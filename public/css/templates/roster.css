@@ -1,0 +1,32 @@
+/* Roster Template */
+.roster-grid-row {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+.roster-header {
+  font-weight: 600; font-size: 0.8rem; text-transform: uppercase;
+  color: var(--color-text-muted); background: var(--color-bg);
+  letter-spacing: 0.04em;
+}
+.roster-cell { padding: 8px 6px; text-align: center; font-size: 0.85rem; }
+.roster-employee-cell { flex: 1; text-align: left; font-weight: 500; min-width: 120px; }
+.roster-role-cell { width: 80px; flex-shrink: 0; font-size: 0.8rem; color: var(--color-text-muted); }
+.roster-shift-cell { width: 90px; flex-shrink: 0; }
+.roster-day-cell { width: 48px; flex-shrink: 0; }
+.roster-shift-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 8px; border-radius: 10px; border: none;
+  font-size: 0.7rem; font-weight: 600; cursor: pointer;
+  transition: all var(--transition);
+}
+.roster-shift-morning { background: #fef3c7; color: #92400e; }
+.roster-shift-afternoon { background: #dbeafe; color: #1d4ed8; }
+.roster-shift-night { background: #ede9fe; color: #6d28d9; }
+.roster-shift-off { background: #f1f5f9; color: #64748b; }
+.roster-shift-btn:hover { opacity: 0.85; }
+.roster-toggle {
+  cursor: pointer; border-radius: var(--radius-sm);
+  transition: all var(--transition); user-select: none;
+}
+.roster-toggle:hover { background: #ede9fe; }
+.roster-checked { background: #ede9fe; color: #6366f1; font-weight: 700; }

@@ -1,0 +1,32 @@
+/* Timesheet Template */
+.ts-summary {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.ts-summary-item { flex: 1; min-width: 100px; text-align: center; }
+.ts-summary-label { font-size: 0.75rem; text-transform: uppercase; color: var(--color-text-muted); display: block; }
+.ts-summary-value { font-size: 1.1rem; font-weight: 700; color: #4338ca; display: block; }
+.ts-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px; border-left: 3px solid var(--color-border);
+}
+.ts-billable { border-left-color: #4338ca; }
+.ts-nonbillable { border-left-color: var(--color-border); opacity: 0.7; }
+.ts-row-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ts-row-text { font-weight: 500; font-size: 0.95rem; }
+.ts-row-client { font-size: 0.8rem; color: #4338ca; font-weight: 500; }
+.ts-row-date { font-size: 0.8rem; color: var(--color-text-muted); }
+.ts-row-right { display: flex; align-items: center; gap: 10px; }
+.ts-hours {
+  font-weight: 700; font-size: 0.95rem; color: #4338ca;
+  padding: 2px 8px; border-radius: 10px; background: #eef2ff;
+  cursor: pointer; transition: all var(--transition);
+}
+.ts-hours:hover { filter: brightness(0.9); transform: scale(1.05); }
+.ts-row-rate { font-size: 0.8rem; color: var(--color-text-muted); }
+.ts-billable-badge { font-size: 0.85rem; }
+.ts-is-billable { color: #d97706; }

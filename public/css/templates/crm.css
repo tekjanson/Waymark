@@ -1,0 +1,40 @@
+/* CRM Template */
+.crm-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.crm-summary-total { font-weight: 700; font-size: 1.1rem; color: #b45309; }
+.crm-summary-count { font-size: 0.85rem; color: var(--color-text-muted); }
+.crm-card {
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 6px; border-left: 4px solid var(--color-border);
+  transition: border-color var(--transition), background var(--transition);
+}
+.crm-card-lead { border-left-color: #64748b; }
+.crm-card-contacted { border-left-color: #2563eb; }
+.crm-card-qualified { border-left-color: #d97706; }
+.crm-card-proposal { border-left-color: #7c3aed; }
+.crm-card-won { border-left-color: #16a34a; background: #f0fdf4; }
+.crm-card-lost { border-left-color: #dc2626; background: #fef2f2; opacity: 0.7; }
+.crm-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.crm-card-company { font-weight: 600; font-size: 1rem; }
+.crm-card-value { font-weight: 700; color: #b45309; }
+.crm-card-body { display: flex; align-items: center; gap: 10px; }
+.crm-stage-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 10px; border-radius: 10px; border: none;
+  font-size: 0.7rem; font-weight: 700; cursor: pointer;
+  text-transform: uppercase; transition: all var(--transition);
+}
+.crm-stage-lead { background: #f1f5f9; color: #64748b; }
+.crm-stage-contacted { background: #dbeafe; color: #1d4ed8; }
+.crm-stage-qualified { background: #fef3c7; color: #92400e; }
+.crm-stage-proposal { background: #ede9fe; color: #6d28d9; }
+.crm-stage-won { background: #dcfce7; color: #15803d; }
+.crm-stage-lost { background: #fee2e2; color: #b91c1c; }
+.crm-stage-btn:hover { opacity: 0.85; }
+.crm-card-contact { font-size: 0.85rem; color: var(--color-text-muted); }
+.crm-card-notes { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px; font-style: italic; }

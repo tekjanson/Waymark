@@ -1,0 +1,77 @@
+{
+  "id": "sheet-025",
+  "title": "Europe Trip Itinerary",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Activity",
+      "Date",
+      "Location",
+      "Booking",
+      "Cost"
+    ],
+    [
+      "Flight to Paris",
+      "2026-06-15",
+      "JFK → CDG",
+      "AA-1234",
+      "$650"
+    ],
+    [
+      "Hotel Le Marais",
+      "2026-06-15",
+      "Paris",
+      "BK-5678",
+      "$180/night"
+    ],
+    [
+      "Eiffel Tower Tour",
+      "2026-06-16",
+      "Paris",
+      "TK-9012",
+      "$35"
+    ],
+    [
+      "Louvre Museum",
+      "2026-06-17",
+      "Paris",
+      "TK-9013",
+      "$20"
+    ],
+    [
+      "Train to Amsterdam",
+      "2026-06-18",
+      "Paris → Amsterdam",
+      "TH-3456",
+      "$120"
+    ],
+    [
+      "Canal Hotel",
+      "2026-06-18",
+      "Amsterdam",
+      "BK-7890",
+      "$160/night"
+    ],
+    [
+      "Van Gogh Museum",
+      "2026-06-19",
+      "Amsterdam",
+      "TK-2345",
+      "$22"
+    ],
+    [
+      "Bike Tour",
+      "2026-06-20",
+      "Amsterdam",
+      "TK-6789",
+      "$45"
+    ],
+    [
+      "Flight Home",
+      "2026-06-21",
+      "AMS → JFK",
+      "KL-5678",
+      "$700"
+    ]
+  ]
+}

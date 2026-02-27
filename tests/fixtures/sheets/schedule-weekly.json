@@ -1,0 +1,20 @@
+{
+  "id": "sheet-011",
+  "title": "Weekly Schedule",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Day", "Time", "Activity", "Location"],
+    ["Monday", "8:00 AM", "Team Standup", "Conference Room A"],
+    ["Monday", "10:00 AM", "Design Review", "Zoom"],
+    ["Monday", "2:00 PM", "Client Call", "Phone"],
+    ["Tuesday", "9:00 AM", "Sprint Planning", "Conference Room B"],
+    ["Tuesday", "1:00 PM", "Code Review", "Desk"],
+    ["Wednesday", "8:00 AM", "Team Standup", "Conference Room A"],
+    ["Wednesday", "11:00 AM", "Lunch & Learn", "Break Room"],
+    ["Thursday", "9:00 AM", "Focus Time", "Home Office"],
+    ["Thursday", "3:00 PM", "1-on-1 Manager", "Zoom"],
+    ["Friday", "8:00 AM", "Team Standup", "Conference Room A"],
+    ["Friday", "10:00 AM", "Demo Day", "All Hands Room"],
+    ["Friday", "2:00 PM", "Retro", "Conference Room B"]
+  ]
+}

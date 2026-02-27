@@ -1,0 +1,87 @@
+{
+  "id": "sheet-020",
+  "title": "Weekly Timesheet",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Project",
+      "Client",
+      "Hours",
+      "Rate",
+      "Billable",
+      "Date"
+    ],
+    [
+      "Website Redesign",
+      "Acme Corp",
+      "8",
+      "150",
+      "Yes",
+      "2026-03-03"
+    ],
+    [
+      "API Integration",
+      "Acme Corp",
+      "6",
+      "150",
+      "Yes",
+      "2026-03-03"
+    ],
+    [
+      "Internal Meeting",
+      "",
+      "2",
+      "",
+      "No",
+      "2026-03-04"
+    ],
+    [
+      "Mobile App",
+      "Beta Inc",
+      "7",
+      "175",
+      "Yes",
+      "2026-03-04"
+    ],
+    [
+      "Bug Fixes",
+      "Acme Corp",
+      "3",
+      "150",
+      "Yes",
+      "2026-03-05"
+    ],
+    [
+      "Code Review",
+      "",
+      "2",
+      "",
+      "No",
+      "2026-03-05"
+    ],
+    [
+      "Dashboard Feature",
+      "Beta Inc",
+      "8",
+      "175",
+      "Yes",
+      "2026-03-06"
+    ],
+    [
+      "Training Session",
+      "",
+      "1.5",
+      "",
+      "No",
+      "2026-03-07"
+    ],
+    [
+      "Database Optimization",
+      "Gamma LLC",
+      "5",
+      "200",
+      "Yes",
+      "2026-03-07"
+    ]
+  ]
+}

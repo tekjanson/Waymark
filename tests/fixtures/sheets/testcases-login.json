@@ -1,0 +1,18 @@
+{
+  "id": "sheet-015",
+  "title": "Login Feature Tests",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Test Case", "Result", "Expected", "Actual", "Priority", "Notes"],
+    ["Valid username and password", "Pass", "Redirect to dashboard", "Redirect to dashboard", "High", ""],
+    ["Invalid password", "Fail", "Show error message", "Page crashes", "High", "Bug #142"],
+    ["Empty username field", "Pass", "Show validation error", "Show validation error", "Medium", ""],
+    ["Empty password field", "Pass", "Show validation error", "Show validation error", "Medium", ""],
+    ["SQL injection in username", "Pass", "Input sanitised", "Input sanitised", "High", "Security test"],
+    ["Remember me checkbox", "Blocked", "Stay logged in 30 days", "Cannot test — staging down", "Low", "Waiting on DevOps"],
+    ["Password reset link", "Skip", "Email sent within 1 min", "", "Medium", "Deferred to sprint 5"],
+    ["OAuth Google login", "Untested", "Redirect to Google", "", "High", ""],
+    ["2FA code entry", "Fail", "Accept valid TOTP", "Timeout after 10 s", "High", "Bug #158"],
+    ["Account lockout after 5 tries", "Pass", "Lock for 15 min", "Lock for 15 min", "High", ""]
+  ]
+}

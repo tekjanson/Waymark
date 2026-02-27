@@ -1,0 +1,79 @@
+{
+  "id": "sheet-027",
+  "title": "Spaghetti Bolognese Recipe Book",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Recipe",
+      "Servings",
+      "Prep Time",
+      "Cook Time",
+      "Category",
+      "Difficulty"
+    ],
+    [
+      "Spaghetti Bolognese",
+      "4",
+      "15 min",
+      "45 min",
+      "Italian",
+      "Easy"
+    ],
+    [
+      "Chicken Tikka Masala",
+      "4",
+      "20 min",
+      "35 min",
+      "Indian",
+      "Medium"
+    ],
+    [
+      "Caesar Salad",
+      "2",
+      "10 min",
+      "0 min",
+      "American",
+      "Easy"
+    ],
+    [
+      "Beef Stir Fry",
+      "3",
+      "15 min",
+      "20 min",
+      "Asian",
+      "Easy"
+    ],
+    [
+      "Mushroom Risotto",
+      "4",
+      "10 min",
+      "40 min",
+      "Italian",
+      "Medium"
+    ],
+    [
+      "Fish Tacos",
+      "4",
+      "15 min",
+      "15 min",
+      "Mexican",
+      "Easy"
+    ],
+    [
+      "Pad Thai",
+      "3",
+      "20 min",
+      "15 min",
+      "Thai",
+      "Medium"
+    ],
+    [
+      "Banana Pancakes",
+      "2",
+      "5 min",
+      "15 min",
+      "Breakfast",
+      "Easy"
+    ]
+  ]
+}

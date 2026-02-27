@@ -1,0 +1,19 @@
+/* Travel Itinerary Template */
+.travel-date-header {
+  font-weight: 700; font-size: 0.9rem; color: #0891b2;
+  padding: 10px 0 4px; margin-top: 8px;
+  border-bottom: 2px solid #a5f3fc;
+}
+.travel-card {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px;
+}
+.travel-card-icon { font-size: 1.3rem; flex-shrink: 0; padding-top: 2px; }
+.travel-card-content { flex: 1; min-width: 0; }
+.travel-card-title { font-weight: 500; font-size: 0.95rem; }
+.travel-card-location { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px; }
+.travel-card-meta { display: flex; gap: 12px; margin-top: 4px; }
+.travel-booking-ref { font-size: 0.75rem; color: #0891b2; font-weight: 600; }
+.travel-cost { font-size: 0.8rem; font-weight: 700; color: #b45309; }

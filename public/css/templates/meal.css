@@ -1,0 +1,24 @@
+/* Meal Planner Template */
+.meal-day { margin-bottom: 16px; }
+.meal-day-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0 6px; border-bottom: 2px solid #d9f99d;
+  margin-bottom: 6px;
+}
+.meal-day-label { font-weight: 600; font-size: 0.85rem; color: #65a30d; text-transform: uppercase; letter-spacing: 0.04em; }
+.meal-day-macros { font-size: 0.8rem; color: var(--color-text-muted); }
+.meal-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px;
+}
+.meal-type-badge {
+  font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 8px; background: #f7fee7; color: #65a30d;
+  text-transform: capitalize; white-space: nowrap;
+}
+.meal-recipe { font-weight: 500; font-size: 0.95rem; flex: 1; }
+.meal-macros { display: flex; gap: 10px; }
+.meal-cal { font-size: 0.8rem; color: #d97706; font-weight: 500; }
+.meal-prot { font-size: 0.8rem; color: #059669; font-weight: 500; }

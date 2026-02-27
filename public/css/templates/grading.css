@@ -1,0 +1,20 @@
+/* Gradebook Template */
+.grading-row {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+.grading-header {
+  font-weight: 600; font-size: 0.8rem; text-transform: uppercase;
+  color: var(--color-text-muted); background: var(--color-bg);
+}
+.grading-cell { padding: 8px 6px; text-align: center; font-size: 0.85rem; }
+.grading-student-cell { flex: 1; text-align: left; font-weight: 500; min-width: 120px; }
+.grading-score-cell { width: 64px; flex-shrink: 0; cursor: pointer; border-radius: var(--radius-sm); transition: all var(--transition); }
+.grading-score-cell:hover { background: var(--color-bg); }
+.grading-avg-cell { width: 56px; flex-shrink: 0; font-weight: 700; }
+.grading-grade-cell { width: 56px; flex-shrink: 0; font-weight: 700; color: #7c2d12; }
+.grading-a { color: #15803d; }
+.grading-b { color: #2563eb; }
+.grading-c { color: #d97706; }
+.grading-d { color: #dc2626; }
+.grading-f { color: #b91c1c; font-weight: 700; }

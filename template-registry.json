@@ -1,0 +1,691 @@
+{
+  "version": 1,
+  "description": "Machine-readable registry of all WayMark templates. Used by the generator agent to understand what exists and avoid collisions.",
+  "templates": [
+    {
+      "key": "testcases",
+      "name": "Test Cases",
+      "icon": "🧪",
+      "color": "#7c3aed",
+      "priority": 25,
+      "category": "Engineering",
+      "detectSignals": [
+        "result",
+        "pass",
+        "fail",
+        "test.status",
+        "outcome",
+        "verdict",
+        "test",
+        "case",
+        "scenario",
+        "expected",
+        "actual"
+      ],
+      "columnRoles": [
+        "text",
+        "result",
+        "expected",
+        "actual",
+        "priority",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Untested",
+        "Pass",
+        "Fail",
+        "Blocked",
+        "Skip"
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-015"
+      ],
+      "fixtureFiles": [
+        "testcases-login"
+      ]
+    },
+    {
+      "key": "checklist",
+      "name": "Checklist",
+      "icon": "✓",
+      "color": "#16a34a",
+      "priority": 10,
+      "category": "Productivity",
+      "detectSignals": [
+        "status",
+        "done",
+        "complete",
+        "check"
+      ],
+      "columnRoles": [
+        "status",
+        "text",
+        "date",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "toggle",
+      "interactionStates": [
+        "done",
+        ""
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-001",
+        "sheet-002",
+        "sheet-003"
+      ],
+      "fixtureFiles": [
+        "groceries",
+        "home-projects",
+        "shared-chores"
+      ]
+    },
+    {
+      "key": "tracker",
+      "name": "Progress Tracker",
+      "icon": "📊",
+      "color": "#2563eb",
+      "priority": 20,
+      "category": "Goals",
+      "detectSignals": [
+        "progress",
+        "percent",
+        "%",
+        "score",
+        "rating",
+        "level",
+        "grade",
+        "completion"
+      ],
+      "columnRoles": [
+        "text",
+        "progress",
+        "target",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-010"
+      ],
+      "fixtureFiles": [
+        "tracker-fitness"
+      ]
+    },
+    {
+      "key": "schedule",
+      "name": "Schedule",
+      "icon": "📅",
+      "color": "#8b5cf6",
+      "priority": 20,
+      "category": "Time",
+      "detectSignals": [
+        "time",
+        "start",
+        "end",
+        "from",
+        "to",
+        "hour",
+        "slot",
+        "shift",
+        "period",
+        "block"
+      ],
+      "columnRoles": [
+        "text",
+        "time",
+        "day",
+        "location"
+      ],
+      "interactive": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-011"
+      ],
+      "fixtureFiles": [
+        "schedule-weekly"
+      ]
+    },
+    {
+      "key": "inventory",
+      "name": "Inventory",
+      "icon": "📦",
+      "color": "#f59e0b",
+      "priority": 15,
+      "category": "Assets",
+      "detectSignals": [
+        "quantity",
+        "qty",
+        "count",
+        "stock",
+        "amount",
+        "price",
+        "cost",
+        "sku"
+      ],
+      "columnRoles": [
+        "text",
+        "quantity",
+        "category",
+        "extra"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-012"
+      ],
+      "fixtureFiles": [
+        "inventory-pantry"
+      ]
+    },
+    {
+      "key": "contacts",
+      "name": "Contacts",
+      "icon": "📇",
+      "color": "#ec4899",
+      "priority": 15,
+      "category": "People",
+      "detectSignals": [
+        "email",
+        "phone",
+        "mobile",
+        "cell",
+        "name",
+        "contact",
+        "person"
+      ],
+      "columnRoles": [
+        "name",
+        "email",
+        "phone",
+        "role"
+      ],
+      "interactive": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-013"
+      ],
+      "fixtureFiles": [
+        "contacts-emergency"
+      ]
+    },
+    {
+      "key": "log",
+      "name": "Activity Log",
+      "icon": "📝",
+      "color": "#0891b2",
+      "priority": 15,
+      "category": "Tracking",
+      "detectSignals": [
+        "timestamp",
+        "logged",
+        "entry.date",
+        "log.date",
+        "recorded",
+        "created.at"
+      ],
+      "columnRoles": [
+        "text",
+        "timestamp",
+        "type",
+        "duration"
+      ],
+      "interactive": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-014"
+      ],
+      "fixtureFiles": [
+        "log-workout"
+      ]
+    },
+    {
+      "key": "budget",
+      "name": "Budget",
+      "icon": "💰",
+      "color": "#059669",
+      "priority": 20,
+      "category": "Finance",
+      "detectSignals": [
+        "income",
+        "expense",
+        "budget",
+        "spent",
+        "balance",
+        "category",
+        "amount"
+      ],
+      "columnRoles": [
+        "text",
+        "amount",
+        "category",
+        "date",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-016"
+      ],
+      "fixtureFiles": [
+        "budget-personal"
+      ]
+    },
+    {
+      "key": "kanban",
+      "name": "Kanban Board",
+      "icon": "📋",
+      "color": "#0284c7",
+      "priority": 23,
+      "category": "Project Management",
+      "detectSignals": [
+        "backlog",
+        "in.progress",
+        "todo",
+        "doing",
+        "done",
+        "column",
+        "board",
+        "stage",
+        "lane"
+      ],
+      "columnRoles": [
+        "text",
+        "stage",
+        "assignee",
+        "priority"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Backlog",
+        "To Do",
+        "In Progress",
+        "Done"
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-017"
+      ],
+      "fixtureFiles": [
+        "kanban-project"
+      ]
+    },
+    {
+      "key": "habit",
+      "name": "Habit Tracker",
+      "icon": "🔄",
+      "color": "#d97706",
+      "priority": 22,
+      "category": "Personal",
+      "detectSignals": [
+        "habit",
+        "streak",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "mon",
+        "tue",
+        "wed"
+      ],
+      "columnRoles": [
+        "text",
+        "days",
+        "streak",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "toggle-grid",
+      "interactionStates": [
+        "✓",
+        ""
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-018"
+      ],
+      "fixtureFiles": [
+        "habit-morning"
+      ]
+    },
+    {
+      "key": "grading",
+      "name": "Gradebook",
+      "icon": "🎓",
+      "color": "#7c2d12",
+      "priority": 21,
+      "category": "Education",
+      "detectSignals": [
+        "student",
+        "grade",
+        "assignment",
+        "exam",
+        "quiz",
+        "homework",
+        "final",
+        "midterm"
+      ],
+      "columnRoles": [
+        "student",
+        "assignments",
+        "average",
+        "grade"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-019"
+      ],
+      "fixtureFiles": [
+        "grading-math"
+      ]
+    },
+    {
+      "key": "timesheet",
+      "name": "Timesheet",
+      "icon": "⏱️",
+      "color": "#4338ca",
+      "priority": 20,
+      "category": "Work",
+      "detectSignals": [
+        "hours",
+        "billable",
+        "rate",
+        "client",
+        "project",
+        "timesheet"
+      ],
+      "columnRoles": [
+        "text",
+        "hours",
+        "date",
+        "client",
+        "billable"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-020"
+      ],
+      "fixtureFiles": [
+        "timesheet-weekly"
+      ]
+    },
+    {
+      "key": "poll",
+      "name": "Poll / Survey",
+      "icon": "📊",
+      "color": "#be185d",
+      "priority": 18,
+      "category": "Feedback",
+      "detectSignals": [
+        "vote",
+        "votes",
+        "response",
+        "responses",
+        "agree",
+        "disagree",
+        "option",
+        "choice",
+        "poll"
+      ],
+      "columnRoles": [
+        "text",
+        "votes",
+        "percent",
+        "winner"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-021"
+      ],
+      "fixtureFiles": [
+        "poll-team"
+      ]
+    },
+    {
+      "key": "changelog",
+      "name": "Changelog",
+      "icon": "📋",
+      "color": "#374151",
+      "priority": 18,
+      "category": "Engineering",
+      "detectSignals": [
+        "version",
+        "release",
+        "changelog",
+        "what.changed",
+        "breaking",
+        "added",
+        "fixed"
+      ],
+      "columnRoles": [
+        "version",
+        "date",
+        "type",
+        "description"
+      ],
+      "interactive": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-022"
+      ],
+      "fixtureFiles": [
+        "changelog-app"
+      ]
+    },
+    {
+      "key": "crm",
+      "name": "CRM",
+      "icon": "🤝",
+      "color": "#b45309",
+      "priority": 23,
+      "category": "Sales",
+      "detectSignals": [
+        "lead",
+        "deal",
+        "pipeline",
+        "company",
+        "value",
+        "stage",
+        "prospect",
+        "opportunity"
+      ],
+      "columnRoles": [
+        "company",
+        "contact",
+        "stage",
+        "value",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Lead",
+        "Contacted",
+        "Qualified",
+        "Proposal",
+        "Won",
+        "Lost"
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-023"
+      ],
+      "fixtureFiles": [
+        "crm-sales"
+      ]
+    },
+    {
+      "key": "meal",
+      "name": "Meal Planner",
+      "icon": "🍽️",
+      "color": "#65a30d",
+      "priority": 22,
+      "category": "Health",
+      "detectSignals": [
+        "meal",
+        "recipe",
+        "calories",
+        "protein",
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snack"
+      ],
+      "columnRoles": [
+        "meal",
+        "day",
+        "calories",
+        "protein",
+        "notes"
+      ],
+      "interactive": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-024"
+      ],
+      "fixtureFiles": [
+        "meal-weekly"
+      ]
+    },
+    {
+      "key": "travel",
+      "name": "Travel Itinerary",
+      "icon": "✈️",
+      "color": "#0891b2",
+      "priority": 20,
+      "category": "Travel",
+      "detectSignals": [
+        "flight",
+        "hotel",
+        "booking",
+        "itinerary",
+        "departure",
+        "arrival",
+        "accommodation"
+      ],
+      "columnRoles": [
+        "activity",
+        "date",
+        "location",
+        "booking",
+        "cost"
+      ],
+      "interactive": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-025"
+      ],
+      "fixtureFiles": [
+        "travel-europe"
+      ]
+    },
+    {
+      "key": "roster",
+      "name": "Roster",
+      "icon": "👥",
+      "color": "#6366f1",
+      "priority": 18,
+      "category": "Operations",
+      "detectSignals": [
+        "shift",
+        "roster",
+        "employee",
+        "availability",
+        "on.call",
+        "schedule",
+        "rotation"
+      ],
+      "columnRoles": [
+        "employee",
+        "shift",
+        "day",
+        "role",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Morning",
+        "Afternoon",
+        "Night",
+        "Off"
+      ],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-026"
+      ],
+      "fixtureFiles": [
+        "roster-team"
+      ]
+    },
+    {
+      "key": "recipe",
+      "name": "Recipe Book",
+      "icon": "📖",
+      "color": "#ea580c",
+      "priority": 17,
+      "category": "Personal",
+      "detectSignals": [
+        "recipe",
+        "ingredients",
+        "servings",
+        "prep",
+        "cook",
+        "cuisine"
+      ],
+      "columnRoles": [
+        "text",
+        "servings",
+        "prepTime",
+        "cookTime",
+        "category",
+        "difficulty"
+      ],
+      "interactive": false,
+      "interactionType": "none",
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-027"
+      ],
+      "fixtureFiles": [
+        "recipe-spaghetti-bolognese"
+      ]
+    }
+  ],
+  "nextSheetId": "sheet-028",
+  "totalTemplates": 19,
+  "categories": [
+    "Productivity",
+    "Engineering",
+    "Goals",
+    "Time",
+    "Assets",
+    "People",
+    "Tracking",
+    "Finance",
+    "Project Management",
+    "Personal",
+    "Education",
+    "Work",
+    "Feedback",
+    "Sales",
+    "Health",
+    "Travel",
+    "Operations"
+  ]
+}

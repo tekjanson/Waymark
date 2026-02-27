@@ -1,0 +1,33 @@
+/* Changelog Template */
+.changelog-version { margin-bottom: 16px; }
+.changelog-version-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0; border-bottom: 2px solid var(--color-border);
+  margin-bottom: 6px;
+}
+.changelog-version-tag {
+  font-weight: 700; font-size: 1rem; color: #374151;
+  background: var(--color-bg); padding: 2px 10px; border-radius: 10px;
+}
+.changelog-version-date { font-size: 0.8rem; color: var(--color-text-muted); }
+.changelog-entry {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px; border-left: 3px solid var(--color-border);
+}
+.changelog-added { border-left-color: #16a34a; }
+.changelog-fixed { border-left-color: #2563eb; }
+.changelog-changed { border-left-color: #d97706; }
+.changelog-breaking { border-left-color: #dc2626; }
+.changelog-other { border-left-color: #64748b; }
+.changelog-type-badge {
+  font-size: 0.7rem; font-weight: 600; padding: 1px 6px;
+  border-radius: 8px; white-space: nowrap; text-transform: uppercase;
+}
+.changelog-type-added { background: #dcfce7; color: #15803d; }
+.changelog-type-fixed { background: #dbeafe; color: #1d4ed8; }
+.changelog-type-changed { background: #fef3c7; color: #92400e; }
+.changelog-type-breaking { background: #fee2e2; color: #b91c1c; }
+.changelog-type-other { background: #f1f5f9; color: #64748b; }
+.changelog-desc { font-size: 0.9rem; }

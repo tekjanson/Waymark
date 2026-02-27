@@ -1,0 +1,70 @@
+{
+  "id": "sheet-023",
+  "title": "Sales Pipeline",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Company",
+      "Contact",
+      "Deal Stage",
+      "Value",
+      "Notes"
+    ],
+    [
+      "Acme Corp",
+      "John Smith",
+      "Proposal",
+      "$50,000",
+      "Follow up Friday"
+    ],
+    [
+      "TechStart Inc",
+      "Sarah Lee",
+      "Qualified",
+      "$25,000",
+      "Demo scheduled"
+    ],
+    [
+      "Global Media",
+      "Mike Chen",
+      "Won",
+      "$120,000",
+      "Contract signed"
+    ],
+    [
+      "FreshFoods Co",
+      "Lisa Park",
+      "Lead",
+      "$15,000",
+      "Inbound inquiry"
+    ],
+    [
+      "DataFlow",
+      "Tom Brown",
+      "Contacted",
+      "$35,000",
+      "Sent intro email"
+    ],
+    [
+      "CloudNine",
+      "Amy Davis",
+      "Lost",
+      "$80,000",
+      "Went with competitor"
+    ],
+    [
+      "BuildRight",
+      "Dave Wilson",
+      "Proposal",
+      "$45,000",
+      "Awaiting budget approval"
+    ],
+    [
+      "EduLearn",
+      "Nina Garcia",
+      "Qualified",
+      "$30,000",
+      "Needs security review"
+    ]
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "sheet-001",
+  "title": "Grocery List",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Item", "Status", "Quantity", "Notes"],
+    ["Milk", "done", "2", "Whole milk"],
+    ["Eggs", "done", "12", ""],
+    ["Bread", "", "1", "Sourdough"],
+    ["Butter", "", "1", "Unsalted"],
+    ["Chicken Breast", "done", "2 lbs", "Organic"],
+    ["Spinach", "", "1 bag", "Baby spinach"],
+    ["Tomatoes", "done", "6", "Roma"],
+    ["Cheese", "", "1", "Cheddar block"],
+    ["Rice", "done", "1 bag", "Jasmine 5 lb"],
+    ["Olive Oil", "", "1", "Extra virgin"]
+  ]
+}

@@ -1,0 +1,22 @@
+/* Log Template */
+.template-log-entry {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 0; border-left: 2px solid var(--color-border);
+  margin-left: 8px; padding-left: 20px;
+  position: relative;
+}
+.template-log-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--color-primary); flex-shrink: 0;
+  position: absolute; left: -6px; top: 14px;
+}
+.template-log-content { flex: 1; }
+.template-log-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.template-log-time { font-size: 0.8rem; font-weight: 600; color: var(--color-primary); }
+.template-log-type {
+  font-size: 0.7rem; padding: 1px 6px; border-radius: 10px;
+  background: var(--color-bg); color: var(--color-text-muted);
+  font-weight: 500;
+}
+.template-log-duration { font-size: 0.8rem; color: var(--color-text-muted); }
+.template-log-text { font-size: 0.9rem; }

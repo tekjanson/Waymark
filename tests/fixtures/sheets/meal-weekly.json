@@ -1,0 +1,77 @@
+{
+  "id": "sheet-024",
+  "title": "Weekly Meal Plan",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Day",
+      "Meal",
+      "Recipe",
+      "Calories",
+      "Protein"
+    ],
+    [
+      "Monday",
+      "Breakfast",
+      "Oatmeal with berries",
+      "350",
+      "12g"
+    ],
+    [
+      "Monday",
+      "Lunch",
+      "Grilled chicken salad",
+      "480",
+      "38g"
+    ],
+    [
+      "Monday",
+      "Dinner",
+      "Salmon with asparagus",
+      "520",
+      "42g"
+    ],
+    [
+      "Tuesday",
+      "Breakfast",
+      "Greek yogurt parfait",
+      "280",
+      "20g"
+    ],
+    [
+      "Tuesday",
+      "Lunch",
+      "Turkey club wrap",
+      "450",
+      "30g"
+    ],
+    [
+      "Tuesday",
+      "Dinner",
+      "Beef stir-fry with rice",
+      "580",
+      "35g"
+    ],
+    [
+      "Wednesday",
+      "Breakfast",
+      "Smoothie bowl",
+      "320",
+      "15g"
+    ],
+    [
+      "Wednesday",
+      "Lunch",
+      "Lentil soup with bread",
+      "420",
+      "22g"
+    ],
+    [
+      "Wednesday",
+      "Dinner",
+      "Pasta primavera",
+      "550",
+      "18g"
+    ]
+  ]
+}

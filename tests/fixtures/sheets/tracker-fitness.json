@@ -1,0 +1,16 @@
+{
+  "id": "sheet-010",
+  "title": "Fitness Goals",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Goal", "Progress", "Target", "Notes"],
+    ["Run a 5K", "4.2", "5", "Building up distance"],
+    ["Pushups in a row", "35", "50", "Up from 20 last month"],
+    ["Plank hold (min)", "2.5", "5", "Core strength"],
+    ["Pull-ups", "8", "15", "Wide grip"],
+    ["Weight loss (lbs)", "12", "20", "Since January"],
+    ["Daily steps", "8500", "10000", "Average this week"],
+    ["Meditation (min)", "15", "20", "Morning routine"],
+    ["Sleep hours", "7.2", "8", "Improved from 6.5"]
+  ]
+}

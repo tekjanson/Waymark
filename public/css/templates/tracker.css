@@ -1,0 +1,24 @@
+/* Tracker Template */
+.template-tracker-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 6px;
+}
+.template-tracker-info { flex: 1; min-width: 0; }
+.template-tracker-label { font-weight: 500; font-size: 0.95rem; display: block; }
+.template-tracker-notes { font-size: 0.8rem; color: var(--color-text-muted); }
+.template-tracker-bar-wrap {
+  width: 180px; height: 8px; background: var(--color-border);
+  border-radius: 4px; overflow: hidden; flex-shrink: 0;
+}
+.template-tracker-bar {
+  height: 100%; border-radius: 4px;
+  transition: width 400ms ease;
+}
+.template-tracker-pct {
+  font-size: 0.85rem; font-weight: 600; min-width: 3em; text-align: right;
+  color: var(--color-text-secondary);
+}
+.template-tracker-bar-wrap { cursor: pointer; }
+.template-tracker-bar-wrap:hover { opacity: 0.8; }

@@ -1,0 +1,43 @@
+{
+  "id": "sheet-021",
+  "title": "Team Lunch Poll",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Option",
+      "Votes",
+      "Percent",
+      "Notes"
+    ],
+    [
+      "Pizza Palace",
+      "8",
+      "32%",
+      "Has vegan options"
+    ],
+    [
+      "Sushi Garden",
+      "6",
+      "24%",
+      "Lunch special"
+    ],
+    [
+      "Taco Truck",
+      "5",
+      "20%",
+      "Near the office"
+    ],
+    [
+      "Burger Barn",
+      "4",
+      "16%",
+      ""
+    ],
+    [
+      "Salad Bar",
+      "2",
+      "8%",
+      "Healthy option"
+    ]
+  ]
+}

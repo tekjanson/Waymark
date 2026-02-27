@@ -1,0 +1,97 @@
+{
+  "id": "sheet-026",
+  "title": "Team Roster",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Employee",
+      "Role",
+      "Shift",
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri"
+    ],
+    [
+      "Alice Chen",
+      "Manager",
+      "Morning",
+      "✓",
+      "✓",
+      "✓",
+      "✓",
+      "✓"
+    ],
+    [
+      "Bob Martinez",
+      "Developer",
+      "Morning",
+      "✓",
+      "✓",
+      "",
+      "✓",
+      "✓"
+    ],
+    [
+      "Carol Kim",
+      "Designer",
+      "Afternoon",
+      "",
+      "✓",
+      "✓",
+      "✓",
+      ""
+    ],
+    [
+      "Dave Johnson",
+      "Developer",
+      "Night",
+      "✓",
+      "",
+      "✓",
+      "",
+      "✓"
+    ],
+    [
+      "Eva Williams",
+      "Support",
+      "Morning",
+      "✓",
+      "✓",
+      "✓",
+      "",
+      "✓"
+    ],
+    [
+      "Frank Davis",
+      "Developer",
+      "Afternoon",
+      "✓",
+      "",
+      "✓",
+      "✓",
+      ""
+    ],
+    [
+      "Grace Lee",
+      "QA",
+      "Morning",
+      "",
+      "✓",
+      "",
+      "✓",
+      "✓"
+    ],
+    [
+      "Henry Park",
+      "DevOps",
+      "Night",
+      "✓",
+      "✓",
+      "",
+      "",
+      "✓"
+    ]
+  ]
+}

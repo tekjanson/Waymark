@@ -1,0 +1,16 @@
+{
+  "id": "sheet-003",
+  "title": "Weekly Chores",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Chore", "Complete", "Assigned To", "Day"],
+    ["Vacuum living room", "true", "Alex", "Monday"],
+    ["Wash dishes", "true", "Jordan", "Monday"],
+    ["Clean bathrooms", "", "Alex", "Wednesday"],
+    ["Take out trash", "true", "Jordan", "Tuesday"],
+    ["Mow the lawn", "", "Alex", "Saturday"],
+    ["Do laundry", "true", "Jordan", "Thursday"],
+    ["Wipe kitchen counters", "", "Alex", "Daily"],
+    ["Organize pantry", "", "Jordan", "Sunday"]
+  ]
+}

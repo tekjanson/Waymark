@@ -1,0 +1,67 @@
+{
+  "id": "sheet-017",
+  "title": "Project Board",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Task",
+      "Stage",
+      "Assignee",
+      "Priority"
+    ],
+    [
+      "Design login page",
+      "Done",
+      "Alice",
+      "High"
+    ],
+    [
+      "Set up CI pipeline",
+      "In Progress",
+      "Bob",
+      "High"
+    ],
+    [
+      "Write API docs",
+      "In Progress",
+      "Carol",
+      "Medium"
+    ],
+    [
+      "Add dark mode",
+      "To Do",
+      "Alice",
+      "Low"
+    ],
+    [
+      "Fix nav bug",
+      "Done",
+      "Bob",
+      "High"
+    ],
+    [
+      "Implement search",
+      "Backlog",
+      "",
+      "Medium"
+    ],
+    [
+      "Database migration",
+      "To Do",
+      "Carol",
+      "High"
+    ],
+    [
+      "User onboarding flow",
+      "Backlog",
+      "",
+      "Medium"
+    ],
+    [
+      "Performance audit",
+      "In Progress",
+      "Alice",
+      "High"
+    ]
+  ]
+}

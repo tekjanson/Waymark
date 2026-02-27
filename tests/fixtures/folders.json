@@ -1,0 +1,166 @@
+{
+  "myDrive": [
+    {
+      "id": "f1",
+      "name": "Groceries",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-001",
+          "name": "Grocery List",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f2",
+      "name": "Home Projects",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-002",
+          "name": "Home Repairs",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "f2-sub",
+          "name": "Backyard",
+          "mimeType": "application/vnd.google-apps.folder",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "f-empty",
+      "name": "Empty Folder",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": []
+    },
+    {
+      "id": "f-templates",
+      "name": "WayMark Examples",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-010",
+          "name": "Fitness Goals",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-011",
+          "name": "Weekly Schedule",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-012",
+          "name": "Pantry Inventory",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-013",
+          "name": "Emergency Contacts",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-014",
+          "name": "Workout Log",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-015",
+          "name": "Login Feature Tests",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-016",
+          "name": "Monthly Budget",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-017",
+          "name": "Project Board",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-018",
+          "name": "Morning Routine Habits",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-019",
+          "name": "Math 101 Grades",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-020",
+          "name": "Weekly Timesheet",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-021",
+          "name": "Team Lunch Poll",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-022",
+          "name": "App Changelog",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-023",
+          "name": "Sales Pipeline",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-024",
+          "name": "Weekly Meal Plan",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-025",
+          "name": "Europe Trip Itinerary",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-026",
+          "name": "Team Roster",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    }
+  ],
+  "sharedWithMe": [
+    {
+      "id": "f3",
+      "name": "Family Chores",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": true,
+      "owner": "spouse@gmail.com",
+      "children": [
+        {
+          "id": "sheet-003",
+          "name": "Weekly Chores",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f4",
+      "name": "Team Tasks",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": true,
+      "owner": "boss@work.com",
+      "children": [
+        {
+          "id": "sheet-004",
+          "name": "Sprint Tasks",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+/* Habit Tracker Template */
+.habit-grid-row {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+.habit-grid-header {
+  font-weight: 600; font-size: 0.8rem; text-transform: uppercase;
+  color: var(--color-text-muted); letter-spacing: 0.04em;
+  background: var(--color-bg);
+}
+.habit-grid-cell {
+  padding: 8px 6px; text-align: center; font-size: 0.85rem;
+}
+.habit-name-cell { flex: 1; text-align: left; font-weight: 500; min-width: 120px; }
+.habit-day-cell { width: 48px; flex-shrink: 0; }
+.habit-streak-cell { width: 56px; flex-shrink: 0; font-weight: 600; color: #d97706; }
+.habit-toggle {
+  cursor: pointer; border-radius: var(--radius-sm);
+  transition: all var(--transition); user-select: none;
+}
+.habit-toggle:hover { background: #fef3c7; }
+.habit-checked { background: #fef3c7; color: #d97706; font-weight: 700; }

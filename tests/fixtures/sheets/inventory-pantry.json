@@ -1,0 +1,18 @@
+{
+  "id": "sheet-012",
+  "title": "Pantry Inventory",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Item", "Quantity", "Category", "Expires"],
+    ["Jasmine Rice", "5 lbs", "Grains", "2026-06-01"],
+    ["Black Beans", "4 cans", "Canned", "2027-03-15"],
+    ["Pasta", "3 boxes", "Grains", "2026-12-01"],
+    ["Olive Oil", "750 ml", "Oils", "2026-09-01"],
+    ["Diced Tomatoes", "6 cans", "Canned", "2027-01-10"],
+    ["Flour", "2 lbs", "Baking", "2026-04-15"],
+    ["Sugar", "3 lbs", "Baking", "2027-06-01"],
+    ["Soy Sauce", "1 bottle", "Sauces", "2027-01-01"],
+    ["Chicken Broth", "2 cartons", "Canned", "2026-08-20"],
+    ["Peanut Butter", "1 jar", "Spreads", "2026-11-15"]
+  ]
+}

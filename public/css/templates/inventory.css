@@ -1,0 +1,28 @@
+/* Inventory Template */
+.template-inv-category {
+  font-weight: 600; font-size: 0.85rem; color: var(--color-warning);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 0 4px;
+}
+.template-inv-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px; margin-bottom: 12px;
+}
+.template-inv-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 12px;
+  transition: box-shadow var(--transition);
+}
+.template-inv-card:hover { box-shadow: var(--shadow); }
+.template-inv-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.template-inv-name { font-weight: 500; font-size: 0.9rem; }
+.template-inv-qty {
+  background: var(--color-warning); color: #fff;
+  font-size: 0.75rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 10px; white-space: nowrap;
+  cursor: pointer; transition: all var(--transition);
+}
+.template-inv-qty:hover { filter: brightness(0.85); transform: scale(1.05); }
+.template-inv-extra {
+  font-size: 0.8rem; color: var(--color-text-muted); margin-top: 6px;
+}

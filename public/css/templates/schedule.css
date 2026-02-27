@@ -1,0 +1,23 @@
+/* Schedule Template */
+.template-schedule-day { margin-bottom: 16px; }
+.template-schedule-day-label {
+  font-weight: 600; font-size: 0.85rem; color: var(--color-shared);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 4px 0 6px; border-bottom: 2px solid var(--color-shared-light);
+  margin-bottom: 6px;
+}
+.template-schedule-block {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px; border-left: 3px solid var(--color-shared);
+}
+.template-schedule-time {
+  font-size: 0.85rem; font-weight: 600; color: var(--color-shared);
+  min-width: 5em; flex-shrink: 0;
+}
+.template-schedule-event { flex: 1; }
+.template-schedule-event-name { font-size: 0.95rem; font-weight: 500; }
+.template-schedule-location {
+  font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;
+}

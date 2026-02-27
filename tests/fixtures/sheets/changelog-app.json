@@ -1,0 +1,67 @@
+{
+  "id": "sheet-022",
+  "title": "App Changelog",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Version",
+      "Date",
+      "Type",
+      "What Changed"
+    ],
+    [
+      "2.3.0",
+      "2026-03-15",
+      "Added",
+      "Dark mode support across all screens"
+    ],
+    [
+      "2.3.0",
+      "2026-03-15",
+      "Added",
+      "Export data as CSV and PDF"
+    ],
+    [
+      "2.2.1",
+      "2026-03-10",
+      "Fixed",
+      "Login timeout on slow connections"
+    ],
+    [
+      "2.2.1",
+      "2026-03-10",
+      "Fixed",
+      "Search results not updating in real-time"
+    ],
+    [
+      "2.2.0",
+      "2026-03-01",
+      "Added",
+      "Team collaboration features"
+    ],
+    [
+      "2.2.0",
+      "2026-03-01",
+      "Changed",
+      "Redesigned settings page layout"
+    ],
+    [
+      "2.1.0",
+      "2026-02-20",
+      "Added",
+      "Push notification preferences"
+    ],
+    [
+      "2.1.0",
+      "2026-02-20",
+      "Breaking",
+      "API v1 endpoints deprecated"
+    ],
+    [
+      "2.0.0",
+      "2026-02-01",
+      "Breaking",
+      "Complete UI rewrite — see migration guide"
+    ]
+  ]
+}

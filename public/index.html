@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WayMark</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ===== Login Screen ===== -->
+  <div id="login-screen" class="screen">
+    <div class="login-container">
+      <img src="/assets/logo.svg" alt="WayMark" class="logo">
+      <h1>WayMark</h1>
+      <p class="tagline">Turn your Google Sheets into interactive checklists</p>
+      <button id="login-btn" class="btn btn-google">
+        <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Sign in with Google
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== Main App ===== -->
+  <div id="app-screen" class="screen hidden">
+
+    <!-- Top Bar -->
+    <header id="top-bar">
+      <div class="top-bar-left">
+        <button id="sidebar-toggle" class="btn-icon" aria-label="Toggle sidebar">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <a href="#/" class="brand">WayMark</a>
+      </div>
+
+      <div class="top-bar-center">
+        <form id="search-form" class="search-container" autocomplete="off">
+          <input type="text" id="search-input" placeholder="Ask AI to find a list..." aria-label="Search">
+          <button type="submit" id="search-btn" class="btn-icon" aria-label="Search">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+        </form>
+      </div>
+
+      <div class="top-bar-right">
+        <span id="user-name"></span>
+        <img id="user-avatar" src="" alt="" class="avatar hidden">
+        <button id="logout-btn" class="btn-text">Sign out</button>
+      </div>
+    </header>
+
+    <!-- Layout -->
+    <div id="main-layout">
+
+      <!-- Sidebar — Drive Explorer -->
+      <aside id="sidebar" class="sidebar-open">
+        <div class="sidebar-header">
+          <h3>Drive Explorer</h3>
+        </div>
+        <div id="explorer"></div>
+      </aside>
+
+      <!-- Main Content -->
+      <main id="content">
+
+        <!-- Home View -->
+        <section id="home-view" class="view" data-view="home">
+          <h2>Pinned Folders</h2>
+          <div id="pinned-folders" class="pinned-grid"></div>
+          <p id="no-pinned" class="empty-state hidden">No folders pinned yet. Use the Drive Explorer to browse and pin folders.</p>
+
+          <div id="generate-section" class="generate-section">
+            <h3>Quick Start</h3>
+            <p class="text-muted">Generate example sheets in your Google Drive to try all template types.</p>
+            <button id="generate-examples-btn" class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Generate Example Sheets
+            </button>
+            <div id="generate-progress" class="generate-progress hidden"></div>
+          </div>
+        </section>
+
+        <!-- Checklist View -->
+        <section id="checklist-view" class="view hidden" data-view="checklist">
+          <div class="checklist-header">
+            <button id="back-btn" class="btn-icon" aria-label="Back">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            </button>
+            <h2 id="checklist-title"></h2>
+            <span id="template-badge" class="template-badge hidden"></span>
+            <div class="checklist-actions">
+              <span id="last-updated" class="text-muted"></span>
+              <button id="refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+              <label class="toggle-label" title="Auto-refresh every 60s">
+                <input type="checkbox" id="auto-refresh-toggle" checked>
+                <span class="toggle-text">Auto</span>
+              </label>
+            </div>
+          </div>
+          <div id="checklist-items"></div>
+        </section>
+
+        <!-- Folder Contents View (sheets inside a folder) -->
+        <section id="folder-view" class="view hidden" data-view="folder">
+          <div class="folder-header">
+            <button id="folder-back-btn" class="btn-icon" aria-label="Back">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            </button>
+            <h2 id="folder-title"></h2>
+          </div>
+          <div id="folder-sheets" class="sheet-list"></div>
+          <p id="no-sheets" class="empty-state hidden">No sheets found in this folder.</p>
+        </section>
+
+        <!-- Search Results View -->
+        <section id="search-view" class="view hidden" data-view="search">
+          <h2>Search Results</h2>
+          <p id="search-summary" class="text-muted"></p>
+          <div id="search-results" class="sheet-list"></div>
+          <p id="no-results" class="empty-state hidden">No results found.</p>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- App entry point -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

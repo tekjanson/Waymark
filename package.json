@@ -1,0 +1,24 @@
+{
+  "name": "waymark",
+  "version": "1.0.0",
+  "description": "Turn Google Sheets into interactive checklists — read-only, AI-powered, zero server state",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "WAYMARK_LOCAL=true node server/index.js",
+    "generate": "node scripts/generate-examples.js",
+    "test": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js",
+    "test:headed": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --headed",
+    "test:debug": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --debug"
+  },
+  "keywords": ["checklist", "google-sheets", "drive", "gemini"],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}

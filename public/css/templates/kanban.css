@@ -1,0 +1,50 @@
+/* Kanban Template */
+.kanban-board {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 12px; min-height: 200px;
+}
+.kanban-lane {
+  background: var(--color-bg); border-radius: var(--radius);
+  padding: 8px; border: 1px solid var(--color-border);
+}
+.kanban-lane-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 8px; margin-bottom: 8px;
+  font-weight: 600; font-size: 0.85rem; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kanban-lane-backlog .kanban-lane-header { color: #64748b; }
+.kanban-lane-todo .kanban-lane-header { color: #2563eb; }
+.kanban-lane-inprogress .kanban-lane-header { color: #d97706; }
+.kanban-lane-done .kanban-lane-header { color: #16a34a; }
+.kanban-lane-count {
+  font-size: 0.7rem; padding: 1px 6px; border-radius: 10px;
+  background: var(--color-border); color: var(--color-text-muted);
+}
+.kanban-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 10px; margin-bottom: 6px;
+  transition: box-shadow var(--transition);
+}
+.kanban-card:hover { box-shadow: var(--shadow); }
+.kanban-card-title { font-weight: 500; font-size: 0.9rem; margin-bottom: 6px; }
+.kanban-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kanban-stage-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 8px; border-radius: 10px; border: none;
+  font-size: 0.7rem; font-weight: 600; cursor: pointer;
+  transition: all var(--transition);
+}
+.kanban-stage-backlog { background: #f1f5f9; color: #64748b; }
+.kanban-stage-todo { background: #dbeafe; color: #1d4ed8; }
+.kanban-stage-inprogress { background: #fef3c7; color: #92400e; }
+.kanban-stage-done { background: #dcfce7; color: #15803d; }
+.kanban-stage-btn:hover { opacity: 0.85; }
+.kanban-card-assignee { font-size: 0.75rem; color: var(--color-text-muted); }
+.kanban-card-priority { font-size: 0.65rem; padding: 1px 5px; border-radius: 8px; font-weight: 600; }
+.kanban-pri-high { background: #fee2e2; color: #b91c1c; }
+.kanban-pri-medium { background: #fef3c7; color: #92400e; }
+.kanban-pri-low { background: #f1f5f9; color: #64748b; }
+@media (max-width: 768px) {
+  .kanban-board { grid-template-columns: 1fr; }
+}

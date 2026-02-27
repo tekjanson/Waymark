@@ -1,0 +1,26 @@
+/* =======================================
+   WayMark — CSS Aggregator
+   Each section lives in its own file for maintainability.
+   ======================================= */
+
+/* Core: variables, reset, layout, shared components */
+@import url('./base.css');
+
+/* Per-template styles */
+@import url('./templates/tracker.css');
+@import url('./templates/schedule.css');
+@import url('./templates/inventory.css');
+@import url('./templates/contacts.css');
+@import url('./templates/log.css');
+@import url('./templates/testcases.css');
+@import url('./templates/budget.css');
+@import url('./templates/kanban.css');
+@import url('./templates/habit.css');
+@import url('./templates/grading.css');
+@import url('./templates/timesheet.css');
+@import url('./templates/poll.css');
+@import url('./templates/changelog.css');
+@import url('./templates/crm.css');
+@import url('./templates/meal.css');
+@import url('./templates/travel.css');
+@import url('./templates/roster.css');

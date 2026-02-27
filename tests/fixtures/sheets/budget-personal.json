@@ -1,0 +1,84 @@
+{
+  "id": "sheet-016",
+  "title": "Monthly Budget",
+  "sheetTitle": "Sheet1",
+  "values": [
+    [
+      "Description",
+      "Amount",
+      "Category",
+      "Date",
+      "Budget"
+    ],
+    [
+      "Salary",
+      "5000",
+      "Income",
+      "2026-03-01",
+      ""
+    ],
+    [
+      "Rent",
+      "-1500",
+      "Housing",
+      "2026-03-01",
+      "1500"
+    ],
+    [
+      "Groceries",
+      "-420",
+      "Food",
+      "2026-03-05",
+      "500"
+    ],
+    [
+      "Electric Bill",
+      "-95",
+      "Utilities",
+      "2026-03-08",
+      "120"
+    ],
+    [
+      "Internet",
+      "-70",
+      "Utilities",
+      "2026-03-08",
+      "70"
+    ],
+    [
+      "Gas",
+      "-55",
+      "Transport",
+      "2026-03-10",
+      "80"
+    ],
+    [
+      "Dining Out",
+      "-85",
+      "Food",
+      "2026-03-12",
+      "150"
+    ],
+    [
+      "Gym Membership",
+      "-45",
+      "Health",
+      "2026-03-15",
+      "45"
+    ],
+    [
+      "Freelance Work",
+      "800",
+      "Income",
+      "2026-03-18",
+      ""
+    ],
+    [
+      "Streaming Services",
+      "-32",
+      "Entertainment",
+      "2026-03-20",
+      "50"
+    ]
+  ]
+}

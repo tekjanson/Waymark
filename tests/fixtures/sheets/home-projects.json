@@ -1,0 +1,16 @@
+{
+  "id": "sheet-002",
+  "title": "Home Repairs",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Task", "Done", "Due", "Notes"],
+    ["Fix leaky faucet", "yes", "2025-02-15", "Kitchen sink"],
+    ["Replace smoke detector batteries", "yes", "2025-01-20", "All floors"],
+    ["Patch drywall in hallway", "", "2025-03-01", "Near bathroom"],
+    ["Clean gutters", "", "2025-03-15", "Front and back"],
+    ["Paint garage door", "", "2025-04-01", "Color: Slate Gray"],
+    ["Fix fence gate latch", "yes", "2025-02-01", "Backyard"],
+    ["Caulk bathroom tiles", "", "2025-03-10", "Master bath"],
+    ["Replace porch light", "yes", "2025-01-25", "LED, 60W equivalent"]
+  ]
+}

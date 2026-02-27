@@ -1,0 +1,40 @@
+/* Budget Template */
+.budget-summary {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.budget-summary-item {
+  flex: 1; min-width: 120px; text-align: center;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+}
+.budget-summary-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); display: block; }
+.budget-summary-value { font-size: 1.2rem; font-weight: 700; display: block; }
+.budget-income .budget-summary-value { color: #059669; }
+.budget-expense .budget-summary-value { color: #dc2626; }
+.budget-positive .budget-summary-value { color: #059669; }
+.budget-negative .budget-summary-value { color: #dc2626; }
+.budget-category-label {
+  font-weight: 600; font-size: 0.85rem; color: #059669;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 0 4px; margin-top: 8px;
+}
+.budget-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 4px;
+}
+.budget-row-info { flex: 1; min-width: 0; }
+.budget-row-text { font-weight: 500; font-size: 0.95rem; }
+.budget-row-date { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 8px; }
+.budget-row-limit { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; }
+.budget-amount {
+  font-weight: 700; font-size: 0.95rem; white-space: nowrap;
+  padding: 2px 10px; border-radius: 12px; cursor: pointer;
+  transition: all var(--transition);
+}
+.budget-amt-positive { background: #dcfce7; color: #15803d; }
+.budget-amt-negative { background: #fee2e2; color: #b91c1c; }
+.budget-amount:hover { filter: brightness(0.9); transform: scale(1.05); }
