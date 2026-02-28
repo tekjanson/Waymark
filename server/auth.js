@@ -67,7 +67,7 @@ const REFRESH_COOKIE_OPTS = {
   httpOnly: true,
   secure: isSecure,
   sameSite: isSecure ? 'strict' : 'lax',
-  path: '/auth',
+  path: (config.BASE_PATH || '') + '/auth',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
 };
 
@@ -75,17 +75,20 @@ const SHORT_COOKIE_OPTS = {
   httpOnly: true,
   secure: isSecure,
   sameSite: 'lax',
+  path: (config.BASE_PATH || '') + '/',
   maxAge: 10 * 60 * 1000, // 10 minutes
 };
 
 /* ---------- Route handler ---------- */
 
 module.exports = function setupAuth(app) {
+  const bp = config.BASE_PATH || '';
+
   /* --- GET /auth/login --- */
   app.get('/auth/login', (req, res) => {
     if (config.WAYMARK_LOCAL) {
       res.cookie('waymark_refresh', 'mock-refresh-token', REFRESH_COOKIE_OPTS);
-      return res.redirect('/#auth_success');
+      return res.redirect(bp + '/#auth_success');
     }
 
     const { verifier, challenge } = generatePKCE();
@@ -100,7 +103,7 @@ module.exports = function setupAuth(app) {
   /* --- GET /auth/callback --- */
   app.get('/auth/callback', async (req, res) => {
     if (config.WAYMARK_LOCAL) {
-      return res.redirect('/');
+      return res.redirect(bp + '/');
     }
 
     const { code, state, error } = req.query;
@@ -108,12 +111,12 @@ module.exports = function setupAuth(app) {
     const codeVerifier = req.cookies.pkce_verifier;
 
     // Clear one-time cookies
-    res.clearCookie('pkce_verifier', { path: '/' });
-    res.clearCookie('oauth_state', { path: '/' });
+    res.clearCookie('pkce_verifier', { path: bp + '/' });
+    res.clearCookie('oauth_state', { path: bp + '/' });
 
     if (error) {
       console.error('OAuth error:', error);
-      return res.redirect('/#auth_error');
+      return res.redirect(bp + '/#auth_error');
     }
 
     if (!code || !state || state !== savedState || !codeVerifier) {
@@ -125,7 +128,7 @@ module.exports = function setupAuth(app) {
 
       if (tokens.error) {
         console.error('Token exchange error:', tokens);
-        return res.redirect('/#auth_error');
+        return res.redirect(bp + '/#auth_error');
       }
 
       if (tokens.refresh_token) {
@@ -133,10 +136,10 @@ module.exports = function setupAuth(app) {
       }
 
       // Redirect to app — frontend calls /auth/refresh to get the access token
-      res.redirect('/#auth_success');
+      res.redirect(bp + '/#auth_success');
     } catch (err) {
       console.error('OAuth callback exception:', err);
-      res.redirect('/#auth_error');
+      res.redirect(bp + '/#auth_error');
     }
   });
 
@@ -164,7 +167,7 @@ module.exports = function setupAuth(app) {
 
       if (tokens.error) {
         // Refresh token is expired or revoked — clear cookie
-        res.clearCookie('waymark_refresh', { path: '/auth' });
+        res.clearCookie('waymark_refresh', { path: bp + '/auth' });
         return res.status(401).json({ error: tokens.error_description || tokens.error });
       }
 
@@ -186,7 +189,7 @@ module.exports = function setupAuth(app) {
 
   /* --- POST /auth/logout --- */
   app.post('/auth/logout', (_req, res) => {
-    res.clearCookie('waymark_refresh', { path: '/auth' });
+    res.clearCookie('waymark_refresh', { path: bp + '/auth' });
     res.json({ success: true });
   });
 };

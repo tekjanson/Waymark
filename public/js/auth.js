@@ -7,12 +7,13 @@
 let accessToken = null;
 let tokenExpiry  = 0;          // epoch ms
 let currentUser  = null;
+const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Public API ---------- */
 
 /** Redirect browser to server's OAuth login endpoint. */
 export function login() {
-  window.location.href = '/auth/login';
+  window.location.href = BASE + '/auth/login';
 }
 
 /**
@@ -35,7 +36,7 @@ export async function init() {
  * Returns true on success.
  */
 export async function refreshToken() {
-  const res = await fetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+  const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
   if (!res.ok) { accessToken = null; return false; }
   const data = await res.json();
   accessToken  = data.access_token;
@@ -45,7 +46,7 @@ export async function refreshToken() {
 
 /** POST /auth/logout → clear refresh token cookie. */
 export async function logout() {
-  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+  await fetch(BASE + '/auth/logout', { method: 'POST', credentials: 'include' });
   accessToken = null;
   tokenExpiry = 0;
   currentUser = null;

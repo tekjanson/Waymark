@@ -13,6 +13,7 @@
 import * as clientAuth from './auth.js';
 
 const isLocal = window.__WAYMARK_LOCAL === true;
+const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Dynamic imports for production ---------- */
 let driveApi, sheetsApi, geminiApi;
@@ -30,8 +31,8 @@ let mockFixtures = null;
 async function loadFixtures() {
   if (mockFixtures) return mockFixtures;
   const [folders, users] = await Promise.all([
-    fetch('/__fixtures/folders.json').then(r => r.json()),
-    fetch('/__fixtures/users.json').then(r => r.json()),
+    fetch(BASE + '/__fixtures/folders.json').then(r => r.json()),
+    fetch(BASE + '/__fixtures/users.json').then(r => r.json()),
   ]);
   mockFixtures = { folders, users, sheets: {} };
   return mockFixtures;
@@ -68,7 +69,7 @@ async function loadMockSheet(sheetId) {
   if (!filename) return null;
 
   try {
-    const data = await fetch(`/__fixtures/sheets/${filename}.json`).then(r => r.json());
+    const data = await fetch(BASE + `/__fixtures/sheets/${filename}.json`).then(r => r.json());
     fix.sheets[sheetId] = data;
     return data;
   } catch {
@@ -111,7 +112,7 @@ export const api = {
     login() {
       if (isLocal) {
         // Set mock state and reload
-        window.location.href = '/auth/login';
+        window.location.href = BASE + '/auth/login';
         return;
       }
       clientAuth.login();
@@ -120,7 +121,7 @@ export const api = {
     async init() {
       if (isLocal) {
         // call server mock auth
-        const res = await fetch('/auth/refresh', { method: 'POST', credentials: 'include' });
+        const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
         if (!res.ok) return null;
         await loadFixtures();
         return mockFixtures.users[0];
@@ -130,7 +131,7 @@ export const api = {
 
     async logout() {
       if (isLocal) {
-        await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+        await fetch(BASE + '/auth/logout', { method: 'POST', credentials: 'include' });
         window.location.reload();
         return;
       }

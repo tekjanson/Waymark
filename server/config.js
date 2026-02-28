@@ -1,4 +1,9 @@
+// BASE_PATH — mount prefix when hosted under a subpath (e.g. '/waymark').
+// Must start with '/' and have NO trailing slash. Empty string means root.
+const basePath = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+
 const config = {
+  BASE_PATH: basePath,
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/callback',
