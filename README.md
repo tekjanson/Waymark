@@ -152,6 +152,12 @@ WayMark bridges that gap. Your spreadsheet stays your spreadsheet. We just make 
 
 ---
 
+## Legal
+
+- License: GPL-3.0-only (see `LICENSE`)
+- Privacy Policy: `PRIVACY_POLICY.md` and `/privacy.html`
+- End User License Agreement: `EULA.md` and `/eula.html`
+
 ## License
 
-Private / Unlicensed. See `package.json`.
+WayMark is licensed under the GNU General Public License v3.0 only.
