@@ -12,7 +12,7 @@
     "test:debug": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --debug"
   },
   "keywords": ["checklist", "google-sheets", "drive", "gemini"],
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-only",
   "private": true,
   "dependencies": {
     "cookie-parser": "^1.4.7",

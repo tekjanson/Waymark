@@ -101,6 +101,21 @@ ul { list-style: none; }
 .login-container .logo { width: 80px; height: 80px; }
 .login-container h1 { font-size: 2rem; font-weight: 700; color: var(--color-primary-dark); }
 .tagline { color: var(--color-text-secondary); font-size: 1.1rem; margin-bottom: 16px; }
+.legal-links {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.legal-links a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.legal-links a:hover {
+  text-decoration: underline;
+}
 
 /* ---------- Top Bar ---------- */
 #top-bar {
