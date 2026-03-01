@@ -36,6 +36,7 @@ const MOCK_AUTH_COOKIE = {
  * @param {Object[]} [opts.pinnedFolders=[]]       folders to pre-pin
  * @param {boolean}  [opts.autoRefresh]             auto-refresh pref (default true)
  * @param {boolean}  [opts.sidebarOpen]             sidebar pref (default true)
+ * @param {boolean}  [opts.tutorialCompleted]        tutorial pref (default true — suppresses auto-start)
  * @param {string}   [opts.hash]                    initial URL hash (e.g. '#/sheet/sheet-001')
  */
 async function setupApp(page, opts = {}) {
@@ -44,6 +45,7 @@ async function setupApp(page, opts = {}) {
     pinnedFolders   = [],
     autoRefresh,
     sidebarOpen,
+    tutorialCompleted = true,
     hash,
   } = opts;
 
@@ -55,6 +57,7 @@ async function setupApp(page, opts = {}) {
   if (pinnedFolders.length) lsEntries.pinned_folders = pinnedFolders;
   if (autoRefresh !== undefined) lsEntries.auto_refresh = autoRefresh;
   if (sidebarOpen !== undefined) lsEntries.sidebar_open = sidebarOpen;
+  lsEntries.tutorial_completed = tutorialCompleted;
 
   if (Object.keys(lsEntries).length) {
     await page.addInitScript((entries) => {
