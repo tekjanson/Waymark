@@ -48,6 +48,9 @@
       </div>
 
       <div class="top-bar-right">
+        <button id="tutorial-btn" class="btn-icon" aria-label="Tutorial" title="Show tutorial">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
         <span id="user-name"></span>
         <img id="user-avatar" src="" alt="" class="avatar hidden">
         <button id="logout-btn" class="btn-text">Sign out</button>
@@ -95,6 +98,10 @@
             <span id="template-badge" class="template-badge hidden"></span>
             <div class="checklist-actions">
               <span id="last-updated" class="text-muted"></span>
+              <button id="open-in-sheets-btn" class="btn btn-sheets" aria-label="Open in Google Sheets" title="Open in Google Sheets">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Edit in Sheets
+              </button>
               <button id="refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               </button>
@@ -128,6 +135,51 @@
         </section>
 
       </main>
+    </div>
+  </div>
+
+  <!-- Example Generation Modal -->
+  <div id="examples-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Generate Example Sheets</h3>
+        <button id="examples-modal-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="modal-description">Choose which example sheets to generate in your Google Drive. Each category creates a folder with sample spreadsheets.</p>
+      <div class="modal-actions-top">
+        <button id="examples-select-all" class="btn-text">Select All</button>
+        <button id="examples-select-none" class="btn-text">Select None</button>
+      </div>
+      <div id="examples-categories" class="examples-grid"></div>
+      <div class="modal-footer">
+        <span id="examples-selection-count" class="text-muted"></span>
+        <div class="modal-footer-actions">
+          <button id="examples-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button id="examples-generate-btn" class="btn btn-primary">Generate Selected</button>
+        </div>
+      </div>
+      <div id="examples-modal-progress" class="generate-progress hidden"></div>
+    </div>
+  </div>
+
+  <!-- Tutorial Overlay -->
+  <div id="tutorial-overlay" class="tutorial-overlay hidden">
+    <div id="tutorial-spotlight" class="tutorial-spotlight"></div>
+    <div id="tutorial-tooltip" class="tutorial-tooltip">
+      <div class="tutorial-step-indicator">
+        <span id="tutorial-step-text"></span>
+      </div>
+      <h4 id="tutorial-title"></h4>
+      <p id="tutorial-body"></p>
+      <div class="tutorial-nav">
+        <button id="tutorial-skip" class="btn-text">Skip tutorial</button>
+        <div class="tutorial-nav-right">
+          <button id="tutorial-prev" class="btn btn-secondary btn-sm">Back</button>
+          <button id="tutorial-next" class="btn btn-primary btn-sm">Next</button>
+        </div>
+      </div>
     </div>
   </div>
 

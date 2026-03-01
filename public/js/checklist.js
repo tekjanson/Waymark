@@ -15,7 +15,7 @@ let refreshTimer   = null;
 let lastFetchTime  = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn;
 
 /* ---------- Public ---------- */
 
@@ -26,12 +26,21 @@ export function init() {
   refreshBtn    = document.getElementById('refresh-btn');
   autoToggle    = document.getElementById('auto-refresh-toggle');
   templateBadge = document.getElementById('template-badge');
+  openInSheetsBtn = document.getElementById('open-in-sheets-btn');
 
   autoToggle.checked = storage.getAutoRefresh();
 
   refreshBtn.addEventListener('click', () => {
     if (currentSheetId) loadSheet(currentSheetId);
   });
+
+  if (openInSheetsBtn) {
+    openInSheetsBtn.addEventListener('click', () => {
+      if (currentSheetId) {
+        window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
+      }
+    });
+  }
 
   autoToggle.addEventListener('change', () => {
     storage.setAutoRefresh(autoToggle.checked);

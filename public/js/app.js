@@ -11,7 +11,8 @@ import * as explorer from './explorer.js';
 import * as checklist from './checklist.js';
 import * as search   from './search.js';
 import * as records  from './records.js';
-import { generateExamples } from './examples.js';
+import { generateExamples, getExampleCategories } from './examples.js';
+import { Tutorial } from './tutorial.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -25,6 +26,18 @@ const backBtn       = document.getElementById('back-btn');
 const folderBackBtn = document.getElementById('folder-back-btn');
 const generateBtn   = document.getElementById('generate-examples-btn');
 const generateProg  = document.getElementById('generate-progress');
+const tutorialBtn   = document.getElementById('tutorial-btn');
+
+/* ---------- Example Modal refs ---------- */
+const examplesModal       = document.getElementById('examples-modal');
+const examplesModalClose  = document.getElementById('examples-modal-close');
+const examplesCancelBtn   = document.getElementById('examples-cancel-btn');
+const examplesGenerateBtn = document.getElementById('examples-generate-btn');
+const examplesSelectAll   = document.getElementById('examples-select-all');
+const examplesSelectNone  = document.getElementById('examples-select-none');
+const examplesCategories  = document.getElementById('examples-categories');
+const examplesCount       = document.getElementById('examples-selection-count');
+const examplesModalProg   = document.getElementById('examples-modal-progress');
 
 /* ---------- Navigation callback ---------- */
 
@@ -56,10 +69,13 @@ async function boot() {
   backBtn.addEventListener('click', () => { window.location.hash = '#/'; });
   folderBackBtn.addEventListener('click', () => { window.location.hash = '#/'; });
 
-  // Generate examples
+  // Generate examples — open modal instead of generating directly
   if (generateBtn) {
-    generateBtn.addEventListener('click', handleGenerateExamples);
+    generateBtn.addEventListener('click', openExamplesModal);
   }
+
+  // Wire examples modal
+  initExamplesModal();
 
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderPinnedFolders);
@@ -105,6 +121,16 @@ function showApp(user) {
   // Route to current hash
   handleRoute();
   window.addEventListener('hashchange', handleRoute);
+
+  // Show tutorial for first-time users
+  if (!storage.getTutorialCompleted()) {
+    setTimeout(() => Tutorial.start(), 600);
+  }
+
+  // Tutorial button in top bar
+  if (tutorialBtn) {
+    tutorialBtn.addEventListener('click', () => Tutorial.start());
+  }
 }
 
 async function handleLogout() {
@@ -239,28 +265,129 @@ async function showFolderContents(folderId, folderName) {
   }
 }
 
-/* ---------- Generate Examples ---------- */
+/* ---------- Examples Modal ---------- */
 
-async function handleGenerateExamples() {
-  generateBtn.disabled = true;
-  generateBtn.textContent = 'Generating…';
-  generateProg.classList.remove('hidden');
+let selectedCategories = new Set();
+
+function initExamplesModal() {
+  if (!examplesModal) return;
+
+  // Close modal handlers
+  examplesModalClose.addEventListener('click', closeExamplesModal);
+  examplesCancelBtn.addEventListener('click', closeExamplesModal);
+  examplesModal.addEventListener('click', (e) => {
+    if (e.target === examplesModal) closeExamplesModal();
+  });
+
+  // Select all / none
+  examplesSelectAll.addEventListener('click', () => {
+    selectedCategories = new Set(getExampleCategories().map(c => c.name));
+    renderCategoryCheckboxes();
+  });
+  examplesSelectNone.addEventListener('click', () => {
+    selectedCategories.clear();
+    renderCategoryCheckboxes();
+  });
+
+  // Generate button
+  examplesGenerateBtn.addEventListener('click', handleModalGenerate);
+}
+
+function openExamplesModal() {
+  const categories = getExampleCategories();
+  selectedCategories = new Set(categories.map(c => c.name)); // all selected by default
+  renderCategoryCheckboxes();
+  examplesModal.classList.remove('hidden');
+  examplesGenerateBtn.disabled = false;
+  examplesGenerateBtn.textContent = 'Generate Selected';
+  examplesModalProg.classList.add('hidden');
+}
+
+function closeExamplesModal() {
+  examplesModal.classList.add('hidden');
+}
+
+function renderCategoryCheckboxes() {
+  const categories = getExampleCategories();
+  examplesCategories.innerHTML = '';
+
+  const CATEGORY_ICONS = {
+    'Checklists': '✅', 'Trackers': '📊', 'Schedules': '📅',
+    'Inventories': '📦', 'Contacts': '👥', 'Logs': '📝',
+    'Test Cases': '🧪', 'Budgets': '💰', 'Kanban': '📋',
+    'Habits': '🔄', 'Gradebook': '🎓', 'Timesheets': '⏱️',
+    'Polls': '🗳️', 'Changelogs': '📜', 'CRM': '🤝',
+    'Meal Plans': '🍽️', 'Travel': '✈️', 'Rosters': '👨‍👩‍👧‍👦',
+  };
+
+  for (const cat of categories) {
+    const isChecked = selectedCategories.has(cat.name);
+    const icon = CATEGORY_ICONS[cat.name] || '📁';
+
+    const card = el('label', { className: `example-category-card${isChecked ? ' selected' : ''}` }, [
+      el('input', {
+        type: 'checkbox',
+        className: 'example-category-checkbox',
+        ...(isChecked ? { checked: '' } : {}),
+        on: {
+          change(e) {
+            if (e.target.checked) selectedCategories.add(cat.name);
+            else selectedCategories.delete(cat.name);
+            card.classList.toggle('selected', e.target.checked);
+            updateSelectionCount();
+          },
+        },
+      }),
+      el('span', { className: 'example-category-icon' }, [icon]),
+      el('div', { className: 'example-category-info' }, [
+        el('div', { className: 'example-category-name' }, [cat.name]),
+        el('div', { className: 'text-muted' }, [`${cat.sheets.length} sheet${cat.sheets.length !== 1 ? 's' : ''}`]),
+      ]),
+    ]);
+    examplesCategories.append(card);
+  }
+
+  updateSelectionCount();
+}
+
+function updateSelectionCount() {
+  const total = getExampleCategories().length;
+  examplesCount.textContent = `${selectedCategories.size} of ${total} categories selected`;
+  examplesGenerateBtn.disabled = selectedCategories.size === 0;
+}
+
+async function handleModalGenerate() {
+  if (selectedCategories.size === 0) return;
+
+  examplesGenerateBtn.disabled = true;
+  examplesGenerateBtn.textContent = 'Generating…';
+  examplesCancelBtn.disabled = true;
+  examplesModalProg.classList.remove('hidden');
 
   try {
+    const cats = [...selectedCategories];
     const result = await generateExamples((msg) => {
-      generateProg.textContent = msg;
-    });
+      examplesModalProg.textContent = msg;
+    }, cats);
 
     // Refresh explorer to show new folders
     await explorer.load();
     collectKnownSheets();
+    closeExamplesModal();
   } catch (err) {
     showToast(`Generation failed: ${err.message}`, 'error');
-    generateProg.textContent = `Error: ${err.message}`;
+    examplesModalProg.textContent = `Error: ${err.message}`;
   } finally {
-    generateBtn.disabled = false;
-    generateBtn.textContent = 'Generate Example Sheets';
+    examplesGenerateBtn.disabled = false;
+    examplesGenerateBtn.textContent = 'Generate Selected';
+    examplesCancelBtn.disabled = false;
   }
+}
+
+/* ---------- Legacy generate handler (kept for backwards compat) ---------- */
+
+async function handleGenerateExamples() {
+  openExamplesModal();
 }
 
 /* ---------- Known sheets for search context ---------- */
