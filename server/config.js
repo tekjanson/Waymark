@@ -19,7 +19,6 @@ const config = {
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/generative-language.retriever',
   ],
 
   GOOGLE_AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',

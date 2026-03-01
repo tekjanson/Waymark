@@ -1,6 +1,6 @@
 /* ============================================================
-   records.js — Create new records (completion snapshots,
-   AI search logs) in the user's Drive.
+   records.js — Create new records (completion snapshots)
+   in the user's Drive.
    
    WayMark is CR-only (Create + Read). This module handles
    the "Create" side: writing immutable log entries to a
@@ -43,35 +43,7 @@ export async function createSnapshot(sheetTitle, values) {
   }
 }
 
-/**
- * Log an AI search query and its results.
- *
- * @param {string} query
- * @param {Object} result  { matches, summary }
- * @returns {Promise<Object|null>}
- */
-export async function logSearch(query, result) {
-  try {
-    const folderId = await ensureLogsFolder();
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const title = `search_${timestamp}`;
-
-    const rows = [
-      ['Query', 'Timestamp', 'Type'],
-      [query, new Date().toISOString(), 'search-log'],
-      ['---'],
-      ['Summary', result.summary || ''],
-      ['Matches'],
-      ...((result.matches || []).map(m => [m.sheetName || '', m.sheetId || '', m.reason || ''])),
-    ];
-
-    return await api.sheets.createSpreadsheet(title, rows, folderId);
-  } catch {
-    // Search logs are best-effort; don't bother the user
-    return null;
-  }
-}
 
 /* ---------- Internal ---------- */
 

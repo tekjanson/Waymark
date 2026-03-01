@@ -29,8 +29,8 @@ const STEPS = [
     position: 'bottom',
   },
   {
-    title: 'AI-Powered Search',
-    body: 'Looking for a specific sheet? Use the search bar to find sheets by name. AI assists in understanding what you\'re looking for.',
+    title: 'Search Your Sheets',
+    body: 'Looking for a specific sheet? Use the search bar to find sheets by name — results appear instantly as you type.',
     target: '#search-form',
     position: 'bottom',
   },

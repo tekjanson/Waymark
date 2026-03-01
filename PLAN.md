@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-WayMark is a lightweight tool that turns Google Sheets into interactive checklists, honey-do lists, and other structured views — powered by **Gemini AI** for natural language search. It ships as:
+WayMark is a lightweight tool that turns Google Sheets into interactive checklists, honey-do lists, and other structured views — with keyword search and 18+ interactive templates. It ships as:
 
 - **A web app** — static frontend served from a Docker container (Node.js/Express for auth only), behind an Nginx reverse proxy on `swiftirons.com`
 - **An Android app** — WebView wrapper sharing the same frontend code, with offline support
@@ -22,7 +22,7 @@ WayMark follows a strict **CR (Create + Read)** data model — no updates, no de
 
 This means:
 - Existing data is **immutable** from WayMark's perspective — it only reads what's there
-- WayMark **can write new records** to Drive (e.g., completion logs, result snapshots, AI search history) so they can be shared and reviewed historically
+- WayMark **can write new records** to Drive (e.g., completion logs, result snapshots) so they can be shared and reviewed historically
 - New records are append-only — once written, WayMark won't modify or delete them
 - Users maintain full control over their data in Google Sheets
 - Sheets can be shared via Google Drive's native sharing — WayMark reads whatever the user has access to
@@ -30,7 +30,7 @@ This means:
 ### Use Cases for CREATE
 
 - **Completion snapshots** — when a user views a checklist, WayMark can log a timestamped snapshot (new sheet/row in a log file) for historical tracking
-- **AI search logs** — Gemini queries and results can be saved to a log sheet in the user's Drive for later reference
+- **AI search logs** — ~~Removed~~ Search is now keyword-based; no logs needed
 - **Result records** — any generated output or report can be written as a new file in Drive, shareable with others
 
 ---
@@ -45,7 +45,6 @@ This means:
 │  │  Frontend (HTML / JS / CSS)                        │  │
 │  │  - Google Sheets API (READ existing, CREATE new)   │  │
 │  │  - Google Drive API (browse/list/search/create)    │  │
-│  │  - Gemini API (natural language search via OAuth)  │  │
 │  │  - All UI rendering & business logic               │  │
 │  └──────────────┬─────────────────────────────────────┘  │
 │                 │                                         │
@@ -57,7 +56,6 @@ This means:
     │  Google APIs               │
     │  - Sheets (read + create)  │
     │  - Drive (browse + create) │
-    │  - Gemini (AI queries)     │
     │  - Identity (OAuth)        │
     └────────────────────────────┘
 
@@ -94,9 +92,9 @@ This means:
 | CR-only data | **Create + Read** only — no updates, no deletes. Existing data is immutable. |
 | Google as backend | Google Sheets = data source, Google Drive = file system + record store |
 | Multi-directory | Users can browse and pin multiple Drive folders, including shared folders from other people |
-| AI-powered search | Gemini via Google OAuth for natural language queries across the user's data |
+| AI-powered search | Keyword search across sheet names |
 | Docker-packaged | Single container: `node` image, Express for auth + static serving |
-| Vanilla stack | Raw HTML/CSS/JS — no CSS frameworks, no frontend frameworks — fast and AI-maintainable |
+| Vanilla stack | Raw HTML/CSS/JS — no CSS frameworks, no frontend frameworks — fast and simple to maintain |
 | Testable by design | Local-only mock mode replaces all Google APIs with local fixtures; Playwright E2E tests cover real user behavior |
 
 ---
@@ -113,8 +111,8 @@ This means:
 | CSS | Raw/vanilla CSS — no framework or library |
 | Auth | Google OAuth 2.0 (Authorization Code flow with PKCE, server-side token exchange) |
 | Token storage | httpOnly cookie for refresh token; in-memory JS variable for access token |
-| Google API access | `fetch` against REST endpoints with bearer token (Sheets, Drive, Gemini) |
-| AI | Gemini API via the user's Google OAuth token |
+| Google API access | `fetch` against REST endpoints with bearer token (Sheets, Drive) |
+| AI | Removed — all features are code-based |
 | Containerization | Docker (node:lts-alpine base image) |
 | Reverse proxy | Nginx (existing self-hosted setup on swiftirons.com) |
 | E2E Testing | Playwright — real user behavior tests against a local-only mock mode |
@@ -128,7 +126,7 @@ This means:
 | Min SDK | API 26 (Android 8.0) |
 | UI | **WebView** wrapping the same frontend code as the web app |
 | Auth | Google Sign-In SDK / Credential Manager → inject token into WebView |
-| Google API access | Same frontend JS in WebView (Sheets, Drive, Gemini via REST with bearer token) |
+| Google API access | Same frontend JS in WebView (Sheets, Drive via REST with bearer token) |
 | Offline | Service Worker + cached sheet data in IndexedDB for offline viewing |
 
 The Android app is a thin native shell that handles Google Sign-In, injects the auth token into a WebView, and loads the same HTML/JS/CSS frontend. This shares 95%+ of code with the web version. Native UI can be considered in the future if needed.
@@ -152,7 +150,7 @@ The Android app is a thin native shell that handles Google Sign-In, injects the 
 1. Google Sign-In SDK handles consent natively on the device
 2. App receives access token directly from the SDK
 3. Token is injected into the WebView via a JavaScript bridge
-4. WebView frontend uses the token for all Google API calls (including Gemini)
+4. WebView frontend uses the token for all Google API calls
 
 ### 4.3 Required Scopes
 
@@ -164,13 +162,11 @@ The Android app is a thin native shell that handles Google Sign-In, injects the 
 | `https://www.googleapis.com/auth/spreadsheets` | Read existing sheets + create new sheets (for logging/records) |
 | `https://www.googleapis.com/auth/drive.readonly` | Browse and read files/folders across Drive (including "Shared with me" and shared drives) |
 | `https://www.googleapis.com/auth/drive.file` | Create new files in Drive (logs, records, snapshots) — only affects files WayMark creates |
-| `https://www.googleapis.com/auth/generative-language.retriever` | Access Gemini AI via the user's Google account |
 
 > **Scope rationale:**
 > - `drive.readonly` — lets users browse their entire Drive folder tree, including shared items. WayMark never modifies or deletes anything via this scope.
 > - `drive.file` — lets WayMark create new files (logs, snapshots). This scope only grants access to files the app itself creates, so it can't touch existing user files.
 > - `spreadsheets` (not `readonly`) — needed because WayMark creates new sheets for record-keeping. **The app code will never issue update or delete calls against existing sheets.**
-> - `generative-language.retriever` — enables Gemini API calls using the same OAuth token. Not all Google accounts have Gemini access; the app gracefully degrades if unavailable.
 
 ### 4.4 OAuth Configuration
 
@@ -180,72 +176,28 @@ The Android app is a thin native shell that handles Google Sign-In, injects the 
 | Application type | Web application + Android |
 | Consent screen | External (supports both personal Gmail and Google Workspace accounts) |
 | Test users | Personal Gmail accounts during development; publish for production |
-| APIs to enable | Google Sheets API, Google Drive API, Generative Language API (Gemini) |
+| APIs to enable | Google Sheets API, Google Drive API |
 
 ---
 
-## 5. Gemini AI — Natural Language Search
+## 5. Search — Keyword Matching
 
 ### Overview
 
-WayMark integrates **Google Gemini** to let users search their checklists and data using natural language, via their existing Google account. Gemini access is obtained through the same OAuth token — no separate API key needed.
+WayMark provides a keyword search bar that matches queries against sheet names across the user's Drive. Search is fast, client-side, and requires no external APIs.
 
 ### How It Works
 
-1. User types a natural language query into the WayMark search bar (e.g., "find the grocery list" or "what chores are due this week?")
-2. Frontend gathers context: list of pinned folders, sheet names, and (if already loaded) sheet contents/headers
-3. Frontend sends the query + context to the Gemini API as a prompt
-4. Gemini returns a structured response identifying which sheet(s) match and why
-5. WayMark navigates the user to the matching sheet/folder
-
-### Example Queries
-
-| User Query | What Gemini Does |
-|---|---|
-| "find my grocery list" | Matches sheet names/content → navigates to the "Groceries" sheet |
-| "what's on the honey-do list?" | Finds the honey-do sheet and summarizes its contents |
-| "show me anything shared by Sarah" | Filters to folders/sheets shared by sarah@gmail.com |
-| "what chores are overdue?" | Reads checklist data, identifies items past their due date |
-
-### Prompt Architecture
-
-The frontend constructs a system prompt like:
-
-```
-You are a search assistant for WayMark, a checklist viewer.
-The user has these pinned folders and sheets:
-[list of folder names, sheet names, column headers, and optionally row data]
-
-The user's query is: "{user_query}"
-
-Respond with a JSON object:
-{
-  "matches": [{"sheetId": "...", "sheetName": "...", "reason": "..."}],
-  "summary": "short natural language answer"
-}
-```
-
-### Gemini Access — Graceful Degradation
-
-Not all Google accounts have Gemini access. WayMark handles this:
-
-| Scenario | Behavior |
-|---|---|
-| User has Gemini access | AI search bar is enabled, full natural language search works |
-| User lacks Gemini access | AI search bar is hidden; falls back to basic keyword/filter search across sheet names and content |
-| Gemini API errors | Toast notification, fall back to keyword search |
-
-### Privacy
-
-- All Gemini calls happen **client-side** — the WayMark server never sees the queries or responses
-- Only sheet metadata (names, headers) is sent to Gemini by default — full row data is only sent if the user's query requires content-level search
-- Users can see exactly what context is being sent (expandable "context sent to AI" panel)
+1. User types a search query into the WayMark search bar (e.g., "grocery")
+2. Frontend filters the list of known sheets by name (case-insensitive substring match)
+3. Matching sheets are displayed as clickable results
+4. User clicks a result to navigate to that sheet
 
 ---
 
 ## 6. Feature Roadmap
 
-### Phase 1 — MVP (Checklist Viewer + AI Search)
+### Phase 1 — MVP (Checklist Viewer + Keyword Search)
 
 - [ ] Google OAuth sign-in (web) with httpOnly cookie token storage
 - [ ] **Drive Explorer** — browse the user's Drive folder tree (including "Shared with me"), lazy-loaded on expand
@@ -253,9 +205,8 @@ Not all Google accounts have Gemini access. WayMark handles this:
 - [ ] List Google Sheets within the selected folders
 - [ ] Open a sheet and render it as a read-only checklist view
 - [ ] Manual refresh button + auto-refresh every 60 seconds (toggleable)
-- [ ] **Gemini AI search** — natural language search bar to find checklists and data across pinned folders
-- [ ] Graceful degradation when Gemini is unavailable (keyword fallback)
-- [ ] **Record creation** — write completion snapshots and AI search logs to user's Drive
+- [ ] **Keyword search** — search bar to find sheets by name across pinned folders
+- [ ] **Record creation** — write completion snapshots to user's Drive
 - [ ] Basic responsive UI (mobile-friendly, vanilla CSS)
 - [ ] **API abstraction layer** (`api-client.js`) — switchable between real Google APIs and local mock
 - [ ] **Local-only mode** — `WAYMARK_LOCAL=true` boots with fixture data, no Google account needed
@@ -269,7 +220,7 @@ Not all Google accounts have Gemini access. WayMark handles this:
 - [ ] Android project scaffolding (Kotlin + WebView wrapper)
 - [ ] Google Sign-In integration via Credential Manager
 - [ ] Inject auth token into WebView via JavaScript bridge
-- [ ] Verify Drive Explorer, AI search, and multi-folder support in WebView
+- [ ] Verify Drive Explorer, keyword search, and multi-folder support in WebView
 - [ ] **Offline support** — Service Worker caches frontend assets; IndexedDB caches last-fetched sheet data for offline viewing
 - [ ] Build & test APK
 - [ ] Play Store listing (if desired)
@@ -315,9 +266,8 @@ Waymark/
 │   │   ├── auth.js          # Client-side auth helpers (in-memory token, refresh calls)
 │   │   ├── sheets.js        # Google Sheets API wrapper (read existing + create new)
 │   │   ├── drive.js         # Google Drive API wrapper (browse folders, list files, create files)
-│   │   ├── gemini.js        # Gemini API wrapper (natural language search, prompt construction)
 │   │   ├── explorer.js      # Drive Explorer UI (folder tree, lazy-load, folder pinning)
-│   │   ├── search.js        # Search UI (AI search bar, keyword fallback, results display)
+│   │   ├── search.js        # Search UI (keyword search bar, results display)
 │   │   ├── checklist.js     # Checklist rendering logic (read-only)
 │   │   ├── records.js       # Record creation (snapshots, logs → write to Drive)
 │   │   ├── storage.js       # localStorage helpers (pinned folders, preferences)
@@ -337,7 +287,7 @@ Waymark/
 │   │   ├── auth.spec.js     # Login, logout, session restore
 │   │   ├── explorer.spec.js # Drive explorer: browse, expand, pin/unpin folders
 │   │   ├── checklist.spec.js# View checklist, verify rendering, refresh behavior
-│   │   ├── search.spec.js   # AI search bar, keyword fallback, result navigation
+│   │   ├── search.spec.js   # Keyword search bar, results display, result navigation
 │   │   ├── records.spec.js  # Record creation, verify log files appear
 │   │   └── sharing.spec.js  # Multi-user shared folder scenarios
 │   └── helpers/
@@ -371,7 +321,7 @@ The server is intentionally minimal. Only auth-related routes exist:
 | `POST` | `/auth/logout` | Clear the httpOnly refresh token cookie |
 | `GET` | `/*` | Serve static files from `public/` |
 
-Everything else — reading sheets, browsing Drive folders, creating records, querying Gemini — happens **entirely in the browser** via the Google APIs.
+Everything else — reading sheets, browsing Drive folders, creating records, querying Drive — happens **entirely in the browser** via the Google APIs.
 
 ---
 
@@ -399,7 +349,7 @@ WayMark creates new files in a dedicated `_waymark_logs/` folder within each pin
 | Record Type | Format | Content |
 |---|---|---|
 | Completion snapshot | New sheet (or new rows in a log sheet) | Timestamp + checklist state at time of viewing |
-| AI search log | New rows in a log sheet | Timestamp + query + matched sheets + summary |
+
 
 These logs are regular Google Sheets, so they're:
 - Readable by anyone the folder is shared with
@@ -448,7 +398,6 @@ WayMark allows users to browse and pin **multiple Drive folders** as data source
 | `waymark_last_folder` | Folder ID string | Resume where the user left off |
 | `waymark_view_prefs` | JSON object | Per-sheet view preferences (list style, sort order) |
 | `waymark_auto_refresh` | `true` / `false` | Whether 60s auto-refresh is enabled (default: `true`) |
-| `waymark_gemini_available` | `true` / `false` | Cached flag for whether Gemini API is accessible |
 
 ---
 
@@ -546,10 +495,10 @@ services:
 - **CR-only enforcement** — app code only calls Sheets/Drive create and read methods; update and delete methods are never invoked. Code review and linting should enforce this.
 - **Scoped writes** — `drive.file` scope limits WayMark's write access to only files it creates; it cannot modify pre-existing files
 - **Token expiry** — access tokens are short-lived (~1 hour); refreshed transparently via `/auth/refresh`
-- **CSP headers** — restrict scripts to same-origin + Google APIs + Gemini API
+- **CSP headers** — restrict scripts to same-origin + Google APIs
 - **CORS** — not needed since the frontend and server are same-origin (both on swiftirons.com)
 - **Cookie flags** — `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/auth`
-- **Gemini data sent** — only sheet metadata by default; full content only when needed for a query; user can inspect what's sent
+- **Search privacy** — all search is client-side keyword matching; no data is sent to external APIs
 
 ---
 
@@ -570,7 +519,7 @@ The Android app (Phase 2) will support offline viewing:
 |---|---|---|
 | View cached checklists | ✅ | Shows last-fetched data |
 | Browse pinned folders | ✅ | Folder list is cached |
-| AI search (cached data) | ⚠️ | Keyword fallback only — Gemini requires network |
+| Keyword search | ✅ | Works offline with cached sheet names |
 | Expand new Drive folders | ❌ | Requires API call |
 | See live updates | ❌ | Requires API call |
 | Create records | ❌ | Queued for sync when back online |
@@ -604,7 +553,7 @@ The Android app (Phase 2) will support offline viewing:
 
 ### The Problem
 
-WayMark depends entirely on Google APIs (OAuth, Drive, Sheets, Gemini). You can't scale real Google accounts for testing — OAuth requires real credentials, consent screens, and rate limits. Every test would be flaky, slow, and impossible to run in CI.
+WayMark depends entirely on Google APIs (OAuth, Drive, Sheets). You can't scale real Google accounts for testing — OAuth requires real credentials, consent screens, and rate limits. Every test would be flaky, slow, and impossible to run in CI.
 
 ### The Solution: Data Isolation via an API Abstraction Layer
 
@@ -651,7 +600,7 @@ The app boots, checks the mode, and wires up the correct implementation. **All b
 | Drive browsing | Google Drive API | Reads `folders.json` — returns mock folder tree |
 | Sheet reading | Google Sheets API | Reads `sheets/*.json` — returns mock sheet data |
 | Record creation | Google Sheets API (create) | Writes to an in-memory array (inspectable by tests) |
-| AI search (Gemini) | Gemini API via OAuth | Returns canned responses keyed by query keywords |
+| Keyword search | Client-side name matching | Returns matching sheet names from fixture data |
 | User profile | Google Identity | Returns mock `{name, email, avatar}` from fixtures |
 
 **What is NOT behind the abstraction (tested directly):**
@@ -757,21 +706,21 @@ Tests are organized by **real user flows**, not by code modules:
 | Auto-refresh toggle works | Disable toggle → no refresh after 60s; re-enable → resumes |
 | "Last updated" indicator updates | Shows correct relative time since last fetch |
 
-#### `search.spec.js` — AI Search & Fallback
+#### `search.spec.js` — Keyword Search
 | Test | What it verifies |
 |---|---|
-| Search bar is visible when Gemini available | AI search bar shows with placeholder text |
+| Search bar is visible | Search bar shows with placeholder text |
 | Typing a query and submitting returns results | Type "grocery" → submit → results panel shows matching sheet |
 | Clicking a search result navigates to sheet | Click result → checklist view for that sheet |
 | No results shows empty state | Query with no matches → "No results found" message |
-| Keyword fallback when Gemini unavailable | Gemini flag off → search still works via keyword matching |
-| Search bar adapts when Gemini unavailable | Shows "Search sheets..." instead of "Ask AI..." |
+
+
 
 #### `records.spec.js` — Record Creation
 | Test | What it verifies |
 |---|---|
 | Viewing a checklist creates a snapshot | Open sheet → mock record store receives a snapshot entry |
-| AI search creates a log entry | Search query → mock record store receives a log entry |
+
 | Records contain correct timestamps | Snapshot/log entries have ISO timestamp |
 | Records contain correct data | Snapshot matches current checklist state |
 
@@ -824,16 +773,16 @@ Playwright tests run in CI (GitHub Actions or similar) with:
 
 | Milestone | Tasks | Est. Duration |
 |---|---|---|
-| **M0 — Setup** | Repo, Node project, Docker skeleton, Google Cloud project + OAuth credentials + Gemini API enabled, Nginx config, Playwright install | 1 day |
+| **M0 — Setup** | Repo, Node project, Docker skeleton, Google Cloud project + OAuth credentials, Nginx config, Playwright install | 1 day |
 | **M1 — API Abstraction + Local Mode** | Build `api-client.js` abstraction layer, mock-api implementation, test fixtures (folders, sheets, users), `WAYMARK_LOCAL=true` boot mode | 2–3 days |
-| **M2 — Auth** | OAuth login/callback/refresh with PKCE, httpOnly cookie for refresh token, in-memory access token, Gemini scope included | 2–3 days |
+| **M2 — Auth** | OAuth login/callback/refresh with PKCE, httpOnly cookie for refresh token, in-memory access token | 2–3 days |
 | **M3 — Auth Tests** | Playwright: `auth.spec.js` — login, logout, session restore (against local mode) | 1 day |
 | **M4 — Drive Explorer** | Browse Drive folder tree (lazy-loaded), pin folders, list sheets within folders, "Shared with me" support | 3–4 days |
 | **M5 — Explorer Tests** | Playwright: `explorer.spec.js` — browse, expand, pin/unpin, shared folders, empty states | 1–2 days |
 | **M6 — Checklist Viewer** | Read sheet → render as read-only checklist, manual refresh + 60s auto-refresh | 2–3 days |
 | **M7 — Checklist Tests** | Playwright: `checklist.spec.js` — render, checkmarks, refresh, auto-refresh, timer | 1–2 days |
-| **M8 — AI Search** | Gemini integration, prompt construction, search UI, keyword fallback, graceful degradation | 3–4 days |
-| **M9 — Search Tests** | Playwright: `search.spec.js` — AI search, results, fallback, empty state | 1–2 days |
+| **M8 — Search** | Keyword search UI, results display | 1 day |
+| **M9 — Search Tests** | Playwright: `search.spec.js` — keyword search, results, empty state | 1 day |
 | **M10 — Record Creation** | Create completion snapshots and search logs in user's Drive (append-only) | 2–3 days |
 | **M11 — Record + Sharing Tests** | Playwright: `records.spec.js` + `sharing.spec.js` — log creation, multi-user scenarios | 1–2 days |
 | **M12 — UI Polish** | Responsive vanilla CSS, loading states, error handling, toast notifications | 2–3 days |
@@ -851,7 +800,7 @@ Playwright tests run in CI (GitHub Actions or similar) with:
 |---|---|---|
 | 1 | Android: WebView vs. Native UI? | **WebView wrapper** — share code with web, native later if needed |
 | 2 | Token storage (web)? | **httpOnly cookie** for refresh token, **in-memory** for access token |
-| 3 | CSS framework? | **Vanilla CSS** — raw CSS is faster, AI can handle the development cost |
+| 3 | CSS framework? | **Vanilla CSS** — raw CSS is faster and simpler to maintain |
 | 4 | Hosting target? | **Self-hosted** on existing server with **Nginx** reverse proxy (multi-container setup) |
 | 5 | Domain? | **swiftirons.com** (production), **localhost** (development) |
 | 6 | Google account support? | **Both** personal Gmail and Workspace — testing with personal accounts |
@@ -859,9 +808,9 @@ Playwright tests run in CI (GitHub Actions or similar) with:
 | 8 | Drive browsing depth? | **Lazy-load** — fetch children only when user expands a folder |
 | 9 | Auto-refresh interval? | **Manual refresh** + **60s auto-refresh** (toggleable, on by default) |
 | 10 | Data model? | **CREATE + READ only** — no updates, no deletes. Existing data is immutable. New records are append-only. |
-| 11 | AI features? | **Natural language search** via Gemini to find checklists/data across folders |
-| 12 | Gemini access method? | **Google OAuth token** — use the same OAuth flow, no separate API key |
-| 13 | AI timing? | **Phase 1** — ship with Gemini from day one (with graceful degradation) |
+| 11 | AI features? | **Removed** — all search is keyword-based, all import analysis is code-based |
+| 12 | Gemini access method? | N/A — Gemini removed |
+| 13 | AI timing? | N/A — no AI dependencies |
 | 14 | E2E testing? | **Playwright** — tests focused on real user behavior, not code internals |
 | 15 | Test isolation? | **Local-only mock mode** — `api-client.js` abstraction swaps Google APIs for local JSON fixtures; no real Google accounts needed |
 | 16 | When to test? | **Alongside each feature** — every milestone has a paired test milestone |
@@ -871,7 +820,7 @@ Playwright tests run in CI (GitHub Actions or similar) with:
 ## 18. Getting Started (Next Steps)
 
 1. **Finalize this plan** — review and confirm
-2. **Google Cloud setup** — create project, enable Sheets API + Drive API + Generative Language API (Gemini), create OAuth 2.0 credentials for web (`swiftirons.com` + `localhost` redirect URIs) and Android
+2. **Google Cloud setup** — create project, enable Sheets API + Drive API, create OAuth 2.0 credentials for web (`swiftirons.com` + `localhost` redirect URIs) and Android
 3. **Init repo** — `npm init`, install Express + Playwright, set up project structure
 4. **Build M1 (API abstraction + local mode)** — the testing foundation; everything builds on this
 5. **Docker scaffold** — Dockerfile + docker-compose.yml
