@@ -15,17 +15,32 @@ import { EXAMPLE_SHEETS } from './example-data.js';
 // Re-export so existing consumers don't break
 export { EXAMPLE_SHEETS };
 
+/* ---------- Category helpers ---------- */
+
+/**
+ * Get all unique categories (folders) and their sheet counts.
+ * @returns {{ name: string, sheets: string[] }[]}
+ */
+export function getExampleCategories() {
+  const map = {};
+  for (const [title, def] of Object.entries(EXAMPLE_SHEETS)) {
+    if (!map[def.folder]) map[def.folder] = [];
+    map[def.folder].push(title);
+  }
+  return Object.entries(map).map(([name, sheets]) => ({ name, sheets }));
+}
+
 /* ---------- Generator ---------- */
 
 let isGenerating = false;
 
 /**
- * Generate all example sheets in the user's Google Drive.
- * Creates a "WayMark Examples" folder with subfolders per category.
+ * Generate example sheets in the user's Google Drive.
  * @param {function} onProgress  callback(message) for status updates
+ * @param {string[]} [selectedCategories]  optional list of category names to generate (all if omitted)
  * @returns {Promise<{folderId: string, count: number}>}
  */
-export async function generateExamples(onProgress = () => {}) {
+export async function generateExamples(onProgress = () => {}, selectedCategories = null) {
   if (isGenerating) throw new Error('Generation already in progress');
   isGenerating = true;
 
@@ -37,8 +52,14 @@ export async function generateExamples(onProgress = () => {}) {
       []
     );
 
-    // Create subfolders
-    const subfolderNames = [...new Set(Object.values(EXAMPLE_SHEETS).map(s => s.folder))];
+    // Filter entries by selected categories
+    const entries = Object.entries(EXAMPLE_SHEETS).filter(([, def]) => {
+      if (!selectedCategories) return true;
+      return selectedCategories.includes(def.folder);
+    });
+
+    // Create subfolders (only for selected categories)
+    const subfolderNames = [...new Set(entries.map(([, s]) => s.folder))];
     const subfolders = {};
 
     for (const name of subfolderNames) {
@@ -53,7 +74,6 @@ export async function generateExamples(onProgress = () => {}) {
 
     // Create sheets
     let count = 0;
-    const entries = Object.entries(EXAMPLE_SHEETS);
 
     for (const [title, def] of entries) {
       count++;

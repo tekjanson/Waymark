@@ -70,6 +70,16 @@ export function setSidebarOpen(open) {
   set('sidebar_open', !!open);
 }
 
+/* --- Tutorial --- */
+
+export function getTutorialCompleted() {
+  return !!get('tutorial_completed');
+}
+
+export function setTutorialCompleted(done) {
+  set('tutorial_completed', !!done);
+}
+
 /* --- Clear All --- */
 
 export function clearAll() {
