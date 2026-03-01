@@ -13,6 +13,7 @@ import * as search   from './search.js';
 import * as records  from './records.js';
 import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
+import * as importer from './import.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -27,6 +28,7 @@ const folderBackBtn = document.getElementById('folder-back-btn');
 const generateBtn   = document.getElementById('generate-examples-btn');
 const generateProg  = document.getElementById('generate-progress');
 const tutorialBtn   = document.getElementById('tutorial-btn');
+const importBtn     = document.getElementById('import-sheet-btn');
 
 /* ---------- Example Modal refs ---------- */
 const examplesModal       = document.getElementById('examples-modal');
@@ -38,6 +40,31 @@ const examplesSelectNone  = document.getElementById('examples-select-none');
 const examplesCategories  = document.getElementById('examples-categories');
 const examplesCount       = document.getElementById('examples-selection-count');
 const examplesModalProg   = document.getElementById('examples-modal-progress');
+
+/* ---------- Import Modal refs ---------- */
+const importModal         = document.getElementById('import-modal');
+const importModalClose    = document.getElementById('import-modal-close');
+const importCancelBtn     = document.getElementById('import-cancel-btn');
+const importBackBtn       = document.getElementById('import-back-btn');
+const importNextBtn       = document.getElementById('import-next-btn');
+const importSearchInput   = document.getElementById('import-search-input');
+const importSheetList     = document.getElementById('import-sheet-list');
+const importStepPick      = document.getElementById('import-step-pick');
+const importStepAnalyze   = document.getElementById('import-step-analyze');
+const importStepReview    = document.getElementById('import-step-review');
+const importPreviewName   = document.getElementById('import-preview-name');
+const importPreviewRows   = document.getElementById('import-preview-rows');
+const importPreviewTable  = document.getElementById('import-preview-table');
+const importTemplatePick  = document.getElementById('import-template-pick');
+const importDetectConf    = document.getElementById('import-detect-confidence');
+const importColMapEditor  = document.getElementById('import-column-map-editor');
+const importAnalysisSummary = document.getElementById('import-analysis-summary');
+const importResultTemplate  = document.getElementById('import-result-template');
+const importResultConfidence= document.getElementById('import-result-confidence');
+const importResultRows      = document.getElementById('import-result-rows');
+const importMappingTable    = document.getElementById('import-mapping-table');
+const importProgress        = document.getElementById('import-progress');
+const importModalTitle      = document.getElementById('import-modal-title');
 
 /* ---------- Navigation callback ---------- */
 
@@ -74,8 +101,16 @@ async function boot() {
     generateBtn.addEventListener('click', openExamplesModal);
   }
 
+  // Import sheet — open import modal
+  if (importBtn) {
+    importBtn.addEventListener('click', openImportModal);
+  }
+
   // Wire examples modal
   initExamplesModal();
+
+  // Wire import modal
+  initImportModal();
 
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderPinnedFolders);
@@ -88,7 +123,7 @@ async function boot() {
   hideLoading();
 
   if (user) {
-    showApp(user);
+    await showApp(user);
   } else {
     showLogin();
   }
@@ -101,7 +136,7 @@ function showLogin() {
   appScreen.classList.add('hidden');
 }
 
-function showApp(user) {
+async function showApp(user) {
   loginScreen.classList.add('hidden');
   appScreen.classList.remove('hidden');
 
@@ -113,10 +148,9 @@ function showApp(user) {
     userAvatarEl.classList.remove('hidden');
   }
 
-  // Load explorer
-  explorer.load().then(() => {
-    collectKnownSheets();
-  });
+  // Load explorer & collect known sheets before routing
+  await explorer.load();
+  await collectKnownSheets();
 
   // Route to current hash
   handleRoute();
@@ -229,9 +263,10 @@ async function showFolderContents(folderId, folderName) {
     const res = await api.drive.listChildren(folderId);
     const items = res.files || [];
     const sheets  = items.filter(i => i.mimeType === 'application/vnd.google-apps.spreadsheet');
+    const docs    = items.filter(i => i.mimeType === 'application/vnd.google-apps.document');
     const folders = items.filter(i => i.mimeType === 'application/vnd.google-apps.folder');
 
-    if (sheets.length === 0 && folders.length === 0) {
+    if (sheets.length === 0 && folders.length === 0 && docs.length === 0) {
       noSheetsEl.classList.remove('hidden');
       return;
     }
@@ -255,6 +290,17 @@ async function showFolderContents(folderId, folderName) {
       }, [
         el('span', { className: 'sheet-emoji' }, ['📊']),
         el('div', { className: 'sheet-list-item-name' }, [s.name]),
+      ]));
+    }
+
+    // Render docs
+    for (const d of docs) {
+      sheetsEl.append(el('div', {
+        className: 'sheet-list-item',
+        on: { click() { navigate('sheet', d.id, d.name); } },
+      }, [
+        el('span', { className: 'sheet-emoji' }, ['📄']),
+        el('div', { className: 'sheet-list-item-name' }, [d.name]),
       ]));
     }
 
@@ -390,19 +436,375 @@ async function handleGenerateExamples() {
   openExamplesModal();
 }
 
-/* ---------- Known sheets for search context ---------- */
+/* ---------- Import Modal ---------- */
 
-function collectKnownSheets() {
-  const sheetNodes = document.querySelectorAll('.sheet-item[data-id], .sheet-list-item[data-id]');
-  const sheets = [];
-  sheetNodes.forEach(n => {
-    sheets.push({ id: n.dataset.id, name: n.textContent.trim(), folder: '' });
+let importStep = 0;       // 0 = pick, 1 = configure, 2 = review
+let importSheets = [];    // cached list of importable sheets
+let selectedImportSheet = null; // { id, name, ... }
+let importSheetData = null;     // full sheet data from API
+let importAnalysis = null;      // analysis result from code detection
+let userColumnMapping = {};     // user's manual column assignments
+
+function initImportModal() {
+  if (!importModal) return;
+
+  // Close
+  importModalClose.addEventListener('click', closeImportModal);
+  importCancelBtn.addEventListener('click', closeImportModal);
+  importModal.addEventListener('click', (e) => {
+    if (e.target === importModal) closeImportModal();
   });
 
-  // Also gather from fixtures in local mode (if available)
-  if (window.__WAYMARK_LOCAL && window.__WAYMARK_FIXTURE_SHEETS) {
-    sheets.push(...window.__WAYMARK_FIXTURE_SHEETS);
+  // Navigation
+  importBackBtn.addEventListener('click', importGoBack);
+  importNextBtn.addEventListener('click', importGoNext);
+
+  // Search
+  importSearchInput.addEventListener('input', filterImportSheets);
+
+  // Template picker change — re-run code detection with new template
+  importTemplatePick.addEventListener('change', () => {
+    if (!importSheetData) return;
+    const chosenKey = importTemplatePick.value;
+    importAnalysis = importer.analyzeWithCode(importSheetData);
+    // Override template if user picked one
+    if (chosenKey && chosenKey !== importAnalysis.suggestedTemplate) {
+      importAnalysis.suggestedTemplate = chosenKey;
+      const templates = importer.getTemplateList();
+      const t = templates.find(t => t.key === chosenKey);
+      importAnalysis.templateName = t?.name || chosenKey;
+      importAnalysis.confidence = 0.5; // user-chosen, medium confidence
+      importAnalysis.summary = `Manually selected "${importAnalysis.templateName}" template.`;
+    }
+    renderColumnMapEditor(importAnalysis);
+    updateDetectBadge(importAnalysis);
+  });
+}
+
+async function openImportModal() {
+  importStep = 0;
+  selectedImportSheet = null;
+  importSheetData = null;
+  importAnalysis = null;
+  userColumnMapping = {};
+  importSearchInput.value = '';
+
+  showImportStep(0);
+  importModal.classList.remove('hidden');
+  importNextBtn.disabled = true;
+  importNextBtn.textContent = 'Next';
+  importBackBtn.classList.add('hidden');
+  importProgress.classList.add('hidden');
+
+  // Load sheets
+  importSheetList.innerHTML = '<p class="text-muted import-loading">Loading your files…</p>';
+  try {
+    importSheets = await importer.listImportableSheets();
+    renderImportSheets(importSheets);
+  } catch (err) {
+    importSheetList.innerHTML = `<p class="text-muted">Failed to load files: ${err.message}</p>`;
   }
+}
+
+function closeImportModal() {
+  importModal.classList.add('hidden');
+}
+
+function showImportStep(step) {
+  importStep = step;
+  importStepPick.classList.toggle('hidden', step !== 0);
+  importStepAnalyze.classList.toggle('hidden', step !== 1);
+  importStepReview.classList.toggle('hidden', step !== 2);
+  importBackBtn.classList.toggle('hidden', step === 0);
+  importModalTitle.textContent = ['Import a File', 'Configure Template', 'Review & Import'][step];
+
+  if (step === 0) {
+    importNextBtn.textContent = 'Next';
+    importNextBtn.disabled = !selectedImportSheet;
+  } else if (step === 1) {
+    importNextBtn.textContent = 'Review';
+    importNextBtn.disabled = false;
+  } else if (step === 2) {
+    importNextBtn.textContent = 'Import';
+    importNextBtn.disabled = false;
+  }
+}
+
+function importGoBack() {
+  if (importStep > 0) {
+    showImportStep(importStep - 1);
+  }
+}
+
+async function importGoNext() {
+  if (importStep === 0) {
+    // Load the selected file data, auto-detect template, and move to step 1
+    if (!selectedImportSheet) return;
+    importProgress.classList.remove('hidden');
+    importProgress.textContent = 'Loading file data…';
+    try {
+      const isDoc = selectedImportSheet.mimeType === 'application/vnd.google-apps.document';
+      if (isDoc) {
+        importSheetData = await importer.fetchDocForImport(selectedImportSheet.id, selectedImportSheet.name);
+      } else {
+        importSheetData = await importer.fetchSheetForImport(selectedImportSheet.id);
+      }
+      renderImportPreview(importSheetData);
+
+      // Auto-detect template
+      importAnalysis = importer.analyzeWithCode(importSheetData);
+
+      // Populate template picker
+      populateTemplatePicker(importAnalysis);
+      renderColumnMapEditor(importAnalysis);
+      updateDetectBadge(importAnalysis);
+
+      showImportStep(1);
+    } catch (err) {
+      showToast(`Failed to load file: ${err.message}`, 'error');
+    } finally {
+      importProgress.classList.add('hidden');
+    }
+  } else if (importStep === 1) {
+    // Collect user column mapping and move to review
+    collectUserMapping();
+    importAnalysis.columnMapping = { ...userColumnMapping };
+    importAnalysis.suggestedTemplate = importTemplatePick.value || importAnalysis.suggestedTemplate;
+    const templates = importer.getTemplateList();
+    const t = templates.find(t => t.key === importAnalysis.suggestedTemplate);
+    if (t) importAnalysis.templateName = t.name;
+
+    renderImportReview(importAnalysis);
+    showImportStep(2);
+  } else if (importStep === 2) {
+    // Execute import
+    importNextBtn.disabled = true;
+    importNextBtn.textContent = 'Importing…';
+    importCancelBtn.disabled = true;
+    importProgress.classList.remove('hidden');
+    try {
+      const options = {
+        remap: false,
+        template: importAnalysis.suggestedTemplate,
+        onProgress(msg) { importProgress.textContent = msg; },
+      };
+      const result = await importer.importSheet(importSheetData, importAnalysis, options);
+      await explorer.load();
+      collectKnownSheets();
+      closeImportModal();
+      // Navigate to the imported sheet
+      if (result.sheetId) {
+        window.location.hash = `#/sheet/${result.sheetId}`;
+      }
+    } catch (err) {
+      showToast(`Import failed: ${err.message}`, 'error');
+      importProgress.textContent = `Error: ${err.message}`;
+    } finally {
+      importNextBtn.disabled = false;
+      importNextBtn.textContent = 'Import';
+      importCancelBtn.disabled = false;
+    }
+  }
+}
+
+function populateTemplatePicker(analysis) {
+  importTemplatePick.innerHTML = '';
+  const templates = importer.getTemplateList();
+  for (const t of templates) {
+    const opt = el('option', { value: t.key }, [`${t.icon} ${t.name}`]);
+    if (t.key === analysis.suggestedTemplate) opt.selected = true;
+    importTemplatePick.append(opt);
+  }
+}
+
+function updateDetectBadge(analysis) {
+  const conf = Math.round((analysis.confidence || 0) * 100);
+  importDetectConf.textContent = `${conf}% match`;
+  importDetectConf.className = 'import-confidence-badge ' +
+    (conf >= 70 ? 'import-confidence-high' : conf >= 40 ? 'import-confidence-medium' : 'import-confidence-low');
+}
+
+function renderColumnMapEditor(analysis) {
+  importColMapEditor.innerHTML = '';
+  const headers = importSheetData?.values?.[0] || [];
+  const mapping = analysis.columnMapping || {};
+
+  // Get available roles for the selected template
+  const roles = importer.getTemplateRoles(analysis.suggestedTemplate);
+
+  for (const header of headers) {
+    const currentRole = mapping[header] || '';
+
+    const row = el('div', { className: 'import-mapping-row' }, [
+      el('span', { className: 'import-mapping-orig' }, [header]),
+      el('span', { className: 'import-mapping-arrow' }, ['→']),
+    ]);
+
+    const select = document.createElement('select');
+    select.className = 'import-mapping-select';
+    select.dataset.header = header;
+
+    // Default option
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '(keep as-is)';
+    select.append(defaultOpt);
+
+    for (const role of roles) {
+      const opt = document.createElement('option');
+      opt.value = role.key;
+      opt.textContent = role.label;
+      // Auto-select if code detection mapped this column to this role
+      if (currentRole === role.label || currentRole === role.key) {
+        opt.selected = true;
+      }
+      select.append(opt);
+    }
+
+    row.append(select);
+    importColMapEditor.append(row);
+  }
+}
+
+function collectUserMapping() {
+  userColumnMapping = {};
+  const selects = importColMapEditor.querySelectorAll('.import-mapping-select');
+  selects.forEach(select => {
+    const header = select.dataset.header;
+    const role = select.value;
+    if (header) {
+      userColumnMapping[header] = role || '(keep as-is)';
+    }
+  });
+}
+function renderImportSheets(sheets) {
+  importSheetList.innerHTML = '';
+  if (sheets.length === 0) {
+    importSheetList.innerHTML = '<p class="text-muted">No spreadsheets or documents found in your Drive.</p>';
+    return;
+  }
+
+  for (const sheet of sheets) {
+    const isDoc = sheet.mimeType === 'application/vnd.google-apps.document';
+    const icon = isDoc ? '📄' : '📊';
+    const typeLabel = isDoc ? 'Document' : 'Spreadsheet';
+    const item = el('div', {
+      className: 'import-sheet-item',
+      dataset: { id: sheet.id },
+      on: {
+        click() {
+          // Deselect previous
+          importSheetList.querySelectorAll('.import-sheet-item.selected').forEach(s => s.classList.remove('selected'));
+          item.classList.add('selected');
+          selectedImportSheet = sheet;
+          importNextBtn.disabled = false;
+        },
+      },
+    }, [
+      el('span', { className: 'import-sheet-item-icon' }, [icon]),
+      el('div', { className: 'import-sheet-item-info' }, [
+        el('div', { className: 'import-sheet-item-name' }, [sheet.name]),
+        el('div', { className: 'import-sheet-item-meta' }, [
+          typeLabel,
+          sheet.modifiedTime ? ` · Modified ${new Date(sheet.modifiedTime).toLocaleDateString()}` : '',
+          sheet.owners?.[0]?.displayName ? ` · ${sheet.owners[0].displayName}` : '',
+        ].filter(Boolean).join('')),
+      ]),
+    ]);
+    importSheetList.append(item);
+  }
+}
+
+function filterImportSheets() {
+  const q = importSearchInput.value.toLowerCase().trim();
+  const filtered = q
+    ? importSheets.filter(s => s.name.toLowerCase().includes(q))
+    : importSheets;
+  renderImportSheets(filtered);
+  // re-highlight if still selected
+  if (selectedImportSheet) {
+    const el = importSheetList.querySelector(`[data-id="${selectedImportSheet.id}"]`);
+    if (el) el.classList.add('selected');
+  }
+}
+
+function renderImportPreview(data) {
+  importPreviewName.textContent = data.title || 'Untitled';
+  const rowCount = Math.max(0, (data.values?.length || 1) - 1);
+  importPreviewRows.textContent = `${rowCount} row${rowCount !== 1 ? 's' : ''}`;
+
+  // Render preview table (headers + up to 5 rows)
+  importPreviewTable.innerHTML = '';
+  const headers = data.values?.[0] || [];
+  const rows = (data.values || []).slice(1, 6);
+
+  if (headers.length) {
+    const thead = el('thead', {}, [
+      el('tr', {}, headers.map(h => el('th', {}, [h || '']))),
+    ]);
+    importPreviewTable.append(thead);
+  }
+  if (rows.length) {
+    const tbody = el('tbody', {}, rows.map(row =>
+      el('tr', {}, headers.map((_, i) => el('td', {}, [row[i] || ''])))
+    ));
+    importPreviewTable.append(tbody);
+  }
+}
+
+function renderImportReview(analysis) {
+  // Summary
+  importAnalysisSummary.textContent = analysis.summary || '';
+
+  // Template
+  importResultTemplate.textContent = analysis.templateName || analysis.suggestedTemplate;
+
+  // Confidence badge
+  const conf = Math.round((analysis.confidence || 0) * 100);
+  importResultConfidence.textContent = `${conf}%`;
+  importResultConfidence.className = 'import-confidence-badge ' +
+    (conf >= 70 ? 'import-confidence-high' : conf >= 40 ? 'import-confidence-medium' : 'import-confidence-low');
+
+  // Rows
+  importResultRows.textContent = analysis.rowCount ?? '—';
+
+  // Column mapping
+  importMappingTable.innerHTML = '';
+  const mapping = analysis.columnMapping || {};
+  for (const [orig, mapped] of Object.entries(mapping)) {
+    const row = el('div', { className: 'import-mapping-row' }, [
+      el('span', { className: 'import-mapping-orig' }, [orig]),
+      el('span', { className: 'import-mapping-arrow' }, ['→']),
+      el('span', { className: 'import-mapping-new' }, [mapped]),
+    ]);
+    importMappingTable.append(row);
+  }
+}
+
+/* ---------- Known sheets for search context ---------- */
+
+async function collectKnownSheets() {
+  const sheetNodes = document.querySelectorAll('.sheet-item[data-id], .sheet-list-item[data-id]');
+  const sheets = [];
+  const seen = new Set();
+  sheetNodes.forEach(n => {
+    if (!seen.has(n.dataset.id)) {
+      seen.add(n.dataset.id);
+      sheets.push({ id: n.dataset.id, name: n.textContent.trim(), folder: '' });
+    }
+  });
+
+  // In local mode, also walk the fixture folder tree to find all sheets
+  // (since not all folders may be expanded in the explorer)
+  try {
+    const allSheets = await api.drive.getAllSheets();
+    for (const s of allSheets) {
+      if (!seen.has(s.id)) {
+        seen.add(s.id);
+        sheets.push(s);
+      }
+    }
+  } catch { /* ignore — this is a best-effort enrichment */ }
 
   search.registerSheets(sheets);
 }

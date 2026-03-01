@@ -24,7 +24,7 @@ WayMark reads your Google Sheets and renders them as the interactive tools they 
 2. **Auto-detect the template** — WayMark examines the column headers and figures out what kind of data you have (checklist? budget? timesheet? CRM pipeline?).
 3. **Render an interactive view** — progress bars, clickable checkboxes, calendar groupings, status badges, swim lanes — whatever fits the data.
 4. **Write changes back** — toggle a checkbox, cycle a status badge, and the edit goes straight back to Google Sheets.
-5. **AI-powered search** — find sheets by describing what you're looking for in plain English, powered by Gemini.
+5. **Keyword search** — quickly find any sheet by name from the search bar.
 
 No extra database. No migration. No export/import. Just your spreadsheet, made better.
 
@@ -62,7 +62,7 @@ Detection is automatic — name your columns sensibly and WayMark figures out th
 ### Prerequisites
 
 - **Node.js** 18+
-- A **Google Cloud** project with Sheets API v4, Drive API v3, and (optionally) Gemini API enabled
+- A **Google Cloud** project with Sheets API v4 and Drive API v3 enabled
 - OAuth 2.0 credentials (see `.env.example`)
 
 ### Install & Run

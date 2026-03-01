@@ -9,7 +9,7 @@ const definition = {
   priority: 20,
 
   detect(lower) {
-    return lower.some(h => /^(time\b|start\b|end\b|from\b|to\b|slot|period|block)/.test(h));
+    return lower.some(h => /^(time\b|start\s*time|end\s*time|slot|period|block)/.test(h));
   },
 
   columns(lower) {

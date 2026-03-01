@@ -25,6 +25,7 @@ function getFixtures() {
       'sheet-001': loadJSON('sheets/groceries.json'),
       'sheet-002': loadJSON('sheets/home-projects.json'),
       'sheet-003': loadJSON('sheets/shared-chores.json'),
+      'sheet-004': loadJSON('sheets/groceries-categorized.json'),
     },
   };
 }
@@ -52,7 +53,7 @@ async function overrideFixture(page, fixturePath, data) {
  * Sets window.__WAYMARK_MOCK_ERROR on the page.
  *
  * @param {import('@playwright/test').Page} page
- * @param {'drive'|'sheets'|'gemini'|null} area   null to clear
+ * @param {'drive'|'sheets'|null} area   null to clear
  */
 async function injectError(page, area) {
   await page.evaluate((a) => { window.__WAYMARK_MOCK_ERROR = a; }, area);

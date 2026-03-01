@@ -2,7 +2,7 @@
    api-client.js — THE critical abstraction layer
    
    In production mode → delegates to drive.js, sheets.js,
-   gemini.js, auth.js (which call real Google APIs).
+   auth.js (which call real Google APIs).
    
    In local/mock mode → fetches fixture data from the
    server's /__fixtures/ endpoint and uses canned responses.
@@ -16,12 +16,11 @@ const isLocal = window.__WAYMARK_LOCAL === true;
 const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Dynamic imports for production ---------- */
-let driveApi, sheetsApi, geminiApi;
+let driveApi, sheetsApi;
 if (!isLocal) {
-  [driveApi, sheetsApi, geminiApi] = await Promise.all([
+  [driveApi, sheetsApi] = await Promise.all([
     import('./drive.js'),
     import('./sheets.js'),
-    import('./gemini.js'),
   ]);
 }
 
@@ -47,6 +46,7 @@ async function loadMockSheet(sheetId) {
     'sheet-001': 'groceries',
     'sheet-002': 'home-projects',
     'sheet-003': 'shared-chores',
+    'sheet-004': 'groceries-categorized',
     'sheet-010': 'tracker-fitness',
     'sheet-011': 'schedule-weekly',
     'sheet-012': 'inventory-pantry',
@@ -80,27 +80,6 @@ async function loadMockSheet(sheetId) {
 /* Init records store for test assertions */
 if (isLocal) {
   window.__WAYMARK_RECORDS = window.__WAYMARK_RECORDS || [];
-}
-
-/* ---------- Canned Gemini responses for local mode ---------- */
-const CANNED_AI = {
-  grocery:  { matches: [{ sheetId: 'sheet-001', sheetName: 'Grocery List',  reason: 'Sheet name matches grocery query' }], summary: 'Found your grocery list.' },
-  chore:    { matches: [{ sheetId: 'sheet-003', sheetName: 'Weekly Chores', reason: 'Sheet name matches chores query' }], summary: 'Found the weekly chores list.' },
-  home:     { matches: [{ sheetId: 'sheet-002', sheetName: 'Home Repairs',  reason: 'Sheet name matches home query' }],   summary: 'Found the home repairs list.' },
-  repair:   { matches: [{ sheetId: 'sheet-002', sheetName: 'Home Repairs',  reason: 'Sheet name matches repair query' }], summary: 'Found the home repairs list.' },
-  task:     { matches: [{ sheetId: 'sheet-002', sheetName: 'Home Repairs',  reason: 'General task match' }],              summary: 'Here are task-related sheets.' },
-  shop:     { matches: [{ sheetId: 'sheet-001', sheetName: 'Grocery List',  reason: 'Shopping relates to groceries' }],   summary: 'Found shopping-related lists.' },
-};
-
-function mockGeminiQuery(userQuery) {
-  // simulate error if injected
-  if (window.__WAYMARK_MOCK_ERROR === 'gemini') throw new Error('Mock Gemini error');
-
-  const q = userQuery.toLowerCase();
-  for (const [keyword, response] of Object.entries(CANNED_AI)) {
-    if (q.includes(keyword)) return { ...response };
-  }
-  return { matches: [], summary: 'No matching sheets found.' };
 }
 
 /* ---------- Unified API ---------- */
@@ -213,6 +192,107 @@ export const api = {
       const token = await clientAuth.getToken();
       return driveApi.createFile(token, name, mimeType, parents);
     },
+
+    async findFolder(name, parentId) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const search = (folders) => {
+          for (const f of folders) {
+            if (f.name === name && f.mimeType === 'application/vnd.google-apps.folder') return f;
+            if (f.children) {
+              const found = search(f.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        return search(fix.folders.myDrive) || null;
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.findFolder(token, name, parentId);
+    },
+
+    async listSpreadsheets(query) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        // Return all sheets from mock data
+        const sheets = [];
+        const collect = (items) => {
+          for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.spreadsheet') sheets.push(item);
+            if (item.children) collect(item.children);
+          }
+        };
+        collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+        return { files: sheets };
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.listSpreadsheets(token, query);
+    },
+
+    async listImportableFiles() {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        // Return all sheets and docs from mock data
+        const files = [];
+        const collect = (items) => {
+          for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.spreadsheet' ||
+                item.mimeType === 'application/vnd.google-apps.document') {
+              files.push(item);
+            }
+            if (item.children) collect(item.children);
+          }
+        };
+        collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+        return { files };
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.listImportableFiles(token);
+    },
+
+    /**
+     * Get all sheets (for search context).
+     * In local mode walks the fixture folder tree.
+     * In production queries Drive for all spreadsheets.
+     * @returns {Promise<{id:string, name:string, folder:string}[]>}
+     */
+    async getAllSheets() {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const sheets = [];
+        const collect = (items, folder) => {
+          for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.spreadsheet') {
+              sheets.push({ id: item.id, name: item.name, folder: folder || '' });
+            }
+            if (item.children) collect(item.children, item.name);
+          }
+        };
+        collect([...fix.folders.myDrive, ...(fix.folders.sharedWithMe || [])], '');
+        return sheets;
+      }
+      const token = await clientAuth.getToken();
+      const res = await driveApi.listSpreadsheets(token);
+      return (res.files || []).map(f => ({ id: f.id, name: f.name, folder: '' }));
+    },
+
+    async exportDoc(fileId) {
+      if (isLocal) {
+        // In mock mode return a simple table-like text
+        return 'Item\tStatus\tNotes\nTask 1\tDone\tSample note\nTask 2\tPending\tAnother note\n';
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.exportDoc(token, fileId);
+    },
+
+    async getFile(fileId) {
+      if (isLocal) {
+        return { id: fileId, name: 'Mock File', mimeType: 'application/vnd.google-apps.spreadsheet' };
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.getFile(token, fileId);
+    },
   },
 
   /* ---- Sheets ---- */
@@ -270,23 +350,6 @@ export const api = {
       }
       const token = await clientAuth.getToken();
       return sheetsApi.updateCell(token, spreadsheetId, sheetTitle, row, col, value);
-    },
-  },
-
-  /* ---- Gemini AI ---- */
-  gemini: {
-    async query(userQuery, context) {
-      if (isLocal) {
-        return mockGeminiQuery(userQuery);
-      }
-      const token = await clientAuth.getToken();
-      return geminiApi.query(token, userQuery, context);
-    },
-
-    async isAvailable() {
-      if (isLocal) return true;
-      const token = await clientAuth.getToken();
-      return geminiApi.isAvailable(token);
     },
   },
 };
