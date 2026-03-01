@@ -1,0 +1,18 @@
+{
+  "id": "sheet-004",
+  "title": "Multi-Store Grocery List",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Item", "Category", "Status"],
+    ["Milk", "Dairy", "done"],
+    ["Eggs", "Dairy", ""],
+    ["Yogurt", "Dairy", "done"],
+    ["Apples", "Produce", ""],
+    ["Spinach", "Produce", ""],
+    ["Bananas", "Produce", "done"],
+    ["Chicken Breast", "Meat & Seafood", ""],
+    ["Salmon", "Meat & Seafood", ""],
+    ["Bread", "Bakery", "done"],
+    ["Bagels", "Bakery", ""]
+  ]
+}

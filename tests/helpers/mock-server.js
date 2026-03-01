@@ -25,6 +25,7 @@ function getFixtures() {
       'sheet-001': loadJSON('sheets/groceries.json'),
       'sheet-002': loadJSON('sheets/home-projects.json'),
       'sheet-003': loadJSON('sheets/shared-chores.json'),
+      'sheet-004': loadJSON('sheets/groceries-categorized.json'),
     },
   };
 }

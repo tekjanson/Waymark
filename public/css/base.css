@@ -304,6 +304,15 @@ ul { list-style: none; }
   background: var(--color-success); border-color: var(--color-success); color: #fff;
 }
 
+/* Checklist category grouping */
+.checklist-group-header {
+  font-weight: 600; font-size: 0.85rem; color: var(--color-success);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 12px 0 4px; margin-top: 4px;
+}
+.checklist-group-header:first-child { margin-top: 0; }
+.checklist-group { margin-bottom: 8px; }
+
 /* Folder header in views */
 .folder-header {
   display: flex; align-items: center; gap: 12px; margin-bottom: 20px;

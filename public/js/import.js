@@ -21,6 +21,7 @@ const ROLE_LABELS = {
   // Checklist
   'checklist.status': 'Completion Status (done/not done)',
   'checklist.text': 'Item Description',
+  'checklist.category': 'Category / Section / Store',
   'checklist.date': 'Due Date',
   'checklist.notes': 'Notes',
   // Tracker

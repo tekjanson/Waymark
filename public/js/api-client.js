@@ -46,6 +46,7 @@ async function loadMockSheet(sheetId) {
     'sheet-001': 'groceries',
     'sheet-002': 'home-projects',
     'sheet-003': 'shared-chores',
+    'sheet-004': 'groceries-categorized',
     'sheet-010': 'tracker-fitness',
     'sheet-011': 'schedule-weekly',
     'sheet-012': 'inventory-pantry',

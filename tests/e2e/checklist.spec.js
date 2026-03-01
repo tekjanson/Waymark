@@ -77,3 +77,55 @@ test('checklist toggle can uncheck a completed item', async ({ page }) => {
   const lastUpdate = updates[updates.length - 1];
   expect(lastUpdate.value).toBe('');
 });
+
+test('categorized checklist renders group headers', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+  await expect(page.locator('#template-badge')).toContainText('Checklist');
+
+  // Should have group headers for each category
+  const headers = page.locator('.checklist-group-header');
+  await expect(headers).toHaveCount(4); // Dairy, Produce, Meat & Seafood, Bakery
+
+  const headerTexts = await headers.allTextContents();
+  expect(headerTexts).toEqual(['Dairy', 'Produce', 'Meat & Seafood', 'Bakery']);
+});
+
+test('categorized checklist groups items under correct headers', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Each group container should have the right number of items
+  const groups = page.locator('.checklist-group');
+  await expect(groups).toHaveCount(4);
+
+  // Dairy: 3 items, Produce: 3 items, Meat & Seafood: 2 items, Bakery: 2 items
+  await expect(groups.nth(0).locator('.checklist-row')).toHaveCount(3);
+  await expect(groups.nth(1).locator('.checklist-row')).toHaveCount(3);
+  await expect(groups.nth(2).locator('.checklist-row')).toHaveCount(2);
+  await expect(groups.nth(3).locator('.checklist-row')).toHaveCount(2);
+});
+
+test('categorized checklist checkbox toggle works within groups', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Eggs (Dairy group, 2nd item) is not done — click to complete
+  const dairyGroup = page.locator('.checklist-group').first();
+  const eggsRow = dairyGroup.locator('.checklist-row').nth(1);
+  await expect(eggsRow).not.toHaveClass(/completed/);
+
+  const checkbox = eggsRow.locator('.checklist-checkbox');
+  await checkbox.click();
+
+  await expect(eggsRow).toHaveClass(/completed/);
+  await expect(checkbox).toHaveText('✓');
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.length).toBeGreaterThanOrEqual(1);
+  expect(updates[updates.length - 1].value).toBe('done');
+});
