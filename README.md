@@ -1,5 +1,9 @@
 # WayMark
 
+***Try for Free***
+[Waymark](https://swiftirons.com/waymark.html)
+
+
 **Every project ends with a spreadsheet.**
 
 You know the drill. Somebody says *"we need a database"* and then somebody else opens Google Sheets, types a few headers, and — congratulations — that *is* the database now. Budgets, inventories, guest lists, bug trackers, meal plans, hiring pipelines, school grades — humanity runs on rows and columns maintained by people who never asked for a DBA certification.
