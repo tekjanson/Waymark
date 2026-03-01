@@ -30,7 +30,7 @@ app.use((_req, res, next) => {
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline'",
-        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com",
+        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
       ].join('; ')

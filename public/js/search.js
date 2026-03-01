@@ -1,9 +1,8 @@
 /* ============================================================
-   search.js — AI-powered search + keyword fallback
+   search.js — Keyword-based search across known sheets
    ============================================================ */
 
-import { api } from './api-client.js';
-import { el, showToast, showView } from './ui.js';
+import { el, showView } from './ui.js';
 
 let resultsEl, summaryEl, noResultsEl;
 let onNavigate;         // callback from app.js
@@ -28,7 +27,7 @@ export function init(navigateFn) {
 }
 
 /**
- * Register sheets the user has browsed (for Gemini context).
+ * Register sheets the user has browsed (for search context).
  */
 export function registerSheets(sheets) {
   knownSheets = sheets;
@@ -45,33 +44,16 @@ async function performSearch(query) {
   noResultsEl.classList.add('hidden');
 
   try {
-    // Try AI search first
-    const aiAvailable = await api.gemini.isAvailable();
-    let result;
-
-    if (aiAvailable) {
-      result = await api.gemini.query(query, knownSheets);
-    } else {
-      // Keyword fallback
-      result = keywordSearch(query);
-    }
-
-    renderResults(result, !aiAvailable);
+    const result = keywordSearch(query);
+    renderResults(result);
   } catch (err) {
-    // Fallback to keyword search on AI failure
-    try {
-      const result = keywordSearch(query);
-      renderResults(result, true);
-      showToast('AI search unavailable, showing keyword results', 'info');
-    } catch (fallbackErr) {
-      summaryEl.textContent = '';
-      resultsEl.innerHTML = `<p class="empty-state">Search failed: ${err.message}</p>`;
-    }
+    summaryEl.textContent = '';
+    resultsEl.innerHTML = `<p class="empty-state">Search failed: ${err.message}</p>`;
   }
 }
 
 /**
- * Simple keyword matching across known sheet names.
+ * Keyword matching across known sheet names.
  */
 function keywordSearch(query) {
   const q = query.toLowerCase();
@@ -93,13 +75,9 @@ function keywordSearch(query) {
 
 /* ---------- Rendering ---------- */
 
-function renderResults(result, isKeyword = false) {
+function renderResults(result) {
   resultsEl.innerHTML = '';
   summaryEl.textContent = result.summary || '';
-
-  if (isKeyword) {
-    summaryEl.textContent += ' (keyword search)';
-  }
 
   if (!result.matches || result.matches.length === 0) {
     noResultsEl.classList.remove('hidden');

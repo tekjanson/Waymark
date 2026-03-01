@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
 /*
- * AI Search tests — each test fully bootstraps the app with
+ * Search tests — each test fully bootstraps the app with
  * preconditioned auth + explorer state, then exercises search.
  */
 
@@ -14,7 +14,7 @@ test('search bar is visible after login', async ({ page }) => {
   await expect(page.locator('#search-btn')).toBeVisible();
 });
 
-test('AI search for "grocery" returns matching sheet', async ({ page }) => {
+test('search for "grocery" returns matching sheet', async ({ page }) => {
   await setupApp(page, { waitForExplorer: true });
 
   await page.fill('#search-input', 'grocery');
@@ -30,7 +30,7 @@ test('AI search for "grocery" returns matching sheet', async ({ page }) => {
   await expect(results.first()).toContainText('Grocery List');
 });
 
-test('AI search for "chore" returns chores sheet', async ({ page }) => {
+test('search for "chore" returns chores sheet', async ({ page }) => {
   await setupApp(page, { waitForExplorer: true });
 
   await page.fill('#search-input', 'chore');
@@ -40,7 +40,7 @@ test('AI search for "chore" returns chores sheet', async ({ page }) => {
   await expect(page.locator('.sheet-list-item').first()).toContainText('Weekly Chores');
 });
 
-test('AI search for "home" returns home repairs sheet', async ({ page }) => {
+test('search for "home" returns home repairs sheet', async ({ page }) => {
   await setupApp(page, { waitForExplorer: true });
 
   await page.fill('#search-input', 'home');

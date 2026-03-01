@@ -52,7 +52,7 @@ async function overrideFixture(page, fixturePath, data) {
  * Sets window.__WAYMARK_MOCK_ERROR on the page.
  *
  * @param {import('@playwright/test').Page} page
- * @param {'drive'|'sheets'|'gemini'|null} area   null to clear
+ * @param {'drive'|'sheets'|null} area   null to clear
  */
 async function injectError(page, area) {
   await page.evaluate((a) => { window.__WAYMARK_MOCK_ERROR = a; }, area);

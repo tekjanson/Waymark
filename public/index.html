@@ -40,7 +40,7 @@
 
       <div class="top-bar-center">
         <form id="search-form" class="search-container" autocomplete="off">
-          <input type="text" id="search-input" placeholder="Ask AI to find a list..." aria-label="Search">
+          <input type="text" id="search-input" placeholder="Search your lists..." aria-label="Search">
           <button type="submit" id="search-btn" class="btn-icon" aria-label="Search">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
@@ -80,10 +80,16 @@
           <div id="generate-section" class="generate-section">
             <h3>Quick Start</h3>
             <p class="text-muted">Generate example sheets in your Google Drive to try all template types.</p>
-            <button id="generate-examples-btn" class="btn btn-primary">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-              Generate Example Sheets
-            </button>
+            <div class="generate-buttons">
+              <button id="generate-examples-btn" class="btn btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Generate Example Sheets
+              </button>
+              <button id="import-sheet-btn" class="btn btn-secondary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Import Existing Sheet or Doc
+              </button>
+            </div>
             <div id="generate-progress" class="generate-progress hidden"></div>
           </div>
         </section>
@@ -161,6 +167,89 @@
         </div>
       </div>
       <div id="examples-modal-progress" class="generate-progress hidden"></div>
+    </div>
+  </div>
+
+  <!-- Import Sheet Modal -->
+  <div id="import-modal" class="modal-overlay hidden">
+    <div class="modal import-modal-wide">
+      <div class="modal-header">
+        <h3 id="import-modal-title">Import a File</h3>
+        <button id="import-modal-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Step 1: Pick a sheet -->
+      <div id="import-step-pick" class="import-step">
+        <p class="modal-description">Select a Google Sheet or Doc from your Drive to import into WayMark. The data will be copied into a managed folder.</p>
+        <div class="import-search-bar">
+          <input type="text" id="import-search-input" placeholder="Search your files…" class="import-search-field">
+        </div>
+        <div id="import-sheet-list" class="import-sheet-list">
+          <p class="text-muted import-loading">Loading your sheets…</p>
+        </div>
+      </div>
+
+      <!-- Step 2: Configure template & columns -->
+      <div id="import-step-analyze" class="import-step hidden">
+        <p class="modal-description">We auto-detected a template based on your columns. You can change it or adjust the column mapping below.</p>
+        <div class="import-sheet-preview">
+          <div class="import-preview-title">
+            <span id="import-preview-icon">📊</span>
+            <strong id="import-preview-name"></strong>
+            <span id="import-preview-rows" class="text-muted"></span>
+          </div>
+          <div id="import-preview-table-wrap" class="import-preview-table-wrap">
+            <table id="import-preview-table" class="import-preview-table"></table>
+          </div>
+        </div>
+
+        <div class="import-template-picker">
+          <label for="import-template-pick">Template:</label>
+          <select id="import-template-pick" class="import-select"></select>
+          <span id="import-detect-confidence" class="import-confidence-badge"></span>
+        </div>
+
+        <div class="import-column-mapping-edit">
+          <h4>Column Mapping</h4>
+          <p class="text-muted">Assign each of your columns to a template role, or leave as "(keep as-is)".</p>
+          <div id="import-column-map-editor"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: Review & import -->
+      <div id="import-step-review" class="import-step hidden">
+        <p class="modal-description" id="import-analysis-summary"></p>
+
+        <div class="import-result-grid">
+          <div class="import-result-card">
+            <span class="import-result-label">Template</span>
+            <div class="import-result-value">
+              <span id="import-result-template"></span>
+              <span id="import-result-confidence" class="import-confidence-badge"></span>
+            </div>
+          </div>
+          <div class="import-result-card">
+            <span class="import-result-label">Rows</span>
+            <span id="import-result-rows" class="import-result-value"></span>
+          </div>
+        </div>
+
+        <div class="import-column-mapping">
+          <h4>Column Mapping</h4>
+          <div id="import-mapping-table"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="import-back-btn" class="btn btn-secondary hidden">Back</button>
+        <div class="modal-footer-actions">
+          <button id="import-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button id="import-next-btn" class="btn btn-primary" disabled>Next</button>
+        </div>
+      </div>
+      <div id="import-progress" class="generate-progress hidden"></div>
     </div>
   </div>
 
