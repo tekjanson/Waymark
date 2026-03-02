@@ -3,6 +3,7 @@
    ============================================================ */
 
 import { el, showView } from './ui.js';
+import * as userData from './user-data.js';
 
 let resultsEl, summaryEl, noResultsEl;
 let onNavigate;         // callback from app.js
@@ -46,6 +47,8 @@ async function performSearch(query) {
   try {
     const result = keywordSearch(query);
     renderResults(result);
+    // Record in search history
+    userData.addSearchEntry(query, result.matches?.length || 0);
   } catch (err) {
     summaryEl.textContent = '';
     resultsEl.innerHTML = `<p class="empty-state">Search failed: ${err.message}</p>`;

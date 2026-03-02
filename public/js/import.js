@@ -5,11 +5,14 @@
    with manual column mapping for user control. Detects
    the best template match and lets users override both
    the template choice and individual column assignments.
+   
+   Imports are stored under Waymark/Imports/<template-type>/.
    ============================================================ */
 
 import { api } from './api-client.js';
 import { showToast } from './ui.js';
 import { detectTemplate, TEMPLATES } from './templates/index.js';
+import * as userData from './user-data.js';
 
 /* ---------- Code-based import analysis ---------- */
 
@@ -286,7 +289,7 @@ export function getTemplateRoles(templateKey) {
 
 /**
  * Import a spreadsheet into WayMark by copying it into a WayMark-managed folder.
- * Creates a "WayMark Imports" root folder and copies/re-creates the sheet there.
+ * Creates sheets inside the Waymark/Imports/<template-type>/ directory.
  * @param {Object} sheetData    full sheet data { id, title, values }
  * @param {Object} analysis     analysis result from analyzeWithCode
  * @param {Object} [options]    import options
@@ -298,31 +301,24 @@ export function getTemplateRoles(templateKey) {
 export async function importSheet(sheetData, analysis, options = {}) {
   const { remap = false, template, onProgress = () => {} } = options;
 
-  onProgress('Setting up WayMark Imports folder…');
+  onProgress('Setting up Waymark/Imports folder…');
 
-  // Find or create the imports root folder
-  let importsFolder = await api.drive.findFolder('WayMark Imports');
-  if (!importsFolder) {
-    importsFolder = await api.drive.createFile(
-      'WayMark Imports',
-      'application/vnd.google-apps.folder',
-      []
-    );
-  }
+  // Get the Imports folder inside the Waymark directory
+  const importsFolderId = await userData.getImportsFolderId();
 
   // Determine the template subfolder name
   const templateKey = template || analysis.suggestedTemplate;
   const templateDef = TEMPLATES[templateKey];
   const subfolderName = templateDef?.name || templateKey;
 
-  // Find or create template subfolder
+  // Find or create template subfolder inside Waymark/Imports/
   onProgress(`Setting up "${subfolderName}" folder…`);
-  let subfolder = await api.drive.findFolder(subfolderName, importsFolder.id);
+  let subfolder = await api.drive.findFolder(subfolderName, importsFolderId);
   if (!subfolder) {
     subfolder = await api.drive.createFile(
       subfolderName,
       'application/vnd.google-apps.folder',
-      [importsFolder.id]
+      [importsFolderId]
     );
   }
 
@@ -346,6 +342,13 @@ export async function importSheet(sheetData, analysis, options = {}) {
 
   onProgress(`Imported "${title}" into ${subfolderName} folder.`);
   showToast(`Imported "${title}" successfully`, 'success');
+
+  // Record in import history
+  userData.addImportEntry({
+    sheetId: created.spreadsheetId,
+    sheetName: title,
+    templateKey: templateKey,
+  });
 
   return {
     sheetId: created.spreadsheetId,

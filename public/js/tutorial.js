@@ -5,7 +5,7 @@
    with spotlight highlights and tooltip explanations.
    ============================================================ */
 
-import * as storage from './storage.js';
+import * as userData from './user-data.js';
 
 /* ---------- Tutorial Steps ---------- */
 
@@ -106,7 +106,11 @@ function start() {
   const els = getElements();
   if (!eventsBound) { bindEvents(); eventsBound = true; }
   isActive = true;
-  currentStep = 0;
+
+  // Resume from last saved step if tutorial wasn't completed
+  const savedStep = userData.getTutorialStep();
+  currentStep = (savedStep > 0 && savedStep < STEPS.length) ? savedStep : 0;
+
   els.overlay.classList.remove('hidden');
   renderStep();
 }
@@ -116,12 +120,14 @@ function stop() {
   const els = getElements();
   els.overlay.classList.add('hidden');
   els.spotlight.style.display = 'none';
-  storage.setTutorialCompleted(true);
+  userData.setTutorialCompleted(true);
+  userData.setTutorialStep(currentStep);
 }
 
 function next() {
   if (currentStep < STEPS.length - 1) {
     currentStep++;
+    userData.setTutorialStep(currentStep);
     renderStep();
   } else {
     stop();
@@ -131,6 +137,7 @@ function next() {
 function prev() {
   if (currentStep > 0) {
     currentStep--;
+    userData.setTutorialStep(currentStep);
     renderStep();
   }
 }

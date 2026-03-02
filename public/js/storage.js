@@ -80,6 +80,84 @@ export function setTutorialCompleted(done) {
   set('tutorial_completed', !!done);
 }
 
+export function getTutorialStep() {
+  return get('tutorial_step') || 0;
+}
+
+export function setTutorialStep(step) {
+  set('tutorial_step', step);
+}
+
+/* --- Recent Sheets --- */
+
+export function getRecentSheets() {
+  return get('recent_sheets') || [];
+}
+
+export function setRecentSheets(sheets) {
+  set('recent_sheets', sheets);
+}
+
+/* --- Search History --- */
+
+export function getSearchHistory() {
+  return get('search_history') || [];
+}
+
+export function setSearchHistory(history) {
+  set('search_history', history);
+}
+
+/* --- Expanded Folders --- */
+
+export function getExpandedFolders() {
+  return get('expanded_folders') || [];
+}
+
+export function setExpandedFolders(folders) {
+  set('expanded_folders', folders);
+}
+
+/* --- Generated Categories --- */
+
+export function getGeneratedCategories() {
+  return get('generated_categories') || [];
+}
+
+export function setGeneratedCategories(categories) {
+  set('generated_categories', categories);
+}
+
+/* --- Import History --- */
+
+export function getImportHistory() {
+  return get('import_history') || [];
+}
+
+export function setImportHistory(history) {
+  set('import_history', history);
+}
+
+/* --- Dismissed Items --- */
+
+export function getDismissedItems() {
+  return get('dismissed_items') || [];
+}
+
+export function setDismissedItems(items) {
+  set('dismissed_items', items);
+}
+
+/* --- Sort Order --- */
+
+export function getSortOrder() {
+  return get('sort_order') || 'name';
+}
+
+export function setSortOrder(order) {
+  set('sort_order', order);
+}
+
 /* --- Clear All --- */
 
 export function clearAll() {
