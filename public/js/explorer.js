@@ -6,7 +6,7 @@
 
 import { api } from './api-client.js';
 import { el } from './ui.js';
-import * as storage from './storage.js';
+import * as userData from './user-data.js';
 
 let explorerRoot;
 let onNavigate;       // callback from app.js
@@ -24,6 +24,11 @@ export function init(containerEl, navigateFn) {
 }
 
 export async function load() {
+  // Restore expanded folders from persistent user data
+  const saved = userData.getExpandedFolders();
+  expandedSet.clear();
+  for (const id of saved) expandedSet.add(id);
+
   explorerRoot.innerHTML = '';
 
   const mySection  = el('div', { className: 'explorer-section' });
@@ -75,17 +80,17 @@ function buildFolderNode(folder, isShared = false) {
 
   // Pin button
   const pinBtn = el('button', {
-    className: `btn-pin${storage.isPinned(folder.id) ? ' pinned' : ''}`,
-    title: storage.isPinned(folder.id) ? 'Unpin folder' : 'Pin folder',
+    className: `btn-pin${userData.isPinned(folder.id) ? ' pinned' : ''}`,
+    title: userData.isPinned(folder.id) ? 'Unpin folder' : 'Pin folder',
     on: {
       click(e) {
         e.stopPropagation();
-        if (storage.isPinned(folder.id)) {
-          storage.removePinnedFolder(folder.id);
+        if (userData.isPinned(folder.id)) {
+          userData.removePinnedFolder(folder.id);
           pinBtn.classList.remove('pinned');
           pinBtn.title = 'Pin folder';
         } else {
-          storage.addPinnedFolder({
+          userData.addPinnedFolder({
             id: folder.id,
             name: folder.name,
             owner: folder.owners?.[0]?.emailAddress || folder.owner || null,
@@ -154,10 +159,12 @@ async function toggleFolder(folder, wrapper, childrenEl, expandIcon) {
     expandedSet.delete(folder.id);
     expandIcon.classList.remove('expanded');
     childrenEl.innerHTML = '';
+    userData.removeExpandedFolder(folder.id);
   } else {
     expandedSet.add(folder.id);
     expandIcon.classList.add('expanded');
     await loadChildren(folder.id, childrenEl);
+    userData.addExpandedFolder(folder.id);
   }
 }
 

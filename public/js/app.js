@@ -6,6 +6,7 @@
 
 import { api }       from './api-client.js';
 import * as storage  from './storage.js';
+import * as userData from './user-data.js';
 import { el, showView, showLoading, hideLoading, showToast, toggleSidebar } from './ui.js';
 import * as explorer from './explorer.js';
 import * as checklist from './checklist.js';
@@ -91,7 +92,7 @@ async function boot() {
   logoutBtn.addEventListener('click', handleLogout);
   sidebarToggle.addEventListener('click', () => {
     const open = toggleSidebar();
-    storage.setSidebarOpen(open);
+    userData.setSidebarOpen(open);
   });
   backBtn.addEventListener('click', () => { window.location.hash = '#/'; });
   folderBackBtn.addEventListener('click', () => { window.location.hash = '#/'; });
@@ -116,7 +117,7 @@ async function boot() {
   window.addEventListener('waymark:pins-changed', renderPinnedFolders);
 
   // Restore sidebar state
-  toggleSidebar(storage.getSidebarOpen());
+  toggleSidebar(userData.getSidebarOpen());
 
   // Attempt auth
   const user = await api.auth.init();
@@ -148,6 +149,13 @@ async function showApp(user) {
     userAvatarEl.classList.remove('hidden');
   }
 
+  // Initialize Drive-backed user data (pins, prefs, Waymark folder)
+  try {
+    await userData.init();
+  } catch (err) {
+    console.warn('user-data init failed, using localStorage fallback:', err);
+  }
+
   // Load explorer & collect known sheets before routing
   await explorer.load();
   await collectKnownSheets();
@@ -157,7 +165,7 @@ async function showApp(user) {
   window.addEventListener('hashchange', handleRoute);
 
   // Show tutorial for first-time users
-  if (!storage.getTutorialCompleted()) {
+  if (!userData.getTutorialCompleted()) {
     setTimeout(() => Tutorial.start(), 600);
   }
 
@@ -169,6 +177,7 @@ async function showApp(user) {
 
 async function handleLogout() {
   await api.auth.logout();
+  await userData.clearAll();
   storage.clearAll();
   loginScreen.classList.remove('hidden');
   appScreen.classList.add('hidden');
@@ -191,30 +200,30 @@ function handleRoute() {
     const sheetId = hash.replace('#/sheet/', '');
     showView('checklist');
     checklist.show(sheetId);
-    storage.setLastView(hash);
+    userData.setLastView(hash);
   } else if (hash.startsWith('#/folder/')) {
     const parts = hash.replace('#/folder/', '').split('/');
     const folderId = parts[0];
     const folderName = decodeURIComponent(parts.slice(1).join('/') || 'Folder');
     showView('folder');
     showFolderContents(folderId, folderName);
-    storage.setLastView(hash);
+    userData.setLastView(hash);
   } else if (hash.startsWith('#/search')) {
     showView('search');
     search.searchFromHash(hash);
-    storage.setLastView(hash);
+    userData.setLastView(hash);
   } else {
     // Home
     showView('home');
     renderPinnedFolders();
-    storage.setLastView('#/');
+    userData.setLastView('#/');
   }
 }
 
 /* ---------- Home — Pinned Folders ---------- */
 
 function renderPinnedFolders() {
-  const pinned = storage.getPinnedFolders();
+  const pinned = userData.getPinnedFolders();
   const container = document.getElementById('pinned-folders');
   const emptyMsg  = document.getElementById('no-pinned');
 

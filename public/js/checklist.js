@@ -6,7 +6,7 @@
 
 import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
-import * as storage from './storage.js';
+import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 
 let currentSheetId = null;
@@ -28,7 +28,7 @@ export function init() {
   templateBadge = document.getElementById('template-badge');
   openInSheetsBtn = document.getElementById('open-in-sheets-btn');
 
-  autoToggle.checked = storage.getAutoRefresh();
+  autoToggle.checked = userData.getAutoRefresh();
 
   refreshBtn.addEventListener('click', () => {
     if (currentSheetId) loadSheet(currentSheetId);
@@ -43,7 +43,7 @@ export function init() {
   }
 
   autoToggle.addEventListener('change', () => {
-    storage.setAutoRefresh(autoToggle.checked);
+    userData.setAutoRefresh(autoToggle.checked);
     resetTimer();
   });
 
@@ -96,6 +96,11 @@ async function loadSheet(sheetId) {
     renderWithTemplate(data.values || []);
     lastFetchTime = new Date();
     updateTimestamp();
+
+    // Track as a recently opened sheet
+    const headers = data.values?.[0] || [];
+    const { key: templateKey } = detectTemplate(headers);
+    userData.addRecentSheet({ id: sheetId, name: data.title, templateKey });
   } catch (err) {
     showToast(`Failed to load sheet: ${err.message}`, 'error');
     itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;
@@ -143,7 +148,7 @@ function resetTimer() {
   clearInterval(refreshTimer);
   refreshTimer = null;
 
-  if (currentSheetId && storage.getAutoRefresh() && !document.hidden) {
+  if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
     refreshTimer = setInterval(() => {
       if (currentSheetId) loadSheet(currentSheetId);
     }, 60_000);

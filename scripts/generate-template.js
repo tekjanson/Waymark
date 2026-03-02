@@ -303,7 +303,7 @@ function main() {
     { label: 'CSS Styles (append to style.css)', content: css },
     { label: 'E2E Tests (append to templates.spec.js)', content: tests },
     { label: 'API Client Mapping (add to loadMockSheet mapping)', content: apiMapping },
-    { label: 'Folder Entry (add to folders.json WayMark Examples files array)', content: folderEntry },
+    { label: 'Folder Entry (add to folders.json Waymark/Examples files array)', content: folderEntry },
     { label: 'Registry Entry (add to template-registry.json templates array)', content: registryEntry },
   ];
 

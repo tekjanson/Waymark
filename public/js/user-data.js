@@ -1,0 +1,480 @@
+/* ============================================================
+   user-data.js — Persistent user data stored in Google Drive
+
+   Manages a "Waymark" root folder in the user's Drive with:
+     Waymark/
+       .waymark-data.json   ← user settings, pins, preferences
+       Examples/             ← generated example sheets
+       Imports/              ← imported sheets
+
+   Data is cached in memory and synced to Drive on writes.
+   Falls back to localStorage when Drive is unavailable.
+   ============================================================ */
+
+import { api } from './api-client.js';
+import * as storage from './storage.js';
+
+/* ---------- Constants ---------- */
+
+const WAYMARK_ROOT_FOLDER = 'Waymark';
+const DATA_FILENAME = '.waymark-data.json';
+const EXAMPLES_FOLDER = 'Examples';
+const IMPORTS_FOLDER = 'Imports';
+
+/* ---------- Default user data schema ---------- */
+
+/**
+ * Schema v2 — everything the app needs to persist across
+ * sessions and devices.  Fields are merge-safe: new keys are
+ * added silently via the spread in _doInit().
+ */
+function defaultUserData() {
+  return {
+    version: 2,
+
+    /* ── Pins & navigation ── */
+    pinnedFolders: [],          // { id, name, owner?, shared? }[]
+    lastView: '/',              // URL hash of last route
+
+    /* ── Preferences ── */
+    preferences: {
+      autoRefresh: true,        // auto-reload sheet every 60 s
+      sidebarOpen: true,        // explorer sidebar visible
+      sortOrder: 'name',        // explorer sort: 'name' | 'modified'
+      // Future: theme, density, viewMode
+    },
+
+    /* ── Tutorial ── */
+    tutorialCompleted: false,
+    tutorialStep: 0,            // last step reached (0-based)
+
+    /* ── Recent activity ── */
+    recentSheets: [],           // { id, name, templateKey?, openedAt }[]  (max 20)
+    searchHistory: [],          // { query, resultCount, searchedAt }[]  (max 30)
+
+    /* ── Explorer state ── */
+    expandedFolders: [],        // folder ID strings
+
+    /* ── Example generation log ── */
+    generatedCategories: [],    // category names already generated
+
+    /* ── Import history ── */
+    importHistory: [],          // { sheetId, sheetName, templateKey, importedAt }[]  (max 50)
+
+    /* ── Dismissed UI elements ── */
+    dismissedItems: [],         // string IDs of dismissed banners/tips/what's-new
+
+    /* ── Housekeeping ── */
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/* ---------- Capacity limits ---------- */
+const MAX_RECENT_SHEETS  = 20;
+const MAX_SEARCH_HISTORY = 30;
+const MAX_IMPORT_HISTORY = 50;
+
+/* ---------- Internal state ---------- */
+
+let _rootFolderId = null;      // cached Waymark folder ID
+let _dataFileId = null;        // cached .waymark-data.json file ID
+let _userData = null;           // cached user data in memory
+let _initialized = false;
+let _initPromise = null;        // singleton init promise to avoid races
+
+/* ---------- Initialization ---------- */
+
+/**
+ * Ensure the Waymark root folder and data file exist.
+ * This is idempotent — calling it multiple times is safe.
+ * @returns {Promise<void>}
+ */
+export async function init() {
+  if (_initialized) return;
+  if (_initPromise) return _initPromise;
+
+  _initPromise = _doInit();
+  try {
+    await _initPromise;
+    _initialized = true;
+  } finally {
+    _initPromise = null;
+  }
+}
+
+async function _doInit() {
+  try {
+    // Find or create the Waymark root folder
+    _rootFolderId = await ensureFolder(WAYMARK_ROOT_FOLDER);
+
+    // Find or create the data file
+    const existing = await api.drive.findFile(DATA_FILENAME, _rootFolderId);
+    if (existing) {
+      _dataFileId = existing.id;
+      _userData = await api.drive.readJsonFile(existing.id);
+      // Merge with defaults for forward-compat (new fields added later)
+      _userData = { ...defaultUserData(), ..._userData };
+    } else {
+      // Seed from localStorage for migration
+      _userData = migrateFromLocalStorage();
+      const created = await api.drive.createJsonFile(
+        DATA_FILENAME,
+        _userData,
+        [_rootFolderId]
+      );
+      _dataFileId = created.id;
+    }
+
+    // Sync loaded data back to localStorage as a fallback cache
+    syncToLocalStorage(_userData);
+  } catch (err) {
+    console.warn('[user-data] Drive init failed, falling back to localStorage:', err);
+    _userData = migrateFromLocalStorage();
+  }
+}
+
+/* ---------- Folder helpers ---------- */
+
+/**
+ * Get the Waymark root folder ID (initializes if needed).
+ * @returns {Promise<string>}
+ */
+export async function getRootFolderId() {
+  await init();
+  return _rootFolderId;
+}
+
+/**
+ * Get (or create) the Examples subfolder inside Waymark/.
+ * @returns {Promise<string>}  folder ID
+ */
+export async function getExamplesFolderId() {
+  await init();
+  return ensureFolder(EXAMPLES_FOLDER, _rootFolderId);
+}
+
+/**
+ * Get (or create) the Imports subfolder inside Waymark/.
+ * @returns {Promise<string>}  folder ID
+ */
+export async function getImportsFolderId() {
+  await init();
+  return ensureFolder(IMPORTS_FOLDER, _rootFolderId);
+}
+
+/**
+ * Find or create a folder by name, optionally within a parent.
+ * @param {string} name
+ * @param {string} [parentId]  parent folder ID (root if omitted)
+ * @returns {Promise<string>}  folder ID
+ */
+async function ensureFolder(name, parentId) {
+  const existing = await api.drive.findFolder(name, parentId);
+  if (existing) return existing.id;
+  const created = await api.drive.createFile(
+    name,
+    'application/vnd.google-apps.folder',
+    parentId ? [parentId] : []
+  );
+  return created.id;
+}
+
+/* ---------- Data access ---------- */
+
+/**
+ * Get the full user data object (read-only snapshot).
+ * @returns {Object}
+ */
+export function getData() {
+  return _userData ? { ..._userData } : defaultUserData();
+}
+
+/**
+ * Persist updated user data to Drive (and localStorage fallback).
+ * @param {Object} data  partial or full data to merge
+ * @returns {Promise<void>}
+ */
+async function save(data) {
+  _userData = { ..._userData, ...data, updatedAt: new Date().toISOString() };
+  syncToLocalStorage(_userData);
+
+  if (_dataFileId) {
+    try {
+      await api.drive.updateJsonFile(_dataFileId, _userData);
+    } catch (err) {
+      console.warn('[user-data] Drive save failed:', err);
+    }
+  }
+}
+
+/* ---------- Pinned Folders ---------- */
+
+/**
+ * @returns {{ id: string, name: string, owner?: string, shared?: boolean }[]}
+ */
+export function getPinnedFolders() {
+  return (_userData?.pinnedFolders) || [];
+}
+
+export async function setPinnedFolders(folders) {
+  await save({ pinnedFolders: folders });
+}
+
+export async function addPinnedFolder(folder) {
+  const pinned = getPinnedFolders();
+  if (pinned.find(f => f.id === folder.id)) return;
+  pinned.push(folder);
+  await save({ pinnedFolders: pinned });
+}
+
+export async function removePinnedFolder(folderId) {
+  await save({ pinnedFolders: getPinnedFolders().filter(f => f.id !== folderId) });
+}
+
+export function isPinned(folderId) {
+  return getPinnedFolders().some(f => f.id === folderId);
+}
+
+/* ---------- Preferences ---------- */
+
+export function getAutoRefresh() {
+  return _userData?.preferences?.autoRefresh ?? true;
+}
+
+export async function setAutoRefresh(enabled) {
+  const prefs = { ...(_userData?.preferences || {}), autoRefresh: !!enabled };
+  await save({ preferences: prefs });
+}
+
+export function getLastView() {
+  return _userData?.lastView || '/';
+}
+
+export async function setLastView(hash) {
+  await save({ lastView: hash });
+}
+
+export function getSidebarOpen() {
+  return _userData?.preferences?.sidebarOpen ?? true;
+}
+
+export async function setSidebarOpen(open) {
+  const prefs = { ...(_userData?.preferences || {}), sidebarOpen: !!open };
+  await save({ preferences: prefs });
+}
+
+/* ---------- Tutorial ---------- */
+
+export function getTutorialCompleted() {
+  return !!_userData?.tutorialCompleted;
+}
+
+export async function setTutorialCompleted(done) {
+  await save({ tutorialCompleted: !!done });
+}
+
+export function getTutorialStep() {
+  return _userData?.tutorialStep ?? 0;
+}
+
+export async function setTutorialStep(step) {
+  await save({ tutorialStep: step });
+}
+
+/* ---------- Recent Sheets ---------- */
+
+/**
+ * @returns {{ id: string, name: string, templateKey?: string, openedAt: string }[]}
+ */
+export function getRecentSheets() {
+  return (_userData?.recentSheets) || [];
+}
+
+/**
+ * Record that a sheet was opened. Moves duplicates to the top and caps the list.
+ * @param {{ id: string, name: string, templateKey?: string }} sheet
+ */
+export async function addRecentSheet(sheet) {
+  const recent = getRecentSheets().filter(s => s.id !== sheet.id);
+  recent.unshift({ ...sheet, openedAt: new Date().toISOString() });
+  if (recent.length > MAX_RECENT_SHEETS) recent.length = MAX_RECENT_SHEETS;
+  await save({ recentSheets: recent });
+}
+
+/* ---------- Search History ---------- */
+
+/**
+ * @returns {{ query: string, resultCount: number, searchedAt: string }[]}
+ */
+export function getSearchHistory() {
+  return (_userData?.searchHistory) || [];
+}
+
+/**
+ * Record a search query. Deduplicates (most recent wins) and caps.
+ */
+export async function addSearchEntry(query, resultCount) {
+  const history = getSearchHistory().filter(e => e.query !== query);
+  history.unshift({ query, resultCount, searchedAt: new Date().toISOString() });
+  if (history.length > MAX_SEARCH_HISTORY) history.length = MAX_SEARCH_HISTORY;
+  await save({ searchHistory: history });
+}
+
+/* ---------- Expanded Folders ---------- */
+
+/**
+ * @returns {string[]}  array of folder IDs
+ */
+export function getExpandedFolders() {
+  return (_userData?.expandedFolders) || [];
+}
+
+export async function setExpandedFolders(folderIds) {
+  await save({ expandedFolders: folderIds });
+}
+
+export async function addExpandedFolder(folderId) {
+  const expanded = getExpandedFolders();
+  if (!expanded.includes(folderId)) {
+    expanded.push(folderId);
+    await save({ expandedFolders: expanded });
+  }
+}
+
+export async function removeExpandedFolder(folderId) {
+  await save({ expandedFolders: getExpandedFolders().filter(id => id !== folderId) });
+}
+
+/* ---------- Generated Categories ---------- */
+
+/**
+ * @returns {string[]}  category names that have been generated
+ */
+export function getGeneratedCategories() {
+  return (_userData?.generatedCategories) || [];
+}
+
+export async function addGeneratedCategories(categories) {
+  const existing = new Set(getGeneratedCategories());
+  for (const c of categories) existing.add(c);
+  await save({ generatedCategories: [...existing] });
+}
+
+/* ---------- Import History ---------- */
+
+/**
+ * @returns {{ sheetId: string, sheetName: string, templateKey: string, importedAt: string }[]}
+ */
+export function getImportHistory() {
+  return (_userData?.importHistory) || [];
+}
+
+export async function addImportEntry(entry) {
+  const history = getImportHistory();
+  history.unshift({ ...entry, importedAt: new Date().toISOString() });
+  if (history.length > MAX_IMPORT_HISTORY) history.length = MAX_IMPORT_HISTORY;
+  await save({ importHistory: history });
+}
+
+/* ---------- Dismissed UI Items ---------- */
+
+/**
+ * @returns {string[]}  IDs of dismissed banners/tips
+ */
+export function getDismissedItems() {
+  return (_userData?.dismissedItems) || [];
+}
+
+export function isDismissed(itemId) {
+  return getDismissedItems().includes(itemId);
+}
+
+export async function dismissItem(itemId) {
+  const items = getDismissedItems();
+  if (!items.includes(itemId)) {
+    items.push(itemId);
+    await save({ dismissedItems: items });
+  }
+}
+
+/* ---------- Sort Order ---------- */
+
+export function getSortOrder() {
+  return _userData?.preferences?.sortOrder || 'name';
+}
+
+export async function setSortOrder(order) {
+  const prefs = { ...(_userData?.preferences || {}), sortOrder: order };
+  await save({ preferences: prefs });
+}
+
+/* ---------- localStorage migration / fallback ---------- */
+
+/**
+ * Migrate existing localStorage data into the Drive-backed format.
+ */
+function migrateFromLocalStorage() {
+  return {
+    ...defaultUserData(),
+    pinnedFolders: storage.getPinnedFolders(),
+    preferences: {
+      autoRefresh: storage.getAutoRefresh(),
+      sidebarOpen: storage.getSidebarOpen(),
+      sortOrder: storage.getSortOrder?.() || 'name',
+    },
+    tutorialCompleted: storage.getTutorialCompleted(),
+    tutorialStep: storage.getTutorialStep?.() || 0,
+    lastView: storage.getLastView(),
+    recentSheets: storage.getRecentSheets?.() || [],
+    searchHistory: storage.getSearchHistory?.() || [],
+    expandedFolders: storage.getExpandedFolders?.() || [],
+    generatedCategories: storage.getGeneratedCategories?.() || [],
+    importHistory: storage.getImportHistory?.() || [],
+    dismissedItems: storage.getDismissedItems?.() || [],
+  };
+}
+
+/**
+ * Keep localStorage in sync as a fast cache / offline fallback.
+ */
+function syncToLocalStorage(data) {
+  try {
+    storage.setPinnedFolders(data.pinnedFolders || []);
+    storage.setAutoRefresh(data.preferences?.autoRefresh ?? true);
+    storage.setSidebarOpen(data.preferences?.sidebarOpen ?? true);
+    storage.setTutorialCompleted(data.tutorialCompleted || false);
+    storage.setLastView(data.lastView || '/');
+    // Extended fields
+    if (storage.setTutorialStep) storage.setTutorialStep(data.tutorialStep || 0);
+    if (storage.setRecentSheets) storage.setRecentSheets(data.recentSheets || []);
+    if (storage.setSearchHistory) storage.setSearchHistory(data.searchHistory || []);
+    if (storage.setExpandedFolders) storage.setExpandedFolders(data.expandedFolders || []);
+    if (storage.setGeneratedCategories) storage.setGeneratedCategories(data.generatedCategories || []);
+    if (storage.setImportHistory) storage.setImportHistory(data.importHistory || []);
+    if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
+    if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
+  } catch { /* localStorage quota / private mode */ }
+}
+
+/* ---------- Clear / Reset ---------- */
+
+/**
+ * Clear all user data (Drive file + localStorage).
+ */
+export async function clearAll() {
+  _userData = defaultUserData();
+  storage.clearAll();
+  if (_dataFileId) {
+    try {
+      await api.drive.updateJsonFile(_dataFileId, _userData);
+    } catch { /* ignore */ }
+  }
+}
+
+/* ---------- Folder name exports (for other modules) ---------- */
+
+export const FOLDER_NAMES = {
+  root: WAYMARK_ROOT_FOLDER,
+  examples: EXAMPLES_FOLDER,
+  imports: IMPORTS_FOLDER,
+};

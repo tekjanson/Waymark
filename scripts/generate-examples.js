@@ -319,9 +319,13 @@ async function main() {
 
   const token = await getAccessToken();
 
-  // Create root folder
-  console.log('Creating "WayMark Examples" folder...');
-  const rootFolder = await createDriveFolder(token, 'WayMark Examples');
+  // Create Waymark root folder, then Examples subfolder
+  console.log('Creating "Waymark" folder...');
+  const waymarkFolder = await createDriveFolder(token, 'Waymark');
+  console.log(`  → ${waymarkFolder.id}`);
+
+  console.log('Creating "Examples" subfolder...');
+  const rootFolder = await createDriveFolder(token, 'Examples', [waymarkFolder.id]);
   console.log(`  → ${rootFolder.id}`);
 
   // Create subfolders
@@ -344,7 +348,7 @@ async function main() {
     console.log(`  → ${result.spreadsheetId}`);
   }
 
-  console.log(`\nDone! Created ${count} sheets in "WayMark Examples" folder.`);
+  console.log(`\nDone! Created ${count} sheets in "Waymark/Examples" folder.`);
   console.log(`Root folder ID: ${rootFolder.id}`);
   console.log(`View at: https://drive.google.com/drive/folders/${rootFolder.id}`);
 }

@@ -293,6 +293,73 @@ export const api = {
       const token = await clientAuth.getToken();
       return driveApi.getFile(token, fileId);
     },
+
+    async findFile(name, parentId) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const search = (folders) => {
+          for (const f of folders) {
+            if (f.name === name) return f;
+            if (f.children) {
+              const found = search(f.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        return search(fix.folders.myDrive) || null;
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.findFile(token, name, parentId);
+    },
+
+    async createJsonFile(name, content, parents) {
+      if (isLocal) {
+        const record = {
+          id: `json-${Date.now()}`,
+          name,
+          mimeType: 'application/json',
+          content,
+          parents,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        // Store in a local map for subsequent reads
+        if (!window.__WAYMARK_JSON_FILES) window.__WAYMARK_JSON_FILES = {};
+        window.__WAYMARK_JSON_FILES[record.id] = content;
+        return record;
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.createJsonFile(token, name, content, parents);
+    },
+
+    async readJsonFile(fileId) {
+      if (isLocal) {
+        if (window.__WAYMARK_JSON_FILES?.[fileId]) {
+          return window.__WAYMARK_JSON_FILES[fileId];
+        }
+        return {};
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.readJsonFile(token, fileId);
+    },
+
+    async updateJsonFile(fileId, content) {
+      if (isLocal) {
+        if (!window.__WAYMARK_JSON_FILES) window.__WAYMARK_JSON_FILES = {};
+        window.__WAYMARK_JSON_FILES[fileId] = content;
+        const record = {
+          type: 'json-update',
+          fileId,
+          content,
+          updatedAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return { id: fileId, name: 'updated', mimeType: 'application/json' };
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.updateJsonFile(token, fileId, content);
+    },
   },
 
   /* ---- Sheets ---- */

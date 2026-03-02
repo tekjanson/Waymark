@@ -143,3 +143,84 @@ export async function getFile(token, fileId) {
   if (!res.ok) throw new Error(`Drive getFile ${res.status}`);
   return res.json();
 }
+
+/**
+ * Find a file by name inside a folder (any MIME type).
+ * @param {string} token
+ * @param {string} name       file name to search for
+ * @param {string} parentId   parent folder ID
+ * @returns {Promise<Object|null>}
+ */
+export async function findFile(token, name, parentId) {
+  const q = `'${parentId}' in parents and name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
+  const result = await list(token, { q });
+  return result.files?.[0] || null;
+}
+
+/**
+ * Create a file with JSON content (multipart upload).
+ * Used for storing app data (settings, pins, etc.) in Drive.
+ * @param {string} token
+ * @param {string} name       file name (e.g. 'waymark-settings.json')
+ * @param {Object} content    JSON-serializable content
+ * @param {string[]} parents  parent folder IDs
+ * @returns {Promise<Object>}  created file metadata
+ */
+export async function createJsonFile(token, name, content, parents = []) {
+  const metadata = { name, mimeType: 'application/json', parents };
+  const body = JSON.stringify(content, null, 2);
+
+  const boundary = '----WayMarkBoundary' + Date.now();
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify(metadata) +
+    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+    body +
+    `\r\n--${boundary}--`;
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: multipart,
+  });
+  if (!res.ok) throw new Error(`Drive createJsonFile ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Read JSON content from a Drive file.
+ * @param {string} token
+ * @param {string} fileId
+ * @returns {Promise<Object>}  parsed JSON content
+ */
+export async function readJsonFile(token, fileId) {
+  const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Drive readJsonFile ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Update JSON content of an existing Drive file.
+ * @param {string} token
+ * @param {string} fileId
+ * @param {Object} content  JSON-serializable content
+ * @returns {Promise<Object>}  updated file metadata
+ */
+export async function updateJsonFile(token, fileId, content) {
+  const body = JSON.stringify(content, null, 2);
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body,
+  });
+  if (!res.ok) throw new Error(`Drive updateJsonFile ${res.status}`);
+  return res.json();
+}
