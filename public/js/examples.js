@@ -1,8 +1,9 @@
 /* ============================================================
    examples.js — Generate example sheets in the user's Drive
    
-   Creates a "WayMark Examples" folder with subfolders for
-   each template type, each containing sample spreadsheets.
+   Creates example sheets under the organized Waymark directory:
+     Waymark/Examples/<template-type>/
+   
    Uses the existing API layer (works in both local + live mode).
    
    REUSES existing folders — clicking generate multiple times
@@ -14,6 +15,7 @@
 import { api } from './api-client.js';
 import { showToast } from './ui.js';
 import { EXAMPLE_SHEETS } from './example-data.js';
+import * as userData from './user-data.js';
 
 // Re-export so existing consumers don't break
 export { EXAMPLE_SHEETS };
@@ -74,8 +76,8 @@ async function sheetExistsInFolder(folderId, sheetName) {
 
 /**
  * Generate example sheets in the user's Google Drive.
- * Reuses existing "WayMark Examples" folder and subfolders.
- * Skips sheets that already exist (by name) in their subfolder.
+ * Places sheets under Waymark/Examples/<template-type>/.
+ * Reuses existing folders; skips sheets that already exist.
  * @param {function} onProgress  callback(message) for status updates
  * @param {string[]} [selectedCategories]  optional list of category names to generate (all if omitted)
  * @returns {Promise<{folderId: string, count: number, skipped: number}>}
@@ -85,8 +87,8 @@ export async function generateExamples(onProgress = () => {}, selectedCategories
   isGenerating = true;
 
   try {
-    onProgress('Looking for existing WayMark Examples folder…');
-    const rootFolder = await findOrCreateFolder('WayMark Examples');
+    onProgress('Setting up Waymark/Examples folder…');
+    const examplesFolderId = await userData.getExamplesFolderId();
 
     // Filter entries by selected categories
     const entries = Object.entries(EXAMPLE_SHEETS).filter(([, def]) => {
@@ -100,7 +102,7 @@ export async function generateExamples(onProgress = () => {}, selectedCategories
 
     for (const name of subfolderNames) {
       onProgress(`Setting up folder: ${name}`);
-      const folder = await findOrCreateFolder(name, rootFolder.id);
+      const folder = await findOrCreateFolder(name, examplesFolderId);
       subfolders[name] = folder.id;
     }
 
@@ -127,10 +129,14 @@ export async function generateExamples(onProgress = () => {}, selectedCategories
 
     const msg = skipped > 0
       ? `Done! Created ${count} new sheets, skipped ${skipped} existing.`
-      : `Done! Created ${count} example sheets in "WayMark Examples" folder.`;
+      : `Done! Created ${count} example sheets in "Waymark/Examples" folder.`;
     onProgress(msg);
     showToast(msg, 'success');
-    return { folderId: rootFolder.id, count, skipped };
+
+    // Record which categories were generated
+    userData.addGeneratedCategories(subfolderNames);
+
+    return { folderId: examplesFolderId, count, skipped };
 
   } finally {
     isGenerating = false;

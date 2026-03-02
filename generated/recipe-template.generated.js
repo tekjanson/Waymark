@@ -273,7 +273,7 @@ test('recipe shows first item text', async ({ page }) => {
     'sheet-027': 'recipe-spaghetti-bolognese',
 
 /* ──────────────────────────────────────────────────────────── */
-/* Folder Entry (add to folders.json WayMark Examples files array) */
+/* Folder Entry (add to folders.json Waymark/Examples files array) */
 /* ──────────────────────────────────────────────────────────── */
 
 {
