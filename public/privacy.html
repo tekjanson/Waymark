@@ -9,34 +9,50 @@
 <body>
   <main id="content" style="max-width: 900px; margin: 0 auto; padding: 24px;">
     <h1>WayMark Privacy Policy</h1>
-    <p class="text-muted">Last updated: February 28, 2026</p>
+    <p class="text-muted">Last updated: March 2, 2026</p>
 
     <h2>1. Overview</h2>
     <p>WayMark helps users interact with data stored in Google Sheets and Google Drive. This policy explains what information is processed and how it is used.</p>
 
-    <h2>2. Information We Process</h2>
+    <h2>2. Browser-First Architecture</h2>
+    <p><strong>All data processing happens entirely in your web browser.</strong> The WayMark server serves the application files and brokers OAuth authentication &mdash; it never receives, inspects, or stores your spreadsheet content, Drive files, or any other user data. Your Google Sheets and Drive data is fetched directly from Google's APIs by JavaScript running in your browser. Template detection, data analysis, import processing, and rendering all happen client-side.</p>
+
+    <h2>3. Information We Process</h2>
+    <p>WayMark processes the following <strong>in your browser</strong>:</p>
     <ul>
       <li>Google account basic profile information (name, email, profile image)</li>
       <li>OAuth tokens required to access approved Google APIs</li>
-      <li>Google Drive and Google Sheets metadata/content needed for app features</li>
+      <li>Google Drive and Google Sheets metadata and content needed for app features</li>
+      <li>Data you import from external files or URLs (processed entirely client-side)</li>
+    </ul>
+    <p>WayMark does not sell personal information.</p>
+
+    <h2>4. Google API Data Use</h2>
+    <p>WayMark uses Google APIs only to provide core app functionality requested by the user. All Google API calls are made directly from your browser to Google's servers. WayMark's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including Limited Use requirements.</p>
+
+    <h2>5. Data Import &amp; Recipe Scraping</h2>
+    <p>WayMark lets you import data from Google Sheets, Google Docs, and recipe URLs. Your browser reads the source, analyzes its structure, and writes converted data to a new Google Sheet &mdash; all client-side. When you import a recipe from a URL, your browser fetches the page and extracts structured data directly. No imported content is transmitted to or stored on WayMark's servers.</p>
+
+    <h2>6. Session Handling</h2>
+    <p>OAuth is handled through Google. Access tokens are short-lived and held in browser memory. Refresh tokens may be stored in secure, HTTP-only cookies managed by the server. The server never uses these tokens to access your data &mdash; they are returned to your browser for client-side API calls.</p>
+
+    <h2>7. Data Storage</h2>
+    <ul>
+      <li><strong>Google Drive:</strong> Your files and WayMark user preferences are stored in your own Google Drive account.</li>
+      <li><strong>Browser localStorage:</strong> Non-sensitive UI preferences (theme, sidebar state, tutorial progress) are stored locally on your device and never leave it.</li>
+      <li><strong>WayMark server:</strong> Stores nothing &mdash; no database, no cache, no session store, no user data.</li>
     </ul>
 
-    <h2>3. Google API Data Use</h2>
-    <p>WayMark uses Google APIs only to provide core app functionality requested by the user. WayMark’s use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including Limited Use requirements.</p>
+    <h2>8. Data Sharing</h2>
+    <p>WayMark does not share your data with third parties except: Google services you authorize through OAuth, infrastructure providers required to run the app, or where required by law. Because all processing is browser-based, your file contents are never accessible to WayMark infrastructure.</p>
 
-    <h2>4. Session Handling</h2>
-    <p>OAuth is handled through Google. Access tokens are short-lived and used for authorized requests. Refresh tokens may be stored in secure, HTTP-only cookies on the server.</p>
+    <h2>9. Security</h2>
+    <p>WayMark applies reasonable safeguards such as HTTPS in production, secure cookie settings, and least-privilege API scopes. The browser-first architecture limits your data exposure to your own browser session and Google's APIs. No method of transmission or storage is 100% secure.</p>
 
-    <h2>5. Data Sharing</h2>
-    <p>WayMark does not sell personal information. Data is shared only with authorized Google services, infrastructure providers required to run the app, or where required by law.</p>
+    <h2>10. Your Choices</h2>
+    <p>You can revoke access anytime in your Google Account permissions settings, clear browser localStorage to remove local preferences, and stop using the app at any time.</p>
 
-    <h2>6. Security</h2>
-    <p>WayMark applies reasonable safeguards such as HTTPS in production and secure cookie settings. No method of transmission or storage is 100% secure.</p>
-
-    <h2>7. Your Choices</h2>
-    <p>You can revoke access anytime in your Google Account permissions settings and stop using the app at any time.</p>
-
-    <h2>8. Contact</h2>
+    <h2>11. Contact</h2>
     <p>For privacy inquiries, use your project support contact email and/or website support channel.</p>
 
     <p><a href="/">Back to WayMark</a></p>
