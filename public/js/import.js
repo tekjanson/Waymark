@@ -118,6 +118,83 @@ const ROLE_LABELS = {
   'roster.role': 'Role / Position',
   'roster.shift': 'Shift / Schedule',
   'roster.days': 'Day Assignments',
+  // Recipe (row-per-item: each ingredient and step is its own row)
+  'recipe.text': 'Recipe Name',
+  'recipe.servings': 'Number of Servings',
+  'recipe.prepTime': 'Prep Time',
+  'recipe.cookTime': 'Cook Time',
+  'recipe.category': 'Cuisine / Category',
+  'recipe.difficulty': 'Difficulty Level',
+  'recipe.ingredient': 'Ingredient (one per row)',
+  'recipe.step': 'Step / Instruction (one per row)',
+};
+
+/**
+ * Canonical header names that each template's detect() / columns() functions
+ * recognise.  Used to rename columns when a user overrides the auto-detected
+ * template so the imported sheet renders correctly when opened.
+ *
+ * Convention: pick the header name used in the existing fixtures / examples.
+ */
+const CANONICAL_HEADERS = {
+  // Checklist
+  'checklist.status': 'Status', 'checklist.text': 'Item',
+  'checklist.date': 'Date', 'checklist.notes': 'Notes', 'checklist.category': 'Category',
+  // Tracker
+  'tracker.text': 'Goal', 'tracker.progress': 'Progress',
+  'tracker.target': 'Target', 'tracker.notes': 'Notes',
+  // Schedule
+  'schedule.text': 'Activity', 'schedule.time': 'Time',
+  'schedule.day': 'Day', 'schedule.location': 'Location',
+  // Inventory
+  'inventory.text': 'Item', 'inventory.quantity': 'Quantity',
+  'inventory.category': 'Category', 'inventory.extra': 'Price',
+  // Contacts
+  'contacts.name': 'Name', 'contacts.email': 'Email',
+  'contacts.phone': 'Phone', 'contacts.role': 'Role',
+  // Log
+  'log.text': 'Activity', 'log.timestamp': 'Date',
+  'log.type': 'Type', 'log.duration': 'Duration',
+  // Test Cases
+  'testcases.text': 'Test Case', 'testcases.result': 'Result',
+  'testcases.expected': 'Expected', 'testcases.actual': 'Actual',
+  'testcases.priority': 'Priority', 'testcases.notes': 'Notes',
+  // Budget
+  'budget.text': 'Description', 'budget.amount': 'Amount',
+  'budget.category': 'Category', 'budget.date': 'Date', 'budget.budget': 'Budget',
+  // Kanban
+  'kanban.text': 'Task', 'kanban.stage': 'Stage',
+  'kanban.assignee': 'Assignee', 'kanban.priority': 'Priority',
+  // Habit
+  'habit.text': 'Habit', 'habit.streak': 'Streak',
+  // Grading
+  'grading.student': 'Student', 'grading.grade': 'Grade',
+  // Timesheet
+  'timesheet.text': 'Project', 'timesheet.hours': 'Hours',
+  'timesheet.client': 'Client', 'timesheet.rate': 'Rate',
+  'timesheet.billable': 'Billable', 'timesheet.date': 'Date',
+  // Poll
+  'poll.text': 'Option', 'poll.votes': 'Votes',
+  'poll.percent': 'Percent', 'poll.notes': 'Notes',
+  // Changelog
+  'changelog.version': 'Version', 'changelog.date': 'Date',
+  'changelog.type': 'Type', 'changelog.description': 'Description',
+  // CRM
+  'crm.company': 'Company', 'crm.contact': 'Contact',
+  'crm.stage': 'Deal Stage', 'crm.value': 'Value', 'crm.notes': 'Notes',
+  // Meal
+  'meal.meal': 'Meal', 'meal.day': 'Day',
+  'meal.recipe': 'Recipe', 'meal.calories': 'Calories', 'meal.protein': 'Protein',
+  // Travel
+  'travel.activity': 'Activity', 'travel.date': 'Date',
+  'travel.location': 'Location', 'travel.booking': 'Booking', 'travel.cost': 'Cost',
+  // Roster
+  'roster.employee': 'Employee', 'roster.role': 'Role', 'roster.shift': 'Shift',
+  // Recipe
+  'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
+  'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',
+  'recipe.category': 'Category', 'recipe.difficulty': 'Difficulty',
+  'recipe.ingredient': 'Ingredient', 'recipe.step': 'Step',
 };
 
 /**
@@ -299,7 +376,7 @@ export function getTemplateRoles(templateKey) {
  * @returns {Promise<{sheetId: string, folderId: string}>}
  */
 export async function importSheet(sheetData, analysis, options = {}) {
-  const { remap = false, template, onProgress = () => {} } = options;
+  const { remap = false, template, columnMapping, onProgress = () => {} } = options;
 
   onProgress('Setting up Waymark/Imports folder…');
 
@@ -326,8 +403,17 @@ export async function importSheet(sheetData, analysis, options = {}) {
   let headers = sheetData.values?.[0] || [];
   let dataRows = (sheetData.values || []).slice(1);
 
-  if (remap && analysis.suggestedHeaders && analysis.columnMapping) {
-    // Remap columns from original to suggested order
+  // When user overrides the template, rename headers so the chosen
+  // template's detect() / columns() recognise them when the sheet is
+  // next opened.  This uses the user's column-role assignments from
+  // the mapping editor + the CANONICAL_HEADERS table.
+  if (columnMapping && templateKey) {
+    onProgress('Remapping columns…');
+    const remapped = remapForTemplate(headers, dataRows, templateKey, columnMapping);
+    headers = remapped.headers;
+    dataRows = remapped.rows;
+  } else if (remap && analysis.suggestedHeaders && analysis.columnMapping) {
+    // Legacy remap path — reorder columns per analysis suggestion
     onProgress('Remapping columns…');
     const remapped = remapData(headers, dataRows, analysis);
     headers = remapped.headers;
@@ -354,6 +440,29 @@ export async function importSheet(sheetData, analysis, options = {}) {
     sheetId: created.spreadsheetId,
     folderId: subfolder.id,
   };
+}
+
+/**
+ * Rename headers so the target template's detect() / columns() recognise them.
+ * Uses the user's column-role assignments (from the mapping editor UI) and the
+ * CANONICAL_HEADERS lookup to derive the correct header name for each column.
+ *
+ * Data rows are returned unchanged — only header strings are renamed.
+ *
+ * @param {string[]} origHeaders
+ * @param {string[][]} origRows
+ * @param {string} templateKey   target template key (e.g. 'recipe')
+ * @param {Object} columnMapping  { sourceHeader: roleKey | '(keep as-is)' }
+ * @returns {{ headers: string[], rows: string[][] }}
+ */
+function remapForTemplate(origHeaders, origRows, templateKey, columnMapping) {
+  const newHeaders = origHeaders.map(h => {
+    const role = columnMapping[h];
+    if (!role || role === '(keep as-is)') return h;
+    const canonical = CANONICAL_HEADERS[`${templateKey}.${role}`];
+    return canonical || h;
+  });
+  return { headers: newHeaders, rows: origRows };
 }
 
 /**

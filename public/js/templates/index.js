@@ -30,6 +30,7 @@ import './crm.js';
 import './meal.js';
 import './travel.js';
 import './roster.js';
+import './recipe.js';
 
 /* ---------- Detection ---------- */
 
