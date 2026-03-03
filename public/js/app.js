@@ -16,6 +16,7 @@ import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
+import { TEMPLATES } from './templates/index.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -31,6 +32,7 @@ const generateBtn   = document.getElementById('generate-examples-btn');
 const generateProg  = document.getElementById('generate-progress');
 const tutorialBtn   = document.getElementById('tutorial-btn');
 const importBtn     = document.getElementById('import-sheet-btn');
+const createSheetBtn = document.getElementById('create-sheet-btn');
 
 /* ---------- Example Modal refs ---------- */
 const examplesModal       = document.getElementById('examples-modal');
@@ -73,6 +75,39 @@ const recipeUrlInput       = document.getElementById('recipe-url-input');
 const recipeUrlImportBtn   = document.getElementById('recipe-url-import-btn');
 const recipeUrlStatus      = document.getElementById('recipe-url-status');
 
+/* ---------- Create Sheet Modal refs ---------- */
+const createSheetModal      = document.getElementById('create-sheet-modal');
+const createSheetModalClose = document.getElementById('create-sheet-modal-close');
+const createSheetCancelBtn  = document.getElementById('create-sheet-cancel-btn');
+const createSheetCreateBtn  = document.getElementById('create-sheet-create-btn');
+const createSheetNameInput  = document.getElementById('create-sheet-name');
+const createSheetGrid       = document.getElementById('create-sheet-templates');
+const createSheetStatus     = document.getElementById('create-sheet-status');
+const createSheetProgress   = document.getElementById('create-sheet-progress');
+
+/* ---------- Template headers for new sheet creation ---------- */
+const TEMPLATE_HEADERS = {
+  checklist:  ['Item', 'Status', 'Quantity', 'Notes'],
+  tracker:    ['Goal', 'Progress', 'Target', 'Notes'],
+  schedule:   ['Day', 'Time', 'Activity', 'Location'],
+  inventory:  ['Item', 'Quantity', 'Category', 'Expires'],
+  contacts:   ['Name', 'Phone', 'Email', 'Relationship'],
+  log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
+  budget:     ['Description', 'Amount', 'Category', 'Date', 'Budget'],
+  kanban:     ['Task', 'Stage', 'Assignee', 'Priority'],
+  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+  grading:    ['Student', 'Homework 1', 'Homework 2', 'Midterm', 'Final', 'Grade'],
+  timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
+  poll:       ['Option', 'Votes', 'Percent', 'Notes'],
+  changelog:  ['Version', 'Date', 'Type', 'What Changed'],
+  crm:        ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
+  meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
+  travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
+  roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
+  testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
+};
+
 /* ---------- Navigation callback ---------- */
 
 function navigate(type, id, name) {
@@ -113,11 +148,19 @@ async function boot() {
     importBtn.addEventListener('click', openImportModal);
   }
 
+  // Create new sheet — open create sheet modal
+  if (createSheetBtn) {
+    createSheetBtn.addEventListener('click', openCreateSheetModal);
+  }
+
   // Wire examples modal
   initExamplesModal();
 
   // Wire import modal
   initImportModal();
+
+  // Wire create sheet modal
+  initCreateSheetModal();
 
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderPinnedFolders);
@@ -449,6 +492,134 @@ async function handleModalGenerate() {
 
 async function handleGenerateExamples() {
   openExamplesModal();
+}
+
+/* ---------- Create Sheet Modal ---------- */
+
+let selectedTemplateKey = null;
+
+function initCreateSheetModal() {
+  if (!createSheetModal) return;
+
+  // Close modal handlers
+  createSheetModalClose.addEventListener('click', closeCreateSheetModal);
+  createSheetCancelBtn.addEventListener('click', closeCreateSheetModal);
+  createSheetModal.addEventListener('click', (e) => {
+    if (e.target === createSheetModal) closeCreateSheetModal();
+  });
+
+  // Name input enables/disables create button
+  createSheetNameInput.addEventListener('input', updateCreateSheetButton);
+
+  // Create button
+  createSheetCreateBtn.addEventListener('click', handleCreateSheet);
+}
+
+function openCreateSheetModal() {
+  selectedTemplateKey = null;
+  createSheetNameInput.value = '';
+  createSheetStatus.textContent = '';
+  createSheetCreateBtn.disabled = true;
+  createSheetCreateBtn.textContent = 'Create Sheet';
+  createSheetProgress.classList.add('hidden');
+  renderCreateSheetGrid();
+  createSheetModal.classList.remove('hidden');
+  createSheetNameInput.focus();
+}
+
+function closeCreateSheetModal() {
+  createSheetModal.classList.add('hidden');
+}
+
+function renderCreateSheetGrid() {
+  createSheetGrid.innerHTML = '';
+
+  // Sort templates alphabetically by name
+  const entries = Object.entries(TEMPLATES)
+    .filter(([key]) => TEMPLATE_HEADERS[key])
+    .sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+  for (const [key, tpl] of entries) {
+    const headers = TEMPLATE_HEADERS[key];
+    const card = el('div', {
+      className: 'create-sheet-card',
+      on: {
+        click() {
+          // Deselect previous
+          const prev = createSheetGrid.querySelector('.create-sheet-card.selected');
+          if (prev) prev.classList.remove('selected');
+          // Select this
+          card.classList.add('selected');
+          selectedTemplateKey = key;
+          // Auto-fill name if empty
+          if (!createSheetNameInput.value.trim()) {
+            createSheetNameInput.value = `My ${tpl.name}`;
+          }
+          updateCreateSheetButton();
+        },
+      },
+    }, [
+      el('span', { className: 'create-sheet-icon' }, [tpl.icon || '📋']),
+      el('div', { className: 'create-sheet-card-info' }, [
+        el('div', { className: 'create-sheet-card-name' }, [tpl.name]),
+        el('div', { className: 'create-sheet-card-headers' }, [headers.join(', ')]),
+      ]),
+    ]);
+    createSheetGrid.append(card);
+  }
+}
+
+function updateCreateSheetButton() {
+  const hasName = createSheetNameInput.value.trim().length > 0;
+  const hasTemplate = selectedTemplateKey !== null;
+  createSheetCreateBtn.disabled = !(hasName && hasTemplate);
+}
+
+async function handleCreateSheet() {
+  if (!selectedTemplateKey || !createSheetNameInput.value.trim()) return;
+
+  const title = createSheetNameInput.value.trim();
+  const headers = TEMPLATE_HEADERS[selectedTemplateKey];
+  if (!headers) return;
+
+  createSheetCreateBtn.disabled = true;
+  createSheetCreateBtn.textContent = 'Creating…';
+  createSheetCancelBtn.disabled = true;
+  createSheetProgress.classList.remove('hidden');
+  createSheetProgress.textContent = 'Creating sheet…';
+
+  try {
+    // Use the Waymark root folder as the parent
+    let parentId = null;
+    try {
+      parentId = await userData.getRootFolderId();
+    } catch {
+      // Fall back to root if folder lookup fails
+      parentId = null;
+    }
+
+    // Create the spreadsheet with just the header row
+    const result = await api.sheets.createSpreadsheet(title, [headers], parentId);
+
+    // Refresh explorer
+    await explorer.load();
+    collectKnownSheets();
+    closeCreateSheetModal();
+
+    showToast(`Created "${title}"`, 'success');
+
+    // Navigate to the new sheet
+    if (result && result.spreadsheetId) {
+      window.location.hash = `#/sheet/${result.spreadsheetId}`;
+    }
+  } catch (err) {
+    showToast(`Failed to create sheet: ${err.message}`, 'error');
+    createSheetProgress.textContent = `Error: ${err.message}`;
+  } finally {
+    createSheetCreateBtn.disabled = false;
+    createSheetCreateBtn.textContent = 'Create Sheet';
+    createSheetCancelBtn.disabled = false;
+  }
 }
 
 /* ---------- Import Modal ---------- */

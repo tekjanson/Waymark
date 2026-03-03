@@ -630,6 +630,45 @@ ul { list-style: none; }
 .example-category-name { font-weight: 600; font-size: 0.9rem; }
 .example-category-info .text-muted { font-size: 0.78rem; }
 
+/* ---------- Create Sheet Modal ---------- */
+.create-sheet-form {
+  padding: 12px 24px 0;
+}
+.create-sheet-label {
+  display: block; font-size: 0.82rem; font-weight: 600;
+  color: var(--color-text-secondary); margin-bottom: 6px;
+}
+.create-sheet-input {
+  width: 100%; padding: 10px 14px;
+  border: 1.5px solid var(--color-border); border-radius: var(--radius);
+  font-size: 0.95rem; color: var(--color-text);
+  background: var(--color-surface);
+  transition: border-color var(--transition);
+  box-sizing: border-box;
+}
+.create-sheet-input:focus {
+  outline: none; border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+.create-sheet-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px; padding: 12px 24px;
+  overflow-y: auto; max-height: 40vh;
+}
+.create-sheet-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: var(--radius);
+  border: 1.5px solid var(--color-border);
+  cursor: pointer; transition: all var(--transition);
+  user-select: none;
+}
+.create-sheet-card:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
+.create-sheet-card.selected { border-color: var(--color-primary); background: var(--color-primary-light); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.create-sheet-icon { font-size: 1.4rem; flex-shrink: 0; line-height: 1; }
+.create-sheet-card-info { flex: 1; min-width: 0; }
+.create-sheet-card-name { font-weight: 600; font-size: 0.9rem; }
+.create-sheet-card-headers { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- Tutorial Overlay ---------- */
 .tutorial-overlay {
   position: fixed; inset: 0; z-index: 600;

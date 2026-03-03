@@ -378,14 +378,25 @@ export const api = {
 
     async createSpreadsheet(title, rows, parentId) {
       if (isLocal) {
+        const sheetId = `created-sheet-${Date.now()}`;
         const record = {
-          spreadsheetId: `created-sheet-${Date.now()}`,
+          spreadsheetId: sheetId,
           title,
           rows,
           parentId,
           createdAt: new Date().toISOString(),
         };
         window.__WAYMARK_RECORDS.push(record);
+
+        // Register in fixture cache so getSpreadsheet can find it
+        const fix = await loadFixtures();
+        fix.sheets[sheetId] = {
+          id: sheetId,
+          title,
+          sheetTitle: 'Sheet1',
+          values: rows,
+        };
+
         return record;
       }
       const token = await clientAuth.getToken();
