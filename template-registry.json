@@ -638,15 +638,20 @@
       "name": "Recipe Book",
       "icon": "📖",
       "color": "#ea580c",
-      "priority": 17,
+      "priority": 24,
       "category": "Personal",
       "detectSignals": [
         "recipe",
+        "ingredient",
         "ingredients",
+        "step",
+        "instructions",
         "servings",
         "prep",
         "cook",
-        "cuisine"
+        "cuisine",
+        "difficulty",
+        "directions"
       ],
       "columnRoles": [
         "text",
@@ -654,10 +659,12 @@
         "prepTime",
         "cookTime",
         "category",
-        "difficulty"
+        "difficulty",
+        "ingredient",
+        "step"
       ],
-      "interactive": false,
-      "interactionType": "none",
+      "interactive": true,
+      "interactionType": "inline-edit",
       "exampleCount": 2,
       "fixtureIds": [
         "sheet-027"

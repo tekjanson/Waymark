@@ -64,6 +64,7 @@ async function loadMockSheet(sheetId) {
     'sheet-024': 'meal-weekly',
     'sheet-025': 'travel-europe',
     'sheet-026': 'roster-team',
+    'sheet-027': 'recipe-spaghetti-bolognese',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

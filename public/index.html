@@ -182,7 +182,22 @@
 
       <!-- Step 1: Pick a sheet -->
       <div id="import-step-pick" class="import-step">
-        <p class="modal-description">Select a Google Sheet or Doc from your Drive to import into WayMark. The data will be copied into a managed folder.</p>
+        <p class="modal-description">Select a Google Sheet or Doc from your Drive to import into WayMark, or import a recipe from a URL.</p>
+
+        <!-- Recipe URL Import -->
+        <div class="recipe-import-url-section">
+          <h4 style="margin:0 0 8px; font-size:0.85rem; color: #ea580c;">📖 Import Recipe from URL</h4>
+          <p class="text-muted" style="margin:0 0 8px; font-size:0.82rem;">Paste a link to a recipe page and WayMark will extract the ingredients and instructions.</p>
+          <div class="recipe-import-url-bar">
+            <input type="url" id="recipe-url-input" placeholder="https://example.com/recipe/..." aria-label="Recipe URL">
+            <button id="recipe-url-import-btn" class="btn btn-primary btn-sm">Import Recipe</button>
+          </div>
+          <div id="recipe-url-status" class="recipe-import-status hidden"></div>
+        </div>
+
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--color-border);">
+        <p class="text-muted" style="margin: 0 0 8px; font-size: 0.82rem;">Or pick an existing file from your Drive:</p>
+
         <div class="import-search-bar">
           <input type="text" id="import-search-input" placeholder="Search your files…" class="import-search-field">
         </div>

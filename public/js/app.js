@@ -15,6 +15,7 @@ import * as records  from './records.js';
 import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
+import { scrapeRecipe } from './recipe-scraper.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -66,6 +67,11 @@ const importResultRows      = document.getElementById('import-result-rows');
 const importMappingTable    = document.getElementById('import-mapping-table');
 const importProgress        = document.getElementById('import-progress');
 const importModalTitle      = document.getElementById('import-modal-title');
+
+/* ---------- Recipe URL Import refs ---------- */
+const recipeUrlInput       = document.getElementById('recipe-url-input');
+const recipeUrlImportBtn   = document.getElementById('recipe-url-import-btn');
+const recipeUrlStatus      = document.getElementById('recipe-url-status');
 
 /* ---------- Navigation callback ---------- */
 
@@ -453,6 +459,7 @@ let selectedImportSheet = null; // { id, name, ... }
 let importSheetData = null;     // full sheet data from API
 let importAnalysis = null;      // analysis result from code detection
 let userColumnMapping = {};     // user's manual column assignments
+let userTemplateOverride = null; // explicit user template choice — always overrides auto-detection
 
 function initImportModal() {
   if (!importModal) return;
@@ -471,23 +478,32 @@ function initImportModal() {
   // Search
   importSearchInput.addEventListener('input', filterImportSheets);
 
-  // Template picker change — re-run code detection with new template
+  // Template picker change — user selection ALWAYS overrides auto-detection
   importTemplatePick.addEventListener('change', () => {
-    if (!importSheetData) return;
+    if (!importSheetData || !importAnalysis) return;
     const chosenKey = importTemplatePick.value;
-    importAnalysis = importer.analyzeWithCode(importSheetData);
-    // Override template if user picked one
-    if (chosenKey && chosenKey !== importAnalysis.suggestedTemplate) {
-      importAnalysis.suggestedTemplate = chosenKey;
-      const templates = importer.getTemplateList();
-      const t = templates.find(t => t.key === chosenKey);
-      importAnalysis.templateName = t?.name || chosenKey;
-      importAnalysis.confidence = 0.5; // user-chosen, medium confidence
-      importAnalysis.summary = `Manually selected "${importAnalysis.templateName}" template.`;
-    }
+    if (!chosenKey) return;
+
+    // Record the user's explicit choice — this takes priority over all automation
+    userTemplateOverride = chosenKey;
+    importAnalysis.suggestedTemplate = chosenKey;
+    const templates = importer.getTemplateList();
+    const t = templates.find(t => t.key === chosenKey);
+    importAnalysis.templateName = t?.name || chosenKey;
+    importAnalysis.confidence = 1.0; // user-chosen, full confidence
+    importAnalysis.summary = `Manually selected "${importAnalysis.templateName}" template.`;
+
     renderColumnMapEditor(importAnalysis);
     updateDetectBadge(importAnalysis);
   });
+
+  // Recipe URL import
+  if (recipeUrlImportBtn) {
+    recipeUrlImportBtn.addEventListener('click', handleRecipeUrlImport);
+    recipeUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); handleRecipeUrlImport(); }
+    });
+  }
 }
 
 async function openImportModal() {
@@ -496,7 +512,10 @@ async function openImportModal() {
   importSheetData = null;
   importAnalysis = null;
   userColumnMapping = {};
+  userTemplateOverride = null;
   importSearchInput.value = '';
+  if (recipeUrlInput) recipeUrlInput.value = '';
+  if (recipeUrlStatus) recipeUrlStatus.classList.add('hidden');
 
   showImportStep(0);
   importModal.classList.remove('hidden');
@@ -512,6 +531,86 @@ async function openImportModal() {
     renderImportSheets(importSheets);
   } catch (err) {
     importSheetList.innerHTML = `<p class="text-muted">Failed to load files: ${err.message}</p>`;
+  }
+}
+
+/**
+ * Handle importing a recipe from an external URL.
+ * Uses the frontend-only scraper (CORS proxy + DOMParser),
+ * builds sheet-like data, and jumps to the configure step.
+ */
+async function handleRecipeUrlImport() {
+  const url = (recipeUrlInput?.value || '').trim();
+  if (!url) {
+    showToast('Please enter a recipe URL', 'error');
+    return;
+  }
+
+  // Validate URL
+  try { new URL(url); } catch {
+    showToast('Please enter a valid URL (e.g. https://…)', 'error');
+    return;
+  }
+
+  recipeUrlImportBtn.disabled = true;
+  recipeUrlImportBtn.textContent = 'Scraping…';
+  recipeUrlStatus.classList.remove('hidden');
+  recipeUrlStatus.textContent = 'Fetching recipe from URL — this may take a few seconds…';
+
+  try {
+    const recipe = await scrapeRecipe(url);
+
+    // Build sheet-like values — row-per-item so each ingredient/step
+    // is its own row, making the sheet easy to edit as a human.
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'];
+    const ingredients = recipe.ingredients || [];
+    const steps = recipe.instructions || [];
+    const maxRows = Math.max(ingredients.length, steps.length, 1);
+    const dataRows = [];
+    for (let i = 0; i < maxRows; i++) {
+      dataRows.push([
+        i === 0 ? (recipe.name || 'Imported Recipe') : '',
+        i === 0 ? (recipe.servings || '') : '',
+        i === 0 ? (recipe.prepTime || '') : '',
+        i === 0 ? (recipe.cookTime || '') : '',
+        i === 0 ? (recipe.category || '') : '',
+        i === 0 ? (recipe.difficulty || '') : '',
+        ingredients[i] || '',
+        steps[i] || '',
+      ]);
+    }
+
+    importSheetData = {
+      id: 'url-import-' + Date.now(),
+      title: recipe.name || 'Imported Recipe',
+      values: [headers, ...dataRows],
+    };
+
+    // Set up analysis as recipe book template
+    importAnalysis = importer.analyzeWithCode(importSheetData);
+    // Force recipe template — user-initiated, so record as explicit override
+    userTemplateOverride = 'recipe';
+    importAnalysis.suggestedTemplate = 'recipe';
+    importAnalysis.templateName = 'Recipe Book';
+    importAnalysis.confidence = 0.9;
+    importAnalysis.summary = `Imported from URL using ${recipe.method === 'json-ld' ? 'structured data (JSON-LD)' : 'heuristic parsing'}. Found ${recipe.ingredients?.length || 0} ingredients and ${recipe.instructions?.length || 0} instructions.`;
+
+    recipeUrlStatus.textContent = `✅ Found: "${recipe.name}" — ${recipe.ingredients?.length || 0} ingredients, ${recipe.instructions?.length || 0} steps`;
+
+    // Render preview and jump to configure step
+    renderImportPreview(importSheetData);
+    populateTemplatePicker(importAnalysis);
+    renderColumnMapEditor(importAnalysis);
+    updateDetectBadge(importAnalysis);
+    showImportStep(1);
+
+    showToast(`Recipe "${recipe.name}" loaded from URL`, 'success');
+  } catch (err) {
+    recipeUrlStatus.textContent = `❌ ${err.message}`;
+    showToast(`Recipe import failed: ${err.message}`, 'error');
+  } finally {
+    recipeUrlImportBtn.disabled = false;
+    recipeUrlImportBtn.textContent = 'Import Recipe';
   }
 }
 
@@ -576,11 +675,13 @@ async function importGoNext() {
     }
   } else if (importStep === 1) {
     // Collect user column mapping and move to review
+    // User selection ALWAYS takes priority over auto-detection
     collectUserMapping();
     importAnalysis.columnMapping = { ...userColumnMapping };
-    importAnalysis.suggestedTemplate = importTemplatePick.value || importAnalysis.suggestedTemplate;
+    const effectiveTemplate = userTemplateOverride || importTemplatePick.value || importAnalysis.suggestedTemplate;
+    importAnalysis.suggestedTemplate = effectiveTemplate;
     const templates = importer.getTemplateList();
-    const t = templates.find(t => t.key === importAnalysis.suggestedTemplate);
+    const t = templates.find(t => t.key === effectiveTemplate);
     if (t) importAnalysis.templateName = t.name;
 
     renderImportReview(importAnalysis);
@@ -594,7 +695,11 @@ async function importGoNext() {
     try {
       const options = {
         remap: false,
-        template: importAnalysis.suggestedTemplate,
+        // User selection ALWAYS overrides auto-detected template
+        template: userTemplateOverride || importAnalysis.suggestedTemplate,
+        // When user overrides the template, pass column mapping so headers
+        // are renamed to match the chosen template's expected columns.
+        columnMapping: userTemplateOverride ? userColumnMapping : null,
         onProgress(msg) { importProgress.textContent = msg; },
       };
       const result = await importer.importSheet(importSheetData, importAnalysis, options);
