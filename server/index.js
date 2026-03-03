@@ -75,7 +75,7 @@ if (config.WAYMARK_LOCAL) {
 // Must come before express.static so the root '/' is handled here.
 router.get('/', serveIndex);
 
-/* ---------- API: server-side URL fetch (avoids CORS) ---------- */
+/* ---------- Scraping proxy (fetch a URL on behalf of the browser) ---------- */
 
 router.post('/api/fetch-url', async (req, res) => {
   const { url } = req.body || {};
@@ -83,36 +83,54 @@ router.post('/api/fetch-url', async (req, res) => {
     return res.status(400).json({ error: 'Missing or invalid "url" parameter' });
   }
 
-  // Validate URL
   let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
+  try { parsed = new URL(url); } catch {
     return res.status(400).json({ error: 'Invalid URL' });
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     return res.status(400).json({ error: 'Only HTTP/HTTPS URLs are supported' });
   }
 
-  // Block private/internal IPs to prevent SSRF
-  const hostname = parsed.hostname.toLowerCase();
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname.startsWith('10.') ||
-    hostname.startsWith('192.168.') ||
-    hostname.startsWith('172.') ||
-    hostname.endsWith('.local')
-  ) {
+  // Block private/internal IPs (SSRF prevention)
+  function isPrivateHost(h) {
+    h = h.toLowerCase();
+    return (
+      h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+      h.startsWith('10.') || h.startsWith('192.168.') ||
+      h.startsWith('172.') || h.endsWith('.local') ||
+      h === '0.0.0.0' || h === '[::]' || h.startsWith('169.254.')
+    );
+  }
+
+  if (isPrivateHost(parsed.hostname)) {
     return res.status(400).json({ error: 'Cannot fetch internal/private URLs' });
+  }
+
+  const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MB cap
+
+  /** Collect response body with size limit */
+  function collectBody(response) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let bytes = 0;
+      response.on('data', (chunk) => {
+        bytes += chunk.length;
+        if (bytes > MAX_RESPONSE_BYTES) {
+          response.destroy();
+          return reject(new Error('Response too large (max 5 MB)'));
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      response.on('error', reject);
+    });
   }
 
   const httpMod = parsed.protocol === 'https:' ? require('https') : require('http');
 
   try {
     const html = await new Promise((resolve, reject) => {
-      const options = {
+      const opts = {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; WayMark/1.0; +https://swiftirons.com)',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -120,43 +138,35 @@ router.post('/api/fetch-url', async (req, res) => {
         timeout: 15000,
       };
 
-      const request = httpMod.get(url, options, (response) => {
-        // Follow redirects (3xx)
+      const request = httpMod.get(url, opts, (response) => {
+        // Follow one redirect (re-check SSRF on redirect target)
         if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
-          const redirectUrl = new URL(response.headers.location, url).href;
-          httpMod.get(redirectUrl, options, (resp2) => {
-            if (resp2.statusCode < 200 || resp2.statusCode >= 400) {
-              return reject(new Error(`HTTP ${resp2.statusCode}`));
-            }
-            const chunks = [];
-            resp2.on('data', (chunk) => chunks.push(chunk));
-            resp2.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-            resp2.on('error', reject);
+          let nextUrl;
+          try { nextUrl = new URL(response.headers.location, url); } catch {
+            return reject(new Error('Invalid redirect URL'));
+          }
+          if (isPrivateHost(nextUrl.hostname)) {
+            return reject(new Error('Redirect to internal/private URL blocked'));
+          }
+          const nextMod = nextUrl.protocol === 'https:' ? require('https') : require('http');
+          nextMod.get(nextUrl.href, opts, (r2) => {
+            if (r2.statusCode < 200 || r2.statusCode >= 400) return reject(new Error(`HTTP ${r2.statusCode}`));
+            collectBody(r2).then(resolve, reject);
           }).on('error', reject);
           return;
         }
-
         if (response.statusCode < 200 || response.statusCode >= 400) {
           return reject(new Error(`HTTP ${response.statusCode}`));
         }
-
-        const chunks = [];
-        response.on('data', (chunk) => chunks.push(chunk));
-        response.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-        response.on('error', reject);
+        collectBody(response).then(resolve, reject);
       });
-
       request.on('error', reject);
-      request.on('timeout', () => {
-        request.destroy();
-        reject(new Error('Request timed out'));
-      });
+      request.on('timeout', () => { request.destroy(); reject(new Error('Request timed out')); });
     });
 
     if (!html || html.length < 100) {
       return res.status(502).json({ error: 'Empty or too-short response from target URL' });
     }
-
     res.json({ html });
   } catch (err) {
     res.status(502).json({ error: `Failed to fetch URL: ${err.message}` });
