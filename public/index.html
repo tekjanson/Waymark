@@ -81,7 +81,11 @@
             <h3>Quick Start</h3>
             <p class="text-muted">Generate example sheets in your Google Drive to try all template types.</p>
             <div class="generate-buttons">
-              <button id="generate-examples-btn" class="btn btn-primary">
+              <button id="create-sheet-btn" class="btn btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                Create New Sheet
+              </button>
+              <button id="generate-examples-btn" class="btn btn-secondary">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                 Generate Example Sheets
               </button>
@@ -141,6 +145,32 @@
         </section>
 
       </main>
+    </div>
+  </div>
+
+  <!-- Create New Sheet Modal -->
+  <div id="create-sheet-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Create New Sheet</h3>
+        <button id="create-sheet-modal-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="modal-description">Choose a template type and name your new sheet. It will be created in your Google Drive with the correct headers.</p>
+      <div class="create-sheet-form">
+        <label class="create-sheet-label" for="create-sheet-name">Sheet Name</label>
+        <input type="text" id="create-sheet-name" class="create-sheet-input" placeholder="My New Sheet" autocomplete="off">
+      </div>
+      <div id="create-sheet-templates" class="create-sheet-grid"></div>
+      <div class="modal-footer">
+        <span id="create-sheet-status" class="text-muted"></span>
+        <div class="modal-footer-actions">
+          <button id="create-sheet-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button id="create-sheet-create-btn" class="btn btn-primary" disabled>Create Sheet</button>
+        </div>
+      </div>
+      <div id="create-sheet-progress" class="generate-progress hidden"></div>
     </div>
   </div>
 

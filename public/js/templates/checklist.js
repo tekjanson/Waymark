@@ -7,6 +7,7 @@ const definition = {
   icon: '✓',
   color: '#16a34a',
   priority: 10,
+  itemNoun: 'Item',
 
   detect(lower) {
     return lower.some(h => /^(status|done|complete|check|✓|✔)/.test(h));
@@ -21,6 +22,16 @@ const definition = {
     cols.notes    = lower.findIndex(h => /^(notes?|comment|detail|info)/.test(h));
     cols.category = lower.findIndex(h => /^(category|type|group|section|aisle|store|department)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Item',     colIndex: cols.text,     type: 'text',   placeholder: 'What needs to be done?', required: true },
+      { role: 'status',   label: 'Status',   colIndex: cols.status,   type: 'text',   defaultValue: '', hidden: true },
+      { role: 'date',     label: 'Due',      colIndex: cols.date,     type: 'date',   placeholder: 'Due date' },
+      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'text',   placeholder: 'Optional notes' },
+      { role: 'category', label: 'Category', colIndex: cols.category, type: 'text',   placeholder: 'Category' },
+    ];
   },
 
   isComplete(val) {

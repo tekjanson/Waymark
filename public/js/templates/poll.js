@@ -7,6 +7,7 @@ const definition = {
   icon: '📊',
   color: '#be185d',
   priority: 18,
+  itemNoun: 'Option',
 
   detect(lower) {
     return lower.some(h => /^(vote|votes|response|responses|poll|ballot|tally)/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.percent = lower.findIndex((h, i) => i !== cols.votes && i !== cols.text && /^(percent|%|share|ratio|proportion)/.test(h));
     cols.notes   = lower.findIndex((h, i) => i !== cols.votes && i !== cols.text && i !== cols.percent && /^(notes?|comment|detail|info)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',    label: 'Option',   colIndex: cols.text,    type: 'text',   placeholder: 'Choice or answer', required: true },
+      { role: 'votes',   label: 'Votes',    colIndex: cols.votes,   type: 'number', placeholder: '0', defaultValue: '0' },
+      { role: 'percent', label: 'Percent',   colIndex: cols.percent, type: 'text',   placeholder: 'e.g. 25%' },
+      { role: 'notes',   label: 'Notes',     colIndex: cols.notes,   type: 'text',   placeholder: 'Optional notes' },
+    ];
   },
 
   render(container, rows, cols) {

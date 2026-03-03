@@ -7,6 +7,7 @@ const definition = {
   icon: '👥',
   color: '#6366f1',
   priority: 18,
+  itemNoun: 'Employee',
 
   detect(lower) {
     return lower.some(h => /^(employee|staff|team.?member|worker|person|name)/.test(h))
@@ -26,6 +27,14 @@ const definition = {
       }
     }
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'employee', label: 'Employee', colIndex: cols.employee, type: 'text',   placeholder: 'Name', required: true },
+      { role: 'role',     label: 'Role',     colIndex: cols.role,     type: 'text',   placeholder: 'Position or title' },
+      { role: 'shift',    label: 'Shift',    colIndex: cols.shift,    type: 'select', options: ['Morning', 'Afternoon', 'Night', 'Off'], defaultValue: 'Morning' },
+    ];
   },
 
   shiftStates: ['Morning', 'Afternoon', 'Night', 'Off'],

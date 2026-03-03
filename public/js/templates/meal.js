@@ -7,6 +7,7 @@ const definition = {
   icon: '🍽️',
   color: '#65a30d',
   priority: 22,
+  itemNoun: 'Meal',
 
   detect(lower) {
     return lower.some(h => /^(meal|recipe|dish|food)/.test(h))
@@ -22,6 +23,16 @@ const definition = {
     cols.calories = lower.findIndex(h => /^(calorie|cal|kcal|energy)/.test(h));
     cols.protein  = lower.findIndex(h => /^(protein|prot)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'recipe',   label: 'Recipe',   colIndex: cols.recipe,   type: 'text',   placeholder: 'Dish name', required: true },
+      { role: 'meal',     label: 'Meal',     colIndex: cols.meal,     type: 'select', options: ['Breakfast', 'Lunch', 'Dinner', 'Snack'] },
+      { role: 'day',      label: 'Day',      colIndex: cols.day,      type: 'text',   placeholder: 'e.g. Monday' },
+      { role: 'calories', label: 'Calories', colIndex: cols.calories, type: 'number', placeholder: '0' },
+      { role: 'protein',  label: 'Protein',  colIndex: cols.protein,  type: 'number', placeholder: 'grams' },
+    ];
   },
 
   render(container, rows, cols) {

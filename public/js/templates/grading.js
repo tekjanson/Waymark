@@ -7,6 +7,7 @@ const definition = {
   icon: '🎓',
   color: '#7c2d12',
   priority: 21,
+  itemNoun: 'Student',
 
   detect(lower) {
     return lower.some(h => /^(student|pupil|name)/.test(h))
@@ -25,6 +26,12 @@ const definition = {
       }
     }
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'student', label: 'Student', colIndex: cols.student, type: 'text', placeholder: 'Student name', required: true },
+    ];
   },
 
   render(container, rows, cols, _template) {

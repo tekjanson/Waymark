@@ -7,6 +7,7 @@ const definition = {
   icon: '🧪',
   color: '#7c3aed',
   priority: 25,
+  itemNoun: 'Test Case',
 
   detect(lower) {
     return lower.some(h => /^(result|pass|fail|test.?status|outcome|verdict)/.test(h))
@@ -23,6 +24,17 @@ const definition = {
     cols.priority = lower.findIndex((h, i) => i !== cols.result && i !== cols.text && /^(priority|severity|importance|p[0-4])/.test(h));
     cols.notes    = lower.findIndex((h, i) => i !== cols.result && i !== cols.text && i !== cols.expected && i !== cols.actual && /^(notes?|comment|detail|bug)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Test Case', colIndex: cols.text,     type: 'text',   placeholder: 'Test case name', required: true },
+      { role: 'result',   label: 'Result',    colIndex: cols.result,   type: 'select', options: ['Untested', 'Pass', 'Fail', 'Blocked', 'Skip'], defaultValue: 'Untested' },
+      { role: 'expected', label: 'Expected',  colIndex: cols.expected, type: 'text',   placeholder: 'Expected outcome' },
+      { role: 'actual',   label: 'Actual',    colIndex: cols.actual,   type: 'text',   placeholder: 'Actual outcome' },
+      { role: 'priority', label: 'Priority',  colIndex: cols.priority, type: 'select', options: ['P0', 'P1', 'P2', 'P3', 'P4'] },
+      { role: 'notes',    label: 'Notes',     colIndex: cols.notes,    type: 'text',   placeholder: 'Bug ID or notes' },
+    ];
   },
 
   resultStates: ['Untested', 'Pass', 'Fail', 'Blocked', 'Skip'],

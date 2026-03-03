@@ -7,6 +7,7 @@ const definition = {
   icon: '💰',
   color: '#059669',
   priority: 20,
+  itemNoun: 'Transaction',
 
   detect(lower) {
     return lower.some(h => /^(budget|income|expense|spent|balance)/.test(h))
@@ -22,6 +23,16 @@ const definition = {
     if (cols.text === -1) cols.text = lower.findIndex((_, i) => i !== cols.amount && i !== cols.category && i !== cols.budget);
     cols.date     = lower.findIndex(h => /^(date|when|day|month)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Description', colIndex: cols.text,     type: 'text',   placeholder: 'Item or description', required: true },
+      { role: 'amount',   label: 'Amount',      colIndex: cols.amount,   type: 'number', placeholder: '0.00', required: true },
+      { role: 'category', label: 'Category',    colIndex: cols.category, type: 'text',   placeholder: 'e.g. Food, Rent' },
+      { role: 'date',     label: 'Date',        colIndex: cols.date,     type: 'date',   defaultValue: '__TODAY__' },
+      { role: 'budget',   label: 'Budget',      colIndex: cols.budget,   type: 'number', placeholder: 'Budgeted amount' },
+    ];
   },
 
   render(container, rows, cols) {

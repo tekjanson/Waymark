@@ -7,6 +7,7 @@ const definition = {
   icon: '📇',
   color: '#ec4899',
   priority: 15,
+  itemNoun: 'Contact',
 
   detect(lower) {
     return lower.some(h => /^(email|phone|mobile|cell|telephone)/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.phone = lower.findIndex(h => /^(phone|mobile|cell|telephone|tel)/.test(h));
     cols.role  = lower.findIndex(h => /^(role|title|relationship|department|company|org|group|type)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'name',  label: 'Name',  colIndex: cols.name,  type: 'text', placeholder: 'Full name', required: true },
+      { role: 'email', label: 'Email', colIndex: cols.email, type: 'text', placeholder: 'email@example.com' },
+      { role: 'phone', label: 'Phone', colIndex: cols.phone, type: 'text', placeholder: '(555) 000-0000' },
+      { role: 'role',  label: 'Role',  colIndex: cols.role,  type: 'text', placeholder: 'Title or relationship' },
+    ];
   },
 
   render(container, rows, cols) {

@@ -7,6 +7,7 @@ const definition = {
   icon: '📝',
   color: '#0891b2',
   priority: 15,
+  itemNoun: 'Entry',
 
   detect(lower) {
     return lower.some(h => /^(timestamp|logged|entry.?date|log.?date|recorded|created.?at)/.test(h));
@@ -22,6 +23,15 @@ const definition = {
     cols.type      = lower.findIndex((h, i) => i !== cols.text && i !== cols.timestamp && /^(type|category|kind|tag|label)/.test(h));
     cols.duration  = lower.findIndex((h, i) => i !== cols.text && i !== cols.timestamp && /^(duration|time\b|length|minutes|hours)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',      label: 'Activity',  colIndex: cols.text,      type: 'text', placeholder: 'What happened?', required: true },
+      { role: 'timestamp', label: 'Date',       colIndex: cols.timestamp, type: 'date', defaultValue: '__TODAY__' },
+      { role: 'type',      label: 'Type',       colIndex: cols.type,      type: 'text', placeholder: 'Category / tag' },
+      { role: 'duration',  label: 'Duration',   colIndex: cols.duration,  type: 'text', placeholder: 'e.g. 30 min' },
+    ];
   },
 
   render(container, rows, cols) {
