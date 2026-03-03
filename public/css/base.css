@@ -355,7 +355,12 @@ ul { list-style: none; }
 /* ---------- Import Modal ---------- */
 .import-modal-wide { max-width: 680px; }
 
-.import-step { padding: 0 24px 16px; }
+.import-step {
+  padding: 0 24px 16px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 
 .import-search-bar {
   margin-bottom: 12px;
@@ -389,6 +394,7 @@ ul { list-style: none; }
 .import-sheet-preview {
   background: var(--color-bg); border-radius: var(--radius);
   padding: 14px; margin-bottom: 16px;
+  position: sticky; top: 0; z-index: 2;
 }
 .import-preview-title {
   display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
