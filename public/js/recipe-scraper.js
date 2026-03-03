@@ -15,7 +15,15 @@
    NO SERVER-SIDE CODE. Runs entirely in the browser.
    ============================================================ */
 
-// ---------- CORS proxies (tried in order) ----------
+// ---------- Server-side proxy + CORS proxy fallbacks ----------
+
+/**
+ * Build the server-side fetch-url endpoint path, respecting __WAYMARK_BASE.
+ */
+function _serverFetchUrl() {
+  const base = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
+  return `${base}/api/fetch-url`;
+}
 
 const CORS_PROXIES = [
   (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -24,13 +32,35 @@ const CORS_PROXIES = [
 ];
 
 /**
- * Fetch a URL through a CORS proxy. Tries proxies in order until one works.
+ * Fetch a URL — tries our own server proxy first (no CORS issues), then
+ * falls back to public CORS proxies.
  * @param {string} url
  * @returns {Promise<string>} HTML text
  */
 async function fetchPage(url) {
   let lastError;
 
+  // --- Strategy 1: server-side proxy (no CORS, no CSP issues) ---
+  try {
+    const resp = await fetch(_serverFetchUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.html && data.html.length >= 100) return data.html;
+      throw new Error('Empty response from server proxy');
+    }
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(errBody.error || `HTTP ${resp.status}`);
+  } catch (err) {
+    lastError = err;
+    console.warn('[recipe-scraper] Server proxy failed, trying CORS proxies:', err.message);
+  }
+
+  // --- Strategy 2: public CORS proxies (fallback) ---
   for (const proxyFn of CORS_PROXIES) {
     const proxyUrl = proxyFn(url);
     try {
@@ -53,7 +83,7 @@ async function fetchPage(url) {
   }
 
   throw new Error(
-    `Could not fetch the recipe page. All CORS proxies failed. Last error: ${lastError?.message || 'unknown'}`
+    `Could not fetch the recipe page. All methods failed. Last error: ${lastError?.message || 'unknown'}`
   );
 }
 
