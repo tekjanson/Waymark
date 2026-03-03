@@ -393,6 +393,33 @@ export const api = {
     },
 
     /**
+     * Append one or more rows to the end of a sheet.
+     * @param {string}     spreadsheetId
+     * @param {string}     sheetTitle     e.g. 'Sheet1'
+     * @param {string[][]} rows           array of row arrays
+     * @returns {Promise<Object>}
+     */
+    async appendRows(spreadsheetId, sheetTitle, rows) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        const data = fix.sheets[spreadsheetId];
+        if (data && data.values) {
+          for (const row of rows) data.values.push(row);
+        }
+        const record = {
+          type: 'row-append',
+          spreadsheetId, sheetTitle, rows,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await clientAuth.getToken();
+      return sheetsApi.appendRows(token, spreadsheetId, sheetTitle, rows);
+    },
+
+    /**
      * Update a single cell in a spreadsheet.
      * @param {string} spreadsheetId
      * @param {string} sheetTitle   e.g. 'Sheet1'

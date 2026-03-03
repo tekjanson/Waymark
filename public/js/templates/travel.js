@@ -7,6 +7,7 @@ const definition = {
   icon: '✈️',
   color: '#0891b2',
   priority: 20,
+  itemNoun: 'Activity',
 
   detect(lower) {
     return lower.some(h => /^(flight|hotel|booking|itinerary|accommodation|departure|arrival|transport)/.test(h) || /^(activity|event|attraction)/.test(h))
@@ -22,6 +23,16 @@ const definition = {
     cols.booking  = lower.findIndex(h => /^(booking|confirmation|ref|reservation|code|ticket|record)/.test(h));
     cols.cost     = lower.findIndex(h => /^(cost|price|amount|total|fee|\$|budget|paid)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'activity', label: 'Activity', colIndex: cols.activity, type: 'text',   placeholder: 'Flight, hotel, excursion…', required: true },
+      { role: 'date',     label: 'Date',     colIndex: cols.date,     type: 'date' },
+      { role: 'location', label: 'Location', colIndex: cols.location, type: 'text',   placeholder: 'City or address' },
+      { role: 'booking',  label: 'Booking',  colIndex: cols.booking,  type: 'text',   placeholder: 'Confirmation #' },
+      { role: 'cost',     label: 'Cost',     colIndex: cols.cost,     type: 'number', placeholder: 'Amount' },
+    ];
   },
 
   render(container, rows, cols) {

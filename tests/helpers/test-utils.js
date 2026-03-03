@@ -76,6 +76,13 @@ async function setupApp(page, opts = {}) {
   if (waitForExplorer) {
     await page.waitForSelector('.folder-item', { timeout: 10_000 });
   }
+
+  /* 5. Clear init-time records — user-data.js creates .waymark-data.json
+     and saves last-view on every fresh start, which pollutes the records
+     array before the test even begins. Reset so tests start clean. */
+  await page.evaluate(() => {
+    if (window.__WAYMARK_RECORDS) window.__WAYMARK_RECORDS.length = 0;
+  });
 }
 
 /**

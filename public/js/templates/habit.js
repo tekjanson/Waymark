@@ -7,6 +7,7 @@ const definition = {
   icon: '🔄',
   color: '#d97706',
   priority: 22,
+  itemNoun: 'Habit',
 
   detect(lower) {
     return lower.some(h => /^(habit|routine|daily)/.test(h))
@@ -25,6 +26,12 @@ const definition = {
       }
     }
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text', label: 'Habit', colIndex: cols.text, type: 'text', placeholder: 'New habit', required: true },
+    ];
   },
 
   render(container, rows, cols) {

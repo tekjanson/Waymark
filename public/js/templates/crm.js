@@ -7,6 +7,7 @@ const definition = {
   icon: '🤝',
   color: '#b45309',
   priority: 23,
+  itemNoun: 'Deal',
 
   detect(lower) {
     return lower.some(h => /^(company|lead|prospect|account|organization|org)/.test(h))
@@ -22,6 +23,16 @@ const definition = {
     cols.value   = lower.findIndex((h, i) => i !== cols.company && /^(value|worth|revenue|amount|deal.?size|\$|price|arr)/.test(h));
     cols.notes   = lower.findIndex((h, i) => i !== cols.company && i !== cols.stage && i !== cols.contact && i !== cols.value && /^(notes?|comment|detail|info|next.?step|follow)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'company', label: 'Company', colIndex: cols.company, type: 'text',   placeholder: 'Company or lead name', required: true },
+      { role: 'contact', label: 'Contact', colIndex: cols.contact, type: 'text',   placeholder: 'Contact person' },
+      { role: 'stage',   label: 'Stage',   colIndex: cols.stage,   type: 'select', options: ['Lead', 'Contacted', 'Qualified', 'Proposal', 'Won', 'Lost'], defaultValue: 'Lead' },
+      { role: 'value',   label: 'Value',   colIndex: cols.value,   type: 'number', placeholder: 'Deal value' },
+      { role: 'notes',   label: 'Notes',   colIndex: cols.notes,   type: 'text',   placeholder: 'Next steps, notes' },
+    ];
   },
 
   dealStages: ['Lead', 'Contacted', 'Qualified', 'Proposal', 'Won', 'Lost'],

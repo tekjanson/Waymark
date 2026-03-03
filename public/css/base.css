@@ -674,6 +674,142 @@ ul { list-style: none; }
 }
 .tutorial-nav-right { display: flex; gap: 8px; }
 
+/* ---------- Add Row Form ---------- */
+.add-row-root {
+  margin-top: 16px;
+}
+.add-row-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--add-row-accent, var(--color-primary));
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  justify-content: center;
+}
+.add-row-trigger:hover {
+  background: color-mix(in srgb, var(--add-row-accent, var(--color-primary)) 8%, transparent);
+  border-color: var(--add-row-accent, var(--color-primary));
+}
+.add-row-form {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.add-row-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.add-row-field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.add-row-field-input,
+.add-row-field-select {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: border-color var(--transition);
+}
+.add-row-field-input:focus,
+.add-row-field-select:focus {
+  outline: none;
+  border-color: var(--add-row-accent, var(--color-primary));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--add-row-accent, var(--color-primary)) 20%, transparent);
+}
+.add-row-required {
+  border-color: var(--color-error);
+}
+.add-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+.add-row-submit {
+  color: #fff;
+}
+/* List fields (recipe ingredients/steps) */
+.add-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.add-row-list-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.add-row-list-item .add-row-field-input {
+  flex: 1;
+}
+.add-row-list-remove {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 1.1rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+}
+.add-row-list-remove:hover {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+}
+.add-row-list-add {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--add-row-accent, var(--color-primary));
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.add-row-list-add:hover {
+  text-decoration: underline;
+}
+.add-row-list.add-row-required {
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+/* Kanban per-lane add button */
+.add-row-root.add-row-lane {
+  margin-top: 8px;
+}
+.add-row-lane .add-row-trigger {
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+.add-row-lane .add-row-form {
+  padding: 12px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
   #sidebar {
@@ -694,4 +830,7 @@ ul { list-style: none; }
   .search-container { max-width: 140px; }
   .checklist-actions { flex-wrap: wrap; }
   .checklist-item-notes { display: none; }
+  .add-row-form { padding: 12px; }
+  .add-row-actions { flex-direction: column; }
+  .add-row-actions .btn { width: 100%; justify-content: center; }
 }

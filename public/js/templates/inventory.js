@@ -7,6 +7,7 @@ const definition = {
   icon: '📦',
   color: '#f59e0b',
   priority: 15,
+  itemNoun: 'Item',
 
   detect(lower) {
     return lower.some(h => /^(quantity|qty|count|stock|amount|price|cost|sku|upc|in.?stock)/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.category = lower.findIndex(h => /^(category|type|group|section|aisle|shelf|department)/.test(h));
     cols.extra    = lower.findIndex(h => /^(price|cost|expir|notes?|brand|unit)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Item',     colIndex: cols.text,     type: 'text', placeholder: 'Item name', required: true },
+      { role: 'quantity', label: 'Quantity',  colIndex: cols.quantity, type: 'text', placeholder: '1' },
+      { role: 'category', label: 'Category',  colIndex: cols.category, type: 'text', placeholder: 'Category' },
+      { role: 'extra',    label: 'Details',   colIndex: cols.extra,    type: 'text', placeholder: 'Price, notes, etc.' },
+    ];
   },
 
   render(container, rows, cols) {

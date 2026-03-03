@@ -635,7 +635,7 @@
     },
     {
       "key": "recipe",
-      "name": "Recipe Book",
+      "name": "Recipe",
       "icon": "📖",
       "color": "#ea580c",
       "priority": 24,

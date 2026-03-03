@@ -8,6 +8,7 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
+import { buildAddRowForm, isAddRowOpen } from './templates/shared.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -138,8 +139,28 @@ function renderWithTemplate(values) {
   const lower = headers.map(h => (h || '').toLowerCase().trim());
   const cols = template.columns(lower);
 
+  // Wire up add-row callback so templates can embed per-lane forms
+  const totalCols = headers.length;
+  const addRowCallback = async (newRows) => {
+    try {
+      await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
+      showToast(`${template.itemNoun || 'Item'} added`, 'success');
+      await loadSheet(currentSheetId);
+    } catch (err) {
+      showToast(`Failed to add: ${err.message}`, 'error');
+    }
+  };
+  template._onAddRow = addRowCallback;
+  template._totalColumns = totalCols;
+
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
+
+  // Append add-row form if template declares fields (skip kanban + recipe — they handle inline)
+  if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe') {
+    const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
+    itemsEl.append(addForm);
+  }
 }
 
 /* ---------- Auto-refresh ---------- */
@@ -150,7 +171,7 @@ function resetTimer() {
 
   if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
     refreshTimer = setInterval(() => {
-      if (currentSheetId) loadSheet(currentSheetId);
+      if (currentSheetId && !isAddRowOpen()) loadSheet(currentSheetId);
     }, 60_000);
   }
 }

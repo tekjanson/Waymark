@@ -1,11 +1,14 @@
-/* Recipe Book Template */
+/* Recipe Template */
 
-.recipe-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+/* Single-recipe layout — full width centered */
+.recipe-single {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
 
 .recipe-card {
   display: flex; flex-direction: column;
-  width: calc(50% - 8px);
-  min-width: 300px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -141,6 +144,69 @@
   font-size: 0.8rem; text-transform: uppercase;
   letter-spacing: 0.04em; color: #ea580c;
   margin: 0 0 4px;
+}
+
+/* Inline add ingredient / step buttons */
+.recipe-inline-add {
+  margin-top: 8px;
+}
+.recipe-inline-add-btn {
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  color: #ea580c;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.recipe-inline-add-btn:hover {
+  background: #fff7ed;
+  border-color: #ea580c;
+}
+.recipe-inline-add-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.recipe-inline-add-form.hidden { display: none; }
+.recipe-inline-add-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.recipe-inline-add-input:focus {
+  outline: none;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234,88,12,0.15);
+}
+.recipe-inline-add-submit {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  background: #ea580c;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.recipe-inline-add-submit:hover {
+  background: #c2410c;
+}
+.recipe-inline-add-cancel {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.recipe-inline-add-cancel:hover {
+  background: var(--color-bg);
 }
 
 @media (max-width: 720px) {

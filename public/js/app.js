@@ -586,12 +586,12 @@ async function handleRecipeUrlImport() {
       values: [headers, ...dataRows],
     };
 
-    // Set up analysis as recipe book template
+    // Set up analysis as recipe template
     importAnalysis = importer.analyzeWithCode(importSheetData);
     // Force recipe template — user-initiated, so record as explicit override
     userTemplateOverride = 'recipe';
     importAnalysis.suggestedTemplate = 'recipe';
-    importAnalysis.templateName = 'Recipe Book';
+    importAnalysis.templateName = 'Recipe';
     importAnalysis.confidence = 0.9;
     importAnalysis.summary = `Imported from URL using ${recipe.method === 'json-ld' ? 'structured data (JSON-LD)' : 'heuristic parsing'}. Found ${recipe.ingredients?.length || 0} ingredients and ${recipe.instructions?.length || 0} instructions.`;
 

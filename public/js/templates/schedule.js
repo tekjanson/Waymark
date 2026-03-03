@@ -7,6 +7,7 @@ const definition = {
   icon: '📅',
   color: '#8b5cf6',
   priority: 20,
+  itemNoun: 'Event',
 
   detect(lower) {
     return lower.some(h => /^(time\b|start\s*time|end\s*time|slot|period|block)/.test(h));
@@ -20,6 +21,15 @@ const definition = {
     cols.day      = lower.findIndex(h => /^(day|date|when|weekday)/.test(h));
     cols.location = lower.findIndex(h => /^(location|where|room|place|venue)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Activity', colIndex: cols.text,     type: 'text', placeholder: 'Event or task', required: true },
+      { role: 'time',     label: 'Time',     colIndex: cols.time,     type: 'text', placeholder: '9:00 AM' },
+      { role: 'day',      label: 'Day',      colIndex: cols.day,      type: 'text', placeholder: 'Monday' },
+      { role: 'location', label: 'Location', colIndex: cols.location, type: 'text', placeholder: 'Where?' },
+    ];
   },
 
   render(container, rows, cols) {
