@@ -7,6 +7,7 @@ const definition = {
   icon: '📊',
   color: '#2563eb',
   priority: 20,
+  itemNoun: 'Goal',
 
   detect(lower) {
     return lower.some(h => /^(progress|percent|%|score|rating|level|grade|completion)/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.target   = lower.findIndex((h, i) => i !== cols.text && i !== cols.progress && /^(target|goal|max|total|out.of|capacity)/.test(h));
     cols.notes    = lower.findIndex((h, i) => i !== cols.text && i !== cols.progress && i !== cols.target && /^(notes?|comment|detail|info|status)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Goal',     colIndex: cols.text,     type: 'text',   placeholder: 'Goal or item name', required: true },
+      { role: 'progress', label: 'Progress', colIndex: cols.progress, type: 'number', placeholder: '0', defaultValue: '0' },
+      { role: 'target',   label: 'Target',   colIndex: cols.target,   type: 'number', placeholder: '100' },
+      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'text',   placeholder: 'Status notes' },
+    ];
   },
 
   render(container, rows, cols) {

@@ -1,12 +1,13 @@
 /* templates/kanban.js — Kanban Board: cycle stage, all fields editable */
 
-import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm } from './shared.js';
 
 const definition = {
   name: 'Kanban Board',
   icon: '📋',
   color: '#0284c7',
   priority: 23,
+  itemNoun: 'Task',
 
   detect(lower) {
     return lower.some(h => /^(stage|column|lane|board|swim)/.test(h) || /backlog|in.?progress|to.?do|doing/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.assignee = lower.findIndex((h, i) => i !== cols.stage && i !== cols.text && /^(assign|owner|who|person|dev|member)/.test(h));
     cols.priority = lower.findIndex((h, i) => i !== cols.stage && i !== cols.text && i !== cols.assignee && /^(priority|urgency|importance|p[0-4])/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Task',     colIndex: cols.text,     type: 'text',   placeholder: 'Task description', required: true },
+      { role: 'stage',    label: 'Stage',    colIndex: cols.stage,    type: 'select', options: ['Backlog', 'To Do', 'In Progress', 'Done'], defaultValue: 'Backlog' },
+      { role: 'assignee', label: 'Assignee', colIndex: cols.assignee, type: 'text',   placeholder: 'Who?' },
+      { role: 'priority', label: 'Priority', colIndex: cols.priority, type: 'select', options: ['P0', 'P1', 'P2', 'P3'] },
+    ];
   },
 
   stageStates: ['Backlog', 'To Do', 'In Progress', 'Done'],
@@ -86,6 +96,16 @@ const definition = {
             cols.priority >= 0 ? editableCell('span', { className: 'kanban-card-priority kanban-pri-' + (priority || '').toLowerCase().trim() }, priority, rowIdx, cols.priority) : null,
           ]),
         ]));
+      }
+
+      // Per-lane add button
+      if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {
+        const stageName = laneLabels[laneKey] || laneKey;
+        const laneForm = buildAddRowForm(template, cols, template._totalColumns || 0, template._onAddRow, {
+          defaults: { stage: stageName },
+        });
+        laneForm.classList.add('add-row-lane');
+        lane.append(laneForm);
       }
 
       board.append(lane);

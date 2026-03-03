@@ -502,15 +502,14 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
-  /* ---- Recipe Book examples ---- */
-  /* Row-per-item format: each ingredient and step occupies its own row.
-     Recipe metadata (name, servings, etc.) goes on the first row only;
-     continuation rows leave the name column blank. */
-  'Family Recipes': {
+  /* ---- Recipe examples ---- */
+  /* Single-recipe-per-sheet: each sheet holds one recipe.
+     Metadata (name, servings, etc.) goes on the first row only;
+     continuation rows carry additional ingredients and steps. */
+  'Spaghetti Bolognese': {
     folder: 'Recipes',
     headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
     rows: [
-      // Spaghetti Bolognese
       ['Spaghetti Bolognese', '4', '15 min', '45 min', 'Italian', 'Easy', '400g spaghetti',      'Cook spaghetti'],
       ['',                    '',  '',       '',       '',        '',     '500g ground beef',     'Brown beef'],
       ['',                    '',  '',       '',       '',        '',     '1 onion, diced',       'Add onion and garlic 3 min'],
@@ -520,7 +519,13 @@ export const EXAMPLE_SHEETS = {
       ['',                    '',  '',       '',       '',        '',     'oregano',              'Serve over pasta'],
       ['',                    '',  '',       '',       '',        '',     'salt and pepper',      'Top with parmesan'],
       ['',                    '',  '',       '',       '',        '',     'parmesan',             ''],
-      // Chicken Tikka Masala
+    ],
+  },
+
+  'Chicken Tikka Masala': {
+    folder: 'Recipes',
+    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
+    rows: [
       ['Chicken Tikka Masala', '4', '20 min', '35 min', 'Indian', 'Medium', '600g chicken breast', 'Marinate chicken in yogurt and tikka paste'],
       ['',                     '',  '',       '',       '',       '',       '200ml yogurt',        'Fry onion'],
       ['',                     '',  '',       '',       '',       '',       '2 tbsp tikka paste',  'Add chicken until browned'],
@@ -530,43 +535,13 @@ export const EXAMPLE_SHEETS = {
       ['',                     '',  '',       '',       '',       '',       'garam masala',        ''],
       ['',                     '',  '',       '',       '',       '',       'coriander',           ''],
       ['',                     '',  '',       '',       '',       '',       'rice',                ''],
-      // Caesar Salad
-      ['Caesar Salad', '2', '10 min', '0 min', 'American', 'Easy', '1 romaine lettuce',  'Chop lettuce'],
-      ['',             '',  '',       '',      '',         '',     'croutons',            'Blend anchovy, egg yolk, mustard, lemon'],
-      ['',             '',  '',       '',      '',         '',     'parmesan',            'Drizzle in oil'],
-      ['',             '',  '',       '',      '',         '',     'anchovy fillets',     'Toss lettuce with dressing'],
-      ['',             '',  '',       '',      '',         '',     '1 egg yolk',          'Add croutons and parmesan'],
-      ['',             '',  '',       '',      '',         '',     'Dijon mustard',       ''],
-      ['',             '',  '',       '',      '',         '',     'lemon juice',         ''],
-      ['',             '',  '',       '',      '',         '',     'olive oil',           ''],
-      // Mushroom Risotto
-      ['Mushroom Risotto', '4', '10 min', '40 min', 'Italian', 'Medium', '300g arborio rice',    'Heat stock'],
-      ['',                 '',  '',       '',       '',        '',       '400g mushrooms',       'Sauté mushrooms'],
-      ['',                 '',  '',       '',       '',        '',       '1L stock',             'Cook onion and garlic'],
-      ['',                 '',  '',       '',       '',        '',       '1 onion',              'Toast rice'],
-      ['',                 '',  '',       '',       '',        '',       'garlic',               'Add wine'],
-      ['',                 '',  '',       '',       '',        '',       'white wine',           'Add stock gradually, stirring'],
-      ['',                 '',  '',       '',       '',        '',       'parmesan',             'Fold in mushrooms and parmesan'],
-      ['',                 '',  '',       '',       '',        '',       'butter',               ''],
-      ['',                 '',  '',       '',       '',        '',       'thyme',                ''],
-      // Fish Tacos
-      ['Fish Tacos', '4', '15 min', '15 min', 'Mexican', 'Easy', '500g white fish',  'Season fish with cumin and chili'],
-      ['',           '',  '',       '',       '',        '',     '8 tortillas',      'Pan-fry 3 min each side'],
-      ['',           '',  '',       '',       '',        '',     '1 avocado',        'Mash avocado with lime'],
-      ['',           '',  '',       '',       '',        '',     'cabbage',          'Warm tortillas'],
-      ['',           '',  '',       '',       '',        '',     'lime',             'Assemble tacos'],
-      ['',           '',  '',       '',       '',        '',     'sour cream',       'Top with cabbage and cream'],
-      ['',           '',  '',       '',       '',        '',     'cumin',            ''],
-      ['',           '',  '',       '',       '',        '',     'chili powder',     ''],
-      ['',           '',  '',       '',       '',        '',     'cilantro',         ''],
     ],
   },
 
-  'Quick Weeknight Dinners': {
+  'Beef Stir Fry': {
     folder: 'Recipes',
     headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
     rows: [
-      // Beef Stir Fry
       ['Beef Stir Fry', '3', '15 min', '20 min', 'Asian', 'Easy', '400g beef sirloin',  'Cook rice'],
       ['',              '',  '',       '',       '',      '',     '2 bell peppers',     'Mix sauce'],
       ['',              '',  '',       '',       '',      '',     'broccoli',            'Stir-fry beef 3 min'],
@@ -575,34 +550,6 @@ export const EXAMPLE_SHEETS = {
       ['',              '',  '',       '',       '',      '',     'garlic',              'Toss until thick'],
       ['',              '',  '',       '',       '',      '',     'cornstarch',          'Serve over rice'],
       ['',              '',  '',       '',       '',      '',     'rice',                ''],
-      // Pad Thai
-      ['Pad Thai', '3', '20 min', '15 min', 'Thai', 'Medium', '200g rice noodles',  'Soak noodles'],
-      ['',         '',  '',       '',       '',     '',       '300g shrimp',        'Mix sauce'],
-      ['',         '',  '',       '',       '',     '',       '2 eggs',             'Scramble eggs'],
-      ['',         '',  '',       '',       '',     '',       'bean sprouts',       'Stir-fry shrimp'],
-      ['',         '',  '',       '',       '',     '',       'fish sauce',         'Add noodles and sauce'],
-      ['',         '',  '',       '',       '',     '',       'tamarind paste',     'Toss with sprouts'],
-      ['',         '',  '',       '',       '',     '',       'sugar',              'Top with peanuts'],
-      ['',         '',  '',       '',       '',     '',       'peanuts',            'Serve with lime'],
-      ['',         '',  '',       '',       '',     '',       'lime',               ''],
-      // Banana Pancakes
-      ['Banana Pancakes', '2', '5 min', '15 min', 'Breakfast', 'Easy', '2 bananas',       'Mash bananas'],
-      ['',                '',  '',      '',       '',          '',     '2 eggs',           'Whisk in eggs and vanilla'],
-      ['',                '',  '',      '',       '',          '',     'flour',            'Mix dry ingredients'],
-      ['',                '',  '',      '',       '',          '',     'baking powder',    'Cook in buttered pan'],
-      ['',                '',  '',      '',       '',          '',     'vanilla',          'Flip when bubbly'],
-      ['',                '',  '',      '',       '',          '',     'salt',             'Serve with syrup'],
-      ['',                '',  '',      '',       '',          '',     'butter',           ''],
-      ['',                '',  '',      '',       '',          '',     'maple syrup',      ''],
-      // One-Pot Pasta
-      ['One-Pot Pasta', '4', '5 min', '20 min', 'Italian', 'Easy', '400g penne',           'Combine pasta, tomatoes, garlic, oil, stock in pot'],
-      ['',              '',  '',      '',       '',        '',     '400g cherry tomatoes', 'Bring to boil'],
-      ['',              '',  '',      '',       '',        '',     'garlic',               'Cook 12 min, stirring'],
-      ['',              '',  '',      '',       '',        '',     'basil',                'Tear in mozzarella'],
-      ['',              '',  '',      '',       '',        '',     'olive oil',            'Season'],
-      ['',              '',  '',      '',       '',        '',     'vegetable stock',      'Garnish with basil'],
-      ['',              '',  '',      '',       '',        '',     'mozzarella',           ''],
-      ['',              '',  '',      '',       '',        '',     'salt and pepper',      ''],
     ],
   },
 };

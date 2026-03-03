@@ -7,6 +7,7 @@ const definition = {
   icon: '⏱️',
   color: '#4338ca',
   priority: 20,
+  itemNoun: 'Entry',
 
   detect(lower) {
     return lower.some(h => /^(hours|time.?spent|duration|hrs)/.test(h))
@@ -24,6 +25,17 @@ const definition = {
     if (cols.text === -1) cols.text = lower.findIndex((_, i) => i !== cols.hours && i !== cols.client);
     cols.date     = lower.findIndex(h => /^(date|day|when)/.test(h));
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',     label: 'Task',     colIndex: cols.text,     type: 'text',   placeholder: 'Project or task', required: true },
+      { role: 'hours',    label: 'Hours',    colIndex: cols.hours,    type: 'number', placeholder: '0', required: true },
+      { role: 'client',   label: 'Client',   colIndex: cols.client,   type: 'text',   placeholder: 'Client name' },
+      { role: 'rate',     label: 'Rate',     colIndex: cols.rate,     type: 'number', placeholder: 'Hourly rate' },
+      { role: 'billable', label: 'Billable', colIndex: cols.billable, type: 'select', options: ['Yes', 'No'], defaultValue: 'Yes' },
+      { role: 'date',     label: 'Date',     colIndex: cols.date,     type: 'date',   defaultValue: '__TODAY__' },
+    ];
   },
 
   render(container, rows, cols) {

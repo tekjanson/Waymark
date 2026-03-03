@@ -7,6 +7,7 @@ const definition = {
   icon: '📋',
   color: '#374151',
   priority: 18,
+  itemNoun: 'Entry',
 
   detect(lower) {
     return lower.some(h => /^(version|release|v\d|build)/.test(h))
@@ -21,6 +22,15 @@ const definition = {
     cols.description = lower.findIndex((h, i) => i !== cols.version && i !== cols.date && i !== cols.type && /^(change|what.?changed|description|detail|summary|notes?|added|fixed|entry)/.test(h));
     if (cols.description === -1) cols.description = lower.findIndex((_, i) => i !== cols.version && i !== cols.date && i !== cols.type);
     return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'version',     label: 'Version',     colIndex: cols.version,     type: 'text',   placeholder: 'e.g. 1.2.0', required: true },
+      { role: 'date',        label: 'Date',        colIndex: cols.date,        type: 'date',   defaultValue: '__TODAY__' },
+      { role: 'type',        label: 'Type',        colIndex: cols.type,        type: 'select', options: ['Added', 'Fixed', 'Changed', 'Removed', 'Deprecated', 'Breaking'], defaultValue: 'Added' },
+      { role: 'description', label: 'Description', colIndex: cols.description, type: 'text',   placeholder: 'What changed?', required: true },
+    ];
   },
 
   changeClass(val) {

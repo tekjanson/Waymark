@@ -87,6 +87,32 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
 }
 
 /**
+ * Append one or more rows to the end of a sheet.
+ * Uses the Sheets API values:append endpoint.
+ * @param {string}     token
+ * @param {string}     spreadsheetId
+ * @param {string}     sheetTitle     e.g. 'Sheet1'
+ * @param {string[][]} rows           array of row arrays (each row is string[])
+ * @returns {Promise<Object>}
+ */
+export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
+  const range = `${sheetTitle}!A1`;
+  const res = await fetch(
+    `${BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: rows }),
+    }
+  );
+  if (!res.ok) throw new Error(`Sheets append ${res.status}`);
+  return res.json();
+}
+
+/**
  * Update a single cell value in a spreadsheet.
  * @param {string} token
  * @param {string} spreadsheetId

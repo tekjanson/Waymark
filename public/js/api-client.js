@@ -378,18 +378,56 @@ export const api = {
 
     async createSpreadsheet(title, rows, parentId) {
       if (isLocal) {
+        const sheetId = `created-sheet-${Date.now()}`;
         const record = {
-          spreadsheetId: `created-sheet-${Date.now()}`,
+          spreadsheetId: sheetId,
           title,
           rows,
           parentId,
           createdAt: new Date().toISOString(),
         };
         window.__WAYMARK_RECORDS.push(record);
+
+        // Register in fixture cache so getSpreadsheet can find it
+        const fix = await loadFixtures();
+        fix.sheets[sheetId] = {
+          id: sheetId,
+          title,
+          sheetTitle: 'Sheet1',
+          values: rows,
+        };
+
         return record;
       }
       const token = await clientAuth.getToken();
       return sheetsApi.createSpreadsheet(token, title, rows, parentId);
+    },
+
+    /**
+     * Append one or more rows to the end of a sheet.
+     * @param {string}     spreadsheetId
+     * @param {string}     sheetTitle     e.g. 'Sheet1'
+     * @param {string[][]} rows           array of row arrays
+     * @returns {Promise<Object>}
+     */
+    async appendRows(spreadsheetId, sheetTitle, rows) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        const data = fix.sheets[spreadsheetId];
+        if (data && data.values) {
+          for (const row of rows) data.values.push(row);
+        }
+        const record = {
+          type: 'row-append',
+          spreadsheetId, sheetTitle, rows,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await clientAuth.getToken();
+      return sheetsApi.appendRows(token, spreadsheetId, sheetTitle, rows);
     },
 
     /**
