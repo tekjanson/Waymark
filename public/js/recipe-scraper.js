@@ -1,8 +1,9 @@
 /* ============================================================
-   public/js/recipe-scraper.js — Frontend-only recipe URL scraper
+   public/js/recipe-scraper.js — Recipe URL scraper
 
-   Fetches a web page via a CORS proxy, parses the HTML in-browser
-   using DOMParser, and extracts recipe data.
+   Fetches a web page via the server-side /api/fetch-url proxy,
+   parses the HTML in-browser using DOMParser, and extracts
+   recipe data.
 
    Strategies (in order):
    1. JSON-LD structured data (schema.org/Recipe) — most reliable
@@ -11,50 +12,37 @@
    Returns a normalised recipe object:
    { name, servings, prepTime, cookTime, category, difficulty,
      ingredients: string[], instructions: string[], sourceUrl, method }
-
-   NO SERVER-SIDE CODE. Runs entirely in the browser.
    ============================================================ */
 
-// ---------- CORS proxies (tried in order) ----------
-
-const CORS_PROXIES = [
-  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-];
+// ---------- Page fetching via server proxy ----------
 
 /**
- * Fetch a URL through a CORS proxy. Tries proxies in order until one works.
+ * Fetch a URL via the server-side proxy at /api/fetch-url.
+ * Respects __WAYMARK_BASE so it works at both / (dev) and /waymark (prod).
  * @param {string} url
  * @returns {Promise<string>} HTML text
  */
 async function fetchPage(url) {
-  let lastError;
+  const base = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
+  const endpoint = `${base}/api/fetch-url`;
 
-  for (const proxyFn of CORS_PROXIES) {
-    const proxyUrl = proxyFn(url);
-    try {
-      const resp = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        signal: AbortSignal.timeout(20000),
-      });
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+    signal: AbortSignal.timeout(20000),
+  });
 
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-      const text = await resp.text();
-      if (!text || text.length < 100) throw new Error('Empty response');
-      return text;
-    } catch (err) {
-      lastError = err;
-      // try next proxy
-    }
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.error || `Server returned HTTP ${resp.status}`);
   }
 
-  throw new Error(
-    `Could not fetch the recipe page. All CORS proxies failed. Last error: ${lastError?.message || 'unknown'}`
-  );
+  const data = await resp.json();
+  if (!data.html || data.html.length < 100) {
+    throw new Error('Empty or too-short response from the recipe page');
+  }
+  return data.html;
 }
 
 // ---------- HTML utility helpers ----------
