@@ -11,7 +11,8 @@
 
    Returns a normalised recipe object:
    { name, servings, prepTime, cookTime, category, difficulty,
-     ingredients: string[], instructions: string[], sourceUrl, method }
+     ingredients: { quantity, name }[], instructions: string[],
+     sourceUrl, method }
    ============================================================ */
 
 // ---------- Page fetching via server proxy ----------
@@ -158,21 +159,66 @@ function normaliseInstructions(instructions) {
 }
 
 /**
- * Normalise ingredient entries.
+ * Normalise ingredient entries and split each into quantity + name.
  * @param {*} ingredients
- * @returns {string[]}
+ * @returns {{ quantity: string, name: string }[]}
  */
 function normaliseIngredients(ingredients) {
   if (!ingredients) return [];
+  let raw = [];
   if (typeof ingredients === 'string') {
-    return stripTags(ingredients).split('\n').filter(Boolean);
-  }
-  if (Array.isArray(ingredients)) {
-    return ingredients
+    raw = stripTags(ingredients).split('\n').filter(Boolean);
+  } else if (Array.isArray(ingredients)) {
+    raw = ingredients
       .map(i => stripTags(typeof i === 'string' ? i : (i.name || i.text || '')))
       .filter(Boolean);
   }
-  return [];
+  return raw.map(splitIngredient);
+}
+
+/**
+ * Split a raw ingredient string like "2 cups all-purpose flour" into
+ * { quantity: "2 cups", name: "all-purpose flour" }.
+ *
+ * Handles integers, decimals, Unicode fractions (½), slash fractions (1/2),
+ * mixed numbers (1 1/2), and common unit abbreviations.
+ *
+ * @param {string} text — full ingredient string
+ * @returns {{ quantity: string, name: string }}
+ */
+function splitIngredient(text) {
+  if (!text) return { quantity: '', name: '' };
+  const s = text.trim();
+
+  // Known unit words/abbreviations
+  const units = '(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|kg|ml|l|litres?|liters?|cloves?|cans?|heads?|bunch(?:es)?|pinch(?:es)?|dash(?:es)?|slices?|pieces?|sticks?|sprigs?|stalks?|handfuls?|packs?|packets?|bags?|boxes?|bottles?|jars?|containers?)';
+
+  // Regex: optional number (int, decimal, fraction, mixed) + optional unit,
+  // then the rest is the ingredient name.
+  // Number patterns: "2", "2.5", "1/2", "1 1/2", "½", "1½"
+  const qtyRe = new RegExp(
+    `^((?:\\d+\\s+)?\\d+\\/\\d+|\\d+[\\u00BC-\\u00BE\\u2150-\\u215E]|[\\u00BC-\\u00BE\\u2150-\\u215E]|\\d+(?:\\.\\d+)?)` +
+    `(?:\\s*(${units}))?\\s+(.+)$`,
+    'i'
+  );
+
+  const m = s.match(qtyRe);
+  if (m) {
+    const qty = m[2] ? `${m[1]} ${m[2]}`.trim() : m[1].trim();
+    return { quantity: qty, name: m[3].trim() };
+  }
+
+  // Fallback: number glued to unit without space, e.g. "400g spaghetti"
+  const gluedRe = new RegExp(
+    `^(\\d+(?:\\.\\d+)?\\s*(?:${units}))\\s+(.+)$`, 'i'
+  );
+  const gm = s.match(gluedRe);
+  if (gm) {
+    return { quantity: gm[1].trim(), name: gm[2].trim() };
+  }
+
+  // No quantity detected — entire string is the ingredient name
+  return { quantity: '', name: s };
 }
 
 // ---------- Recipe builders ----------

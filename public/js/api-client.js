@@ -457,5 +457,32 @@ export const api = {
       const token = await clientAuth.getToken();
       return sheetsApi.updateCell(token, spreadsheetId, sheetTitle, row, col, value);
     },
+
+    /**
+     * Replace all data in a sheet (clear + write).
+     * Used for recipe re-sync from source URL.
+     * @param {string}     spreadsheetId
+     * @param {string}     sheetTitle  e.g. 'Sheet1'
+     * @param {string[][]} rows        2D array including header row
+     */
+    async replaceSheetData(spreadsheetId, sheetTitle, rows) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        // Replace the cached fixture data entirely
+        if (fix.sheets[spreadsheetId]) {
+          fix.sheets[spreadsheetId].values = rows;
+        }
+        const record = {
+          type: 'sheet-replace',
+          spreadsheetId, sheetTitle, rows,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await clientAuth.getToken();
+      return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
+    },
   },
 };
