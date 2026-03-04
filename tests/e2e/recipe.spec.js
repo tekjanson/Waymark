@@ -192,3 +192,66 @@ test('recipe displays source URL when present', async ({ page }) => {
   await expect(resyncBtn).toBeVisible();
   await expect(resyncBtn).toContainText('Re-sync');
 });
+
+test('recipe quantity is editable at 1× scale and commits on Enter', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
+
+  // At default 1×, quantity should have editable-cell class
+  const qtyCell = page.locator('.recipe-ingredient-qty').first();
+  await expect(qtyCell).toHaveClass(/editable-cell/);
+
+  // Click to start editing
+  await qtyCell.click();
+  const input = page.locator('.recipe-ingredient-qty input.editable-cell-input').first();
+  await expect(input).toBeVisible();
+  await input.fill('500g');
+  await input.press('Enter');
+
+  // Verify the edit was recorded
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.value === '500g')).toBe(true);
+
+  // Cell should display the new value
+  await expect(qtyCell).toContainText('500g');
+});
+
+test('recipe quantity is not editable when scaled to 2×', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+
+  // Scale to 2×
+  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+
+  // Quantity should NOT have editable-cell class
+  const qtyCell = page.locator('.recipe-ingredient-qty').first();
+  await expect(qtyCell).not.toHaveClass(/editable-cell/);
+
+  // Click the quantity — no input should appear
+  await qtyCell.click();
+  const input = page.locator('.recipe-ingredient-qty input.editable-cell-input');
+  await expect(input).toHaveCount(0);
+});
+
+test('recipe quantity becomes editable again when returning to 1×', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+
+  // Scale to 3×
+  await page.locator('.recipe-scale-btn[data-scale="3"]').click();
+  const qtyCell = page.locator('.recipe-ingredient-qty').first();
+  await expect(qtyCell).not.toHaveClass(/editable-cell/);
+
+  // Return to 1×
+  await page.locator('.recipe-scale-btn[data-scale="1"]').click();
+  await expect(qtyCell).toHaveClass(/editable-cell/);
+
+  // Should be editable — click and verify input appears
+  await qtyCell.click();
+  const input = page.locator('.recipe-ingredient-qty input.editable-cell-input').first();
+  await expect(input).toBeVisible();
+  await input.press('Escape');
+});

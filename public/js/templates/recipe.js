@@ -389,8 +389,52 @@ const definition = {
       }
       const ul = el('ul', { className: 'recipe-ingredients-list' });
       for (const item of items) {
-        const qtySpan = el('span', { className: 'recipe-ingredient-qty' }, [item.qty || '']);
+        const qtySpan = el('span', {
+          className: 'recipe-ingredient-qty editable-cell',
+          tabindex: '0',
+          title: 'Click to edit',
+        }, [item.qty || '—']);
         qtySpan.dataset.originalQty = item.qty;
+        qtySpan.dataset.rowIdx = String(item.rowIdx);
+        qtySpan.dataset.colIdx = String(cols.quantity);
+
+        // Inline-edit that only activates at 1× scale
+        if (cols.quantity >= 0) {
+          qtySpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentScale !== 1) return;                          // scaled → read-only
+            if (qtySpan.querySelector('input')) return;              // already editing
+            const current = qtySpan.dataset.originalQty || '';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'editable-cell-input';
+            input.value = current;
+            qtySpan.textContent = '';
+            qtySpan.append(input);
+            input.focus();
+            input.select();
+
+            function commit() {
+              const nv = input.value.trim();
+              input.removeEventListener('blur', commit);
+              qtySpan.textContent = nv || '—';
+              qtySpan.dataset.originalQty = nv;
+              if (nv !== current && !(current === '' && nv === '')) {
+                emitEdit(item.rowIdx, cols.quantity, nv);
+              }
+            }
+            function cancel() {
+              input.removeEventListener('blur', commit);
+              qtySpan.textContent = current || '—';
+            }
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (ev) => {
+              if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
+              if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+            });
+          });
+        }
+
         quantitySpans.push(qtySpan);
 
         const li = el('li', {}, [
@@ -456,10 +500,19 @@ const definition = {
       } else if (!matchesPreset) {
         customScaleInput.classList.add('recipe-scale-custom-active');
       }
-      // Scale quantity spans
+      // Scale quantity spans & toggle editability
       for (const span of quantitySpans) {
         const orig = span.dataset.originalQty || '';
-        span.textContent = orig ? scaleQuantity(orig, scale) : '';
+        span.textContent = orig ? scaleQuantity(orig, scale) : (scale === 1 ? '—' : '');
+        if (scale === 1) {
+          span.classList.add('editable-cell');
+          span.setAttribute('tabindex', '0');
+          span.title = 'Click to edit';
+        } else {
+          span.classList.remove('editable-cell');
+          span.removeAttribute('tabindex');
+          span.title = '';
+        }
       }
       // Scale servings display
       if (servingsSpan) {
