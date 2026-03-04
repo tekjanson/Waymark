@@ -507,9 +507,9 @@ test('recipe inline add ingredient: click opens form and cancel hides it', async
   const form = page.locator('.recipe-inline-add-form:not(.hidden)').first();
   await expect(form).toBeVisible();
 
-  // Input should be focused
-  const input = form.locator('.recipe-inline-add-input');
-  await expect(input).toBeFocused();
+  // First input (quantity) should be focused
+  const inputs = form.locator('.recipe-inline-add-input');
+  await expect(inputs.first()).toBeFocused();
 
   // Trigger should be hidden
   await expect(addBtn).toBeHidden();
@@ -527,7 +527,10 @@ test('recipe inline add ingredient: submit appends row', async ({ page }) => {
 
   await page.locator('.recipe-inline-add-btn').first().click();
   const form = page.locator('.recipe-inline-add-form:not(.hidden)').first();
-  await form.locator('.recipe-inline-add-input').fill('2 cups flour');
+  const inputs = form.locator('.recipe-inline-add-input');
+  // Fill quantity and ingredient name in separate inputs
+  await inputs.first().fill('2 cups');
+  await inputs.nth(1).fill('flour');
   await form.locator('.recipe-inline-add-submit').click();
 
   // Wait for re-render
@@ -537,8 +540,9 @@ test('recipe inline add ingredient: submit appends row', async ({ page }) => {
   const appends = records.filter(r => r.type === 'row-append');
   expect(appends.length).toBe(1);
   expect(appends[0].rows.length).toBe(1);
-  // The ingredient value should be in column 6 (Ingredient column)
-  expect(appends[0].rows[0].some(v => v === '2 cups flour')).toBe(true);
+  // The quantity and ingredient values should be in separate columns
+  expect(appends[0].rows[0].some(v => v === '2 cups')).toBe(true);
+  expect(appends[0].rows[0].some(v => v === 'flour')).toBe(true);
 });
 
 test('recipe inline add step: Enter key submits', async ({ page }) => {
@@ -567,8 +571,9 @@ test('recipe inline add: Escape key cancels without submit', async ({ page }) =>
 
   await page.locator('.recipe-inline-add-btn').first().click();
   const form = page.locator('.recipe-inline-add-form:not(.hidden)').first();
-  await form.locator('.recipe-inline-add-input').fill('should not submit');
-  await form.locator('.recipe-inline-add-input').press('Escape');
+  const input = form.locator('.recipe-inline-add-input').first();
+  await input.fill('should not submit');
+  await input.press('Escape');
 
   // Form should be hidden
   await expect(form).toBeHidden();
@@ -587,11 +592,11 @@ test('recipe inline add: empty field shows validation error', async ({ page }) =
   await page.locator('.recipe-inline-add-btn').first().click();
   const form = page.locator('.recipe-inline-add-form:not(.hidden)').first();
 
-  // Click submit with empty input
+  // Click submit with empty inputs
   await form.locator('.recipe-inline-add-submit').click();
 
-  // Input should get required class
-  await expect(form.locator('.recipe-inline-add-input')).toHaveClass(/add-row-required/);
+  // First input should get required class
+  await expect(form.locator('.recipe-inline-add-input').first()).toHaveClass(/add-row-required/);
 
   // Form stays open
   await expect(form).toBeVisible();

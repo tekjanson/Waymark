@@ -93,6 +93,16 @@ ul { list-style: none; }
 .btn-pin:hover { color: var(--color-warning); }
 .btn-pin.pinned { color: var(--color-warning); }
 
+.btn-open-drive {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: transparent; color: var(--color-text-muted);
+  font-size: 0.85rem; cursor: pointer; transition: all var(--transition);
+  opacity: 0;
+}
+.folder-item:hover .btn-open-drive { opacity: 1; }
+.btn-open-drive:hover { color: var(--color-primary); background: var(--color-bg); }
+
 /* ---------- Login Screen ---------- */
 .login-container {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -554,6 +564,19 @@ ul { list-style: none; }
 }
 .btn-sheets:hover { background: #c8e6c9; box-shadow: var(--shadow); }
 .btn-sheets svg { stroke: #1e7e34; flex-shrink: 0; }
+
+/* ---------- Open in Google Drive Button ---------- */
+.btn-drive {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius);
+  border: 1px solid var(--color-primary); background: #eff6ff; color: var(--color-primary);
+  font-size: 0.82rem; font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn-drive:hover { background: #dbeafe; box-shadow: var(--shadow); }
+.btn-drive svg { stroke: var(--color-primary); flex-shrink: 0; }
 
 /* ---------- Modal ---------- */
 .modal-overlay {

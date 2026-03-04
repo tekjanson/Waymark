@@ -644,6 +644,7 @@
         "recipe",
         "ingredient",
         "ingredients",
+        "quantity",
         "step",
         "instructions",
         "servings",
@@ -651,7 +652,8 @@
         "cook",
         "cuisine",
         "difficulty",
-        "directions"
+        "directions",
+        "source"
       ],
       "columnRoles": [
         "text",
@@ -660,8 +662,10 @@
         "cookTime",
         "category",
         "difficulty",
+        "quantity",
         "ingredient",
-        "step"
+        "step",
+        "source"
       ],
       "interactive": true,
       "interactionType": "inline-edit",

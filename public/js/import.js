@@ -125,8 +125,10 @@ const ROLE_LABELS = {
   'recipe.cookTime': 'Cook Time',
   'recipe.category': 'Cuisine / Category',
   'recipe.difficulty': 'Difficulty Level',
-  'recipe.ingredient': 'Ingredient (one per row)',
+  'recipe.quantity': 'Quantity / Amount (one per row)',
+  'recipe.ingredient': 'Ingredient Name (one per row)',
   'recipe.step': 'Step / Instruction (one per row)',
+  'recipe.source': 'Source URL (attribution / re-sync)',
 };
 
 /**
@@ -194,7 +196,8 @@ const CANONICAL_HEADERS = {
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',
   'recipe.category': 'Category', 'recipe.difficulty': 'Difficulty',
-  'recipe.ingredient': 'Ingredient', 'recipe.step': 'Step',
+  'recipe.quantity': 'Quantity', 'recipe.ingredient': 'Ingredient',
+  'recipe.step': 'Step', 'recipe.source': 'Source',
 };
 
 /**

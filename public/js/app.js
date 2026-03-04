@@ -104,7 +104,7 @@ const TEMPLATE_HEADERS = {
   meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
   travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
   roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
+  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
   testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
 };
 
@@ -164,6 +164,9 @@ async function boot() {
 
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderPinnedFolders);
+
+  // Listen for recipe re-sync requests from the recipe template
+  window.addEventListener('waymark:recipe-resync', handleRecipeResync);
 
   // Restore sidebar state
   toggleSidebar(userData.getSidebarOpen());
@@ -308,7 +311,19 @@ function renderPinnedFolders() {
 
 /* ---------- Folder Contents ---------- */
 
+const openInDriveBtn = document.getElementById('open-in-drive-btn');
+let currentFolderId  = null;
+
+if (openInDriveBtn) {
+  openInDriveBtn.addEventListener('click', () => {
+    if (currentFolderId) {
+      window.open(`https://drive.google.com/drive/folders/${currentFolderId}`, '_blank');
+    }
+  });
+}
+
 async function showFolderContents(folderId, folderName) {
+  currentFolderId = folderId;
   const titleEl      = document.getElementById('folder-title');
   const sheetsEl     = document.getElementById('folder-sheets');
   const noSheetsEl   = document.getElementById('no-sheets');
@@ -733,12 +748,15 @@ async function handleRecipeUrlImport() {
 
     // Build sheet-like values — row-per-item so each ingredient/step
     // is its own row, making the sheet easy to edit as a human.
-    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'];
+    // Quantity and Ingredient are separate columns for recipe scaling.
+    // Source column stores the URL for attribution and re-sync.
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'];
     const ingredients = recipe.ingredients || [];
     const steps = recipe.instructions || [];
     const maxRows = Math.max(ingredients.length, steps.length, 1);
     const dataRows = [];
     for (let i = 0; i < maxRows; i++) {
+      const ingr = ingredients[i] || { quantity: '', name: '' };
       dataRows.push([
         i === 0 ? (recipe.name || 'Imported Recipe') : '',
         i === 0 ? (recipe.servings || '') : '',
@@ -746,8 +764,10 @@ async function handleRecipeUrlImport() {
         i === 0 ? (recipe.cookTime || '') : '',
         i === 0 ? (recipe.category || '') : '',
         i === 0 ? (recipe.difficulty || '') : '',
-        ingredients[i] || '',
+        ingr.quantity || '',
+        ingr.name || '',
         steps[i] || '',
+        i === 0 ? url : '',
       ]);
     }
 
@@ -782,6 +802,69 @@ async function handleRecipeUrlImport() {
   } finally {
     recipeUrlImportBtn.disabled = false;
     recipeUrlImportBtn.textContent = 'Import Recipe';
+  }
+}
+
+/**
+ * Handle re-syncing a recipe from its source URL.
+ * Triggered by the 'waymark:recipe-resync' custom event from the
+ * recipe template.  Re-scrapes the original URL and replaces the
+ * sheet data in place.
+ * @param {CustomEvent} e — detail: { url }
+ */
+async function handleRecipeResync(e) {
+  const url = e.detail?.url;
+  if (!url) return;
+
+  // Get the current sheet context from the hash route
+  const hash = window.location.hash || '';
+  const sheetMatch = hash.match(/^#\/sheet\/(.+)/);
+  if (!sheetMatch) {
+    showToast('Cannot re-sync: no sheet is currently open', 'error');
+    return;
+  }
+  const sheetId = sheetMatch[1];
+
+  showToast('Re-syncing recipe from source…', 'info');
+
+  try {
+    const recipe = await scrapeRecipe(url);
+
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'];
+    const ingredients = recipe.ingredients || [];
+    const steps = recipe.instructions || [];
+    const maxRows = Math.max(ingredients.length, steps.length, 1);
+    const dataRows = [];
+    for (let i = 0; i < maxRows; i++) {
+      const ingr = ingredients[i] || { quantity: '', name: '' };
+      dataRows.push([
+        i === 0 ? (recipe.name || 'Imported Recipe') : '',
+        i === 0 ? (recipe.servings || '') : '',
+        i === 0 ? (recipe.prepTime || '') : '',
+        i === 0 ? (recipe.cookTime || '') : '',
+        i === 0 ? (recipe.category || '') : '',
+        i === 0 ? (recipe.difficulty || '') : '',
+        ingr.quantity || '',
+        ingr.name || '',
+        steps[i] || '',
+        i === 0 ? url : '',
+      ]);
+    }
+
+    const allRows = [headers, ...dataRows];
+
+    // Get the sheet title from the current loaded data
+    const data = await api.sheets.getSpreadsheet(sheetId);
+    const sheetTitle = data.sheetTitle || 'Sheet1';
+
+    await api.sheets.replaceSheetData(sheetId, sheetTitle, allRows);
+
+    showToast(`Recipe "${recipe.name}" re-synced successfully`, 'success');
+
+    // Reload the current sheet view
+    checklist.show(sheetId);
+  } catch (err) {
+    showToast(`Re-sync failed: ${err.message}`, 'error');
   }
 }
 

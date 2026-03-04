@@ -138,3 +138,38 @@ export async function updateCell(token, spreadsheetId, sheetTitle, row, col, val
   if (!res.ok) throw new Error(`Sheets update ${res.status}`);
   return res.json();
 }
+
+/**
+ * Replace all sheet data: clears the sheet then writes new rows.
+ * Used by re-sync to overwrite a sheet with fresh content.
+ * @param {string}     token
+ * @param {string}     spreadsheetId
+ * @param {string}     sheetTitle   e.g. 'Sheet1'
+ * @param {string[][]} rows         2D array including header row
+ */
+export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
+  // Clear existing data
+  await fetch(
+    `${BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetTitle)}:clear`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  // Write new data starting at A1
+  const range = `${sheetTitle}!A1`;
+  const res = await fetch(
+    `${BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: rows }),
+    }
+  );
+  if (!res.ok) throw new Error(`Sheets replace ${res.status}`);
+  return res.json();
+}
