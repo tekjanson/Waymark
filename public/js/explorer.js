@@ -105,6 +105,18 @@ function buildFolderNode(folder, isShared = false) {
     },
   }, ['📌']);
 
+  // Open in Google Drive button
+  const openDriveBtn = el('button', {
+    className: 'btn-open-drive',
+    title: 'Open in Google Drive',
+    on: {
+      click(e) {
+        e.stopPropagation();
+        window.open(`https://drive.google.com/drive/folders/${folder.id}`, '_blank');
+      },
+    },
+  }, ['↗']);
+
   // Shared badge
   const badges = [];
   if (isShared || folder.shared) {
@@ -122,6 +134,7 @@ function buildFolderNode(folder, isShared = false) {
     el('span', { className: 'folder-icon' }, ['📁']),
     el('span', { className: 'folder-name' }, [folder.name]),
     ...badges,
+    openDriveBtn,
     pinBtn,
   ]);
 

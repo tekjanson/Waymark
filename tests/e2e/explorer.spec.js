@@ -109,3 +109,15 @@ test('sidebar toggle works', async ({ page }) => {
   await page.click('#sidebar-toggle');
   await expect(sidebar).toHaveClass(/sidebar-open/);
 });
+
+test('folder items have open in drive button', async ({ page }) => {
+  await setupApp(page, { waitForExplorer: true });
+
+  // Hover over the first folder item to reveal the button
+  const folderItem = page.locator('.folder-item').first();
+  await folderItem.hover();
+
+  const openDriveBtn = folderItem.locator('.btn-open-drive');
+  await expect(openDriveBtn).toBeAttached();
+  await expect(openDriveBtn).toContainText('↗');
+});
