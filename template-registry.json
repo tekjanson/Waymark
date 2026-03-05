@@ -298,9 +298,14 @@
       ],
       "columnRoles": [
         "text",
+        "description",
         "stage",
+        "project",
         "assignee",
-        "priority"
+        "priority",
+        "due",
+        "label",
+        "note"
       ],
       "interactive": true,
       "interactionType": "status-cycle",
@@ -308,14 +313,17 @@
         "Backlog",
         "To Do",
         "In Progress",
-        "Done"
+        "Done",
+        "Archived"
       ],
       "exampleCount": 2,
       "fixtureIds": [
-        "sheet-017"
+        "sheet-017",
+        "sheet-028"
       ],
       "fixtureFiles": [
-        "kanban-project"
+        "kanban-project",
+        "kanban-waymark"
       ]
     },
     {
@@ -678,7 +686,7 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-028",
+  "nextSheetId": "sheet-029",
   "totalTemplates": 19,
   "categories": [
     "Productivity",

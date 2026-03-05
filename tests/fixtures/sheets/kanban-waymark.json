@@ -1,0 +1,23 @@
+{
+  "id": "sheet-028",
+  "title": "Waymark Development",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Task", "Description", "Stage", "Project", "Assignee", "Priority", "Due", "Label", "Note"],
+    ["Kanban Board Redesign", "Rebuild kanban with expandable cards and project filtering", "Done", "Frontend", "Alice", "P0", "2026-03-01", "feature", ""],
+    ["", "Design card expansion layout", "Done", "", "Alice", "", "2026-02-25", "", ""],
+    ["", "Implement project filter pills", "Done", "", "Bob", "", "2026-02-27", "", ""],
+    ["", "", "", "", "Alice", "", "2026-03-01", "", "Looks great in testing!"],
+    ["Dark Mode Support", "Add dark theme with CSS custom properties", "In Progress", "Frontend", "Carol", "P1", "2026-03-15", "feature", ""],
+    ["", "Define dark color tokens", "Done", "", "Carol", "", "2026-03-05", "", ""],
+    ["", "Apply dark tokens to base.css", "In Progress", "", "Carol", "", "2026-03-10", "", ""],
+    ["API Rate Limiting", "Implement request throttling for Google API calls", "To Do", "Backend", "Bob", "P1", "2026-03-20", "infra", ""],
+    ["Fix Search Bug", "Search results don't highlight matching text", "In Progress", "Frontend", "Alice", "P0", "2026-03-05", "bug", ""],
+    ["", "", "", "", "Alice", "", "2026-03-03", "", "Found the regex issue in search.js"],
+    ["Add Export Feature", "Export sheet data to CSV or PDF", "Backlog", "Backend", "", "P2", "", "feature", ""],
+    ["Mobile Layout Polish", "Fix responsive issues on small screens", "To Do", "Frontend", "Carol", "P2", "2026-03-25", "design", ""],
+    ["Write Integration Tests", "Add Playwright tests for all new features", "Backlog", "Testing", "", "P1", "", "docs", ""],
+    ["Upgrade Dependencies", "Update all npm packages to latest versions", "Done", "DevOps", "Bob", "P3", "2026-02-20", "infra", ""],
+    ["Setup CI Pipeline", "Configure GitHub Actions for automated testing", "Archived", "DevOps", "Bob", "P1", "2026-01-15", "infra", ""]
+  ]
+}

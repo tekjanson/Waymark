@@ -67,9 +67,14 @@ const ROLE_LABELS = {
   'budget.budget': 'Budget Limit',
   // Kanban
   'kanban.text': 'Task / Story',
+  'kanban.description': 'Description / Details',
   'kanban.stage': 'Board Stage (to-do, in progress, done)',
+  'kanban.project': 'Project / Epic',
   'kanban.assignee': 'Assignee',
   'kanban.priority': 'Priority Level',
+  'kanban.due': 'Due Date / Deadline',
+  'kanban.label': 'Label / Tag (feature, bug, etc.)',
+  'kanban.note': 'Note / Comment',
   // Habit
   'habit.text': 'Habit / Routine',
   'habit.streak': 'Streak Count',
@@ -165,8 +170,9 @@ const CANONICAL_HEADERS = {
   'budget.text': 'Description', 'budget.amount': 'Amount',
   'budget.category': 'Category', 'budget.date': 'Date', 'budget.budget': 'Budget',
   // Kanban
-  'kanban.text': 'Task', 'kanban.stage': 'Stage',
-  'kanban.assignee': 'Assignee', 'kanban.priority': 'Priority',
+  'kanban.text': 'Task', 'kanban.description': 'Description', 'kanban.stage': 'Stage',
+  'kanban.project': 'Project', 'kanban.assignee': 'Assignee', 'kanban.priority': 'Priority',
+  'kanban.due': 'Due', 'kanban.label': 'Label', 'kanban.note': 'Note',
   // Habit
   'habit.text': 'Habit', 'habit.streak': 'Streak',
   // Grading
