@@ -1,0 +1,17 @@
+{
+  "id": "sheet-029",
+  "title": "User Login Flow",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Flow", "Step", "Type", "Next", "Condition", "Notes"],
+    ["User Login Flow", "User Opens App", "start", "Show Login Form", "", "Entry point"],
+    ["", "Show Login Form", "process", "Enter Credentials", "", "Display email and password fields"],
+    ["", "Enter Credentials", "input", "Validate Input", "", "User types email and password"],
+    ["", "Validate Input", "decision", "Check Auth,Show Login Form", "Valid,Invalid", "Client-side validation"],
+    ["", "Check Auth", "process", "Auth OK?", "", "Call authentication API"],
+    ["", "Auth OK?", "decision", "Load Dashboard,Show Error", "Yes,No", "Server response check"],
+    ["", "Show Error", "process", "Show Login Form", "", "Display error toast"],
+    ["", "Load Dashboard", "process", "Done", "", "Fetch user data and render"],
+    ["", "Done", "end", "", "", "User is logged in"]
+  ]
+}

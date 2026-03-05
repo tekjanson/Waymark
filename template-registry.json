@@ -684,10 +684,48 @@
       "fixtureFiles": [
         "recipe-spaghetti-bolognese"
       ]
+    },
+    {
+      "key": "flow",
+      "name": "Flow Diagram",
+      "icon": "🔀",
+      "color": "#6366f1",
+      "priority": 20,
+      "category": "Engineering",
+      "detectSignals": [
+        "flow",
+        "diagram",
+        "process",
+        "workflow",
+        "pipeline",
+        "step",
+        "node",
+        "type",
+        "next",
+        "condition"
+      ],
+      "columnRoles": [
+        "flow",
+        "step",
+        "type",
+        "next",
+        "condition",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-029"
+      ],
+      "fixtureFiles": [
+        "flow-login"
+      ]
     }
   ],
-  "nextSheetId": "sheet-029",
-  "totalTemplates": 19,
+  "nextSheetId": "sheet-030",
+  "totalTemplates": 20,
   "categories": [
     "Productivity",
     "Engineering",

@@ -6,7 +6,7 @@
    sort within lanes, archive toggle, lane progress.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm, getUserName } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm, getUserName, comboCell, textareaCell } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -26,6 +26,11 @@ let _activeProject = null;
 let _activeSort = 'default';
 let _showArchived = false;
 let _expandedCards = new Set();
+
+/* ---------- Drag-and-drop state ---------- */
+
+let _dragCard = null;     // DOM element being dragged
+let _dragRowIdx = null;   // 1-based row index of dragged card
 
 /* ---------- Helpers ---------- */
 
@@ -165,10 +170,10 @@ const definition = {
   addRowFields(cols) {
     return [
       { role: 'text',        label: 'Task',        colIndex: cols.text,        type: 'text',   placeholder: 'Task title', required: true },
-      { role: 'description', label: 'Description',  colIndex: cols.description, type: 'text',   placeholder: 'Details (optional)' },
+      { role: 'description', label: 'Description',  colIndex: cols.description, type: 'textarea', placeholder: 'Details (optional)' },
       { role: 'stage',       label: 'Stage',        colIndex: cols.stage,       type: 'select', options: ['Backlog', 'To Do', 'In Progress', 'Done'], defaultValue: 'Backlog' },
-      { role: 'project',     label: 'Project',      colIndex: cols.project,     type: 'text',   placeholder: 'Project name' },
-      { role: 'assignee',    label: 'Assignee',     colIndex: cols.assignee,    type: 'text',   placeholder: 'Who?' },
+      { role: 'project',     label: 'Project',      colIndex: cols.project,     type: 'combo',  placeholder: 'Select or type new…' },
+      { role: 'assignee',    label: 'Assignee',     colIndex: cols.assignee,    type: 'combo',  placeholder: 'Select or type new…' },
       { role: 'priority',    label: 'Priority',     colIndex: cols.priority,    type: 'select', options: ['P0', 'P1', 'P2', 'P3'], defaultValue: 'P2' },
       { role: 'due',         label: 'Due Date',     colIndex: cols.due,         type: 'date' },
       { role: 'label',       label: 'Label',        colIndex: cols.label,       type: 'select', options: ['', 'feature', 'bug', 'infra', 'design', 'docs'] },
@@ -194,6 +199,14 @@ const definition = {
     // Collect unique project names
     const projects = cols.project >= 0
       ? [...new Set(groups.map(g => cell(g.row, cols.project)).filter(Boolean))].sort()
+      : [];
+
+    // Collect unique project names and assignees for combo dropdowns
+    const allProjects = cols.project >= 0
+      ? [...new Set(groups.map(g => cell(g.row, cols.project)).filter(Boolean))].sort()
+      : [];
+    const allAssignees = cols.assignee >= 0
+      ? [...new Set(groups.map(g => cell(g.row, cols.assignee)).filter(Boolean))].sort()
       : [];
 
     /* ---- Toolbar: filter pills + sort + archive toggle ---- */
@@ -293,6 +306,40 @@ const definition = {
 
         const lane = el('div', { className: `kanban-lane kanban-lane-${laneKey}` });
 
+        /* Drop-zone: accept dragged cards */
+        lane.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          lane.classList.add('kanban-lane-dragover');
+        });
+        lane.addEventListener('dragleave', () => {
+          lane.classList.remove('kanban-lane-dragover');
+        });
+        lane.addEventListener('drop', (e) => {
+          e.preventDefault();
+          lane.classList.remove('kanban-lane-dragover');
+          if (_dragRowIdx && cols.stage >= 0) {
+            const stageValue = LANE_LABELS[laneKey] || laneKey;
+            emitEdit(_dragRowIdx, cols.stage, stageValue);
+            /* Move the card DOM immediately for responsiveness */
+            if (_dragCard) {
+              _dragCard.classList.remove('kanban-card-dragging');
+              /* Insert before the add-row form if present, else at end */
+              const addForm = lane.querySelector('.add-row-lane');
+              if (addForm) lane.insertBefore(_dragCard, addForm);
+              else lane.append(_dragCard);
+              /* Update the stage badge on the moved card */
+              const badge = _dragCard.querySelector('.kanban-stage-btn');
+              if (badge) {
+                badge.textContent = stageValue;
+                badge.className = `kanban-stage-btn kanban-stage-${template.stageClass(stageValue)}`;
+              }
+            }
+            _dragCard = null;
+            _dragRowIdx = null;
+          }
+        });
+
         // Lane header
         const headerChildren = [
           el('span', { className: 'kanban-lane-title' }, [LANE_LABELS[laneKey] || laneKey]),
@@ -316,6 +363,10 @@ const definition = {
         if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {
           const laneForm = buildAddRowForm(template, cols, template._totalColumns || 0, template._onAddRow, {
             defaults: { stage: LANE_LABELS[laneKey] || laneKey, project: _activeProject || '' },
+            dynamicOptions: {
+              project: ['', ...allProjects],
+              assignee: ['', ...allAssignees],
+            },
           });
           laneForm.classList.add('add-row-lane');
           lane.append(laneForm);
@@ -343,7 +394,23 @@ const definition = {
       const hasNotes = group.notes.length > 0;
       const hasDetail = desc || hasSubtasks || hasNotes;
 
-      const card = el('div', { className: 'kanban-card' });
+      const card = el('div', { className: 'kanban-card', draggable: 'true' });
+
+      /* Drag-and-drop handlers */
+      card.addEventListener('dragstart', (e) => {
+        _dragCard = card;
+        _dragRowIdx = rowIdx;
+        card.classList.add('kanban-card-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(rowIdx));
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('kanban-card-dragging');
+        /* Clean up any lingering dragover highlights */
+        document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
+        _dragCard = null;
+        _dragRowIdx = null;
+      });
 
       // Project color accent on left border
       if (project) {
@@ -496,12 +563,12 @@ const definition = {
       const { row, idx } = group;
       const rowIdx = idx + 1;
 
-      // Full description
+      // Full description (multiline textarea)
       const desc = cols.description >= 0 ? cell(row, cols.description) : '';
       if (cols.description >= 0) {
         detail.append(el('div', { className: 'kanban-detail-section' }, [
           el('div', { className: 'kanban-detail-label' }, ['Description']),
-          editableCell('div', { className: 'kanban-detail-desc' }, desc, rowIdx, cols.description),
+          textareaCell('div', { className: 'kanban-detail-desc' }, desc, rowIdx, cols.description),
         ]));
       }
 
@@ -522,13 +589,13 @@ const definition = {
       if (cols.project >= 0) {
         metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
           el('span', { className: 'kanban-detail-field-label' }, ['Project']),
-          editableCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.project), rowIdx, cols.project),
+          comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.project), rowIdx, cols.project, allProjects),
         ]));
       }
       if (cols.assignee >= 0) {
         metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
           el('span', { className: 'kanban-detail-field-label' }, ['Assignee']),
-          editableCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.assignee), rowIdx, cols.assignee),
+          comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.assignee), rowIdx, cols.assignee, allAssignees),
         ]));
       }
       if (metaGrid.children.length > 0) detail.append(metaGrid);
