@@ -31,6 +31,7 @@ import './meal.js';
 import './travel.js';
 import './roster.js';
 import './recipe.js';
+import './flow.js';
 
 /* ---------- Detection ---------- */
 

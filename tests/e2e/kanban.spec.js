@@ -271,3 +271,366 @@ test('kanban lane header shows item count', async ({ page }) => {
   const counts = page.locator('.kanban-lane-count');
   expect(await counts.count()).toBe(4); // 4 lanes visible by default
 });
+
+/* ---------- Drag-and-drop ---------- */
+
+test('kanban cards are draggable', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Every card should have draggable attribute
+  const cards = page.locator('.kanban-card[draggable="true"]');
+  expect(await cards.count()).toBe(8);
+});
+
+test('kanban card drag adds dragging class', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card').first();
+
+  // Dispatch synthetic dragstart via evaluate (DataTransfer can only be created in page context)
+  await card.evaluate(el => {
+    const evt = new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() });
+    el.dispatchEvent(evt);
+  });
+  await expect(card).toHaveClass(/kanban-card-dragging/);
+});
+
+/* ---------- Combo cell (Project / Assignee) ---------- */
+
+test('kanban project field opens combo dropdown on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand a card to see detail
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  // Click the Project field value (should be a combo cell)
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  await projectField.click();
+
+  // Should show an input
+  const input = card.locator('.combo-cell-input');
+  await expect(input).toBeVisible();
+
+  // Visible dropdown should appear with options
+  const dropdown = projectField.locator('.combo-cell-dropdown:not(.hidden)');
+  await expect(dropdown).toBeVisible();
+  const options = dropdown.locator('.combo-cell-option');
+  expect(await options.count()).toBeGreaterThan(0);
+});
+
+test('kanban assignee field opens combo dropdown on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand a card to see detail
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  // Find the assignee combo cell (second combo-cell in detail)
+  const assigneeField = card.locator('.kanban-detail-field-value.combo-cell').nth(1);
+  await assigneeField.click();
+
+  // The input and dropdown should appear inside the assignee field itself
+  const input = assigneeField.locator('.combo-cell-input');
+  await expect(input).toBeVisible();
+  const dropdown = assigneeField.locator('.combo-cell-dropdown:not(.hidden)');
+  await expect(dropdown).toBeVisible();
+});
+
+test('kanban combo cell commits edit on Enter', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  await projectField.click();
+
+  const input = card.locator('.combo-cell-input').first();
+  await input.fill('New Project');
+  await input.press('Enter');
+
+  // Verify edit record
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'New Project')).toBe(true);
+});
+
+test('kanban combo cell cancels on Escape', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  const originalText = await projectField.textContent();
+
+  await projectField.click();
+  const input = card.locator('.combo-cell-input').first();
+  await input.fill('Should Not Save');
+  await input.press('Escape');
+
+  // Text should revert and dropdown should be gone
+  await expect(projectField).toContainText(originalText || '');
+  await expect(projectField.locator('.combo-cell-dropdown')).toBeHidden();
+});
+
+test('kanban combo cell selects option from dropdown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  await projectField.click();
+
+  // Clear input to see all options, then pick one different from current
+  const input = projectField.locator('.combo-cell-input');
+  await input.fill('');
+
+  const dropdown = projectField.locator('.combo-cell-dropdown:not(.hidden)');
+  await expect(dropdown).toBeVisible();
+
+  // Pick an option that differs from original ("Frontend")
+  const options = dropdown.locator('.combo-cell-option');
+  const count = await options.count();
+  let picked = null;
+  for (let i = 0; i < count; i++) {
+    const text = await options.nth(i).textContent();
+    if (text !== 'Frontend') { picked = { el: options.nth(i), text }; break; }
+  }
+  expect(picked).not.toBeNull();
+  await picked.el.click();
+
+  // Verify edit record was created with the selected value
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === picked.text)).toBe(true);
+});
+
+test('kanban combo cell arrow toggles dropdown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  await projectField.click();
+
+  // Dropdown opens on click
+  const dropdown = projectField.locator('.combo-cell-dropdown');
+  await expect(dropdown).toBeVisible();
+
+  // Click arrow to close
+  const arrow = projectField.locator('.combo-cell-arrow');
+  await arrow.click();
+  await expect(dropdown).toHaveClass(/hidden/);
+
+  // Click arrow again to re-open
+  await arrow.click();
+  await expect(dropdown).not.toHaveClass(/hidden/);
+});
+
+test('kanban combo cell filters options when typing', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  await projectField.click();
+
+  // Clear input to see all available options
+  const input = projectField.locator('.combo-cell-input');
+  await input.fill('');
+
+  const dropdown = projectField.locator('.combo-cell-dropdown');
+  const allCount = await dropdown.locator('.combo-cell-option').count();
+  expect(allCount).toBeGreaterThan(1);
+
+  // Type a non-matching value to see the (new) hint
+  await input.fill('zzz_nonexistent_project');
+  const emptyHint = dropdown.locator('.combo-cell-empty');
+  await expect(emptyHint).toBeVisible();
+  await expect(emptyHint).toContainText('(new)');
+  expect(await dropdown.locator('.combo-cell-option').count()).toBe(0);
+
+  // Clear the filter to restore all
+  await input.fill('');
+  expect(await dropdown.locator('.combo-cell-option').count()).toBe(allCount);
+});
+
+/* ---------- Textarea cell (Description) ---------- */
+
+test('kanban description opens textarea on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const descField = card.locator('.kanban-detail-desc.textarea-cell');
+  await descField.click();
+
+  const textarea = card.locator('.editable-cell-textarea');
+  await expect(textarea).toBeVisible();
+});
+
+test('kanban description textarea commits on Ctrl+Enter', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const descField = card.locator('.kanban-detail-desc.textarea-cell');
+  await descField.click();
+
+  const textarea = card.locator('.editable-cell-textarea');
+  await textarea.fill('Updated description text');
+  await textarea.press('Control+Enter');
+
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'Updated description text')).toBe(true);
+});
+
+test('kanban description textarea cancels on Escape', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+
+  const descField = card.locator('.kanban-detail-desc.textarea-cell');
+  const originalText = await descField.textContent();
+
+  await descField.click();
+  const textarea = card.locator('.editable-cell-textarea');
+  await textarea.fill('Should not save this');
+  await textarea.press('Escape');
+
+  await expect(descField).toContainText(originalText || '');
+});
+
+/* ---------- Add-row combo dropdown ---------- */
+
+test('kanban add-row project field shows combo dropdown with existing projects', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Open the add-row form in the first lane
+  const trigger = page.locator('.add-row-trigger').first();
+  await trigger.click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+
+  // The project field should have a combo wrap with arrow
+  const comboWrap = page.locator('.add-row-combo-wrap').first();
+  await expect(comboWrap).toBeVisible();
+
+  // Click the combo input to open dropdown
+  const comboInput = comboWrap.locator('.add-row-field-combo');
+  await comboInput.focus();
+  await page.waitForSelector('.add-row-combo-dropdown:not(.hidden)', { timeout: 3_000 });
+
+  // Dropdown should have options from existing project names
+  const options = comboWrap.locator('.add-row-combo-option');
+  expect(await options.count()).toBeGreaterThan(0);
+});
+
+test('kanban add-row combo dropdown arrow toggles the list', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const trigger = page.locator('.add-row-trigger').first();
+  await trigger.click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+
+  const comboWrap = page.locator('.add-row-combo-wrap').first();
+  const arrow = comboWrap.locator('.add-row-combo-arrow');
+
+  // Click arrow to open
+  await arrow.click();
+  await page.waitForSelector('.add-row-combo-dropdown:not(.hidden)', { timeout: 3_000 });
+
+  const options = comboWrap.locator('.add-row-combo-option');
+  expect(await options.count()).toBeGreaterThan(0);
+});
+
+test('kanban add-row combo allows typing a new value', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const trigger = page.locator('.add-row-trigger').first();
+  await trigger.click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+
+  const comboInput = page.locator('.add-row-field-combo').first();
+  await comboInput.fill('Brand New Project');
+
+  // Input should accept the custom value
+  await expect(comboInput).toHaveValue('Brand New Project');
+
+  // Dropdown should show "(new)" hint since no match
+  const emptyHint = page.locator('.add-row-combo-empty').first();
+  await expect(emptyHint).toBeVisible();
+});
+
+test('kanban add-row combo selects option from dropdown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const trigger = page.locator('.add-row-trigger').first();
+  await trigger.click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+
+  const comboWrap = page.locator('.add-row-combo-wrap').first();
+  const comboInput = comboWrap.locator('.add-row-field-combo');
+  await comboInput.focus();
+  await page.waitForSelector('.add-row-combo-dropdown:not(.hidden)', { timeout: 3_000 });
+
+  // Click first option in the dropdown
+  const firstOption = comboWrap.locator('.add-row-combo-option').first();
+  const optionText = await firstOption.textContent();
+  await firstOption.click();
+
+  // Input should now have the selected value
+  await expect(comboInput).toHaveValue(optionText || '');
+});
+
+test('kanban add-row description is a textarea', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const trigger = page.locator('.add-row-trigger').first();
+  await trigger.click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+
+  // Description field should be a textarea (scope to the visible form)
+  const form = page.locator('.add-row-form:not(.hidden)');
+  const textarea = form.locator('.add-row-field-textarea');
+  await expect(textarea).toBeVisible();
+});

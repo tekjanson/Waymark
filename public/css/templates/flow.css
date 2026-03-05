@@ -1,0 +1,492 @@
+/* Flow Diagram Template — Interactive Canvas */
+
+/* ---------- Group ---------- */
+
+.flow-group {
+  margin-bottom: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.flow-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.flow-group-icon {
+  font-size: 1.2rem;
+}
+
+.flow-group-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.flow-group-count {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  padding: 2px 8px;
+  background: var(--color-border);
+  border-radius: 10px;
+}
+
+/* ---------- Interactive Canvas ---------- */
+
+.flow-canvas {
+  position: relative;
+}
+
+.flow-diagram-wrap {
+  padding: 16px;
+  overflow-x: auto;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.flow-svg {
+  display: block;
+  max-width: 100%;
+  cursor: grab;
+}
+
+.flow-svg-dragging {
+  cursor: grabbing;
+}
+
+.flow-canvas-hint {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  padding: 6px 0 2px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+/* ---------- Interactive Nodes ---------- */
+
+.flow-node {
+  cursor: pointer;
+  transition: filter 150ms ease;
+}
+
+.flow-node:hover {
+  filter: brightness(0.96);
+}
+
+.flow-node-selected .flow-node-shape {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.4));
+}
+
+.flow-node-dragging {
+  cursor: grabbing;
+  opacity: 0.75;
+}
+
+.flow-node-drop-target .flow-node-shape {
+  stroke: #6366f1;
+  stroke-width: 3;
+  stroke-dasharray: 6,3;
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+}
+
+.flow-node-hit {
+  cursor: pointer;
+}
+
+.flow-node-label {
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  pointer-events: none;
+}
+
+.flow-node-type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: inherit;
+  pointer-events: none;
+}
+
+/* ---------- Connection Ports ---------- */
+
+.flow-port {
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity 150ms ease;
+}
+
+.flow-node:hover .flow-port,
+.flow-node-selected .flow-port {
+  opacity: 1;
+}
+
+.flow-port-out:hover {
+  r: 8;
+  fill: #4f46e5;
+}
+
+/* ---------- Edges ---------- */
+
+.flow-edge-label {
+  font-size: 10px;
+  font-family: inherit;
+}
+
+.flow-temp-edge {
+  pointer-events: none;
+}
+
+/* ---------- Inspector Panel ---------- */
+
+.flow-inspector {
+  padding: 16px 20px;
+  background: var(--color-surface);
+  border-top: 2px solid #6366f1;
+}
+
+.flow-inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.flow-inspector-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.flow-inspector-close {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+}
+
+.flow-inspector-close:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.flow-inspector-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.flow-inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.flow-inspector-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.flow-inspector-input,
+.flow-inspector-select {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+  transition: border-color var(--transition);
+}
+
+.flow-inspector-input:focus,
+.flow-inspector-select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+/* Inspector combo dropdown (Next field) */
+.flow-inspector-combo-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.flow-inspector-combo-wrap .flow-inspector-combo-input {
+  flex: 1;
+  padding-right: 28px;
+}
+.flow-inspector-combo-arrow {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  transition: color var(--transition), background var(--transition);
+}
+.flow-inspector-combo-arrow:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+.flow-inspector-combo-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+  margin-top: 2px;
+}
+.flow-inspector-combo-option {
+  padding: 5px 10px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.flow-inspector-combo-option:hover {
+  background: var(--color-bg);
+}
+.flow-inspector-combo-empty {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.flow-inspector-action {
+  margin-top: 12px;
+  padding: 6px 14px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.flow-inspector-action:hover {
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+/* ---------- Table Toggle ---------- */
+
+.flow-table-section {
+  border-top: 1px solid var(--color-border);
+}
+
+.flow-table-toggle {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
+
+.flow-table-toggle:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ---------- Step Table ---------- */
+
+.flow-step-table {
+  padding: 0 16px 16px;
+}
+
+.flow-step-row {
+  display: grid;
+  grid-template-columns: 24px 2fr 1fr 1.5fr 1fr 2fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  align-items: center;
+}
+
+.flow-step-row:last-child {
+  border-bottom: none;
+}
+
+.flow-step-header-row {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: 6px;
+}
+
+.flow-step-cell {
+  font-size: 0.88rem;
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-step-cell-notes {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+/* ---------- Type Badges ---------- */
+
+.flow-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--flow-type-color) 12%, transparent);
+  color: var(--flow-type-color);
+  border: 1px solid color-mix(in srgb, var(--flow-type-color) 25%, transparent);
+}
+
+.flow-type-start     { --flow-type-color: #16a34a; }
+.flow-type-end       { --flow-type-color: #dc2626; }
+.flow-type-process   { --flow-type-color: #2563eb; }
+.flow-type-decision  { --flow-type-color: #d97706; }
+.flow-type-input     { --flow-type-color: #7c3aed; }
+.flow-type-output    { --flow-type-color: #0891b2; }
+.flow-type-delay     { --flow-type-color: #94a3b8; }
+.flow-type-subprocess { --flow-type-color: #4f46e5; }
+
+/* ---------- Table Drag-and-drop ---------- */
+
+.flow-step-cell-drag {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  flex-shrink: 0;
+}
+
+.flow-drag-handle {
+  cursor: grab;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+
+.flow-drag-handle:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.flow-step-dragging {
+  opacity: 0.4;
+}
+
+.flow-step-dragover {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border-bottom: 2px dashed var(--color-primary);
+}
+
+/* ---------- Empty State ---------- */
+
+.flow-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 768px) {
+  .flow-step-row {
+    grid-template-columns: 24px 1.5fr 1fr 1fr;
+  }
+
+  .flow-step-cell-cond,
+  .flow-step-header-row .flow-step-cell-cond {
+    display: none;
+  }
+
+  .flow-step-cell-notes,
+  .flow-step-header-row .flow-step-cell-notes {
+    display: none;
+  }
+
+  .flow-diagram-wrap {
+    padding: 8px;
+  }
+
+  .flow-inspector-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .flow-step-row {
+    grid-template-columns: 24px 1fr 1fr;
+  }
+
+  .flow-step-cell-next,
+  .flow-step-header-row .flow-step-cell-next {
+    display: none;
+  }
+
+  .flow-group-header {
+    padding: 8px 12px;
+  }
+}

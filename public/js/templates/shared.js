@@ -180,6 +180,215 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
+/* ---------- Combo-editable cell (dropdown + free-text) ---------- */
+
+/**
+ * Create a cell that shows a dropdown with existing values on click,
+ * but also allows free-text typing for new values.
+ * Works like a dropdown + free-text input combo.
+ *
+ * @param {string}  tag        — wrapper element tag
+ * @param {Object}  attrs      — attributes forwarded to el()
+ * @param {string}  text       — initial display text
+ * @param {number}  rowIdx     — 1-based data-row index
+ * @param {number}  colIdx     — 0-based column index
+ * @param {string[]} options   — known option values for the dropdown
+ * @param {Object}  [opts]     — extra options (onCommit)
+ * @returns {HTMLElement}
+ */
+export function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) {
+  const display = text || '—';
+  const wrapper = el(tag, {
+    ...attrs,
+    className: `${attrs.className || ''} editable-cell combo-cell`.trim(),
+    tabindex: '0',
+    title: attrs.title || 'Click to edit',
+  });
+  wrapper.textContent = display;
+  wrapper.dataset.rowIdx = String(rowIdx);
+  wrapper.dataset.colIdx = String(colIdx);
+
+  function startEdit() {
+    if (wrapper.querySelector('input')) return;
+    const current = text || '';
+
+    /* Deduplicated option list */
+    const comboOptions = [];
+    const seen = new Set();
+    for (const opt of options) {
+      if (!opt || seen.has(opt)) continue;
+      seen.add(opt);
+      comboOptions.push(opt);
+    }
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'editable-cell-input combo-cell-input';
+    input.value = current;
+
+    const arrow = el('button', {
+      type: 'button',
+      className: 'combo-cell-arrow',
+      tabindex: '-1',
+    }, ['\u25BE']);
+
+    const dropdown = el('div', { className: 'combo-cell-dropdown hidden' });
+
+    function buildList(filter) {
+      dropdown.innerHTML = '';
+      const lower = (filter || '').toLowerCase();
+      let count = 0;
+      for (const opt of comboOptions) {
+        if (lower && !opt.toLowerCase().includes(lower)) continue;
+        const item = el('div', { className: 'combo-cell-option' }, [opt]);
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          input.value = opt;
+          commit();
+        });
+        dropdown.append(item);
+        count++;
+      }
+      if (count === 0 && filter) {
+        dropdown.append(el('div', { className: 'combo-cell-empty' }, [
+          `"${filter}" (new)`,
+        ]));
+      }
+    }
+
+    function openDropdown() {
+      buildList(input.value);
+      dropdown.classList.remove('hidden');
+    }
+
+    function closeDropdown() {
+      dropdown.classList.add('hidden');
+    }
+
+    wrapper.textContent = '';
+    wrapper.append(input, arrow, dropdown);
+    input.focus();
+    input.select();
+    openDropdown();
+
+    input.addEventListener('input', () => buildList(input.value));
+
+    function commit() {
+      const newValue = input.value.trim();
+      input.removeEventListener('blur', onBlur);
+      closeDropdown();
+      wrapper.textContent = newValue || '—';
+      if (newValue !== current && !(current === '' && newValue === '')) {
+        emitEdit(rowIdx, colIdx, newValue);
+        if (opts.onCommit) opts.onCommit(newValue, wrapper);
+      }
+    }
+
+    function cancel() {
+      input.removeEventListener('blur', onBlur);
+      closeDropdown();
+      wrapper.textContent = current || '—';
+    }
+
+    function onBlur() {
+      /* Small delay so mousedown on option fires first */
+      setTimeout(commit, 150);
+    }
+
+    input.addEventListener('blur', onBlur);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+
+    arrow.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (dropdown.classList.contains('hidden')) {
+        openDropdown();
+      } else {
+        closeDropdown();
+      }
+    });
+  }
+
+  wrapper.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startEdit();
+  });
+
+  return wrapper;
+}
+
+/* ---------- Textarea-editable cell (multiline) ---------- */
+
+/**
+ * Create a cell that opens as a multiline textarea on click.
+ *
+ * @param {string}  tag        — wrapper element tag
+ * @param {Object}  attrs      — attributes forwarded to el()
+ * @param {string}  text       — initial display text
+ * @param {number}  rowIdx     — 1-based data-row index
+ * @param {number}  colIdx     — 0-based column index
+ * @param {Object}  [opts]     — extra options (onCommit)
+ * @returns {HTMLElement}
+ */
+export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+  const display = text || '—';
+  const wrapper = el(tag, {
+    ...attrs,
+    className: `${attrs.className || ''} editable-cell textarea-cell`.trim(),
+    tabindex: '0',
+    title: attrs.title || 'Click to edit',
+  });
+  wrapper.textContent = display;
+  wrapper.dataset.rowIdx = String(rowIdx);
+  wrapper.dataset.colIdx = String(colIdx);
+
+  function startEdit() {
+    if (wrapper.querySelector('textarea')) return;
+    const current = text || '';
+
+    const ta = document.createElement('textarea');
+    ta.className = 'editable-cell-textarea';
+    ta.value = current;
+    ta.rows = Math.max(3, current.split('\n').length + 1);
+
+    wrapper.textContent = '';
+    wrapper.append(ta);
+    ta.focus();
+    ta.select();
+
+    function commit() {
+      const newValue = ta.value.trim();
+      ta.removeEventListener('blur', commit);
+      wrapper.textContent = newValue || '—';
+      if (newValue !== current && !(current === '' && newValue === '')) {
+        emitEdit(rowIdx, colIdx, newValue);
+        if (opts.onCommit) opts.onCommit(newValue, wrapper);
+      }
+    }
+
+    function cancel() {
+      ta.removeEventListener('blur', commit);
+      wrapper.textContent = current || '—';
+    }
+
+    ta.addEventListener('blur', commit);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      /* Ctrl/Cmd + Enter to commit (plain Enter adds newline) */
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.blur(); }
+    });
+  }
+
+  wrapper.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startEdit();
+  });
+
+  return wrapper;
+}
+
 /* Re-export el for convenience — templates only need to import from shared */
 export { el };
 
@@ -243,9 +452,14 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
       ? new Date().toISOString().slice(0, 10)
       : defaultVal;
 
-    if (field.type === 'select' && field.options) {
+    /* Merge dynamic options provided at call-site */
+    const fieldOptions = (opts.dynamicOptions && opts.dynamicOptions[field.role])
+      ? opts.dynamicOptions[field.role]
+      : field.options;
+
+    if (field.type === 'select' && fieldOptions) {
       const select = el('select', { className: 'add-row-field-select' });
-      for (const opt of field.options) {
+      for (const opt of fieldOptions) {
         const optEl = el('option', { value: opt }, [opt || '(none)']);
         if (opt === resolvedDefault) optEl.selected = true;
         select.append(optEl);
@@ -293,6 +507,84 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
 
       listMap[field.role] = { container: listContainer, items };
       fieldWrap.append(listContainer);
+    } else if (field.type === 'combo') {
+      /* Custom combo: text input + visible dropdown with filter */
+      const comboWrap = el('div', { className: 'add-row-combo-wrap' });
+      const input = el('input', {
+        type: 'text',
+        className: 'add-row-field-input add-row-field-combo',
+        placeholder: field.placeholder || '',
+        value: resolvedDefault,
+      });
+      const arrow = el('button', {
+        type: 'button',
+        className: 'add-row-combo-arrow',
+        tabindex: '-1',
+      }, ['\u25BE']);
+      const dropdown = el('div', { className: 'add-row-combo-dropdown hidden' });
+
+      const comboOptions = (fieldOptions || []).filter(o => o !== '');
+
+      function buildList(filter) {
+        dropdown.innerHTML = '';
+        const lower = (filter || '').toLowerCase();
+        let count = 0;
+        for (const opt of comboOptions) {
+          if (lower && !opt.toLowerCase().includes(lower)) continue;
+          const item = el('div', { className: 'add-row-combo-option' }, [opt]);
+          item.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            input.value = opt;
+            closeDropdown();
+          });
+          dropdown.append(item);
+          count++;
+        }
+        if (count === 0 && filter) {
+          dropdown.append(el('div', { className: 'add-row-combo-empty' }, [
+            `"${filter}" (new)`,
+          ]));
+        }
+      }
+
+      function openDropdown() {
+        buildList(input.value);
+        dropdown.classList.remove('hidden');
+      }
+
+      function closeDropdown() {
+        dropdown.classList.add('hidden');
+      }
+
+      input.addEventListener('focus', openDropdown);
+      input.addEventListener('input', () => buildList(input.value));
+      input.addEventListener('blur', () => {
+        /* Small delay so mousedown on option fires first */
+        setTimeout(closeDropdown, 150);
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDropdown();
+      });
+      arrow.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (dropdown.classList.contains('hidden')) {
+          input.focus();
+        } else {
+          closeDropdown();
+        }
+      });
+
+      comboWrap.append(input, arrow, dropdown);
+      inputMap[field.role] = input;
+      fieldWrap.append(comboWrap);
+    } else if (field.type === 'textarea') {
+      const textarea = document.createElement('textarea');
+      textarea.className = 'add-row-field-input add-row-field-textarea';
+      textarea.placeholder = field.placeholder || '';
+      textarea.value = resolvedDefault;
+      textarea.rows = 3;
+      inputMap[field.role] = textarea;
+      fieldWrap.append(textarea);
     } else {
       const inputType = field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text';
       const input = el('input', {

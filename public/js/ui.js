@@ -116,8 +116,88 @@ export function toggleSidebar(forceOpen) {
   } else {
     sidebar.classList.toggle('sidebar-open');
   }
-  return sidebar.classList.contains('sidebar-open');
+  const isOpen = sidebar.classList.contains('sidebar-open');
+  _syncOverlay(isOpen);
+  return isOpen;
 }
+
+/**
+ * Close the sidebar (convenience for auto-close scenarios).
+ */
+export function closeSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('sidebar-open');
+  _syncOverlay(false);
+}
+
+/**
+ * Check whether the sidebar is currently open.
+ * @returns {boolean}
+ */
+export function isSidebarOpen() {
+  return document.getElementById('sidebar').classList.contains('sidebar-open');
+}
+
+/* ---------- Sidebar overlay (mobile) ---------- */
+
+function _syncOverlay(open) {
+  let overlay = document.getElementById('sidebar-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'sidebar-overlay';
+    overlay.addEventListener('click', () => {
+      closeSidebar();
+      /* persist preference */
+      window.dispatchEvent(new CustomEvent('waymark:sidebar-closed'));
+    });
+    document.getElementById('main-layout')?.append(overlay);
+  }
+  overlay.classList.toggle('active', open);
+}
+
+/* ---------- Sidebar swipe/drag gestures ---------- */
+
+(function initSidebarGestures() {
+  let _touchStartX = 0;
+  let _touchStartY = 0;
+  let _swiping = false;
+  const EDGE_ZONE = 30;       // px from left edge to start open-swipe
+  const SWIPE_THRESHOLD = 60; // min px horizontal travel
+
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    _touchStartX = t.clientX;
+    _touchStartY = t.clientY;
+    const sidebar = document.getElementById('sidebar');
+    const isOpen = sidebar?.classList.contains('sidebar-open');
+    // Allow swipe-open from left edge, swipe-close from anywhere on open sidebar
+    _swiping = (!isOpen && _touchStartX < EDGE_ZONE) ||
+               (isOpen && _touchStartX < (sidebar?.offsetWidth || 280) + 20);
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!_swiping) return;
+    _swiping = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - _touchStartX;
+    const dy = Math.abs(t.clientY - _touchStartY);
+    // Ignore mostly-vertical swipes
+    if (dy > Math.abs(dx)) return;
+
+    const sidebar = document.getElementById('sidebar');
+    const isOpen = sidebar?.classList.contains('sidebar-open');
+
+    if (!isOpen && dx > SWIPE_THRESHOLD) {
+      // Swipe right → open
+      toggleSidebar(true);
+      window.dispatchEvent(new CustomEvent('waymark:sidebar-opened'));
+    } else if (isOpen && dx < -SWIPE_THRESHOLD) {
+      // Swipe left → close
+      closeSidebar();
+      window.dispatchEvent(new CustomEvent('waymark:sidebar-closed'));
+    }
+  }, { passive: true });
+})();
 
 /* ---------- Escape HTML ---------- */
 
