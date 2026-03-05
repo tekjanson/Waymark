@@ -134,6 +134,13 @@ const ROLE_LABELS = {
   'recipe.ingredient': 'Ingredient Name (one per row)',
   'recipe.step': 'Step / Instruction (one per row)',
   'recipe.source': 'Source URL (attribution / re-sync)',
+  // Flow Diagram
+  'flow.flow': 'Flow / Process Name',
+  'flow.step': 'Step / Node Label',
+  'flow.type': 'Node Type (start, process, decision, end)',
+  'flow.next': 'Next Step(s)',
+  'flow.condition': 'Edge Label / Condition',
+  'flow.notes': 'Notes / Description',
 };
 
 /**
@@ -198,6 +205,9 @@ const CANONICAL_HEADERS = {
   'travel.location': 'Location', 'travel.booking': 'Booking', 'travel.cost': 'Cost',
   // Roster
   'roster.employee': 'Employee', 'roster.role': 'Role', 'roster.shift': 'Shift',
+  // Flow Diagram
+  'flow.flow': 'Flow', 'flow.step': 'Step', 'flow.type': 'Type',
+  'flow.next': 'Next', 'flow.condition': 'Condition', 'flow.notes': 'Notes',
   // Recipe
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',

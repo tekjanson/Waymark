@@ -175,12 +175,28 @@ ul { list-style: none; }
   width: var(--sidebar-width); min-width: var(--sidebar-width);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
-  overflow-y: auto; transition: margin var(--transition);
+  overflow-y: auto; transition: margin 250ms ease, transform 250ms ease;
   padding-bottom: 24px;
+  z-index: 51;
 }
 #sidebar:not(.sidebar-open) {
   margin-left: calc(-1 * var(--sidebar-width));
 }
+
+/* Sidebar overlay — dims content when sidebar is open on mobile */
+#sidebar-overlay {
+  display: none;
+  position: fixed; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 49;
+  opacity: 0;
+  transition: opacity 250ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+#sidebar-overlay.active {
+  opacity: 1;
+}
+
 .sidebar-header {
   padding: 16px; border-bottom: 1px solid var(--color-border);
   font-size: 0.85rem; color: var(--color-text-secondary);
@@ -553,6 +569,64 @@ ul { list-style: none; }
   box-sizing: border-box;
 }
 
+/* ---------- Inline combo dropdown ---------- */
+.combo-cell {
+  position: relative;
+}
+.combo-cell-arrow {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+  padding: 0;
+}
+.combo-cell-arrow:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+.combo-cell-dropdown {
+  position: absolute;
+  top: 100%;
+  left: -4px;
+  right: -4px;
+  max-height: 150px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+  margin-top: 2px;
+}
+.combo-cell-option {
+  padding: 5px 8px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.combo-cell-option:hover {
+  background: var(--color-bg);
+}
+.combo-cell-empty {
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 /* ---------- Open in Sheets Button ---------- */
 .btn-sheets {
   display: inline-flex; align-items: center; gap: 6px;
@@ -811,6 +885,74 @@ ul { list-style: none; }
   color: #fff;
 }
 /* List fields (recipe ingredients/steps) */
+.add-row-field-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.4;
+}
+/* Combo dropdown (text + dropdown) */
+.add-row-combo-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.add-row-combo-wrap .add-row-field-combo {
+  flex: 1;
+  padding-right: 30px;
+}
+.add-row-combo-arrow {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+.add-row-combo-arrow:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+.add-row-combo-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 20;
+  margin-top: 2px;
+}
+.add-row-combo-option {
+  padding: 6px 10px;
+  font-size: 0.88rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.add-row-combo-option:hover {
+  background: var(--color-bg);
+}
+.add-row-combo-empty {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
 .add-row-list {
   display: flex;
   flex-direction: column;
@@ -876,9 +1018,15 @@ ul { list-style: none; }
 @media (max-width: 768px) {
   #sidebar {
     position: fixed; top: var(--topbar-height); bottom: 0; left: 0;
-    z-index: 50; box-shadow: var(--shadow-lg);
+    z-index: 51; box-shadow: var(--shadow-lg);
+    transform: translateX(0);
   }
-  #sidebar:not(.sidebar-open) { margin-left: calc(-1 * var(--sidebar-width)); }
+  #sidebar:not(.sidebar-open) {
+    margin-left: 0;
+    transform: translateX(calc(-1 * var(--sidebar-width) - 1px));
+  }
+  #sidebar-overlay { display: block; pointer-events: none; }
+  #sidebar-overlay.active { pointer-events: auto; }
   .top-bar-right #user-name { display: none; }
   .search-container { max-width: 200px; }
   #content { padding: 16px; }

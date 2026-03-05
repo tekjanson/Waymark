@@ -561,4 +561,41 @@ export const EXAMPLE_SHEETS = {
       ['',              '',  '',       '',       '',      '',     '',      'rice',          '',                        ''],
     ],
   },
+
+  /* ---- Flow Diagram examples ---- */
+  'User Login Flow': {
+    folder: 'Flows',
+    headers: ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
+    rows: [
+      ['User Login Flow', 'User Opens App',    'start',    'Show Login Form',                  '',            'Entry point'],
+      ['',                'Show Login Form',   'process',  'Enter Credentials',                '',            'Display email and password fields'],
+      ['',                'Enter Credentials', 'input',    'Validate Input',                   '',            'User types email and password'],
+      ['',                'Validate Input',    'decision', 'Check Auth,Show Login Form',       'Valid,Invalid','Client-side validation'],
+      ['',                'Check Auth',        'process',  'Auth OK?',                         '',            'Call authentication API'],
+      ['',                'Auth OK?',          'decision', 'Load Dashboard,Show Error',        'Yes,No',      'Server response check'],
+      ['',                'Show Error',        'process',  'Show Login Form',                  '',            'Display error toast'],
+      ['',                'Load Dashboard',    'process',  'Done',                             '',            'Fetch user data and render'],
+      ['',                'Done',              'end',      '',                                 '',            'User is logged in'],
+    ],
+  },
+
+  'Order Processing': {
+    folder: 'Flows',
+    headers: ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
+    rows: [
+      ['Order Processing', 'Receive Order',     'start',    'Validate Order',                    '',            'New order from customer'],
+      ['',                 'Validate Order',    'decision', 'Check Inventory,Reject Order',      'Valid,Invalid','Verify required fields'],
+      ['',                 'Reject Order',      'output',   'Done',                              '',            'Notify customer of rejection'],
+      ['',                 'Check Inventory',   'process',  'In Stock?',                         '',            'Query warehouse system'],
+      ['',                 'In Stock?',         'decision', 'Process Payment,Backorder',         'Yes,No',      'Check availability'],
+      ['',                 'Backorder',         'delay',    'Notify Customer',                   '',            'Wait for restock'],
+      ['',                 'Notify Customer',   'output',   'Done',                              '',            'Send backorder email'],
+      ['',                 'Process Payment',   'subprocess','Payment OK?',                      '',            'Stripe payment flow'],
+      ['',                 'Payment OK?',       'decision', 'Ship Order,Retry Payment',          'Yes,No',      'Payment gateway response'],
+      ['',                 'Retry Payment',     'process',  'Process Payment',                   '',            'Allow retry up to 3 times'],
+      ['',                 'Ship Order',        'process',  'Send Confirmation',                 '',            'Generate shipping label'],
+      ['',                 'Send Confirmation', 'output',   'Done',                              '',            'Email with tracking number'],
+      ['',                 'Done',              'end',      '',                                  '',            'Order complete'],
+    ],
+  },
 };

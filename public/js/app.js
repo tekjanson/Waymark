@@ -7,7 +7,7 @@
 import { api }       from './api-client.js';
 import * as storage  from './storage.js';
 import * as userData from './user-data.js';
-import { el, showView, showLoading, hideLoading, showToast, toggleSidebar } from './ui.js';
+import { el, showView, showLoading, hideLoading, showToast, toggleSidebar, closeSidebar, isSidebarOpen } from './ui.js';
 import * as explorer from './explorer.js';
 import * as checklist from './checklist.js';
 import * as search   from './search.js';
@@ -108,10 +108,34 @@ const TEMPLATE_HEADERS = {
   testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
 };
 
+/* ---------- Navigation history ---------- */
+
+/**
+ * Stack of internal hash routes visited since app boot.
+ * Used by back buttons to decide whether to use browser history
+ * or fall back to a parent/home route.
+ */
+let _navHistory = [];
+
+/**
+ * Maps sheet-ID → { folderId, folderName } so the sheet-view
+ * back button can return to the folder the user came from.
+ */
+let _sheetOrigin = {};
+
 /* ---------- Navigation callback ---------- */
 
 function navigate(type, id, name) {
   if (type === 'sheet') {
+    // Remember which folder we came from (if any)
+    const curHash = window.location.hash || '#/';
+    const folderMatch = curHash.match(/^#\/folder\/([^/]+)\/(.*)/);
+    if (folderMatch) {
+      _sheetOrigin[id] = {
+        folderId: folderMatch[1],
+        folderName: decodeURIComponent(folderMatch[2] || 'Folder'),
+      };
+    }
     window.location.hash = `#/sheet/${id}`;
   } else if (type === 'folder') {
     window.location.hash = `#/folder/${id}/${encodeURIComponent(name || '')}`;
@@ -135,8 +159,14 @@ async function boot() {
     const open = toggleSidebar();
     userData.setSidebarOpen(open);
   });
-  backBtn.addEventListener('click', () => { window.location.hash = '#/'; });
-  folderBackBtn.addEventListener('click', () => { window.location.hash = '#/'; });
+
+  // Persist sidebar state from swipe/overlay events
+  window.addEventListener('waymark:sidebar-closed', () => userData.setSidebarOpen(false));
+  window.addEventListener('waymark:sidebar-opened', () => userData.setSidebarOpen(true));
+
+  // Back buttons — use browser history when available, otherwise smart fallback
+  backBtn.addEventListener('click', () => { goBack(); });
+  folderBackBtn.addEventListener('click', () => { goBack(); });
 
   // Generate examples — open modal instead of generating directly
   if (generateBtn) {
@@ -246,7 +276,18 @@ function handleRoute() {
     return;
   }
 
+  // Track internal navigation history
+  if (_navHistory[_navHistory.length - 1] !== hash) {
+    _navHistory.push(hash);
+  }
+
   checklist.hide(); // stop any running timer
+
+  // Auto-close sidebar on narrow screens when navigating to a detail view
+  if (window.innerWidth <= 768 && isSidebarOpen()) {
+    closeSidebar();
+    userData.setSidebarOpen(false);
+  }
 
   if (hash.startsWith('#/sheet/')) {
     const sheetId = hash.replace('#/sheet/', '');
@@ -269,6 +310,47 @@ function handleRoute() {
     showView('home');
     renderPinnedFolders();
     userData.setLastView('#/');
+  }
+}
+
+/**
+ * Navigate back intelligently:
+ * — From a sheet: return to the folder the user navigated from
+ * — From a folder: go to parent folder or home
+ * — Falls back to browser history, then home
+ */
+function goBack() {
+  const hash = window.location.hash || '#/';
+
+  // From sheet view → try the folder we came from
+  if (hash.startsWith('#/sheet/')) {
+    const sheetId = hash.replace('#/sheet/', '');
+    const origin = _sheetOrigin[sheetId];
+    if (origin) {
+      window.location.hash = `#/folder/${origin.folderId}/${encodeURIComponent(origin.folderName)}`;
+      return;
+    }
+    // Fall through to history
+  }
+
+  // From folder view → go to parent if we have history
+  if (hash.startsWith('#/folder/')) {
+    // Look through history for the previous non-identical route
+    for (let i = _navHistory.length - 2; i >= 0; i--) {
+      if (_navHistory[i] !== hash) {
+        window.location.hash = _navHistory[i];
+        // Trim history to that point to keep the stack clean
+        _navHistory = _navHistory.slice(0, i + 1);
+        return;
+      }
+    }
+  }
+
+  // Generic fallback: use browser history if we have internal depth, else go home
+  if (_navHistory.length > 1) {
+    history.back();
+  } else {
+    window.location.hash = '#/';
   }
 }
 
