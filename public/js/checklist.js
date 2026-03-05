@@ -8,7 +8,7 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
-import { buildAddRowForm, isAddRowOpen } from './templates/shared.js';
+import { buildAddRowForm, isAddRowOpen, setUserName } from './templates/shared.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -98,6 +98,10 @@ async function loadSheet(sheetId) {
     lastFetchTime = new Date();
     updateTimestamp();
 
+    // Expose current user name so templates can auto-fill author fields
+    const user = api.auth.getUser();
+    setUserName(user?.name || user?.email || '');
+
     // Track as a recently opened sheet
     const headers = data.values?.[0] || [];
     const { key: templateKey } = detectTemplate(headers);
@@ -152,6 +156,21 @@ function renderWithTemplate(values) {
   };
   template._onAddRow = addRowCallback;
   template._totalColumns = totalCols;
+
+  // Insert-after-row callback for sub-tasks and notes (kanban)
+  template._onInsertAfterRow = async (afterValuesIdx, newRows) => {
+    try {
+      const data = await api.sheets.getSpreadsheet(currentSheetId);
+      const values = data.values || [];
+      const insertAt = afterValuesIdx + 1;
+      values.splice(insertAt, 0, ...newRows);
+      await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, values);
+      showToast('Added', 'success');
+      await loadSheet(currentSheetId);
+    } catch (err) {
+      showToast(`Failed to add: ${err.message}`, 'error');
+    }
+  };
 
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);

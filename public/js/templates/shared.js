@@ -11,6 +11,22 @@ import { el } from '../ui.js';
 
 let _onCellEdit = null;
 
+/* ---------- User name (set by checklist.js for note authoring) ---------- */
+
+let _userName = '';
+
+/**
+ * Set the display name of the current user (called by checklist.js).
+ * @param {string} name
+ */
+export function setUserName(name) { _userName = name || ''; }
+
+/**
+ * Get the display name of the current user.
+ * @returns {string}
+ */
+export function getUserName() { return _userName; }
+
 /**
  * Register a callback for cell edits.
  * @param {(rowIndex: number, colIndex: number, newValue: string) => void} fn
