@@ -513,52 +513,53 @@ export const EXAMPLE_SHEETS = {
   /* Single-recipe-per-sheet: each sheet holds one recipe.
      Metadata (name, servings, etc.) goes on the first row only;
      continuation rows carry additional ingredients and steps.
-     Quantity and Ingredient are separate columns for scaling.
+     Qty and Unit are separate columns for scaling and unit conversion.
+     Notes column holds recipe-level or per-item notes.
      Source column stores the original URL for attribution. */
   'Spaghetti Bolognese': {
     folder: 'Recipes',
-    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
+    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'],
     rows: [
-      ['Spaghetti Bolognese', '4', '15 min', '45 min', 'Italian', 'Easy', '400g',      'spaghetti',      'Cook spaghetti',             ''],
-      ['',                    '',  '',       '',       '',        '',     '500g',      'ground beef',    'Brown beef',                 ''],
-      ['',                    '',  '',       '',       '',        '',     '1',         'onion, diced',   'Add onion and garlic 3 min', ''],
-      ['',                    '',  '',       '',       '',        '',     '3 cloves',  'garlic',         'Stir in tomatoes and paste', ''],
-      ['',                    '',  '',       '',       '',        '',     '800g',      'canned tomatoes','Simmer 30 min',              ''],
-      ['',                    '',  '',       '',       '',        '',     '2 tbsp',    'tomato paste',   'Season',                     ''],
-      ['',                    '',  '',       '',       '',        '',     '1 tsp',     'oregano',        'Serve over pasta',           ''],
-      ['',                    '',  '',       '',       '',        '',     '',          'salt and pepper', 'Top with parmesan',         ''],
-      ['',                    '',  '',       '',       '',        '',     '',          'parmesan',        '',                          ''],
+      ['Spaghetti Bolognese', '4', '15 min', '45 min', 'Italian', 'Easy', '400',  'g',      'spaghetti',       'Cook spaghetti',             'A classic Italian comfort dish', ''],
+      ['',                    '',  '',       '',       '',        '',     '500',  'g',      'ground beef',     'Brown beef',                 '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '1',    '',       'onion, diced',    'Add onion and garlic 3 min', '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '3',    'cloves', 'garlic',          'Stir in tomatoes and paste', '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '800',  'g',      'canned tomatoes', 'Simmer 30 min',              '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '2',    'tbsp',   'tomato paste',    'Season',                     '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '1',    'tsp',    'oregano',         'Serve over pasta',           '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '',     '',       'salt and pepper',  'Top with parmesan',         '',                               ''],
+      ['',                    '',  '',       '',       '',        '',     '',     '',       'parmesan',         '',                          '',                               ''],
     ],
   },
 
   'Chicken Tikka Masala': {
     folder: 'Recipes',
-    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
+    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'],
     rows: [
-      ['Chicken Tikka Masala', '4', '20 min', '35 min', 'Indian', 'Medium', '600g',    'chicken breast',  'Marinate chicken in yogurt and tikka paste', ''],
-      ['',                     '',  '',       '',       '',       '',       '200ml',   'yogurt',          'Fry onion',                                 ''],
-      ['',                     '',  '',       '',       '',       '',       '2 tbsp',  'tikka paste',     'Add chicken until browned',                  ''],
-      ['',                     '',  '',       '',       '',       '',       '1',       'onion',           'Add tomatoes, simmer 20 min',                ''],
-      ['',                     '',  '',       '',       '',       '',       '400g',    'canned tomatoes', 'Stir in cream',                              ''],
-      ['',                     '',  '',       '',       '',       '',       '200ml',   'coconut cream',   'Serve with rice',                            ''],
-      ['',                     '',  '',       '',       '',       '',       '',        'garam masala',    '',                                           ''],
-      ['',                     '',  '',       '',       '',       '',       '',        'coriander',       '',                                           ''],
-      ['',                     '',  '',       '',       '',       '',       '',        'rice',            '',                                           ''],
+      ['Chicken Tikka Masala', '4', '20 min', '35 min', 'Indian', 'Medium', '600',  'g',    'chicken breast',  'Marinate chicken in yogurt and tikka paste', 'Great with naan bread', ''],
+      ['',                     '',  '',       '',       '',       '',       '200',  'ml',   'yogurt',          'Fry onion',                                 '',                      ''],
+      ['',                     '',  '',       '',       '',       '',       '2',    'tbsp', 'tikka paste',     'Add chicken until browned',                  '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '1',    '',     'onion',           'Add tomatoes, simmer 20 min',                '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '400',  'g',    'canned tomatoes', 'Stir in cream',                              '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '200',  'ml',   'coconut cream',   'Serve with rice',                            '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '',     '',     'garam masala',    '',                                           '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '',     '',     'coriander',       '',                                           '',                     ''],
+      ['',                     '',  '',       '',       '',       '',       '',     '',     'rice',            '',                                           '',                     ''],
     ],
   },
 
   'Beef Stir Fry': {
     folder: 'Recipes',
-    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
+    headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'],
     rows: [
-      ['Beef Stir Fry', '3', '15 min', '20 min', 'Asian', 'Easy', '400g',  'beef sirloin',  'Cook rice',               ''],
-      ['',              '',  '',       '',       '',      '',     '2',     'bell peppers',  'Mix sauce',               ''],
-      ['',              '',  '',       '',       '',      '',     '1 head','broccoli',      'Stir-fry beef 3 min',     ''],
-      ['',              '',  '',       '',       '',      '',     '3 tbsp','soy sauce',     'Add vegetables 4 min',    ''],
-      ['',              '',  '',       '',       '',      '',     '1 tbsp','sesame oil',    'Return beef with sauce',  ''],
-      ['',              '',  '',       '',       '',      '',     '2 cloves','garlic',      'Toss until thick',        ''],
-      ['',              '',  '',       '',       '',      '',     '1 tbsp','cornstarch',    'Serve over rice',         ''],
-      ['',              '',  '',       '',       '',      '',     '',      'rice',          '',                        ''],
+      ['Beef Stir Fry', '3', '15 min', '20 min', 'Asian', 'Easy', '400',  'g',      'beef sirloin',  'Cook rice',               'Quick weeknight dinner', ''],
+      ['',              '',  '',       '',       '',      '',     '2',    '',       'bell peppers',  'Mix sauce',               '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '1',    'head',   'broccoli',      'Stir-fry beef 3 min',     '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '3',    'tbsp',   'soy sauce',     'Add vegetables 4 min',    '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '1',    'tbsp',   'sesame oil',    'Return beef with sauce',  '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '2',    'cloves', 'garlic',        'Toss until thick',        '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '1',    'tbsp',   'cornstarch',    'Serve over rice',         '',                       ''],
+      ['',              '',  '',       '',       '',      '',     '',     '',       'rice',          '',                        '',                       ''],
     ],
   },
 

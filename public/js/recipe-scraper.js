@@ -159,9 +159,9 @@ function normaliseInstructions(instructions) {
 }
 
 /**
- * Normalise ingredient entries and split each into quantity + name.
+ * Normalise ingredient entries and split each into qty + unit + name.
  * @param {*} ingredients
- * @returns {{ quantity: string, name: string }[]}
+ * @returns {{ qty: string, unit: string, name: string }[]}
  */
 function normaliseIngredients(ingredients) {
   if (!ingredients) return [];
@@ -178,16 +178,16 @@ function normaliseIngredients(ingredients) {
 
 /**
  * Split a raw ingredient string like "2 cups all-purpose flour" into
- * { quantity: "2 cups", name: "all-purpose flour" }.
+ * { qty: "2", unit: "cups", name: "all-purpose flour" }.
  *
  * Handles integers, decimals, Unicode fractions (½), slash fractions (1/2),
  * mixed numbers (1 1/2), and common unit abbreviations.
  *
  * @param {string} text — full ingredient string
- * @returns {{ quantity: string, name: string }}
+ * @returns {{ qty: string, unit: string, name: string }}
  */
 function splitIngredient(text) {
-  if (!text) return { quantity: '', name: '' };
+  if (!text) return { qty: '', unit: '', name: '' };
   const s = text.trim();
 
   // Known unit words/abbreviations
@@ -204,21 +204,20 @@ function splitIngredient(text) {
 
   const m = s.match(qtyRe);
   if (m) {
-    const qty = m[2] ? `${m[1]} ${m[2]}`.trim() : m[1].trim();
-    return { quantity: qty, name: m[3].trim() };
+    return { qty: m[1].trim(), unit: (m[2] || '').trim(), name: m[3].trim() };
   }
 
   // Fallback: number glued to unit without space, e.g. "400g spaghetti"
   const gluedRe = new RegExp(
-    `^(\\d+(?:\\.\\d+)?\\s*(?:${units}))\\s+(.+)$`, 'i'
+    `^(\\d+(?:\\.\\d+)?)\\s*(${units})\\s+(.+)$`, 'i'
   );
   const gm = s.match(gluedRe);
   if (gm) {
-    return { quantity: gm[1].trim(), name: gm[2].trim() };
+    return { qty: gm[1].trim(), unit: gm[2].trim(), name: gm[3].trim() };
   }
 
   // No quantity detected — entire string is the ingredient name
-  return { quantity: '', name: s };
+  return { qty: '', unit: '', name: s };
 }
 
 // ---------- Recipe builders ----------
@@ -364,6 +363,9 @@ function recipeFromHeuristic(doc, html, sourceUrl) {
   if (prepMatch) recipe.prepTime = prepMatch[1];
   const cookMatch = html.match(/cook(?:\s*time)?\s*:?\s*([\d]+\s*(?:min(?:ute)?s?|hr|hours?))/i);
   if (cookMatch) recipe.cookTime = cookMatch[1];
+
+  // Normalise ingredients from raw strings into { qty, unit, name }
+  recipe.ingredients = recipe.ingredients.map(splitIngredient);
 
   return recipe;
 }

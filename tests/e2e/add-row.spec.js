@@ -54,9 +54,10 @@ test('add-row trigger shows "Add Ingredient" for recipe template', async ({ page
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-inline-add-btn', { timeout: 5_000 });
   const addBtns = page.locator('.recipe-inline-add-btn');
-  expect(await addBtns.count()).toBe(2); // Add Ingredient + Add Step
+  expect(await addBtns.count()).toBe(3); // Add Ingredient + Add Step + Add Note
   await expect(addBtns.first()).toContainText('Add Ingredient');
   await expect(addBtns.nth(1)).toContainText('Add Step');
+  await expect(addBtns.nth(2)).toContainText('Add Note');
 });
 
 /* ====================================================================
@@ -490,9 +491,10 @@ test('recipe shows inline "Add Ingredient" and "Add Step" buttons', async ({ pag
   await page.waitForSelector('.recipe-inline-add-btn', { timeout: 5_000 });
 
   const addBtns = page.locator('.recipe-inline-add-btn');
-  expect(await addBtns.count()).toBe(2);
+  expect(await addBtns.count()).toBe(3); // Add Ingredient + Add Step + Add Note
   await expect(addBtns.first()).toContainText('Add Ingredient');
   await expect(addBtns.nth(1)).toContainText('Add Step');
+  await expect(addBtns.nth(2)).toContainText('Add Note');
 });
 
 test('recipe inline add ingredient: click opens form and cancel hides it', async ({ page }) => {
