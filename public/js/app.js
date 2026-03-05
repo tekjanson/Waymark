@@ -94,7 +94,7 @@ const TEMPLATE_HEADERS = {
   contacts:   ['Name', 'Phone', 'Email', 'Relationship'],
   log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
   budget:     ['Description', 'Amount', 'Category', 'Date', 'Budget'],
-  kanban:     ['Task', 'Stage', 'Assignee', 'Priority'],
+  kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
   habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
   grading:    ['Student', 'Homework 1', 'Homework 2', 'Midterm', 'Final', 'Grade'],
   timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
