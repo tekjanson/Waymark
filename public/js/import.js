@@ -130,9 +130,12 @@ const ROLE_LABELS = {
   'recipe.cookTime': 'Cook Time',
   'recipe.category': 'Cuisine / Category',
   'recipe.difficulty': 'Difficulty Level',
-  'recipe.quantity': 'Quantity / Amount (one per row)',
+  'recipe.qty': 'Numeric Quantity (one per row)',
+  'recipe.unit': 'Unit of Measure (g, cups, tbsp, etc.)',
+  'recipe.quantity': 'Combined Quantity / Amount (legacy)',
   'recipe.ingredient': 'Ingredient Name (one per row)',
   'recipe.step': 'Step / Instruction (one per row)',
+  'recipe.notes': 'Recipe Notes',
   'recipe.source': 'Source URL (attribution / re-sync)',
   // Flow Diagram
   'flow.flow': 'Flow / Process Name',
@@ -212,8 +215,9 @@ const CANONICAL_HEADERS = {
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',
   'recipe.category': 'Category', 'recipe.difficulty': 'Difficulty',
+  'recipe.qty': 'Qty', 'recipe.unit': 'Unit',
   'recipe.quantity': 'Quantity', 'recipe.ingredient': 'Ingredient',
-  'recipe.step': 'Step', 'recipe.source': 'Source',
+  'recipe.step': 'Step', 'recipe.notes': 'Notes', 'recipe.source': 'Source',
 };
 
 /**

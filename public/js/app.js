@@ -16,7 +16,7 @@ import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
-import { TEMPLATES } from './templates/index.js';
+import { TEMPLATES, detectTemplate } from './templates/index.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -437,15 +437,88 @@ async function showFolderContents(folderId, folderName) {
       ]));
     }
 
-    // Render sheets
-    for (const s of sheets) {
-      sheetsEl.append(el('div', {
-        className: 'sheet-list-item',
-        on: { click() { navigate('sheet', s.id, s.name); } },
-      }, [
-        el('span', { className: 'sheet-emoji' }, ['📊']),
-        el('div', { className: 'sheet-list-item-name' }, [s.name]),
-      ]));
+    // Fetch sheet data to detect templates and enable directory views
+    if (sheets.length > 0) {
+      const results = await Promise.allSettled(
+        sheets.map(s => api.sheets.getSpreadsheet(s.id).then(data => ({ ...s, data })))
+      );
+      const loadedSheets = [];
+      const failedSheets = [];
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'fulfilled') {
+          loadedSheets.push(results[i].value);
+        } else {
+          failedSheets.push(sheets[i]);
+        }
+      }
+
+      // Detect templates and group sheets
+      const templateGroups = {};
+      for (const s of loadedSheets) {
+        const headers = s.data.values?.[0] || [];
+        const { key, template } = detectTemplate(headers);
+        if (!templateGroups[key]) templateGroups[key] = { template, sheets: [] };
+        const lower = headers.map(h => (h || '').toLowerCase().trim());
+        const cols = template.columns(lower);
+        templateGroups[key].sheets.push({
+          id: s.id,
+          name: s.name || s.data.title,
+          headers,
+          rows: (s.data.values || []).slice(1),
+          cols,
+        });
+      }
+
+      // Check if a template with directoryView covers majority of sheets
+      let usedDirectoryView = false;
+      for (const [key, group] of Object.entries(templateGroups)) {
+        if (group.template.directoryView && group.sheets.length > loadedSheets.length * 0.5) {
+          // Use the template's directory view
+          const dirContainer = el('div', { className: 'directory-view-container' });
+          sheetsEl.append(dirContainer);
+          group.template.directoryView(dirContainer, group.sheets, navigate);
+          usedDirectoryView = true;
+
+          // Render remaining non-matching sheets normally
+          for (const [otherKey, otherGroup] of Object.entries(templateGroups)) {
+            if (otherKey === key) continue;
+            for (const s of otherGroup.sheets) {
+              sheetsEl.append(el('div', {
+                className: 'sheet-list-item',
+                on: { click() { navigate('sheet', s.id, s.name); } },
+              }, [
+                el('span', { className: 'sheet-emoji' }, ['📊']),
+                el('div', { className: 'sheet-list-item-name' }, [s.name]),
+              ]));
+            }
+          }
+          break;
+        }
+      }
+
+      // If no directory view was used, render all sheets normally
+      if (!usedDirectoryView) {
+        for (const s of loadedSheets) {
+          sheetsEl.append(el('div', {
+            className: 'sheet-list-item',
+            on: { click() { navigate('sheet', s.id, s.name || s.data.title); } },
+          }, [
+            el('span', { className: 'sheet-emoji' }, ['📊']),
+            el('div', { className: 'sheet-list-item-name' }, [s.name || s.data.title]),
+          ]));
+        }
+      }
+
+      // Render sheets that failed to load as plain items
+      for (const s of failedSheets) {
+        sheetsEl.append(el('div', {
+          className: 'sheet-list-item',
+          on: { click() { navigate('sheet', s.id, s.name); } },
+        }, [
+          el('span', { className: 'sheet-emoji' }, ['📊']),
+          el('div', { className: 'sheet-list-item-name' }, [s.name]),
+        ]));
+      }
     }
 
     // Render docs
@@ -830,15 +903,16 @@ async function handleRecipeUrlImport() {
 
     // Build sheet-like values — row-per-item so each ingredient/step
     // is its own row, making the sheet easy to edit as a human.
-    // Quantity and Ingredient are separate columns for recipe scaling.
+    // Qty and Unit are separate columns for recipe scaling and conversion.
+    // Notes column for recipe-level notes.
     // Source column stores the URL for attribution and re-sync.
-    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'];
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
     const ingredients = recipe.ingredients || [];
     const steps = recipe.instructions || [];
     const maxRows = Math.max(ingredients.length, steps.length, 1);
     const dataRows = [];
     for (let i = 0; i < maxRows; i++) {
-      const ingr = ingredients[i] || { quantity: '', name: '' };
+      const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
       dataRows.push([
         i === 0 ? (recipe.name || 'Imported Recipe') : '',
         i === 0 ? (recipe.servings || '') : '',
@@ -846,9 +920,11 @@ async function handleRecipeUrlImport() {
         i === 0 ? (recipe.cookTime || '') : '',
         i === 0 ? (recipe.category || '') : '',
         i === 0 ? (recipe.difficulty || '') : '',
-        ingr.quantity || '',
+        ingr.qty || '',
+        ingr.unit || '',
         ingr.name || '',
         steps[i] || '',
+        i === 0 ? (recipe.description || '') : '',
         i === 0 ? url : '',
       ]);
     }
@@ -912,13 +988,13 @@ async function handleRecipeResync(e) {
   try {
     const recipe = await scrapeRecipe(url);
 
-    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'];
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
     const ingredients = recipe.ingredients || [];
     const steps = recipe.instructions || [];
     const maxRows = Math.max(ingredients.length, steps.length, 1);
     const dataRows = [];
     for (let i = 0; i < maxRows; i++) {
-      const ingr = ingredients[i] || { quantity: '', name: '' };
+      const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
       dataRows.push([
         i === 0 ? (recipe.name || 'Imported Recipe') : '',
         i === 0 ? (recipe.servings || '') : '',
@@ -926,9 +1002,11 @@ async function handleRecipeResync(e) {
         i === 0 ? (recipe.cookTime || '') : '',
         i === 0 ? (recipe.category || '') : '',
         i === 0 ? (recipe.difficulty || '') : '',
-        ingr.quantity || '',
+        ingr.qty || '',
+        ingr.unit || '',
         ingr.name || '',
         steps[i] || '',
+        i === 0 ? (recipe.description || '') : '',
         i === 0 ? url : '',
       ]);
     }

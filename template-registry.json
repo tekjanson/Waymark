@@ -652,6 +652,8 @@
         "recipe",
         "ingredient",
         "ingredients",
+        "qty",
+        "unit",
         "quantity",
         "step",
         "instructions",
@@ -661,7 +663,8 @@
         "cuisine",
         "difficulty",
         "directions",
-        "source"
+        "source",
+        "notes"
       ],
       "columnRoles": [
         "text",
@@ -670,9 +673,12 @@
         "cookTime",
         "category",
         "difficulty",
+        "qty",
+        "unit",
         "quantity",
         "ingredient",
         "step",
+        "notes",
         "source"
       ],
       "interactive": true,
