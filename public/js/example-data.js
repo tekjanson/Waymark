@@ -262,28 +262,28 @@ export const EXAMPLE_SHEETS = {
   /* ---- Habit Tracker examples ---- */
   'Morning Routine': {
     folder: 'Habits',
-    headers: ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+    headers: ['Habit', 'Category', 'Goal', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak', 'Notes'],
     rows: [
-      ['Wake up at 6 AM',    '✓', '✓', '✓', '',  '✓', '',  '',  '4'],
-      ['Meditate 10 min',    '✓', '✓', '',  '✓', '✓', '✓', '',  '5'],
-      ['Exercise 30 min',    '✓', '',  '✓', '',  '✓', '',  '✓', '4'],
-      ['Read 20 pages',      '',  '✓', '',  '✓', '',  '✓', '✓', '3'],
-      ['Journal',            '✓', '✓', '✓', '✓', '✓', '✓', '✓', '7'],
-      ['Drink water (500ml)','✓', '✓', '✓', '✓', '',  '✓', '',  '5'],
-      ['No phone first hour','',  '',  '✓', '',  '✓', '',  '✓', '2'],
-      ['Healthy breakfast',  '✓', '✓', '',  '✓', '✓', '✓', '',  '5'],
+      ['Wake up at 6 AM',    'Health',      '6x', '✓', '✓', '✓', '',  '✓', '✓', '✓', '6', 'Getting easier'],
+      ['Meditate 10 min',    'Mindfulness', '5x', '✓', '✓', '',  '✓', '✓', '✓', '',  '5', ''],
+      ['Exercise 30 min',    'Health',      '4x', '✓', '',  '✓', '',  '✓', '',  '✓', '4', 'Mix cardio and strength'],
+      ['Read 20 pages',      'Learning',    '5x', '',  '✓', '',  '✓', '',  '✓', '✓', '3', 'Currently reading Atomic Habits'],
+      ['Journal',            'Mindfulness', '7x', '✓', '✓', '✓', '✓', '✓', '✓', '✓', '7', 'Perfect week!'],
+      ['Drink water (500ml)','Health',      '7x', '✓', '✓', '✓', '✓', '',  '✓', '',  '5', ''],
+      ['No phone first hour','Mindfulness', '5x', '',  '',  '✓', '',  '✓', '',  '✓', '2', 'Still struggling'],
+      ['Healthy breakfast',  'Health',      '6x', '✓', '✓', '',  '✓', '✓', '✓', '',  '5', ''],
     ],
   },
 
   'Fitness Habits': {
     folder: 'Habits',
-    headers: ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+    headers: ['Habit', 'Category', 'Goal', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak', 'Notes'],
     rows: [
-      ['10K steps',        '✓', '✓', '',  '✓', '✓', '✓', '',  '5'],
-      ['Strength training','✓', '',  '✓', '',  '✓', '',  '',  '3'],
-      ['Stretch routine',  '✓', '✓', '✓', '✓', '',  '✓', '✓', '6'],
-      ['Track calories',   '',  '✓', '✓', '',  '✓', '',  '✓', '3'],
-      ['Sleep by 10 PM',   '✓', '',  '✓', '✓', '',  '✓', '',  '4'],
+      ['10K steps',        'Cardio',   '5x', '✓', '✓', '',  '✓', '✓', '✓', '',  '5', ''],
+      ['Strength training','Strength', '3x', '✓', '',  '✓', '',  '✓', '',  '',  '3', 'Upper/lower split'],
+      ['Stretch routine',  'Recovery', '6x', '✓', '✓', '✓', '✓', '',  '✓', '✓', '6', ''],
+      ['Track calories',   'Nutrition','4x', '',  '✓', '✓', '',  '✓', '',  '✓', '3', 'Using MyFitnessPal'],
+      ['Sleep by 10 PM',   'Recovery', '5x', '✓', '',  '✓', '✓', '',  '✓', '',  '4', ''],
     ],
   },
 

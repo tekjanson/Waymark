@@ -107,6 +107,11 @@
           "mimeType": "application/vnd.google-apps.spreadsheet"
         },
         {
+          "id": "sheet-030",
+          "name": "Comprehensive Habits",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
           "id": "sheet-019",
           "name": "Math 101 Grades",
           "mimeType": "application/vnd.google-apps.spreadsheet"

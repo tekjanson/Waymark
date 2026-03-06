@@ -347,6 +347,8 @@
       ],
       "columnRoles": [
         "text",
+        "category",
+        "goal",
         "days",
         "streak",
         "notes"
@@ -359,10 +361,12 @@
       ],
       "exampleCount": 2,
       "fixtureIds": [
-        "sheet-018"
+        "sheet-018",
+        "sheet-030"
       ],
       "fixtureFiles": [
-        "habit-morning"
+        "habit-morning",
+        "habit-comprehensive"
       ]
     },
     {
@@ -730,7 +734,7 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-030",
+  "nextSheetId": "sheet-031",
   "totalTemplates": 20,
   "categories": [
     "Productivity",

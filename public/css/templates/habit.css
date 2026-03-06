@@ -1,10 +1,59 @@
 /* Habit Tracker Template */
+
+/* ---------- Toolbar ---------- */
+.habit-toolbar {
+  display: flex; gap: 6px; padding: 8px 0 12px;
+  border-bottom: 1px solid var(--color-border); margin-bottom: 12px;
+}
+.habit-view-btn {
+  padding: 6px 14px; border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface); color: var(--color-text); font-size: 0.82rem;
+  font-weight: 500; cursor: pointer; transition: all var(--transition);
+}
+.habit-view-btn:hover { background: var(--color-bg); }
+.habit-view-btn-active {
+  background: #d97706; color: #fff; border-color: #d97706;
+}
+
+/* ---------- Summary Bar ---------- */
+.habit-summary-bar {
+  display: flex; gap: 16px; padding: 12px 16px; margin-bottom: 16px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-radius: var(--radius); border: 1px solid #fde68a;
+}
+.habit-summary-stat {
+  display: flex; flex-direction: column; align-items: center; flex: 1;
+}
+.habit-summary-value {
+  font-size: 1.4rem; font-weight: 700; color: #92400e;
+}
+.habit-summary-label {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #b45309; font-weight: 500;
+}
+
+/* ---------- Category Headers ---------- */
+.habit-category-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; margin: 12px 0 4px;
+  background: var(--color-bg); border-radius: var(--radius-sm);
+  border-left: 3px solid #d97706;
+}
+.habit-category-label { font-weight: 600; font-size: 0.9rem; color: var(--color-text); }
+.habit-category-count { font-size: 0.75rem; color: var(--color-text-muted); }
+
+/* ---------- Grid Table ---------- */
+.habit-table {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 12px;
+}
 .habit-grid-row {
   display: flex; align-items: center;
   border-bottom: 1px solid var(--color-border);
 }
+.habit-grid-row:last-child { border-bottom: none; }
 .habit-grid-header {
-  font-weight: 600; font-size: 0.8rem; text-transform: uppercase;
+  font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
   color: var(--color-text-muted); letter-spacing: 0.04em;
   background: var(--color-bg);
 }
@@ -12,11 +61,125 @@
   padding: 8px 6px; text-align: center; font-size: 0.85rem;
 }
 .habit-name-cell { flex: 1; text-align: left; font-weight: 500; min-width: 120px; }
-.habit-day-cell { width: 48px; flex-shrink: 0; }
-.habit-streak-cell { width: 56px; flex-shrink: 0; font-weight: 600; color: #d97706; }
+.habit-day-cell { width: 52px; flex-shrink: 0; }
+.habit-day-label { font-size: 0.78rem; }
+.habit-day-pct { font-size: 0.65rem; color: var(--color-text-muted); margin-top: 1px; }
+.habit-day-pct-perfect { color: var(--color-success); font-weight: 600; }
+.habit-streak-cell { width: 64px; flex-shrink: 0; font-weight: 600; color: #d97706; }
+.habit-streak-fire { color: #dc2626; }
+.habit-streak-warm { color: #ea580c; }
+.habit-goal-cell { width: 80px; flex-shrink: 0; font-size: 0.78rem; }
+.habit-row-goal-met { background: #f0fdf4; }
+
+/* ---------- Toggle Cells ---------- */
 .habit-toggle {
   cursor: pointer; border-radius: var(--radius-sm);
   transition: all var(--transition); user-select: none;
 }
-.habit-toggle:hover { background: #fef3c7; }
-.habit-checked { background: #fef3c7; color: #d97706; font-weight: 700; }
+.habit-toggle:hover { background: #fef3c7; transform: scale(1.1); }
+.habit-checked {
+  background: #fef3c7; color: #d97706; font-weight: 700;
+}
+
+/* ---------- Goal Progress Bar ---------- */
+.habit-goal-bar-bg {
+  height: 6px; border-radius: 3px; background: var(--color-border);
+  overflow: hidden; margin-bottom: 2px;
+}
+.habit-goal-bar-fill {
+  height: 100%; border-radius: 3px; background: #d97706;
+  transition: width var(--transition);
+}
+.habit-goal-bar-met { background: var(--color-success); }
+.habit-goal-text { font-size: 0.7rem; color: var(--color-text-muted); }
+
+/* ---------- Stats View ---------- */
+.habit-stats {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px; padding: 4px 0;
+}
+.habit-stats-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 16px;
+}
+.habit-stats-ring-card { display: flex; flex-direction: column; align-items: center; }
+.habit-stats-title {
+  font-size: 0.9rem; font-weight: 600; color: var(--color-text);
+  margin: 0 0 12px;
+}
+.habit-stats-subtitle { font-size: 0.8rem; color: var(--color-text-muted); margin: 8px 0 0; }
+.habit-stats-insight { font-size: 0.82rem; color: var(--color-text-muted); margin: 6px 0 0; }
+
+/* Completion ring */
+.habit-ring-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.habit-ring-svg { display: block; }
+.habit-ring-label {
+  position: absolute; font-size: 1.6rem; font-weight: 700; color: #d97706;
+}
+
+/* Day heatmap */
+.habit-day-heatmap {
+  display: flex; gap: 6px; align-items: flex-end;
+  height: 120px; padding-top: 8px;
+}
+.habit-heatmap-day {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; height: 100%;
+}
+.habit-heatmap-bar {
+  width: 100%; min-height: 4px; border-radius: 3px 3px 0 0;
+  transition: height var(--transition);
+}
+.habit-heatmap-label { font-size: 0.7rem; font-weight: 600; margin-top: 4px; color: var(--color-text); }
+.habit-heatmap-pct { font-size: 0.65rem; color: var(--color-text-muted); }
+
+/* Streak leaderboard */
+.habit-streak-list { display: flex; flex-direction: column; gap: 8px; }
+.habit-streak-item {
+  display: flex; align-items: center; gap: 8px; font-size: 0.82rem;
+}
+.habit-streak-rank { font-size: 0.9rem; width: 24px; text-align: center; }
+.habit-streak-name { width: 100px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.habit-streak-bar-bg {
+  flex: 1; height: 8px; border-radius: 4px; background: var(--color-border); overflow: hidden;
+}
+.habit-streak-bar-fill {
+  height: 100%; border-radius: 4px; background: linear-gradient(90deg, #f59e0b, #dc2626);
+  transition: width var(--transition);
+}
+.habit-streak-val { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; }
+
+/* Per-habit completion bars */
+.habit-completion-list { display: flex; flex-direction: column; gap: 8px; }
+.habit-completion-item {
+  display: flex; align-items: center; gap: 8px; font-size: 0.82rem;
+}
+.habit-completion-name {
+  width: 120px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.habit-completion-bar-bg {
+  flex: 1; height: 8px; border-radius: 4px; background: var(--color-border); overflow: hidden;
+}
+.habit-completion-bar-fill {
+  height: 100%; border-radius: 4px; background: #d97706;
+  transition: width var(--transition);
+}
+.habit-completion-perfect { background: var(--color-success); }
+.habit-completion-pct { font-size: 0.75rem; color: var(--color-text-muted); width: 36px; text-align: right; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .habit-summary-bar { flex-wrap: wrap; gap: 8px; }
+  .habit-summary-stat { min-width: 80px; }
+  .habit-stats { grid-template-columns: 1fr; }
+  .habit-day-cell { width: 40px; }
+  .habit-name-cell { min-width: 80px; }
+  .habit-streak-name { width: 80px; }
+  .habit-completion-name { width: 80px; }
+}
+@media (max-width: 480px) {
+  .habit-toolbar { flex-wrap: wrap; }
+  .habit-day-cell { width: 32px; font-size: 0.75rem; }
+  .habit-goal-cell { width: 60px; }
+  .habit-day-heatmap { height: 80px; }
+}

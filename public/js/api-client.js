@@ -67,6 +67,7 @@ async function loadMockSheet(sheetId) {
     'sheet-027': 'recipe-spaghetti-bolognese',
     'sheet-028': 'kanban-waymark',
     'sheet-029': 'flow-login',
+    'sheet-030': 'habit-comprehensive',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;
