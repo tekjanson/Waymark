@@ -41,9 +41,12 @@ export function init() {
 
   if (openInSheetsBtn) {
     openInSheetsBtn.addEventListener('click', () => {
-      if (currentSheetId) {
-        window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
+      if (!currentSheetId) return;
+      if (currentSheetId.startsWith('created-')) {
+        showToast('This sheet was created locally and only exists in mock mode', 'error');
+        return;
       }
+      window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
     });
   }
 
