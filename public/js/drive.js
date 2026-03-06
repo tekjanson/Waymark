@@ -205,6 +205,20 @@ export async function readJsonFile(token, fileId) {
 }
 
 /**
+ * Read plain text content from a Drive file.
+ * @param {string} token
+ * @param {string} fileId
+ * @returns {Promise<string>}  raw text content
+ */
+export async function readTextFile(token, fileId) {
+  const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Drive readTextFile ${res.status}`);
+  return res.text();
+}
+
+/**
  * Update JSON content of an existing Drive file.
  * @param {string} token
  * @param {string} fileId
@@ -222,5 +236,56 @@ export async function updateJsonFile(token, fileId, content) {
     body,
   });
   if (!res.ok) throw new Error(`Drive updateJsonFile ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Create a plain text file via multipart upload.
+ * @param {string} token
+ * @param {string} name       file name (e.g. '.waymarkIgnore')
+ * @param {string} content    plain text content
+ * @param {string[]} parents  parent folder IDs
+ * @returns {Promise<Object>}  created file metadata
+ */
+export async function createTextFile(token, name, content, parents = []) {
+  const metadata = { name, mimeType: 'text/plain', parents };
+
+  const boundary = '----WayMarkBoundary' + Date.now();
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify(metadata) +
+    `\r\n--${boundary}\r\nContent-Type: text/plain\r\n\r\n` +
+    content +
+    `\r\n--${boundary}--`;
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: multipart,
+  });
+  if (!res.ok) throw new Error(`Drive createTextFile ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Update plain text content of an existing Drive file.
+ * @param {string} token
+ * @param {string} fileId
+ * @param {string} content   plain text content
+ * @returns {Promise<Object>}  updated file metadata
+ */
+export async function updateTextFile(token, fileId, content) {
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'text/plain',
+    },
+    body: content,
+  });
+  if (!res.ok) throw new Error(`Drive updateTextFile ${res.status}`);
   return res.json();
 }

@@ -18,8 +18,8 @@ const STEPS = [
   },
   {
     title: 'Drive Explorer',
-    body: 'Browse your Google Drive folders and sheets right from the sidebar. Click any folder to expand it and find your spreadsheets.',
-    target: '#sidebar',
+    body: 'Browse your Google Drive folders and sheets. Click "Browse Drive" in the menu to open the full explorer. Click any folder to expand it and find your spreadsheets.',
+    target: '#menu-explorer-btn',
     position: 'right',
   },
   {
@@ -53,10 +53,10 @@ const STEPS = [
     position: 'center',
   },
   {
-    title: 'Generate Examples',
-    body: 'Not sure where to start? Click "Generate Example Sheets" to create sample spreadsheets for every template type. You can pick which categories you want!',
-    target: '#generate-section',
-    position: 'top',
+    title: 'Quick Actions',
+    body: 'Use the sidebar menu to create new sheets, import files, or generate example sheets. Everything is just one click away!',
+    target: '#menu-create-btn',
+    position: 'right',
   },
   {
     title: 'You\'re All Set!',

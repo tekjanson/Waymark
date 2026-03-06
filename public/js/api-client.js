@@ -363,6 +363,132 @@ export const api = {
       const token = await clientAuth.getToken();
       return driveApi.updateJsonFile(token, fileId, content);
     },
+
+    /**
+     * Read plain text content from a Drive file.
+     * @param {string} fileId
+     * @returns {Promise<string>}
+     */
+    async readTextFile(fileId) {
+      if (isLocal) {
+        // In mock mode, check for stored text files
+        if (window.__WAYMARK_TEXT_FILES?.[fileId]) {
+          return window.__WAYMARK_TEXT_FILES[fileId];
+        }
+        return '';
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.readTextFile(token, fileId);
+    },
+
+    /**
+     * Find a file by name inside a specific folder.
+     * Looks for any MIME type. Returns null if not found.
+     * @param {string} name       file name to find
+     * @param {string} parentId   parent folder ID
+     * @returns {Promise<Object|null>}
+     */
+    async findFileInFolder(name, parentId) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+
+        // 'root' means the top level of myDrive
+        if (parentId === 'root') {
+          return fix.folders.myDrive.find(c => c.name === name) || null;
+        }
+
+        const search = (items) => {
+          for (const item of items) {
+            if (item.id === parentId && item.children) {
+              return item.children.find(c => c.name === name) || null;
+            }
+            if (item.children) {
+              const found = search(item.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        return search([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.findFile(token, name, parentId);
+    },
+
+    /**
+     * Create a plain text file in Drive.
+     * @param {string} name       file name
+     * @param {string} content    plain text content
+     * @param {string[]} parents  parent folder IDs
+     * @returns {Promise<Object>}  created file metadata
+     */
+    async createTextFile(name, content, parents) {
+      if (isLocal) {
+        const record = {
+          id: `text-${Date.now()}`,
+          name,
+          mimeType: 'text/plain',
+          content,
+          parents,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        if (!window.__WAYMARK_TEXT_FILES) window.__WAYMARK_TEXT_FILES = {};
+        window.__WAYMARK_TEXT_FILES[record.id] = content;
+
+        // Inject into fixture tree so findFileInFolder/listChildren find it
+        if (parents && parents.length > 0) {
+          const fix = await loadFixtures();
+
+          if (parents[0] === 'root') {
+            // Root-level file — add to top of myDrive
+            fix.folders.myDrive.push({ id: record.id, name, mimeType: 'text/plain' });
+          } else {
+            const inject = (items) => {
+              for (const item of items) {
+                if (item.id === parents[0]) {
+                  if (!item.children) item.children = [];
+                  item.children.push({ id: record.id, name, mimeType: 'text/plain' });
+                  return true;
+                }
+                if (item.children) {
+                  if (inject(item.children)) return true;
+                }
+              }
+              return false;
+            };
+            inject([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+          }
+        }
+
+        return record;
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.createTextFile(token, name, content, parents);
+    },
+
+    /**
+     * Update plain text content of an existing Drive file.
+     * @param {string} fileId
+     * @param {string} content  plain text content
+     * @returns {Promise<Object>}  updated file metadata
+     */
+    async updateTextFile(fileId, content) {
+      if (isLocal) {
+        if (!window.__WAYMARK_TEXT_FILES) window.__WAYMARK_TEXT_FILES = {};
+        window.__WAYMARK_TEXT_FILES[fileId] = content;
+        const record = {
+          type: 'text-update',
+          fileId,
+          content,
+          updatedAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return { id: fileId, name: 'updated', mimeType: 'text/plain' };
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.updateTextFile(token, fileId, content);
+    },
   },
 
   /* ---- Sheets ---- */

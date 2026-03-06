@@ -11,7 +11,7 @@ test('template badge hidden for empty sheets', async ({ page }) => {
 
 test('generate examples button visible on home screen', async ({ page }) => {
   await setupApp(page);
-  await expect(page.locator('#generate-examples-btn')).toBeVisible();
+  await expect(page.locator('#menu-examples-btn')).toBeVisible();
 });
 
 test('folder view shows open in drive button', async ({ page }) => {
