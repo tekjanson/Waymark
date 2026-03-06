@@ -1,0 +1,11 @@
+{
+  "name": "waymark-google-sheets-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MCP server for Google Sheets (avoids Zod schema bugs in published packages)",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "google-auth-library": "^9.14.0"
+  }
+}
