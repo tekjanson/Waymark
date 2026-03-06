@@ -42,6 +42,16 @@ export function isPinned(folderId) {
   return getPinnedFolders().some(f => f.id === folderId);
 }
 
+/* --- Pinned Sheets --- */
+
+export function getPinnedSheets() {
+  return get('pinned_sheets') || [];
+}
+
+export function setPinnedSheets(sheets) {
+  set('pinned_sheets', sheets);
+}
+
 /* --- Preferences --- */
 
 export function getAutoRefresh() {

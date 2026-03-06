@@ -14,9 +14,11 @@ let currentSheetId = null;
 let currentSheetTitle = null;
 let refreshTimer   = null;
 let lastFetchTime  = null;
+let currentValues  = null;
+let currentDataTitle = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn;
 
 /* ---------- Public ---------- */
 
@@ -28,6 +30,8 @@ export function init() {
   autoToggle    = document.getElementById('auto-refresh-toggle');
   templateBadge = document.getElementById('template-badge');
   openInSheetsBtn = document.getElementById('open-in-sheets-btn');
+  downloadCsvBtn  = document.getElementById('download-csv-btn');
+  sheetPinBtn     = document.getElementById('sheet-pin-btn');
 
   autoToggle.checked = userData.getAutoRefresh();
 
@@ -40,6 +44,28 @@ export function init() {
       if (currentSheetId) {
         window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
       }
+    });
+  }
+
+  if (downloadCsvBtn) {
+    downloadCsvBtn.addEventListener('click', () => downloadCsv());
+  }
+
+  if (sheetPinBtn) {
+    sheetPinBtn.addEventListener('click', () => {
+      if (!currentSheetId) return;
+      if (userData.isSheetPinned(currentSheetId)) {
+        userData.removePinnedSheet(currentSheetId);
+        sheetPinBtn.classList.remove('pinned');
+        sheetPinBtn.title = 'Pin sheet';
+      } else {
+        const headers = currentValues?.[0] || [];
+        const { key: templateKey } = detectTemplate(headers);
+        userData.addPinnedSheet({ id: currentSheetId, name: currentDataTitle || 'Untitled', templateKey });
+        sheetPinBtn.classList.add('pinned');
+        sheetPinBtn.title = 'Unpin sheet';
+      }
+      window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
     });
   }
 
@@ -83,8 +109,50 @@ export async function show(sheetId, sheetName) {
 /** Stop auto-refresh (called when navigating away). */
 export function hide() {
   currentSheetId = null;
+  currentValues = null;
+  currentDataTitle = null;
   clearInterval(refreshTimer);
   refreshTimer = null;
+}
+
+/* ---------- CSV Download ---------- */
+
+/**
+ * Convert a cell value to a properly escaped CSV field.
+ * @param {string} value
+ * @returns {string}
+ */
+function csvEscape(value) {
+  const str = String(value ?? '');
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+/**
+ * Download the current sheet data as a CSV file.
+ */
+function downloadCsv() {
+  if (!currentValues || currentValues.length === 0) {
+    showToast('No data to download', 'error');
+    return;
+  }
+  const csvContent = currentValues
+    .map(row => row.map(csvEscape).join(','))
+    .join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const filename = (currentDataTitle || 'waymark-sheet')
+    .replace(/[^a-z0-9_\- ]/gi, '')
+    .replace(/\s+/g, '-')
+    .toLowerCase();
+  const a = el('a', { href: url, download: `${filename}.csv` });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('CSV downloaded', 'success');
 }
 
 /* ---------- Data loading ---------- */
@@ -93,8 +161,10 @@ async function loadSheet(sheetId) {
   try {
     const data = await api.sheets.getSpreadsheet(sheetId);
     titleEl.textContent = data.title;
+    currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
-    renderWithTemplate(data.values || []);
+    currentValues = data.values || [];
+    renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();
 
@@ -106,6 +176,13 @@ async function loadSheet(sheetId) {
     const headers = data.values?.[0] || [];
     const { key: templateKey } = detectTemplate(headers);
     userData.addRecentSheet({ id: sheetId, name: data.title, templateKey });
+
+    // Sync sheet pin button state
+    if (sheetPinBtn) {
+      const pinned = userData.isSheetPinned(sheetId);
+      sheetPinBtn.classList.toggle('pinned', pinned);
+      sheetPinBtn.title = pinned ? 'Unpin sheet' : 'Pin sheet';
+    }
   } catch (err) {
     showToast(`Failed to load sheet: ${err.message}`, 'error');
     itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;

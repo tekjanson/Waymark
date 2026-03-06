@@ -476,7 +476,7 @@ ul { list-style: none; }
 .folder-header {
   display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
 }
-.folder-header h2 { margin-bottom: 0; }
+.folder-header h2 { margin-bottom: 0; flex: 1; }
 
 /* ---------- Search Results ---------- */
 #search-summary { margin-bottom: 16px; }
@@ -762,6 +762,18 @@ ul { list-style: none; }
 }
 .btn-sheets:hover { background: #c8e6c9; box-shadow: var(--shadow); }
 .btn-sheets svg { stroke: #1e7e34; flex-shrink: 0; }
+
+/* ---------- Download CSV Button ---------- */
+.btn-csv {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius);
+  border: 1px solid var(--color-primary); background: var(--color-primary-light); color: var(--color-primary-dark);
+  font-size: 0.82rem; font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+.btn-csv:hover { background: #bfdbfe; box-shadow: var(--shadow); }
+.btn-csv svg { stroke: var(--color-primary-dark); flex-shrink: 0; }
 
 /* ---------- Open in Google Drive Button ---------- */
 .btn-drive {
@@ -1157,6 +1169,7 @@ ul { list-style: none; }
   .examples-grid { grid-template-columns: 1fr; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
   .btn-sheets span { display: none; }
+  .btn-csv span { display: none; }
 
   /* --- Home: mobile-first warmth --- */
   .home-greeting {

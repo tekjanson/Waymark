@@ -128,12 +128,18 @@
             <div id="home-recent-list" class="home-recent-list"></div>
           </div>
 
+          <!-- Pinned Sheets -->
+          <div id="home-pinned-sheets" class="home-section hidden">
+            <h3 class="home-section-title">📌 Pinned Sheets</h3>
+            <div id="pinned-sheets" class="pinned-grid"></div>
+          </div>
+
           <!-- Pinned Folders -->
           <div id="home-pinned" class="home-section">
             <h3 class="home-section-title">📌 Pinned Folders</h3>
             <div id="pinned-folders" class="pinned-grid"></div>
             <p id="no-pinned" class="home-empty-hint hidden">
-              No folders pinned yet — browse your Drive and pin the folders you use most.
+              No pins yet — open a sheet or folder and tap 📌 to pin it.
             </p>
           </div>
 
@@ -159,11 +165,16 @@
             </button>
             <h2 id="checklist-title"></h2>
             <span id="template-badge" class="template-badge hidden"></span>
+            <button id="sheet-pin-btn" class="btn-pin" aria-label="Pin sheet" title="Pin sheet">📌</button>
             <div class="checklist-actions">
               <span id="last-updated" class="text-muted"></span>
               <button id="open-in-sheets-btn" class="btn btn-sheets" aria-label="Open in Google Sheets" title="Open in Google Sheets">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 Edit in Sheets
+              </button>
+              <button id="download-csv-btn" class="btn btn-csv" aria-label="Download as CSV" title="Download as CSV">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Download CSV</span>
               </button>
               <button id="refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -184,6 +195,7 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             </button>
             <h2 id="folder-title"></h2>
+            <button id="folder-pin-btn" class="btn-pin" aria-label="Pin folder" title="Pin folder">📌</button>
             <button id="open-in-drive-btn" class="btn btn-drive" aria-label="Open in Google Drive" title="Open in Google Drive">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               Open in Drive

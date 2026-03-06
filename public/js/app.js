@@ -372,44 +372,50 @@ function handleRoute() {
 }
 
 /**
- * Navigate back intelligently:
- * — From a sheet: return to the folder the user navigated from
- * — From a folder: go to parent folder or home
- * — Falls back to browser history, then home
+ * Navigate back deterministically:
+ * — From a sheet: return to the folder the user navigated from, else home
+ * — From a folder: go to the previous folder or home (walk history)
+ * — From explorer/search: go home
+ * Never uses history.back() which can leave the app.
  */
 function goBack() {
   const hash = window.location.hash || '#/';
 
-  // From sheet view → try the folder we came from
+  // From sheet view → return to originating folder, else home
   if (hash.startsWith('#/sheet/')) {
     const sheetId = hash.replace('#/sheet/', '');
     const origin = _sheetOrigin[sheetId];
     if (origin) {
       window.location.hash = `#/folder/${origin.folderId}/${encodeURIComponent(origin.folderName)}`;
-      return;
+    } else {
+      // Walk history for a non-sheet route (folder or home)
+      for (let i = _navHistory.length - 2; i >= 0; i--) {
+        if (!_navHistory[i].startsWith('#/sheet/')) {
+          window.location.hash = _navHistory[i];
+          _navHistory = _navHistory.slice(0, i + 1);
+          return;
+        }
+      }
+      window.location.hash = '#/';
     }
-    // Fall through to history
+    return;
   }
 
-  // From folder view → go to parent if we have history
+  // From folder view → walk history for a different route (parent folder or home)
   if (hash.startsWith('#/folder/')) {
-    // Look through history for the previous non-identical route
     for (let i = _navHistory.length - 2; i >= 0; i--) {
-      if (_navHistory[i] !== hash) {
+      if (_navHistory[i] !== hash && !_navHistory[i].startsWith('#/sheet/')) {
         window.location.hash = _navHistory[i];
-        // Trim history to that point to keep the stack clean
         _navHistory = _navHistory.slice(0, i + 1);
         return;
       }
     }
+    window.location.hash = '#/';
+    return;
   }
 
-  // Generic fallback: use browser history if we have internal depth, else go home
-  if (_navHistory.length > 1) {
-    history.back();
-  } else {
-    window.location.hash = '#/';
-  }
+  // From any other view (explorer, search) → home
+  window.location.hash = '#/';
 }
 
 /* ---------- Home — Pinned Folders ---------- */
@@ -424,6 +430,7 @@ function renderHome() {
   renderGreeting();
   wireQuickActions();
   renderRecentSheets();
+  renderPinnedSheets();
   renderPinnedFolders();
 }
 
@@ -444,7 +451,7 @@ function renderGreeting() {
     ? `Good ${period}, ${firstName}`
     : `Good ${period}`;
 
-  const pinned  = userData.getPinnedFolders().length;
+  const pinned  = userData.getPinnedFolders().length + userData.getPinnedSheets().length;
   const recent  = userData.getRecentSheets().length;
   if (pinned === 0 && recent === 0) {
     subEl.textContent = 'Welcome to WayMark — your sheets, beautifully organized';
@@ -513,14 +520,18 @@ function renderPinnedFolders() {
   const pinned = userData.getPinnedFolders();
   const container = document.getElementById('pinned-folders');
   const emptyMsg  = document.getElementById('no-pinned');
+  const pinnedSheets = userData.getPinnedSheets();
 
   container.innerHTML = '';
 
-  if (pinned.length === 0) {
+  // Show empty hint only when BOTH pinned folders and pinned sheets are empty
+  if (pinned.length === 0 && pinnedSheets.length === 0) {
     emptyMsg.classList.remove('hidden');
-    return;
+  } else {
+    emptyMsg.classList.add('hidden');
   }
-  emptyMsg.classList.add('hidden');
+
+  if (pinned.length === 0) return;
 
   for (const folder of pinned) {
     const card = el('div', {
@@ -544,10 +555,45 @@ function renderPinnedFolders() {
   }
 }
 
+/* ---------- Home: Pinned Sheets ---------- */
+
+function renderPinnedSheets() {
+  const section   = document.getElementById('home-pinned-sheets');
+  const container = document.getElementById('pinned-sheets');
+  if (!section || !container) return;
+
+  const pinned = userData.getPinnedSheets();
+  container.innerHTML = '';
+
+  if (pinned.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  for (const sheet of pinned) {
+    const tpl = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
+    const icon = tpl ? tpl.icon : '📊';
+
+    const card = el('div', {
+      className: 'pinned-card',
+      on: { click() { navigate('sheet', sheet.id); } },
+    }, [
+      el('span', { className: 'folder-emoji' }, [icon]),
+      el('div', { className: 'pinned-card-info' }, [
+        el('div', { className: 'pinned-card-name' }, [sheet.name || 'Untitled']),
+      ]),
+    ]);
+    container.append(card);
+  }
+}
+
 /* ---------- Folder Contents ---------- */
 
 const openInDriveBtn = document.getElementById('open-in-drive-btn');
+const folderPinBtn   = document.getElementById('folder-pin-btn');
 let currentFolderId  = null;
+let currentFolderName = null;
 
 if (openInDriveBtn) {
   openInDriveBtn.addEventListener('click', () => {
@@ -557,8 +603,25 @@ if (openInDriveBtn) {
   });
 }
 
+if (folderPinBtn) {
+  folderPinBtn.addEventListener('click', () => {
+    if (!currentFolderId) return;
+    if (userData.isPinned(currentFolderId)) {
+      userData.removePinnedFolder(currentFolderId);
+      folderPinBtn.classList.remove('pinned');
+      folderPinBtn.title = 'Pin folder';
+    } else {
+      userData.addPinnedFolder({ id: currentFolderId, name: currentFolderName || 'Folder' });
+      folderPinBtn.classList.add('pinned');
+      folderPinBtn.title = 'Unpin folder';
+    }
+    window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
+  });
+}
+
 async function showFolderContents(folderId, folderName) {
   currentFolderId = folderId;
+  currentFolderName = folderName;
   const titleEl      = document.getElementById('folder-title');
   const sheetsEl     = document.getElementById('folder-sheets');
   const noSheetsEl   = document.getElementById('no-sheets');
@@ -566,6 +629,13 @@ async function showFolderContents(folderId, folderName) {
   titleEl.textContent = folderName;
   sheetsEl.innerHTML  = '';
   noSheetsEl.classList.add('hidden');
+
+  // Sync folder pin button state
+  if (folderPinBtn) {
+    const pinned = userData.isPinned(folderId);
+    folderPinBtn.classList.toggle('pinned', pinned);
+    folderPinBtn.title = pinned ? 'Unpin folder' : 'Pin folder';
+  }
 
   try {
     const res = await api.drive.listChildren(folderId);
@@ -611,12 +681,14 @@ async function showFolderContents(folderId, folderName) {
 
       // Detect templates and group sheets
       const templateGroups = {};
+      const sheetIconMap = {};  // sheet ID → template icon
       for (const s of loadedSheets) {
         const headers = s.data.values?.[0] || [];
         const { key, template } = detectTemplate(headers);
         if (!templateGroups[key]) templateGroups[key] = { template, sheets: [] };
         const lower = headers.map(h => (h || '').toLowerCase().trim());
         const cols = template.columns(lower);
+        sheetIconMap[s.id] = template.icon || '📊';
         templateGroups[key].sheets.push({
           id: s.id,
           name: s.name || s.data.title,
@@ -644,7 +716,7 @@ async function showFolderContents(folderId, folderName) {
                 className: 'sheet-list-item',
                 on: { click() { navigate('sheet', s.id, s.name); } },
               }, [
-                el('span', { className: 'sheet-emoji' }, ['📊']),
+                el('span', { className: 'sheet-emoji' }, [otherGroup.template.icon || '📊']),
                 el('div', { className: 'sheet-list-item-name' }, [s.name]),
               ]));
             }
@@ -660,7 +732,7 @@ async function showFolderContents(folderId, folderName) {
             className: 'sheet-list-item',
             on: { click() { navigate('sheet', s.id, s.name || s.data.title); } },
           }, [
-            el('span', { className: 'sheet-emoji' }, ['📊']),
+            el('span', { className: 'sheet-emoji' }, [sheetIconMap[s.id] || '📊']),
             el('div', { className: 'sheet-list-item-name' }, [s.name || s.data.title]),
           ]));
         }
