@@ -308,6 +308,9 @@ ul { list-style: none; }
 /* ---------- Home Page ---------- */
 .home-greeting {
   margin-bottom: 28px;
+  padding: 20px 24px; border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-surface) 100%);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 .home-greeting h2 {
   font-size: 1.6rem; font-weight: 700;
@@ -315,7 +318,7 @@ ul { list-style: none; }
   margin-bottom: 4px;
 }
 .home-greeting-sub {
-  font-size: 0.95rem; color: var(--color-text-muted);
+  font-size: 0.95rem; color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -336,6 +339,9 @@ ul { list-style: none; }
   box-shadow: var(--shadow); border-color: var(--color-primary);
   transform: translateY(-2px);
 }
+.home-action-card:active {
+  transform: scale(0.97);
+}
 .home-action-icon { font-size: 1.6rem; line-height: 1; }
 .home-action-label {
   font-size: 0.85rem; font-weight: 600;
@@ -346,8 +352,9 @@ ul { list-style: none; }
 /* Home Sections */
 .home-section { margin-bottom: 28px; }
 .home-section-title {
-  font-size: 1rem; font-weight: 600;
-  color: var(--color-text-secondary);
+  font-size: 0.82rem; font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
   margin-bottom: 12px;
 }
 
@@ -363,6 +370,7 @@ ul { list-style: none; }
   cursor: pointer; transition: box-shadow var(--transition), border-color var(--transition);
 }
 .home-recent-card:hover { box-shadow: var(--shadow); border-color: var(--color-primary); }
+.home-recent-card:active { transform: scale(0.98); }
 .home-recent-icon { font-size: 1.3rem; flex-shrink: 0; }
 .home-recent-info { flex: 1; min-width: 0; }
 .home-recent-name {
@@ -374,10 +382,12 @@ ul { list-style: none; }
 
 /* Pinned empty hint */
 .home-empty-hint {
-  text-align: center; padding: 24px 16px;
+  text-align: center; padding: 28px 20px;
   color: var(--color-text-muted); font-size: 0.9rem;
-  background: var(--color-bg); border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--color-bg) 0%, var(--color-surface) 100%);
+  border-radius: var(--radius);
   border: 1px dashed var(--color-border);
+  line-height: 1.6;
 }
 
 /* ---------- Pinned Folders Grid ---------- */
@@ -1144,12 +1154,61 @@ ul { list-style: none; }
   .top-bar-right #user-name { display: none; }
   .search-container { max-width: 200px; }
   #content { padding: 16px; }
-  .pinned-grid { grid-template-columns: 1fr; }
-  .home-quick-actions { grid-template-columns: repeat(2, 1fr); }
-  .home-recent-list { grid-template-columns: 1fr; }
   .examples-grid { grid-template-columns: 1fr; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
   .btn-sheets span { display: none; }
+
+  /* --- Home: mobile-first warmth --- */
+  .home-greeting {
+    padding: 16px 18px; margin-bottom: 20px;
+    border-radius: 12px;
+  }
+  .home-greeting h2 { font-size: 1.3rem; }
+  .home-greeting-sub { font-size: 0.88rem; }
+
+  /* Horizontal scrollable quick-action strip */
+  .home-quick-actions {
+    display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+    gap: 10px; margin-bottom: 24px;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .home-quick-actions::-webkit-scrollbar { display: none; }
+  .home-action-card {
+    flex: 0 0 auto; flex-direction: row;
+    scroll-snap-align: start;
+    gap: 8px; padding: 12px 18px;
+    border-radius: 24px;
+    min-width: max-content;
+  }
+  .home-action-icon { font-size: 1.15rem; }
+  .home-action-label { font-size: 0.82rem; white-space: nowrap; }
+
+  /* Section breathing room */
+  .home-section { margin-bottom: 24px; }
+
+  /* Recent sheets — compact list */
+  .home-recent-list {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .home-recent-card {
+    padding: 12px 14px; gap: 10px;
+    border-radius: 10px;
+  }
+  .home-recent-icon { font-size: 1.15rem; }
+  .home-recent-name { font-size: 0.88rem; }
+
+  /* Pinned folders — cozy cards */
+  .pinned-grid { grid-template-columns: 1fr; gap: 8px; }
+  .pinned-card {
+    padding: 14px; border-radius: 10px;
+  }
+
+  .home-empty-hint {
+    padding: 20px 16px; font-size: 0.85rem;
+    border-radius: 10px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1159,7 +1218,21 @@ ul { list-style: none; }
   .add-row-form { padding: 12px; }
   .add-row-actions { flex-direction: column; }
   .add-row-actions .btn { width: 100%; justify-content: center; }
-  .home-quick-actions { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .home-action-card { padding: 14px 8px; }
-  .home-action-icon { font-size: 1.3rem; }
+
+  /* Tighten home for narrow phones */
+  #content { padding: 12px; }
+  .home-greeting {
+    padding: 14px 16px; margin-bottom: 16px;
+    border-radius: 10px;
+  }
+  .home-greeting h2 { font-size: 1.15rem; }
+  .home-greeting-sub { font-size: 0.82rem; }
+  .home-quick-actions { gap: 8px; margin-bottom: 20px; }
+  .home-action-card { padding: 10px 14px; border-radius: 20px; }
+  .home-action-icon { font-size: 1.05rem; }
+  .home-action-label { font-size: 0.78rem; }
+  .home-section { margin-bottom: 20px; }
+  .home-section-title { font-size: 0.75rem; margin-bottom: 8px; }
+  .home-recent-card { padding: 10px 12px; }
+  .pinned-card { padding: 12px; }
 }
