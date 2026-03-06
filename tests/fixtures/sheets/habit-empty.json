@@ -1,0 +1,8 @@
+{
+  "id": "sheet-032",
+  "title": "My Habit Tracker",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Habit", "Category", "Goal", "Week", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Streak", "Notes"]
+  ]
+}

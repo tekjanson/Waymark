@@ -163,7 +163,7 @@ const definition = {
     const weeks = hasWeeks ? groupByWeek(allItems, cols.week) : null;
     const multiWeek = hasWeeks && weeks && weeks.length > 1;
 
-    let weekIdx = weeks ? weeks.length - 1 : 0;
+    let weekIdx = weeks && weeks.length > 0 ? weeks.length - 1 : 0;
     let activeView = 'weekly';
 
     /* ---------- View Toolbar ---------- */
@@ -218,12 +218,12 @@ const definition = {
     container.append(viewContainer);
 
     function currentWeekDate() {
-      if (!hasWeeks || !weeks) return null;
+      if (!hasWeeks || !weeks || weeks.length === 0) return null;
       return weeks[weekIdx].date;
     }
 
     function currentItems() {
-      if (!hasWeeks || !weeks) return allItems;
+      if (!hasWeeks || !weeks || weeks.length === 0) return allItems;
       return weeks[weekIdx].items;
     }
 

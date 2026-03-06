@@ -69,6 +69,7 @@ async function loadMockSheet(sheetId) {
     'sheet-029': 'flow-login',
     'sheet-030': 'habit-comprehensive',
     'sheet-031': 'habit-historical',
+    'sheet-032': 'habit-empty',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

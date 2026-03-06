@@ -363,3 +363,16 @@ test('habit single-week sheet has no date labels in header', async ({ page }) =>
   const dateLabels = page.locator('.habit-day-date');
   expect(await dateLabels.count()).toBe(0);
 });
+
+test('habit empty sheet with headers only renders without error', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-032');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  // Should render the toolbar and view container without crashing
+  await expect(page.locator('.habit-toolbar')).toBeVisible();
+  await expect(page.locator('.habit-view-container')).toBeVisible();
+
+  // No data rows means the summary should show 0 habits
+  await expect(page.locator('.habit-summary-value').first()).toContainText('0');
+});
