@@ -34,6 +34,7 @@ function defaultUserData() {
 
     /* ── Pins & navigation ── */
     pinnedFolders: [],          // { id, name, owner?, shared? }[]
+    pinnedSheets: [],           // { id, name, templateKey?, pinnedAt }[]
     lastView: '/',              // URL hash of last route
 
     /* ── Preferences ── */
@@ -236,6 +237,32 @@ export async function removePinnedFolder(folderId) {
 
 export function isPinned(folderId) {
   return getPinnedFolders().some(f => f.id === folderId);
+}
+
+/* ---------- Pinned Sheets ---------- */
+
+const MAX_PINNED_SHEETS = 20;
+
+/**
+ * @returns {{ id: string, name: string, templateKey?: string, pinnedAt: string }[]}
+ */
+export function getPinnedSheets() {
+  return (_userData?.pinnedSheets) || [];
+}
+
+export async function addPinnedSheet(sheet) {
+  const pinned = getPinnedSheets().filter(s => s.id !== sheet.id);
+  pinned.unshift({ ...sheet, pinnedAt: new Date().toISOString() });
+  if (pinned.length > MAX_PINNED_SHEETS) pinned.length = MAX_PINNED_SHEETS;
+  await save({ pinnedSheets: pinned });
+}
+
+export async function removePinnedSheet(sheetId) {
+  await save({ pinnedSheets: getPinnedSheets().filter(s => s.id !== sheetId) });
+}
+
+export function isSheetPinned(sheetId) {
+  return getPinnedSheets().some(s => s.id === sheetId);
 }
 
 /* ---------- Preferences ---------- */
@@ -453,6 +480,7 @@ function migrateFromLocalStorage() {
   return {
     ...defaultUserData(),
     pinnedFolders: storage.getPinnedFolders(),
+    pinnedSheets: storage.getPinnedSheets?.() || [],
     preferences: {
       autoRefresh: storage.getAutoRefresh(),
       sidebarOpen: storage.getSidebarOpen(),
@@ -477,6 +505,7 @@ function migrateFromLocalStorage() {
 function syncToLocalStorage(data) {
   try {
     storage.setPinnedFolders(data.pinnedFolders || []);
+    if (storage.setPinnedSheets) storage.setPinnedSheets(data.pinnedSheets || []);
     storage.setAutoRefresh(data.preferences?.autoRefresh ?? true);
     storage.setSidebarOpen(data.preferences?.sidebarOpen ?? true);
     storage.setTutorialCompleted(data.tutorialCompleted || false);
