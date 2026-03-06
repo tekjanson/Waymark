@@ -3,8 +3,9 @@
  * open-in-sheets.spec.js — Tests for the "Edit in Sheets" button.
  *
  * Each test bootstraps the app in full isolation via setupApp()
- * and verifies the button's visibility, href behaviour, and
- * interaction without any shared state between tests.
+ * and verifies the button's visibility and interaction without
+ * any shared state between tests. In local mode the button
+ * shows a toast instead of opening a Google Sheets URL.
  */
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToSheet, waitForChecklistRows } = require('../helpers/test-utils');
@@ -29,50 +30,23 @@ test('Edit in Sheets button is not visible on home view', async ({ page }) => {
   await expect(page.locator('#open-in-sheets-btn')).not.toBeVisible();
 });
 
-test('Edit in Sheets button opens correct Google Sheets URL', async ({ page }) => {
+test('Edit in Sheets button shows toast in local mode', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await waitForChecklistRows(page);
 
-  // Listen for the popup (new tab) that the button opens
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
-
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-001');
+  // In local mode, clicking should show a toast instead of opening a tab
+  await page.locator('#open-in-sheets-btn').click();
+  await expect(page.locator('.toast')).toBeVisible();
+  await expect(page.locator('.toast')).toContainText('not available in local mode');
 });
 
-test('Edit in Sheets button opens correct URL for a different sheet', async ({ page }) => {
+test('Edit in Sheets button shows toast for any sheet in local mode', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-002');
   await waitForChecklistRows(page);
 
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
-
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-002');
-});
-
-test('Edit in Sheets button updates URL when navigating between sheets', async ({ page }) => {
-  await setupApp(page);
-
-  // Navigate to first sheet
-  await navigateToSheet(page, 'sheet-001');
-  await waitForChecklistRows(page);
-
-  // Navigate to second sheet
-  await navigateToSheet(page, 'sheet-002');
-  await waitForChecklistRows(page);
-
-  // Verify button opens the second sheet, not the first
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
-
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-002');
-  expect(popup.url()).not.toContain('sheet-001');
+  await page.locator('#open-in-sheets-btn').click();
+  await expect(page.locator('.toast')).toBeVisible();
+  await expect(page.locator('.toast')).toContainText('not available in local mode');
 });

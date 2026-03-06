@@ -119,6 +119,10 @@ function buildFolderNode(folder, isShared = false, parentFolderId = null) {
     on: {
       click(e) {
         e.stopPropagation();
+        if (window.__WAYMARK_LOCAL) {
+          showToast('Open in Drive is not available in local mode', 'error');
+          return;
+        }
         window.open(`https://drive.google.com/drive/folders/${folder.id}`, '_blank');
       },
     },

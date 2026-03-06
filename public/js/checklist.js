@@ -41,9 +41,12 @@ export function init() {
 
   if (openInSheetsBtn) {
     openInSheetsBtn.addEventListener('click', () => {
-      if (currentSheetId) {
-        window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
+      if (!currentSheetId) return;
+      if (window.__WAYMARK_LOCAL) {
+        showToast('Open in Sheets is not available in local mode', 'error');
+        return;
       }
+      window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`, '_blank');
     });
   }
 

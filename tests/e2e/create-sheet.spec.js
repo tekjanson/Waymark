@@ -52,7 +52,7 @@ test('create sheet modal closes when clicking the backdrop', async ({ page }) =>
 
 /* ────────────────── Template grid ────────────────── */
 
-test('create sheet modal shows all 19 template cards', async ({ page }) => {
+test('create sheet modal shows all 20 template cards', async ({ page }) => {
   await setupApp(page);
 
   await page.locator('#menu-create-btn').click();
@@ -229,4 +229,19 @@ test('modal resets state when reopened', async ({ page }) => {
   await expect(page.locator('#create-sheet-create-btn')).toBeDisabled();
   const selectedCards = page.locator('.create-sheet-card.selected');
   await expect(selectedCards).toHaveCount(0);
+});
+
+test('home Create quick-action button opens modal with populated grid', async ({ page }) => {
+  await setupApp(page);
+
+  // Verify we are on the home view
+  await expect(page.locator('#home-view')).toBeVisible();
+
+  // Click the home Create quick-action button
+  await page.locator('#home-action-create').click();
+
+  // Modal should be visible with populated template cards
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+  const cards = page.locator('.create-sheet-card');
+  await expect(cards).toHaveCount(20);
 });

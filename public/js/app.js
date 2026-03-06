@@ -474,8 +474,8 @@ function wireQuickActions() {
     if (btn) btn.addEventListener('click', fn);
   };
 
-  wire('home-action-create',   () => { if (createSheetModal) createSheetModal.classList.remove('hidden'); });
-  wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
+  wire('home-action-create',   () => { openCreateSheetModal(); });
+  wire('home-action-import',   () => { openImportModal(); });
   wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
   wire('home-action-examples', () => { openExamplesModal(); });
 }
@@ -598,9 +598,12 @@ let currentFolderName = null;
 
 if (openInDriveBtn) {
   openInDriveBtn.addEventListener('click', () => {
-    if (currentFolderId) {
-      window.open(`https://drive.google.com/drive/folders/${currentFolderId}`, '_blank');
+    if (!currentFolderId) return;
+    if (window.__WAYMARK_LOCAL) {
+      showToast('Open in Drive is not available in local mode', 'error');
+      return;
     }
+    window.open(`https://drive.google.com/drive/folders/${currentFolderId}`, '_blank');
   });
 }
 
