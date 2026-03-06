@@ -101,6 +101,9 @@ export async function init() {
   try {
     await _initPromise;
     _initialized = true;
+  } catch {
+    // Allow retry on next call if init failed
+    _initialized = false;
   } finally {
     _initPromise = null;
   }
@@ -133,6 +136,7 @@ async function _doInit() {
     syncToLocalStorage(_userData);
   } catch (err) {
     console.warn('[user-data] Drive init failed, falling back to localStorage:', err);
+    _rootFolderId = null;
     _userData = migrateFromLocalStorage();
   }
 }

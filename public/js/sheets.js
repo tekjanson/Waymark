@@ -74,13 +74,16 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
 
   // Move to parent folder if specified (requires drive.file scope)
   if (parentId) {
-    await fetch(
-      `https://www.googleapis.com/drive/v3/files/${created.spreadsheetId}?addParents=${parentId}&fields=id`,
+    const moveRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${created.spreadsheetId}?addParents=${parentId}&removeParents=root&fields=id,parents`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
       }
     );
+    if (!moveRes.ok) {
+      throw new Error(`Failed to move sheet to folder (${moveRes.status})`);
+    }
   }
 
   return created;

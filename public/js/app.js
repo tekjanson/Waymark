@@ -993,12 +993,9 @@ async function handleCreateSheet() {
 
   try {
     // Use the Waymark root folder as the parent
-    let parentId = null;
-    try {
-      parentId = await userData.getRootFolderId();
-    } catch {
-      // Fall back to root if folder lookup fails
-      parentId = null;
+    const parentId = await userData.getRootFolderId();
+    if (!parentId) {
+      throw new Error('Could not locate Waymark folder in Drive');
     }
 
     // Create the spreadsheet with just the header row
