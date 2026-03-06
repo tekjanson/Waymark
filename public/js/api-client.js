@@ -68,6 +68,7 @@ async function loadMockSheet(sheetId) {
     'sheet-028': 'kanban-waymark',
     'sheet-029': 'flow-login',
     'sheet-030': 'habit-comprehensive',
+    'sheet-031': 'habit-historical',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

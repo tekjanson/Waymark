@@ -62,7 +62,7 @@ test('habit tracker shows view toggle toolbar', async ({ page }) => {
   const toolbar = page.locator('.habit-toolbar');
   await expect(toolbar).toBeVisible();
 
-  // Should have Weekly and Stats buttons
+  // Single-week sheet should have Weekly and Stats buttons only (no History)
   const buttons = page.locator('.habit-view-btn');
   expect(await buttons.count()).toBe(2);
 
@@ -191,4 +191,153 @@ test('habit met-goal rows are highlighted', async ({ page }) => {
 
   const metRows = page.locator('.habit-row-goal-met');
   expect(await metRows.count()).toBeGreaterThan(0);
+});
+
+/* ---------- Multi-Week / Historical Tests (sheet-031) ---------- */
+
+test('habit historical shows week navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  await expect(page.locator('.habit-week-nav')).toBeVisible();
+  await expect(page.locator('.habit-week-label')).toBeVisible();
+  await expect(page.locator('.habit-week-counter')).toBeVisible();
+});
+
+test('habit historical defaults to latest week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Should show "4 of 4" (latest week)
+  await expect(page.locator('.habit-week-counter')).toContainText('4 of 4');
+
+  // Next button should be disabled
+  const nextBtn = page.locator('.habit-week-nav-btn').last();
+  await expect(nextBtn).toBeDisabled();
+});
+
+test('habit historical navigates to previous week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Click previous
+  await page.locator('.habit-week-nav-btn').first().click();
+  await expect(page.locator('.habit-week-counter')).toContainText('3 of 4');
+
+  // Click previous again
+  await page.locator('.habit-week-nav-btn').first().click();
+  await expect(page.locator('.habit-week-counter')).toContainText('2 of 4');
+
+  // Click next to go forward
+  await page.locator('.habit-week-nav-btn').last().click();
+  await expect(page.locator('.habit-week-counter')).toContainText('3 of 4');
+});
+
+test('habit historical shows 3 view buttons including History', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  const buttons = page.locator('.habit-view-btn');
+  expect(await buttons.count()).toBe(3);
+
+  // Should have History button
+  await expect(page.locator('.habit-view-btn[data-view="history"]')).toBeVisible();
+});
+
+test('habit historical History view shows week cards', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="history"]');
+  await page.waitForSelector('.habit-history-card', { timeout: 5_000 });
+
+  // Should have 4 week cards
+  const cards = page.locator('.habit-history-card');
+  expect(await cards.count()).toBe(4);
+});
+
+test('habit historical History view shows heatmap table', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="history"]');
+  await page.waitForSelector('.habit-heatmap-table', { timeout: 5_000 });
+
+  // Should have rows for each habit
+  const rows = page.locator('.habit-heatmap-row:not(.habit-heatmap-header)');
+  expect(await rows.count()).toBe(5);
+
+  // Should have heatmap cells with values
+  const values = page.locator('.habit-heatmap-value');
+  expect(await values.count()).toBeGreaterThanOrEqual(15);
+});
+
+test('habit historical clicking week card navigates to it', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  // Switch to History
+  await page.click('.habit-view-btn[data-view="history"]');
+  await page.waitForSelector('.habit-history-card', { timeout: 5_000 });
+
+  // Click the last card (earliest week, since cards are reverse-sorted)
+  await page.locator('.habit-history-card').last().click();
+
+  // Should switch back to weekly view
+  await page.waitForSelector('.habit-table', { timeout: 5_000 });
+  await expect(page.locator('.habit-view-btn-active')).toContainText('Weekly');
+
+  // Should be at week 1 of 4
+  await expect(page.locator('.habit-week-counter')).toContainText('1 of 4');
+});
+
+test('habit historical stats show weekly trend chart', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="stats"]');
+  await page.waitForSelector('.habit-trend-chart', { timeout: 5_000 });
+
+  // Should have 4 trend weeks
+  const trendWeeks = page.locator('.habit-trend-week');
+  expect(await trendWeeks.count()).toBe(4);
+
+  // Active week should be highlighted
+  await expect(page.locator('.habit-trend-active')).toBeVisible();
+});
+
+test('habit historical week nav shows correct habits per week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-summary-bar', { timeout: 5_000 });
+
+  // Each week has 5 habits
+  await expect(page.locator('.habit-summary-value').first()).toContainText('5');
+
+  // Navigate to first week
+  for (let i = 0; i < 3; i++) {
+    await page.locator('.habit-week-nav-btn').first().click();
+  }
+  await expect(page.locator('.habit-week-counter')).toContainText('1 of 4');
+
+  // Still 5 habits
+  await expect(page.locator('.habit-summary-value').first()).toContainText('5');
+});
+
+test('habit single-week sheet has no week navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  // Week nav should not exist for single-week sheets
+  const weekNav = page.locator('.habit-week-nav');
+  expect(await weekNav.count()).toBe(0);
 });

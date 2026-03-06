@@ -79,6 +79,7 @@ const ROLE_LABELS = {
   'habit.text': 'Habit / Routine',
   'habit.category': 'Category / Area (Health, Learning, etc.)',
   'habit.goal': 'Weekly Goal (e.g. 5x/week)',
+  'habit.week': 'Week (date for multi-week tracking)',
   'habit.streak': 'Streak Count',
   'habit.days': 'Day Tracking (Mon–Sun)',
   'habit.notes': 'Notes / Reflection',
@@ -188,7 +189,7 @@ const CANONICAL_HEADERS = {
   'kanban.due': 'Due', 'kanban.label': 'Label', 'kanban.note': 'Note',
   // Habit
   'habit.text': 'Habit', 'habit.category': 'Category', 'habit.goal': 'Goal',
-  'habit.streak': 'Streak', 'habit.notes': 'Notes',
+  'habit.week': 'Week', 'habit.streak': 'Streak', 'habit.notes': 'Notes',
   // Grading
   'grading.student': 'Student', 'grading.grade': 'Grade',
   // Timesheet

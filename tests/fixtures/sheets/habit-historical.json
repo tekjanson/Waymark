@@ -1,0 +1,28 @@
+{
+  "id": "sheet-031",
+  "title": "Habit History",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Habit", "Category", "Goal", "Week", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Streak", "Notes"],
+    ["Morning Run", "Health", "5x", "2026-02-09", "✓", "", "✓", "", "✓", "", "", "3", "Starting out"],
+    ["Read 30 min", "Learning", "6x", "2026-02-09", "✓", "✓", "", "✓", "", "", "✓", "2", ""],
+    ["Meditate", "Mindfulness", "7x", "2026-02-09", "✓", "", "✓", "", "✓", "✓", "", "4", "Hard to maintain"],
+    ["Drink Water", "Health", "7x", "2026-02-09", "✓", "✓", "", "✓", "✓", "", "✓", "3", ""],
+    ["Practice Piano", "Learning", "4x", "2026-02-09", "", "✓", "", "✓", "", "", "", "2", "Learning scales"],
+    ["Morning Run", "Health", "5x", "2026-02-16", "✓", "✓", "", "✓", "✓", "", "✓", "5", "Getting easier"],
+    ["Read 30 min", "Learning", "6x", "2026-02-16", "✓", "✓", "✓", "", "✓", "✓", "", "4", ""],
+    ["Meditate", "Mindfulness", "7x", "2026-02-16", "✓", "✓", "", "✓", "✓", "✓", "", "5", "Found a good app"],
+    ["Drink Water", "Health", "7x", "2026-02-16", "✓", "✓", "✓", "✓", "", "✓", "✓", "6", ""],
+    ["Practice Piano", "Learning", "4x", "2026-02-16", "✓", "", "✓", "", "✓", "", "", "3", "Chords now"],
+    ["Morning Run", "Health", "5x", "2026-02-23", "✓", "✓", "✓", "", "✓", "✓", "", "5", "5K milestone"],
+    ["Read 30 min", "Learning", "6x", "2026-02-23", "✓", "✓", "✓", "✓", "✓", "", "✓", "6", "Great book"],
+    ["Meditate", "Mindfulness", "7x", "2026-02-23", "✓", "✓", "✓", "✓", "", "✓", "✓", "6", ""],
+    ["Drink Water", "Health", "7x", "2026-02-23", "✓", "✓", "✓", "✓", "✓", "✓", "", "6", "Almost there"],
+    ["Practice Piano", "Learning", "4x", "2026-02-23", "✓", "", "✓", "✓", "", "✓", "", "4", "First song!"],
+    ["Morning Run", "Health", "5x", "2026-03-02", "✓", "✓", "✓", "✓", "✓", "", "✓", "6", "New PB!"],
+    ["Read 30 min", "Learning", "6x", "2026-03-02", "✓", "✓", "✓", "✓", "✓", "✓", "", "6", ""],
+    ["Meditate", "Mindfulness", "7x", "2026-03-02", "✓", "✓", "✓", "✓", "✓", "✓", "✓", "7", "Perfect week!"],
+    ["Drink Water", "Health", "7x", "2026-03-02", "✓", "✓", "✓", "✓", "✓", "✓", "✓", "7", "Nailed it"],
+    ["Practice Piano", "Learning", "4x", "2026-03-02", "✓", "✓", "", "✓", "", "✓", "", "4", ""]
+  ]
+}
