@@ -454,9 +454,9 @@ function renderGreeting() {
   const pinned  = userData.getPinnedFolders().length + userData.getPinnedSheets().length;
   const recent  = userData.getRecentSheets().length;
   if (pinned === 0 && recent === 0) {
-    subEl.textContent = 'Welcome to WayMark — your sheets, beautifully organized';
+    subEl.textContent = 'Welcome to your Wayboard — pin sheets and folders to get started';
   } else {
-    subEl.textContent = "Here's what's happening in your workspace";
+    subEl.textContent = 'Welcome back to your Wayboard';
   }
 }
 
