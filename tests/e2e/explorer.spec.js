@@ -91,6 +91,10 @@ test('pin and unpin a folder', async ({ page }) => {
   await page.waitForSelector('#home-view:not(.hidden)');
   await expect(page.locator('.pinned-card-name', { hasText: 'Groceries' })).toBeVisible();
 
+  // Go back to explorer to unpin
+  await page.evaluate(() => { window.location.hash = '#/explorer'; });
+  await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 5_000 });
+
   // Unpin it
   const pinBtnAgain = page.locator('.folder-item', { hasText: 'Groceries' }).locator('.btn-pin');
   await pinBtnAgain.click();
@@ -98,7 +102,7 @@ test('pin and unpin a folder', async ({ page }) => {
 });
 
 test('sidebar toggle works', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page);
 
   const sidebar = page.locator('#sidebar');
   await expect(sidebar).toHaveClass(/sidebar-open/);

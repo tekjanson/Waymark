@@ -38,6 +38,7 @@ const MOCK_AUTH_COOKIE = {
  * @param {boolean}  [opts.sidebarOpen]             sidebar pref (default true)
  * @param {boolean}  [opts.tutorialCompleted]        tutorial pref (default true — suppresses auto-start)
  * @param {string}   [opts.hash]                    initial URL hash (e.g. '#/sheet/sheet-001')
+ * @param {Object}   [opts.textFiles]               seed window.__WAYMARK_TEXT_FILES (id → content)
  */
 async function setupApp(page, opts = {}) {
   const {
@@ -47,6 +48,7 @@ async function setupApp(page, opts = {}) {
     sidebarOpen,
     tutorialCompleted = true,
     hash,
+    textFiles,
   } = opts;
 
   /* 1. Auth — inject cookie before any navigation */
@@ -67,13 +69,23 @@ async function setupApp(page, opts = {}) {
     }, lsEntries);
   }
 
+  /* 2b. Seed text files for .waymarkIgnore testing */
+  if (textFiles && Object.keys(textFiles).length) {
+    await page.addInitScript((files) => {
+      window.__WAYMARK_TEXT_FILES = window.__WAYMARK_TEXT_FILES || {};
+      Object.assign(window.__WAYMARK_TEXT_FILES, files);
+    }, textFiles);
+  }
+
   /* 3. Navigate */
   const url = hash ? `/${hash}` : '/';
   await page.goto(url);
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
 
-  /* 4. Optional: wait for explorer */
+  /* 4. Optional: wait for explorer (navigate to explorer view first) */
   if (waitForExplorer) {
+    await page.evaluate(() => { window.location.hash = '#/explorer'; });
+    await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
     await page.waitForSelector('.folder-item', { timeout: 10_000 });
   }
 
@@ -133,6 +145,8 @@ async function getCompletedCount(page) {
 }
 
 async function waitForExplorer(page) {
+  await page.evaluate(() => { window.location.hash = '#/explorer'; });
+  await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
   await page.waitForSelector('.folder-item', { timeout: 10_000 });
 }
 

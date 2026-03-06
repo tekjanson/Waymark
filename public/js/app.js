@@ -7,7 +7,7 @@
 import { api }       from './api-client.js';
 import * as storage  from './storage.js';
 import * as userData from './user-data.js';
-import { el, showView, showLoading, hideLoading, showToast, toggleSidebar, closeSidebar, isSidebarOpen } from './ui.js';
+import { el, showView, showLoading, hideLoading, showToast, toggleSidebar, closeSidebar, isSidebarOpen, timeAgo } from './ui.js';
 import * as explorer from './explorer.js';
 import * as checklist from './checklist.js';
 import * as search   from './search.js';
@@ -28,11 +28,16 @@ const userNameEl    = document.getElementById('user-name');
 const userAvatarEl  = document.getElementById('user-avatar');
 const backBtn       = document.getElementById('back-btn');
 const folderBackBtn = document.getElementById('folder-back-btn');
-const generateBtn   = document.getElementById('generate-examples-btn');
 const generateProg  = document.getElementById('generate-progress');
 const tutorialBtn   = document.getElementById('tutorial-btn');
-const importBtn     = document.getElementById('import-sheet-btn');
-const createSheetBtn = document.getElementById('create-sheet-btn');
+
+/* ---------- Sidebar menu refs ---------- */
+const menuHomeBtn      = document.getElementById('menu-home-btn');
+const menuExplorerBtn  = document.getElementById('menu-explorer-btn');
+const menuCreateBtn    = document.getElementById('menu-create-btn');
+const menuImportBtn    = document.getElementById('menu-import-btn');
+const menuExamplesBtn  = document.getElementById('menu-examples-btn');
+const explorerRefreshBtn = document.getElementById('explorer-refresh-btn');
 
 /* ---------- Example Modal refs ---------- */
 const examplesModal       = document.getElementById('examples-modal');
@@ -168,19 +173,41 @@ async function boot() {
   backBtn.addEventListener('click', () => { goBack(); });
   folderBackBtn.addEventListener('click', () => { goBack(); });
 
-  // Generate examples — open modal instead of generating directly
-  if (generateBtn) {
-    generateBtn.addEventListener('click', openExamplesModal);
+  // Sidebar menu buttons
+  if (menuHomeBtn) {
+    menuHomeBtn.addEventListener('click', () => {
+      window.location.hash = '#/';
+      updateMenuActive('home');
+      autoCloseSidebarMobile();
+    });
   }
-
-  // Import sheet — open import modal
-  if (importBtn) {
-    importBtn.addEventListener('click', openImportModal);
+  if (menuExplorerBtn) {
+    menuExplorerBtn.addEventListener('click', () => {
+      window.location.hash = '#/explorer';
+      updateMenuActive('explorer');
+      autoCloseSidebarMobile();
+    });
   }
-
-  // Create new sheet — open create sheet modal
-  if (createSheetBtn) {
-    createSheetBtn.addEventListener('click', openCreateSheetModal);
+  if (menuCreateBtn) {
+    menuCreateBtn.addEventListener('click', () => {
+      openCreateSheetModal();
+      autoCloseSidebarMobile();
+    });
+  }
+  if (menuImportBtn) {
+    menuImportBtn.addEventListener('click', () => {
+      openImportModal();
+      autoCloseSidebarMobile();
+    });
+  }
+  if (menuExamplesBtn) {
+    menuExamplesBtn.addEventListener('click', () => {
+      openExamplesModal();
+      autoCloseSidebarMobile();
+    });
+  }
+  if (explorerRefreshBtn) {
+    explorerRefreshBtn.addEventListener('click', () => explorer.refresh());
   }
 
   // Wire examples modal
@@ -193,7 +220,7 @@ async function boot() {
   initCreateSheetModal();
 
   // Listen for pin changes to re-render home
-  window.addEventListener('waymark:pins-changed', renderPinnedFolders);
+  window.addEventListener('waymark:pins-changed', renderHome);
 
   // Listen for recipe re-sync requests from the recipe template
   window.addEventListener('waymark:recipe-resync', handleRecipeResync);
@@ -224,7 +251,8 @@ async function showApp(user) {
   appScreen.classList.remove('hidden');
 
   // Update user info in top bar
-  userNameEl.textContent = user.name || user.email || '';
+  _userName = user.name || user.email || '';
+  userNameEl.textContent = _userName;
   if (user.picture) {
     userAvatarEl.src = user.picture;
     userAvatarEl.alt = user.name || '';
@@ -265,6 +293,28 @@ async function handleLogout() {
   appScreen.classList.add('hidden');
 }
 
+/* ---------- Sidebar menu helpers ---------- */
+
+/**
+ * Update active state on sidebar menu items.
+ * @param {string} menuId — one of 'home', 'explorer'
+ */
+function updateMenuActive(menuId) {
+  document.querySelectorAll('.sidebar-nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.menu === menuId);
+  });
+}
+
+/**
+ * Auto-close sidebar on narrow screens after navigating.
+ */
+function autoCloseSidebarMobile() {
+  if (window.innerWidth <= 768 && isSidebarOpen()) {
+    closeSidebar();
+    userData.setSidebarOpen(false);
+  }
+}
+
 /* ---------- Routing ---------- */
 
 function handleRoute() {
@@ -294,6 +344,7 @@ function handleRoute() {
     showView('checklist');
     checklist.show(sheetId);
     userData.setLastView(hash);
+    updateMenuActive('');
   } else if (hash.startsWith('#/folder/')) {
     const parts = hash.replace('#/folder/', '').split('/');
     const folderId = parts[0];
@@ -301,15 +352,22 @@ function handleRoute() {
     showView('folder');
     showFolderContents(folderId, folderName);
     userData.setLastView(hash);
+    updateMenuActive('');
   } else if (hash.startsWith('#/search')) {
     showView('search');
     search.searchFromHash(hash);
     userData.setLastView(hash);
+    updateMenuActive('');
+  } else if (hash === '#/explorer') {
+    showView('explorer');
+    updateMenuActive('explorer');
+    userData.setLastView(hash);
   } else {
     // Home
     showView('home');
-    renderPinnedFolders();
+    renderHome();
     userData.setLastView('#/');
+    updateMenuActive('home');
   }
 }
 
@@ -355,6 +413,101 @@ function goBack() {
 }
 
 /* ---------- Home — Pinned Folders ---------- */
+
+/** Module-scoped user name for greeting. Set on login. */
+let _userName = '';
+
+/**
+ * Render the full home page: greeting, quick actions, recent sheets, pinned folders.
+ */
+function renderHome() {
+  renderGreeting();
+  wireQuickActions();
+  renderRecentSheets();
+  renderPinnedFolders();
+}
+
+/* ---------- Home: Greeting ---------- */
+
+function renderGreeting() {
+  const greetEl = document.getElementById('home-greeting-text');
+  const subEl   = document.getElementById('home-greeting-sub');
+  if (!greetEl) return;
+
+  const hour = new Date().getHours();
+  let period = 'evening';
+  if (hour >= 5 && hour < 12)  period = 'morning';
+  else if (hour >= 12 && hour < 17) period = 'afternoon';
+
+  const firstName = _userName ? _userName.split(' ')[0] : '';
+  greetEl.textContent = firstName
+    ? `Good ${period}, ${firstName}`
+    : `Good ${period}`;
+
+  const pinned  = userData.getPinnedFolders().length;
+  const recent  = userData.getRecentSheets().length;
+  if (pinned === 0 && recent === 0) {
+    subEl.textContent = 'Welcome to WayMark — your sheets, beautifully organized';
+  } else {
+    subEl.textContent = "Here's what's happening in your workspace";
+  }
+}
+
+/* ---------- Home: Quick Actions ---------- */
+
+let _quickActionsWired = false;
+
+function wireQuickActions() {
+  if (_quickActionsWired) return;
+  _quickActionsWired = true;
+
+  const wire = (id, fn) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', fn);
+  };
+
+  wire('home-action-create',   () => { if (createSheetModal) createSheetModal.classList.remove('hidden'); });
+  wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
+  wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
+  wire('home-action-examples', () => { openExamplesModal(); });
+}
+
+/* ---------- Home: Recent Sheets ---------- */
+
+function renderRecentSheets() {
+  const section   = document.getElementById('home-recent');
+  const container = document.getElementById('home-recent-list');
+  if (!section || !container) return;
+
+  const recent = userData.getRecentSheets().slice(0, 6);
+  container.innerHTML = '';
+
+  if (recent.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  for (const sheet of recent) {
+    const tpl = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
+    const icon = tpl ? tpl.icon : '📄';
+    const ago  = sheet.openedAt ? timeAgo(sheet.openedAt) : '';
+
+    const card = el('div', {
+      className: 'home-recent-card',
+      on: { click() { navigate('sheet', sheet.id); } },
+    }, [
+      el('span', { className: 'home-recent-icon' }, [icon]),
+      el('div', { className: 'home-recent-info' }, [
+        el('div', { className: 'home-recent-name' }, [sheet.name || 'Untitled']),
+        ago ? el('div', { className: 'home-recent-time' }, [ago]) : null,
+      ]),
+    ]);
+    container.append(card);
+  }
+}
+
+/* ---------- Home: Pinned Folders ---------- */
 
 function renderPinnedFolders() {
   const pinned = userData.getPinnedFolders();
@@ -416,7 +569,11 @@ async function showFolderContents(folderId, folderName) {
 
   try {
     const res = await api.drive.listChildren(folderId);
-    const items = res.files || [];
+    let items = res.files || [];
+
+    // Apply .waymarkIgnore filtering
+    items = await explorer.applyWaymarkIgnore(folderId, items);
+
     const sheets  = items.filter(i => i.mimeType === 'application/vnd.google-apps.spreadsheet');
     const docs    = items.filter(i => i.mimeType === 'application/vnd.google-apps.document');
     const folders = items.filter(i => i.mimeType === 'application/vnd.google-apps.folder');

@@ -34,6 +34,11 @@
           "name": "Backyard",
           "mimeType": "application/vnd.google-apps.folder",
           "children": []
+        },
+        {
+          "id": "f2-ignore",
+          "name": ".waymarkIgnore",
+          "mimeType": "text/plain"
         }
       ]
     },
@@ -166,6 +171,11 @@
           "children": []
         }
       ]
+    },
+    {
+      "id": "root-ignore",
+      "name": ".waymarkIgnore",
+      "mimeType": "text/plain"
     }
   ],
   "sharedWithMe": [

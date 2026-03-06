@@ -15,14 +15,14 @@ test('clicking Create New Sheet opens the modal', async ({ page }) => {
   await setupApp(page);
 
   await expect(page.locator('#create-sheet-modal')).toBeHidden();
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 });
 
 test('create sheet modal closes when clicking Cancel', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   await page.locator('#create-sheet-cancel-btn').click();
@@ -32,7 +32,7 @@ test('create sheet modal closes when clicking Cancel', async ({ page }) => {
 test('create sheet modal closes when clicking the X button', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   await page.locator('#create-sheet-modal-close').click();
@@ -42,7 +42,7 @@ test('create sheet modal closes when clicking the X button', async ({ page }) =>
 test('create sheet modal closes when clicking the backdrop', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   // Click the overlay background (not the modal content)
@@ -55,7 +55,7 @@ test('create sheet modal closes when clicking the backdrop', async ({ page }) =>
 test('create sheet modal shows all 19 template cards', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   const cards = page.locator('.create-sheet-card');
@@ -65,7 +65,7 @@ test('create sheet modal shows all 19 template cards', async ({ page }) => {
 test('each template card shows name and headers', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
 
   // Check the first card has a name and header text
   const firstCard = page.locator('.create-sheet-card').first();
@@ -78,7 +78,7 @@ test('each template card shows name and headers', async ({ page }) => {
 test('clicking a template card selects it', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   const firstCard = page.locator('.create-sheet-card').first();
 
   // Not selected initially
@@ -91,7 +91,7 @@ test('clicking a template card selects it', async ({ page }) => {
 test('clicking a template auto-fills the name if empty', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
 
   // Name should start empty
   await expect(page.locator('#create-sheet-name')).toHaveValue('');
@@ -107,7 +107,7 @@ test('clicking a template auto-fills the name if empty', async ({ page }) => {
 test('selecting a different card deselects the previous one', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   const cards = page.locator('.create-sheet-card');
 
   await cards.nth(0).click();
@@ -123,7 +123,7 @@ test('selecting a different card deselects the previous one', async ({ page }) =
 test('create button is disabled until template selected and name entered', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   const createBtn = page.locator('#create-sheet-create-btn');
 
   // Initially disabled
@@ -143,7 +143,7 @@ test('create button is disabled until template selected and name entered', async
 test('create button enables when both name and template are set', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
 
   // Fill name first, then select template
   await page.locator('#create-sheet-name').fill('My Budget');
@@ -157,7 +157,7 @@ test('create button enables when both name and template are set', async ({ page 
 test('creating a sheet records the correct data in WAYMARK_RECORDS', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
 
   // Select Budget template (find card with text "Budget")
   const budgetCard = page.locator('.create-sheet-card', { has: page.locator('.create-sheet-card-name', { hasText: 'Budget' }) });
@@ -185,7 +185,7 @@ test('creating a sheet records the correct data in WAYMARK_RECORDS', async ({ pa
 test('creating a sheet shows a success toast', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await page.locator('.create-sheet-card').first().click();
   await page.locator('#create-sheet-name').fill('Test Toast Sheet');
   await page.locator('#create-sheet-create-btn').click();
@@ -199,7 +199,7 @@ test('creating a sheet shows a success toast', async ({ page }) => {
 test('creating a sheet navigates to the new sheet', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await page.locator('.create-sheet-card').first().click();
   await page.locator('#create-sheet-name').fill('Nav Test Sheet');
   await page.locator('#create-sheet-create-btn').click();
@@ -216,13 +216,13 @@ test('modal resets state when reopened', async ({ page }) => {
   await setupApp(page);
 
   // Open and select a template
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
   await page.locator('.create-sheet-card').first().click();
   await page.locator('#create-sheet-name').fill('First Sheet');
 
   // Close and reopen
   await page.locator('#create-sheet-cancel-btn').click();
-  await page.locator('#create-sheet-btn').click();
+  await page.locator('#menu-create-btn').click();
 
   // Name should be empty, no template selected, button disabled
   await expect(page.locator('#create-sheet-name')).toHaveValue('');

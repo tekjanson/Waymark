@@ -60,12 +60,34 @@
     <!-- Layout -->
     <div id="main-layout">
 
-      <!-- Sidebar — Drive Explorer -->
+      <!-- Sidebar — Navigation Menu -->
       <aside id="sidebar" class="sidebar-open">
         <div class="sidebar-header">
-          <h3>Drive Explorer</h3>
+          <h3>Menu</h3>
         </div>
-        <div id="explorer"></div>
+        <nav class="sidebar-nav">
+          <button id="menu-home-btn" class="sidebar-nav-item active" data-menu="home">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>Home</span>
+          </button>
+          <button id="menu-explorer-btn" class="sidebar-nav-item" data-menu="explorer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Browse Drive</span>
+          </button>
+          <div class="sidebar-nav-divider"></div>
+          <button id="menu-create-btn" class="sidebar-nav-item">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <span>Create New Sheet</span>
+          </button>
+          <button id="menu-import-btn" class="sidebar-nav-item">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Import File</span>
+          </button>
+          <button id="menu-examples-btn" class="sidebar-nav-item">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Generate Examples</span>
+          </button>
+        </nav>
       </aside>
 
       <!-- Main Content -->
@@ -73,29 +95,60 @@
 
         <!-- Home View -->
         <section id="home-view" class="view" data-view="home">
-          <h2>Pinned Folders</h2>
-          <div id="pinned-folders" class="pinned-grid"></div>
-          <p id="no-pinned" class="empty-state hidden">No folders pinned yet. Use the Drive Explorer to browse and pin folders.</p>
 
-          <div id="generate-section" class="generate-section">
-            <h3>Quick Start</h3>
-            <p class="text-muted">Generate example sheets in your Google Drive to try all template types.</p>
-            <div class="generate-buttons">
-              <button id="create-sheet-btn" class="btn btn-primary">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                Create New Sheet
-              </button>
-              <button id="generate-examples-btn" class="btn btn-secondary">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                Generate Example Sheets
-              </button>
-              <button id="import-sheet-btn" class="btn btn-secondary">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Import Existing Sheet or Doc
-              </button>
-            </div>
-            <div id="generate-progress" class="generate-progress hidden"></div>
+          <!-- Greeting -->
+          <div id="home-greeting" class="home-greeting">
+            <h2 id="home-greeting-text">Welcome back</h2>
+            <p id="home-greeting-sub" class="home-greeting-sub">Here's what's happening in your workspace</p>
           </div>
+
+          <!-- Quick Actions -->
+          <div class="home-quick-actions">
+            <button id="home-action-create" class="home-action-card">
+              <span class="home-action-icon">📝</span>
+              <span class="home-action-label">New Sheet</span>
+            </button>
+            <button id="home-action-import" class="home-action-card">
+              <span class="home-action-icon">📥</span>
+              <span class="home-action-label">Import</span>
+            </button>
+            <button id="home-action-browse" class="home-action-card">
+              <span class="home-action-icon">📂</span>
+              <span class="home-action-label">Browse</span>
+            </button>
+            <button id="home-action-examples" class="home-action-card">
+              <span class="home-action-icon">✨</span>
+              <span class="home-action-label">Examples</span>
+            </button>
+          </div>
+
+          <!-- Recent Sheets -->
+          <div id="home-recent" class="home-section hidden">
+            <h3 class="home-section-title">📋 Recently Opened</h3>
+            <div id="home-recent-list" class="home-recent-list"></div>
+          </div>
+
+          <!-- Pinned Folders -->
+          <div id="home-pinned" class="home-section">
+            <h3 class="home-section-title">📌 Pinned Folders</h3>
+            <div id="pinned-folders" class="pinned-grid"></div>
+            <p id="no-pinned" class="home-empty-hint hidden">
+              No folders pinned yet — browse your Drive and pin the folders you use most.
+            </p>
+          </div>
+
+          <div id="generate-progress" class="generate-progress hidden"></div>
+        </section>
+
+        <!-- Drive Explorer View (main content) -->
+        <section id="explorer-view" class="view hidden" data-view="explorer">
+          <div class="explorer-view-header">
+            <h2>Drive Explorer</h2>
+            <button id="explorer-refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh Drive">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+          </div>
+          <div id="explorer"></div>
         </section>
 
         <!-- Checklist View -->

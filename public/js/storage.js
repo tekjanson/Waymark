@@ -148,6 +148,16 @@ export function setDismissedItems(items) {
   set('dismissed_items', items);
 }
 
+/* --- Hidden Items --- */
+
+export function getHiddenItems() {
+  return get('hidden_items') || [];
+}
+
+export function setHiddenItems(items) {
+  set('hidden_items', items);
+}
+
 /* --- Sort Order --- */
 
 export function getSortOrder() {
