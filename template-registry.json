@@ -364,12 +364,14 @@
       "fixtureIds": [
         "sheet-018",
         "sheet-030",
-        "sheet-031"
+        "sheet-031",
+        "sheet-032"
       ],
       "fixtureFiles": [
         "habit-morning",
         "habit-comprehensive",
-        "habit-historical"
+        "habit-historical",
+        "habit-empty"
       ]
     },
     {
@@ -737,7 +739,7 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-032",
+  "nextSheetId": "sheet-033",
   "totalTemplates": 20,
   "categories": [
     "Productivity",

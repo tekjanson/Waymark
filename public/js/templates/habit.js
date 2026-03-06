@@ -3,7 +3,7 @@
    analytics, categories, goals, and streak tracking
    ============================================================ */
 
-import { el, cell, editableCell, comboCell, emitEdit, registerTemplate } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -126,13 +126,16 @@ const definition = {
     const cols = { text: -1, category: -1, goal: -1, week: -1, days: [], streak: -1, notes: -1 };
     cols.text     = lower.findIndex(h => /^(habit|routine|daily|activity|task|name)/.test(h));
     if (cols.text === -1) cols.text = 0;
-    cols.category = lower.findIndex(h => /^(category|group|type|area)/.test(h));
+    cols.category = lower.findIndex((h, i) => i !== cols.text && /^(category|group|type|area)/.test(h));
     cols.goal     = lower.findIndex((h, i) => i !== cols.text && i !== cols.category && /^(goal|target|freq)/.test(h));
     cols.week     = lower.findIndex((h, i) => {
       const used = [cols.text, cols.category, cols.goal];
       return !used.includes(i) && /^(week|date|period)/.test(h);
     });
-    cols.streak   = lower.findIndex(h => /^(streak|total|count|score)/.test(h));
+    cols.streak   = lower.findIndex((h, i) => {
+      const used = [cols.text, cols.category, cols.goal, cols.week];
+      return !used.includes(i) && /^(streak|total|count|score)/.test(h);
+    });
     cols.notes    = lower.findIndex((h, i) => {
       const used = [cols.text, cols.category, cols.goal, cols.week, cols.streak];
       return !used.includes(i) && /^(note|comment|memo)/.test(h);
@@ -421,16 +424,38 @@ function renderStats(container, items, cols, allWeeks, weekIdx) {
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference * (1 - overallPct / 100);
 
-  const ringSvg = `<svg viewBox="0 0 ${ringSize} ${ringSize}" width="${ringSize}" height="${ringSize}" class="habit-ring-svg">
-    <circle cx="${ringSize / 2}" cy="${ringSize / 2}" r="${ringRadius}" fill="none" stroke="var(--color-border)" stroke-width="${ringStroke}" />
-    <circle cx="${ringSize / 2}" cy="${ringSize / 2}" r="${ringRadius}" fill="none" stroke="#d97706" stroke-width="${ringStroke}"
-      stroke-dasharray="${ringCircumference}" stroke-dashoffset="${ringOffset}"
-      stroke-linecap="round" transform="rotate(-90 ${ringSize / 2} ${ringSize / 2})" />
-  </svg>`;
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${ringSize} ${ringSize}`);
+  svg.setAttribute('width', ringSize);
+  svg.setAttribute('height', ringSize);
+  svg.setAttribute('class', 'habit-ring-svg');
+
+  const bgCircle = document.createElementNS(SVG_NS, 'circle');
+  bgCircle.setAttribute('cx', ringSize / 2);
+  bgCircle.setAttribute('cy', ringSize / 2);
+  bgCircle.setAttribute('r', ringRadius);
+  bgCircle.setAttribute('fill', 'none');
+  bgCircle.setAttribute('stroke', 'var(--color-border)');
+  bgCircle.setAttribute('stroke-width', ringStroke);
+
+  const fgCircle = document.createElementNS(SVG_NS, 'circle');
+  fgCircle.setAttribute('cx', ringSize / 2);
+  fgCircle.setAttribute('cy', ringSize / 2);
+  fgCircle.setAttribute('r', ringRadius);
+  fgCircle.setAttribute('fill', 'none');
+  fgCircle.setAttribute('stroke', '#d97706');
+  fgCircle.setAttribute('stroke-width', ringStroke);
+  fgCircle.setAttribute('stroke-dasharray', ringCircumference);
+  fgCircle.setAttribute('stroke-dashoffset', ringOffset);
+  fgCircle.setAttribute('stroke-linecap', 'round');
+  fgCircle.setAttribute('transform', `rotate(-90 ${ringSize / 2} ${ringSize / 2})`);
+
+  svg.append(bgCircle, fgCircle);
 
   const ringWrap = el('div', { className: 'habit-stats-card habit-stats-ring-card' });
   const ringVisual = el('div', { className: 'habit-ring-wrap' });
-  ringVisual.innerHTML = ringSvg; // static SVG, no user content
+  ringVisual.append(svg);
   ringVisual.append(el('div', { className: 'habit-ring-label' }, [`${overallPct}%`]));
   ringWrap.append(
     el('h3', { className: 'habit-stats-title' }, ['Overall Completion']),
