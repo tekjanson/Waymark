@@ -103,6 +103,17 @@ ul { list-style: none; }
 .folder-item:hover .btn-open-drive { opacity: 1; }
 .btn-open-drive:hover { color: var(--color-primary); background: var(--color-bg); }
 
+.btn-ignore {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: transparent; color: var(--color-text-muted);
+  font-size: 0.75rem; cursor: pointer; transition: all var(--transition);
+  opacity: 0;
+}
+.folder-item:hover .btn-ignore,
+.sheet-item:hover .btn-ignore { opacity: 1; }
+.btn-ignore:hover { color: var(--color-error); background: var(--color-error-light); }
+
 /* ---------- Login Screen ---------- */
 .login-container {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -203,7 +214,44 @@ ul { list-style: none; }
 }
 .sidebar-header h3 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* Explorer tree */
+/* Sidebar navigation menu */
+.sidebar-nav {
+  display: flex; flex-direction: column; padding: 8px 0;
+}
+.sidebar-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border: none; background: transparent;
+  color: var(--color-text-secondary); font-size: 0.9rem;
+  font-weight: 500; cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  text-align: left; width: 100%;
+}
+.sidebar-nav-item:hover {
+  background: var(--color-bg); color: var(--color-text);
+}
+.sidebar-nav-item.active {
+  background: var(--color-primary-light); color: var(--color-primary-dark);
+  font-weight: 600;
+}
+.sidebar-nav-item svg {
+  flex-shrink: 0; stroke: currentColor;
+}
+.sidebar-nav-divider {
+  height: 1px; background: var(--color-border); margin: 6px 16px;
+}
+
+/* Explorer view in main content */
+.explorer-view-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+}
+.explorer-view-header h2 { margin-bottom: 0; flex: 1; }
+
+/* Explorer tree (shown in main content area) */
+#explorer {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 8px 0;
+  max-width: 800px;
+}
 .explorer-section { padding: 8px 0; }
 .explorer-section-title {
   padding: 6px 16px; font-size: 0.8rem; font-weight: 600;
@@ -256,6 +304,81 @@ ul { list-style: none; }
 
 .view { animation: fadeIn 200ms ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Home Page ---------- */
+.home-greeting {
+  margin-bottom: 28px;
+}
+.home-greeting h2 {
+  font-size: 1.6rem; font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+.home-greeting-sub {
+  font-size: 0.95rem; color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* Quick Actions */
+.home-quick-actions {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 12px; margin-bottom: 32px;
+}
+.home-action-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 20px 12px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); cursor: pointer;
+  transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
+  font-family: inherit;
+}
+.home-action-card:hover {
+  box-shadow: var(--shadow); border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+.home-action-icon { font-size: 1.6rem; line-height: 1; }
+.home-action-label {
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.home-action-card:hover .home-action-label { color: var(--color-primary); }
+
+/* Home Sections */
+.home-section { margin-bottom: 28px; }
+.home-section-title {
+  font-size: 1rem; font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
+}
+
+/* Recent Sheets */
+.home-recent-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.home-recent-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 14px 16px;
+  cursor: pointer; transition: box-shadow var(--transition), border-color var(--transition);
+}
+.home-recent-card:hover { box-shadow: var(--shadow); border-color: var(--color-primary); }
+.home-recent-icon { font-size: 1.3rem; flex-shrink: 0; }
+.home-recent-info { flex: 1; min-width: 0; }
+.home-recent-name {
+  font-weight: 600; font-size: 0.9rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--color-text);
+}
+.home-recent-time { font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px; }
+
+/* Pinned empty hint */
+.home-empty-hint {
+  text-align: center; padding: 24px 16px;
+  color: var(--color-text-muted); font-size: 0.9rem;
+  background: var(--color-bg); border-radius: var(--radius);
+  border: 1px dashed var(--color-border);
+}
 
 /* ---------- Pinned Folders Grid ---------- */
 .pinned-grid {
@@ -362,16 +485,7 @@ ul { list-style: none; }
   letter-spacing: 0.02em;
 }
 
-/* ---------- Generate Section ---------- */
-.generate-section {
-  margin-top: 32px; padding-top: 24px;
-  border-top: 1px solid var(--color-border);
-}
-.generate-section h3 { font-size: 1.1rem; margin-bottom: 6px; }
-.generate-section .text-muted { margin-bottom: 12px; }
-.generate-buttons {
-  display: flex; gap: 10px; flex-wrap: wrap;
-}
+/* ---------- Generate Progress ---------- */
 .generate-progress {
   margin-top: 12px; padding: 12px; background: var(--color-bg);
   border-radius: var(--radius); font-size: 0.85rem;
@@ -1031,6 +1145,8 @@ ul { list-style: none; }
   .search-container { max-width: 200px; }
   #content { padding: 16px; }
   .pinned-grid { grid-template-columns: 1fr; }
+  .home-quick-actions { grid-template-columns: repeat(2, 1fr); }
+  .home-recent-list { grid-template-columns: 1fr; }
   .examples-grid { grid-template-columns: 1fr; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
   .btn-sheets span { display: none; }
@@ -1043,4 +1159,7 @@ ul { list-style: none; }
   .add-row-form { padding: 12px; }
   .add-row-actions { flex-direction: column; }
   .add-row-actions .btn { width: 100%; justify-content: center; }
+  .home-quick-actions { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .home-action-card { padding: 14px 8px; }
+  .home-action-icon { font-size: 1.3rem; }
 }

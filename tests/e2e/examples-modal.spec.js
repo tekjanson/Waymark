@@ -15,14 +15,14 @@ test('clicking Generate Example Sheets opens the modal', async ({ page }) => {
   await setupApp(page);
 
   await expect(page.locator('#examples-modal')).toBeHidden();
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   await expect(page.locator('#examples-modal')).toBeVisible();
 });
 
 test('modal closes when clicking Cancel', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   await expect(page.locator('#examples-modal')).toBeVisible();
 
   await page.locator('#examples-cancel-btn').click();
@@ -32,7 +32,7 @@ test('modal closes when clicking Cancel', async ({ page }) => {
 test('modal closes when clicking the X button', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   await expect(page.locator('#examples-modal')).toBeVisible();
 
   await page.locator('#examples-modal-close').click();
@@ -42,7 +42,7 @@ test('modal closes when clicking the X button', async ({ page }) => {
 test('modal closes when clicking the backdrop', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   await expect(page.locator('#examples-modal')).toBeVisible();
 
   // Click the overlay background (not the modal content)
@@ -54,7 +54,7 @@ test('modal closes when clicking the backdrop', async ({ page }) => {
 
 test('modal displays all expected category cards', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   const cards = page.locator('.example-category-card');
   const count = await cards.count();
@@ -70,7 +70,7 @@ test('modal displays all expected category cards', async ({ page }) => {
 
 test('all categories are selected by default', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   const cards = page.locator('.example-category-card');
   const total = await cards.count();
@@ -82,7 +82,7 @@ test('all categories are selected by default', async ({ page }) => {
 
 test('each category card shows sheet count', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   // Every card should display "N sheet(s)"
   const sheetLabels = await page.$$eval(
@@ -99,7 +99,7 @@ test('each category card shows sheet count', async ({ page }) => {
 
 test('clicking a selected card deselects it', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   const firstCard = page.locator('.example-category-card').first();
   await expect(firstCard).toHaveClass(/selected/);
@@ -110,7 +110,7 @@ test('clicking a selected card deselects it', async ({ page }) => {
 
 test('clicking a deselected card selects it', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   // Deselect first, then re-select
   const firstCard = page.locator('.example-category-card').first();
@@ -123,7 +123,7 @@ test('clicking a deselected card selects it', async ({ page }) => {
 
 test('Select None deselects all categories', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   await page.locator('#examples-select-none').click();
 
@@ -133,7 +133,7 @@ test('Select None deselects all categories', async ({ page }) => {
 
 test('Select All after Select None re-selects all categories', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   await page.locator('#examples-select-none').click();
   expect(await page.locator('.example-category-card.selected').count()).toBe(0);
@@ -147,7 +147,7 @@ test('Select All after Select None re-selects all categories', async ({ page }) 
 
 test('selection count text updates as categories are toggled', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   const countEl = page.locator('#examples-selection-count');
   const totalCards = await page.locator('.example-category-card').count();
@@ -166,7 +166,7 @@ test('selection count text updates as categories are toggled', async ({ page }) 
 
 test('Generate button is disabled when no categories selected', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   await page.locator('#examples-select-none').click();
   await expect(page.locator('#examples-generate-btn')).toBeDisabled();
@@ -174,7 +174,7 @@ test('Generate button is disabled when no categories selected', async ({ page })
 
 test('Generate button is enabled when at least one category selected', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   // Deselect all, then select one
   await page.locator('#examples-select-none').click();
@@ -188,7 +188,7 @@ test('Generate button is enabled when at least one category selected', async ({ 
 
 test('clicking Generate Selected shows progress text', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   // Select only one category to keep the generation fast
   await page.locator('#examples-select-none').click();
@@ -208,7 +208,7 @@ test('clicking Generate Selected shows progress text', async ({ page }) => {
 
 test('Generate button text changes to Generating… during generation', async ({ page }) => {
   await setupApp(page);
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
 
   await page.locator('#examples-select-none').click();
   await page.locator('.example-category-card').first().click();
@@ -248,13 +248,13 @@ test('re-opening modal resets all categories to selected', async ({ page }) => {
   await setupApp(page);
 
   // Open, deselect some, close
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   await page.locator('#examples-select-none').click();
   expect(await page.locator('.example-category-card.selected').count()).toBe(0);
   await page.locator('#examples-cancel-btn').click();
 
   // Re-open — should be all selected again
-  await page.locator('#generate-examples-btn').click();
+  await page.locator('#menu-examples-btn').click();
   const total = await page.locator('.example-category-card').count();
   const selected = await page.locator('.example-category-card.selected').count();
   expect(selected).toBe(total);

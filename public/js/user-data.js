@@ -64,6 +64,9 @@ function defaultUserData() {
     /* ── Dismissed UI elements ── */
     dismissedItems: [],         // string IDs of dismissed banners/tips/what's-new
 
+    /* ── Hidden Drive items ── */
+    hiddenItems: [],            // { id, name }[] — items hidden from explorer (e.g. shared)
+
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
   };
@@ -397,6 +400,39 @@ export async function dismissItem(itemId) {
   }
 }
 
+/* ---------- Hidden Items ---------- */
+
+/**
+ * @returns {{ id: string, name: string }[]}  items hidden from the explorer
+ */
+export function getHiddenItems() {
+  return (_userData?.hiddenItems) || [];
+}
+
+export function isHidden(itemId) {
+  return getHiddenItems().some(i => i.id === itemId);
+}
+
+/**
+ * Hide a Drive item from the explorer.
+ * @param {{ id: string, name: string }} item
+ */
+export async function addHiddenItem(item) {
+  const items = getHiddenItems();
+  if (!items.some(i => i.id === item.id)) {
+    items.push({ id: item.id, name: item.name });
+    await save({ hiddenItems: items });
+  }
+}
+
+/**
+ * Un-hide a Drive item.
+ * @param {string} itemId
+ */
+export async function removeHiddenItem(itemId) {
+  await save({ hiddenItems: getHiddenItems().filter(i => i.id !== itemId) });
+}
+
 /* ---------- Sort Order ---------- */
 
 export function getSortOrder() {
@@ -431,6 +467,7 @@ function migrateFromLocalStorage() {
     generatedCategories: storage.getGeneratedCategories?.() || [],
     importHistory: storage.getImportHistory?.() || [],
     dismissedItems: storage.getDismissedItems?.() || [],
+    hiddenItems: storage.getHiddenItems?.() || [],
   };
 }
 
@@ -452,6 +489,7 @@ function syncToLocalStorage(data) {
     if (storage.setGeneratedCategories) storage.setGeneratedCategories(data.generatedCategories || []);
     if (storage.setImportHistory) storage.setImportHistory(data.importHistory || []);
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
+    if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
   } catch { /* localStorage quota / private mode */ }
 }
