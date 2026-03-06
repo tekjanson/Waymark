@@ -100,7 +100,7 @@ const TEMPLATE_HEADERS = {
   log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
   budget:     ['Description', 'Amount', 'Category', 'Date', 'Budget'],
   kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
-  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+  habit:      ['Habit', 'Category', 'Goal', 'Week', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak', 'Notes'],
   grading:    ['Student', 'Homework 1', 'Homework 2', 'Midterm', 'Final', 'Grade'],
   timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
   poll:       ['Option', 'Votes', 'Percent', 'Notes'],
@@ -111,6 +111,7 @@ const TEMPLATE_HEADERS = {
   roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
   recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
   testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
+  flow:       ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
 };
 
 /* ---------- Navigation history ---------- */

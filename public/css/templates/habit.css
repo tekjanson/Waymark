@@ -93,6 +93,7 @@
 .habit-name-cell { flex: 1; text-align: left; font-weight: 500; min-width: 120px; }
 .habit-day-cell { width: 52px; flex-shrink: 0; }
 .habit-day-label { font-size: 0.78rem; }
+.habit-day-date { font-size: 0.65rem; color: #d97706; font-weight: 500; margin-top: 1px; }
 .habit-day-pct { font-size: 0.65rem; color: var(--color-text-muted); margin-top: 1px; }
 .habit-day-pct-perfect { color: var(--color-success); font-weight: 600; }
 .habit-streak-cell { width: 64px; flex-shrink: 0; font-weight: 600; color: #d97706; }

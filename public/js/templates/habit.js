@@ -45,14 +45,30 @@ function parseWeekDate(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-/** Format a date as "Week of Mar 2, 2026". */
+/** Format a date as "Week of Mar 2, 2026" (UTC to avoid timezone shift). */
 function formatWeekLabel(date) {
-  return `Week of ${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  return `Week of ${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
 }
 
-/** Format a date as short label "Mar 2". */
+/** Format a date as short label "Mar 2" (UTC to avoid timezone shift). */
 function formatWeekShort(date) {
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+/**
+ * Compute an array of actual date labels for each day column,
+ * based on the week start date. Returns null if no valid date.
+ * Week date is treated as the Monday of that week.
+ */
+function computeDayDates(weekDate, dayCount) {
+  if (!weekDate || dayCount === 0) return null;
+  const labels = [];
+  for (let d = 0; d < dayCount; d++) {
+    const date = new Date(weekDate);
+    date.setUTCDate(date.getUTCDate() + d);
+    labels.push(`${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`);
+  }
+  return labels;
 }
 
 /** Build [{row, rowIdx}] from raw rows array. */
@@ -201,6 +217,11 @@ const definition = {
     const viewContainer = el('div', { className: 'habit-view-container' });
     container.append(viewContainer);
 
+    function currentWeekDate() {
+      if (!hasWeeks || !weeks) return null;
+      return weeks[weekIdx].date;
+    }
+
     function currentItems() {
       if (!hasWeeks || !weeks) return allItems;
       return weeks[weekIdx].items;
@@ -209,7 +230,7 @@ const definition = {
     function refreshView() {
       viewContainer.innerHTML = '';
       if (activeView === 'weekly') {
-        renderWeekly(viewContainer, currentItems(), cols);
+        renderWeekly(viewContainer, currentItems(), cols, currentWeekDate());
       } else if (activeView === 'stats') {
         renderStats(viewContainer, currentItems(), cols, multiWeek ? weeks : null, weekIdx);
       } else if (activeView === 'history') {
@@ -241,9 +262,10 @@ const definition = {
 
 /* ---------- Weekly View ---------- */
 
-function renderWeekly(container, items, cols) {
+function renderWeekly(container, items, cols, weekDate) {
   const categories = uniqueCategories(items, cols.category);
   const hasCategories = categories.length > 0;
+  const dayDates = computeDayDates(weekDate, cols.days.length);
 
   // Group items by category
   const groups = new Map();
@@ -299,10 +321,14 @@ function renderWeekly(container, items, cols) {
     for (let d = 0; d < cols.days.length; d++) {
       const dayDone = catItems.reduce((n, it) => n + (isChecked(cell(it.row, cols.days[d])) ? 1 : 0), 0);
       const dayPct = catItems.length > 0 ? Math.round((dayDone / catItems.length) * 100) : 0;
-      headerRow.append(el('div', { className: 'habit-grid-cell habit-day-cell' }, [
+      const dayChildren = [
         el('div', { className: 'habit-day-label' }, [DAY_ABBR[d] || 'Day']),
-        el('div', { className: `habit-day-pct ${dayPct === 100 ? 'habit-day-pct-perfect' : ''}` }, [`${dayPct}%`]),
-      ]));
+      ];
+      if (dayDates && dayDates[d]) {
+        dayChildren.push(el('div', { className: 'habit-day-date' }, [dayDates[d]]));
+      }
+      dayChildren.push(el('div', { className: `habit-day-pct ${dayPct === 100 ? 'habit-day-pct-perfect' : ''}` }, [`${dayPct}%`]));
+      headerRow.append(el('div', { className: 'habit-grid-cell habit-day-cell' }, dayChildren));
     }
     if (cols.streak >= 0) headerRow.append(el('div', { className: 'habit-grid-cell habit-streak-cell' }, ['🔥']));
     if (cols.goal >= 0) headerRow.append(el('div', { className: 'habit-grid-cell habit-goal-cell' }, ['Goal']));

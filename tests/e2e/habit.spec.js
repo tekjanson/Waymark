@@ -341,3 +341,25 @@ test('habit single-week sheet has no week navigator', async ({ page }) => {
   const weekNav = page.locator('.habit-week-nav');
   expect(await weekNav.count()).toBe(0);
 });
+
+test('habit historical day headers show actual dates', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-day-date', { timeout: 5_000 });
+
+  // Week 4 starts 2026-03-02 (Mon) — dates: Mar 2..Mar 8
+  // Multiple tables may exist (one per category), each with 7 date labels
+  const dateLabels = page.locator('.habit-day-date');
+  expect(await dateLabels.count()).toBeGreaterThanOrEqual(7);
+  await expect(dateLabels.first()).toContainText('Mar 2');
+});
+
+test('habit single-week sheet has no date labels in header', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-day-label', { timeout: 5_000 });
+
+  // No Week column means no date labels
+  const dateLabels = page.locator('.habit-day-date');
+  expect(await dateLabels.count()).toBe(0);
+});

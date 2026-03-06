@@ -59,7 +59,7 @@ test('create sheet modal shows all 19 template cards', async ({ page }) => {
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   const cards = page.locator('.create-sheet-card');
-  await expect(cards).toHaveCount(19);
+  await expect(cards).toHaveCount(20);
 });
 
 test('each template card shows name and headers', async ({ page }) => {
