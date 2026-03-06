@@ -467,6 +467,24 @@ await injectError(page, 'drive');   // sets window.__WAYMARK_MOCK_ERROR = 'drive
 await injectError(page, 'sheets');  // sets window.__WAYMARK_MOCK_ERROR = 'sheets'
 ```
 
+### 7.9 Running Tests
+The Playwright config lives at `tests/playwright.config.js`, **not** at the project root. A root-level `playwright.config.js` re-exports the real config with a corrected `testDir`. Both methods work:
+```bash
+npm test                         # ✅ recommended — uses --config tests/playwright.config.js
+npx playwright test              # ✅ works — uses root playwright.config.js redirect
+```
+**Common failure mode:** If all tests fail with `Protocol error (Page.navigate): Cannot navigate to invalid URL` at `page.goto('/')`, it means `baseURL` is `undefined` — Playwright cannot find the config. Causes:
+- Running from a subdirectory where neither config file is found.
+- A deleted or corrupted root `playwright.config.js`.
+- Running an older Playwright version that doesn't auto-detect the config.
+
+**Fix:** Always run tests from the project root via `npm test`. If the root `playwright.config.js` is missing, recreate it:
+```javascript
+const config = require('./tests/playwright.config.js');
+const path = require('path');
+module.exports = { ...config, testDir: path.resolve(__dirname, 'tests/e2e') };
+```
+
 ---
 
 ## 8. api-client.js LAWS
@@ -607,6 +625,7 @@ Imported sheets go to `Waymark/Imports/{TemplateName}/` — one sub-folder per t
 | Skip `template-registry.json` update | Registry is source of truth for tooling |
 | Use AI/Gemini for analysis | AI features are removed; all analysis is code-based |
 | Pack multiple values into one cell with delimiters | Sheet data must be human-friendly: one item per row (§4.7) |
+| Run `npx playwright test` from a subdirectory | Config lives at `tests/playwright.config.js`; run from project root via `npm test` (§7.9) |
 
 ---
 
@@ -628,4 +647,4 @@ Imported sheets go to `Waymark/Imports/{TemplateName}/` — one sub-folder per t
 - [ ] Sheet data uses row-per-item format — no delimiter-packed cells (§4.7)
 - [ ] No build step required — changes work with raw ES module loading
 - [ ] `docker compose build` succeeds
-- [ ] `npm test` passes (all Playwright E2E tests green)
+- [ ] `npm test` passes (all Playwright E2E tests green) — run from project root (§7.9)
