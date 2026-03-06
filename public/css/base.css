@@ -308,18 +308,22 @@ ul { list-style: none; }
 /* ---------- Home Page ---------- */
 .home-greeting {
   margin-bottom: 28px;
-  padding: 20px 24px; border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-surface) 100%);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, transparent);
+  padding: 24px 28px; border-radius: var(--radius);
+  background:
+    url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='0.6' fill='%23d4a574' opacity='0.08'/%3E%3C/svg%3E"),
+    linear-gradient(135deg, #fdf6ee 0%, #fef9f3 60%, var(--color-surface) 100%);
+  border: 1px solid #e8d5c0;
+  box-shadow: inset 0 1px 2px rgba(180, 140, 100, 0.06), 0 1px 3px rgba(0,0,0,0.04);
 }
 .home-greeting h2 {
   font-size: 1.6rem; font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .home-greeting-sub {
-  font-size: 0.95rem; color: var(--color-text-secondary);
+  font-size: 0.95rem; color: #8b7355;
   margin: 0;
+  font-style: italic;
 }
 
 /* Quick Actions */
