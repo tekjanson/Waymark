@@ -598,12 +598,9 @@ let currentFolderName = null;
 
 if (openInDriveBtn) {
   openInDriveBtn.addEventListener('click', () => {
-    if (!currentFolderId) return;
-    if (window.__WAYMARK_LOCAL) {
-      showToast('Open in Drive is not available in local mode', 'error');
-      return;
+    if (currentFolderId) {
+      window.open(`https://drive.google.com/drive/folders/${currentFolderId}`, '_blank');
     }
-    window.open(`https://drive.google.com/drive/folders/${currentFolderId}`, '_blank');
   });
 }
 
