@@ -38,7 +38,8 @@ test('habit toggle emits cell-update on click', async ({ page }) => {
   const records = await getCreatedRecords(page);
   const updates = records.filter(r => r.type === 'cell-update');
   expect(updates.length).toBeGreaterThanOrEqual(1);
-  expect(updates[updates.length - 1].value).toBe('✓');
+  // Toggle now emits a timestamp instead of a checkmark
+  expect(updates[updates.length - 1].value).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
 });
 
 test('habit tracker shows summary bar with completion stats', async ({ page }) => {
@@ -62,9 +63,9 @@ test('habit tracker shows view toggle toolbar', async ({ page }) => {
   const toolbar = page.locator('.habit-toolbar');
   await expect(toolbar).toBeVisible();
 
-  // Single-week sheet should have Weekly and Stats buttons only (no History)
+  // All sheets always show all 6 view buttons
   const buttons = page.locator('.habit-view-btn');
-  expect(await buttons.count()).toBe(2);
+  expect(await buttons.count()).toBe(6);
 
   // Weekly should be active by default
   await expect(page.locator('.habit-view-btn-active')).toContainText('Weekly');
@@ -236,66 +237,102 @@ test('habit historical navigates to previous week', async ({ page }) => {
   await expect(page.locator('.habit-week-counter')).toContainText('3 of 4');
 });
 
-test('habit historical shows 3 view buttons including History', async ({ page }) => {
+test('habit historical shows 6 view buttons including Monthly Quarterly Yearly Compare', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-031');
   await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
 
   const buttons = page.locator('.habit-view-btn');
-  expect(await buttons.count()).toBe(3);
+  expect(await buttons.count()).toBe(6);
 
-  // Should have History button
-  await expect(page.locator('.habit-view-btn[data-view="history"]')).toBeVisible();
+  // Should have Monthly, Quarterly, Yearly, Compare buttons
+  await expect(page.locator('.habit-view-btn[data-view="monthly"]')).toBeVisible();
+  await expect(page.locator('.habit-view-btn[data-view="quarterly"]')).toBeVisible();
+  await expect(page.locator('.habit-view-btn[data-view="yearly"]')).toBeVisible();
+  await expect(page.locator('.habit-view-btn[data-view="compare"]')).toBeVisible();
 });
 
-test('habit historical History view shows week cards', async ({ page }) => {
+test('habit historical monthly view renders month grid', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-031');
   await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
 
-  await page.click('.habit-view-btn[data-view="history"]');
-  await page.waitForSelector('.habit-history-card', { timeout: 5_000 });
+  await page.click('.habit-view-btn[data-view="monthly"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 5_000 });
 
-  // Should have 4 week cards
-  const cards = page.locator('.habit-history-card');
-  expect(await cards.count()).toBe(4);
-});
-
-test('habit historical History view shows heatmap table', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-031');
-  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
-
-  await page.click('.habit-view-btn[data-view="history"]');
-  await page.waitForSelector('.habit-heatmap-table', { timeout: 5_000 });
-
-  // Should have rows for each habit
-  const rows = page.locator('.habit-heatmap-row:not(.habit-heatmap-header)');
+  // Should have habit rows in the month grid
+  const rows = page.locator('.habit-month-row:not(.habit-month-header)');
   expect(await rows.count()).toBe(5);
 
-  // Should have heatmap cells with values
-  const values = page.locator('.habit-heatmap-value');
-  expect(await values.count()).toBeGreaterThanOrEqual(15);
+  // Should have day cells with done markers
+  const doneCells = page.locator('.habit-month-done');
+  expect(await doneCells.count()).toBeGreaterThan(0);
 });
 
-test('habit historical clicking week card navigates to it', async ({ page }) => {
+test('habit historical quarterly view renders quarter grid', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-031');
   await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
 
-  // Switch to History
-  await page.click('.habit-view-btn[data-view="history"]');
-  await page.waitForSelector('.habit-history-card', { timeout: 5_000 });
+  await page.click('.habit-view-btn[data-view="quarterly"]');
+  await page.waitForSelector('.habit-quarter-grid', { timeout: 5_000 });
 
-  // Click the last card (earliest week, since cards are reverse-sorted)
-  await page.locator('.habit-history-card').last().click();
+  // Should have habit rows
+  const rows = page.locator('.habit-quarter-row:not(.habit-quarter-header)');
+  expect(await rows.count()).toBe(5);
 
-  // Should switch back to weekly view
-  await page.waitForSelector('.habit-table', { timeout: 5_000 });
-  await expect(page.locator('.habit-view-btn-active')).toContainText('Weekly');
+  // Should show month cells with percentages
+  const monthCells = page.locator('.habit-quarter-month-cell:not(.habit-quarter-header .habit-quarter-month-cell)');
+  expect(await monthCells.count()).toBeGreaterThan(0);
+});
 
-  // Should be at week 1 of 4
-  await expect(page.locator('.habit-week-counter')).toContainText('1 of 4');
+test('habit historical yearly view renders year grid', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="yearly"]');
+  await page.waitForSelector('.habit-year-grid', { timeout: 5_000 });
+
+  // Should have habit rows
+  const rows = page.locator('.habit-year-row:not(.habit-year-header)');
+  expect(await rows.count()).toBe(5);
+});
+
+test('habit historical compare view renders with period selectors', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="compare"]');
+  await page.waitForSelector('.habit-compare', { timeout: 5_000 });
+
+  // Should have period type tabs
+  const tabs = page.locator('.habit-compare-tabs .habit-view-btn');
+  expect(await tabs.count()).toBeGreaterThanOrEqual(1);
+
+  // Should have period selectors
+  const selects = page.locator('.habit-compare-select');
+  expect(await selects.count()).toBe(2);
+
+  // Should show comparison table
+  await page.waitForSelector('.habit-compare-table', { timeout: 5_000 });
+  const compareRows = page.locator('.habit-compare-row:not(.habit-compare-table-header)');
+  expect(await compareRows.count()).toBe(5);
+});
+
+test('habit historical compare view shows overall stats', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+
+  await page.click('.habit-view-btn[data-view="compare"]');
+  await page.waitForSelector('.habit-compare-overall', { timeout: 5_000 });
+
+  // Should show two period stats and a diff
+  const statValues = page.locator('.habit-compare-stat-value');
+  expect(await statValues.count()).toBe(2);
+  await expect(page.locator('.habit-compare-arrow')).toBeVisible();
 });
 
 test('habit historical stats show weekly trend chart', async ({ page }) => {
@@ -332,14 +369,19 @@ test('habit historical week nav shows correct habits per week', async ({ page })
   await expect(page.locator('.habit-summary-value').first()).toContainText('5');
 });
 
-test('habit single-week sheet has no week navigator', async ({ page }) => {
+test('habit single-week sheet shows week navigator with disabled arrows', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
-  await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
 
-  // Week nav should not exist for single-week sheets
-  const weekNav = page.locator('.habit-week-nav');
-  expect(await weekNav.count()).toBe(0);
+  // Week nav always shown — single week shows "1 of 1"
+  await expect(page.locator('.habit-week-counter')).toContainText('1 of 1');
+
+  // Both nav buttons should be disabled
+  const prevBtn = page.locator('.habit-week-nav-btn').first();
+  const nextBtn = page.locator('.habit-week-nav-btn').last();
+  await expect(prevBtn).toBeDisabled();
+  await expect(nextBtn).toBeDisabled();
 });
 
 test('habit historical day headers show actual dates', async ({ page }) => {
@@ -354,14 +396,31 @@ test('habit historical day headers show actual dates', async ({ page }) => {
   await expect(dateLabels.first()).toContainText('Mar 2');
 });
 
-test('habit single-week sheet has no date labels in header', async ({ page }) => {
+test('habit single-week sheet shows synthesized date labels', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
-  await page.waitForSelector('.habit-day-label', { timeout: 5_000 });
+  await page.waitForSelector('.habit-day-date', { timeout: 5_000 });
 
-  // No Week column means no date labels
+  // Even without a Week column, dates are synthesized from current Monday
   const dateLabels = page.locator('.habit-day-date');
-  expect(await dateLabels.count()).toBe(0);
+  expect(await dateLabels.count()).toBeGreaterThanOrEqual(7);
+});
+
+test('habit toggle emits timestamp and shows time on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
+
+  // Click an unchecked cell
+  const unchecked = page.locator('.habit-toggle:not(.habit-checked)').first();
+  const rowAttr = await unchecked.getAttribute('data-row-idx');
+  const colAttr = await unchecked.getAttribute('data-col-idx');
+  await unchecked.click();
+  const clicked = page.locator(`.habit-toggle[data-row-idx="${rowAttr}"][data-col-idx="${colAttr}"]`);
+  await expect(clicked).toHaveClass(/habit-checked/);
+
+  // Should show time label inside the cell
+  await expect(clicked.locator('.habit-check-time')).toBeVisible();
 });
 
 test('habit empty sheet with headers only renders without error', async ({ page }) => {
@@ -369,9 +428,9 @@ test('habit empty sheet with headers only renders without error', async ({ page 
   await navigateToSheet(page, 'sheet-032');
   await page.waitForSelector('.habit-toolbar', { timeout: 5_000 });
 
-  // Should render the toolbar and view container without crashing
+  // Should render the toolbar and content area without crashing
   await expect(page.locator('.habit-toolbar')).toBeVisible();
-  await expect(page.locator('.habit-view-container')).toBeVisible();
+  await expect(page.locator('.habit-content')).toBeVisible();
 
   // No data rows means the summary should show 0 habits
   await expect(page.locator('.habit-summary-value').first()).toContainText('0');

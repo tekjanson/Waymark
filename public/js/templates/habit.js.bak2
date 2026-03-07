@@ -1,40 +1,31 @@
 /* ============================================================
-   templates/habit.js — Habit Tracker
-
-   Timestamps on toggles, multi-week navigation,
-   period views (monthly/quarterly/yearly), period-over-period
-   comparison, and completion statistics.
+   templates/habit.js — Habit Tracker with timestamps,
+   multi-period views (weekly/monthly/quarterly/yearly),
+   and period-over-period comparison
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 
 /* ---------- Constants ---------- */
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CHECK_RE = /^(✓|✔|x|yes|1|true|done)$/i;
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}[\sT]\d{1,2}:\d{2}/;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-/* ---------- Module state (persists across auto-refresh) ---------- */
+/* ---------- Helpers ---------- */
 
-let _activeView = 'weekly';
-let _weekIdx = -1;
-let _monthIdx = -1;
-let _quarterIdx = -1;
-let _yearIdx = -1;
-
-/* ---------- Pure Helpers ---------- */
-
+/** Test whether a cell value counts as "checked" (legacy ✓ or timestamp). */
 function isChecked(val) {
   const v = (val || '').trim();
   return CHECK_RE.test(v) || TIMESTAMP_RE.test(v);
 }
 
-function isTimestamp(val) {
-  return TIMESTAMP_RE.test((val || '').trim());
-}
+/** Test whether a cell value is a timestamp format. */
+function isTimestamp(val) { return TIMESTAMP_RE.test((val || '').trim()); }
 
+/** Extract short time string from a timestamp (e.g., "9:15a"). */
 function extractTime(val) {
   const m = (val || '').match(/(\d{1,2}):(\d{2})/);
   if (!m) return null;
@@ -45,42 +36,56 @@ function extractTime(val) {
   return `${display}:${min}${suffix}`;
 }
 
+/** Format current date/time as a timestamp string for sheet storage. */
 function formatNowTimestamp() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Count checked days for a row across day columns. */
 function countChecked(row, dayCols) {
   return dayCols.reduce((n, idx) => n + (isChecked(cell(row, idx)) ? 1 : 0), 0);
 }
 
+/** Parse a goal string like "5x" or "5x/week" → number, or NaN. */
 function parseGoal(raw) {
   const m = (raw || '').match(/(\d+)/);
   return m ? parseInt(m[1], 10) : NaN;
 }
 
+/** Collect unique categories from items. */
+function uniqueCategories(items, catIdx) {
+  if (catIdx < 0) return [];
+  const seen = new Set();
+  for (const it of items) {
+    const v = cell(it.row, catIdx).trim();
+    if (v) seen.add(v);
+  }
+  return [...seen].sort();
+}
+
+/** Parse a week cell value into a Date. */
 function parseWeekDate(val) {
   if (!val) return null;
   const d = new Date(val.trim());
   return isNaN(d.getTime()) ? null : d;
 }
 
-function currentMonday() {
-  const d = new Date();
-  const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diff));
-}
-
+/** Format a date as "Week of Mar 2, 2026" (UTC to avoid timezone shift). */
 function formatWeekLabel(date) {
   return `Week of ${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
 }
 
+/** Format a date as short label "Mar 2" (UTC to avoid timezone shift). */
 function formatWeekShort(date) {
   return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
 }
 
+/**
+ * Compute an array of actual date labels for each day column,
+ * based on the week start date.
+ */
 function computeDayDates(weekDate, dayCount) {
   if (!weekDate || dayCount === 0) return null;
   const labels = [];
@@ -92,76 +97,107 @@ function computeDayDates(weekDate, dayCount) {
   return labels;
 }
 
-function uniqueCategories(items, catIdx) {
-  if (catIdx < 0) return [];
-  const seen = new Set();
-  for (const it of items) {
-    const v = cell(it.row, catIdx).trim();
-    if (v) seen.add(v);
-  }
-  return [...seen].sort();
-}
-
-/** Clamp an index to a valid range. -1 or out-of-range → last element. */
-function clampIdx(desired, length) {
-  if (length === 0) return 0;
-  if (desired < 0 || desired >= length) return length - 1;
-  return desired;
-}
-
-/** HSL color from percentage (0=red, 100=green). */
-function pctColor(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,45%)`; }
-function pctBg(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,90%)`; }
-function pctText(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,30%)`; }
-
-function completionPct(items, dayCols) {
-  const total = items.length * dayCols.length;
-  if (total === 0) return 0;
-  return Math.round(items.reduce((n, it) => n + countChecked(it.row, dayCols), 0) / total * 100);
-}
-
-function getDaysInMonth(year, month) {
-  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-}
-
-function getFirstDayOfWeek(year, month) {
-  const d = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  return d === 0 ? 6 : d - 1;
-}
-
-/* ---------- Data Aggregation ---------- */
-
+/** Build [{row, rowIdx}] from raw rows array. */
 function toItems(rows) {
   return rows.map((row, i) => ({ row, rowIdx: i + 1 }));
 }
 
-function groupByWeek(allItems, weekCol) {
+/** Get the Monday of the current week as a UTC Date. */
+function currentMonday() {
+  const d = new Date();
+  const day = d.getUTCDay(); // 0=Sun, 1=Mon …
+  const diff = day === 0 ? -6 : 1 - day;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diff));
+}
+
+/** Group items by week column. Returns sorted array of week objects. */
+function groupByWeek(allItems, weekIdx) {
   const map = new Map();
   for (const it of allItems) {
-    const raw = cell(it.row, weekCol).trim();
+    const raw = cell(it.row, weekIdx).trim();
     const date = parseWeekDate(raw);
     const key = date ? date.toISOString().slice(0, 10) : (raw || 'unknown');
     if (!map.has(key)) {
-      map.set(key, { date, dateKey: key, label: date ? formatWeekLabel(date) : key, shortLabel: date ? formatWeekShort(date) : key, items: [] });
+      map.set(key, {
+        date,
+        dateKey: key,
+        label: date ? formatWeekLabel(date) : key,
+        shortLabel: date ? formatWeekShort(date) : key,
+        items: [],
+      });
     }
     map.get(key).items.push(it);
   }
-  return [...map.values()].sort((a, b) => (a.date && b.date) ? a.date - b.date : a.dateKey.localeCompare(b.dateKey));
+  return [...map.values()].sort((a, b) => {
+    if (a.date && b.date) return a.date - b.date;
+    return a.dateKey.localeCompare(b.dateKey);
+  });
 }
 
+/** Compute completion % for a set of items. */
+function completionPct(items, dayCols) {
+  const total = items.length * dayCols.length;
+  if (total === 0) return 0;
+  const checked = items.reduce((n, it) => n + countChecked(it.row, dayCols), 0);
+  return Math.round((checked / total) * 100);
+}
+
+/* ---------- Period Aggregation Helpers ---------- */
+
+/** Build a daily map: habitName → dateKey → cellValue, for all weeks. */
+function buildDailyMap(allWeeks, cols) {
+  const map = new Map();
+  for (const w of allWeeks) {
+    if (!w.date) continue;
+    for (const it of w.items) {
+      const name = cell(it.row, cols.text).trim();
+      if (!name) continue;
+      if (!map.has(name)) map.set(name, new Map());
+      const habitMap = map.get(name);
+      for (let d = 0; d < cols.days.length; d++) {
+        const date = new Date(w.date);
+        date.setUTCDate(date.getUTCDate() + d);
+        const dateKey = date.toISOString().slice(0, 10);
+        habitMap.set(dateKey, cell(it.row, cols.days[d]));
+      }
+    }
+  }
+  return map;
+}
+
+/** Get unique habit names across all weeks, preserving order. */
+function allHabitNames(allWeeks, cols) {
+  const names = [];
+  const seen = new Set();
+  for (const w of allWeeks) {
+    for (const it of w.items) {
+      const name = cell(it.row, cols.text).trim();
+      if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+    }
+  }
+  return names;
+}
+
+/** Group weeks by calendar month. */
 function groupByMonth(allWeeks) {
   const map = new Map();
   for (const w of allWeeks) {
     if (!w.date) continue;
     const key = `${w.date.getUTCFullYear()}-${String(w.date.getUTCMonth() + 1).padStart(2, '0')}`;
     if (!map.has(key)) {
-      map.set(key, { key, year: w.date.getUTCFullYear(), month: w.date.getUTCMonth(), label: `${MONTHS_FULL[w.date.getUTCMonth()]} ${w.date.getUTCFullYear()}`, shortLabel: `${MONTHS[w.date.getUTCMonth()]} ${w.date.getUTCFullYear()}`, weeks: [] });
+      map.set(key, {
+        key, year: w.date.getUTCFullYear(), month: w.date.getUTCMonth(),
+        label: `${MONTHS_FULL[w.date.getUTCMonth()]} ${w.date.getUTCFullYear()}`,
+        shortLabel: `${MONTHS[w.date.getUTCMonth()]} ${w.date.getUTCFullYear()}`,
+        weeks: [],
+      });
     }
     map.get(key).weeks.push(w);
   }
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/** Group weeks by quarter. */
 function groupByQuarter(allWeeks) {
   const map = new Map();
   for (const w of allWeeks) {
@@ -177,59 +213,43 @@ function groupByQuarter(allWeeks) {
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/** Group weeks by year. */
 function groupByYear(allWeeks) {
   const map = new Map();
   for (const w of allWeeks) {
     if (!w.date) continue;
     const y = w.date.getUTCFullYear();
-    if (!map.has(y)) {
-      map.set(y, { key: String(y), year: y, label: String(y), shortLabel: String(y), weeks: [] });
+    const key = String(y);
+    if (!map.has(key)) {
+      map.set(key, { key, year: y, label: String(y), shortLabel: String(y), weeks: [] });
     }
-    map.get(y).weeks.push(w);
+    map.get(key).weeks.push(w);
   }
-  return [...map.values()].sort((a, b) => a.year - b.year);
+  return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function buildDailyMap(allWeeks, cols) {
-  const map = new Map();
-  for (const w of allWeeks) {
-    if (!w.date) continue;
-    for (const it of w.items) {
-      const name = cell(it.row, cols.text).trim();
-      if (!name) continue;
-      if (!map.has(name)) map.set(name, new Map());
-      const habitMap = map.get(name);
-      for (let d = 0; d < cols.days.length; d++) {
-        const date = new Date(w.date);
-        date.setUTCDate(date.getUTCDate() + d);
-        habitMap.set(date.toISOString().slice(0, 10), cell(it.row, cols.days[d]));
-      }
-    }
-  }
-  return map;
+/** Get number of days in a month. */
+function getDaysInMonth(year, month) {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }
 
-function allHabitNames(allWeeks, cols) {
-  const names = [];
-  const seen = new Set();
-  for (const w of allWeeks) {
-    for (const it of w.items) {
-      const name = cell(it.row, cols.text).trim();
-      if (name && !seen.has(name)) { seen.add(name); names.push(name); }
-    }
-  }
-  return names;
+/** Get day-of-week for the 1st of a month (Mon=0 ... Sun=6). */
+function getFirstDayOfWeek(year, month) {
+  const d = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  return d === 0 ? 6 : d - 1;
 }
 
+/** Compute aggregate stats for a group of weeks. */
 function periodStats(weeks, cols) {
   const allItems = weeks.flatMap(w => w.items);
   const totalCells = allItems.length * cols.days.length;
   const totalChecked = allItems.reduce((n, it) => n + countChecked(it.row, cols.days), 0);
   const pct = totalCells > 0 ? Math.round((totalChecked / totalCells) * 100) : 0;
   const nameSet = new Set(allItems.map(it => cell(it.row, cols.text).trim()));
-  return { totalCells, totalChecked, pct, weekCount: weeks.length, habitCount: nameSet.size };
+  return { allItems, totalCells, totalChecked, pct, weekCount: weeks.length, habitCount: nameSet.size };
 }
 
+/** Per-habit stats across a group of weeks. */
 function perHabitStats(weeks, cols) {
   const map = new Map();
   for (const w of weeks) {
@@ -245,8 +265,52 @@ function perHabitStats(weeks, cols) {
   return [...map.values()].map(h => ({ ...h, pct: h.total > 0 ? Math.round((h.checked / h.total) * 100) : 0 }));
 }
 
-/** Get the weeks array for a period (week objects are periods themselves). */
-function getPeriodWeeks(period) { return period.weeks || [period]; }
+/** HSL color from percentage (0=red, 100=green). */
+function pctColor(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,45%)`; }
+function pctBg(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,90%)`; }
+function pctText(pct) { return `hsl(${Math.round((pct / 100) * 120)},70%,30%)`; }
+
+/* ---------- Reusable Components ---------- */
+
+/** Render a reusable navigator bar for any period list. */
+function renderNav(container, items, idx, onChange) {
+  if (!items || items.length === 0) return;
+  const current = items[idx];
+  const nav = el('div', { className: 'habit-week-nav' });
+  const prevBtn = el('button', { className: 'habit-week-nav-btn', title: 'Previous' }, ['‹']);
+  if (idx <= 0) { prevBtn.disabled = true; prevBtn.classList.add('habit-week-nav-disabled'); }
+  const nextBtn = el('button', { className: 'habit-week-nav-btn', title: 'Next' }, ['›']);
+  if (idx >= items.length - 1) { nextBtn.disabled = true; nextBtn.classList.add('habit-week-nav-disabled'); }
+  nav.append(
+    prevBtn,
+    el('span', { className: 'habit-week-label' }, [current.label]),
+    el('span', { className: 'habit-week-counter' }, [`${idx + 1} of ${items.length}`]),
+    nextBtn,
+  );
+  container.append(nav);
+  prevBtn.addEventListener('click', () => { if (idx > 0) onChange(idx - 1); });
+  nextBtn.addEventListener('click', () => { if (idx < items.length - 1) onChange(idx + 1); });
+}
+
+/** Render a summary bar with habit count, completion %, check-ins. */
+function renderSummaryBar(container, stats) {
+  const bar = el('div', { className: 'habit-summary-bar' });
+  bar.append(
+    el('div', { className: 'habit-summary-stat' }, [
+      el('span', { className: 'habit-summary-value' }, [String(stats.habitCount)]),
+      el('span', { className: 'habit-summary-label' }, ['Habits']),
+    ]),
+    el('div', { className: 'habit-summary-stat' }, [
+      el('span', { className: 'habit-summary-value' }, [`${stats.pct}%`]),
+      el('span', { className: 'habit-summary-label' }, ['Completion']),
+    ]),
+    el('div', { className: 'habit-summary-stat' }, [
+      el('span', { className: 'habit-summary-value' }, [`${stats.totalChecked}/${stats.totalCells}`]),
+      el('span', { className: 'habit-summary-label' }, ['Check-ins']),
+    ]),
+  );
+  container.append(bar);
+}
 
 /* ---------- Template Definition ---------- */
 
@@ -264,22 +328,23 @@ const definition = {
 
   columns(lower) {
     const cols = { text: -1, category: -1, goal: -1, week: -1, days: [], streak: -1, notes: -1 };
-    cols.text = lower.findIndex(h => /^(habit|routine|daily|activity|task|name)/.test(h));
+    cols.text     = lower.findIndex(h => /^(habit|routine|daily|activity|task|name)/.test(h));
     if (cols.text === -1) cols.text = 0;
     cols.category = lower.findIndex((h, i) => i !== cols.text && /^(category|group|type|area)/.test(h));
-    cols.goal = lower.findIndex((h, i) => i !== cols.text && i !== cols.category && /^(goal|target|freq)/.test(h));
-    cols.week = lower.findIndex((h, i) => {
+    cols.goal     = lower.findIndex((h, i) => i !== cols.text && i !== cols.category && /^(goal|target|freq)/.test(h));
+    cols.week     = lower.findIndex((h, i) => {
       const used = [cols.text, cols.category, cols.goal];
       return !used.includes(i) && /^(week|date|period)/.test(h);
     });
-    cols.streak = lower.findIndex((h, i) => {
+    cols.streak   = lower.findIndex((h, i) => {
       const used = [cols.text, cols.category, cols.goal, cols.week];
       return !used.includes(i) && /^(streak|total|count|score)/.test(h);
     });
-    cols.notes = lower.findIndex((h, i) => {
+    cols.notes    = lower.findIndex((h, i) => {
       const used = [cols.text, cols.category, cols.goal, cols.week, cols.streak];
       return !used.includes(i) && /^(note|comment|memo)/.test(h);
     });
+
     const dayPattern = /^(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/;
     const used = new Set([cols.text, cols.category, cols.goal, cols.week, cols.streak, cols.notes]);
     for (let i = 0; i < lower.length; i++) {
@@ -297,14 +362,13 @@ const definition = {
     return fields;
   },
 
-  /* ----------------------------------------------------------------
-     render() — main entry point called by checklist.js
-     ---------------------------------------------------------------- */
   render(container, rows, cols) {
+    container.innerHTML = '';
+
     const allItems = toItems(rows);
     const hasWeekCol = cols.week >= 0;
 
-    // Build sorted weeks array
+    // Build weeks array — synthesize one from today's Monday if no Week column
     let weeks;
     if (hasWeekCol) {
       weeks = groupByWeek(allItems, cols.week);
@@ -318,148 +382,102 @@ const definition = {
         items: allItems,
       }];
     }
-    // Safety: ensure at least one week
+
+    // If Week column exists but all rows are empty, ensure we have at least one week
     if (weeks.length === 0) {
       const monday = currentMonday();
-      weeks = [{ date: monday, dateKey: monday.toISOString().slice(0, 10), label: formatWeekLabel(monday), shortLabel: formatWeekShort(monday), items: allItems }];
+      weeks = [{
+        date: monday,
+        dateKey: monday.toISOString().slice(0, 10),
+        label: formatWeekLabel(monday),
+        shortLabel: formatWeekShort(monday),
+        items: allItems,
+      }];
     }
 
-    // Period groups — always computed so all views are available
+    const multiWeek = weeks.length > 1;
+
+    // Pre-compute period groups (always, even for single-week)
     const months = groupByMonth(weeks);
     const quarters = groupByQuarter(weeks);
     const years = groupByYear(weeks);
     const dailyMap = buildDailyMap(weeks, cols);
-    const habitNames = allHabitNames(weeks, cols);
+    const habitNamesAll = allHabitNames(weeks, cols);
 
-    // Clamp saved indices to valid ranges
-    _weekIdx = clampIdx(_weekIdx, weeks.length);
-    _monthIdx = clampIdx(_monthIdx, months.length);
-    _quarterIdx = clampIdx(_quarterIdx, quarters.length);
-    _yearIdx = clampIdx(_yearIdx, years.length);
+    // Navigation state
+    let weekIdx = weeks.length - 1;
+    let monthIdx = months.length > 0 ? months.length - 1 : 0;
+    let quarterIdx = quarters.length > 0 ? quarters.length - 1 : 0;
+    let yearIdx = years.length > 0 ? years.length - 1 : 0;
+    let activeView = 'weekly';
 
-    // --- All views always available ---
-    const viewDefs = [
-      { key: 'weekly', label: '📅 Weekly' },
-      { key: 'monthly', label: '📆 Monthly' },
-      { key: 'quarterly', label: '📋 Quarterly' },
-      { key: 'yearly', label: '📅 Yearly' },
-      { key: 'stats', label: '📊 Stats' },
-      { key: 'compare', label: '⚖️ Compare' },
-    ];
-
-    // --- Build toolbar with direct click handlers ---
+    /* ---------- View Toolbar (always shows all views) ---------- */
     const toolbar = el('div', { className: 'habit-toolbar' });
-    const btnMap = {};
-    for (const v of viewDefs) {
-      const active = v.key === _activeView;
-      const btn = el('button', {
-        className: `habit-view-btn${active ? ' habit-view-btn-active' : ''}`,
-        dataset: { view: v.key },
-      }, [v.label]);
-      btn.addEventListener('click', () => {
-        _activeView = v.key;
-        for (const k in btnMap) {
-          btnMap[k].classList.toggle('habit-view-btn-active', k === _activeView);
-        }
-        buildContent();
-      });
-      btnMap[v.key] = btn;
-      toolbar.append(btn);
+    toolbar.append(
+      el('button', { className: 'habit-view-btn habit-view-btn-active', dataset: { view: 'weekly' } }, ['📅 Weekly']),
+      el('button', { className: 'habit-view-btn', dataset: { view: 'monthly' } }, ['📆 Monthly']),
+      el('button', { className: 'habit-view-btn', dataset: { view: 'quarterly' } }, ['📋 Quarterly']),
+      el('button', { className: 'habit-view-btn', dataset: { view: 'yearly' } }, ['📅 Yearly']),
+      el('button', { className: 'habit-view-btn', dataset: { view: 'stats' } }, ['📊 Stats']),
+    );
+    if (multiWeek) {
+      toolbar.append(el('button', { className: 'habit-view-btn', dataset: { view: 'compare' } }, ['⚖️ Compare']));
     }
+    container.append(toolbar);
 
-    // --- Content area (rebuilt on view/nav changes) ---
-    const contentEl = el('div', { className: 'habit-content' });
+    /* ---------- View Container ---------- */
+    const viewContainer = el('div', { className: 'habit-view-container' });
+    container.append(viewContainer);
 
-    function buildContent() {
-      contentEl.innerHTML = '';
-
-      switch (_activeView) {
+    function refreshView() {
+      viewContainer.innerHTML = '';
+      switch (activeView) {
         case 'weekly':
-          renderNav(contentEl, weeks, _weekIdx, (i) => { _weekIdx = i; buildContent(); });
-          renderWeekly(contentEl, weeks[_weekIdx], cols);
+          renderNav(viewContainer, weeks, weekIdx, (i) => { weekIdx = i; refreshView(); });
+          renderWeekly(viewContainer, weeks[weekIdx].items, cols, weeks[weekIdx].date);
           break;
-
         case 'monthly':
-          renderNav(contentEl, months, _monthIdx, (i) => { _monthIdx = i; buildContent(); });
-          renderMonthly(contentEl, months[_monthIdx], cols, dailyMap, habitNames);
+          renderNav(viewContainer, months, monthIdx, (i) => { monthIdx = i; refreshView(); });
+          renderMonthly(viewContainer, months[monthIdx], cols, dailyMap, habitNamesAll);
           break;
-
         case 'quarterly':
-          renderNav(contentEl, quarters, _quarterIdx, (i) => { _quarterIdx = i; buildContent(); });
-          renderQuarterly(contentEl, quarters[_quarterIdx], cols, months, habitNames);
+          renderNav(viewContainer, quarters, quarterIdx, (i) => { quarterIdx = i; refreshView(); });
+          renderQuarterly(viewContainer, quarters[quarterIdx], cols, months, habitNamesAll);
           break;
-
         case 'yearly':
-          renderNav(contentEl, years, _yearIdx, (i) => { _yearIdx = i; buildContent(); });
-          renderYearly(contentEl, years[_yearIdx], cols, months, habitNames);
+          renderNav(viewContainer, years, yearIdx, (i) => { yearIdx = i; refreshView(); });
+          renderYearly(viewContainer, years[yearIdx], cols, months, habitNamesAll);
           break;
-
         case 'stats':
-          renderStats(contentEl, weeks[_weekIdx], cols, weeks, _weekIdx);
+          renderNav(viewContainer, weeks, weekIdx, (i) => { weekIdx = i; refreshView(); });
+          renderStats(viewContainer, weeks[weekIdx].items, cols, weeks, weekIdx);
           break;
-
         case 'compare':
-          renderCompare(contentEl, weeks, months, quarters, years, cols, habitNames);
+          renderCompare(viewContainer, weeks, months, quarters, years, cols, habitNamesAll);
           break;
       }
     }
 
-    // Append to container (renderWithTemplate already cleared it)
-    container.append(toolbar, contentEl);
-    buildContent();
+    toolbar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.habit-view-btn');
+      if (btn && btn.dataset.view) {
+        activeView = btn.dataset.view;
+        toolbar.querySelectorAll('.habit-view-btn').forEach(b =>
+          b.classList.toggle('habit-view-btn-active', b.dataset.view === activeView));
+        refreshView();
+      }
+    });
+
+    refreshView();
   },
 };
 
-/* ---------- Navigator Component ---------- */
-
-function renderNav(container, items, idx, onChange) {
-  if (!items || items.length === 0) return;
-
-  const current = items[idx];
-  const prevBtn = el('button', { className: 'habit-week-nav-btn', title: 'Previous' }, ['‹']);
-  if (idx <= 0) { prevBtn.disabled = true; prevBtn.classList.add('habit-week-nav-disabled'); }
-  prevBtn.addEventListener('click', () => { if (idx > 0) onChange(idx - 1); });
-
-  const nextBtn = el('button', { className: 'habit-week-nav-btn', title: 'Next' }, ['›']);
-  if (idx >= items.length - 1) { nextBtn.disabled = true; nextBtn.classList.add('habit-week-nav-disabled'); }
-  nextBtn.addEventListener('click', () => { if (idx < items.length - 1) onChange(idx + 1); });
-
-  container.append(el('div', { className: 'habit-week-nav' }, [
-    prevBtn,
-    el('span', { className: 'habit-week-label' }, [current.label]),
-    el('span', { className: 'habit-week-counter' }, [`${idx + 1} of ${items.length}`]),
-    nextBtn,
-  ]));
-}
-
-/* ---------- Summary Bar ---------- */
-
-function renderSummaryBar(container, stats) {
-  container.append(el('div', { className: 'habit-summary-bar' }, [
-    el('div', { className: 'habit-summary-stat' }, [
-      el('span', { className: 'habit-summary-value' }, [String(stats.habitCount)]),
-      el('span', { className: 'habit-summary-label' }, ['Habits']),
-    ]),
-    el('div', { className: 'habit-summary-stat' }, [
-      el('span', { className: 'habit-summary-value' }, [`${stats.pct}%`]),
-      el('span', { className: 'habit-summary-label' }, ['Completion']),
-    ]),
-    el('div', { className: 'habit-summary-stat' }, [
-      el('span', { className: 'habit-summary-value' }, [`${stats.totalChecked}/${stats.totalCells}`]),
-      el('span', { className: 'habit-summary-label' }, ['Check-ins']),
-    ]),
-  ]));
-}
-
 /* ---------- Weekly View ---------- */
 
-function renderWeekly(container, week, cols) {
-  if (!week || !week.items) return;
-
-  const items = week.items;
+function renderWeekly(container, items, cols, weekDate) {
   const categories = uniqueCategories(items, cols.category);
   const hasCategories = categories.length > 0;
-  const dayDates = computeDayDates(week.date, cols.days.length);
+  const dayDates = computeDayDates(weekDate, cols.days.length);
 
   // Group items by category
   const groups = new Map();
@@ -479,7 +497,8 @@ function renderWeekly(container, week, cols) {
   const totalCells = items.length * cols.days.length;
   const overallPct = totalCells > 0 ? Math.round((totalChecked / totalCells) * 100) : 0;
 
-  container.append(el('div', { className: 'habit-summary-bar' }, [
+  const summaryBar = el('div', { className: 'habit-summary-bar' });
+  summaryBar.append(
     el('div', { className: 'habit-summary-stat' }, [
       el('span', { className: 'habit-summary-value' }, [String(items.length)]),
       el('span', { className: 'habit-summary-label' }, ['Habits']),
@@ -492,9 +511,10 @@ function renderWeekly(container, week, cols) {
       el('span', { className: 'habit-summary-value' }, [`${totalChecked}/${totalCells}`]),
       el('span', { className: 'habit-summary-label' }, ['Check-ins']),
     ]),
-  ]));
+  );
+  container.append(summaryBar);
 
-  // Render each category group
+  // Render each group
   for (const [catName, catItems] of groups) {
     if (catItems.length === 0) continue;
 
@@ -513,10 +533,14 @@ function renderWeekly(container, week, cols) {
     for (let d = 0; d < cols.days.length; d++) {
       const dayDone = catItems.reduce((n, it) => n + (isChecked(cell(it.row, cols.days[d])) ? 1 : 0), 0);
       const dayPct = catItems.length > 0 ? Math.round((dayDone / catItems.length) * 100) : 0;
-      const children = [el('div', { className: 'habit-day-label' }, [DAY_LABELS[d] || 'Day'])];
-      if (dayDates && dayDates[d]) children.push(el('div', { className: 'habit-day-date' }, [dayDates[d]]));
-      children.push(el('div', { className: `habit-day-pct ${dayPct === 100 ? 'habit-day-pct-perfect' : ''}` }, [`${dayPct}%`]));
-      headerRow.append(el('div', { className: 'habit-grid-cell habit-day-cell' }, children));
+      const dayChildren = [
+        el('div', { className: 'habit-day-label' }, [DAY_ABBR[d] || 'Day']),
+      ];
+      if (dayDates && dayDates[d]) {
+        dayChildren.push(el('div', { className: 'habit-day-date' }, [dayDates[d]]));
+      }
+      dayChildren.push(el('div', { className: `habit-day-pct ${dayPct === 100 ? 'habit-day-pct-perfect' : ''}` }, [`${dayPct}%`]));
+      headerRow.append(el('div', { className: 'habit-grid-cell habit-day-cell' }, dayChildren));
     }
     if (cols.streak >= 0) headerRow.append(el('div', { className: 'habit-grid-cell habit-streak-cell' }, ['🔥']));
     if (cols.goal >= 0) headerRow.append(el('div', { className: 'habit-grid-cell habit-goal-cell' }, ['Goal']));
@@ -532,24 +556,27 @@ function renderWeekly(container, week, cols) {
       const goalMet = !isNaN(goalNum) && done >= goalNum;
 
       const gridRow = el('div', { className: `habit-grid-row ${goalMet ? 'habit-row-goal-met' : ''}` });
+
+      // Name cell (editable)
       gridRow.append(editableCell('div', { className: 'habit-grid-cell habit-name-cell' }, text, rowIdx, cols.text));
 
-      // Day toggle cells — emit timestamp
+      // Day toggle cells — emit timestamp instead of ✓
       for (const dayIdx of cols.days) {
         const val = cell(row, dayIdx);
         const checked = isChecked(val);
         const timeStr = isTimestamp(val) ? extractTime(val) : null;
-        const children = [];
+
+        const dayCellChildren = [];
         if (checked) {
-          children.push(el('div', { className: 'habit-check-mark' }, ['✓']));
-          if (timeStr) children.push(el('div', { className: 'habit-check-time' }, [timeStr]));
+          dayCellChildren.push(el('div', { className: 'habit-check-mark' }, ['✓']));
+          if (timeStr) dayCellChildren.push(el('div', { className: 'habit-check-time' }, [timeStr]));
         }
 
         const dayCell = el('div', {
           className: `habit-grid-cell habit-day-cell habit-toggle ${checked ? 'habit-checked' : ''}`,
           title: checked && isTimestamp(val) ? val.trim() : 'Click to toggle',
           dataset: { rowIdx: String(rowIdx), colIdx: String(dayIdx) },
-        }, children);
+        }, dayCellChildren);
 
         dayCell.addEventListener('click', () => {
           const nowChecked = !dayCell.classList.contains('habit-checked');
@@ -571,15 +598,18 @@ function renderWeekly(container, week, cols) {
 
       // Streak cell
       if (cols.streak >= 0) {
-        const badge = streakNum >= 7 ? 'habit-streak-fire' : streakNum >= 3 ? 'habit-streak-warm' : '';
-        gridRow.append(editableCell('div', { className: `habit-grid-cell habit-streak-cell ${badge}` }, streak, rowIdx, cols.streak, {
+        const streakBadge = streakNum >= 7 ? 'habit-streak-fire' : streakNum >= 3 ? 'habit-streak-warm' : '';
+        gridRow.append(editableCell('div', {
+          className: `habit-grid-cell habit-streak-cell ${streakBadge}`,
+        }, streak, rowIdx, cols.streak, {
           renderContent(wrapper) {
-            wrapper.textContent = streak ? `${streakNum >= 3 ? '🔥 ' : ''}${streak}` : '—';
+            if (!streak) { wrapper.textContent = '—'; return; }
+            wrapper.textContent = `${streakNum >= 3 ? '🔥 ' : ''}${streak}`;
           },
         }));
       }
 
-      // Goal cell
+      // Goal progress cell
       if (cols.goal >= 0) {
         const goalRaw = cell(row, cols.goal);
         if (!isNaN(goalNum)) {
@@ -618,6 +648,7 @@ function renderMonthly(container, month, cols, dailyMap, habitNames) {
 
   renderSummaryBar(container, stats);
 
+  // Habit × Day grid
   const tableWrap = el('div', { className: 'habit-month-scroll' });
   const table = el('div', { className: 'habit-month-grid' });
 
@@ -629,10 +660,10 @@ function renderMonthly(container, month, cols, dailyMap, habitNames) {
     const isWeekend = dow >= 5;
     headerRow.append(el('div', {
       className: `habit-month-cell habit-month-day-cell ${isWeekend ? 'habit-month-weekend' : ''}`,
-      title: `${DAY_LABELS[dow]} ${MONTHS[mo]} ${d}`,
+      title: `${DAY_ABBR[dow]} ${MONTHS[mo]} ${d}`,
     }, [
       el('div', { className: 'habit-month-day-num' }, [String(d)]),
-      el('div', { className: 'habit-month-day-dow' }, [DAY_LABELS[dow].charAt(0)]),
+      el('div', { className: 'habit-month-day-dow' }, [DAY_ABBR[dow].charAt(0)]),
     ]));
   }
   headerRow.append(el('div', { className: 'habit-month-cell habit-month-total-cell' }, ['%']));
@@ -685,11 +716,13 @@ function renderQuarterly(container, quarter, cols, allMonths, habitNames) {
   const stats = periodStats(quarter.weeks, cols);
   renderSummaryBar(container, stats);
 
+  // Find months within this quarter
   const qMonths = allMonths.filter(m => {
     const q = Math.floor(m.month / 3) + 1;
     return q === quarter.quarter && m.year === quarter.year;
   });
 
+  // Habit × Month grid
   const table = el('div', { className: 'habit-quarter-grid' });
 
   // Header
@@ -762,8 +795,10 @@ function renderYearly(container, yearGroup, cols, allMonths, habitNames) {
   const stats = periodStats(yearGroup.weeks, cols);
   renderSummaryBar(container, stats);
 
+  // Find months in this year
   const yMonths = allMonths.filter(m => m.year === yearGroup.year);
 
+  // Habit × Month heatmap
   const tableWrap = el('div', { className: 'habit-month-scroll' });
   const table = el('div', { className: 'habit-year-grid' });
 
@@ -837,9 +872,7 @@ function renderYearly(container, yearGroup, cols, allMonths, habitNames) {
 
 /* ---------- Stats View ---------- */
 
-function renderStats(container, week, cols, allWeeks, weekIdx) {
-  if (!week) return;
-  const items = week.items || [];
+function renderStats(container, items, cols, allWeeks, weekIdx) {
   const statsWrap = el('div', { className: 'habit-stats' });
 
   const totalDays = cols.days.length;
@@ -848,7 +881,7 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
   const totalChecked = items.reduce((n, it) => n + countChecked(it.row, cols.days), 0);
   const overallPct = totalCells > 0 ? Math.round((totalChecked / totalCells) * 100) : 0;
 
-  /* --- Completion ring --- */
+  /* --- Overall completion ring --- */
   const ringSize = 120;
   const ringStroke = 10;
   const ringRadius = (ringSize - ringStroke) / 2;
@@ -858,27 +891,27 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${ringSize} ${ringSize}`);
-  svg.setAttribute('width', String(ringSize));
-  svg.setAttribute('height', String(ringSize));
+  svg.setAttribute('width', ringSize);
+  svg.setAttribute('height', ringSize);
   svg.setAttribute('class', 'habit-ring-svg');
 
   const bgCircle = document.createElementNS(SVG_NS, 'circle');
-  bgCircle.setAttribute('cx', String(ringSize / 2));
-  bgCircle.setAttribute('cy', String(ringSize / 2));
-  bgCircle.setAttribute('r', String(ringRadius));
+  bgCircle.setAttribute('cx', ringSize / 2);
+  bgCircle.setAttribute('cy', ringSize / 2);
+  bgCircle.setAttribute('r', ringRadius);
   bgCircle.setAttribute('fill', 'none');
   bgCircle.setAttribute('stroke', 'var(--color-border)');
-  bgCircle.setAttribute('stroke-width', String(ringStroke));
+  bgCircle.setAttribute('stroke-width', ringStroke);
 
   const fgCircle = document.createElementNS(SVG_NS, 'circle');
-  fgCircle.setAttribute('cx', String(ringSize / 2));
-  fgCircle.setAttribute('cy', String(ringSize / 2));
-  fgCircle.setAttribute('r', String(ringRadius));
+  fgCircle.setAttribute('cx', ringSize / 2);
+  fgCircle.setAttribute('cy', ringSize / 2);
+  fgCircle.setAttribute('r', ringRadius);
   fgCircle.setAttribute('fill', 'none');
   fgCircle.setAttribute('stroke', '#d97706');
-  fgCircle.setAttribute('stroke-width', String(ringStroke));
-  fgCircle.setAttribute('stroke-dasharray', String(ringCircumference));
-  fgCircle.setAttribute('stroke-dashoffset', String(ringOffset));
+  fgCircle.setAttribute('stroke-width', ringStroke);
+  fgCircle.setAttribute('stroke-dasharray', ringCircumference);
+  fgCircle.setAttribute('stroke-dashoffset', ringOffset);
   fgCircle.setAttribute('stroke-linecap', 'round');
   fgCircle.setAttribute('transform', `rotate(-90 ${ringSize / 2} ${ringSize / 2})`);
 
@@ -895,32 +928,41 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
   );
   statsWrap.append(ringWrap);
 
-  /* --- Weekly trend (multi-week only) --- */
+  /* --- Week-over-week trend (multi-week only) --- */
   if (allWeeks && allWeeks.length > 1) {
     const trendCard = el('div', { className: 'habit-stats-card habit-trend-card' });
     trendCard.append(el('h3', { className: 'habit-stats-title' }, ['📈 Weekly Trend']));
+
     const trendData = allWeeks.map((w, i) => ({
       label: w.shortLabel,
       pct: completionPct(w.items, cols.days),
       isActive: i === weekIdx,
     }));
+
     const trendChart = el('div', { className: 'habit-trend-chart' });
     for (const d of trendData) {
       const barH = Math.max(4, d.pct);
-      trendChart.append(el('div', { className: `habit-trend-week ${d.isActive ? 'habit-trend-active' : ''}` }, [
-        el('div', { className: 'habit-trend-bar', style: `height:${barH}%;background:${pctColor(d.pct)}` }),
+      const hue = Math.round((d.pct / 100) * 120);
+      const bar = el('div', { className: `habit-trend-week ${d.isActive ? 'habit-trend-active' : ''}` }, [
+        el('div', { className: 'habit-trend-bar', style: `height:${barH}%;background:hsl(${hue},70%,45%)` }),
         el('span', { className: 'habit-trend-pct' }, [`${d.pct}%`]),
         el('span', { className: 'habit-trend-label' }, [d.label]),
-      ]));
+      ]);
+      trendChart.append(bar);
     }
     trendCard.append(trendChart);
+
+    // Show improvement
     if (trendData.length >= 2) {
       const first = trendData[0].pct;
       const last = trendData[trendData.length - 1].pct;
       const diff = last - first;
       const arrow = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
-      trendCard.append(el('p', { className: 'habit-stats-insight' }, [`${arrow} ${diff > 0 ? '+' : ''}${diff}% since ${trendData[0].label}`]));
+      trendCard.append(el('p', { className: 'habit-stats-insight' }, [
+        `${arrow} ${diff > 0 ? '+' : ''}${diff}% since ${trendData[0].label}`,
+      ]));
     }
+
     statsWrap.append(trendCard);
   }
 
@@ -935,16 +977,21 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
     const pct = habitCount > 0 ? Math.round((done / habitCount) * 100) : 0;
     if (pct > bestDay.pct) bestDay = { idx: d, pct };
     if (pct < worstDay.pct) worstDay = { idx: d, pct };
+    const hue = Math.round((pct / 100) * 120);
     dayBar.append(el('div', { className: 'habit-heatmap-day' }, [
-      el('div', { className: 'habit-heatmap-bar', style: `height:${Math.max(4, pct)}%;background:${pctColor(pct)}` }),
-      el('span', { className: 'habit-heatmap-label' }, [DAY_LABELS[d] || '?']),
+      el('div', { className: 'habit-heatmap-bar', style: `height:${Math.max(4, pct)}%;background:hsl(${hue},70%,45%)` }),
+      el('span', { className: 'habit-heatmap-label' }, [DAY_ABBR[d] || '?']),
       el('span', { className: 'habit-heatmap-pct' }, [`${pct}%`]),
     ]));
   }
   dayCard.append(dayBar);
   if (totalDays > 0) {
-    dayCard.append(el('p', { className: 'habit-stats-insight' }, [`💪 Best: ${DAY_LABELS[bestDay.idx]} (${bestDay.pct}%)`]));
-    dayCard.append(el('p', { className: 'habit-stats-insight' }, [`📉 Weakest: ${DAY_LABELS[worstDay.idx]} (${worstDay.pct}%)`]));
+    dayCard.append(el('p', { className: 'habit-stats-insight' }, [
+      `💪 Best: ${DAY_ABBR[bestDay.idx]} (${bestDay.pct}%)`,
+    ]));
+    dayCard.append(el('p', { className: 'habit-stats-insight' }, [
+      `📉 Weakest: ${DAY_ABBR[worstDay.idx]} (${worstDay.pct}%)`,
+    ]));
   }
   statsWrap.append(dayCard);
 
@@ -955,6 +1002,7 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
     const sorted = items
       .map(it => ({ name: cell(it.row, cols.text) || it.row[0] || 'Habit', streak: parseInt(cell(it.row, cols.streak), 10) || 0 }))
       .sort((a, b) => b.streak - a.streak);
+
     const list = el('div', { className: 'habit-streak-list' });
     for (let i = 0; i < sorted.length; i++) {
       const item = sorted[i];
@@ -974,7 +1022,7 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
     statsWrap.append(streakCard);
   }
 
-  /* --- Per-Habit Completion --- */
+  /* --- Per-Habit Completion Rates --- */
   const habitCard = el('div', { className: 'habit-stats-card' });
   habitCard.append(el('h3', { className: 'habit-stats-title' }, ['Per-Habit Completion']));
   const habitList = el('div', { className: 'habit-completion-list' });
@@ -993,7 +1041,7 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
   habitCard.append(habitList);
   statsWrap.append(habitCard);
 
-  /* --- Category Breakdown --- */
+  /* --- Category Breakdown (if categories exist) --- */
   if (cols.category >= 0) {
     const cats = uniqueCategories(items, cols.category);
     if (cats.length > 0) {
@@ -1027,7 +1075,9 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
       const goalCard = el('div', { className: 'habit-stats-card' });
       goalCard.append(el('h3', { className: 'habit-stats-title' }, ['🎯 Goal Achievement']));
       const met = goalsData.filter(g => g.done >= g.goal).length;
-      goalCard.append(el('p', { className: 'habit-stats-subtitle' }, [`${met} of ${goalsData.length} goals met this week`]));
+      goalCard.append(el('p', { className: 'habit-stats-subtitle' }, [
+        `${met} of ${goalsData.length} goals met this week`,
+      ]));
       const goalList = el('div', { className: 'habit-completion-list' });
       for (const g of goalsData) {
         const pct = Math.min(100, Math.round((g.done / g.goal) * 100));
@@ -1053,7 +1103,10 @@ function renderStats(container, week, cols, allWeeks, weekIdx) {
 function renderCompare(container, weeks, months, quarters, years, cols, habitNames) {
   const wrap = el('div', { className: 'habit-compare' });
 
-  // Available period types (need at least 2 to compare)
+  // Helper: get the weeks array for a period (week objects are periods themselves)
+  function getPeriodWeeks(period) { return period.weeks || [period]; }
+
+  // Available period types (need at least 2 periods to compare)
   const types = [
     { key: 'week', label: 'Week', periods: weeks },
     { key: 'month', label: 'Month', periods: months },
@@ -1086,7 +1139,11 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
       const btn = el('button', {
         className: `habit-view-btn ${t.key === activeType ? 'habit-view-btn-active' : ''}`,
       }, [t.label]);
-      btn.addEventListener('click', () => { activeType = t.key; initSelections(); refresh(); });
+      btn.addEventListener('click', () => {
+        activeType = t.key;
+        initSelections();
+        refresh();
+      });
       tabs.append(btn);
     }
     wrap.append(tabs);
@@ -1094,6 +1151,7 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
     const periods = types.find(t => t.key === activeType).periods;
 
     // Period selectors
+    const selectors = el('div', { className: 'habit-compare-selectors' });
     const selectA = el('select', { className: 'habit-compare-select' });
     const selectB = el('select', { className: 'habit-compare-select' });
     for (let i = 0; i < periods.length; i++) {
@@ -1107,7 +1165,7 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
     selectA.addEventListener('change', () => { selectedA = parseInt(selectA.value, 10); renderComparison(); });
     selectB.addEventListener('change', () => { selectedB = parseInt(selectB.value, 10); renderComparison(); });
 
-    wrap.append(el('div', { className: 'habit-compare-selectors' }, [
+    selectors.append(
       el('div', { className: 'habit-compare-period' }, [
         el('span', { className: 'habit-compare-period-label' }, ['Period A']),
         selectA,
@@ -1117,8 +1175,10 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
         el('span', { className: 'habit-compare-period-label' }, ['Period B']),
         selectB,
       ]),
-    ]));
+    );
+    wrap.append(selectors);
 
+    // Comparison content area
     const compContent = el('div', { className: 'habit-compare-content' });
     wrap.append(compContent);
 
@@ -1130,8 +1190,9 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
       const statsB = periodStats(getPeriodWeeks(pB), cols);
       const diff = statsB.pct - statsA.pct;
 
-      // Overall comparison
-      compContent.append(el('div', { className: 'habit-compare-overall' }, [
+      // Overall comparison bar
+      const overallBar = el('div', { className: 'habit-compare-overall' });
+      overallBar.append(
         el('div', { className: 'habit-compare-stat' }, [
           el('span', { className: 'habit-compare-stat-label' }, [pA.shortLabel || pA.label]),
           el('span', { className: 'habit-compare-stat-value', style: `color:${pctColor(statsA.pct)}` }, [`${statsA.pct}%`]),
@@ -1145,34 +1206,39 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
           el('span', { className: 'habit-compare-stat-label' }, [pB.shortLabel || pB.label]),
           el('span', { className: 'habit-compare-stat-value', style: `color:${pctColor(statsB.pct)}` }, [`${statsB.pct}%`]),
         ]),
-      ]));
+      );
+      compContent.append(overallBar);
 
-      // Per-habit delta table
+      // Per-habit comparison table
       const habitStatsA = perHabitStats(getPeriodWeeks(pA), cols);
       const habitStatsB = perHabitStats(getPeriodWeeks(pB), cols);
       const mapA = new Map(habitStatsA.map(h => [h.name, h]));
       const mapB = new Map(habitStatsB.map(h => [h.name, h]));
 
       const table = el('div', { className: 'habit-compare-table' });
-      table.append(el('div', { className: 'habit-compare-row habit-compare-table-header' }, [
+      const headerRow = el('div', { className: 'habit-compare-row habit-compare-table-header' });
+      headerRow.append(
         el('div', { className: 'habit-compare-cell habit-compare-name-cell' }, ['Habit']),
         el('div', { className: 'habit-compare-cell' }, ['A']),
         el('div', { className: 'habit-compare-cell' }, ['B']),
         el('div', { className: 'habit-compare-cell' }, ['Δ']),
-      ]));
+      );
+      table.append(headerRow);
 
       for (const name of habitNames) {
         const hA = mapA.get(name) || { pct: 0 };
         const hB = mapB.get(name) || { pct: 0 };
         const hDiff = hB.pct - hA.pct;
-        table.append(el('div', { className: 'habit-compare-row' }, [
+        const row = el('div', { className: 'habit-compare-row' });
+        row.append(
           el('div', { className: 'habit-compare-cell habit-compare-name-cell' }, [name]),
           el('div', { className: 'habit-compare-cell', style: `color:${pctColor(hA.pct)}` }, [`${hA.pct}%`]),
           el('div', { className: 'habit-compare-cell', style: `color:${pctColor(hB.pct)}` }, [`${hB.pct}%`]),
           el('div', {
             className: `habit-compare-cell ${hDiff > 0 ? 'habit-compare-up' : hDiff < 0 ? 'habit-compare-down' : ''}`,
           }, [`${hDiff > 0 ? '+' : ''}${hDiff}%`]),
-        ]));
+        );
+        table.append(row);
       }
       compContent.append(table);
 
@@ -1181,11 +1247,16 @@ function renderCompare(container, weeks, months, quarters, years, cols, habitNam
         .map(n => ({ name: n, diff: (mapB.get(n) || { pct: 0 }).pct - (mapA.get(n) || { pct: 0 }).pct }))
         .filter(h => h.diff !== 0)
         .sort((a, b) => b.diff - a.diff);
+
       if (sorted.length > 0) {
         const insights = el('div', { className: 'habit-compare-insights' });
-        if (sorted[0].diff > 0) insights.append(el('p', { className: 'habit-stats-insight' }, [`🏆 Most improved: ${sorted[0].name} (+${sorted[0].diff}%)`]));
+        if (sorted[0].diff > 0) {
+          insights.append(el('p', { className: 'habit-stats-insight' }, [`🏆 Most improved: ${sorted[0].name} (+${sorted[0].diff}%)`]));
+        }
         const worst = sorted[sorted.length - 1];
-        if (worst.diff < 0) insights.append(el('p', { className: 'habit-stats-insight' }, [`📉 Needs attention: ${worst.name} (${worst.diff}%)`]));
+        if (worst.diff < 0) {
+          insights.append(el('p', { className: 'habit-stats-insight' }, [`📉 Needs attention: ${worst.name} (${worst.diff}%)`]));
+        }
         compContent.append(insights);
       }
     }

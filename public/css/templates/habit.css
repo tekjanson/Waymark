@@ -106,11 +106,14 @@
 .habit-toggle {
   cursor: pointer; border-radius: var(--radius-sm);
   transition: all var(--transition); user-select: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 .habit-toggle:hover { background: #fef3c7; transform: scale(1.1); }
 .habit-checked {
   background: #fef3c7; color: #d97706; font-weight: 700;
 }
+.habit-check-mark { font-size: 0.85rem; line-height: 1; }
+.habit-check-time { font-size: 0.55rem; color: #b45309; line-height: 1; margin-top: 1px; }
 
 /* ---------- Goal Progress Bar ---------- */
 .habit-goal-bar-bg {
@@ -295,6 +298,183 @@
   color: var(--color-text-muted); flex: 1;
 }
 
+/* ---------- Monthly View ---------- */
+.habit-month-scroll {
+  overflow-x: auto; margin-bottom: 16px;
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+.habit-month-grid {
+  display: table; min-width: 100%; border-collapse: collapse;
+}
+.habit-month-row { display: table-row; }
+.habit-month-header {
+  background: var(--color-bg); font-weight: 600; font-size: 0.7rem;
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.habit-month-cell {
+  display: table-cell; padding: 4px 2px; text-align: center;
+  font-size: 0.75rem; border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.habit-month-row:last-child .habit-month-cell { border-bottom: none; }
+.habit-month-name-cell {
+  text-align: left; font-weight: 500; padding: 6px 8px;
+  white-space: nowrap; max-width: 120px; overflow: hidden;
+  text-overflow: ellipsis; position: sticky; left: 0;
+  background: var(--color-surface); z-index: 1;
+  border-right: 1px solid var(--color-border);
+}
+.habit-month-header .habit-month-name-cell { background: var(--color-bg); }
+.habit-month-day-cell { min-width: 28px; width: 28px; }
+.habit-month-day-num { font-size: 0.7rem; font-weight: 600; }
+.habit-month-day-dow { font-size: 0.55rem; color: var(--color-text-muted); }
+.habit-month-weekend { background: color-mix(in srgb, var(--color-bg) 50%, var(--color-surface)); }
+.habit-month-done {
+  background: #fef3c7; color: #d97706; font-weight: 700;
+}
+.habit-month-nodata { color: var(--color-border); font-size: 0.65rem; }
+.habit-month-total-cell {
+  font-weight: 700; font-size: 0.78rem; padding: 6px 8px;
+  position: sticky; right: 0; background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+.habit-month-header .habit-month-total-cell { background: var(--color-bg); }
+
+/* ---------- Quarterly View ---------- */
+.habit-quarter-grid {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 16px;
+}
+.habit-quarter-row {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+.habit-quarter-row:last-child { border-bottom: none; }
+.habit-quarter-header {
+  font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
+  color: var(--color-text-muted); background: var(--color-bg);
+}
+.habit-quarter-cell {
+  padding: 10px 8px; text-align: center; font-size: 0.85rem;
+}
+.habit-quarter-name-cell {
+  flex: 1; text-align: left; font-weight: 500; min-width: 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.habit-quarter-month-cell {
+  width: 100px; flex-shrink: 0; border-radius: var(--radius-sm);
+  font-weight: 600; margin: 4px 2px;
+}
+.habit-quarter-total-cell {
+  width: 80px; flex-shrink: 0; font-weight: 700;
+}
+
+/* ---------- Yearly View ---------- */
+.habit-year-grid {
+  display: table; min-width: 100%; border-collapse: collapse;
+}
+.habit-year-row { display: table-row; }
+.habit-year-header {
+  background: var(--color-bg); font-weight: 600; font-size: 0.72rem;
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.habit-year-cell {
+  display: table-cell; padding: 6px 4px; text-align: center;
+  font-size: 0.78rem; border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.habit-year-row:last-child .habit-year-cell { border-bottom: none; }
+.habit-year-name-cell {
+  text-align: left; font-weight: 500; padding: 8px;
+  white-space: nowrap; max-width: 130px; overflow: hidden;
+  text-overflow: ellipsis; position: sticky; left: 0;
+  background: var(--color-surface); z-index: 1;
+  border-right: 1px solid var(--color-border);
+}
+.habit-year-header .habit-year-name-cell { background: var(--color-bg); }
+.habit-year-month-cell {
+  min-width: 50px; font-weight: 600; border-radius: var(--radius-sm);
+}
+.habit-year-nodata { color: var(--color-text-muted); font-weight: 400; }
+.habit-year-total-cell {
+  font-weight: 700; padding: 8px;
+  position: sticky; right: 0; background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+.habit-year-header .habit-year-total-cell { background: var(--color-bg); }
+
+/* ---------- Compare View ---------- */
+.habit-compare { padding: 4px 0; }
+.habit-compare-tabs {
+  display: flex; gap: 6px; margin-bottom: 16px;
+}
+.habit-compare-selectors {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 12px 16px; margin-bottom: 16px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.habit-compare-period {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.habit-compare-period-label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--color-text-muted);
+}
+.habit-compare-select {
+  padding: 6px 12px; border: 1px solid var(--color-border);
+  border-radius: var(--radius); background: var(--color-bg);
+  font-size: 0.85rem; color: var(--color-text); cursor: pointer;
+}
+.habit-compare-vs {
+  font-size: 1rem; font-weight: 700; color: var(--color-text-muted);
+}
+.habit-compare-overall {
+  display: flex; align-items: center; justify-content: center; gap: 24px;
+  padding: 16px; margin-bottom: 16px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.habit-compare-stat {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.habit-compare-stat-label {
+  font-size: 0.78rem; font-weight: 500; color: var(--color-text-muted);
+}
+.habit-compare-stat-value { font-size: 1.8rem; font-weight: 700; }
+.habit-compare-diff {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.habit-compare-arrow { font-size: 1.2rem; }
+.habit-compare-diff-value { font-size: 0.9rem; font-weight: 600; }
+.habit-compare-up { color: var(--color-success); }
+.habit-compare-down { color: var(--color-error); }
+.habit-compare-table {
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 16px;
+}
+.habit-compare-row {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+.habit-compare-row:last-child { border-bottom: none; }
+.habit-compare-table-header {
+  font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
+  color: var(--color-text-muted); background: var(--color-bg);
+}
+.habit-compare-cell {
+  padding: 8px 10px; text-align: center; font-size: 0.85rem;
+  width: 70px; flex-shrink: 0; font-weight: 600;
+}
+.habit-compare-name-cell {
+  flex: 1; text-align: left; font-weight: 500; min-width: 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.habit-compare-insights {
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
   .habit-summary-bar { flex-wrap: wrap; gap: 8px; }
@@ -305,9 +485,15 @@
   .habit-streak-name { width: 80px; }
   .habit-completion-name { width: 80px; }
   .habit-week-label { min-width: 120px; font-size: 0.85rem; }
-  .habit-history-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-  .habit-heatmap-name { min-width: 100px; flex: 0 0 100px; }
   .habit-trend-chart { height: 100px; }
+  .habit-month-name-cell { max-width: 90px; padding: 4px 6px; }
+  .habit-month-day-cell { min-width: 24px; width: 24px; }
+  .habit-quarter-name-cell { min-width: 80px; }
+  .habit-quarter-month-cell { width: 80px; }
+  .habit-year-name-cell { max-width: 100px; }
+  .habit-compare-overall { flex-direction: column; gap: 12px; }
+  .habit-compare-selectors { flex-direction: column; gap: 8px; }
+  .habit-compare-name-cell { min-width: 80px; }
 }
 @media (max-width: 480px) {
   .habit-toolbar { flex-wrap: wrap; }
@@ -316,6 +502,8 @@
   .habit-day-heatmap { height: 80px; }
   .habit-week-nav { gap: 8px; padding: 8px; }
   .habit-week-label { min-width: 100px; font-size: 0.8rem; }
-  .habit-history-grid { grid-template-columns: 1fr; }
   .habit-trend-chart { height: 80px; }
+  .habit-month-day-cell { min-width: 20px; width: 20px; font-size: 0.65rem; }
+  .habit-month-name-cell { max-width: 70px; font-size: 0.7rem; }
+  .habit-compare-cell { width: 50px; padding: 6px 4px; font-size: 0.75rem; }
 }
