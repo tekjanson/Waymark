@@ -619,6 +619,58 @@ if (folderPinBtn) {
   });
 }
 
+/* ---------- .waymark-index helpers ---------- */
+
+const INDEX_FILE = '.waymark-index';
+
+/**
+ * Patch the .waymark-index in a folder to include a newly-created sheet.
+ * Fire-and-forget — failures are silently ignored (the next full folder
+ * load will rebuild the index anyway).
+ *
+ * @param {string} folderId   Google Drive folder ID
+ * @param {Object} sheet      { id, name, headers, firstRow }
+ */
+function patchFolderIndex(folderId, sheet) {
+  (async () => {
+    try {
+      // Also update localStorage cache so same-session nav is instant
+      const local = storage.getFolderIndex(folderId);
+      if (local) {
+        const { key, template } = detectTemplate(sheet.headers);
+        local[sheet.id] = {
+          name: sheet.name,
+          headers: sheet.headers,
+          firstRow: sheet.firstRow,
+          templateKey: key,
+          icon: template.icon || '📊',
+          modified: new Date().toISOString(),
+        };
+        storage.setFolderIndex(folderId, local);
+      }
+
+      // Find existing index file in Drive
+      const indexFile = await api.drive.findFile(INDEX_FILE, folderId);
+      if (indexFile) {
+        // Read → patch → write
+        const idx = await api.drive.readJsonFile(indexFile.id);
+        if (idx && idx.sheets) {
+          idx.sheets[sheet.id] = {
+            name: sheet.name,
+            headers: sheet.headers,
+            firstRow: sheet.firstRow,
+            modified: new Date().toISOString(),
+          };
+          await api.drive.updateJsonFile(indexFile.id, idx);
+        }
+      }
+      // If no index file exists yet we skip — the next full folder load
+      // will create it.  No point creating one for a folder that may
+      // contain only 1-2 sheets.
+    } catch { /* best-effort */ }
+  })();
+}
+
 async function showFolderContents(folderId, folderName) {
   currentFolderId = folderId;
   currentFolderName = folderName;
@@ -664,20 +716,113 @@ async function showFolderContents(folderId, folderName) {
       ]));
     }
 
-    // Fetch sheet data to detect templates and enable directory views
+    // Fetch sheet data to detect templates and enable directory views.
+    // Uses a .waymark-index JSON file stored in Google Drive to avoid
+    // individual Sheets API calls. Typically loads in 3 Drive API calls
+    // (listChildren + findFile + readJsonFile) instead of N Sheets calls.
     if (sheets.length > 0) {
-      const results = await Promise.allSettled(
-        sheets.map(s => api.sheets.getSpreadsheet(s.id).then(data => ({ ...s, data })))
-      );
-      const loadedSheets = [];
-      const failedSheets = [];
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'fulfilled') {
-          loadedSheets.push(results[i].value);
+      const BATCH_SIZE = 3;
+      const BATCH_DELAY_MS = 1500;
+
+      // --- Phase 1: Look up and read the folder index ---
+      // The index is application/json so listChildren (which filters to
+      // folders/sheets/docs) won't return it — use findFile instead.
+      let folderIndex = null;   // { v: 1, sheets: { [id]: { name, headers, firstRow, modified } } }
+      let indexFileId = null;
+
+      try {
+        const indexFile = await api.drive.findFile(INDEX_FILE, folderId);
+        if (indexFile) {
+          indexFileId = indexFile.id;
+          folderIndex = await api.drive.readJsonFile(indexFileId);
+        }
+      } catch {
+        folderIndex = null;  // corrupt or unreadable — rebuild from scratch
+      }
+
+      const indexSheets = folderIndex?.sheets || {};
+
+      // --- Phase 2: Diff against modifiedTimes from Drive listing ---
+      const cachedSheets = [];
+      const toFetch = [];
+
+      for (const s of sheets) {
+        const cached = indexSheets[s.id];
+        if (cached && cached.modified === s.modifiedTime) {
+          // Index hit — data is current
+          cachedSheets.push({
+            ...s,
+            data: { title: cached.name, values: [cached.headers, cached.firstRow] },
+          });
         } else {
-          failedSheets.push(sheets[i]);
+          toFetch.push(s);
         }
       }
+
+      // --- Phase 3: Fetch only new/modified sheets (small batches with long gaps) ---
+      const freshSheets = [];
+      const failedSheets = [];
+
+      for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+        const batch = toFetch.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(s => api.sheets.getSpreadsheetSummary(s.id).then(data => ({ ...s, data })))
+        );
+        for (let j = 0; j < results.length; j++) {
+          if (results[j].status === 'fulfilled') {
+            freshSheets.push(results[j].value);
+          } else {
+            failedSheets.push(batch[j]);
+          }
+        }
+        if (i + BATCH_SIZE < toFetch.length) {
+          await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+        }
+      }
+
+      const loadedSheets = [...cachedSheets, ...freshSheets];
+
+      // --- Phase 4: Write back updated index (non-blocking) ---
+      if (freshSheets.length > 0 || Object.keys(indexSheets).length !== sheets.length) {
+        const newIndex = { v: 1, sheets: {} };
+        for (const s of loadedSheets) {
+          const headers = s.data.values?.[0] || [];
+          const firstRow = s.data.values?.[1] || [];
+          newIndex.sheets[s.id] = {
+            name: s.name || s.data.title,
+            headers,
+            firstRow,
+            modified: s.modifiedTime,
+          };
+        }
+        // Fire-and-forget: update or create index file
+        (async () => {
+          try {
+            if (indexFileId) {
+              await api.drive.updateJsonFile(indexFileId, newIndex);
+            } else {
+              await api.drive.createJsonFile(INDEX_FILE, newIndex, [folderId]);
+            }
+          } catch { /* best-effort — next visit will retry */ }
+        })();
+      }
+
+      // Also update localStorage cache for instant nav within session
+      const localIndex = {};
+      for (const s of loadedSheets) {
+        const headers = s.data.values?.[0] || [];
+        const firstRow = s.data.values?.[1] || [];
+        const { key, template } = detectTemplate(headers);
+        localIndex[s.id] = {
+          name: s.name || s.data.title,
+          headers,
+          firstRow,
+          templateKey: key,
+          icon: template.icon || '📊',
+          modified: s.modifiedTime,
+        };
+      }
+      storage.setFolderIndex(folderId, localIndex);
 
       // Detect templates and group sheets
       const templateGroups = {};
@@ -999,6 +1144,16 @@ async function handleCreateSheet() {
 
     // Create the spreadsheet with just the header row
     const result = await api.sheets.createSpreadsheet(title, [headers], parentId);
+
+    // Patch .waymark-index so the folder view picks up the new sheet instantly
+    if (result?.spreadsheetId && parentId) {
+      patchFolderIndex(parentId, {
+        id: result.spreadsheetId,
+        name: title,
+        headers,
+        firstRow: [],
+      });
+    }
 
     // Refresh explorer
     await explorer.load();
@@ -1346,6 +1501,19 @@ async function importGoNext() {
         onProgress(msg) { importProgress.textContent = msg; },
       };
       const result = await importer.importSheet(importSheetData, importAnalysis, options);
+
+      // Patch .waymark-index so the folder view picks up the imported sheet
+      if (result.sheetId && result.folderId) {
+        const importHeaders = importSheetData?.values?.[0] || [];
+        const importFirstRow = importSheetData?.values?.[1] || [];
+        patchFolderIndex(result.folderId, {
+          id: result.sheetId,
+          name: importSheetData?.title || 'Imported Sheet',
+          headers: importHeaders,
+          firstRow: importFirstRow,
+        });
+      }
+
       await explorer.load();
       collectKnownSheets();
       closeImportModal();
