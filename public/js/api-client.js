@@ -504,6 +504,24 @@ export const api = {
       return sheetsApi.getSpreadsheet(token, spreadsheetId);
     },
 
+    /**
+     * Get only the header + first data row (for template detection and directory views).
+     * Much cheaper than getSpreadsheet — single API call, minimal data.
+     * @param {string} spreadsheetId
+     * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+     */
+    async getSpreadsheetSummary(spreadsheetId) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const data = await loadMockSheet(spreadsheetId);
+        if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
+        // Return only first two rows to mirror production behavior
+        return { ...data, values: (data.values || []).slice(0, 2) };
+      }
+      const token = await clientAuth.getToken();
+      return sheetsApi.getSpreadsheetSummary(token, spreadsheetId);
+    },
+
     async createSpreadsheet(title, rows, parentId) {
       if (isLocal) {
         const sheetId = `created-sheet-${Date.now()}`;

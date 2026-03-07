@@ -178,6 +178,26 @@ export function setSortOrder(order) {
   set('sort_order', order);
 }
 
+/* --- Folder Index Cache --- */
+
+/**
+ * Get cached folder index (sheet summaries keyed by sheet ID).
+ * @param {string} folderId
+ * @returns {Object|null}  { [sheetId]: { name, headers, firstRow, templateKey, icon, modified } }
+ */
+export function getFolderIndex(folderId) {
+  return get('folder_idx_' + folderId);
+}
+
+/**
+ * Store folder index cache.
+ * @param {string} folderId
+ * @param {Object} index
+ */
+export function setFolderIndex(folderId, index) {
+  set('folder_idx_' + folderId, index);
+}
+
 /* --- Clear All --- */
 
 export function clearAll() {
