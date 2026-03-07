@@ -4,6 +4,35 @@
 
 const BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+/* ---------- Rate-limit retry helper ---------- */
+
+const MAX_RETRIES = 4;
+const BASE_DELAY_MS = 1000;
+
+/**
+ * Fetch with automatic retry on 429 (rate-limit) responses.
+ * Uses exponential backoff with jitter.
+ * @param {string} url
+ * @param {RequestInit} opts
+ * @returns {Promise<Response>}
+ */
+async function fetchWithRetry(url, opts) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, opts);
+    if (res.status !== 429) return res;
+
+    if (attempt === MAX_RETRIES) return res; // give up, let caller handle
+
+    // Respect Retry-After header if present, otherwise exponential backoff
+    const retryAfter = res.headers.get('Retry-After');
+    const delay = retryAfter
+      ? parseInt(retryAfter, 10) * 1000
+      : BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
+
+    await new Promise(r => setTimeout(r, delay));
+  }
+}
+
 /**
  * Get spreadsheet metadata + cell values for the first sheet.
  * @param {string} token
@@ -11,16 +40,16 @@ const BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
  * @returns {Promise<Object>}  { properties, sheets, values }
  */
 export async function getSpreadsheet(token, spreadsheetId) {
-  // Fetch metadata
-  const metaRes = await fetch(`${BASE}/${spreadsheetId}?fields=properties,sheets.properties`, {
+  // Fetch metadata (with 429 retry)
+  const metaRes = await fetchWithRetry(`${BASE}/${spreadsheetId}?fields=properties,sheets.properties`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!metaRes.ok) throw new Error(`Sheets API ${metaRes.status}`);
   const meta = await metaRes.json();
 
-  // Fetch values from the first sheet
+  // Fetch values from the first sheet (with 429 retry)
   const sheetTitle = meta.sheets?.[0]?.properties?.title || 'Sheet1';
-  const valRes = await fetch(
+  const valRes = await fetchWithRetry(
     `${BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetTitle)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -36,6 +65,39 @@ export async function getSpreadsheet(token, spreadsheetId) {
     sheetTitle,
     values,
   };
+}
+
+/**
+ * Get only the header row and first data row of a spreadsheet.
+ * Uses a single API call with a limited range, much cheaper than getSpreadsheet.
+ * Sufficient for template detection and directory-view metadata.
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+ */
+export async function getSpreadsheetSummary(token, spreadsheetId) {
+  // Fetch just the first two rows via includeGridData with a limited range
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}?ranges=Sheet1!1:2&fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+  const body = await res.json();
+
+  const title = body.properties?.title || 'Untitled';
+  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
+
+  // Extract values from the grid data format into a simple 2D array
+  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
+  const values = rowData.map(row =>
+    (row.values || []).map(cell => {
+      const v = cell?.userEnteredValue;
+      if (!v) return '';
+      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
+    })
+  );
+
+  return { id: spreadsheetId, title, sheetTitle, values };
 }
 
 /**
