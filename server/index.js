@@ -29,7 +29,7 @@ app.use((_req, res, next) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
         "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
