@@ -58,6 +58,7 @@ function serveIndex(_req, res) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
 
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.type('html').send(html);
 }
 
@@ -182,7 +183,23 @@ setupAuth(router);
 // index: false — prevent express.static from serving raw index.html;
 // the serveIndex handler above (and the SPA fallback below) inject runtime
 // config (e.g. __WAYMARK_BASE) that the client JS needs.
-router.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
+router.use(express.static(path.join(__dirname, '..', 'public'), {
+  index: false,
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      // HTML: always revalidate
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
+      // CSS/JS: short cache so updates land quickly
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    } else {
+      // Everything else (images, SVGs, etc.): 1 hour
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  },
+}));
 
 // SPA fallback — serve index.html for any unmatched route
 router.get('*', (req, res) => {
