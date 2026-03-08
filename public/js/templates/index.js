@@ -20,7 +20,7 @@ import './inventory.js';
 import './contacts.js';
 import './log.js';
 import './budget.js';
-import './kanban.js';
+import './kanban/index.js';
 import './habit.js';
 import './grading.js';
 import './timesheet.js';

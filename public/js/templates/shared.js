@@ -392,6 +392,83 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
 /* Re-export el for convenience — templates only need to import from shared */
 export { el };
 
+/* ---------- Generic Helpers ---------- */
+
+/**
+ * Set up delegated event handling on a container element.
+ * The handler fires only when the event target (or an ancestor up to container)
+ * matches the given CSS selector.
+ *
+ * @param {HTMLElement} container — ancestor element that owns the listener
+ * @param {string}      eventType — DOM event name ('click', 'dragstart', etc.)
+ * @param {string}      selector  — CSS selector to match against event target
+ * @param {(e: Event, match: HTMLElement) => void} handler — called with the event and matched element
+ */
+export function delegateEvent(container, eventType, selector, handler) {
+  container.addEventListener(eventType, (e) => {
+    const match = /** @type {HTMLElement} */ (e.target).closest?.(selector);
+    if (match && container.contains(match)) {
+      handler(e, match);
+    }
+  });
+}
+
+/**
+ * Lazily render a section inside a parent element.
+ * On first call, invokes `buildFn` and appends the result.
+ * On subsequent calls, removes the `hidden` class to reveal it.
+ *
+ * @param {HTMLElement} parent   — container to search / append into
+ * @param {string}      selector — CSS selector to find existing section
+ * @param {() => HTMLElement} buildFn — factory called once to create the section
+ * @returns {HTMLElement} the (possibly new) section element
+ */
+export function lazySection(parent, selector, buildFn) {
+  let section = parent.querySelector(selector);
+  if (!section) {
+    section = buildFn();
+    parent.append(section);
+  }
+  section.classList.remove('hidden');
+  return section;
+}
+
+/**
+ * Parse flat sheet rows into groups using §4.7 contiguous row-grouping.
+ * A new group starts whenever the primary column is non-empty;
+ * subsequent rows with an empty primary column are children of the
+ * preceding group.
+ *
+ * @param {string[][]} rows          — data rows (header row excluded)
+ * @param {number}     primaryColIdx — column index of the group key (e.g. task name, recipe name)
+ * @param {Object}     [opts]
+ * @param {() => Object}            [opts.initGroup]    — factory for extra properties on each group (e.g. `() => ({ subtasks: [], notes: [] })`)
+ * @param {(child: {row: string[], idx: number}, group: Object) => void} [opts.classifyChild] — assign a child row to its group's sub-arrays
+ * @returns {Array<{row: string[], idx: number, children: Array<{row: string[], idx: number}>}>}
+ */
+export function parseGroups(rows, primaryColIdx, opts = {}) {
+  const groups = [];
+  let current = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const primary = cell(row, primaryColIdx);
+
+    if (primary) {
+      current = { row, idx: i, children: [], ...(opts.initGroup ? opts.initGroup() : {}) };
+      groups.push(current);
+    } else if (current) {
+      const child = { row, idx: i };
+      if (opts.classifyChild) {
+        opts.classifyChild(child, current);
+      } else {
+        current.children.push(child);
+      }
+    }
+  }
+  return groups;
+}
+
 /* ---------- Add-Row Form Builder ---------- */
 
 /** @type {boolean} Whether the add-row form is currently expanded */

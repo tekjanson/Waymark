@@ -1,4 +1,6 @@
-/* templates/tracker.js — Progress Tracker: all fields editable inline */
+/* ============================================================
+   templates/tracker.js — Progress Tracker: all fields editable inline
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate } from './shared.js';
 

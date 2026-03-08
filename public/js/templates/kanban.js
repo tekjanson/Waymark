@@ -4,6 +4,9 @@
    Features: expandable cards, project grouping & filtering,
    sub-tasks, notes with authors, due-date urgency, labels,
    sort within lanes, archive toggle, lane progress.
+
+   Performance: lazy detail rendering, lane-level virtualization,
+   delegated event handling for scaling to thousands of items.
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm, getUserName, comboCell, textareaCell } from './shared.js';
@@ -20,12 +23,17 @@ const LANE_LABELS = {
   done: 'Done', archived: 'Archived',
 };
 
+/** Number of cards rendered per lane before showing "Show more" */
+const LANE_PAGE_SIZE = 50;
+
 /* ---------- Module state (persists across auto-refresh) ---------- */
 
 let _activeProject = null;
 let _activeSort = 'default';
 let _showArchived = false;
 let _expandedCards = new Set();
+/** Per-lane render counts: how many cards are currently shown */
+let _laneRendered = {};
 
 /* ---------- Drag-and-drop state ---------- */
 
@@ -294,6 +302,10 @@ const definition = {
       const totalParent = filtered.length;
       const doneParent = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === 'done').length;
 
+      // Build a lookup from group index to group for delegated events
+      const groupMap = new Map();
+      for (const g of groups) groupMap.set(g.idx + 1, g);
+
       for (const laneKey of laneOrder) {
         let items = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === laneKey);
 
@@ -306,7 +318,7 @@ const definition = {
 
         const lane = el('div', { className: `kanban-lane kanban-lane-${laneKey}` });
 
-        /* Drop-zone: accept dragged cards */
+        /* ---- Delegated drag-and-drop on lane ---- */
         lane.addEventListener('dragover', (e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
@@ -321,14 +333,11 @@ const definition = {
           if (_dragRowIdx && cols.stage >= 0) {
             const stageValue = LANE_LABELS[laneKey] || laneKey;
             emitEdit(_dragRowIdx, cols.stage, stageValue);
-            /* Move the card DOM immediately for responsiveness */
             if (_dragCard) {
               _dragCard.classList.remove('kanban-card-dragging');
-              /* Insert before the add-row form if present, else at end */
               const addForm = lane.querySelector('.add-row-lane');
               if (addForm) lane.insertBefore(_dragCard, addForm);
               else lane.append(_dragCard);
-              /* Update the stage badge on the moved card */
               const badge = _dragCard.querySelector('.kanban-stage-btn');
               if (badge) {
                 badge.textContent = stageValue;
@@ -338,6 +347,112 @@ const definition = {
             _dragCard = null;
             _dragRowIdx = null;
           }
+        });
+
+        /* ---- Delegated click handler on lane ---- */
+        lane.addEventListener('click', (e) => {
+          const target = /** @type {HTMLElement} */ (e.target);
+
+          // Stage badge cycling
+          if (target.classList.contains('kanban-stage-btn') && target.closest('.kanban-card')) {
+            e.stopPropagation();
+            const card = target.closest('.kanban-card');
+            const rowIdx = Number(card.dataset.rowIdx);
+            if (!rowIdx) return;
+            const states = template.stageStates;
+            const cur = target.textContent.trim();
+            const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
+            const next = states[(si + 1) % states.length];
+            target.textContent = next;
+            target.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
+            emitEdit(rowIdx, cols.stage, next);
+            return;
+          }
+
+          // Archive button
+          if (target.classList.contains('kanban-archive-btn')) {
+            e.stopPropagation();
+            const card = target.closest('.kanban-card');
+            const rowIdx = Number(card.dataset.rowIdx);
+            if (!rowIdx) return;
+            card.classList.add('kanban-card-archiving');
+            setTimeout(() => card.remove(), 300);
+            emitEdit(rowIdx, cols.stage, 'Archived');
+            return;
+          }
+
+          // Unarchive button
+          if (target.classList.contains('kanban-unarchive-btn')) {
+            e.stopPropagation();
+            const card = target.closest('.kanban-card');
+            const rowIdx = Number(card.dataset.rowIdx);
+            if (!rowIdx) return;
+            card.classList.add('kanban-card-archiving');
+            setTimeout(() => card.remove(), 300);
+            emitEdit(rowIdx, cols.stage, 'Done');
+            return;
+          }
+
+          // Open modal button
+          if (target.classList.contains('kanban-card-open')) {
+            e.stopPropagation();
+            const card = target.closest('.kanban-card');
+            const rowIdx = Number(card.dataset.rowIdx);
+            const group = groupMap.get(rowIdx);
+            if (group) openCardModal(group, cols, template);
+            return;
+          }
+
+          // Expand/collapse button
+          if (target.classList.contains('kanban-card-expand')) {
+            e.stopPropagation();
+            const card = target.closest('.kanban-card');
+            const rowIdx = Number(card.dataset.rowIdx);
+            if (!rowIdx) return;
+            const expanded = _expandedCards.has(rowIdx);
+
+            if (expanded) {
+              _expandedCards.delete(rowIdx);
+              const detail = card.querySelector('.kanban-card-detail');
+              if (detail) detail.classList.add('hidden');
+              card.classList.remove('kanban-card-expanded');
+              target.textContent = '▾';
+            } else {
+              _expandedCards.add(rowIdx);
+              // Lazy detail rendering: build on first expand
+              let detail = card.querySelector('.kanban-card-detail');
+              if (!detail) {
+                const group = groupMap.get(rowIdx);
+                if (group) {
+                  detail = buildCardDetail(group, cols, template);
+                  card.append(detail);
+                }
+              } else {
+                detail.classList.remove('hidden');
+              }
+              card.classList.add('kanban-card-expanded');
+              target.textContent = '▴';
+            }
+            return;
+          }
+        });
+
+        /* ---- Delegated drag handlers on lane (dragstart / dragend bubble) ---- */
+        lane.addEventListener('dragstart', (e) => {
+          const card = /** @type {HTMLElement} */ (e.target).closest?.('.kanban-card');
+          if (!card) return;
+          _dragCard = card;
+          _dragRowIdx = Number(card.dataset.rowIdx);
+          card.classList.add('kanban-card-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(_dragRowIdx));
+        });
+        lane.addEventListener('dragend', (e) => {
+          const card = /** @type {HTMLElement} */ (e.target).closest?.('.kanban-card');
+          if (card) card.classList.remove('kanban-card-dragging');
+          document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
+          _dragCard = null;
+          _dragRowIdx = null;
         });
 
         // Lane header
@@ -354,9 +469,25 @@ const definition = {
         }
         lane.append(el('div', { className: 'kanban-lane-header' }, headerChildren));
 
-        // Cards
-        for (const group of items) {
+        // Virtualized card rendering: render first LANE_PAGE_SIZE cards
+        const limit = _laneRendered[laneKey] || LANE_PAGE_SIZE;
+        const visibleItems = items.slice(0, limit);
+        const remaining = items.length - visibleItems.length;
+
+        for (const group of visibleItems) {
           lane.append(buildCard(group, cols, template, laneKey));
+        }
+
+        // "Show more" button if there are remaining items
+        if (remaining > 0) {
+          const showMoreBtn = el('button', { className: 'kanban-show-more' }, [
+            `Show ${Math.min(remaining, LANE_PAGE_SIZE)} more of ${remaining} remaining`,
+          ]);
+          showMoreBtn.addEventListener('click', () => {
+            _laneRendered[laneKey] = (limit) + LANE_PAGE_SIZE;
+            buildBoard();
+          });
+          lane.append(showMoreBtn);
         }
 
         // Per-lane add button
@@ -376,7 +507,7 @@ const definition = {
       }
     }
 
-    /* ---- Card builder ---- */
+    /* ---- Card builder (lightweight — no detail panel, no per-card listeners) ---- */
 
     function buildCard(group, cols, template, laneKey) {
       const { row, idx } = group;
@@ -395,22 +526,7 @@ const definition = {
       const hasDetail = desc || hasSubtasks || hasNotes;
 
       const card = el('div', { className: 'kanban-card', draggable: 'true' });
-
-      /* Drag-and-drop handlers */
-      card.addEventListener('dragstart', (e) => {
-        _dragCard = card;
-        _dragRowIdx = rowIdx;
-        card.classList.add('kanban-card-dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', String(rowIdx));
-      });
-      card.addEventListener('dragend', () => {
-        card.classList.remove('kanban-card-dragging');
-        /* Clean up any lingering dragover highlights */
-        document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
-        _dragCard = null;
-        _dragRowIdx = null;
-      });
+      card.dataset.rowIdx = String(rowIdx);
 
       // Project color accent on left border
       if (project) {
@@ -418,10 +534,10 @@ const definition = {
         card.classList.add('kanban-card-project');
       }
 
-      // Expanded state
+      // Expanded state (restore from module state)
       if (_expandedCards.has(rowIdx)) card.classList.add('kanban-card-expanded');
 
-      /* -- Card header: priority dot + title + expand toggle -- */
+      /* -- Card header: priority dot + title + open + expand toggle -- */
       const cardHeader = el('div', { className: 'kanban-card-header' });
 
       if (priority) {
@@ -432,13 +548,17 @@ const definition = {
 
       cardHeader.append(editableCell('span', { className: 'kanban-card-title' }, taskName, rowIdx, cols.text));
 
-      let expandBtn = null;
+      // Open in focus modal button (delegated click on lane)
+      cardHeader.append(el('button', {
+        className: 'kanban-card-open',
+        title: 'Open in focus view',
+      }, ['⛶']));
+
       if (hasDetail) {
-        expandBtn = el('button', {
+        cardHeader.append(el('button', {
           className: 'kanban-card-expand',
           title: 'Expand details',
-        }, [_expandedCards.has(rowIdx) ? '▴' : '▾']);
-        cardHeader.append(expandBtn);
+        }, [_expandedCards.has(rowIdx) ? '▴' : '▾']));
       }
 
       card.append(cardHeader);
@@ -447,29 +567,16 @@ const definition = {
       const preview = el('div', { className: 'kanban-card-preview' });
 
       if (desc) {
-        const snippet = desc.length > 80 ? desc.slice(0, 80) + '…' : desc;
-        preview.append(el('div', { className: 'kanban-card-desc' }, [snippet]));
+        preview.append(el('div', { className: 'kanban-card-desc' }, [desc]));
       }
 
       const meta = el('div', { className: 'kanban-card-meta' });
 
-      // Stage badge (cycle on click)
-      const stageBadge = el('button', {
+      // Stage badge (delegated click on lane)
+      meta.append(el('button', {
         className: `kanban-stage-btn kanban-stage-${template.stageClass(stage)}`,
         title: 'Click to cycle stage',
-      }, [stage || 'Backlog']);
-
-      stageBadge.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const states = template.stageStates;
-        const cur = stageBadge.textContent.trim();
-        const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
-        const next = states[(si + 1) % states.length];
-        stageBadge.textContent = next;
-        stageBadge.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
-        emitEdit(rowIdx, cols.stage, next);
-      });
-      meta.append(stageBadge);
+      }, [stage || 'Backlog']));
 
       // Project badge
       if (project) {
@@ -511,47 +618,24 @@ const definition = {
 
       preview.append(meta);
 
-      // Archive button (Done lane only)
+      // Archive button (Done lane only) — delegated click handler on lane
       if (laneKey === 'done') {
-        const archiveBtn = el('button', { className: 'kanban-archive-btn', title: 'Archive this task' }, ['📦 Archive']);
-        archiveBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          card.classList.add('kanban-card-archiving');
-          setTimeout(() => card.remove(), 300);
-          emitEdit(rowIdx, cols.stage, 'Archived');
-        });
-        preview.append(archiveBtn);
+        preview.append(el('button', { className: 'kanban-archive-btn', title: 'Archive this task' }, ['📦 Archive']));
       }
 
-      // Unarchive button (Archived lane only)
+      // Unarchive button (Archived lane only) — delegated click handler on lane
       if (laneKey === 'archived') {
-        const unarchiveBtn = el('button', { className: 'kanban-unarchive-btn', title: 'Restore to Done' }, ['♻️ Restore']);
-        unarchiveBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          card.classList.add('kanban-card-archiving');
-          setTimeout(() => card.remove(), 300);
-          emitEdit(rowIdx, cols.stage, 'Done');
-        });
-        preview.append(unarchiveBtn);
+        preview.append(el('button', { className: 'kanban-unarchive-btn', title: 'Restore to Done' }, ['♻️ Restore']));
       }
 
       card.append(preview);
 
-      /* -- Expandable detail section -- */
-      if (hasDetail) {
-        const detail = buildCardDetail(group, cols, template);
-        if (!_expandedCards.has(rowIdx)) detail.classList.add('hidden');
-        card.append(detail);
-
-        expandBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const expanded = _expandedCards.has(rowIdx);
-          if (expanded) { _expandedCards.delete(rowIdx); } else { _expandedCards.add(rowIdx); }
-          detail.classList.toggle('hidden');
-          card.classList.toggle('kanban-card-expanded');
-          expandBtn.textContent = expanded ? '▾' : '▴';
-        });
+      /* -- Lazy expandable detail: only built on first expand (delegated) -- */
+      if (hasDetail && _expandedCards.has(rowIdx)) {
+        // Restore previously expanded detail
+        card.append(buildCardDetail(group, cols, template));
       }
+      // Otherwise detail is built lazily by the delegated click handler
 
       return card;
     }
@@ -772,6 +856,116 @@ const definition = {
       return detail;
     }
 
+    /* ---- Focus modal ---- */
+
+    function openCardModal(group, cols, template) {
+      // Close any existing modal
+      const existing = document.querySelector('.kanban-modal-overlay');
+      if (existing) existing.remove();
+
+      const { row, idx } = group;
+      const rowIdx = idx + 1;
+      const taskName = cell(row, cols.text) || '—';
+      const stage = cell(row, cols.stage);
+      const project = cols.project >= 0 ? cell(row, cols.project) : '';
+      const priority = cols.priority >= 0 ? cell(row, cols.priority) : '';
+      const assignee = cols.assignee >= 0 ? cell(row, cols.assignee) : '';
+      const due = cols.due >= 0 ? cell(row, cols.due) : '';
+      const labelVal = cols.label >= 0 ? cell(row, cols.label) : '';
+
+      const overlay = el('div', { className: 'kanban-modal-overlay' });
+      const modal = el('div', { className: 'kanban-modal' });
+
+      /* -- Header with title and badges -- */
+      const headerContent = el('div', { className: 'kanban-modal-header-content' });
+
+      // Editable title
+      headerContent.append(editableCell('div', { className: 'kanban-modal-title' }, taskName, rowIdx, cols.text));
+
+      // Header meta: stage, project, priority, assignee, due, label
+      const headerMeta = el('div', { className: 'kanban-modal-header-meta' });
+
+      const stageBadge = el('button', {
+        className: `kanban-stage-btn kanban-stage-${template.stageClass(stage)}`,
+        title: 'Click to cycle stage',
+      }, [stage || 'Backlog']);
+      stageBadge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const states = template.stageStates;
+        const cur = stageBadge.textContent.trim();
+        const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
+        const next = states[(si + 1) % states.length];
+        stageBadge.textContent = next;
+        stageBadge.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
+        emitEdit(rowIdx, cols.stage, next);
+      });
+      headerMeta.append(stageBadge);
+
+      if (project) {
+        headerMeta.append(el('span', {
+          className: 'kanban-card-project-badge',
+          style: `--project-color: ${projectColor(project)}`,
+        }, [project]));
+      }
+
+      if (priority) {
+        headerMeta.append(el('span', {
+          className: `kanban-pri-dot kanban-pri-${priority.toLowerCase().trim()}`,
+        }));
+      }
+
+      if (due) {
+        headerMeta.append(el('span', {
+          className: `kanban-card-due ${dueBadgeClass(due)}`,
+          title: due,
+        }, [formatDue(due)]));
+      }
+
+      if (labelVal) {
+        headerMeta.append(el('span', {
+          className: `kanban-card-label kanban-label-${labelVal.toLowerCase().trim()}`,
+        }, [labelVal]));
+      }
+
+      if (assignee) {
+        const initial = assignee.charAt(0).toUpperCase();
+        headerMeta.append(el('span', { className: 'kanban-card-assignee', title: assignee }, [
+          el('span', { className: 'kanban-avatar' }, [initial]),
+          assignee,
+        ]));
+      }
+
+      headerContent.append(headerMeta);
+
+      const closeBtn = el('button', { className: 'kanban-modal-close', title: 'Close' }, ['✕']);
+      closeBtn.addEventListener('click', () => overlay.remove());
+
+      modal.append(el('div', { className: 'kanban-modal-header' }, [headerContent, closeBtn]));
+
+      /* -- Body: full detail panel -- */
+      const body = el('div', { className: 'kanban-modal-body' });
+      body.append(buildCardDetail(group, cols, template));
+      modal.append(body);
+
+      overlay.append(modal);
+
+      // Close on backdrop click
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
+
+      // Close on Escape
+      function onKey(e) {
+        if (e.key === 'Escape') {
+          overlay.remove();
+          document.removeEventListener('keydown', onKey);
+        }
+      }
+      document.addEventListener('keydown', onKey);
+
+      document.body.append(overlay);
+    }
+
     /* ---- Initial build ---- */
     buildBoard();
   },
@@ -779,3 +973,4 @@ const definition = {
 
 registerTemplate('kanban', definition);
 export default definition;
+

@@ -10,7 +10,7 @@
 ### 1.1 NO BACKEND BUSINESS LOGIC
 The server (`server/`) does exactly three things: serve static files, broker OAuth, and inject runtime flags. **All** business logic, data fetching, rendering, and template detection runs in the browser. Never add routes, middleware, controllers, or any processing to `server/index.js`, `server/auth.js`, or `server/config.js`. Never create new server-side files.
 
-### 1.3 VANILLA STACK — NO FRAMEWORKS, NO BUILD STEP
+### 1.2 VANILLA STACK — NO FRAMEWORKS, NO BUILD STEP
 - **No** CSS frameworks (Tailwind, Bootstrap, etc.)
 - **No** JS frameworks (React, Vue, Svelte, etc.)
 - **No** bundlers, transpilers, or build tools (Webpack, Vite, esbuild, etc.)
@@ -20,14 +20,16 @@ The server (`server/`) does exactly three things: serve static files, broker OAu
 - Raw CSS with custom properties
 - Pure DOM manipulation via the `el()` factory
 
-### 1.4 ZERO SERVER STATE
+### 1.3 ZERO SERVER STATE
 The server stores nothing. No database, no in-memory cache, no session store, no user data. The httpOnly cookie holds only the refresh token. All persistent data lives in Google Drive (via `user-data.js`) or the browser's `localStorage` (via `storage.js`).
 
-### 1.5 ALL GOOGLE API ACCESS GOES THROUGH api-client.js
+### 1.4 ALL GOOGLE API ACCESS GOES THROUGH api-client.js
 `public/js/api-client.js` is the **sole gateway** to Google APIs. No module may import `drive.js` or `sheets.js` directly (except `api-client.js` itself). This abstraction enables the local-only mock mode that the entire test suite depends on.
 
-### 1.6 TEMPLATES ONLY IMPORT FROM shared.js
+### 1.5 TEMPLATES ONLY IMPORT FROM shared.js
 Template files (`public/js/templates/*.js`) import exclusively from `./shared.js`. They never import from `../ui.js`, `../api-client.js`, or any other module. `shared.js` re-exports `el` from `ui.js` for convenience — templates use that re-export.
+
+When a template uses the **folder layout** (`templates/{key}/`), sub-modules import from `../shared.js` and may also import from **sibling files** within the same `{key}/` directory. No template file ever imports from `../../ui.js`, `../../api-client.js`, or any other non-template module.
 
 ---
 
@@ -67,8 +69,13 @@ public/                        # All frontend code (served as static)
     tutorial.js                # First-run tutorial
     templates/
       index.js                 # Barrel: side-effect imports all templates, exports detectTemplate()
-      shared.js                # Registry, cell helpers, editableCell, el re-export
+      shared.js                # Registry, cell helpers, editableCell, el re-export, generic helpers
       {key}.js                 # One self-registering module per template
+      {key}/                   # Folder layout for complex templates (>~300 LOC)
+        index.js               # Barrel: definition, registerTemplate, export default
+        helpers.js             # Constants & pure functions
+        cards.js               # Card/item DOM builders
+        modal.js               # Modal / overlay UI
 tests/
   playwright.config.js
   helpers/
@@ -88,15 +95,18 @@ scripts/
   generate-examples.js         # Real Drive example creator
 ```
 
-### 2.2 When Adding a New Template
+### 2.2 Template Folder Layout
+For complex templates exceeding ~300 lines, use the **folder layout**: `templates/{key}/index.js` as the barrel module. The barrel import in `templates/index.js` changes from `import './{key}.js'` to `import './{key}/index.js'`. Sub-modules import from `../shared.js` and may import siblings within the same folder. CSS stays at `css/templates/{key}.css` (unchanged). See `kanban/` for the reference implementation.
+
+### 2.3 When Adding a New Template
 Every new template requires ALL of these artifacts:
 
 | Artifact | Path | Notes |
 |---|---|---|
-| Template JS | `public/js/templates/{key}.js` | Self-registers via `registerTemplate()` |
+| Template JS | `public/js/templates/{key}.js` or `{key}/index.js` | Self-registers via `registerTemplate()` |
 | Template CSS | `public/css/templates/{key}.css` | All classes prefixed `.{key}-` |
 | CSS import | `public/css/style.css` | Add `@import 'templates/{key}.css';` |
-| Template import | `public/js/templates/index.js` | Add `import './{key}.js';` |
+| Template import | `public/js/templates/index.js` | Add `import './{key}.js';` (or `'./{key}/index.js'` for folder layout) |
 | Fixture JSON | `tests/fixtures/sheets/{key}-{desc}.json` | Sheet data for tests |
 | Fixture ID mapping | `public/js/api-client.js` | Add `'sheet-NNN': '{key}-{desc}'` to `mapping` |
 | Folder entry | `tests/fixtures/folders.json` | Add sheet ref under Examples folder |
@@ -210,6 +220,17 @@ registerTemplate('key', definition);
 export default definition;
 ```
 
+### 4.1a shared.js Generic Helpers
+`shared.js` exports these reusable helpers in addition to cell/edit utilities:
+
+| Export | Signature | Purpose |
+|---|---|---|
+| `delegateEvent` | `(container, eventType, selector, handler)` | Attach a single listener that fires when the target matches `selector` (event delegation) |
+| `lazySection` | `(parent, selector, buildFn)` | Build a DOM section on first use; reveal it on subsequent calls (lazy rendering) |
+| `parseGroups` | `(rows, primaryColIdx, opts?)` | Group contiguous rows per §4.7; supports `opts.initGroup` and `opts.classifyChild` callbacks |
+
+Templates should prefer these over ad-hoc implementations for consistency and to reduce per-element listener counts.
+
 ### 4.2 detect() Rules
 - Receives `lower`: array of lowercased, trimmed header strings.
 - Returns `boolean`.
@@ -286,6 +307,7 @@ All template data stored in Google Sheets MUST be easy for a human to read and e
 - `style.css` is a **pure aggregator** — only `@import` statements, no rules.
 - `base.css` holds all custom properties, reset, layout, and shared component styles.
 - Each template has its own file: `templates/{key}.css`.
+- **Exception:** `checklist` styles live in `base.css` because `#checklist-view` is the universal detail view for all templates (§6.2), not just the checklist template.
 
 ### 5.2 Custom Properties (mandatory)
 All colors and design tokens come from `:root` variables in `base.css`:
@@ -635,7 +657,7 @@ Imported sheets go to `Waymark/Imports/{TemplateName}/` — one sub-folder per t
 - [ ] All DOM built via `el()` — no unsafe `innerHTML`
 - [ ] All Google API calls go through `api-client.js`
 - [ ] Template files only import from `shared.js`
-- [ ] New template has ALL required artifacts (§2.2)
+- [ ] New template has ALL required artifacts (§2.3)
 - [ ] CSS classes follow `.{key}-{element}` naming
 - [ ] Colors use `var(--color-*)` tokens (base.css) or template-scoped accents
 - [ ] Tests use `setupApp(page)` + no `describe()` blocks + CSS selectors only

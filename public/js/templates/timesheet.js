@@ -1,4 +1,6 @@
-/* templates/timesheet.js — Timesheet: all fields editable inline, shows totals */
+/* ============================================================
+   templates/timesheet.js — Timesheet: all fields editable inline, shows totals
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 
