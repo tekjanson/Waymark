@@ -1,4 +1,6 @@
-/* templates/budget.js — Budget: all fields editable inline, grouped by category */
+/* ============================================================
+   templates/budget.js — Budget: all fields editable inline, grouped by category
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

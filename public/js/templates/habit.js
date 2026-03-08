@@ -1,4 +1,6 @@
-/* templates/habit.js — Habit Tracker: toggle days, all fields editable */
+/* ============================================================
+   templates/habit.js — Habit Tracker: toggle days, all fields editable
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 

@@ -655,11 +655,14 @@ function patchFolderIndex(folderId, sheet) {
         // Read → patch → write
         const idx = await api.drive.readJsonFile(indexFile.id);
         if (idx && idx.sheets) {
+          const { key, template } = detectTemplate(sheet.headers);
           idx.sheets[sheet.id] = {
             name: sheet.name,
             headers: sheet.headers,
             firstRow: sheet.firstRow,
             modified: new Date().toISOString(),
+            templateKey: key,
+            icon: template.icon || '📊',
           };
           await api.drive.updateJsonFile(indexFile.id, idx);
         }
@@ -687,6 +690,46 @@ async function showFolderContents(folderId, folderName) {
     const pinned = userData.isPinned(folderId);
     folderPinBtn.classList.toggle('pinned', pinned);
     folderPinBtn.title = pinned ? 'Unpin folder' : 'Pin folder';
+  }
+
+  // --- Instant render from localStorage cache (zero API calls) ---
+  // If the folder was previously visited this session and the majority
+  // of its sheets are a single template with a directoryView (e.g.
+  // cookbook), render the cached version immediately so the user sees
+  // content while Drive data verifies in the background.
+  const localIdx = storage.getFolderIndex(folderId);
+  if (localIdx) {
+    const entries = Object.entries(localIdx);
+    // Count templates and find dominant one
+    const templateCounts = {};
+    for (const [, v] of entries) {
+      const tk = v.templateKey || 'checklist';
+      templateCounts[tk] = (templateCounts[tk] || 0) + 1;
+    }
+    const dominant = Object.entries(templateCounts)
+      .sort((a, b) => b[1] - a[1])[0];
+    if (dominant && dominant[1] > entries.length * 0.5) {
+      const domKey = dominant[0];
+      const domTemplate = TEMPLATES[domKey];
+      if (domTemplate?.directoryView) {
+        const cachedSheets = entries
+          .filter(([, v]) => (v.templateKey || 'checklist') === domKey)
+          .map(([id, v]) => {
+            const lower = (v.headers || []).map(h => (h || '').toLowerCase().trim());
+            return {
+              id,
+              name: v.name,
+              rows: [v.firstRow || []],
+              cols: domTemplate.columns(lower),
+            };
+          });
+        const dirContainer = el('div', {
+          className: 'directory-view-container directory-view-cached',
+        });
+        sheetsEl.append(dirContainer);
+        domTemplate.directoryView(dirContainer, cachedSheets, navigate);
+      }
+    }
   }
 
   try {
@@ -788,11 +831,14 @@ async function showFolderContents(folderId, folderName) {
         for (const s of loadedSheets) {
           const headers = s.data.values?.[0] || [];
           const firstRow = s.data.values?.[1] || [];
+          const { key, template } = detectTemplate(headers);
           newIndex.sheets[s.id] = {
             name: s.name || s.data.title,
             headers,
             firstRow,
             modified: s.modifiedTime,
+            templateKey: key,
+            icon: template.icon || '📊',
           };
         }
         // Fire-and-forget: update or create index file
@@ -825,11 +871,20 @@ async function showFolderContents(folderId, folderName) {
       storage.setFolderIndex(folderId, localIndex);
 
       // Detect templates and group sheets
+      // Use cached templateKey from .waymark-index when available to skip
+      // detectTemplate() regex matching for unchanged sheets.
       const templateGroups = {};
       const sheetIconMap = {};  // sheet ID → template icon
       for (const s of loadedSheets) {
         const headers = s.data.values?.[0] || [];
-        const { key, template } = detectTemplate(headers);
+        const cachedEntry = indexSheets[s.id];
+        let key, template;
+        if (cachedEntry?.templateKey && TEMPLATES[cachedEntry.templateKey]) {
+          key = cachedEntry.templateKey;
+          template = TEMPLATES[key];
+        } else {
+          ({ key, template } = detectTemplate(headers));
+        }
         if (!templateGroups[key]) templateGroups[key] = { template, sheets: [] };
         const lower = headers.map(h => (h || '').toLowerCase().trim());
         const cols = template.columns(lower);
@@ -847,6 +902,10 @@ async function showFolderContents(folderId, folderName) {
       let usedDirectoryView = false;
       for (const [key, group] of Object.entries(templateGroups)) {
         if (group.template.directoryView && group.sheets.length > loadedSheets.length * 0.5) {
+          // Remove instant-cached render now that real data is ready
+          const cachedDir = sheetsEl.querySelector('.directory-view-cached');
+          if (cachedDir) cachedDir.remove();
+
           // Use the template's directory view
           const dirContainer = el('div', { className: 'directory-view-container' });
           sheetsEl.append(dirContainer);
@@ -872,6 +931,10 @@ async function showFolderContents(folderId, folderName) {
 
       // If no directory view was used, render all sheets normally
       if (!usedDirectoryView) {
+        // Remove instant-cached render if it was shown (folder composition changed)
+        const cachedDir = sheetsEl.querySelector('.directory-view-cached');
+        if (cachedDir) cachedDir.remove();
+
         for (const s of loadedSheets) {
           sheetsEl.append(el('div', {
             className: 'sheet-list-item',

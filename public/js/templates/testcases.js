@@ -1,4 +1,6 @@
-/* templates/testcases.js — Test Cases: cycle status, all fields editable */
+/* ============================================================
+   templates/testcases.js — Test Cases: cycle status, all fields editable
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 

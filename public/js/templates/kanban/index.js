@@ -1,0 +1,405 @@
+/* ============================================================
+   kanban/index.js — Enhanced Kanban Board (barrel)
+
+   Features: expandable cards, project grouping & filtering,
+   sub-tasks, notes with authors, due-date urgency, labels,
+   sort within lanes, archive toggle, lane progress.
+
+   Performance: lazy detail rendering, lane-level virtualization,
+   delegated event handling for scaling to thousands of items.
+   ============================================================ */
+
+import {
+  el, cell, emitEdit, registerTemplate, buildAddRowForm,
+  parseGroups, delegateEvent,
+} from '../shared.js';
+import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank } from './helpers.js';
+import { buildCard, buildCardDetail } from './cards.js';
+import { openCardModal } from './modal.js';
+
+/* ---------- Module state (persists across auto-refresh) ---------- */
+
+let _activeProject = null;
+let _activeSort = 'default';
+let _showArchived = false;
+let _expandedCards = new Set();
+/** Per-lane render counts: how many cards are currently shown */
+let _laneRendered = {};
+
+/* ---------- Drag-and-drop state ---------- */
+
+let _dragCard = null;     // DOM element being dragged
+let _dragRowIdx = null;   // 1-based row index of dragged card
+
+/* ---------- Template Definition ---------- */
+
+const definition = {
+  name: 'Kanban Board',
+  icon: '📋',
+  color: '#0284c7',
+  priority: 23,
+  itemNoun: 'Task',
+
+  detect(lower) {
+    return lower.some(h => /^(stage|column|lane|board|swim)/.test(h) || /backlog|in.?progress|to.?do|doing/.test(h))
+      && lower.some(h => /^(task|story|ticket|item|feature|issue|title|name|description)/.test(h));
+  },
+
+  columns(lower) {
+    const cols = {
+      text: -1, description: -1, stage: -1, project: -1,
+      assignee: -1, priority: -1, due: -1, label: -1, note: -1,
+    };
+    const used = () => Object.values(cols).filter(v => v >= 0);
+
+    cols.stage       = lower.findIndex(h => /^(stage|column|lane|board|status|swim)/.test(h) || /backlog|in.?progress|to.?do|doing/.test(h));
+    cols.text        = lower.findIndex((h, i) => !used().includes(i) && /^(task|story|ticket|item|feature|issue|title|name)/.test(h));
+    if (cols.text === -1) cols.text = lower.findIndex((_, i) => !used().includes(i));
+    cols.description = lower.findIndex((h, i) => !used().includes(i) && /^(desc|detail|body|summary)/.test(h));
+    cols.project     = lower.findIndex((h, i) => !used().includes(i) && /^(project|epic|group|module|sprint|milestone|workstream)/.test(h));
+    cols.assignee    = lower.findIndex((h, i) => !used().includes(i) && /^(assign|owner|who|person|dev|member)/.test(h));
+    cols.priority    = lower.findIndex((h, i) => !used().includes(i) && /^(priority|urgency|importance|p[0-4])/.test(h));
+    cols.due         = lower.findIndex((h, i) => !used().includes(i) && /^(due|deadline|target.?date|by|date)/.test(h));
+    cols.label       = lower.findIndex((h, i) => !used().includes(i) && /^(label|tag|type|kind|category)/.test(h));
+    cols.note        = lower.findIndex((h, i) => !used().includes(i) && /^(note|comment|remark|feedback)/.test(h));
+
+    return cols;
+  },
+
+  addRowFields(cols) {
+    return [
+      { role: 'text',        label: 'Task',        colIndex: cols.text,        type: 'text',   placeholder: 'Task title', required: true },
+      { role: 'description', label: 'Description',  colIndex: cols.description, type: 'textarea', placeholder: 'Details (optional)' },
+      { role: 'stage',       label: 'Stage',        colIndex: cols.stage,       type: 'select', options: ['Backlog', 'To Do', 'In Progress', 'Done'], defaultValue: 'Backlog' },
+      { role: 'project',     label: 'Project',      colIndex: cols.project,     type: 'combo',  placeholder: 'Select or type new…' },
+      { role: 'assignee',    label: 'Assignee',     colIndex: cols.assignee,    type: 'combo',  placeholder: 'Select or type new…' },
+      { role: 'priority',    label: 'Priority',     colIndex: cols.priority,    type: 'select', options: ['P0', 'P1', 'P2', 'P3'], defaultValue: 'P2' },
+      { role: 'due',         label: 'Due Date',     colIndex: cols.due,         type: 'date' },
+      { role: 'label',       label: 'Label',        colIndex: cols.label,       type: 'select', options: ['', 'feature', 'bug', 'infra', 'design', 'docs'] },
+    ];
+  },
+
+  stageStates: ['Backlog', 'To Do', 'In Progress', 'Done'],
+
+  stageClass(val) {
+    const v = (val || '').toLowerCase().trim();
+    if (/^(archived|archive)/.test(v)) return 'archived';
+    if (/^(done|complete|finished|closed|shipped)/.test(v)) return 'done';
+    if (/^(in.?progress|doing|active|wip|started)/.test(v)) return 'inprogress';
+    if (/^(to.?do|ready|planned|next|queued)/.test(v)) return 'todo';
+    return 'backlog';
+  },
+
+  /* ---------- Main render ---------- */
+
+  render(container, rows, cols, template) {
+    const groups = parseGroups(rows, cols.text, {
+      initGroup: () => ({ subtasks: [], notes: [] }),
+      classifyChild: (child, parent) => {
+        const noteVal = cols.note >= 0 ? cell(child.row, cols.note) : '';
+        if (noteVal) parent.notes.push(child);
+        else parent.subtasks.push(child);
+      },
+    });
+
+    // Collect unique project names and assignees for combo dropdowns
+    const allProjects = cols.project >= 0
+      ? [...new Set(groups.map(g => cell(g.row, cols.project)).filter(Boolean))].sort()
+      : [];
+    const allAssignees = cols.assignee >= 0
+      ? [...new Set(groups.map(g => cell(g.row, cols.assignee)).filter(Boolean))].sort()
+      : [];
+
+    /** Shared render context passed to card/modal builders */
+    const ctx = { cols, template, allProjects, allAssignees, expandedCards: _expandedCards };
+
+    // Project filter pills list (same as allProjects for toolbar)
+    const projects = allProjects;
+
+    /* ---- Toolbar: filter pills + sort + archive toggle ---- */
+
+    const toolbar = el('div', { className: 'kanban-toolbar' });
+
+    // Project filter pills
+    if (projects.length > 0) {
+      const filterBar = el('div', { className: 'kanban-filter-bar' });
+
+      const allPill = el('button', {
+        className: `kanban-filter-pill ${!_activeProject ? 'active' : ''}`,
+      }, ['All']);
+      allPill.addEventListener('click', () => {
+        _activeProject = null;
+        filterBar.querySelectorAll('.kanban-filter-pill').forEach(p => p.classList.remove('active'));
+        allPill.classList.add('active');
+        buildBoard();
+      });
+      filterBar.append(allPill);
+
+      for (const proj of projects) {
+        const color = projectColor(proj);
+        const pill = el('button', {
+          className: `kanban-filter-pill ${_activeProject === proj ? 'active' : ''}`,
+          style: `--pill-color: ${color}`,
+        }, [proj]);
+        pill.addEventListener('click', () => {
+          _activeProject = proj;
+          filterBar.querySelectorAll('.kanban-filter-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          buildBoard();
+        });
+        filterBar.append(pill);
+      }
+
+      toolbar.append(filterBar);
+    }
+
+    // Sort + Archive controls
+    const controls = el('div', { className: 'kanban-controls' });
+
+    const sortLabel = el('label', { className: 'kanban-sort-label' }, ['Sort:']);
+    const sortSelect = el('select', { className: 'kanban-sort-select' });
+    [['default', 'Default'], ['priority', 'Priority'], ['due', 'Due Date']].forEach(([val, txt]) => {
+      const opt = el('option', { value: val }, [txt]);
+      if (val === _activeSort) opt.selected = true;
+      sortSelect.append(opt);
+    });
+    sortSelect.addEventListener('change', () => { _activeSort = sortSelect.value; buildBoard(); });
+    controls.append(sortLabel, sortSelect);
+
+    const archiveLabel = el('label', { className: 'kanban-archive-toggle' });
+    const archiveCheck = el('input', { type: 'checkbox', className: 'kanban-archive-checkbox' });
+    archiveCheck.checked = _showArchived;
+    archiveCheck.addEventListener('change', () => { _showArchived = archiveCheck.checked; buildBoard(); });
+    archiveLabel.append(archiveCheck, ' Show Archived');
+    controls.append(archiveLabel);
+
+    toolbar.append(controls);
+    container.append(toolbar);
+
+    /* ---- Board element (rebuilt on filter/sort/archive changes) ---- */
+
+    const boardEl = el('div', { className: 'kanban-board' });
+    container.append(boardEl);
+
+    function buildBoard() {
+      boardEl.innerHTML = '';
+
+      // Filter by project
+      const filtered = _activeProject
+        ? groups.filter(g => cell(g.row, cols.project) === _activeProject)
+        : groups;
+
+      // Choose lane order
+      const laneOrder = _showArchived
+        ? ['backlog', 'todo', 'inprogress', 'done', 'archived']
+        : ['backlog', 'todo', 'inprogress', 'done'];
+
+      if (_showArchived) boardEl.classList.add('kanban-board-5');
+      else boardEl.classList.remove('kanban-board-5');
+
+      // Progress stats (for Done lane header)
+      const totalParent = filtered.length;
+      const doneParent = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === 'done').length;
+
+      // Build a lookup from group index to group for delegated events
+      const groupMap = new Map();
+      for (const g of groups) groupMap.set(g.idx + 1, g);
+
+      for (const laneKey of laneOrder) {
+        let items = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === laneKey);
+
+        // Sort
+        if (_activeSort === 'priority') {
+          items.sort((a, b) => priRank(cell(a.row, cols.priority)) - priRank(cell(b.row, cols.priority)));
+        } else if (_activeSort === 'due') {
+          items.sort((a, b) => (cell(a.row, cols.due) || 'z').localeCompare(cell(b.row, cols.due) || 'z'));
+        }
+
+        const lane = el('div', { className: `kanban-lane kanban-lane-${laneKey}` });
+
+        /* ---- Delegated drag-and-drop on lane ---- */
+        lane.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          lane.classList.add('kanban-lane-dragover');
+        });
+        lane.addEventListener('dragleave', () => {
+          lane.classList.remove('kanban-lane-dragover');
+        });
+        lane.addEventListener('drop', (e) => {
+          e.preventDefault();
+          lane.classList.remove('kanban-lane-dragover');
+          if (_dragRowIdx && cols.stage >= 0) {
+            const stageValue = LANE_LABELS[laneKey] || laneKey;
+            emitEdit(_dragRowIdx, cols.stage, stageValue);
+            if (_dragCard) {
+              _dragCard.classList.remove('kanban-card-dragging');
+              const addForm = lane.querySelector('.add-row-lane');
+              if (addForm) lane.insertBefore(_dragCard, addForm);
+              else lane.append(_dragCard);
+              const badge = _dragCard.querySelector('.kanban-stage-btn');
+              if (badge) {
+                badge.textContent = stageValue;
+                badge.className = `kanban-stage-btn kanban-stage-${template.stageClass(stageValue)}`;
+              }
+            }
+            _dragCard = null;
+            _dragRowIdx = null;
+          }
+        });
+
+        /* ---- Delegated click handlers on lane ---- */
+
+        // Stage badge cycling
+        delegateEvent(lane, 'click', '.kanban-stage-btn', (e, btn) => {
+          const card = btn.closest('.kanban-card');
+          if (!card) return;
+          e.stopPropagation();
+          const rowIdx = Number(card.dataset.rowIdx);
+          if (!rowIdx) return;
+          const states = template.stageStates;
+          const cur = btn.textContent.trim();
+          const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
+          const next = states[(si + 1) % states.length];
+          btn.textContent = next;
+          btn.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
+          emitEdit(rowIdx, cols.stage, next);
+        });
+
+        // Archive button
+        delegateEvent(lane, 'click', '.kanban-archive-btn', (e, btn) => {
+          e.stopPropagation();
+          const card = btn.closest('.kanban-card');
+          const rowIdx = Number(card.dataset.rowIdx);
+          if (!rowIdx) return;
+          card.classList.add('kanban-card-archiving');
+          setTimeout(() => card.remove(), 300);
+          emitEdit(rowIdx, cols.stage, 'Archived');
+        });
+
+        // Unarchive button
+        delegateEvent(lane, 'click', '.kanban-unarchive-btn', (e, btn) => {
+          e.stopPropagation();
+          const card = btn.closest('.kanban-card');
+          const rowIdx = Number(card.dataset.rowIdx);
+          if (!rowIdx) return;
+          card.classList.add('kanban-card-archiving');
+          setTimeout(() => card.remove(), 300);
+          emitEdit(rowIdx, cols.stage, 'Done');
+        });
+
+        // Open modal button
+        delegateEvent(lane, 'click', '.kanban-card-open', (e, btn) => {
+          e.stopPropagation();
+          const card = btn.closest('.kanban-card');
+          const rowIdx = Number(card.dataset.rowIdx);
+          const group = groupMap.get(rowIdx);
+          if (group) openCardModal(group, ctx);
+        });
+
+        // Expand/collapse button
+        delegateEvent(lane, 'click', '.kanban-card-expand', (e, btn) => {
+          e.stopPropagation();
+          const card = btn.closest('.kanban-card');
+          const rowIdx = Number(card.dataset.rowIdx);
+          if (!rowIdx) return;
+          const expanded = _expandedCards.has(rowIdx);
+
+          if (expanded) {
+            _expandedCards.delete(rowIdx);
+            const detail = card.querySelector('.kanban-card-detail');
+            if (detail) detail.classList.add('hidden');
+            card.classList.remove('kanban-card-expanded');
+            btn.textContent = '▾';
+          } else {
+            _expandedCards.add(rowIdx);
+            // Lazy detail rendering: build on first expand
+            let detail = card.querySelector('.kanban-card-detail');
+            if (!detail) {
+              const group = groupMap.get(rowIdx);
+              if (group) {
+                detail = buildCardDetail(group, ctx);
+                card.append(detail);
+              }
+            } else {
+              detail.classList.remove('hidden');
+            }
+            card.classList.add('kanban-card-expanded');
+            btn.textContent = '▴';
+          }
+        });
+
+        /* ---- Delegated drag handlers on lane (dragstart / dragend bubble) ---- */
+        delegateEvent(lane, 'dragstart', '.kanban-card', (e, card) => {
+          _dragCard = card;
+          _dragRowIdx = Number(card.dataset.rowIdx);
+          card.classList.add('kanban-card-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(_dragRowIdx));
+        });
+        delegateEvent(lane, 'dragend', '.kanban-card', (e, card) => {
+          card.classList.remove('kanban-card-dragging');
+          document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
+          _dragCard = null;
+          _dragRowIdx = null;
+        });
+
+        // Lane header
+        const headerChildren = [
+          el('span', { className: 'kanban-lane-title' }, [LANE_LABELS[laneKey] || laneKey]),
+          el('span', { className: 'kanban-lane-count' }, [String(items.length)]),
+        ];
+
+        if (laneKey === 'done' && totalParent > 0) {
+          const pct = Math.round((doneParent / totalParent) * 100);
+          headerChildren.push(el('div', { className: 'kanban-lane-progress' }, [
+            el('div', { className: 'kanban-lane-progress-bar', style: `width: ${pct}%` }),
+          ]));
+        }
+        lane.append(el('div', { className: 'kanban-lane-header' }, headerChildren));
+
+        // Virtualized card rendering: render first LANE_PAGE_SIZE cards
+        const limit = _laneRendered[laneKey] || LANE_PAGE_SIZE;
+        const visibleItems = items.slice(0, limit);
+        const remaining = items.length - visibleItems.length;
+
+        for (const group of visibleItems) {
+          lane.append(buildCard(group, ctx, laneKey));
+        }
+
+        // "Show more" button if there are remaining items
+        if (remaining > 0) {
+          const showMoreBtn = el('button', { className: 'kanban-show-more' }, [
+            `Show ${Math.min(remaining, LANE_PAGE_SIZE)} more of ${remaining} remaining`,
+          ]);
+          showMoreBtn.addEventListener('click', () => {
+            _laneRendered[laneKey] = (limit) + LANE_PAGE_SIZE;
+            buildBoard();
+          });
+          lane.append(showMoreBtn);
+        }
+
+        // Per-lane add button
+        if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {
+          const laneForm = buildAddRowForm(template, cols, template._totalColumns || 0, template._onAddRow, {
+            defaults: { stage: LANE_LABELS[laneKey] || laneKey, project: _activeProject || '' },
+            dynamicOptions: {
+              project: ['', ...allProjects],
+              assignee: ['', ...allAssignees],
+            },
+          });
+          laneForm.classList.add('add-row-lane');
+          lane.append(laneForm);
+        }
+
+        boardEl.append(lane);
+      }
+    }
+
+    /* ---- Initial build ---- */
+    buildBoard();
+  },
+};
+
+registerTemplate('kanban', definition);
+export default definition;

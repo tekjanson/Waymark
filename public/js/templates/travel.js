@@ -1,4 +1,6 @@
-/* templates/travel.js — Travel Itinerary: all fields editable inline */
+/* ============================================================
+   templates/travel.js — Travel Itinerary: all fields editable inline
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

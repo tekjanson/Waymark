@@ -1,4 +1,6 @@
-/* templates/crm.js — CRM: cycle deal stage, all fields editable */
+/* ============================================================
+   templates/crm.js — CRM: cycle deal stage, all fields editable
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 

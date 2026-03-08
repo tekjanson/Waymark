@@ -1,4 +1,6 @@
-/* templates/checklist.js — Checklist: toggle done/undone, all fields editable */
+/* ============================================================
+   templates/checklist.js — Checklist: toggle done/undone, all fields editable
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 
