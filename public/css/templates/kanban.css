@@ -126,6 +126,7 @@
 .kanban-card-title {
   font-weight: 500; font-size: 0.9rem; flex: 1;
   line-height: 1.3;
+  overflow-wrap: anywhere; word-break: break-word;
 }
 
 .kanban-card-expand {
@@ -146,6 +147,7 @@
   margin-bottom: 6px; line-height: 1.35;
   overflow: hidden; text-overflow: ellipsis;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
 
 .kanban-card-meta {
@@ -190,6 +192,7 @@
   font-weight: 600;
   background: color-mix(in srgb, var(--project-color) 15%, transparent);
   color: var(--project-color);
+  overflow-wrap: anywhere; word-break: break-word;
 }
 
 /* ---------- Assignee ---------- */
@@ -272,6 +275,7 @@
 .kanban-detail-desc {
   font-size: 0.85rem; line-height: 1.5; color: var(--color-text);
   min-height: 1.5em;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
 
 /* Detail metadata grid */
@@ -292,6 +296,7 @@
 
 .kanban-detail-field-value {
   font-size: 0.82rem; color: var(--color-text);
+  overflow-wrap: anywhere; word-break: break-word;
 }
 
 /* ---------- Sub-tasks ---------- */
@@ -340,6 +345,7 @@
 
 .kanban-subtask-text {
   font-size: 0.82rem; flex: 1; color: var(--color-text);
+  overflow-wrap: anywhere; word-break: break-word;
 }
 
 .kanban-subtask-assignee {
@@ -371,6 +377,7 @@
 
 .kanban-note-text {
   font-size: 0.82rem; line-height: 1.4; color: var(--color-text);
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
 
 /* ---------- Inline add forms (sub-tasks & notes) ---------- */
@@ -462,6 +469,145 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
+/* ---------- Focus Modal ---------- */
+
+.kanban-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 24px;
+  overflow-y: auto;
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; } to { opacity: 1; }
+}
+
+.kanban-modal {
+  background: var(--color-surface);
+  border-radius: calc(var(--radius) * 1.5);
+  box-shadow: 0 12px 48px rgba(0,0,0,.22);
+  width: 100%; max-width: 720px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: kanbanModalSlideUp 250ms ease;
+}
+
+@keyframes kanbanModalSlideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.kanban-modal-header {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.kanban-modal-header-content { flex: 1; min-width: 0; }
+
+.kanban-modal-title {
+  font-size: 1.25rem; font-weight: 700; line-height: 1.35;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+
+.kanban-modal-header-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.kanban-modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 1.3rem; color: var(--color-text-muted); padding: 4px;
+  line-height: 1; flex-shrink: 0; border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.kanban-modal-close:hover {
+  background: var(--color-bg); color: var(--color-text);
+}
+
+.kanban-modal-body {
+  padding: 20px 28px 28px;
+  overflow-y: auto;
+}
+
+.kanban-modal-body .kanban-detail-section {
+  margin-bottom: 20px;
+}
+
+.kanban-modal-body .kanban-detail-desc {
+  font-size: 0.92rem; line-height: 1.6;
+  min-height: 2em;
+}
+
+.kanban-modal-body .kanban-detail-meta {
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px 16px;
+}
+
+.kanban-modal-body .kanban-detail-field-label {
+  font-size: 0.72rem;
+}
+
+.kanban-modal-body .kanban-detail-field-value {
+  font-size: 0.88rem;
+}
+
+.kanban-modal-body .kanban-subtask-text {
+  font-size: 0.88rem;
+}
+
+.kanban-modal-body .kanban-note {
+  padding: 10px 12px;
+}
+
+.kanban-modal-body .kanban-note-text {
+  font-size: 0.88rem; line-height: 1.5;
+}
+
+.kanban-modal-body .kanban-add-inline-input {
+  font-size: 0.85rem; padding: 6px 10px;
+}
+
+.kanban-modal-body .kanban-add-inline-btn {
+  font-size: 0.85rem; padding: 6px 14px;
+}
+
+/* Open / focus button on card */
+
+.kanban-card-open {
+  background: none; border: none; cursor: pointer;
+  font-size: 0.78rem; color: var(--color-text-muted); padding: 0 2px;
+  line-height: 1; flex-shrink: 0;
+  transition: color var(--transition);
+  opacity: 0;
+}
+
+.kanban-card:hover .kanban-card-open,
+.kanban-card-open:focus {
+  opacity: 1;
+}
+
+.kanban-card-open:hover { color: var(--color-primary); }
+
+/* ---------- Show More (lane virtualization) ---------- */
+
+.kanban-show-more {
+  display: block; width: 100%; padding: 8px;
+  margin-top: 4px; border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm); background: none;
+  color: var(--color-text-muted); font-size: 0.78rem; font-weight: 500;
+  cursor: pointer; text-align: center;
+  transition: all var(--transition);
+}
+
+.kanban-show-more:hover {
+  border-color: var(--color-primary); color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 768px) {
@@ -476,6 +622,11 @@
 
   .kanban-filter-bar { gap: 4px; }
   .kanban-filter-pill { font-size: 0.72rem; padding: 3px 8px; }
+
+  .kanban-modal-overlay { padding: 16px 8px; }
+  .kanban-modal-header { padding: 16px 16px 12px; }
+  .kanban-modal-body { padding: 16px; }
+  .kanban-modal-body .kanban-detail-meta { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 480px) {

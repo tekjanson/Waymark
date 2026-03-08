@@ -1,4 +1,6 @@
-/* templates/contacts.js — Contacts: all fields editable inline */
+/* ============================================================
+   templates/contacts.js — Contacts: all fields editable inline
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

@@ -1,4 +1,6 @@
-/* templates/grading.js — Gradebook: all fields editable inline, shows averages */
+/* ============================================================
+   templates/grading.js — Gradebook: all fields editable inline, shows averages
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

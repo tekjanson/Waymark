@@ -1,4 +1,6 @@
-/* templates/log.js — Activity Log: all fields editable inline */
+/* ============================================================
+   templates/log.js — Activity Log: all fields editable inline
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

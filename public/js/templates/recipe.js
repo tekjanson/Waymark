@@ -1,17 +1,18 @@
-/* templates/recipe.js — Recipe: single-recipe-per-sheet display with
-   inline editable ingredients and instructions, plus inline add buttons,
-   recipe scaling (½×, 1×, 2×, 3×), unit conversion (metric/imperial),
-   notes section, and print-to-PDF.
+/* ============================================================
+   templates/recipe.js — Recipe: single-recipe-per-sheet display
 
-   Sheet format: one row per ingredient/step. Recipe metadata (name,
-   servings, prep, cook, category, difficulty) lives on the first row.
-   Continuation rows leave the recipe-name cell blank. Each list item
-   occupies its own row.  Qty and Unit are separate columns so scaling
-   and unit conversion work cleanly. Notes column holds recipe-level
-   or per-row notes.
+   Inline editable ingredients and instructions, plus inline add
+   buttons, recipe scaling (½×, 1×, 2×, 3×), unit conversion
+   (metric/imperial), notes section, and print-to-PDF.
+
+   Sheet format: one row per ingredient/step. Recipe metadata
+   (name, servings, prep, cook, category, difficulty) lives on
+   the first row. Continuation rows leave the recipe-name cell
+   blank (§4.7 contiguous row-grouping). Qty and Unit are
+   separate columns so scaling and conversion work cleanly.
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate, emitEdit } from './shared.js';
+import { el, cell, editableCell, registerTemplate, emitEdit, delegateEvent } from './shared.js';
 
 /* ---------- Quantity parsing & scaling helpers ---------- */
 
@@ -618,43 +619,6 @@ const definition = {
         qtySpan.dataset.rowIdx = String(item.rowIdx);
         qtySpan.dataset.colIdx = String(qtyColIdx);
 
-        // Inline-edit qty — activates only at 1\u00D7 scale + original units
-        if (qtyColIdx >= 0) {
-          qtySpan.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (currentScale !== 1 || currentConversion !== 'original') return;
-            if (qtySpan.querySelector('input')) return;
-            const current = qtySpan.dataset.originalQty || '';
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'editable-cell-input';
-            input.value = current;
-            qtySpan.textContent = '';
-            qtySpan.append(input);
-            input.focus();
-            input.select();
-
-            function commit() {
-              const nv = input.value.trim();
-              input.removeEventListener('blur', commit);
-              qtySpan.textContent = nv || '';
-              qtySpan.dataset.originalQty = nv;
-              if (nv !== current && !(current === '' && nv === '')) {
-                emitEdit(item.rowIdx, qtyColIdx, nv);
-              }
-            }
-            function cancel() {
-              input.removeEventListener('blur', commit);
-              qtySpan.textContent = current || '';
-            }
-            input.addEventListener('blur', commit);
-            input.addEventListener('keydown', (ev) => {
-              if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
-              if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
-            });
-          });
-        }
-
         quantitySpans.push(qtySpan);
 
         // Unit span — manually managed for conversion control (not editableCell)
@@ -669,42 +633,6 @@ const definition = {
           unitSpanEl.dataset.rowIdx = String(item.rowIdx);
           unitSpanEl.dataset.colIdx = String(cols.unit);
 
-          // Inline-edit unit — only at 1\u00D7 scale + original
-          unitSpanEl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (currentScale !== 1 || currentConversion !== 'original') return;
-            if (unitSpanEl.querySelector('input')) return;
-            const current = unitSpanEl.dataset.originalUnit || '';
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.className = 'editable-cell-input';
-            input.value = current;
-            unitSpanEl.textContent = '';
-            unitSpanEl.append(input);
-            input.focus();
-            input.select();
-
-            function commit() {
-              const nv = input.value.trim();
-              input.removeEventListener('blur', commit);
-              unitSpanEl.textContent = nv || '';
-              unitSpanEl.dataset.originalUnit = nv;
-              qtySpan.dataset.originalUnit = nv;
-              if (nv !== current && !(current === '' && nv === '')) {
-                emitEdit(item.rowIdx, cols.unit, nv);
-              }
-            }
-            function cancel() {
-              input.removeEventListener('blur', commit);
-              unitSpanEl.textContent = current || '';
-            }
-            input.addEventListener('blur', commit);
-            input.addEventListener('keydown', (ev) => {
-              if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
-              if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
-            });
-          });
-
           unitSpans.push(unitSpanEl);
         }
 
@@ -714,6 +642,86 @@ const definition = {
           editableCell('span', { className: 'recipe-ingredient-text' }, item.text, item.rowIdx, cols.ingredient),
         ]);
         ul.append(li);
+      }
+
+      // Delegated inline-edit for qty spans (one listener instead of N)
+      if (qtyColIdx >= 0) {
+        delegateEvent(ul, 'click', '.recipe-ingredient-qty', (e, qtySpan) => {
+          e.stopPropagation();
+          if (currentScale !== 1 || currentConversion !== 'original') return;
+          if (qtySpan.querySelector('input')) return;
+          const current = qtySpan.dataset.originalQty || '';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'editable-cell-input';
+          input.value = current;
+          qtySpan.textContent = '';
+          qtySpan.append(input);
+          input.focus();
+          input.select();
+
+          const rowIdx = Number(qtySpan.dataset.rowIdx);
+          function commit() {
+            const nv = input.value.trim();
+            input.removeEventListener('blur', commit);
+            qtySpan.textContent = nv || '';
+            qtySpan.dataset.originalQty = nv;
+            if (nv !== current && !(current === '' && nv === '')) {
+              emitEdit(rowIdx, qtyColIdx, nv);
+            }
+          }
+          function cancel() {
+            input.removeEventListener('blur', commit);
+            qtySpan.textContent = current || '';
+          }
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
+            if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+          });
+        });
+      }
+
+      // Delegated inline-edit for unit spans (one listener instead of N)
+      if (useSplitQty && cols.unit >= 0) {
+        delegateEvent(ul, 'click', '.recipe-ingredient-unit', (e, unitSpanEl) => {
+          e.stopPropagation();
+          if (currentScale !== 1 || currentConversion !== 'original') return;
+          if (unitSpanEl.querySelector('input')) return;
+          const current = unitSpanEl.dataset.originalUnit || '';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'editable-cell-input';
+          input.value = current;
+          unitSpanEl.textContent = '';
+          unitSpanEl.append(input);
+          input.focus();
+          input.select();
+
+          const rowIdx = Number(unitSpanEl.dataset.rowIdx);
+          // Find sibling qty span to keep its originalUnit in sync
+          const li = unitSpanEl.closest('li');
+          const qtySpan = li ? li.querySelector('.recipe-ingredient-qty') : null;
+          function commit() {
+            const nv = input.value.trim();
+            input.removeEventListener('blur', commit);
+            unitSpanEl.textContent = nv || '';
+            unitSpanEl.dataset.originalUnit = nv;
+            if (qtySpan) qtySpan.dataset.originalUnit = nv;
+            if (nv !== current && !(current === '' && nv === '')) {
+              emitEdit(rowIdx, cols.unit, nv);
+            }
+          }
+          function cancel() {
+            input.removeEventListener('blur', commit);
+            unitSpanEl.textContent = current || '';
+          }
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
+            if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+          });
+        });
       }
 
       // Add ingredient button
@@ -876,9 +884,10 @@ const definition = {
       }
       updateIngredientDisplay();
     }
-    for (const btn of scaleButtons) {
-      btn.addEventListener('click', () => applyScale(Number(btn.dataset.scale), true));
-    }
+    // Delegated scale-button clicks (one listener instead of N)
+    delegateEvent(scaleBar, 'click', '.recipe-scale-btn', (_e, btn) => {
+      applyScale(Number(btn.dataset.scale), true);
+    });
     // Custom scale input events
     function handleCustomScale() {
       const val = parseFloat(customScaleInput.value);
@@ -890,9 +899,11 @@ const definition = {
     customScaleInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); handleCustomScale(); }
     });
-    // Conversion button events
-    for (const btn of convertButtons) {
-      btn.addEventListener('click', () => applyConversion(btn.dataset.conversion));
+    // Delegated conversion-button clicks (one listener instead of N)
+    if (convertBar) {
+      delegateEvent(convertBar, 'click', '.recipe-convert-btn', (_e, btn) => {
+        applyConversion(btn.dataset.conversion);
+      });
     }
 
     // --- Assemble single recipe card ---
@@ -917,14 +928,19 @@ const definition = {
 
   /**
    * Render a cookbook-style directory view for a folder of recipe sheets.
-   * Shows a sortable table with Recipe, Servings, Prep Time, Cook Time, Category, Difficulty.
+   * Shows a sortable, filterable grid of recipe cards.
+   *
+   * Optimised: card DOM is built once per entry, then reordered / shown /
+   * hidden on sort & filter changes.  All events are delegated on stable
+   * ancestor nodes so no listeners are created per-card or per-toolbar
+   * rebuild.
    *
    * @param {HTMLElement} container — target element
    * @param {{ id: string, name: string, rows: string[][], cols: Object }[]} sheets — pre-fetched sheet data
    * @param {function} navigateFn — callback(type, id, name)
    */
   directoryView(container, sheets, navigateFn) {
-    // Extract metadata from each sheet's first data row
+    // --- Extract metadata once per sheet ---
     const allEntries = sheets.map(s => {
       const firstRow = s.rows[0] || [];
       return {
@@ -936,14 +952,46 @@ const definition = {
         cookTime: cell(firstRow, s.cols.cookTime),
         category: cell(firstRow, s.cols.category),
         difficulty: cell(firstRow, s.cols.difficulty),
+        el: null,  // card DOM — built once below
       };
     });
 
-    // Sort state
+    // --- Pre-build card DOM for every entry (one-time cost) ---
+    for (const entry of allEntries) {
+      const diffClass = (entry.difficulty || '').toLowerCase().replace(/[^a-z]/g, '');
+
+      const pills = [];
+      if (entry.servings) {
+        pills.push(el('span', { className: 'cookbook-pill' }, ['\uD83C\uDF7D\uFE0F ' + entry.servings]));
+      }
+      if (entry.prepTime) {
+        pills.push(el('span', { className: 'cookbook-pill' }, ['\u23F1\uFE0F ' + entry.prepTime]));
+      }
+      if (entry.cookTime) {
+        pills.push(el('span', { className: 'cookbook-pill' }, ['\uD83D\uDD25 ' + entry.cookTime]));
+      }
+
+      entry.el = el('div', { className: 'cookbook-card' }, [
+        el('div', { className: 'cookbook-card-top' }, [
+          el('span', { className: 'cookbook-card-name' }, [entry.recipe]),
+          entry.difficulty
+            ? el('span', { className: `cookbook-card-diff ${diffClass}` }, [entry.difficulty])
+            : null,
+        ]),
+        pills.length > 0
+          ? el('div', { className: 'cookbook-card-meta' }, pills)
+          : null,
+        entry.category
+          ? el('div', { className: 'cookbook-card-category' }, [entry.category])
+          : null,
+      ]);
+      entry.el.dataset.entryId = entry.id;
+      entry.el.dataset.entryName = entry.name;
+    }
+
+    // --- Sort & filter state ---
     let sortKey = 'recipe';
     let sortAsc = true;
-
-    // Filter state
     let searchText = '';
     const activeFilters = {
       category: '',
@@ -952,13 +1000,6 @@ const definition = {
       prepTime: '',
       cookTime: '',
     };
-
-    // Collect unique values for filterable columns
-    function uniqueVals(key) {
-      const set = new Set();
-      for (const e of allEntries) { if (e[key]) set.add(e[key]); }
-      return [...set].sort();
-    }
 
     const sortOptions = [
       { key: 'recipe', label: 'Name' },
@@ -977,14 +1018,22 @@ const definition = {
       { key: 'cookTime', label: 'Cook Time' },
     ];
 
+    // Cache unique filter values (immutable for the lifetime of the view)
+    const filterOpts = {};
+    for (const col of filterColumns) {
+      const set = new Set();
+      for (const e of allEntries) { if (e[col.key]) set.add(e[col.key]); }
+      filterOpts[col.key] = [...set].sort();
+    }
+
     function getFilteredEntries() {
       let list = allEntries;
       const q = searchText.toLowerCase();
       if (q) {
         list = list.filter(e =>
           e.recipe.toLowerCase().includes(q) ||
-          e.category.toLowerCase().includes(q) ||
-          e.difficulty.toLowerCase().includes(q)
+          (e.category || '').toLowerCase().includes(q) ||
+          (e.difficulty || '').toLowerCase().includes(q)
         );
       }
       for (const [key, val] of Object.entries(activeFilters)) {
@@ -1013,163 +1062,173 @@ const definition = {
     const hasActiveFilters = () =>
       searchText || Object.values(activeFilters).some(v => v);
 
-    function render() {
-      const filtered = sortList(getFilteredEntries());
-      container.innerHTML = '';
+    // --- Build stable shell (one-time) ---
+    const wrapper = el('div', { className: 'cookbook-directory' });
 
-      const wrapper = el('div', { className: 'cookbook-directory' });
+    const countSpan = el('span', { className: 'cookbook-count' });
+    wrapper.append(el('div', { className: 'cookbook-title-bar' }, [
+      el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
+      el('span', { className: 'cookbook-title' }, ['Cookbook']),
+      countSpan,
+    ]));
 
-      // --- Title bar ---
-      const titleBar = el('div', { className: 'cookbook-title-bar' }, [
-        el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
-        el('span', { className: 'cookbook-title' }, ['Cookbook']),
-        el('span', { className: 'cookbook-count' }, [
-          filtered.length === allEntries.length
-            ? `${allEntries.length} recipe${allEntries.length !== 1 ? 's' : ''}`
-            : `${filtered.length} of ${allEntries.length}`,
-        ]),
-      ]);
-      wrapper.append(titleBar);
+    const grid = el('div', { className: 'cookbook-grid' });
+    const emptyMsg = el('p', { className: 'cookbook-empty hidden' });
+    for (const entry of allEntries) grid.append(entry.el);
+    grid.append(emptyMsg);
 
-      // --- Toolbar: search + sort + filters ---
-      const toolbar = el('div', { className: 'cookbook-toolbar' });
+    // --- Delegated event handlers on stable ancestors ---
+    // Card clicks — one listener covers all cards
+    delegateEvent(grid, 'click', '.cookbook-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+    // Search input (persists through toolbar rebuilds)
+    delegateEvent(wrapper, 'input', '.cookbook-search', (_e, input) => {
+      searchText = input.value.trim();
+      updateView();
+    });
+    // Sort select
+    delegateEvent(wrapper, 'change', '[data-sort-role]', (_e, sel) => {
+      if (sortKey === sel.value) {
+        sortAsc = !sortAsc;
+      } else {
+        sortKey = sel.value;
+        sortAsc = true;
+      }
+      updateView();
+    });
+    // Sort direction toggle
+    delegateEvent(wrapper, 'click', '.cookbook-sort-dir', () => {
+      sortAsc = !sortAsc;
+      updateView();
+    });
+    // Filter selects
+    delegateEvent(wrapper, 'change', '[data-filter-key]', (_e, sel) => {
+      activeFilters[sel.dataset.filterKey] = sel.value;
+      updateView();
+    });
+    // Clear all filters
+    delegateEvent(wrapper, 'click', '.cookbook-filter-clear', () => {
+      searchText = '';
+      for (const k of Object.keys(activeFilters)) activeFilters[k] = '';
+      updateView();
+    });
 
-      // Search
-      const searchInput = el('input', {
+    // Toolbar slot — rebuilt on state change (lightweight, no listeners)
+    wrapper.append(grid);
+    container.append(wrapper);
+
+    let toolbarEl = null;
+
+    function buildToolbar() {
+      const tb = el('div', { className: 'cookbook-toolbar' });
+
+      // Search (value-only, no listener — delegated on wrapper)
+      tb.append(el('input', {
         type: 'text',
         className: 'cookbook-search',
         placeholder: 'Search recipes\u2026',
         value: searchText,
-      });
-      searchInput.addEventListener('input', () => {
-        searchText = searchInput.value.trim();
-        render();
-      });
-      toolbar.append(searchInput);
+      }));
 
-      // Sort dropdown
+      // Sort dropdown (no listener — delegated on wrapper)
       const sortSelect = el('select', {
         className: 'cookbook-sort-select',
         title: 'Sort by',
       });
+      sortSelect.dataset.sortRole = '';
       for (const opt of sortOptions) {
         const label = opt.label + (sortKey === opt.key ? (sortAsc ? ' \u2191' : ' \u2193') : '');
         const optEl = el('option', { value: opt.key }, [label]);
         if (sortKey === opt.key) optEl.selected = true;
         sortSelect.append(optEl);
       }
-      sortSelect.addEventListener('change', () => {
-        if (sortKey === sortSelect.value) {
-          sortAsc = !sortAsc;
-        } else {
-          sortKey = sortSelect.value;
-          sortAsc = true;
-        }
-        render();
-      });
 
       const sortDir = el('button', {
         className: 'cookbook-sort-dir',
         type: 'button',
         title: sortAsc ? 'Ascending' : 'Descending',
       }, [sortAsc ? '\u2191' : '\u2193']);
-      sortDir.addEventListener('click', () => { sortAsc = !sortAsc; render(); });
 
-      toolbar.append(el('div', { className: 'cookbook-sort-group' }, [sortSelect, sortDir]));
+      tb.append(el('div', { className: 'cookbook-sort-group' }, [sortSelect, sortDir]));
 
-      // Filter dropdowns
+      // Filter dropdowns (no listeners — delegated on wrapper)
       for (const col of filterColumns) {
-        const opts = uniqueVals(col.key);
+        const opts = filterOpts[col.key];
         if (opts.length < 2) continue;
         const select = el('select', {
           className: `cookbook-filter-select${activeFilters[col.key] ? ' active' : ''}`,
           title: `Filter by ${col.label}`,
         });
+        select.dataset.filterKey = col.key;
         select.append(el('option', { value: '' }, [col.label]));
         for (const opt of opts) {
           const optEl = el('option', { value: opt }, [opt]);
           if (activeFilters[col.key] === opt) optEl.selected = true;
           select.append(optEl);
         }
-        select.addEventListener('change', () => {
-          activeFilters[col.key] = select.value;
-          render();
-        });
-        toolbar.append(select);
+        tb.append(select);
       }
 
-      // Clear all
+      // Clear button (only when filters active — no listener, delegated)
       if (hasActiveFilters()) {
-        const clearBtn = el('button', {
+        tb.append(el('button', {
           className: 'cookbook-filter-clear',
           type: 'button',
           title: 'Clear all filters',
-        }, ['Clear']);
-        clearBtn.addEventListener('click', () => {
-          searchText = '';
-          for (const k of Object.keys(activeFilters)) activeFilters[k] = '';
-          render();
-        });
-        toolbar.append(clearBtn);
+        }, ['Clear']));
       }
 
-      wrapper.append(toolbar);
+      return tb;
+    }
 
-      // --- Recipe cards ---
-      const grid = el('div', { className: 'cookbook-grid' });
+    function updateView() {
+      const filtered = sortList(getFilteredEntries());
+      const filteredSet = new Set(filtered.map(e => e.id));
 
+      // Update recipe count
+      countSpan.textContent = filtered.length === allEntries.length
+        ? `${allEntries.length} recipe${allEntries.length !== 1 ? 's' : ''}`
+        : `${filtered.length} of ${allEntries.length}`;
+
+      // Rebuild toolbar (small element count, zero listeners — all delegated)
+      const newToolbar = buildToolbar();
+      if (toolbarEl) {
+        toolbarEl.replaceWith(newToolbar);
+      } else {
+        wrapper.insertBefore(newToolbar, grid);
+      }
+      toolbarEl = newToolbar;
+
+      // Show / hide cards and reorder (main perf win — no DOM recreation)
+      for (const entry of allEntries) {
+        entry.el.classList.toggle('hidden', !filteredSet.has(entry.id));
+      }
       for (const entry of filtered) {
-        const diffClass = (entry.difficulty || '').toLowerCase().replace(/[^a-z]/g, '');
-
-        // Build meta pills
-        const pills = [];
-        if (entry.servings) {
-          pills.push(el('span', { className: 'cookbook-pill' }, ['\uD83C\uDF7D\uFE0F ' + entry.servings]));
-        }
-        if (entry.prepTime) {
-          pills.push(el('span', { className: 'cookbook-pill' }, ['\u23F1\uFE0F ' + entry.prepTime]));
-        }
-        if (entry.cookTime) {
-          pills.push(el('span', { className: 'cookbook-pill' }, ['\uD83D\uDD25 ' + entry.cookTime]));
-        }
-
-        const card = el('div', {
-          className: 'cookbook-card',
-          on: { click() { navigateFn('sheet', entry.id, entry.name); } },
-        }, [
-          el('div', { className: 'cookbook-card-top' }, [
-            el('span', { className: 'cookbook-card-name' }, [entry.recipe]),
-            entry.difficulty
-              ? el('span', { className: `cookbook-card-diff ${diffClass}` }, [entry.difficulty])
-              : null,
-          ]),
-          pills.length > 0
-            ? el('div', { className: 'cookbook-card-meta' }, pills)
-            : null,
-          entry.category
-            ? el('div', { className: 'cookbook-card-category' }, [entry.category])
-            : null,
-        ]);
-        grid.append(card);
+        grid.append(entry.el);   // moves existing element to sorted position
       }
+      grid.append(emptyMsg);    // keep empty message at end
 
       if (filtered.length === 0) {
-        grid.append(el('p', { className: 'cookbook-empty' }, [
-          hasActiveFilters() ? 'No recipes match your filters.' : 'No recipes found.',
-        ]));
+        emptyMsg.textContent = hasActiveFilters()
+          ? 'No recipes match your filters.'
+          : 'No recipes found.';
+        emptyMsg.classList.remove('hidden');
+      } else {
+        emptyMsg.classList.add('hidden');
       }
 
-      wrapper.append(grid);
-      container.append(wrapper);
-
-      // Restore search focus
+      // Restore search focus & caret position
       if (searchText) {
-        searchInput.focus();
-        searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+        const si = wrapper.querySelector('.cookbook-search');
+        if (si) {
+          si.focus();
+          si.setSelectionRange(si.value.length, si.value.length);
+        }
       }
     }
 
-    render();
+    updateView();
   },
 };
 

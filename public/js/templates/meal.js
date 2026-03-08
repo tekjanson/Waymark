@@ -1,4 +1,6 @@
-/* templates/meal.js — Meal Planner: all fields editable inline */
+/* ============================================================
+   templates/meal.js — Meal Planner: all fields editable inline
+   ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 

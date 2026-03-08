@@ -1,4 +1,6 @@
-/* templates/roster.js — Roster: shift grid, all fields editable */
+/* ============================================================
+   templates/roster.js — Roster: shift grid, all fields editable
+   ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
 
