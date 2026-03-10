@@ -33,6 +33,21 @@
 .recipe-difficulty-badge.medium  { background: #fefce8; color: #ca8a04; }
 .recipe-difficulty-badge.hard    { background: #fef2f2; color: #dc2626; }
 
+/* Photo */
+.recipe-photo {
+  width: 100%;
+  max-height: 320px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+}
+.recipe-photo-img {
+  width: 100%;
+  height: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  display: block;
+}
+
 /* Scale controls */
 .recipe-scale-bar {
   display: flex; align-items: center; gap: 6px;
@@ -191,13 +206,128 @@
   letter-spacing: 0.04em; color: #ea580c;
   margin: 0 0 6px;
 }
+
+/* Mode bar — cooking / shopping toggles */
+.recipe-mode-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.recipe-mode-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.recipe-mode-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+/* Ingredient checkoff (cooking mode) */
+.recipe-ingredient-checked {
+  text-decoration: line-through;
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+.recipe-ingredient-checked::before {
+  content: '\2713' !important;
+  color: #16a34a !important;
+}
+
+/* Shopping list mode */
+.recipe-shopping-mode .recipe-scale-bar,
+.recipe-shopping-mode .recipe-convert-bar,
+.recipe-shopping-mode .recipe-meta-row,
+.recipe-shopping-mode .recipe-source-bar,
+.recipe-shopping-mode .recipe-card-instructions,
+.recipe-shopping-mode .recipe-card-notes,
+.recipe-shopping-mode .recipe-mode-bar .recipe-mode-btn:not(.recipe-shopping-btn) {
+  display: none;
+}
+.recipe-shopping-mode .recipe-card-ingredients {
+  border-top: none;
+  padding-top: 4px;
+}
+.recipe-shopping-mode .recipe-ingredients-list li {
+  padding: 5px 0;
+  cursor: pointer;
+}
+.recipe-shopping-mode .recipe-ingredients-list li::before {
+  content: '\25A1';
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+.recipe-shopping-mode .recipe-ingredient-checked::before {
+  content: '\2611' !important;
+  color: #16a34a !important;
+}
+.recipe-shopping-mode .recipe-shopping-btn {
+  background: #ea580c;
+  color: #fff;
+  border-color: #ea580c;
+}
+
+/* --- Status + Rating --- */
+.recipe-status-rating {
+  display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+  padding: 10px 0; border-bottom: 1px solid var(--color-border);
+}
+.recipe-status-badge {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;
+  border: 1px solid; cursor: pointer; transition: all var(--transition);
+  white-space: nowrap;
+}
+.recipe-status-untested { background: #f5f5f4; color: #78716c; border-color: #d6d3d1; }
+.recipe-status-approved { background: #dcfce7; color: #166534; border-color: #86efac; }
+.recipe-status-needs-work { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+
+.recipe-rating-section { display: flex; flex-direction: column; gap: 6px; }
+.recipe-rating-avg { font-size: 1.1rem; display: flex; align-items: center; gap: 2px; }
+.recipe-star { font-size: 1.1rem; line-height: 1; }
+.recipe-star-filled { color: #f59e0b; }
+.recipe-star-empty { color: #d1d5db; }
+.recipe-rating-count { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 4px; }
+
+.recipe-rating-breakdown { display: flex; flex-wrap: wrap; gap: 8px; }
+.recipe-rating-person { display: flex; align-items: center; gap: 3px; font-size: 0.8rem; }
+.recipe-rating-name { font-weight: 600; color: var(--color-text-muted); margin-right: 2px; }
+.recipe-rating-name::after { content: ':'; }
+
+.recipe-your-rating { display: flex; align-items: center; gap: 4px; }
+.recipe-rating-label { font-size: 0.8rem; font-weight: 500; color: var(--color-text-muted); margin-right: 4px; }
+.recipe-rate-star {
+  background: none; border: none; cursor: pointer; font-size: 1.3rem;
+  padding: 0 1px; line-height: 1; transition: transform 0.15s;
+}
+.recipe-rate-star:hover { transform: scale(1.3); }
+
+/* Print: shopping list mode */
+@media print {
+  .recipe-shopping-mode .recipe-card-header {
+    padding: 8px 12px;
+  }
+  .recipe-shopping-mode .recipe-card-title {
+    font-size: 1rem;
+  }
+  .recipe-shopping-mode .recipe-ingredients-list li {
+    padding: 3px 0;
+  }
+}
+
 .recipe-ingredients-list {
   list-style: none; margin: 0; padding: 0;
   font-size: 0.85rem;
 }
 .recipe-ingredients-list li {
-  display: flex; align-items: baseline; gap: 6px;
-  padding: 2px 0;
+  display: flex; align-items: baseline; gap: 4px;
+  padding: 3px 0;
   color: var(--color-text-muted);
 }
 .recipe-ingredients-list li::before {
@@ -207,15 +337,27 @@
   font-weight: 600; color: var(--color-text);
   font-size: 1.06rem;
   white-space: nowrap;
-  /* Mirror .editable-cell base sizing so toggling the class doesn't shift layout */
+  min-width: 2.5em; width: 2.5em; flex-shrink: 0;
+  text-align: left;
   padding: 1px 4px;
-  margin: -1px -4px;
-  min-width: 1.5em;
+  margin: -1px 0;
   border-radius: var(--radius-sm);
   transition: color 0.15s;
 }
+.recipe-ingredient-unit {
+  font-size: 1.06rem;
+  font-weight: 600;
+  color: #a8845c;
+  white-space: nowrap;
+  min-width: 3.5em; width: 3.5em; flex-shrink: 0;
+  text-align: left;
+  padding: 1px 4px;
+  margin-top: -1px; margin-bottom: -1px;
+  border-radius: var(--radius-sm);
+}
 .recipe-ingredient-text {
   flex: 1;
+  font-size: 0.92rem;
 }
 
 .recipe-card-instructions {
@@ -312,20 +454,6 @@
   border-color: #ea580c;
   color: #ea580c;
   background: #fff7ed;
-}
-
-/* Ingredient unit */
-.recipe-ingredient-unit {
-  font-size: 1.06rem;
-  font-weight: 600;
-  color: #a8845c;
-  white-space: nowrap;
-  margin-right: 2px;
-  /* Mirror .editable-cell base sizing so toggling the class doesn't shift layout */
-  padding: 1px 4px;
-  margin-top: -1px; margin-bottom: -1px;
-  min-width: 1.5em;
-  border-radius: var(--radius-sm);
 }
 
 /* Notes section */
@@ -775,9 +903,11 @@
   }
   .recipe-ingredient-qty {
     color: #000;
+    min-width: 2.5em; width: 2.5em;
   }
   .recipe-ingredient-unit {
     color: #000;
+    min-width: 3.5em; width: 3.5em;
   }
 
   .recipe-card-instructions {

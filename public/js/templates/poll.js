@@ -1,12 +1,15 @@
 /* ============================================================
-   templates/poll.js — Poll / Survey: all fields editable inline
+   templates/poll.js \u2014 Poll / Survey: animated bars + live mode
    ============================================================ */
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 
+/* ---------- Module state ---------- */
+let liveTimer = null;
+
 const definition = {
   name: 'Poll / Survey',
-  icon: '📊',
+  icon: '\uD83D\uDCCA',
   color: '#be185d',
   priority: 18,
   itemNoun: 'Option',
@@ -43,25 +46,53 @@ const definition = {
       totalVotes += v;
     }
 
-    container.append(el('div', { className: 'poll-total' }, [`${totalVotes} total votes`]));
+    /* --- toolbar: total + live toggle --- */
+    const liveBtn = el('button', {
+      className: 'poll-live-btn' + (liveTimer ? ' poll-live-active' : ''),
+    }, [liveTimer ? '\u25C9 Live' : '\u25CB Live']);
 
+    liveBtn.addEventListener('click', () => {
+      if (liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+        liveBtn.textContent = '\u25CB Live';
+        liveBtn.classList.remove('poll-live-active');
+        window.dispatchEvent(new CustomEvent('waymark:set-refresh-rate', { detail: 0 }));
+      } else {
+        liveBtn.textContent = '\u25C9 Live';
+        liveBtn.classList.add('poll-live-active');
+        window.dispatchEvent(new CustomEvent('waymark:set-refresh-rate', { detail: 10000 }));
+        liveTimer = setInterval(() => {}, 10000); // keep reference for toggle state
+      }
+    });
+
+    const toolbar = el('div', { className: 'poll-toolbar' }, [
+      el('span', { className: 'poll-total' }, [`${totalVotes} total votes`]),
+      liveBtn,
+    ]);
+    container.append(toolbar);
+
+    /* --- poll rows with animated bars + inline percentage --- */
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowIdx = i + 1;
-      const text = cell(row, cols.text) || row[0] || '—';
+      const text = cell(row, cols.text) || row[0] || '\u2014';
       const votes = parseInt(cell(row, cols.votes)) || 0;
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
       const barWidth = maxVotes > 0 ? Math.round((votes / maxVotes) * 100) : 0;
       const notes = cell(row, cols.notes);
+
+      const barChildren = [
+        el('div', { className: 'poll-bar', style: { width: `${barWidth}%` } },
+          barWidth > 15 ? [el('span', { className: 'poll-bar-label' }, [`${pct}%`])] : []),
+      ];
 
       container.append(el('div', { className: 'poll-row' }, [
         el('div', { className: 'poll-row-label' }, [
           editableCell('span', { className: 'poll-option-text' }, text, rowIdx, cols.text),
           cols.notes >= 0 ? editableCell('span', { className: 'poll-option-notes' }, notes, rowIdx, cols.notes) : null,
         ]),
-        el('div', { className: 'poll-bar-wrap' }, [
-          el('div', { className: 'poll-bar', style: { width: `${barWidth}%` } }),
-        ]),
+        el('div', { className: 'poll-bar-wrap' }, barChildren),
         el('div', { className: 'poll-row-stats' }, [
           editableCell('span', { className: 'poll-votes-count' }, String(votes), rowIdx, cols.votes),
           el('span', { className: 'poll-pct' }, [`${pct}%`]),

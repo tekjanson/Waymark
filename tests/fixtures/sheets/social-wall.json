@@ -1,0 +1,20 @@
+{
+  "id": "sheet-030",
+  "title": "Jamie's Wall",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Post", "Author", "Date", "Category", "Mood", "Link", "Comment"],
+    ["Just shipped a major update to Waymark! The kanban board now has reject tickets, reporter column, and a directory view. So excited about how this is coming together.", "Jamie", "2026-03-10", "milestone", "excited", "", ""],
+    ["", "Alex", "2026-03-10", "", "", "", "Congrats! The new features look awesome."],
+    ["", "Sam", "2026-03-10", "", "", "", "Can't wait to try the directory view!"],
+    ["Working on the social template today. The idea is that each Google Sheet becomes a personal wall that you can share with friends.", "Jamie", "2026-03-09", "update", "thinking", "", ""],
+    ["Check out this article on building apps with vanilla JS — no frameworks needed!", "Jamie", "2026-03-08", "link", "", "https://developer.mozilla.org/en-US/docs/Learn/JavaScript", ""],
+    ["", "Alex", "2026-03-08", "", "", "", "Great read! Vanilla JS is underrated."],
+    ["Had an amazing dinner tonight. Tried the gluten-free pasta recipe from Mimi's cookbook. Turned out perfect!", "Jamie", "2026-03-07", "update", "happy", "", ""],
+    ["What's everyone's favorite productivity tool? Looking for recommendations.", "Jamie", "2026-03-06", "question", "", "", ""],
+    ["", "Sam", "2026-03-06", "", "", "", "I love Waymark of course!"],
+    ["", "Alex", "2026-03-06", "", "", "", "Notion is pretty good too."],
+    ["", "Riley", "2026-03-06", "", "", "", "Obsidian for notes, Waymark for everything else."],
+    ["Feeling grateful for this community. Building things together is the best.", "Jamie", "2026-03-05", "thought", "grateful", "", ""]
+  ]
+}

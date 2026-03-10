@@ -3,15 +3,15 @@
   "title": "Spaghetti Bolognese",
   "sheetTitle": "Sheet1",
   "values": [
-    ["Recipe", "Servings", "Prep Time", "Cook Time", "Category", "Difficulty", "Qty", "Unit", "Ingredient", "Step", "Notes", "Source"],
-    ["Spaghetti Bolognese", "4", "15 min", "45 min", "Italian", "Easy", "400", "g", "spaghetti", "Cook spaghetti according to package directions", "A classic Italian comfort dish", "https://example.com/spaghetti-bolognese"],
-    ["", "", "", "", "", "", "500", "g", "ground beef", "Brown ground beef in a large pan", "", ""],
-    ["", "", "", "", "", "", "1", "", "onion, diced", "Add onion and garlic, cook 3 min", "", ""],
-    ["", "", "", "", "", "", "3", "cloves", "garlic", "Stir in tomatoes, paste, and oregano", "", ""],
-    ["", "", "", "", "", "", "800", "g", "canned tomatoes", "Simmer 30 min, stirring occasionally", "", ""],
-    ["", "", "", "", "", "", "2", "tbsp", "tomato paste", "Season with salt and pepper", "", ""],
-    ["", "", "", "", "", "", "1", "tsp", "dried oregano", "Serve sauce over spaghetti", "", ""],
-    ["", "", "", "", "", "", "", "", "salt and pepper", "Top with parmesan", "", ""],
-    ["", "", "", "", "", "", "", "", "parmesan cheese", "", "", ""]
+    ["Recipe", "Servings", "Prep Time", "Cook Time", "Category", "Difficulty", "Qty", "Unit", "Ingredient", "Step", "Notes", "Source", "Status", "Rating", "Photo"],
+    ["Spaghetti Bolognese", "4", "15 min", "45 min", "Italian", "Easy", "400", "g", "spaghetti", "Cook spaghetti according to package directions", "A classic Italian comfort dish", "https://example.com/spaghetti-bolognese", "Approved", "Dad:5,Mom:4,Baby:3", "https://example.com/images/spaghetti-bolognese.jpg"],
+    ["", "", "", "", "", "", "500", "g", "ground beef", "Brown ground beef in a large pan", "", "", "", "", ""],
+    ["", "", "", "", "", "", "1", "", "onion, diced", "Add onion and garlic, cook 3 min", "", "", "", "", ""],
+    ["", "", "", "", "", "", "3", "cloves", "garlic", "Stir in tomatoes, paste, and oregano", "", "", "", "", ""],
+    ["", "", "", "", "", "", "800", "g", "canned tomatoes", "Simmer 30 min, stirring occasionally", "", "", "", "", ""],
+    ["", "", "", "", "", "", "2", "tbsp", "tomato paste", "Season with salt and pepper", "", "", "", "", ""],
+    ["", "", "", "", "", "", "1", "tsp", "dried oregano", "Serve sauce over spaghetti", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", "salt and pepper", "Top with parmesan", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", "parmesan cheese", "", "", "", "", "", ""]
   ]
 }

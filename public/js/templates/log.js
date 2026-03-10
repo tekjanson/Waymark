@@ -4,6 +4,9 @@
 
 import { el, cell, editableCell, registerTemplate } from './shared.js';
 
+/** Number of entries to show per page */
+const PAGE_SIZE = 50;
+
 const definition = {
   name: 'Activity Log',
   icon: '📝',
@@ -41,25 +44,50 @@ const definition = {
     const indexed = rows.map((row, i) => ({ row, originalIndex: i }));
     indexed.reverse();
 
-    for (const { row, originalIndex } of indexed) {
-      const rowIdx = originalIndex + 1;
-      const text      = cell(row, cols.text) || row[0] || '—';
-      const timestamp = cell(row, cols.timestamp);
-      const type      = cell(row, cols.type);
-      const duration  = cell(row, cols.duration);
+    let shown = 0;
 
-      container.append(el('div', { className: 'template-log-entry' }, [
-        el('div', { className: 'template-log-dot' }),
-        el('div', { className: 'template-log-content' }, [
-          el('div', { className: 'template-log-header' }, [
-            cols.timestamp >= 0 ? editableCell('span', { className: 'template-log-time' }, timestamp, rowIdx, cols.timestamp) : null,
-            cols.type >= 0      ? editableCell('span', { className: 'template-log-type' }, type, rowIdx, cols.type) : null,
-            cols.duration >= 0  ? editableCell('span', { className: 'template-log-duration' }, duration, rowIdx, cols.duration) : null,
+    function renderBatch(count) {
+      const end = Math.min(shown + count, indexed.length);
+      for (let j = shown; j < end; j++) {
+        const { row, originalIndex } = indexed[j];
+        const rowIdx = originalIndex + 1;
+        const text      = cell(row, cols.text) || row[0] || '\u2014';
+        const timestamp = cell(row, cols.timestamp);
+        const type      = cell(row, cols.type);
+        const duration  = cell(row, cols.duration);
+
+        container.append(el('div', { className: 'template-log-entry' }, [
+          el('div', { className: 'template-log-dot' }),
+          el('div', { className: 'template-log-content' }, [
+            el('div', { className: 'template-log-header' }, [
+              cols.timestamp >= 0 ? editableCell('span', { className: 'template-log-time' }, timestamp, rowIdx, cols.timestamp) : null,
+              cols.type >= 0      ? editableCell('span', { className: 'template-log-type' }, type, rowIdx, cols.type) : null,
+              cols.duration >= 0  ? editableCell('span', { className: 'template-log-duration' }, duration, rowIdx, cols.duration) : null,
+            ]),
+            editableCell('div', { className: 'template-log-text' }, text, rowIdx, cols.text),
           ]),
-          editableCell('div', { className: 'template-log-text' }, text, rowIdx, cols.text),
-        ]),
-      ]));
+        ]));
+      }
+      shown = end;
+      updateMoreBtn();
     }
+
+    /* "Load more" button */
+    const moreBtn = el('button', {
+      className: 'template-log-more btn btn-secondary',
+      on: { click() { renderBatch(PAGE_SIZE); } },
+    });
+    function updateMoreBtn() {
+      const remaining = indexed.length - shown;
+      if (remaining > 0) {
+        moreBtn.textContent = `Show more (${remaining} remaining)`;
+        if (!moreBtn.parentNode) container.append(moreBtn);
+      } else {
+        moreBtn.remove();
+      }
+    }
+
+    renderBatch(PAGE_SIZE);
   },
 };
 

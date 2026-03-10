@@ -50,6 +50,17 @@ const examplesCategories  = document.getElementById('examples-categories');
 const examplesCount       = document.getElementById('examples-selection-count');
 const examplesModalProg   = document.getElementById('examples-modal-progress');
 
+/* ---------- Settings Modal refs ---------- */
+const settingsModal       = document.getElementById('settings-modal');
+const settingsModalClose  = document.getElementById('settings-modal-close');
+const settingsDoneBtn     = document.getElementById('settings-done-btn');
+const settingsAutoRefresh = document.getElementById('settings-auto-refresh');
+const settingsSortOrder   = document.getElementById('settings-sort-order');
+const settingsImportFolder = document.getElementById('settings-import-folder');
+const settingsChooseFolder = document.getElementById('settings-choose-folder');
+const settingsResetFolder  = document.getElementById('settings-reset-folder');
+const settingsFolderBrowser = document.getElementById('settings-folder-browser');
+
 /* ---------- Import Modal refs ---------- */
 const importModal         = document.getElementById('import-modal');
 const importModalClose    = document.getElementById('import-modal-close');
@@ -218,6 +229,9 @@ async function boot() {
 
   // Wire create sheet modal
   initCreateSheetModal();
+
+  // Wire settings modal
+  initSettingsModal();
 
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderHome);
@@ -610,11 +624,15 @@ if (folderPinBtn) {
       userData.removePinnedFolder(currentFolderId);
       folderPinBtn.classList.remove('pinned');
       folderPinBtn.title = 'Pin folder';
+      showToast('Folder unpinned', 'success');
     } else {
       userData.addPinnedFolder({ id: currentFolderId, name: currentFolderName || 'Folder' });
       folderPinBtn.classList.add('pinned');
       folderPinBtn.title = 'Unpin folder';
+      showToast('Folder pinned to home', 'success');
     }
+    folderPinBtn.classList.add('pin-bounce');
+    folderPinBtn.addEventListener('animationend', () => folderPinBtn.classList.remove('pin-bounce'), { once: true });
     window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
   });
 }
@@ -673,6 +691,14 @@ function patchFolderIndex(folderId, sheet) {
     } catch { /* best-effort */ }
   })();
 }
+
+// Auto-patch the parent folder's .waymark-index whenever a sheet refreshes.
+// This keeps folder directory-views current without requiring a full folder visit.
+window.addEventListener('waymark:sheet-refreshed', (e) => {
+  if (currentFolderId && e.detail) {
+    patchFolderIndex(currentFolderId, e.detail);
+  }
+});
 
 async function showFolderContents(folderId, folderName) {
   currentFolderId = folderId;
@@ -1767,6 +1793,155 @@ function renderImportReview(analysis) {
     ]);
     importMappingTable.append(row);
   }
+}
+
+/* ---------- Settings Modal ---------- */
+
+function openSettingsModal() {
+  if (!settingsModal) return;
+
+  // Populate profile info
+  const avatarEl = document.getElementById('settings-avatar');
+  const nameEl = document.getElementById('settings-user-name');
+  const emailEl = document.getElementById('settings-user-email');
+
+  if (userAvatarEl.src && !userAvatarEl.classList.contains('hidden')) {
+    avatarEl.src = userAvatarEl.src;
+    avatarEl.alt = userAvatarEl.alt;
+  }
+  nameEl.textContent = _userName || '';
+  emailEl.textContent = '';
+
+  // Version / hash display
+  const versionEl = document.getElementById('settings-version');
+  if (versionEl) {
+    const hash = window.__WAYMARK_HASH || '';
+    const repo = window.__WAYMARK_REPO || '';
+    if (hash) {
+      versionEl.innerHTML = '';
+      if (repo) {
+        const link = document.createElement('a');
+        link.href = `${repo}/commit/${hash}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = hash;
+        link.className = 'settings-hash-link';
+        versionEl.append('Build: ', link);
+      } else {
+        versionEl.textContent = `Build: ${hash}`;
+      }
+    } else {
+      versionEl.textContent = '';
+    }
+  }
+
+  // Populate current preferences
+  settingsAutoRefresh.checked = userData.getAutoRefresh();
+  settingsSortOrder.value = userData.getSortOrder();
+
+  // Import folder display
+  const customName = userData.getImportFolderName();
+  settingsImportFolder.textContent = customName || 'Waymark / Imports';
+  settingsResetFolder.classList.toggle('hidden', !customName);
+  settingsFolderBrowser.classList.add('hidden');
+
+  settingsModal.classList.remove('hidden');
+}
+
+function closeSettingsModal() {
+  if (settingsModal) settingsModal.classList.add('hidden');
+  if (settingsFolderBrowser) settingsFolderBrowser.classList.add('hidden');
+}
+
+async function loadFolderBrowser() {
+  settingsFolderBrowser.innerHTML = '';
+  settingsFolderBrowser.classList.remove('hidden');
+
+  const loading = el('div', { className: 'settings-folder-item' }, ['Loading folders…']);
+  settingsFolderBrowser.append(loading);
+
+  try {
+    const result = await api.drive.listRootFolders();
+    const folders = (result.files || []).filter(f =>
+      f.mimeType === 'application/vnd.google-apps.folder'
+    );
+    settingsFolderBrowser.innerHTML = '';
+
+    if (!folders.length) {
+      settingsFolderBrowser.append(
+        el('div', { className: 'settings-folder-item' }, ['No folders found'])
+      );
+      return;
+    }
+
+    for (const folder of folders) {
+      const item = el('div', {
+        className: 'settings-folder-item',
+        dataset: { folderId: folder.id, folderName: folder.name },
+      }, [
+        el('span', {}, ['📁']),
+        el('span', {}, [folder.name]),
+      ]);
+      item.addEventListener('click', async () => {
+        await userData.setImportFolder(folder.id, folder.name);
+        settingsImportFolder.textContent = folder.name;
+        settingsResetFolder.classList.remove('hidden');
+        settingsFolderBrowser.classList.add('hidden');
+        showToast(`Import folder set to "${folder.name}"`, 'success');
+      });
+      settingsFolderBrowser.append(item);
+    }
+  } catch (err) {
+    settingsFolderBrowser.innerHTML = '';
+    settingsFolderBrowser.append(
+      el('div', { className: 'settings-folder-item' }, ['Failed to load folders'])
+    );
+  }
+}
+
+function initSettingsModal() {
+  if (!settingsModal) return;
+
+  // Open on avatar or username click
+  userAvatarEl.addEventListener('click', openSettingsModal);
+  userNameEl.addEventListener('click', openSettingsModal);
+  userAvatarEl.style.cursor = 'pointer';
+  userNameEl.style.cursor = 'pointer';
+
+  // Close handlers
+  settingsModalClose.addEventListener('click', closeSettingsModal);
+  settingsDoneBtn.addEventListener('click', closeSettingsModal);
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeSettingsModal();
+  });
+
+  // Auto-refresh toggle
+  settingsAutoRefresh.addEventListener('change', () => {
+    userData.setAutoRefresh(settingsAutoRefresh.checked);
+  });
+
+  // Sort order select
+  settingsSortOrder.addEventListener('change', () => {
+    userData.setSortOrder(settingsSortOrder.value);
+  });
+
+  // Import folder — choose button
+  settingsChooseFolder.addEventListener('click', () => {
+    if (settingsFolderBrowser.classList.contains('hidden')) {
+      loadFolderBrowser();
+    } else {
+      settingsFolderBrowser.classList.add('hidden');
+    }
+  });
+
+  // Import folder — reset button
+  settingsResetFolder.addEventListener('click', async () => {
+    await userData.setImportFolder(null, null);
+    settingsImportFolder.textContent = 'Waymark / Imports';
+    settingsResetFolder.classList.add('hidden');
+    settingsFolderBrowser.classList.add('hidden');
+    showToast('Import folder reset to default', 'success');
+  });
 }
 
 /* ---------- Known sheets for search context ---------- */

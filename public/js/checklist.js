@@ -8,7 +8,7 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
-import { buildAddRowForm, isAddRowOpen, setUserName } from './templates/shared.js';
+import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations } from './templates/shared.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -18,7 +18,7 @@ let currentValues  = null;
 let currentDataTitle = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn;
 
 /* ---------- Public ---------- */
 
@@ -32,6 +32,9 @@ export function init() {
   openInSheetsBtn = document.getElementById('open-in-sheets-btn');
   downloadCsvBtn  = document.getElementById('download-csv-btn');
   sheetPinBtn     = document.getElementById('sheet-pin-btn');
+  duplicateSheetBtn = document.getElementById('duplicate-sheet-btn');
+  shareBtn          = document.getElementById('share-btn');
+  lockBtn           = document.getElementById('lock-btn');
 
   autoToggle.checked = userData.getAutoRefresh();
 
@@ -51,6 +54,29 @@ export function init() {
     downloadCsvBtn.addEventListener('click', () => downloadCsv());
   }
 
+  if (duplicateSheetBtn) {
+    duplicateSheetBtn.addEventListener('click', () => duplicateSheet());
+  }
+
+  if (shareBtn) {
+    shareBtn.addEventListener('click', () => {
+      if (currentSheetId) {
+        window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit?usp=sharing`, '_blank');
+      }
+    });
+  }
+
+  if (lockBtn) {
+    lockBtn.addEventListener('click', () => {
+      if (!currentSheetId) return;
+      const key = `waymark-lock-${currentSheetId}`;
+      const isLocked = localStorage.getItem(key) === '1';
+      const newState = !isLocked;
+      localStorage.setItem(key, newState ? '1' : '0');
+      applyLockState(newState);
+    });
+  }
+
   if (sheetPinBtn) {
     sheetPinBtn.addEventListener('click', () => {
       if (!currentSheetId) return;
@@ -58,13 +84,17 @@ export function init() {
         userData.removePinnedSheet(currentSheetId);
         sheetPinBtn.classList.remove('pinned');
         sheetPinBtn.title = 'Pin sheet';
+        showToast('Sheet unpinned', 'success');
       } else {
         const headers = currentValues?.[0] || [];
         const { key: templateKey } = detectTemplate(headers);
         userData.addPinnedSheet({ id: currentSheetId, name: currentDataTitle || 'Untitled', templateKey });
         sheetPinBtn.classList.add('pinned');
         sheetPinBtn.title = 'Unpin sheet';
+        showToast('Sheet pinned to home', 'success');
       }
+      sheetPinBtn.classList.add('pin-bounce');
+      sheetPinBtn.addEventListener('animationend', () => sheetPinBtn.classList.remove('pin-bounce'), { once: true });
       window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
     });
   }
@@ -91,6 +121,22 @@ export function init() {
   });
 }
 
+/* ---------- Lock State ---------- */
+
+/** Apply lock/unlock visual + shared flag */
+function applyLockState(locked) {
+  setEditLocked(locked);
+  if (lockBtn) {
+    lockBtn.textContent = locked ? '\u{1F512}' : '\u{1F513}';
+    lockBtn.classList.toggle('locked', locked);
+    lockBtn.title = locked ? 'Unlock editing' : 'Lock editing';
+    lockBtn.setAttribute('aria-label', locked ? 'Unlock editing' : 'Lock editing');
+  }
+  if (itemsEl) {
+    itemsEl.classList.toggle('sheet-locked', locked);
+  }
+}
+
 /**
  * Show a sheet as a checklist.
  * @param {string} sheetId
@@ -101,7 +147,9 @@ export async function show(sheetId, sheetName) {
   titleEl.textContent = sheetName || 'Loading…';
   itemsEl.innerHTML = '';
   lastUpdatedEl.textContent = '';
-
+  // Restore per-sheet lock state
+  const locked = localStorage.getItem(`waymark-lock-${sheetId}`) === '1';
+  applyLockState(locked);
   await loadSheet(sheetId);
   resetTimer();
 }
@@ -155,6 +203,31 @@ function downloadCsv() {
   showToast('CSV downloaded', 'success');
 }
 
+/* ---------- Duplicate sheet ---------- */
+
+/**
+ * Duplicate the current sheet by reading its data and creating
+ * a new spreadsheet with the same content.
+ */
+async function duplicateSheet() {
+  if (!currentSheetId || !currentValues || currentValues.length === 0) {
+    showToast('No sheet data to duplicate', 'error');
+    return;
+  }
+  const title = `Copy of ${currentDataTitle || 'Untitled'}`;
+  try {
+    showToast('Duplicating sheet…', 'info');
+    const result = await api.sheets.createSpreadsheet(title, currentValues);
+    showToast(`Created "${title}"`, 'success');
+    // Navigate to the new sheet
+    if (result && (result.spreadsheetId || result.id)) {
+      window.location.hash = `#/sheet/${result.spreadsheetId || result.id}`;
+    }
+  } catch (err) {
+    showToast(`Failed to duplicate: ${err.message}`, 'error');
+  }
+}
+
 /* ---------- Data loading ---------- */
 
 async function loadSheet(sheetId) {
@@ -183,6 +256,16 @@ async function loadSheet(sheetId) {
       sheetPinBtn.classList.toggle('pinned', pinned);
       sheetPinBtn.title = pinned ? 'Unpin sheet' : 'Pin sheet';
     }
+
+    // Notify app.js so the parent folder's .waymark-index stays fresh
+    window.dispatchEvent(new CustomEvent('waymark:sheet-refreshed', {
+      detail: {
+        id: sheetId,
+        name: data.title,
+        headers,
+        firstRow: data.values?.[1] || [],
+      },
+    }));
   } catch (err) {
     showToast(`Failed to load sheet: ${err.message}`, 'error');
     itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;
@@ -252,6 +335,47 @@ function renderWithTemplate(values) {
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
 
+  // Migration banner: suggest adding missing columns the template now supports
+  const missing = getMissingMigrations(template, cols);
+  if (missing.length > 0) {
+    const names = missing.map(m => m.header).join(', ');
+    const banner = el('div', { className: 'migration-banner' }, [
+      el('span', { className: 'migration-text' }, [
+        `\u2728 This ${template.name} sheet can be upgraded with new columns: ${names}`,
+      ]),
+      el('button', {
+        className: 'migration-btn',
+        type: 'button',
+      }, ['Add Columns']),
+      el('button', {
+        className: 'migration-dismiss',
+        type: 'button',
+        title: 'Dismiss',
+      }, ['\u2715']),
+    ]);
+    banner.querySelector('.migration-btn').addEventListener('click', async () => {
+      try {
+        const data = await api.sheets.getSpreadsheet(currentSheetId);
+        const vals = data.values || [];
+        const headerRow = vals[0] || [];
+        for (const m of missing) headerRow.push(m.header);
+        // Pad all data rows to match new header length
+        for (let i = 1; i < vals.length; i++) {
+          while (vals[i].length < headerRow.length) vals[i].push('');
+        }
+        await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, vals);
+        showToast(`Added columns: ${names}`, 'success');
+        await loadSheet(currentSheetId);
+      } catch (err) {
+        showToast(`Migration failed: ${err.message}`, 'error');
+      }
+    });
+    banner.querySelector('.migration-dismiss').addEventListener('click', () => {
+      banner.remove();
+    });
+    itemsEl.prepend(banner);
+  }
+
   // Append add-row form if template declares fields (skip kanban + recipe — they handle inline)
   if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe') {
     const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
@@ -261,20 +385,35 @@ function renderWithTemplate(values) {
 
 /* ---------- Auto-refresh ---------- */
 
+let customRefreshRate = 0; // 0 = use default 60 s
+
+window.addEventListener('waymark:set-refresh-rate', (e) => {
+  customRefreshRate = e.detail || 0;
+  resetTimer();
+});
+
 function resetTimer() {
   clearInterval(refreshTimer);
   refreshTimer = null;
 
+  const interval = customRefreshRate || 60_000;
   if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
     refreshTimer = setInterval(() => {
       if (currentSheetId && !isAddRowOpen()) loadSheet(currentSheetId);
-    }, 60_000);
+    }, interval);
   }
 }
 
 function updateTimestamp() {
   if (!lastFetchTime) return;
   lastUpdatedEl.textContent = `Updated ${timeAgo(lastFetchTime)}`;
+  // Freshness indicator: green <1m, amber 1-5m, dim >5m
+  const ageMs = Date.now() - lastFetchTime.getTime();
+  const fresh = ageMs < 90_000; // within ~1.5 refresh cycles
+  const stale = ageMs > 300_000; // >5 min
+  lastUpdatedEl.classList.toggle('freshness-fresh', fresh);
+  lastUpdatedEl.classList.toggle('freshness-stale', stale);
+  lastUpdatedEl.classList.toggle('freshness-aging', !fresh && !stale);
   // keep updating the relative time display
   setTimeout(updateTimestamp, 10_000);
 }

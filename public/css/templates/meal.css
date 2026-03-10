@@ -22,3 +22,53 @@
 .meal-macros { display: flex; gap: 10px; }
 .meal-cal { font-size: 0.8rem; color: #d97706; font-weight: 500; }
 .meal-prot { font-size: 0.8rem; color: #059669; font-weight: 500; }
+
+/* Weekly summary bar */
+.meal-summary {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  padding: 12px 16px; margin-bottom: 12px;
+  background: linear-gradient(135deg, #f7fee7 0%, #ecfccb 100%);
+  border: 1px solid #d9f99d; border-radius: var(--radius);
+}
+.meal-summary-item {
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 80px;
+}
+.meal-summary-label {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+.meal-summary-value {
+  font-size: 1.1rem; font-weight: 700; color: #65a30d;
+}
+.meal-summary-cal { color: #d97706; }
+.meal-summary-prot { color: #059669; }
+
+/* Directory view */
+.meal-dir-title {
+  font-size: 1.1rem; font-weight: 700; color: #65a30d;
+  margin-bottom: 12px;
+}
+.meal-dir-totals {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  padding: 10px 16px; margin-bottom: 12px;
+  background: #f7fee7; border: 1px solid #d9f99d;
+  border-radius: var(--radius);
+  font-weight: 600; font-size: 0.9rem; color: var(--color-text-muted);
+}
+.meal-dir-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.meal-dir-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 16px; cursor: pointer;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.meal-dir-card:hover { box-shadow: var(--shadow); border-color: #65a30d; }
+.meal-dir-card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+.meal-dir-card-stats {
+  display: flex; gap: 10px; font-size: 0.8rem; color: var(--color-text-muted);
+}
+.meal-dir-card-cal { color: #d97706; font-weight: 600; }
+.meal-dir-card-prot { color: #059669; font-weight: 600; }

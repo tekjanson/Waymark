@@ -38,3 +38,38 @@ test('roster day toggle emits cell-update', async ({ page }) => {
   const updates = records.filter(r => r.type === 'cell-update');
   expect(updates.length).toBeGreaterThanOrEqual(1);
 });
+
+/* ---------- Weekly navigation ---------- */
+
+test('roster toolbar with week label is visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-026');
+  await page.waitForSelector('.roster-toolbar', { timeout: 5_000 });
+
+  await expect(page.locator('.roster-week-label')).toContainText('Week 1');
+  const navBtns = await page.locator('.roster-nav-btn').count();
+  expect(navBtns).toBe(2);
+});
+
+/* ---------- Shift summary ---------- */
+
+test('roster summary row shows coverage per day', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-026');
+  await page.waitForSelector('.roster-summary', { timeout: 5_000 });
+
+  await expect(page.locator('.roster-summary-label')).toContainText('Coverage');
+  const summaryCells = await page.locator('.roster-summary-day').count();
+  expect(summaryCells).toBe(5); // Mon-Fri in fixture
+});
+
+test('roster summary day cells show shift abbreviation counts', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-026');
+  await page.waitForSelector('.roster-summary-day', { timeout: 5_000 });
+
+  // At least one summary cell should contain a colon (shift:count format)
+  const texts = await page.locator('.roster-summary-day').allTextContents();
+  const hasShiftData = texts.some(t => t.includes(':'));
+  expect(hasShiftData).toBe(true);
+});

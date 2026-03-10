@@ -147,6 +147,51 @@
   pointer-events: none;
 }
 
+/* Ghost label during edge connect drag */
+.flow-ghost-label {
+  font-size: 11px;
+  font-family: inherit;
+  pointer-events: none;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* Connecting mode — highlight available targets */
+.flow-svg-connecting .flow-node:not(.flow-node-drop-target) {
+  opacity: 0.5;
+}
+.flow-svg-connecting .flow-node.flow-node-drop-target {
+  opacity: 1;
+}
+
+/* ---------- Minimap ---------- */
+
+.flow-minimap {
+  position: absolute;
+  bottom: 28px;
+  right: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  z-index: 10;
+  opacity: 0.85;
+  transition: opacity var(--transition);
+}
+
+.flow-minimap:hover {
+  opacity: 1;
+}
+
+.flow-minimap-svg {
+  display: block;
+}
+
+.flow-minimap-viewport {
+  pointer-events: none;
+}
+
 /* ---------- Inspector Panel ---------- */
 
 .flow-inspector {
@@ -469,11 +514,22 @@
 
   .flow-diagram-wrap {
     padding: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .flow-inspector-fields {
     grid-template-columns: 1fr;
   }
+
+  .flow-tooltip { max-width: 200px; }
+
+  .flow-detail-modal {
+    width: 95vw; left: 2.5vw; top: 5vh;
+    max-height: 85vh;
+  }
+
+  .flow-detail-body { padding: 12px; }
 }
 
 @media (max-width: 480px) {
@@ -489,4 +545,159 @@
   .flow-group-header {
     padding: 8px 12px;
   }
+
+  .flow-realign-btn { font-size: 0.7rem; padding: 3px 8px; }
+}
+
+/* ---------- Re-align Button ---------- */
+.flow-realign-btn {
+  margin-left: auto;
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.flow-realign-btn:hover {
+  background: #c7d2fe;
+  box-shadow: 0 1px 3px rgba(79,70,229,0.2);
+}
+
+/* ---------- Tooltip ---------- */
+.flow-tooltip {
+  position: absolute;
+  z-index: 50;
+  background: #1e293b;
+  color: #f1f5f9;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  max-width: 260px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  line-height: 1.4;
+}
+.flow-tooltip.hidden { display: none; }
+.flow-tooltip-type { font-weight: 700; margin-bottom: 2px; }
+.flow-tooltip-name { font-weight: 500; }
+.flow-tooltip-notes {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  border-top: 1px solid #334155;
+  padding-top: 4px;
+}
+.flow-tooltip-conns {
+  margin-top: 3px;
+  color: #a5b4fc;
+  font-size: 0.72rem;
+}
+
+/* ---------- Detail Modal ---------- */
+.flow-detail-modal {
+  position: absolute;
+  z-index: 60;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 90vw);
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+  animation: flow-detail-in 0.2s ease;
+}
+.flow-detail-modal.hidden { display: none; }
+
+@keyframes flow-detail-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.flow-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.flow-detail-title {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  color: #1e293b;
+}
+.flow-detail-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.flow-detail-close:hover { background: #f1f5f9; color: #475569; }
+
+.flow-detail-body { padding: 16px; }
+
+.flow-detail-section {
+  margin-bottom: 14px;
+}
+.flow-detail-section h4 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  margin: 0 0 6px;
+}
+.flow-detail-section p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.flow-detail-conns { display: flex; flex-direction: column; gap: 6px; }
+.flow-detail-conn-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.flow-detail-conn-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-right: 4px;
+}
+.flow-detail-conn-item {
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.flow-detail-empty {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-style: italic;
+  margin: 0;
+}
+
+.flow-detail-props {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.flow-detail-props td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #475569;
+}
+.flow-detail-props td:first-child {
+  font-weight: 600;
+  color: #64748b;
+  width: 100px;
 }

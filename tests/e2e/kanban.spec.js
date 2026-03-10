@@ -17,7 +17,7 @@ test('kanban renders swim lanes with cards', async ({ page }) => {
   await page.waitForSelector('.kanban-board', { timeout: 5_000 });
 
   const lanes = page.locator('.kanban-lane');
-  expect(await lanes.count()).toBe(4); // Backlog, To Do, In Progress, Done
+  expect(await lanes.count()).toBe(5); // Backlog, To Do, In Progress, Done, Rejected
 
   const cards = page.locator('.kanban-card');
   expect(await cards.count()).toBe(9);
@@ -208,14 +208,14 @@ test('kanban show archived toggle reveals archived lane', async ({ page }) => {
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-board', { timeout: 5_000 });
 
-  // Initially 4 lanes (no archived lane visible)
-  expect(await page.locator('.kanban-lane').count()).toBe(4);
+  // Initially 5 lanes (no archived lane visible)
+  expect(await page.locator('.kanban-lane').count()).toBe(5);
 
   // Toggle "Show Archived"
   await page.locator('.kanban-archive-checkbox').check();
 
-  // Now 5 lanes
-  expect(await page.locator('.kanban-lane').count()).toBe(5);
+  // Now 6 lanes
+  expect(await page.locator('.kanban-lane').count()).toBe(6);
 
   // Archived lane should have 1 card ("Setup CI Pipeline")
   const archivedLane = page.locator('.kanban-lane-archived');
@@ -269,7 +269,7 @@ test('kanban lane header shows item count', async ({ page }) => {
 
   // Each lane should show a count
   const counts = page.locator('.kanban-lane-count');
-  expect(await counts.count()).toBe(4); // 4 lanes visible by default
+  expect(await counts.count()).toBe(5); // 5 lanes visible by default (incl. Rejected)
 });
 
 /* ---------- Drag-and-drop ---------- */

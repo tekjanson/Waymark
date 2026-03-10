@@ -2,11 +2,27 @@
    templates/changelog.js — Changelog: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate } from './shared.js';
+import { el, cell, editableCell, lazySection, delegateEvent, registerTemplate } from './shared.js';
+
+/* ---------- Helpers ---------- */
+
+/** Build entry DOM for a single changelog row */
+function buildEntry(row, originalIndex, cols, template) {
+  const rowIdx = originalIndex + 1;
+  const type = cell(row, cols.type);
+  const desc = cell(row, cols.description) || row[0] || '\u2014';
+  const cls = template.changeClass(type);
+  return el('div', { className: `changelog-entry changelog-${cls}` }, [
+    cols.type >= 0
+      ? editableCell('span', { className: `changelog-type-badge changelog-type-${cls}` }, type, rowIdx, cols.type)
+      : null,
+    editableCell('span', { className: 'changelog-desc' }, desc, rowIdx, cols.description),
+  ]);
+}
 
 const definition = {
   name: 'Changelog',
-  icon: '📋',
+  icon: '\uD83D\uDCCB',
   color: '#374151',
   priority: 18,
   itemNoun: 'Entry',
@@ -45,6 +61,7 @@ const definition = {
   },
 
   render(container, rows, cols, template) {
+    /* --- group rows by version --- */
     const groups = new Map();
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -55,29 +72,84 @@ const definition = {
       g.entries.push({ row, originalIndex: i });
     }
 
+    const versionKeys = [...groups.keys()];
+
+    /* --- sidebar: version quick-nav --- */
+    const sidebar = el('nav', { className: 'changelog-sidebar' });
+    for (const ver of versionKeys) {
+      sidebar.append(el('button', {
+        className: 'changelog-nav-btn',
+        dataset: { ver },
+      }, [ver]));
+    }
+    delegateEvent(sidebar, 'click', '.changelog-nav-btn', (_e, btn) => {
+      const target = container.querySelector(`[data-version="${btn.dataset.ver}"]`);
+      if (target) {
+        const body = target.querySelector('.changelog-body');
+        if (body && body.classList.contains('hidden')) {
+          target.querySelector('.changelog-version-header').click();
+        }
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    /* --- main changelog area --- */
+    const main = el('div', { className: 'changelog-main' });
+
+    let first = true;
     for (const [ver, { date, entries }] of groups) {
-      const section = el('div', { className: 'changelog-version' });
-      section.append(el('div', { className: 'changelog-version-header' }, [
+      const section = el('div', { className: 'changelog-version', dataset: { version: ver } });
+
+      const chevron = el('span', { className: 'changelog-chevron' }, ['\u25B6']);
+      const header = el('div', { className: 'changelog-version-header changelog-collapsible' }, [
+        chevron,
         el('span', { className: 'changelog-version-tag' }, [ver]),
         date ? el('span', { className: 'changelog-version-date' }, [date]) : null,
-      ]));
+        el('span', { className: 'changelog-version-count' }, [`${entries.length}`]),
+      ]);
 
-      for (const { row, originalIndex } of entries) {
-        const rowIdx = originalIndex + 1;
-        const type = cell(row, cols.type);
-        const desc = cell(row, cols.description) || row[0] || '—';
-        const cls = template.changeClass(type);
+      section.append(header);
 
-        section.append(el('div', { className: `changelog-entry changelog-${cls}` }, [
-          cols.type >= 0
-            ? editableCell('span', { className: `changelog-type-badge changelog-type-${cls}` }, type, rowIdx, cols.type)
-            : null,
-          editableCell('span', { className: 'changelog-desc' }, desc, rowIdx, cols.description),
-        ]));
+      if (first) {
+        /* Latest version starts expanded */
+        const body = el('div', { className: 'changelog-body' });
+        for (const { row, originalIndex } of entries) {
+          body.append(buildEntry(row, originalIndex, cols, template));
+        }
+        section.append(body);
+        chevron.classList.add('changelog-chevron-open');
+        first = false;
       }
 
-      container.append(section);
+      header.addEventListener('click', () => {
+        const existed = !!section.querySelector('.changelog-body');
+        const body = lazySection(section, '.changelog-body', () => {
+          const b = el('div', { className: 'changelog-body' });
+          for (const { row, originalIndex } of entries) {
+            b.append(buildEntry(row, originalIndex, cols, template));
+          }
+          return b;
+        });
+        if (!existed) {
+          /* first expand via lazySection — body is now visible */
+          chevron.classList.add('changelog-chevron-open');
+          return;
+        }
+        const open = !body.classList.contains('hidden');
+        if (open) {
+          body.classList.add('hidden');
+          chevron.classList.remove('changelog-chevron-open');
+        } else {
+          body.classList.remove('hidden');
+          chevron.classList.add('changelog-chevron-open');
+        }
+      });
+
+      main.append(section);
     }
+
+    const layout = el('div', { className: 'changelog-layout' }, [sidebar, main]);
+    container.append(layout);
   },
 };
 

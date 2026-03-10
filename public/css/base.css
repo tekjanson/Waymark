@@ -52,6 +52,11 @@ ul { list-style: none; }
 .text-muted { color: var(--color-text-muted); font-size: 0.85rem; }
 .screen { min-height: 100vh; }
 
+/* Data freshness indicators */
+.freshness-fresh { color: var(--color-success); }
+.freshness-aging { color: var(--color-text-muted); }
+.freshness-stale { color: #d97706; }
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -92,6 +97,15 @@ ul { list-style: none; }
 }
 .btn-pin:hover { color: var(--color-warning); }
 .btn-pin.pinned { color: var(--color-warning); }
+
+.btn-lock {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: none; background: transparent; color: var(--color-text-muted);
+  font-size: 1rem; cursor: pointer; transition: all var(--transition);
+}
+.btn-lock:hover { color: var(--color-danger); }
+.btn-lock.locked { color: var(--color-danger); }
 
 .btn-open-drive {
   display: inline-flex; align-items: center; justify-content: center;
@@ -423,58 +437,12 @@ ul { list-style: none; }
 .sheet-list-item .sheet-emoji { font-size: 1.3rem; }
 .sheet-list-item-name { font-weight: 500; }
 
-/* ---------- Checklist View ---------- */
-.checklist-header {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 20px; flex-wrap: wrap;
-}
-.checklist-header h2 { flex: 1; margin-bottom: 0; }
-.checklist-actions {
-  display: flex; align-items: center; gap: 10px;
-}
+/* Shared toggle (used by checklist + templates) */
 .toggle-label {
   display: flex; align-items: center; gap: 4px;
   font-size: 0.8rem; color: var(--color-text-secondary); cursor: pointer;
 }
 .toggle-text { user-select: none; }
-
-.checklist-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  margin-bottom: 6px;
-  transition: background var(--transition);
-}
-.checklist-row.completed { background: var(--color-success-light); }
-.checklist-row.completed .checklist-item-text { text-decoration: line-through; color: var(--color-text-muted); }
-
-.checklist-item-text { flex: 1; font-size: 0.95rem; }
-.checklist-item-date { font-size: 0.8rem; color: var(--color-text-muted); white-space: nowrap; }
-.checklist-item-notes { font-size: 0.8rem; color: var(--color-text-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.checklist-checkbox {
-  display: flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border-radius: var(--radius-sm);
-  border: 2px solid var(--color-border); flex-shrink: 0;
-  color: transparent; font-size: 0.85rem;
-  cursor: pointer; transition: all var(--transition);
-  user-select: none;
-}
-.checklist-checkbox:hover { border-color: var(--color-success); background: var(--color-success-light); }
-.checklist-row.completed .checklist-checkbox {
-  background: var(--color-success); border-color: var(--color-success); color: #fff;
-}
-
-/* Checklist category grouping */
-.checklist-group-header {
-  font-weight: 600; font-size: 0.85rem; color: var(--color-success);
-  text-transform: uppercase; letter-spacing: 0.04em;
-  padding: 12px 0 4px; margin-top: 4px;
-}
-.checklist-group-header:first-child { margin-top: 0; }
-.checklist-group { margin-bottom: 8px; }
 
 /* Folder header in views */
 .folder-header {
@@ -490,6 +458,35 @@ ul { list-style: none; }
   text-align: center; padding: 40px 20px;
   color: var(--color-text-muted); font-size: 0.95rem;
 }
+
+/* ---------- Migration Banner ---------- */
+.migration-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px; margin-bottom: 12px;
+  background: #eef2ff; border: 1px solid #c7d2fe; border-radius: var(--radius);
+  border-left: 3px solid #4338ca;
+}
+.migration-text { flex: 1; font-size: 0.85rem; color: #312e81; }
+.migration-btn {
+  padding: 5px 14px; border-radius: 16px; font-size: 0.8rem; font-weight: 600;
+  background: #4338ca; color: #fff; border: none; cursor: pointer;
+  transition: all var(--transition);
+}
+.migration-btn:hover { background: #3730a3; }
+.migration-dismiss {
+  background: none; border: none; color: #6366f1; cursor: pointer;
+  font-size: 1rem; padding: 2px 6px; line-height: 1;
+}
+.migration-dismiss:hover { color: #4338ca; }
+
+/* ---------- Pin Bounce Animation ---------- */
+@keyframes pin-bounce {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.35); }
+  60%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.pin-bounce { animation: pin-bounce 0.35s ease; }
 
 /* ---------- Template Badge ---------- */
 .template-badge {
@@ -679,6 +676,14 @@ ul { list-style: none; }
   background: var(--color-primary-light);
   outline: 1px dashed var(--color-primary);
 }
+.sheet-locked .editable-cell {
+  cursor: default;
+  pointer-events: none;
+}
+.sheet-locked .editable-cell:hover {
+  background: transparent;
+  outline: none;
+}
 .editable-cell:focus-within {
   background: var(--color-surface);
   outline: 2px solid var(--color-primary);
@@ -779,6 +784,30 @@ ul { list-style: none; }
 .btn-csv:hover { background: #bfdbfe; box-shadow: var(--shadow); }
 .btn-csv svg { stroke: var(--color-primary-dark); flex-shrink: 0; }
 
+/* ---------- Duplicate Sheet Button ---------- */
+.btn-duplicate {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius);
+  border: 1px solid #7c3aed; background: #ede9fe; color: #5b21b6;
+  font-size: 0.82rem; font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+.btn-duplicate:hover { background: #ddd6fe; box-shadow: var(--shadow); }
+.btn-duplicate svg { stroke: #5b21b6; flex-shrink: 0; }
+
+/* ---------- Share Button ---------- */
+.btn-share {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius);
+  border: 1px solid #0d9488; background: #ccfbf1; color: #115e59;
+  font-size: 0.82rem; font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+.btn-share:hover { background: #99f6e4; box-shadow: var(--shadow); }
+.btn-share svg { stroke: #115e59; flex-shrink: 0; }
+
 /* ---------- Open in Google Drive Button ---------- */
 .btn-drive {
   display: inline-flex; align-items: center; gap: 6px;
@@ -832,6 +861,68 @@ ul { list-style: none; }
   margin-top: auto;
 }
 .modal-footer-actions { display: flex; gap: 8px; }
+
+/* ---------- Settings Modal ---------- */
+.settings-modal { max-width: 480px; }
+
+.settings-profile {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 24px; border-bottom: 1px solid var(--color-border);
+}
+.settings-avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  object-fit: cover; background: var(--color-bg);
+}
+.settings-profile-info { display: flex; flex-direction: column; gap: 2px; }
+.settings-name { font-weight: 600; font-size: 1rem; }
+.settings-email { font-size: 0.82rem; color: var(--color-text-muted); }
+.settings-version { font-size: 0.75rem; color: var(--color-text-muted); font-family: monospace; }
+.settings-hash-link { color: #4338ca; text-decoration: none; font-weight: 500; }
+.settings-hash-link:hover { text-decoration: underline; }
+
+.settings-section { padding: 16px 24px; }
+.settings-section-title {
+  font-size: 0.82rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 12px;
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-label { font-size: 0.9rem; font-weight: 500; }
+
+.settings-toggle {
+  width: 18px; height: 18px; accent-color: var(--color-primary); cursor: pointer;
+}
+.settings-select {
+  padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--color-border);
+  font-size: 0.85rem; background: var(--color-surface); cursor: pointer;
+}
+
+.settings-folder-picker {
+  display: flex; align-items: center; gap: 8px;
+}
+.settings-folder-name {
+  font-size: 0.85rem; color: var(--color-text-secondary);
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.settings-folder-browser {
+  margin-top: 8px; max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-bg);
+}
+.settings-folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+  font-size: 0.85rem; border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+.settings-folder-item:last-child { border-bottom: none; }
+.settings-folder-item:hover { background: var(--color-surface); }
+.settings-folder-item.selected { background: #dbeafe; font-weight: 600; }
 
 /* Secondary button */
 .btn-secondary {
@@ -1174,6 +1265,8 @@ ul { list-style: none; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
   .btn-sheets span { display: none; }
   .btn-csv span { display: none; }
+  .btn-duplicate span { display: none; }
+  .btn-share span { display: none; }
 
   /* --- Home: mobile-first warmth --- */
   .home-greeting {
@@ -1230,8 +1323,6 @@ ul { list-style: none; }
 
 @media (max-width: 480px) {
   .search-container { max-width: 140px; }
-  .checklist-actions { flex-wrap: wrap; }
-  .checklist-item-notes { display: none; }
   .add-row-form { padding: 12px; }
   .add-row-actions { flex-direction: column; }
   .add-row-actions .btn { width: 100%; justify-content: center; }

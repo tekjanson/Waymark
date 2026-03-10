@@ -1,0 +1,17 @@
+{
+  "id": "sheet-034",
+  "title": "Next Week Meal Plan",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Day", "Meal", "Recipe", "Calories", "Protein"],
+    ["Monday", "Breakfast", "Avocado toast", "300", "10g"],
+    ["Monday", "Lunch", "Chicken Caesar salad", "510", "40g"],
+    ["Monday", "Dinner", "Shrimp tacos", "480", "32g"],
+    ["Tuesday", "Breakfast", "Banana pancakes", "340", "14g"],
+    ["Tuesday", "Lunch", "Veggie burger", "460", "22g"],
+    ["Tuesday", "Dinner", "Grilled salmon bowl", "560", "44g"],
+    ["Wednesday", "Breakfast", "Chia pudding", "290", "8g"],
+    ["Wednesday", "Lunch", "Minestrone soup", "380", "16g"],
+    ["Wednesday", "Dinner", "Chicken tikka masala", "620", "38g"]
+  ]
+}

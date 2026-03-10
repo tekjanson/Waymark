@@ -377,13 +377,13 @@ test('grading add-row form has exactly one field for student name', async ({ pag
    Kanban — per-lane add buttons
    ==================================================================== */
 
-test('kanban has an add trigger in each of the 4 lanes', async ({ page }) => {
+test('kanban has an add trigger in each of the 5 lanes', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-017');
   await page.waitForSelector('.kanban-board', { timeout: 5_000 });
 
   const triggers = page.locator('.kanban-lane .add-row-trigger');
-  expect(await triggers.count()).toBe(4);
+  expect(await triggers.count()).toBe(5);
 });
 
 test('kanban does NOT show a global add-row trigger outside lanes', async ({ page }) => {
