@@ -18,7 +18,7 @@ let currentValues  = null;
 let currentDataTitle = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn;
 
 /* ---------- Public ---------- */
 
@@ -32,6 +32,7 @@ export function init() {
   openInSheetsBtn = document.getElementById('open-in-sheets-btn');
   downloadCsvBtn  = document.getElementById('download-csv-btn');
   sheetPinBtn     = document.getElementById('sheet-pin-btn');
+  duplicateSheetBtn = document.getElementById('duplicate-sheet-btn');
 
   autoToggle.checked = userData.getAutoRefresh();
 
@@ -49,6 +50,10 @@ export function init() {
 
   if (downloadCsvBtn) {
     downloadCsvBtn.addEventListener('click', () => downloadCsv());
+  }
+
+  if (duplicateSheetBtn) {
+    duplicateSheetBtn.addEventListener('click', () => duplicateSheet());
   }
 
   if (sheetPinBtn) {
@@ -153,6 +158,31 @@ function downloadCsv() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast('CSV downloaded', 'success');
+}
+
+/* ---------- Duplicate sheet ---------- */
+
+/**
+ * Duplicate the current sheet by reading its data and creating
+ * a new spreadsheet with the same content.
+ */
+async function duplicateSheet() {
+  if (!currentSheetId || !currentValues || currentValues.length === 0) {
+    showToast('No sheet data to duplicate', 'error');
+    return;
+  }
+  const title = `Copy of ${currentDataTitle || 'Untitled'}`;
+  try {
+    showToast('Duplicating sheet…', 'info');
+    const result = await api.sheets.createSpreadsheet(title, currentValues);
+    showToast(`Created "${title}"`, 'success');
+    // Navigate to the new sheet
+    if (result && (result.spreadsheetId || result.id)) {
+      window.location.hash = `#/sheet/${result.spreadsheetId || result.id}`;
+    }
+  } catch (err) {
+    showToast(`Failed to duplicate: ${err.message}`, 'error');
+  }
 }
 
 /* ---------- Data loading ---------- */

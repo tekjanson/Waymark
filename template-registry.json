@@ -305,7 +305,8 @@
         "priority",
         "due",
         "label",
-        "note"
+        "note",
+        "reporter"
       ],
       "interactive": true,
       "interactionType": "status-cycle",
@@ -314,9 +315,11 @@
         "To Do",
         "In Progress",
         "Done",
+        "Rejected",
         "Archived"
       ],
       "exampleCount": 2,
+      "hasDirectoryView": true,
       "fixtureIds": [
         "sheet-017",
         "sheet-028"

@@ -779,6 +779,18 @@ ul { list-style: none; }
 .btn-csv:hover { background: #bfdbfe; box-shadow: var(--shadow); }
 .btn-csv svg { stroke: var(--color-primary-dark); flex-shrink: 0; }
 
+/* ---------- Duplicate Sheet Button ---------- */
+.btn-duplicate {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius);
+  border: 1px solid #7c3aed; background: #ede9fe; color: #5b21b6;
+  font-size: 0.82rem; font-weight: 600;
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+.btn-duplicate:hover { background: #ddd6fe; box-shadow: var(--shadow); }
+.btn-duplicate svg { stroke: #5b21b6; flex-shrink: 0; }
+
 /* ---------- Open in Google Drive Button ---------- */
 .btn-drive {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1174,6 +1186,7 @@ ul { list-style: none; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
   .btn-sheets span { display: none; }
   .btn-csv span { display: none; }
+  .btn-duplicate span { display: none; }
 
   /* --- Home: mobile-first warmth --- */
   .home-greeting {

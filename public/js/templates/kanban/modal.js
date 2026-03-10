@@ -31,6 +31,7 @@ export function openCardModal(group, ctx) {
   const project = cols.project >= 0 ? cell(row, cols.project) : '';
   const priority = cols.priority >= 0 ? cell(row, cols.priority) : '';
   const assignee = cols.assignee >= 0 ? cell(row, cols.assignee) : '';
+  const reporter = cols.reporter >= 0 ? cell(row, cols.reporter) : '';
   const due = cols.due >= 0 ? cell(row, cols.due) : '';
   const labelVal = cols.label >= 0 ? cell(row, cols.label) : '';
 
@@ -93,6 +94,12 @@ export function openCardModal(group, ctx) {
     headerMeta.append(el('span', { className: 'kanban-card-assignee', title: assignee }, [
       el('span', { className: 'kanban-avatar' }, [initial]),
       assignee,
+    ]));
+  }
+
+  if (reporter) {
+    headerMeta.append(el('span', { className: 'kanban-card-reporter', title: `Reported by ${reporter}` }, [
+      '📝 ', reporter,
     ]));
   }
 

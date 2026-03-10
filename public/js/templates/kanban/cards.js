@@ -31,6 +31,7 @@ export function buildCard(group, ctx, laneKey) {
   const priority = cols.priority >= 0 ? cell(row, cols.priority) : '';
   const due = cols.due >= 0 ? cell(row, cols.due) : '';
   const labelVal = cols.label >= 0 ? cell(row, cols.label) : '';
+  const reporter = cols.reporter >= 0 ? cell(row, cols.reporter) : '';
 
   const hasSubtasks = group.subtasks.length > 0;
   const hasNotes = group.notes.length > 0;
@@ -106,6 +107,13 @@ export function buildCard(group, ctx, laneKey) {
     ]));
   }
 
+  // Reporter / Reported By
+  if (reporter && cols.reporter >= 0) {
+    meta.append(el('span', { className: 'kanban-card-reporter', title: `Reported by ${reporter}` }, [
+      '📝 ', reporter,
+    ]));
+  }
+
   // Due date chip
   if (due) {
     meta.append(el('span', {
@@ -134,9 +142,20 @@ export function buildCard(group, ctx, laneKey) {
     preview.append(el('button', { className: 'kanban-archive-btn', title: 'Archive this task' }, ['📦 Archive']));
   }
 
+  // Reject button (any active lane) — delegated click handler on lane
+  if (laneKey !== 'done' && laneKey !== 'archived' && laneKey !== 'rejected') {
+    preview.append(el('button', { className: 'kanban-reject-btn', title: 'Reject this task' }, ['🚫 Reject']));
+  }
+
   // Unarchive button (Archived lane only) — delegated click handler on lane
   if (laneKey === 'archived') {
     preview.append(el('button', { className: 'kanban-unarchive-btn', title: 'Restore to Done' }, ['♻️ Restore']));
+  }
+
+  // Restore from Rejected — delegated click handler on lane
+  if (laneKey === 'rejected') {
+    preview.append(el('button', { className: 'kanban-unarchive-btn', title: 'Restore to Backlog' }, ['♻️ Restore']));
+    preview.append(el('button', { className: 'kanban-archive-btn', title: 'Archive this task' }, ['📦 Archive']));
   }
 
   card.append(preview);
@@ -161,7 +180,7 @@ export function buildCard(group, ctx, laneKey) {
  * @returns {HTMLElement}
  */
 export function buildCardDetail(group, ctx) {
-  const { cols, template, allProjects, allAssignees } = ctx;
+  const { cols, template, allProjects, allAssignees, allReporters } = ctx;
   const detail = el('div', { className: 'kanban-card-detail' });
   const { row, idx } = group;
   const rowIdx = idx + 1;
@@ -199,6 +218,12 @@ export function buildCardDetail(group, ctx) {
     metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
       el('span', { className: 'kanban-detail-field-label' }, ['Assignee']),
       comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.assignee), rowIdx, cols.assignee, allAssignees),
+    ]));
+  }
+  if (cols.reporter >= 0) {
+    metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
+      el('span', { className: 'kanban-detail-field-label' }, ['Reported By']),
+      comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.reporter), rowIdx, cols.reporter, allReporters || []),
     ]));
   }
   if (metaGrid.children.length > 0) detail.append(metaGrid);

@@ -25,3 +25,21 @@ test('folder view shows open in drive button', async ({ page }) => {
   await expect(openDriveBtn).toBeVisible();
   await expect(openDriveBtn).toContainText('Open in Drive');
 });
+
+test('duplicate sheet button visible and creates copy', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  const dupBtn = page.locator('#duplicate-sheet-btn');
+  await expect(dupBtn).toBeVisible();
+
+  await dupBtn.click();
+  // Wait for toast confirming creation
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const copyRecord = records.find(r => r.title && r.title.startsWith('Copy of'));
+  expect(copyRecord).toBeTruthy();
+  expect(copyRecord.rows.length).toBeGreaterThan(0);
+});

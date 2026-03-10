@@ -75,6 +75,7 @@ const ROLE_LABELS = {
   'kanban.due': 'Due Date / Deadline',
   'kanban.label': 'Label / Tag (feature, bug, etc.)',
   'kanban.note': 'Note / Comment',
+  'kanban.reporter': 'Reported By / Submitter',
   // Habit
   'habit.text': 'Habit / Routine',
   'habit.streak': 'Streak Count',
@@ -183,6 +184,7 @@ const CANONICAL_HEADERS = {
   'kanban.text': 'Task', 'kanban.description': 'Description', 'kanban.stage': 'Stage',
   'kanban.project': 'Project', 'kanban.assignee': 'Assignee', 'kanban.priority': 'Priority',
   'kanban.due': 'Due', 'kanban.label': 'Label', 'kanban.note': 'Note',
+  'kanban.reporter': 'Reported By',
   // Habit
   'habit.text': 'Habit', 'habit.streak': 'Streak',
   // Grading
