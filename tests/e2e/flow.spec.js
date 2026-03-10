@@ -409,3 +409,269 @@ test('flow inspector Next combo cancels on Escape', async ({ page }) => {
   const records = await getCreatedRecords(page);
   expect(records.some(r => r.value === 'Should Not Save')).toBe(false);
 });
+
+/* ---------- Ghost edge preview ---------- */
+
+test('flow port drag shows ghost label on canvas', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Ghost label should be hidden initially
+  const ghostLabel = page.locator('.flow-ghost-label');
+  await expect(ghostLabel).toHaveAttribute('visibility', 'hidden');
+
+  // Simulate port mousedown on the first node's output port
+  const port = page.locator('.flow-port-out').first();
+  const portBox = await port.boundingBox();
+  await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+  await page.mouse.down();
+
+  // Ghost label should now be visible
+  await expect(ghostLabel).toHaveAttribute('visibility', 'visible');
+  const labelText = await ghostLabel.evaluate(el => el.textContent);
+  expect(labelText).toContain('target');
+
+  // SVG should have connecting class
+  await expect(page.locator('.flow-svg')).toHaveClass(/flow-svg-connecting/);
+
+  await page.mouse.up();
+  await expect(ghostLabel).toHaveAttribute('visibility', 'hidden');
+});
+
+/* ---------- Snap-to-grid ---------- */
+
+test('flow dragged node position snaps to grid', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  const node = page.locator('.flow-node').first();
+  const box = await node.boundingBox();
+
+  // Drag the node by an arbitrary amount (13px horizontal)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 13, box.y + box.height / 2 + 7, { steps: 5 });
+  await page.mouse.up();
+
+  // Read the transform — should be snapped to grid multiples of 20
+  const transform = await node.getAttribute('transform');
+  const match = transform.match(/translate\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)/);
+  expect(match).not.toBeNull();
+  const x = parseFloat(match[1]);
+  const y = parseFloat(match[2]);
+  expect(x % 20).toBe(0);
+  expect(y % 20).toBe(0);
+});
+
+/* ---------- Keyboard shortcuts ---------- */
+
+test('flow Delete key removes selected node connections', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Click first node to select it
+  await page.locator('.flow-node').first().click();
+  await page.waitForSelector('.flow-inspector:not(.hidden)', { timeout: 3_000 });
+
+  // Count edges before
+  const edgesBefore = await page.locator('.flow-edge').count();
+
+  // Focus the canvas wrapper and press Delete
+  await page.locator('.flow-canvas').first().focus();
+  await page.keyboard.press('Delete');
+
+  // Wait for RAF to flush edge re-render
+  await page.waitForTimeout(100);
+
+  // Should have fewer edges (at least one removed)
+  const edgesAfter = await page.locator('.flow-edge').count();
+  expect(edgesAfter).toBeLessThan(edgesBefore);
+
+  // emitEdit should have been called to clear the Next field
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === '')).toBe(true);
+});
+
+test('flow Ctrl+Z undoes Delete and restores connections', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Select first node
+  await page.locator('.flow-node').first().click();
+  await page.waitForSelector('.flow-inspector:not(.hidden)', { timeout: 3_000 });
+
+  const edgesBefore = await page.locator('.flow-edge').count();
+
+  // Delete connections
+  await page.locator('.flow-canvas').first().focus();
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(100); // wait for RAF edge re-render
+  const edgesAfterDelete = await page.locator('.flow-edge').count();
+  expect(edgesAfterDelete).toBeLessThan(edgesBefore);
+
+  // Undo with Ctrl+Z
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(100); // wait for RAF edge re-render
+
+  // Edges should be restored
+  const edgesAfterUndo = await page.locator('.flow-edge').count();
+  expect(edgesAfterUndo).toBe(edgesBefore);
+});
+
+/* ---------- Minimap ---------- */
+
+test('flow minimap appears for large diagrams (>= 15 nodes)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Minimap should be present
+  const minimap = page.locator('.flow-minimap');
+  await expect(minimap).toBeVisible();
+
+  // Minimap should contain an SVG
+  const mmSvg = page.locator('.flow-minimap-svg');
+  await expect(mmSvg).toBeVisible();
+
+  // Should have a viewport indicator
+  const viewport = page.locator('.flow-minimap-viewport');
+  expect(await viewport.count()).toBe(1);
+});
+
+test('flow minimap does not appear for small diagrams', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // sheet-029 has 9 nodes — minimap should NOT appear
+  const minimap = page.locator('.flow-minimap');
+  expect(await minimap.count()).toBe(0);
+});
+
+test('flow minimap contains node rectangles matching diagram nodes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-031');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Count diagram nodes
+  const nodeCount = await page.locator('.flow-node').count();
+
+  // Minimap should have one rect per node
+  const mmRects = page.locator('.flow-minimap-svg rect:not(.flow-minimap-viewport)');
+  expect(await mmRects.count()).toBe(nodeCount);
+});
+
+test('flow diagram-wrap has tabindex for keyboard shortcuts', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-canvas', { timeout: 5_000 });
+
+  const wrap = page.locator('.flow-canvas').first();
+  await expect(wrap).toHaveAttribute('tabindex', '0');
+});
+
+test('flow auto-align button is visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-group', { timeout: 5_000 });
+
+  const btn = page.locator('.flow-realign-btn');
+  await expect(btn).toBeVisible();
+  await expect(btn).toContainText('Auto-Align');
+});
+
+test('flow auto-align button re-renders diagram', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  // Nodes should exist before and after re-align
+  expect(await page.locator('.flow-node').count()).toBe(9);
+  await page.locator('.flow-realign-btn').click();
+
+  // After re-align, nodes should still render
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+  expect(await page.locator('.flow-node').count()).toBe(9);
+});
+
+test('flow tooltip appears on node hover', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  const firstNode = page.locator('.flow-node').first();
+  await firstNode.hover();
+
+  const tooltip = page.locator('.flow-tooltip:not(.hidden)');
+  await expect(tooltip).toBeVisible({ timeout: 3000 });
+});
+
+test('flow detail modal opens on double-click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  const firstNode = page.locator('.flow-node').first();
+  await firstNode.dblclick();
+
+  const modal = page.locator('.flow-detail-modal:not(.hidden)');
+  await expect(modal).toBeVisible({ timeout: 3000 });
+  await expect(modal.locator('.flow-detail-title')).not.toBeEmpty();
+});
+
+test('flow detail modal close button works', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  await page.locator('.flow-node').first().dblclick();
+  await page.waitForSelector('.flow-detail-modal:not(.hidden)', { timeout: 3000 });
+
+  await page.locator('.flow-detail-close').click();
+  await expect(page.locator('.flow-detail-modal.hidden')).toHaveCount(1);
+});
+
+test('flow layered layout positions decision branches horizontally', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  // The layout should produce nodes at varying X positions (not all stacked at centerX)
+  const transforms = await page.locator('.flow-node').evaluateAll(els =>
+    els.map(el => el.getAttribute('transform'))
+  );
+  const xs = transforms.map(t => parseFloat(t.match(/translate\(([\d.]+)/)?.[1] || '0'));
+  const uniqueXs = new Set(xs);
+  // With hierarchical layout, decision branches should produce multiple X positions
+  expect(uniqueXs.size).toBeGreaterThanOrEqual(2);
+});
+
+test('flow positions persist across re-renders via localStorage', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  // Check localStorage for saved positions or drag a node to trigger save
+  const firstNode = page.locator('.flow-node').first();
+  const box = await firstNode.boundingBox();
+  if (box) {
+    // Drag node to new position
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 50, box.y + box.height / 2 + 30, { steps: 5 });
+    await page.mouse.up();
+
+    // Give localStorage time to save
+    await page.waitForTimeout(500);
+
+    // Check that localStorage has flow positions
+    const stored = await page.evaluate(() => localStorage.getItem('waymark:flow-positions'));
+    expect(stored).not.toBeNull();
+    const parsed = JSON.parse(stored);
+    expect(Object.keys(parsed).length).toBeGreaterThan(0);
+  }
+});

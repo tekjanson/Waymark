@@ -1,0 +1,24 @@
+{
+  "id": "sheet-031",
+  "title": "Large Pipeline",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Flow", "Step", "Type", "Next", "Condition", "Notes"],
+    ["Large Pipeline", "Start", "start", "Gather Requirements", "", "Begin pipeline"],
+    ["", "Gather Requirements", "process", "Analyze Data", "", "Collect inputs"],
+    ["", "Analyze Data", "process", "Validate Schema", "", "Process raw data"],
+    ["", "Validate Schema", "decision", "Transform,Report Error", "Valid,Invalid", "Check formats"],
+    ["", "Transform", "process", "Enrich", "", "Apply transforms"],
+    ["", "Report Error", "output", "End", "", "Log failures"],
+    ["", "Enrich", "process", "Deduplicate", "", "Add metadata"],
+    ["", "Deduplicate", "process", "Quality Check", "", "Remove dupes"],
+    ["", "Quality Check", "decision", "Route,Quarantine", "Pass,Fail", "QA gate"],
+    ["", "Route", "process", "Load Stage", "", "Send to target"],
+    ["", "Quarantine", "delay", "Manual Review", "", "Hold for review"],
+    ["", "Manual Review", "input", "Quality Check", "", "Human check"],
+    ["", "Load Stage", "process", "Index", "", "Stage records"],
+    ["", "Index", "process", "Notify", "", "Build search index"],
+    ["", "Notify", "output", "Archive", "", "Send alerts"],
+    ["", "Archive", "process", "End", "", "Store processed data"]
+  ]
+}

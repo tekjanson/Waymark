@@ -276,7 +276,8 @@
       ],
       "fixtureFiles": [
         "budget-personal"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "kanban",
@@ -393,12 +394,15 @@
       ],
       "interactive": true,
       "interactionType": "inline-edit",
+      "hasDirectoryView": true,
       "exampleCount": 2,
       "fixtureIds": [
-        "sheet-019"
+        "sheet-019",
+        "sheet-035"
       ],
       "fixtureFiles": [
-        "grading-math"
+        "grading-math",
+        "grading-science"
       ]
     },
     {
@@ -571,7 +575,8 @@
       ],
       "fixtureFiles": [
         "meal-weekly"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "travel",
@@ -731,10 +736,46 @@
       "fixtureFiles": [
         "flow-login"
       ]
+    },
+    {
+      "key": "social",
+      "name": "Social Feed",
+      "icon": "💬",
+      "color": "#6366f1",
+      "priority": 19,
+      "category": "Social",
+      "detectSignals": [
+        "post",
+        "message",
+        "status",
+        "update",
+        "author",
+        "posted.by"
+      ],
+      "columnRoles": [
+        "text",
+        "author",
+        "date",
+        "category",
+        "mood",
+        "link",
+        "comment"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "hasDirectoryView": true,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-030"
+      ],
+      "fixtureFiles": [
+        "social-wall"
+      ]
     }
   ],
-  "nextSheetId": "sheet-030",
-  "totalTemplates": 20,
+  "nextSheetId": "sheet-031",
+  "totalTemplates": 21,
   "categories": [
     "Productivity",
     "Engineering",
@@ -752,6 +793,7 @@
     "Sales",
     "Health",
     "Travel",
-    "Operations"
+    "Operations",
+    "Social"
   ]
 }

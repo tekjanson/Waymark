@@ -8,63 +8,81 @@
       "Contact",
       "Deal Stage",
       "Value",
-      "Notes"
+      "Notes",
+      "Last Activity",
+      "Activity"
     ],
     [
       "Acme Corp",
       "John Smith",
       "Proposal",
       "$50,000",
-      "Follow up Friday"
+      "Follow up Friday",
+      "2026-03-12",
+      "Feb 20: Lead created | Mar 1: Lead \u2192 Contacted | Mar 5: Demo call | Mar 10: Contacted \u2192 Proposal"
     ],
     [
       "TechStart Inc",
       "Sarah Lee",
       "Qualified",
       "$25,000",
-      "Demo scheduled"
+      "Demo scheduled",
+      "2026-03-14",
+      "Mar 1: Inbound lead | Mar 8: Lead \u2192 Contacted | Mar 14: Contacted \u2192 Qualified"
     ],
     [
       "Global Media",
       "Mike Chen",
       "Won",
       "$120,000",
-      "Contract signed"
+      "Contract signed",
+      "2026-03-15",
+      "Jan 15: Lead created | Feb 1: Proposal sent | Mar 1: Contract signed | Mar 15: Proposal \u2192 Won"
     ],
     [
       "FreshFoods Co",
       "Lisa Park",
       "Lead",
       "$15,000",
-      "Inbound inquiry"
+      "Inbound inquiry",
+      "2026-02-25",
+      "Feb 25: Inbound inquiry"
     ],
     [
       "DataFlow",
       "Tom Brown",
       "Contacted",
       "$35,000",
-      "Sent intro email"
+      "Sent intro email",
+      "2026-03-01",
+      "Feb 15: Lead created | Mar 1: Lead \u2192 Contacted"
     ],
     [
       "CloudNine",
       "Amy Davis",
       "Lost",
       "$80,000",
-      "Went with competitor"
+      "Went with competitor",
+      "2026-03-10",
+      "Jan 10: Lead created | Feb 5: Proposal sent | Mar 10: Proposal \u2192 Lost"
     ],
     [
       "BuildRight",
       "Dave Wilson",
       "Proposal",
       "$45,000",
-      "Awaiting budget approval"
+      "Awaiting budget approval",
+      "2026-03-13",
+      "Feb 28: Lead created | Mar 5: Lead \u2192 Qualified | Mar 13: Qualified \u2192 Proposal"
     ],
     [
       "EduLearn",
       "Nina Garcia",
       "Qualified",
       "$30,000",
-      "Needs security review"
+      "Needs security review",
+      "2026-03-11",
+      "Mar 1: Lead created | Mar 5: Lead \u2192 Contacted | Mar 11: Contacted \u2192 Qualified"
     ]
   ]
 }

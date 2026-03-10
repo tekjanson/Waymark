@@ -170,6 +170,7 @@
             <h2 id="checklist-title"></h2>
             <span id="template-badge" class="template-badge hidden"></span>
             <button id="sheet-pin-btn" class="btn-pin" aria-label="Pin sheet" title="Pin sheet">📌</button>
+            <button id="lock-btn" class="btn-lock" aria-label="Lock editing" title="Lock editing">🔓</button>
             <div class="checklist-actions">
               <span id="last-updated" class="text-muted"></span>
               <button id="open-in-sheets-btn" class="btn btn-sheets" aria-label="Open in Google Sheets" title="Open in Google Sheets">
@@ -183,6 +184,10 @@
               <button id="duplicate-sheet-btn" class="btn btn-duplicate" aria-label="Duplicate sheet" title="Duplicate sheet">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span>Duplicate</span>
+              </button>
+              <button id="share-btn" class="btn btn-share" aria-label="Share sheet" title="Share sheet">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                <span>Share</span>
               </button>
               <button id="refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -222,6 +227,63 @@
         </section>
 
       </main>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal settings-modal">
+      <div class="modal-header">
+        <h3>Settings</h3>
+        <button id="settings-modal-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Profile section -->
+      <div class="settings-profile">
+        <img id="settings-avatar" src="" alt="" class="settings-avatar">
+        <div class="settings-profile-info">
+          <span id="settings-user-name" class="settings-name"></span>
+          <span id="settings-user-email" class="settings-email"></span>
+          <span id="settings-version" class="settings-version"></span>
+        </div>
+      </div>
+
+      <!-- Preferences -->
+      <div class="settings-section">
+        <h4 class="settings-section-title">Preferences</h4>
+
+        <label class="settings-row">
+          <span class="settings-label">Auto-refresh sheets</span>
+          <input type="checkbox" id="settings-auto-refresh" class="settings-toggle">
+        </label>
+
+        <label class="settings-row">
+          <span class="settings-label">Sort explorer by</span>
+          <select id="settings-sort-order" class="settings-select">
+            <option value="name">Name</option>
+            <option value="modified">Last Modified</option>
+          </select>
+        </label>
+
+        <div class="settings-row">
+          <span class="settings-label">Import directory</span>
+          <div class="settings-folder-picker">
+            <span id="settings-import-folder" class="settings-folder-name">Waymark / Imports</span>
+            <button id="settings-choose-folder" class="btn btn-secondary btn-sm">Choose</button>
+            <button id="settings-reset-folder" class="btn btn-secondary btn-sm hidden">Reset</button>
+          </div>
+        </div>
+
+        <!-- Folder browser (hidden until Choose is clicked) -->
+        <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="text-muted">Changes save automatically</span>
+        <button id="settings-done-btn" class="btn btn-primary">Done</button>
+      </div>
     </div>
   </div>
 

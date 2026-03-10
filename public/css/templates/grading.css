@@ -18,3 +18,93 @@
 .grading-c { color: #d97706; }
 .grading-d { color: #dc2626; }
 .grading-f { color: #b91c1c; font-weight: 700; }
+
+/* Class average footer */
+.grading-footer {
+  font-weight: 700; background: var(--color-bg);
+  border-top: 2px solid var(--color-border);
+}
+
+/* Grade distribution chart */
+.grading-dist {
+  margin-top: 20px; padding: 16px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.grading-dist-title {
+  font-weight: 600; font-size: 0.85rem; color: var(--color-text-muted);
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.grading-dist-chart {
+  display: flex; gap: 12px; align-items: flex-end;
+  height: 120px;
+}
+.grading-dist-col {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 4px;
+}
+.grading-dist-bar-wrap {
+  width: 100%; flex: 1; display: flex; align-items: flex-end;
+}
+.grading-dist-bar {
+  width: 100%; border-radius: 4px 4px 0 0;
+  min-height: 4px; transition: height 0.3s;
+}
+.grading-dist-a { background: #15803d; }
+.grading-dist-b { background: #2563eb; }
+.grading-dist-c { background: #d97706; }
+.grading-dist-d { background: #dc2626; }
+.grading-dist-f { background: #b91c1c; }
+.grading-dist-label { font-weight: 700; font-size: 0.85rem; }
+.grading-dist-count { font-size: 0.75rem; color: var(--color-text-muted); }
+
+/* Directory-level classroom overview */
+.grading-dir-title {
+  font-size: 1.1rem; font-weight: 700;
+  padding: 12px 0 8px; color: #7c2d12;
+}
+.grading-dir-totals {
+  display: flex; gap: 16px; padding: 8px 12px;
+  background: linear-gradient(135deg, #fef3c7, #fffbeb);
+  border: 1px solid #fbbf24; border-radius: var(--radius);
+  font-size: 0.85rem; font-weight: 600; margin-bottom: 12px;
+}
+.grading-dir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.grading-dir-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.grading-dir-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-color: #7c2d12;
+}
+.grading-dir-card-title {
+  font-weight: 600; font-size: 0.95rem; margin-bottom: 6px;
+}
+.grading-dir-card-stats {
+  display: flex; gap: 12px;
+  font-size: 0.8rem; color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+.grading-dir-mini-chart {
+  display: flex; align-items: flex-end; gap: 4px; height: 36px;
+}
+.grading-dir-mini-col {
+  display: flex; flex-direction: column; align-items: center;
+  flex: 1; height: 100%;
+}
+.grading-dir-mini-bar {
+  width: 100%; border-radius: 2px 2px 0 0;
+  min-height: 2px; transition: height 0.3s;
+}
+.grading-dir-mini-label {
+  font-size: 0.65rem; font-weight: 600; color: var(--color-text-muted);
+}

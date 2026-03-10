@@ -31,3 +31,38 @@ test('travel itinerary shows activity icons', async ({ page }) => {
   expect(icons.some(i => i.includes('✈️'))).toBe(true);
   expect(icons.some(i => i.includes('🏨'))).toBe(true);
 });
+
+test('travel itinerary shows cost summary bar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-025');
+  await page.waitForSelector('.travel-summary', { timeout: 5_000 });
+
+  const costText = await page.locator('.travel-summary-cost').textContent();
+  expect(costText).toContain('1,932');
+
+  const activitiesText = await page.locator('.travel-summary-item:nth-child(2) .travel-summary-value').textContent();
+  expect(activitiesText.trim()).toBe('9');
+});
+
+test('travel itinerary shows departure countdown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-025');
+  await page.waitForSelector('.travel-summary', { timeout: 5_000 });
+
+  const countdown = page.locator('.travel-summary-countdown .travel-summary-value');
+  expect(await countdown.count()).toBe(1);
+  const text = await countdown.textContent();
+  expect(text).toMatch(/\d+ days? away/);
+});
+
+test('travel itinerary shows map links for locations', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-025');
+  await page.waitForSelector('.travel-card', { timeout: 5_000 });
+
+  const mapLinks = page.locator('.travel-map-link');
+  expect(await mapLinks.count()).toBeGreaterThanOrEqual(5);
+
+  const href = await mapLinks.first().getAttribute('href');
+  expect(href).toContain('google.com/maps');
+});

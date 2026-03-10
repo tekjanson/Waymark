@@ -11,7 +11,7 @@
 
 import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
-  parseGroups, delegateEvent,
+  parseGroups, delegateEvent, cycleStatus, lazySection,
 } from '../shared.js';
 import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
@@ -385,12 +385,7 @@ const definition = {
         e.stopPropagation();
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
-        const states = template.stageStates;
-        const cur = btn.textContent.trim();
-        const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
-        const next = states[(si + 1) % states.length];
-        btn.textContent = next;
-        btn.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
+        const next = cycleStatus(btn, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
         emitEdit(rowIdx, cols.stage, next);
       });
 
@@ -455,15 +450,9 @@ const definition = {
         } else {
           _expandedCards.add(rowIdx);
           // Lazy detail rendering: build on first expand
-          let detail = card.querySelector('.kanban-card-detail');
-          if (!detail) {
-            const group = groupMap.get(rowIdx);
-            if (group) {
-              detail = buildCardDetail(group, ctx);
-              card.append(detail);
-            }
-          } else {
-            detail.classList.remove('hidden');
+          const group = groupMap.get(rowIdx);
+          if (group) {
+            lazySection(card, '.kanban-card-detail', () => buildCardDetail(group, ctx));
           }
           card.classList.add('kanban-card-expanded');
           btn.textContent = '▴';

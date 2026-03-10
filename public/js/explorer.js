@@ -96,6 +96,7 @@ function buildFolderNode(folder, isShared = false, parentFolderId = null) {
           userData.removePinnedFolder(folder.id);
           pinBtn.classList.remove('pinned');
           pinBtn.title = 'Pin folder';
+          showToast('Folder unpinned', 'success');
         } else {
           userData.addPinnedFolder({
             id: folder.id,
@@ -105,7 +106,10 @@ function buildFolderNode(folder, isShared = false, parentFolderId = null) {
           });
           pinBtn.classList.add('pinned');
           pinBtn.title = 'Unpin folder';
+          showToast('Folder pinned to home', 'success');
         }
+        pinBtn.classList.add('pin-bounce');
+        pinBtn.addEventListener('animationend', () => pinBtn.classList.remove('pin-bounce'), { once: true });
         // Notify app to re-render pinned folders
         window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
       },

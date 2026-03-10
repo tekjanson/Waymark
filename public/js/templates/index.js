@@ -21,7 +21,7 @@ import './contacts.js';
 import './log.js';
 import './budget.js';
 import './kanban/index.js';
-import './habit.js';
+import './habit/index.js';
 import './grading.js';
 import './timesheet.js';
 import './poll.js';
@@ -30,8 +30,9 @@ import './crm.js';
 import './meal.js';
 import './travel.js';
 import './roster.js';
-import './recipe.js';
-import './flow.js';
+import './recipe/index.js';
+import './flow/index.js';
+import './social.js';
 
 /* ---------- Detection ---------- */
 

@@ -27,14 +27,14 @@ test('recipe renders ingredients with separate qty and unit columns', async ({ p
   const items = page.locator('.recipe-ingredients-list li');
   expect(await items.count()).toBeGreaterThanOrEqual(7);
 
-  // First ingredient: qty "400" in qty span, "g" in unit span, name separate
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // Spaghetti (index 3 after sort): qty "400" in qty span, "g" in unit span, name separate
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('400');
 
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 
-  const firstName = page.locator('.recipe-ingredient-text').first();
+  const firstName = page.locator('.recipe-ingredient-text').nth(3);
   await expect(firstName).toContainText('spaghetti');
 });
 
@@ -74,10 +74,10 @@ test('recipe scaling doubles quantities when 2× is clicked', async ({ page }) =
   // 2× should now be active
   await expect(btn2x).toHaveClass(/active/);
 
-  // First quantity "400" → "800", unit stays "g"
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // Spaghetti (index 3) quantity "400" → "800", unit stays "g"
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('800');
-  await expect(page.locator('.recipe-ingredient-unit').first()).toContainText('g');
+  await expect(page.locator('.recipe-ingredient-unit').nth(3)).toContainText('g');
 
   // Servings "4" → "8"
   const servings = page.locator('.recipe-meta-item .meta-label').first();
@@ -93,8 +93,8 @@ test('recipe scaling halves quantities when ½× is clicked', async ({ page }) =
   const btnHalf = page.locator('.recipe-scale-btn[data-scale="0.5"]');
   await btnHalf.click();
 
-  // First quantity "400" → "200"
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // Spaghetti (index 3) quantity "400" → "200"
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('200');
 
   // Servings "4" → "2"
@@ -109,7 +109,7 @@ test('recipe scaling resets to original when 1× is clicked back', async ({ page
 
   // Scale to 3×
   await page.locator('.recipe-scale-btn[data-scale="3"]').click();
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('1200');
 
   // Reset to 1×
@@ -145,8 +145,8 @@ test('recipe custom scale input scales quantities', async ({ page }) => {
   await expect(customInput).toBeVisible();
   await customInput.fill('4');
 
-  // First quantity "400" → "1600"
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // Spaghetti (index 3) quantity "400" → "1600"
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('1600');
 
   // Servings "4" → "16"
@@ -289,16 +289,16 @@ test('recipe renders separate unit column for ingredients', async ({ page }) => 
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
 
-  // Second ingredient (ground beef): qty "500" and unit "g" in separate spans
-  const secondQty = page.locator('.recipe-ingredient-qty').nth(1);
+  // Ground beef (index 4 after sort): qty "500" and unit "g" in separate spans
+  const secondQty = page.locator('.recipe-ingredient-qty').nth(4);
   await expect(secondQty).toContainText('500');
-  const secondUnit = page.locator('.recipe-ingredient-unit').nth(1);
+  const secondUnit = page.locator('.recipe-ingredient-unit').nth(4);
   await expect(secondUnit).toContainText('g');
 
-  // Fourth ingredient (garlic): qty "3" and unit "cloves"
-  const fourthQty = page.locator('.recipe-ingredient-qty').nth(3);
+  // Garlic (index 5 after sort): qty "3" and unit "cloves"
+  const fourthQty = page.locator('.recipe-ingredient-qty').nth(5);
   await expect(fourthQty).toContainText('3');
-  const fourthUnit = page.locator('.recipe-ingredient-unit').nth(3);
+  const fourthUnit = page.locator('.recipe-ingredient-unit').nth(5);
   await expect(fourthUnit).toContainText('cloves');
 });
 
@@ -330,12 +330,12 @@ test('recipe converts grams to imperial (oz/lb) when Imperial is clicked', async
   await imperialBtn.click();
   await expect(imperialBtn).toHaveClass(/active/);
 
-  // 400 g spaghetti → unit span now shows "oz"
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  // 400 g spaghetti (index 3) → unit span now shows "oz"
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('oz');
 
-  // 800 g canned tomatoes → unit should show "lb" (>= 453.592g threshold)
-  const fifthUnit = page.locator('.recipe-ingredient-unit').nth(4);
+  // 800 g canned tomatoes (index 6) → unit should show "lb" (>= 453.592g threshold)
+  const fifthUnit = page.locator('.recipe-ingredient-unit').nth(6);
   await expect(fifthUnit).toContainText('lb');
 });
 
@@ -349,18 +349,18 @@ test('recipe converts tbsp/tsp to metric (ml) when Metric is clicked', async ({ 
   await metricBtn.click();
   await expect(metricBtn).toHaveClass(/active/);
 
-  // 2 tbsp olive oil → unit span now shows "ml"
-  const sixthUnit = page.locator('.recipe-ingredient-unit').nth(5);
+  // 2 tbsp tomato paste (index 7) → unit span now shows "ml"
+  const sixthUnit = page.locator('.recipe-ingredient-unit').nth(7);
   await expect(sixthUnit).toContainText('ml');
 
-  // 1 tsp dried oregano → unit span also shows "ml"
-  const seventhUnit = page.locator('.recipe-ingredient-unit').nth(6);
+  // 1 tsp dried oregano (index 8) → unit span also shows "ml"
+  const seventhUnit = page.locator('.recipe-ingredient-unit').nth(8);
   await expect(seventhUnit).toContainText('ml');
 
-  // 400 g spaghetti → stays metric: qty "400", unit "g"
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // 400 g spaghetti (index 3) → stays metric: qty "400", unit "g"
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('400');
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 });
 
@@ -372,14 +372,14 @@ test('recipe non-convertible units stay unchanged during conversion', async ({ p
   // Click "Imperial"
   await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
 
-  // "3 cloves" garlic — not convertible: qty stays "3", unit stays "cloves"
-  const fourthQty = page.locator('.recipe-ingredient-qty').nth(3);
+  // "3 cloves" garlic (index 5) — not convertible: qty stays "3", unit stays "cloves"
+  const fourthQty = page.locator('.recipe-ingredient-qty').nth(5);
   await expect(fourthQty).toContainText('3');
-  const fourthUnit = page.locator('.recipe-ingredient-unit').nth(3);
+  const fourthUnit = page.locator('.recipe-ingredient-unit').nth(5);
   await expect(fourthUnit).toContainText('cloves');
 
-  // "1" onion (no unit) — stays as "1"
-  const thirdQty = page.locator('.recipe-ingredient-qty').nth(2);
+  // "1" onion (index 0, no unit) — stays as "1"
+  const thirdQty = page.locator('.recipe-ingredient-qty').nth(0);
   await expect(thirdQty).toContainText('1');
 });
 
@@ -390,12 +390,12 @@ test('recipe restores original values when Original is clicked after conversion'
 
   // Convert to Imperial
   await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('oz');
 
   // Switch back to Original
   await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('400');
   await expect(firstUnit).toContainText('g');
 
@@ -411,9 +411,9 @@ test('recipe unit conversion combines with scaling', async ({ page }) => {
 
   // Scale to 2× first
   await page.locator('.recipe-scale-btn[data-scale="2"]').click();
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('800');
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 
   // Now convert to Imperial — should show 2× scaled imperial value
@@ -453,16 +453,16 @@ test('recipe imperial units (tbsp/tsp) stay when Imperial conversion is selected
   // Click "Imperial"
   await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
 
-  // "2 tbsp" is already imperial — qty stays "2", unit stays "tbsp"
-  const sixthQty = page.locator('.recipe-ingredient-qty').nth(5);
+  // "2 tbsp" tomato paste (index 7) is already imperial — qty stays "2", unit stays "tbsp"
+  const sixthQty = page.locator('.recipe-ingredient-qty').nth(7);
   await expect(sixthQty).toContainText('2');
-  const sixthUnit = page.locator('.recipe-ingredient-unit').nth(5);
+  const sixthUnit = page.locator('.recipe-ingredient-unit').nth(7);
   await expect(sixthUnit).toContainText('tbsp');
 
-  // "1 tsp" is already imperial — qty stays "1", unit stays "tsp"
-  const seventhQty = page.locator('.recipe-ingredient-qty').nth(6);
+  // "1 tsp" dried oregano (index 8) is already imperial — qty stays "1", unit stays "tsp"
+  const seventhQty = page.locator('.recipe-ingredient-qty').nth(8);
   await expect(seventhQty).toContainText('1');
-  const seventhUnit = page.locator('.recipe-ingredient-unit').nth(6);
+  const seventhUnit = page.locator('.recipe-ingredient-unit').nth(8);
   await expect(seventhUnit).toContainText('tsp');
 });
 
@@ -473,8 +473,8 @@ test('recipe empty unit does not show em-dash', async ({ page }) => {
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
 
-  // Third ingredient "onion, diced" has no unit — unit span should be empty, not "—"
-  const thirdUnit = page.locator('.recipe-ingredient-unit').nth(2);
+  // Onion, diced (index 0 after sort) has no unit — unit span should be empty, not "—"
+  const thirdUnit = page.locator('.recipe-ingredient-unit').nth(0);
   const unitText = await thirdUnit.textContent();
   expect(unitText).toBe('');
 });
@@ -487,12 +487,12 @@ test('recipe scaling produces vulgar fractions for common values', async ({ page
   // Scale ½×: qty "3" cloves garlic → should show "1 ½" (or similar fraction)
   await page.locator('.recipe-scale-btn[data-scale="0.5"]').click();
 
-  // 1 tsp → 0.5 → should show "½"
-  const seventhQty = page.locator('.recipe-ingredient-qty').nth(6);
+  // 1 tsp dried oregano (index 8) → 0.5 → should show "½"
+  const seventhQty = page.locator('.recipe-ingredient-qty').nth(8);
   await expect(seventhQty).toContainText('½');
 
-  // 3 cloves → 1.5 → should show "1 ½"
-  const fourthQty = page.locator('.recipe-ingredient-qty').nth(3);
+  // 3 cloves garlic (index 5) → 1.5 → should show "1 ½"
+  const fourthQty = page.locator('.recipe-ingredient-qty').nth(5);
   await expect(fourthQty).toContainText('½');
 });
 
@@ -501,8 +501,8 @@ test('recipe unit span updates correctly during conversion', async ({ page }) =>
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
 
-  // Original state: first ingredient unit is "g"
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  // Spaghetti (index 3): unit is "g"
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 
   // Convert to Imperial — unit span should update to "oz"
@@ -523,8 +523,8 @@ test('recipe unit span is not editable during conversion', async ({ page }) => {
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
 
-  // Default: unit span should be editable
-  const firstUnit = page.locator('.recipe-ingredient-unit').first();
+  // Default: spaghetti (index 3) unit span should be editable
+  const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toHaveClass(/editable-cell/);
 
   // Convert to Imperial — unit span should not be editable
@@ -609,8 +609,8 @@ test('recipe unit styling matches qty and stays consistent during conversion', a
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
 
-  const qtySpan = page.locator('.recipe-ingredient-qty').first();
-  const unitSpan = page.locator('.recipe-ingredient-unit').first();
+  const qtySpan = page.locator('.recipe-ingredient-qty').nth(3);
+  const unitSpan = page.locator('.recipe-ingredient-unit').nth(3);
 
   // Both should have matching font-size, font-weight, and padding
   const qtyStyles = await qtySpan.evaluate(el => {
@@ -687,13 +687,77 @@ test('recipe qty bounding box height stays identical across unit conversions', a
   expect(restoredHeight).toBe(baseHeight);
 });
 
+test('recipe sorts unitless ingredients first', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
+
+  const units = page.locator('.recipe-ingredient-unit');
+  const count = await units.count();
+
+  // First 3 items should have no unit text (unitless group)
+  for (let i = 0; i < 3; i++) {
+    const text = await units.nth(i).textContent();
+    expect(text).toBe('');
+  }
+
+  // Items 3–8 should have unit text (unit group)
+  for (let i = 3; i < count; i++) {
+    const text = await units.nth(i).textContent();
+    expect(text.trim().length).toBeGreaterThan(0);
+  }
+});
+
+test('recipe unitless ingredients appear before unit ingredients', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
+
+  // Onion (unitless) should appear before spaghetti (has unit "g")
+  const names = page.locator('.recipe-ingredient-text');
+  const onionIndex = await names.evaluateAll(els =>
+    els.findIndex(el => el.textContent.toLowerCase().includes('onion'))
+  );
+  const spaghettiIndex = await names.evaluateAll(els =>
+    els.findIndex(el => el.textContent.toLowerCase().includes('spaghetti'))
+  );
+
+  expect(onionIndex).toBeLessThan(spaghettiIndex);
+});
+
+test('recipe ingredient columns are left-aligned with fixed widths', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
+
+  const qtySpan = page.locator('.recipe-ingredient-qty').nth(3);
+  const unitSpan = page.locator('.recipe-ingredient-unit').nth(3);
+
+  const qtyStyles = await qtySpan.evaluate(el => {
+    const s = getComputedStyle(el);
+    return { textAlign: s.textAlign, width: s.width };
+  });
+  const unitStyles = await unitSpan.evaluate(el => {
+    const s = getComputedStyle(el);
+    return { textAlign: s.textAlign, width: s.width };
+  });
+
+  // Both columns should be left-aligned
+  expect(qtyStyles.textAlign).toBe('left');
+  expect(unitStyles.textAlign).toBe('left');
+
+  // Both columns should have fixed widths (not "auto")
+  expect(qtyStyles.width).not.toBe('auto');
+  expect(unitStyles.width).not.toBe('auto');
+});
+
 test('recipe initial qty display uses formatNumber for consistency', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
 
-  // Fixture first ingredient qty is "400" — formatNumber(400) → "400"
-  const firstQty = page.locator('.recipe-ingredient-qty').first();
+  // Spaghetti (index 3) qty is "400" — formatNumber(400) → "400"
+  const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   const initialText = await firstQty.textContent();
   expect(initialText).toBe('400');
 
@@ -702,4 +766,183 @@ test('recipe initial qty display uses formatNumber for consistency', async ({ pa
   await page.locator('.recipe-scale-btn[data-scale="1"]').click();
   const afterRoundTrip = await firstQty.textContent();
   expect(afterRoundTrip).toBe(initialText);
+});
+
+/* ---------- Cooking Mode: Ingredient Checkoff ---------- */
+
+test('recipe clicking ingredient toggles strikethrough class', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
+
+  const li = page.locator('.recipe-ingredients-list li').first();
+  await expect(li).not.toHaveClass(/recipe-ingredient-checked/);
+
+  // Click the bullet area (not on editable cell)
+  await li.locator('::before').click().catch(() => {});
+  // Fallback: click the li element itself via JS
+  await li.evaluate(el => el.click());
+  await expect(li).toHaveClass(/recipe-ingredient-checked/);
+
+  // Click again to uncheck
+  await li.evaluate(el => el.click());
+  await expect(li).not.toHaveClass(/recipe-ingredient-checked/);
+});
+
+test('recipe ingredient checkoff does not trigger on editable cell click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
+
+  const li = page.locator('.recipe-ingredients-list li').nth(3);
+  const qtySpan = li.locator('.recipe-ingredient-qty');
+
+  // Click the qty span (editable cell) — should NOT toggle checked class
+  await qtySpan.click();
+  await expect(li).not.toHaveClass(/recipe-ingredient-checked/);
+});
+
+/* ---------- Shopping List Mode ---------- */
+
+test('recipe shopping list button is visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-shopping-btn', { timeout: 5_000 });
+
+  await expect(page.locator('.recipe-shopping-btn')).toBeVisible();
+  await expect(page.locator('.recipe-shopping-btn')).toContainText('Shopping List');
+});
+
+test('recipe shopping list mode hides instructions and metadata', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-shopping-btn', { timeout: 5_000 });
+
+  // Toggle shopping mode
+  await page.click('.recipe-shopping-btn');
+
+  // Card should have shopping mode class
+  await expect(page.locator('.recipe-card')).toHaveClass(/recipe-shopping-mode/);
+
+  // Instructions and metadata should be hidden
+  await expect(page.locator('.recipe-card-instructions')).toBeHidden();
+  await expect(page.locator('.recipe-card-notes')).toBeHidden();
+  await expect(page.locator('.recipe-scale-bar')).toBeHidden();
+
+  // Ingredients should still be visible
+  await expect(page.locator('.recipe-ingredients-list')).toBeVisible();
+});
+
+test('recipe shopping list mode exit restores normal view', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-shopping-btn', { timeout: 5_000 });
+
+  // Enter shopping mode
+  await page.click('.recipe-shopping-btn');
+  await expect(page.locator('.recipe-card')).toHaveClass(/recipe-shopping-mode/);
+
+  // Exit shopping mode
+  await page.click('.recipe-shopping-btn');
+  await expect(page.locator('.recipe-card')).not.toHaveClass(/recipe-shopping-mode/);
+
+  // Instructions should be visible again
+  await expect(page.locator('.recipe-card-instructions')).toBeVisible();
+});
+
+test('recipe shopping list mode button text changes when active', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-shopping-btn', { timeout: 5_000 });
+
+  const btn = page.locator('.recipe-shopping-btn');
+  await expect(btn).toContainText('Shopping List');
+
+  await btn.click();
+  await expect(btn).toContainText('Exit');
+
+  await btn.click();
+  await expect(btn).toContainText('Shopping List');
+});
+
+test('recipe ingredient checkoff works in shopping list mode', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-shopping-btn', { timeout: 5_000 });
+
+  // Enter shopping mode
+  await page.click('.recipe-shopping-btn');
+
+  // Click an ingredient to check it off
+  const li = page.locator('.recipe-ingredients-list li').first();
+  await li.evaluate(el => el.click());
+  await expect(li).toHaveClass(/recipe-ingredient-checked/);
+});
+
+/* --- Status + Rating tests --- */
+
+test('recipe shows status badge', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-status-badge', { timeout: 5_000 });
+  await expect(page.locator('.recipe-status-badge')).toContainText('Approved');
+});
+
+test('recipe status badge cycles on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-status-badge', { timeout: 5_000 });
+  await page.locator('.recipe-status-badge').click();
+  await expect(page.locator('.recipe-status-badge')).toContainText('Needs Work');
+});
+
+test('recipe shows average rating with stars', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-rating-avg', { timeout: 5_000 });
+  const filled = page.locator('.recipe-rating-avg .recipe-star-filled');
+  expect(await filled.count()).toBeGreaterThanOrEqual(3);
+});
+
+test('recipe shows per-person rating breakdown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-rating-breakdown', { timeout: 5_000 });
+  const persons = page.locator('.recipe-rating-person');
+  expect(await persons.count()).toBe(3);
+});
+
+test('recipe interactive rating stars are clickable', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-your-rating', { timeout: 5_000 });
+  const stars = page.locator('.recipe-rate-star');
+  expect(await stars.count()).toBe(5);
+});
+
+test('recipe renders photo when Photo column has an image URL', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-photo', { timeout: 5_000 });
+
+  const img = page.locator('.recipe-photo-img');
+  expect(await img.count()).toBe(1);
+  const src = await img.getAttribute('src');
+  expect(src).toContain('.jpg');
+});
+
+test('recipe photo appears between header and scale bar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-photo', { timeout: 5_000 });
+
+  // Photo should be a sibling after header and before scale bar
+  const card = page.locator('.recipe-card');
+  const children = card.locator('> *');
+  const classes = await children.evaluateAll(els => els.map(e => e.className));
+  const headerIdx = classes.findIndex(c => c.includes('recipe-card-header'));
+  const photoIdx = classes.findIndex(c => c.includes('recipe-photo'));
+  const scaleIdx = classes.findIndex(c => c.includes('recipe-scale-bar'));
+  expect(photoIdx).toBeGreaterThan(headerIdx);
+  expect(photoIdx).toBeLessThan(scaleIdx);
 });

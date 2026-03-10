@@ -11,6 +11,22 @@ import { el } from '../ui.js';
 
 let _onCellEdit = null;
 
+/* ---------- Edit Lock (set by checklist.js) ---------- */
+
+let _editLocked = false;
+
+/**
+ * Lock or unlock inline editing globally.
+ * @param {boolean} locked
+ */
+export function setEditLocked(locked) { _editLocked = !!locked; }
+
+/**
+ * Check whether inline editing is currently locked.
+ * @returns {boolean}
+ */
+export function isEditLocked() { return _editLocked; }
+
 /* ---------- User name (set by checklist.js for note authoring) ---------- */
 
 let _userName = '';
@@ -77,6 +93,17 @@ export function parseProgress(raw, rawTarget) {
   return 0;
 }
 
+/** Check if a string looks like a URL pointing to an image.
+ * @param {string} val
+ * @returns {boolean}
+ */
+export function isImageUrl(val) {
+  if (!val || typeof val !== 'string') return false;
+  const v = val.trim().toLowerCase();
+  return /^https?:\/\/.+\.(jpe?g|png|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(v)
+    || /^https?:\/\/(lh[0-9]*\.googleusercontent\.com|drive\.google\.com|.*\.ggpht\.com)\//i.test(v);
+}
+
 /* ---------- Template Registry ---------- */
 
 /**
@@ -93,6 +120,19 @@ export const TEMPLATES = {};
  */
 export function registerTemplate(key, definition) {
   TEMPLATES[key] = definition;
+}
+
+/**
+ * Check a template's migrations array against its detected cols.
+ * Returns an array of {header, role, description} for columns the
+ * sheet is missing but the template now supports.
+ * @param {Object} template
+ * @param {Object} cols — result of template.columns(lower)
+ * @returns {Array<{header:string, role:string, description?:string}>}
+ */
+export function getMissingMigrations(template, cols) {
+  if (!template.migrations || !Array.isArray(template.migrations)) return [];
+  return template.migrations.filter(m => cols[m.role] === -1);
 }
 
 /* ---------- Inline-editable cell ---------- */
@@ -130,6 +170,7 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   wrapper.dataset.colIdx = String(colIdx);
 
   function startEdit() {
+    if (_editLocked) return;                               // sheet is locked
     if (wrapper.querySelector('input')) return;            // already editing
     const current = text || '';
     const input = document.createElement('input');
@@ -209,6 +250,7 @@ export function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) 
   wrapper.dataset.colIdx = String(colIdx);
 
   function startEdit() {
+    if (_editLocked) return;
     if (wrapper.querySelector('input')) return;
     const current = text || '';
 
@@ -345,6 +387,7 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   wrapper.dataset.colIdx = String(colIdx);
 
   function startEdit() {
+    if (_editLocked) return;
     if (wrapper.querySelector('textarea')) return;
     const current = text || '';
 
@@ -467,6 +510,50 @@ export function parseGroups(rows, primaryColIdx, opts = {}) {
     }
   }
   return groups;
+}
+
+/* ---------- Value-Based Grouping ---------- */
+
+/**
+ * Group rows by the value in a specific column.
+ * Returns a Map<string, {row, originalIndex}[]> preserving insertion order.
+ *
+ * @param {any[][]} rows       — data rows (header excluded)
+ * @param {number}  colIdx     — column index to group by (-1 puts all in one group)
+ * @param {string}  [fallback] — label when the cell is empty (default: 'Other')
+ * @returns {Map<string, {row: any[], originalIndex: number}[]>}
+ */
+export function groupByColumn(rows, colIdx, fallback = 'Other') {
+  const groups = new Map();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const key = colIdx >= 0 ? (cell(row, colIdx) || fallback) : fallback;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ row, originalIndex: i });
+  }
+  return groups;
+}
+
+/* ---------- Status-Cycle Utility ---------- */
+
+/**
+ * Cycle a status badge element through an ordered list of states.
+ * Returns the next state string so callers can do follow-up work
+ * (e.g. update parent card class, emit edit).
+ *
+ * @param {HTMLElement} badge   — the element whose textContent is the current state
+ * @param {string[]}    states  — ordered state labels, e.g. ['Lead','Contacted','Won']
+ * @param {function}    classify — maps a state string to a CSS suffix, e.g. 'won' | 'lead'
+ * @param {string}      cssPrefix — base class(es) before the suffix, e.g. 'crm-stage-btn crm-stage-'
+ * @returns {string} the next state label
+ */
+export function cycleStatus(badge, states, classify, cssPrefix) {
+  const current = badge.textContent.trim();
+  const idx = states.findIndex(s => s.toLowerCase() === current.toLowerCase());
+  const next = states[(idx + 1) % states.length];
+  badge.textContent = next;
+  badge.className = `${cssPrefix}${classify(next)}`;
+  return next;
 }
 
 /* ---------- Add-Row Form Builder ---------- */

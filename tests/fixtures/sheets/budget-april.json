@@ -1,0 +1,15 @@
+{
+  "id": "sheet-033",
+  "title": "April Budget",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Description", "Amount", "Category", "Date", "Budget"],
+    ["Salary", "5200", "Income", "2026-04-01", ""],
+    ["Rent", "-1500", "Housing", "2026-04-01", "1500"],
+    ["Groceries", "-380", "Food", "2026-04-04", "500"],
+    ["Electric Bill", "-110", "Utilities", "2026-04-07", "120"],
+    ["Car Insurance", "-180", "Transport", "2026-04-10", "200"],
+    ["Dining Out", "-65", "Food", "2026-04-14", "150"],
+    ["Freelance Work", "600", "Income", "2026-04-20", ""]
+  ]
+}

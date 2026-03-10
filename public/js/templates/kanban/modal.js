@@ -5,7 +5,7 @@
    cycling, metadata badges, and the full detail panel.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit } from '../shared.js';
+import { el, cell, editableCell, emitEdit, cycleStatus } from '../shared.js';
 import { projectColor, dueBadgeClass, formatDue } from './helpers.js';
 import { buildCardDetail } from './cards.js';
 
@@ -53,12 +53,7 @@ export function openCardModal(group, ctx) {
   }, [stage || 'Backlog']);
   stageBadge.addEventListener('click', (e) => {
     e.stopPropagation();
-    const states = template.stageStates;
-    const cur = stageBadge.textContent.trim();
-    const si = states.findIndex(s => s.toLowerCase() === cur.toLowerCase());
-    const next = states[(si + 1) % states.length];
-    stageBadge.textContent = next;
-    stageBadge.className = `kanban-stage-btn kanban-stage-${template.stageClass(next)}`;
+    const next = cycleStatus(stageBadge, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
     emitEdit(rowIdx, cols.stage, next);
   });
   headerMeta.append(stageBadge);

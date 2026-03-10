@@ -8,6 +8,46 @@
 .ts-summary-item { flex: 1; min-width: 100px; text-align: center; }
 .ts-summary-label { font-size: 0.75rem; text-transform: uppercase; color: var(--color-text-muted); display: block; }
 .ts-summary-value { font-size: 1.1rem; font-weight: 700; color: #4338ca; display: block; }
+
+/* Toolbar: group buttons + invoice */
+.ts-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.ts-group-bar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.ts-group-label {
+  font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ts-group-btn {
+  padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500;
+  border: 1px solid #4338ca; background: transparent; color: #4338ca;
+  cursor: pointer; transition: all var(--transition);
+}
+.ts-group-btn:hover { background: #eef2ff; }
+.ts-group-active { background: #4338ca; color: #fff; }
+.ts-group-active:hover { background: #3730a3; }
+
+.ts-invoice-btn {
+  padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+  border: 1px solid #4338ca; background: #4338ca; color: #fff;
+  cursor: pointer; transition: all var(--transition);
+}
+.ts-invoice-btn:hover { background: #3730a3; }
+
+/* Group headers */
+.ts-group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; margin: 12px 0 4px;
+  background: #eef2ff; border-radius: var(--radius);
+  border-left: 3px solid #4338ca;
+}
+.ts-group-title { font-weight: 700; font-size: 0.95rem; color: #4338ca; }
+.ts-group-stats { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 500; }
+
+/* Rows */
 .ts-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; background: var(--color-surface);
@@ -30,3 +70,56 @@
 .ts-row-rate { font-size: 0.8rem; color: var(--color-text-muted); }
 .ts-billable-badge { font-size: 0.85rem; }
 .ts-is-billable { color: #d97706; }
+
+/* Invoice overlay */
+.ts-invoice-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.ts-invoice-sheet {
+  background: #fff; border-radius: var(--radius); max-width: 800px; width: 100%;
+  max-height: 90vh; overflow-y: auto; padding: 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  color: #111;
+}
+.ts-inv-header { margin-bottom: 20px; border-bottom: 2px solid #4338ca; padding-bottom: 12px; }
+.ts-inv-title { margin: 0 0 8px; font-size: 1.5rem; color: #4338ca; }
+.ts-inv-meta { display: flex; gap: 20px; font-size: 0.85rem; color: #555; }
+.ts-inv-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ts-inv-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; font-weight: 600; color: #555; }
+.ts-inv-table td { padding: 6px; border-bottom: 1px solid #eee; }
+.ts-inv-num { text-align: right; font-variant-numeric: tabular-nums; }
+.ts-inv-total td { font-weight: 700; border-top: 2px solid #4338ca; border-bottom: none; font-size: 1rem; }
+.ts-inv-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.ts-inv-print-btn {
+  padding: 8px 18px; border-radius: 20px; font-weight: 600;
+  background: #4338ca; color: #fff; border: none; cursor: pointer;
+  transition: all var(--transition);
+}
+.ts-inv-print-btn:hover { background: #3730a3; }
+.ts-inv-close-btn {
+  padding: 8px 18px; border-radius: 20px; font-weight: 600;
+  background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border);
+  cursor: pointer; transition: all var(--transition);
+}
+.ts-inv-close-btn:hover { background: var(--color-surface); }
+
+/* Print styles for invoice */
+@media print {
+  body > *:not(.ts-invoice-overlay) { display: none !important; }
+  .ts-invoice-overlay {
+    position: static; background: none; padding: 0;
+  }
+  .ts-invoice-sheet {
+    box-shadow: none; max-height: none; padding: 0; border-radius: 0;
+  }
+  .ts-inv-actions { display: none !important; }
+  .ts-inv-table th, .ts-inv-table td { padding: 4px 6px; }
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .ts-toolbar { flex-direction: column; align-items: stretch; }
+  .ts-group-bar { justify-content: center; }
+  .ts-invoice-btn { text-align: center; }
+}

@@ -1,8 +1,29 @@
 /* Poll Template */
-.poll-total {
-  font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 12px;
-  font-weight: 500;
+
+/* Toolbar */
+.poll-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
 }
+.poll-total {
+  font-size: 0.85rem; color: var(--color-text-muted); font-weight: 500;
+}
+.poll-live-btn {
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  padding: 4px 12px; border-radius: 14px; font-size: 0.8rem; font-weight: 600;
+  color: var(--color-text-muted); cursor: pointer; transition: all var(--transition);
+}
+.poll-live-btn:hover { border-color: #be185d; color: #be185d; }
+.poll-live-active {
+  background: #be185d; color: #fff; border-color: #be185d;
+  animation: poll-pulse 2s ease-in-out infinite;
+}
+@keyframes poll-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(190,24,93,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(190,24,93,0); }
+}
+
+/* Rows */
 .poll-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; background: var(--color-surface);
@@ -12,14 +33,22 @@
 .poll-row-label { flex: 1; min-width: 0; }
 .poll-option-text { font-weight: 500; font-size: 0.95rem; display: block; }
 .poll-option-notes { font-size: 0.8rem; color: var(--color-text-muted); }
+
+/* Bars */
 .poll-bar-wrap {
-  width: 160px; height: 10px; background: var(--color-border);
-  border-radius: 5px; overflow: hidden; flex-shrink: 0;
+  width: 160px; height: 18px; background: var(--color-border);
+  border-radius: 9px; overflow: hidden; flex-shrink: 0;
 }
 .poll-bar {
-  height: 100%; border-radius: 5px; background: #be185d;
-  transition: width 400ms ease;
+  height: 100%; border-radius: 9px; background: linear-gradient(90deg, #be185d, #e11d48);
+  transition: width 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 4px;
 }
+.poll-bar-label {
+  font-size: 0.65rem; font-weight: 700; color: #fff; white-space: nowrap;
+}
+
+/* Stats */
 .poll-row-stats { display: flex; align-items: center; gap: 8px; min-width: 80px; justify-content: flex-end; }
 .poll-votes-count {
   font-weight: 700; font-size: 0.95rem; color: #be185d;

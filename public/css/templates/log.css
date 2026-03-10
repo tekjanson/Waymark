@@ -20,3 +20,9 @@
 }
 .template-log-duration { font-size: 0.8rem; color: var(--color-text-muted); }
 .template-log-text { font-size: 0.9rem; }
+
+/* Load more button */
+.template-log-more {
+  display: block; width: 100%; margin-top: 12px;
+  text-align: center; font-size: 0.85rem;
+}

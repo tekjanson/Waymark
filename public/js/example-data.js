@@ -599,4 +599,40 @@ export const EXAMPLE_SHEETS = {
       ['',                 'Done',              'end',      '',                                  '',            'Order complete'],
     ],
   },
+
+  /* ---- Social Feed examples ---- */
+  "Jamie's Wall": {
+    folder: 'Social',
+    headers: ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
+    rows: [
+      ['Just shipped a major update to Waymark! The kanban board now has reject tickets, reporter column, and a directory view.', 'Jamie', '2026-03-10', 'milestone', 'excited', '', ''],
+      ['', 'Alex', '2026-03-10', '', '', '', 'Congrats! The new features look awesome.'],
+      ['', 'Sam', '2026-03-10', '', '', '', 'Can\'t wait to try the directory view!'],
+      ['Working on the social template today. Each Google Sheet becomes a personal wall.', 'Jamie', '2026-03-09', 'update', 'thinking', '', ''],
+      ['Check out this article on building apps with vanilla JS!', 'Jamie', '2026-03-08', 'link', '', 'https://developer.mozilla.org/en-US/docs/Learn/JavaScript', ''],
+      ['', 'Alex', '2026-03-08', '', '', '', 'Great read! Vanilla JS is underrated.'],
+      ['Had an amazing dinner tonight. Tried the gluten-free pasta recipe.', 'Jamie', '2026-03-07', 'update', 'happy', '', ''],
+      ['What\'s everyone\'s favorite productivity tool?', 'Jamie', '2026-03-06', 'question', '', '', ''],
+      ['', 'Sam', '2026-03-06', '', '', '', 'I love Waymark of course!'],
+      ['', 'Riley', '2026-03-06', '', '', '', 'Obsidian for notes, Waymark for everything else.'],
+      ['Feeling grateful for this community. Building things together is the best.', 'Jamie', '2026-03-05', 'thought', 'grateful', '', ''],
+    ],
+  },
+
+  "Team Updates": {
+    folder: 'Social',
+    headers: ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
+    rows: [
+      ['Sprint review went great! All 5 stories completed ahead of schedule.', 'Alex', '2026-03-09', 'milestone', 'proud', '', ''],
+      ['', 'Jamie', '2026-03-09', '', '', '', 'Nice work team! Keep the momentum going.'],
+      ['New design system tokens are live. Check the Figma link.', 'Sam', '2026-03-08', 'link', '', 'https://figma.com/design-system', ''],
+      ['', 'Alex', '2026-03-08', '', '', '', 'Love the new color palette!'],
+      ['Who wants to pair on the API migration? Need a buddy.', 'Riley', '2026-03-07', 'question', '', '', ''],
+      ['', 'Alex', '2026-03-07', '', '', '', 'I\'m free Thursday afternoon!'],
+      ['', 'Sam', '2026-03-07', '', '', '', 'Count me in too.'],
+      ['Deployed v2.5 to staging. Please test your flows before end of day.', 'Alex', '2026-03-06', 'update', '', '', ''],
+      ['Friday lunch at the new Thai place? Lets go at noon.', 'Jamie', '2026-03-05', 'update', 'happy', '', ''],
+      ['', 'Riley', '2026-03-05', '', '', '', 'Im in! Love Thai food.'],
+    ],
+  },
 };

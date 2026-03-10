@@ -145,6 +145,14 @@ const ROLE_LABELS = {
   'flow.next': 'Next Step(s)',
   'flow.condition': 'Edge Label / Condition',
   'flow.notes': 'Notes / Description',
+  // Social Feed
+  'social.text': 'Post / Message content',
+  'social.author': 'Author / Posted by',
+  'social.date': 'Date / Timestamp',
+  'social.category': 'Category / Type of post',
+  'social.mood': 'Mood / Feeling emoji',
+  'social.link': 'Link / URL',
+  'social.comment': 'Comment / Reply',
 };
 
 /**
@@ -213,6 +221,10 @@ const CANONICAL_HEADERS = {
   // Flow Diagram
   'flow.flow': 'Flow', 'flow.step': 'Step', 'flow.type': 'Type',
   'flow.next': 'Next', 'flow.condition': 'Condition', 'flow.notes': 'Notes',
+  // Social Feed
+  'social.text': 'Post', 'social.author': 'Author', 'social.date': 'Date',
+  'social.category': 'Category', 'social.mood': 'Mood', 'social.link': 'Link',
+  'social.comment': 'Comment',
   // Recipe
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',
