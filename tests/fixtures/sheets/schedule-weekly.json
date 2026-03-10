@@ -8,6 +8,7 @@
     ["Monday", "10:00 AM", "Design Review", "Zoom"],
     ["Monday", "2:00 PM", "Client Call", "Phone"],
     ["Tuesday", "9:00 AM", "Sprint Planning", "Conference Room B"],
+    ["Tuesday", "9:00 AM", "Investor Meeting", "Board Room"],
     ["Tuesday", "1:00 PM", "Code Review", "Desk"],
     ["Wednesday", "8:00 AM", "Team Standup", "Conference Room A"],
     ["Wednesday", "11:00 AM", "Lunch & Learn", "Break Room"],

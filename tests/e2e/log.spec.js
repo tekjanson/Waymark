@@ -30,3 +30,12 @@ test('log shows type badges and duration', async ({ page }) => {
   const durations = await page.locator('.template-log-duration').allTextContents();
   expect(durations.some(d => d.includes('min'))).toBe(true);
 });
+
+test('log hides Load more button when entries fit in one page', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-014');
+  await page.waitForSelector('.template-log-entry', { timeout: 5_000 });
+  // 8 entries < PAGE_SIZE so button should not appear
+  const moreBtn = await page.locator('.template-log-more').count();
+  expect(moreBtn).toBe(0);
+});

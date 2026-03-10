@@ -1,0 +1,14 @@
+{
+  "id": "sheet-035",
+  "title": "Science 101 Grades",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Student", "Lab 1", "Lab 2", "Quiz", "Final Exam", "Grade"],
+    ["Emma Wilson", "90", "95", "88", "92", "A"],
+    ["James Lee", "72", "68", "75", "70", "C+"],
+    ["Sofia Martinez", "97", "99", "95", "98", "A+"],
+    ["Liam Johnson", "55", "60", "50", "58", "F"],
+    ["Olivia Brown", "85", "88", "82", "86", "B+"],
+    ["Noah Davis", "78", "74", "70", "72", "C"]
+  ]
+}

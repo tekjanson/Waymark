@@ -17,9 +17,9 @@ test('habit tracker renders grid with day columns', async ({ page }) => {
   const toggles = page.locator('.habit-toggle');
   expect(await toggles.count()).toBeGreaterThan(0);
 
-  // Check some are checked
-  const checked = page.locator('.habit-checked');
-  expect(await checked.count()).toBeGreaterThan(0);
+  // Check some are done
+  const done = page.locator('.habit-done');
+  expect(await done.count()).toBeGreaterThan(0);
 });
 
 test('habit toggle emits cell-update on click', async ({ page }) => {
@@ -27,16 +27,18 @@ test('habit toggle emits cell-update on click', async ({ page }) => {
   await navigateToSheet(page, 'sheet-018');
   await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
 
-  // Click an unchecked cell — capture data attrs for stable re-query
-  const unchecked = page.locator('.habit-toggle:not(.habit-checked)').first();
+  // Click an empty cell — capture data attrs for stable re-query
+  const unchecked = page.locator('.habit-toggle.habit-empty').first();
   const rowAttr = await unchecked.getAttribute('data-row-idx');
   const colAttr = await unchecked.getAttribute('data-col-idx');
   await unchecked.click();
   const clicked = page.locator(`.habit-toggle[data-row-idx="${rowAttr}"][data-col-idx="${colAttr}"]`);
-  await expect(clicked).toHaveClass(/habit-checked/);
+  await expect(clicked).toHaveClass(/habit-done/);
 
   const records = await getCreatedRecords(page);
   const updates = records.filter(r => r.type === 'cell-update');
   expect(updates.length).toBeGreaterThanOrEqual(1);
-  expect(updates[updates.length - 1].value).toBe('✓');
+  const dayUpdate = updates.find(u => String(u.col) === colAttr && String(u.row) === rowAttr);
+  expect(dayUpdate).toBeTruthy();
+  expect(dayUpdate.value).toBe('✓');
 });

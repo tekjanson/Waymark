@@ -30,3 +30,28 @@
 }
 .roster-toggle:hover { background: #ede9fe; }
 .roster-checked { background: #ede9fe; color: #6366f1; font-weight: 700; }
+
+/* ---------- Week navigation toolbar ---------- */
+.roster-toolbar {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-bottom: 8px; padding: 6px 0;
+}
+.roster-nav-btn {
+  padding: 4px 12px; border-radius: 12px; border: 1px solid #6366f1;
+  background: transparent; color: #6366f1; font-size: 0.75rem;
+  font-weight: 600; cursor: pointer; transition: all var(--transition);
+}
+.roster-nav-btn:hover:not(:disabled) { background: #6366f1; color: #fff; }
+.roster-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.roster-week-label { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); min-width: 90px; text-align: center; }
+
+/* ---------- Summary row ---------- */
+.roster-summary {
+  background: var(--color-bg); font-size: 0.7rem; font-weight: 600;
+  border-top: 2px solid var(--color-border);
+}
+.roster-summary-label { color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.roster-summary-day { font-size: 0.6rem; line-height: 1.2; white-space: nowrap; }
+.roster-no-coverage {
+  background: #fee2e2; color: #dc2626; font-weight: 700;
+}

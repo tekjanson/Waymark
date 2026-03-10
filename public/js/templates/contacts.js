@@ -2,7 +2,7 @@
    templates/contacts.js — Contacts: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate } from './shared.js';
+import { el, cell, editableCell, delegateEvent, registerTemplate } from './shared.js';
 
 const definition = {
   name: 'Contacts',
@@ -36,17 +36,64 @@ const definition = {
   },
 
   render(container, rows, cols) {
-    const grid = el('div', { className: 'template-contacts-grid' });
+    /* ---------- Sort contacts alphabetically ---------- */
+    const indexed = rows.map((row, i) => ({ row, rowIdx: i + 1 }));
+    indexed.sort((a, b) => {
+      const na = (cell(a.row, cols.name) || a.row[0] || '').toLowerCase();
+      const nb = (cell(b.row, cols.name) || b.row[0] || '').toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowIdx = i + 1;
-      const name  = cell(row, cols.name) || row[0] || '—';
+    /* ---------- Collect available letters ---------- */
+    const letters = new Set();
+    for (const { row } of indexed) {
+      const ch = (cell(row, cols.name) || row[0] || '?')[0].toUpperCase();
+      if (/[A-Z]/.test(ch)) letters.add(ch);
+      else letters.add('#');
+    }
+
+    /* ---------- Search bar ---------- */
+    const searchInput = el('input', {
+      className: 'contacts-search',
+      type: 'text',
+      placeholder: '\uD83D\uDD0D Search contacts\u2026',
+    });
+    container.append(el('div', { className: 'contacts-toolbar' }, [searchInput]));
+
+    /* ---------- Layout: sidebar + grid ---------- */
+    const sidebar = el('div', { className: 'contacts-alpha-sidebar' });
+    const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
+    for (const ch of alpha) {
+      sidebar.append(el('button', {
+        className: 'contacts-alpha-btn' + (letters.has(ch) ? '' : ' contacts-alpha-disabled'),
+        dataset: { letter: ch },
+        type: 'button',
+      }, [ch]));
+    }
+
+    const grid = el('div', { className: 'template-contacts-grid' });
+    const layout = el('div', { className: 'contacts-layout' }, [sidebar, grid]);
+    container.append(layout);
+
+    /* ---------- Render contact cards grouped by letter ---------- */
+    let currentLetter = '';
+    for (const { row, rowIdx } of indexed) {
+      const name  = cell(row, cols.name) || row[0] || '\u2014';
       const email = cell(row, cols.email);
       const phone = cell(row, cols.phone);
       const role  = cell(row, cols.role);
+      const ch = (name[0] || '?').toUpperCase();
+      const letter = /[A-Z]/.test(ch) ? ch : '#';
 
-      grid.append(el('div', { className: 'template-contact-card' }, [
+      if (letter !== currentLetter) {
+        grid.append(el('div', {
+          className: 'contacts-letter-header',
+          id: `contacts-letter-${letter}`,
+        }, [letter]));
+        currentLetter = letter;
+      }
+
+      grid.append(el('div', { className: 'template-contact-card', dataset: { letter } }, [
         editableCell('div', { className: 'template-contact-name' }, name, rowIdx, cols.name),
         cols.role >= 0 ? editableCell('div', { className: 'template-contact-role' }, role, rowIdx, cols.role) : null,
         el('div', { className: 'template-contact-details' }, [
@@ -56,7 +103,36 @@ const definition = {
       ]));
     }
 
-    container.append(grid);
+    /* ---------- Alphabetical jump (delegated) ---------- */
+    delegateEvent(sidebar, 'click', '.contacts-alpha-btn', (e, btn) => {
+      if (btn.classList.contains('contacts-alpha-disabled')) return;
+      const target = document.getElementById(`contacts-letter-${btn.dataset.letter}`);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    /* ---------- Search filter ---------- */
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      const headers = grid.querySelectorAll('.contacts-letter-header');
+      const cards = grid.querySelectorAll('.template-contact-card');
+
+      for (const card of cards) {
+        const text = card.textContent.toLowerCase();
+        card.style.display = q && !text.includes(q) ? 'none' : '';
+      }
+
+      /* Hide letter headers with no visible cards */
+      for (const hdr of headers) {
+        const letter = hdr.textContent;
+        let hasVisible = false;
+        let next = hdr.nextElementSibling;
+        while (next && !next.classList.contains('contacts-letter-header')) {
+          if (next.style.display !== 'none') hasVisible = true;
+          next = next.nextElementSibling;
+        }
+        hdr.style.display = q && !hasVisible ? 'none' : '';
+      }
+    });
   },
 };
 

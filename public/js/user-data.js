@@ -42,6 +42,8 @@ function defaultUserData() {
       autoRefresh: true,        // auto-reload sheet every 60 s
       sidebarOpen: true,        // explorer sidebar visible
       sortOrder: 'name',        // explorer sort: 'name' | 'modified'
+      importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
+      importFolderName: null,   // display name of custom import folder
       // Future: theme, density, viewMode
     },
 
@@ -159,10 +161,13 @@ export async function getExamplesFolderId() {
 
 /**
  * Get (or create) the Imports subfolder inside Waymark/.
+ * If the user has a custom import folder configured, returns that instead.
  * @returns {Promise<string>}  folder ID
  */
 export async function getImportsFolderId() {
   await init();
+  const custom = getImportFolderId();
+  if (custom) return custom;
   return ensureFolder(IMPORTS_FOLDER, _rootFolderId);
 }
 
@@ -468,6 +473,34 @@ export function getSortOrder() {
 
 export async function setSortOrder(order) {
   const prefs = { ...(_userData?.preferences || {}), sortOrder: order };
+  await save({ preferences: prefs });
+}
+
+/* ---------- Import Folder ---------- */
+
+/**
+ * Get the custom import folder ID (null = default Waymark/Imports).
+ * @returns {string|null}
+ */
+export function getImportFolderId() {
+  return _userData?.preferences?.importFolderId || null;
+}
+
+/**
+ * Get the custom import folder display name.
+ * @returns {string|null}
+ */
+export function getImportFolderName() {
+  return _userData?.preferences?.importFolderName || null;
+}
+
+/**
+ * Set a custom folder for imports.
+ * @param {string|null} folderId  Drive folder ID (null to reset to default)
+ * @param {string|null} folderName  display name
+ */
+export async function setImportFolder(folderId, folderName) {
+  const prefs = { ...(_userData?.preferences || {}), importFolderId: folderId, importFolderName: folderName };
   await save({ preferences: prefs });
 }
 

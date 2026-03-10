@@ -88,7 +88,7 @@ test('categorized checklist renders group headers', async ({ page }) => {
   const headers = page.locator('.checklist-group-header');
   await expect(headers).toHaveCount(4); // Dairy, Produce, Meat & Seafood, Bakery
 
-  const headerTexts = await headers.allTextContents();
+  const headerTexts = await headers.locator('.checklist-group-header-text').allTextContents();
   expect(headerTexts).toEqual(['Dairy', 'Produce', 'Meat & Seafood', 'Bakery']);
 });
 

@@ -2,10 +2,21 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const { execSync } = require('child_process');
 const config = require('./config');
 const setupAuth = require('./auth');
 
 const app = express();
+
+/* ---------- Git hash + repo URL (read once at startup) ---------- */
+let gitHash = '';
+let gitRepoUrl = '';
+try {
+  gitHash = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+  const remote = execSync('git remote get-url origin', { cwd: __dirname }).toString().trim();
+  // Convert SSH URLs to HTTPS
+  gitRepoUrl = remote.replace(/^git@github\.com:/, 'https://github.com/').replace(/\.git$/, '');
+} catch { /* not a git repo — hash stays empty */ }
 
 /* ---------- Base-path aware router ---------- */
 // When BASE_PATH is set (e.g. '/waymark'), all routes are mounted under
@@ -53,6 +64,12 @@ function serveIndex(_req, res) {
   }
   if (config.WAYMARK_LOCAL) {
     injections.push('window.__WAYMARK_LOCAL=true;');
+  }
+  if (gitHash) {
+    injections.push(`window.__WAYMARK_HASH='${gitHash}';`);
+  }
+  if (gitRepoUrl) {
+    injections.push(`window.__WAYMARK_REPO='${gitRepoUrl}';`);
   }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);

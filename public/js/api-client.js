@@ -63,10 +63,16 @@ async function loadMockSheet(sheetId) {
     'sheet-023': 'crm-sales',
     'sheet-024': 'meal-weekly',
     'sheet-025': 'travel-europe',
+    'sheet-034': 'meal-next-week',
     'sheet-026': 'roster-team',
     'sheet-027': 'recipe-spaghetti-bolognese',
     'sheet-028': 'kanban-waymark',
     'sheet-029': 'flow-login',
+    'sheet-030': 'social-wall',
+    'sheet-031': 'flow-large',
+    'sheet-032': 'recipe-legacy',
+    'sheet-033': 'budget-april',
+    'sheet-035': 'grading-science',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

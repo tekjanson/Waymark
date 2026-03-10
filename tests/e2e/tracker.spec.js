@@ -31,3 +31,28 @@ test('tracker shows progress bar widths', async ({ page }) => {
   const width = await firstBar.evaluate(el => el.style.width);
   expect(width).not.toBe('0%');
 });
+
+test('tracker shows milestone markers on progress bars', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-010');
+  await page.waitForSelector('.tracker-milestone', { timeout: 5_000 });
+
+  // Each row should have 3 milestone markers (25%, 50%, 75%)
+  const milestones = page.locator('.tracker-milestone');
+  // 8 rows x 3 markers = 24 total
+  expect(await milestones.count()).toBe(24);
+  // Some milestones should be passed (progress > marker%)
+  const passed = page.locator('.tracker-milestone-passed');
+  expect(await passed.count()).toBeGreaterThan(0);
+});
+
+test('tracker shows ETA for in-progress goals', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-010');
+  await page.waitForSelector('.tracker-eta', { timeout: 5_000 });
+
+  const etas = page.locator('.tracker-eta');
+  expect(await etas.count()).toBeGreaterThan(0);
+  const text = await etas.first().textContent();
+  expect(text).toMatch(/^ETA:/);
+});

@@ -1,0 +1,13 @@
+{
+  "id": "sheet-032",
+  "title": "Grandma's Cookies",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Recipe", "Servings", "Qty", "Unit", "Ingredient", "Step"],
+    ["Chocolate Chip Cookies", "24", "250", "g", "flour", "Mix dry ingredients"],
+    ["", "", "200", "g", "butter", "Cream butter and sugar"],
+    ["", "", "150", "g", "sugar", "Combine wet and dry"],
+    ["", "", "2", "", "eggs", "Fold in chocolate chips"],
+    ["", "", "200", "g", "chocolate chips", "Bake at 180C for 12 min"]
+  ]
+}

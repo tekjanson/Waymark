@@ -75,6 +75,7 @@ const ROLE_LABELS = {
   'kanban.due': 'Due Date / Deadline',
   'kanban.label': 'Label / Tag (feature, bug, etc.)',
   'kanban.note': 'Note / Comment',
+  'kanban.reporter': 'Reported By / Submitter',
   // Habit
   'habit.text': 'Habit / Routine',
   'habit.streak': 'Streak Count',
@@ -144,6 +145,14 @@ const ROLE_LABELS = {
   'flow.next': 'Next Step(s)',
   'flow.condition': 'Edge Label / Condition',
   'flow.notes': 'Notes / Description',
+  // Social Feed
+  'social.text': 'Post / Message content',
+  'social.author': 'Author / Posted by',
+  'social.date': 'Date / Timestamp',
+  'social.category': 'Category / Type of post',
+  'social.mood': 'Mood / Feeling emoji',
+  'social.link': 'Link / URL',
+  'social.comment': 'Comment / Reply',
 };
 
 /**
@@ -183,6 +192,7 @@ const CANONICAL_HEADERS = {
   'kanban.text': 'Task', 'kanban.description': 'Description', 'kanban.stage': 'Stage',
   'kanban.project': 'Project', 'kanban.assignee': 'Assignee', 'kanban.priority': 'Priority',
   'kanban.due': 'Due', 'kanban.label': 'Label', 'kanban.note': 'Note',
+  'kanban.reporter': 'Reported By',
   // Habit
   'habit.text': 'Habit', 'habit.streak': 'Streak',
   // Grading
@@ -211,6 +221,10 @@ const CANONICAL_HEADERS = {
   // Flow Diagram
   'flow.flow': 'Flow', 'flow.step': 'Step', 'flow.type': 'Type',
   'flow.next': 'Next', 'flow.condition': 'Condition', 'flow.notes': 'Notes',
+  // Social Feed
+  'social.text': 'Post', 'social.author': 'Author', 'social.date': 'Date',
+  'social.category': 'Category', 'social.mood': 'Mood', 'social.link': 'Link',
+  'social.comment': 'Comment',
   // Recipe
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',

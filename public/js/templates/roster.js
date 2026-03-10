@@ -1,8 +1,12 @@
 /* ============================================================
-   templates/roster.js — Roster: shift grid, all fields editable
+   templates/roster.js — Roster: shift grid, weekly nav, summary
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus } from './shared.js';
+
+/* ---------- Constants ---------- */
+const DAY_ABBRS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAYS_PER_PAGE = 7;
 
 const definition = {
   name: 'Roster',
@@ -42,67 +46,138 @@ const definition = {
   shiftStates: ['Morning', 'Afternoon', 'Night', 'Off'],
 
   render(container, rows, cols, template) {
-    // Header
-    const headerRow = el('div', { className: 'roster-grid-row roster-header' });
-    headerRow.append(el('div', { className: 'roster-cell roster-employee-cell' }, ['Employee']));
-    if (cols.role >= 0) headerRow.append(el('div', { className: 'roster-cell roster-role-cell' }, ['Role']));
-    if (cols.shift >= 0) headerRow.append(el('div', { className: 'roster-cell roster-shift-cell' }, ['Shift']));
-    for (const dayIdx of cols.days) {
-      const dayAbbrs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      headerRow.append(el('div', { className: 'roster-cell roster-day-cell' }, [dayAbbrs[cols.days.indexOf(dayIdx)] || 'Day']));
+    /* ---------- Week navigation ---------- */
+    const totalDays = cols.days.length;
+    const totalPages = Math.max(1, Math.ceil(totalDays / DAYS_PER_PAGE));
+    let currentPage = 0;
+
+    /** Get the slice of day column indices for the current page */
+    function visibleDays() {
+      const start = currentPage * DAYS_PER_PAGE;
+      return cols.days.slice(start, start + DAYS_PER_PAGE);
     }
-    container.append(headerRow);
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const rowIdx = i + 1;
-      const employee = cell(row, cols.employee) || row[0] || '—';
-      const role = cols.role >= 0 ? cell(row, cols.role) : '';
-      const shift = cols.shift >= 0 ? cell(row, cols.shift) : '';
+    const prevBtn = el('button', { className: 'roster-nav-btn', disabled: true }, ['\u2190 Prev']);
+    const nextBtn = el('button', { className: 'roster-nav-btn', disabled: totalPages <= 1 }, ['Next \u2192']);
+    const weekLabel = el('span', { className: 'roster-week-label' }, [`Week 1 of ${totalPages}`]);
 
-      const rowEl = el('div', { className: 'roster-grid-row' });
-      rowEl.append(editableCell('div', { className: 'roster-cell roster-employee-cell' }, employee, rowIdx, cols.employee));
-      if (cols.role >= 0) rowEl.append(editableCell('div', { className: 'roster-cell roster-role-cell' }, role, rowIdx, cols.role));
-      if (cols.shift >= 0) {
-        const shiftBadge = el('button', {
-          className: `roster-shift-btn roster-shift-${shift.toLowerCase().trim() || 'morning'}`,
-          title: 'Click to cycle shift',
-        }, [shift || 'Morning']);
+    const toolbar = el('div', { className: 'roster-toolbar' }, [prevBtn, weekLabel, nextBtn]);
+    container.append(toolbar);
 
-        shiftBadge.addEventListener('click', () => {
-          const states = template.shiftStates;
-          const current = shiftBadge.textContent.trim();
-          const idx = states.findIndex(s => s.toLowerCase() === current.toLowerCase());
-          const next = states[(idx + 1) % states.length];
-          shiftBadge.textContent = next;
-          shiftBadge.className = `roster-shift-btn roster-shift-${next.toLowerCase().trim()}`;
-          emitEdit(rowIdx, cols.shift, next);
-        });
+    /* ---------- Grid wrapper (rebuilt on page change) ---------- */
+    const gridWrap = el('div', { className: 'roster-grid' });
+    container.append(gridWrap);
 
-        rowEl.append(el('div', { className: 'roster-cell roster-shift-cell' }, [shiftBadge]));
+    /** Build or rebuild the grid for the current page of days */
+    function buildGrid() {
+      while (gridWrap.firstChild) gridWrap.removeChild(gridWrap.firstChild);
+      const vDays = visibleDays();
+
+      /* Header row */
+      const headerRow = el('div', { className: 'roster-grid-row roster-header' });
+      headerRow.append(el('div', { className: 'roster-cell roster-employee-cell' }, ['Employee']));
+      if (cols.role >= 0) headerRow.append(el('div', { className: 'roster-cell roster-role-cell' }, ['Role']));
+      if (cols.shift >= 0) headerRow.append(el('div', { className: 'roster-cell roster-shift-cell' }, ['Shift']));
+      for (const dayIdx of vDays) {
+        headerRow.append(el('div', { className: 'roster-cell roster-day-cell' },
+          [DAY_ABBRS[cols.days.indexOf(dayIdx)] || 'Day']));
+      }
+      gridWrap.append(headerRow);
+
+      /* Data rows */
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowIdx = i + 1;
+        const employee = cell(row, cols.employee) || row[0] || '\u2014';
+        const role = cols.role >= 0 ? cell(row, cols.role) : '';
+        const shift = cols.shift >= 0 ? cell(row, cols.shift) : '';
+
+        const rowEl = el('div', { className: 'roster-grid-row' });
+        rowEl.append(editableCell('div', { className: 'roster-cell roster-employee-cell' }, employee, rowIdx, cols.employee));
+        if (cols.role >= 0) rowEl.append(editableCell('div', { className: 'roster-cell roster-role-cell' }, role, rowIdx, cols.role));
+        if (cols.shift >= 0) {
+          const shiftBadge = el('button', {
+            className: `roster-shift-btn roster-shift-${shift.toLowerCase().trim() || 'morning'}`,
+            title: 'Click to cycle shift',
+            dataset: { rowIdx: String(rowIdx) },
+          }, [shift || 'Morning']);
+          rowEl.append(el('div', { className: 'roster-cell roster-shift-cell' }, [shiftBadge]));
+        }
+
+        for (const dayIdx of vDays) {
+          const val = cell(row, dayIdx);
+          const checked = /^(✓|✔|x|yes|1|true)$/i.test(val.trim());
+          rowEl.append(el('div', {
+            className: `roster-cell roster-day-cell roster-toggle ${checked ? 'roster-checked' : ''}`,
+            title: 'Click to toggle',
+            dataset: { rowIdx: String(rowIdx), colIdx: String(dayIdx) },
+          }, [checked ? '\u2713' : '']));
+        }
+
+        gridWrap.append(rowEl);
       }
 
-      for (const dayIdx of cols.days) {
-        const val = cell(row, dayIdx);
-        const checked = /^(✓|✔|x|yes|1|true)$/i.test(val.trim());
-        const dayCell = el('div', {
-          className: `roster-cell roster-day-cell roster-toggle ${checked ? 'roster-checked' : ''}`,
-          title: 'Click to toggle',
-          dataset: { rowIdx: String(rowIdx), colIdx: String(dayIdx) },
-        }, [checked ? '✓' : '']);
+      /* ---------- Summary row ---------- */
+      const summaryRow = el('div', { className: 'roster-grid-row roster-summary' });
+      summaryRow.append(el('div', { className: 'roster-cell roster-employee-cell roster-summary-label' }, ['Coverage']));
+      if (cols.role >= 0) summaryRow.append(el('div', { className: 'roster-cell roster-role-cell' }));
+      if (cols.shift >= 0) summaryRow.append(el('div', { className: 'roster-cell roster-shift-cell' }));
 
-        dayCell.addEventListener('click', () => {
-          const nowChecked = !dayCell.classList.contains('roster-checked');
-          dayCell.classList.toggle('roster-checked', nowChecked);
-          dayCell.textContent = nowChecked ? '✓' : '';
-          emitEdit(rowIdx, dayIdx, nowChecked ? '✓' : '');
-        });
+      for (const dayIdx of vDays) {
+        /* Count checked employees per shift for this day */
+        const shiftCounts = {};
+        let totalChecked = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const val = cell(rows[i], dayIdx);
+          const checked = /^(✓|✔|x|yes|1|true)$/i.test(val.trim());
+          if (checked) {
+            totalChecked++;
+            const shift = (cols.shift >= 0 ? cell(rows[i], cols.shift) : '').trim() || 'Morning';
+            shiftCounts[shift] = (shiftCounts[shift] || 0) + 1;
+          }
+        }
 
-        rowEl.append(dayCell);
+        const parts = Object.entries(shiftCounts).map(([s, c]) => `${s[0]}:${c}`);
+        const noCoverage = totalChecked === 0;
+
+        summaryRow.append(el('div', {
+          className: `roster-cell roster-day-cell roster-summary-day ${noCoverage ? 'roster-no-coverage' : ''}`,
+          title: noCoverage ? 'No coverage!' : Object.entries(shiftCounts).map(([s, c]) => `${s}: ${c}`).join(', '),
+        }, [noCoverage ? '\u26A0' : parts.join(' ')]));
       }
+      gridWrap.append(summaryRow);
 
-      container.append(rowEl);
+      /* Update nav state */
+      prevBtn.disabled = currentPage === 0;
+      nextBtn.disabled = currentPage >= totalPages - 1;
+      weekLabel.textContent = `Week ${currentPage + 1} of ${totalPages}`;
     }
+
+    /* ---------- Delegated events ---------- */
+    if (cols.shift >= 0) {
+      delegateEvent(container, 'click', '.roster-shift-btn', (e, btn) => {
+        const next = cycleStatus(btn, template.shiftStates, s => s.toLowerCase().trim(), 'roster-shift-btn roster-shift-');
+        emitEdit(Number(btn.dataset.rowIdx), cols.shift, next);
+      });
+    }
+
+    delegateEvent(container, 'click', '.roster-toggle', (e, dayCell) => {
+      const nowChecked = !dayCell.classList.contains('roster-checked');
+      dayCell.classList.toggle('roster-checked', nowChecked);
+      dayCell.textContent = nowChecked ? '\u2713' : '';
+      emitEdit(Number(dayCell.dataset.rowIdx), Number(dayCell.dataset.colIdx), nowChecked ? '\u2713' : '');
+    });
+
+    /* Nav button handlers */
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 0) { currentPage--; buildGrid(); }
+    });
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages - 1) { currentPage++; buildGrid(); }
+    });
+
+    /* Initial render */
+    buildGrid();
   },
 };
 

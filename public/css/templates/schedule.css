@@ -1,4 +1,18 @@
 /* Schedule Template */
+
+/* Toolbar */
+.schedule-toolbar { margin-bottom: 10px; }
+.schedule-today-btn {
+  border: 1px solid var(--color-shared); background: var(--color-surface);
+  color: var(--color-shared); padding: 4px 14px; border-radius: 14px;
+  font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  transition: all var(--transition);
+}
+.schedule-today-btn:hover {
+  background: var(--color-shared); color: #fff;
+}
+
+/* Day sections */
 .template-schedule-day { margin-bottom: 16px; }
 .template-schedule-day-label {
   font-weight: 600; font-size: 0.85rem; color: var(--color-shared);
@@ -6,6 +20,8 @@
   padding: 4px 0 6px; border-bottom: 2px solid var(--color-shared-light);
   margin-bottom: 6px;
 }
+
+/* Event blocks */
 .template-schedule-block {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 10px 16px; background: var(--color-surface);
@@ -20,4 +36,14 @@
 .template-schedule-event-name { font-size: 0.95rem; font-weight: 500; }
 .template-schedule-location {
   font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;
+}
+
+/* Conflict highlighting */
+.schedule-conflict {
+  border-left-color: var(--color-error); background: #fef2f2;
+}
+.schedule-conflict-badge {
+  font-size: 0.7rem; font-weight: 600; color: var(--color-error);
+  background: #fee2e2; padding: 2px 8px; border-radius: 8px;
+  white-space: nowrap; align-self: center;
 }

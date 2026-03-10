@@ -152,6 +152,11 @@
           "mimeType": "application/vnd.google-apps.spreadsheet"
         },
         {
+          "id": "sheet-032",
+          "name": "Grandma's Cookies",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
           "id": "sheet-028",
           "name": "Waymark Development",
           "mimeType": "application/vnd.google-apps.spreadsheet"
@@ -159,6 +164,11 @@
         {
           "id": "sheet-029",
           "name": "User Login Flow",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-030",
+          "name": "Jamie's Wall",
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
           ]
@@ -169,6 +179,60 @@
           "mimeType": "application/vnd.google-apps.folder",
           "shared": false,
           "children": []
+        }
+      ]
+    },
+    {
+      "id": "f-budgets",
+      "name": "Budgets",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-016",
+          "name": "Monthly Budget",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-033",
+          "name": "April Budget",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-meals",
+      "name": "Meal Plans",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-024",
+          "name": "Weekly Meal Plan",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-034",
+          "name": "Next Week Meal Plan",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-grades",
+      "name": "Gradebooks",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-019",
+          "name": "Math 101 Grades",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-035",
+          "name": "Science 101 Grades",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     },

@@ -7,6 +7,7 @@
 @import url('./base.css');
 
 /* Per-template styles */
+@import url('./templates/checklist.css');
 @import url('./templates/tracker.css');
 @import url('./templates/schedule.css');
 @import url('./templates/inventory.css');
@@ -26,3 +27,4 @@
 @import url('./templates/roster.css');
 @import url('./templates/recipe.css');
 @import url('./templates/flow.css');
+@import url('./templates/social.css');
