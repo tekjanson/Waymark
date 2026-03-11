@@ -37,6 +37,7 @@ const MOCK_AUTH_COOKIE = {
  * @param {boolean}  [opts.autoRefresh]             auto-refresh pref (default true)
  * @param {boolean}  [opts.sidebarOpen]             sidebar pref (default true)
  * @param {boolean}  [opts.tutorialCompleted]        tutorial pref (default true — suppresses auto-start)
+ * @param {boolean}  [opts.templateTutorials]        template tutorial auto-start (default false — suppressed in tests)
  * @param {string}   [opts.hash]                    initial URL hash (e.g. '#/sheet/sheet-001')
  * @param {Object}   [opts.textFiles]               seed window.__WAYMARK_TEXT_FILES (id → content)
  */
@@ -47,6 +48,7 @@ async function setupApp(page, opts = {}) {
     autoRefresh,
     sidebarOpen,
     tutorialCompleted = true,
+    templateTutorials = false,
     hash,
     textFiles,
   } = opts;
@@ -60,6 +62,8 @@ async function setupApp(page, opts = {}) {
   if (autoRefresh !== undefined) lsEntries.auto_refresh = autoRefresh;
   if (sidebarOpen !== undefined) lsEntries.sidebar_open = sidebarOpen;
   lsEntries.tutorial_completed = tutorialCompleted;
+  // Suppress template tutorial auto-start unless explicitly enabled
+  if (!templateTutorials) lsEntries.template_tutorials_auto = false;
 
   if (Object.keys(lsEntries).length) {
     await page.addInitScript((entries) => {

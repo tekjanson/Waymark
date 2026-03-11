@@ -23,6 +23,8 @@ let _activeProject = null;
 let _activeSort = 'default';
 let _showArchived = false;
 let _expandedCards = new Set();
+/** Collapsed lane keys */
+let _collapsedLanes = new Set();
 /** Per-lane render counts: how many cards are currently shown */
 let _laneRendered = {};
 
@@ -389,6 +391,20 @@ const definition = {
         emitEdit(rowIdx, cols.stage, next);
       });
 
+      // Priority dot cycling
+      const priStates = ['P0', 'P1', 'P2', 'P3'];
+      const priClassify = v => (v || '').toLowerCase().trim();
+      delegateEvent(lane, 'click', '.kanban-pri-dot', (e, dot) => {
+        const card = dot.closest('.kanban-card');
+        if (!card) return;
+        e.stopPropagation();
+        const rowIdx = Number(card.dataset.rowIdx);
+        if (!rowIdx || cols.priority < 0) return;
+        const next = cycleStatus(dot, priStates, priClassify, 'kanban-pri-dot kanban-pri-');
+        dot.title = `Priority: ${next} (click to change)`;
+        emitEdit(rowIdx, cols.priority, next);
+      });
+
       // Archive button
       delegateEvent(lane, 'click', '.kanban-archive-btn', (e, btn) => {
         e.stopPropagation();
@@ -551,6 +567,10 @@ const definition = {
         if (oldHeader) oldHeader.remove();
 
         const headerChildren = [
+          el('button', {
+            className: 'kanban-lane-collapse',
+            title: _collapsedLanes.has(laneKey) ? 'Expand lane' : 'Collapse lane',
+          }, [_collapsedLanes.has(laneKey) ? '▸' : '▾']),
           el('span', { className: 'kanban-lane-title' }, [LANE_LABELS[laneKey] || laneKey]),
           el('span', { className: 'kanban-lane-count' }, [String(items.length)]),
         ];
@@ -561,6 +581,24 @@ const definition = {
           ]));
         }
         lane.insertBefore(el('div', { className: 'kanban-lane-header' }, headerChildren), lane.firstChild);
+
+        // Apply collapsed state
+        const isCollapsed = _collapsedLanes.has(laneKey);
+        lane.classList.toggle('kanban-lane-collapsed', isCollapsed);
+        laneBody.classList.toggle('hidden', isCollapsed);
+        const addForm = lane.querySelector('.add-row-lane');
+        if (addForm) addForm.classList.toggle('hidden', isCollapsed);
+
+        // Collapse toggle (delegated on header)
+        const collapseBtn = lane.querySelector('.kanban-lane-collapse');
+        if (collapseBtn) {
+          collapseBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (_collapsedLanes.has(laneKey)) _collapsedLanes.delete(laneKey);
+            else _collapsedLanes.add(laneKey);
+            updateBoard();
+          };
+        }
 
         // Clear lane body and re-populate with cached card elements
         laneBody.innerHTML = '';

@@ -3,6 +3,7 @@
    
    Walks new users through the app's purpose and key features
    with spotlight highlights and tooltip explanations.
+   Also provides per-template contextual tutorials.
    ============================================================ */
 
 import * as userData from './user-data.js';
@@ -107,9 +108,13 @@ function start() {
   if (!eventsBound) { bindEvents(); eventsBound = true; }
   isActive = true;
 
+  _activeSteps = null; // use global STEPS
+  _onComplete = null;
+
   // Resume from last saved step if tutorial wasn't completed
   const savedStep = userData.getTutorialStep();
-  currentStep = (savedStep > 0 && savedStep < STEPS.length) ? savedStep : 0;
+  const steps = getActiveSteps();
+  currentStep = (savedStep > 0 && savedStep < steps.length) ? savedStep : 0;
 
   els.overlay.classList.remove('hidden');
   renderStep();
@@ -120,14 +125,19 @@ function stop() {
   const els = getElements();
   els.overlay.classList.add('hidden');
   els.spotlight.style.display = 'none';
-  userData.setTutorialCompleted(true);
-  userData.setTutorialStep(currentStep);
+  if (_onComplete) {
+    _onComplete();
+  } else {
+    userData.setTutorialCompleted(true);
+    userData.setTutorialStep(currentStep);
+  }
 }
 
 function next() {
-  if (currentStep < STEPS.length - 1) {
+  const steps = getActiveSteps();
+  if (currentStep < steps.length - 1) {
     currentStep++;
-    userData.setTutorialStep(currentStep);
+    if (!_activeSteps) userData.setTutorialStep(currentStep);
     renderStep();
   } else {
     stop();
@@ -137,23 +147,24 @@ function next() {
 function prev() {
   if (currentStep > 0) {
     currentStep--;
-    userData.setTutorialStep(currentStep);
+    if (!_activeSteps) userData.setTutorialStep(currentStep);
     renderStep();
   }
 }
 
 function renderStep() {
   const els = getElements();
-  const step = STEPS[currentStep];
+  const steps = getActiveSteps();
+  const step = steps[currentStep];
 
   // Update content
   els.title.textContent = step.title;
   els.body.textContent = step.body;
-  els.stepText.textContent = `${currentStep + 1} of ${STEPS.length}`;
+  els.stepText.textContent = `${currentStep + 1} of ${steps.length}`;
 
   // Button states
   els.prevBtn.classList.toggle('hidden', currentStep === 0);
-  els.nextBtn.textContent = currentStep === STEPS.length - 1 ? 'Finish' : 'Next';
+  els.nextBtn.textContent = currentStep === steps.length - 1 ? 'Finish' : 'Next';
 
   // Position spotlight and tooltip
   if (step.target) {
@@ -237,4 +248,163 @@ function positionTooltip(tooltip, targetRect, position) {
 
 /* ---------- Public API ---------- */
 
-export const Tutorial = { start, stop, next, prev };
+export const Tutorial = { start, stop, next, prev, startTemplateTutorial };
+
+/* ---------- Per-Template Tutorials ---------- */
+
+const TEMPLATE_TUTORIALS = {
+  kanban: [
+    { title: '📋 Kanban Board', body: 'This is your Kanban board — tasks are organised into lanes by stage. Drag cards between lanes to update their status, or click the stage badge to cycle through stages.', target: null, position: 'center' },
+    { title: 'Filter by Project', body: 'Use the filter pills to show only tasks from a specific project. Click "All" to see everything.', target: '.kanban-filter-bar', position: 'bottom' },
+    { title: 'Sort & Archive', body: 'Sort cards by priority, due date, or reporter. Toggle "Show Archived" to see completed and archived tasks.', target: '.kanban-controls', position: 'bottom' },
+    { title: 'Card Details', body: 'Click the ▾ arrow on a card to expand its details — description, sub-tasks, notes, and editable metadata. Click ⛶ to open the full focus view.', target: '.kanban-card', position: 'bottom' },
+    { title: 'Priority & Stage', body: 'Click the colored priority dot to cycle P0→P1→P2→P3. Click the stage badge to move tasks through your workflow. Drag cards between lanes for bulk moves.', target: '.kanban-card-header', position: 'bottom' },
+    { title: 'Collapse Lanes', body: 'Click the ▾/▸ toggle on a lane header to collapse or expand it — great for focusing on what matters.', target: '.kanban-lane-header', position: 'bottom' },
+    { title: 'Add Tasks', body: 'Use the "+ Add Task" button at the bottom of any lane to create new tasks directly in that stage.', target: '.add-row-trigger', position: 'top' },
+  ],
+  budget: [
+    { title: '💰 Budget Tracker', body: 'Your budget sheet shows income and expenses grouped by category, with subtotals and visual summaries.', target: null, position: 'center' },
+    { title: 'Category Groups', body: 'Items are grouped by category. Each group header shows a subtotal — red when over budget.', target: '.checklist-group-header', position: 'bottom' },
+    { title: 'Inline Editing', body: 'Click any value to edit it directly. Changes sync back to your Google Sheet in real-time.', target: '.editable-cell', position: 'bottom' },
+    { title: 'Budget Chart', body: 'The stacked bar chart shows expense allocation by category. Over-budget categories are highlighted in red.', target: '.budget-chart', position: 'top' },
+  ],
+  recipe: [
+    { title: '🍳 Recipe Viewer', body: 'Your recipe is displayed with ingredients, instructions, and metadata. Let\'s explore the cooking tools!', target: null, position: 'center' },
+    { title: 'Scale Recipes', body: 'Use the scale controls to multiply or divide ingredient quantities. Perfect for cooking for different group sizes.', target: '.recipe-scale-bar', position: 'bottom' },
+    { title: 'Cooking Mode', body: 'Tap any ingredient to check it off as you cook. Green checkmarks track what you\'ve used.', target: '.recipe-ingredients', position: 'bottom' },
+    { title: 'Shopping List', body: 'Toggle Shopping List mode to see just ingredients in a compact checklist format — perfect for grocery shopping on your phone.', target: '.recipe-mode-bar', position: 'bottom' },
+    { title: 'Print Recipe', body: 'Use the Print/PDF button to export a clean, formatted recipe for printing or saving as PDF.', target: '.recipe-print-btn', position: 'bottom' },
+  ],
+  checklist: [
+    { title: '✅ Checklist', body: 'Your checklist shows items with checkboxes. Check items off as you complete them!', target: null, position: 'center' },
+    { title: 'Check Items', body: 'Click the checkbox next to any item to toggle it complete. The row updates with a strikethrough and syncs to your sheet.', target: '.checklist-checkbox', position: 'bottom' },
+    { title: 'Category Progress', body: 'Items grouped by category show progress bars in each header — see how much is done at a glance.', target: '.checklist-group-header', position: 'bottom' },
+    { title: 'Bulk Actions', body: 'Use the ✓ All and ✗ All buttons on each category to quickly check or uncheck all items in that group.', target: '.checklist-bulk-btn', position: 'bottom' },
+  ],
+  habit: [
+    { title: '📊 Habit Tracker', body: 'Track your daily habits with a visual grid. Each cell represents one day for one habit.', target: null, position: 'center' },
+    { title: 'Toggle States', body: 'Click any day cell to cycle through states: empty → ✓ done (green) → ◐ partial (yellow) → ✗ missed (red). Each state syncs to your sheet.', target: '.habit-toggle', position: 'bottom' },
+    { title: 'Streaks & Goals', body: 'The streak column shows consecutive days completed with a 🔥 flame. If goals are set, progress bars show how close you are to your target.', target: '.habit-streak', position: 'bottom' },
+    { title: 'Weekly Summary', body: 'The summary panel shows your overall progress, best habit, and per-habit mini progress bars — all update live as you toggle.', target: '.habit-summary', position: 'bottom' },
+  ],
+  testcases: [
+    { title: '🧪 Test Cases', body: 'Manage your test cases with status tracking, filtering, and bulk operations.', target: null, position: 'center' },
+    { title: 'Status Cycling', body: 'Click the status badge on any test case to cycle through: Untested → Pass → Fail → Blocked → Skip.', target: '.testcase-status', position: 'bottom' },
+    { title: 'Filter by Status', body: 'Use the filter pills to show only tests with a specific status — great for focusing on failures.', target: '.testcase-toolbar', position: 'bottom' },
+    { title: 'Bulk Operations', body: 'Mark all as Pass, reset to Untested, or skip filtered items with one click. Copy all failures to clipboard for bug reports.', target: '.testcase-bulk-btn', position: 'bottom' },
+  ],
+  crm: [
+    { title: '🤝 CRM Pipeline', body: 'Your CRM shows deals with contact info, stage tracking, and pipeline analytics.', target: null, position: 'center' },
+    { title: 'Stage Cycling', body: 'Click the stage badge to move deals through your pipeline: Lead → Contacted → Qualified → Proposal → Won/Lost.', target: '.crm-stage-btn', position: 'bottom' },
+    { title: 'Funnel View', body: 'Toggle the pipeline funnel view to see deals grouped by stage with conversion percentages between stages.', target: '.crm-toggle-view', position: 'bottom' },
+  ],
+  contacts: [
+    { title: '👥 Contacts', body: 'Your contacts are sorted alphabetically with quick navigation and search.', target: null, position: 'center' },
+    { title: 'A–Z Navigation', body: 'Use the letter index on the side to jump directly to contacts starting with that letter.', target: '.contacts-sidebar', position: 'left' },
+    { title: 'Search & Filter', body: 'Type in the search box to filter contacts by name, email, or any visible field.', target: '.contacts-search', position: 'bottom' },
+  ],
+  flow: [
+    { title: '🔀 Flow Diagram', body: 'Your flow diagram shows process steps connected by edges. Nodes are auto-arranged in a hierarchical layout.', target: null, position: 'center' },
+    { title: 'Node Interaction', body: 'Hover over a node for details. Double-click to open the full detail modal with connections and properties.', target: '.flow-node', position: 'bottom' },
+    { title: 'Drag & Arrange', body: 'Drag nodes to reposition them. Positions are saved automatically. Click "Auto-Align" to reset the layout.', target: '.flow-realign-btn', position: 'bottom' },
+  ],
+  tracker: [
+    { title: '📈 Goal Tracker', body: 'Track progress toward your goals with visual progress bars, milestones, and completion estimates.', target: null, position: 'center' },
+    { title: 'Progress Bars', body: 'Each goal shows a progress bar with milestone markers at 25%, 50%, and 75%. Completed goals show a ✓ badge.', target: '.tracker-bar-wrap', position: 'bottom' },
+    { title: 'Edit Values', body: 'Click any value to edit it inline. Update current progress to see the bar and ETA update in real-time.', target: '.editable-cell', position: 'bottom' },
+  ],
+  roster: [
+    { title: '📅 Roster', body: 'Manage employee schedules with shift assignments across days of the week.', target: null, position: 'center' },
+    { title: 'Toggle Shifts', body: 'Click day cells to toggle employee shifts. Click shift badges to cycle through shift types.', target: '.roster-grid', position: 'bottom' },
+    { title: 'Weekly Navigation', body: 'Use the prev/next buttons to navigate between weeks. The summary footer shows daily coverage counts.', target: '.roster-toolbar', position: 'bottom' },
+  ],
+  timesheet: [
+    { title: '⏱️ Timesheet', body: 'Track billable hours by client, project, and date with grouping and invoice export.', target: null, position: 'center' },
+    { title: 'Grouping', body: 'Group entries by client, date, or project to see subtotals for hours and revenue.', target: '.timesheet-group-toolbar', position: 'bottom' },
+    { title: 'Invoice Export', body: 'Click the invoice button to generate a printable invoice summary with billable line items.', target: '.timesheet-invoice-btn', position: 'bottom' },
+  ],
+  grading: [
+    { title: '📝 Gradebook', body: 'View student grades with class averages, grade distribution, and per-assignment scores.', target: null, position: 'center' },
+    { title: 'Class Average', body: 'The footer row shows class-wide averages for each assignment, color-coded by grade.', target: '.grading-footer', position: 'top' },
+    { title: 'Distribution Chart', body: 'The grade distribution chart shows how many A\'s, B\'s, C\'s, D\'s, and F\'s are in the class.', target: '.grading-dist-chart', position: 'bottom' },
+  ],
+  meal: [
+    { title: '🍽️ Meal Planner', body: 'Plan your weekly meals with nutrition tracking and meal-by-day organization.', target: null, position: 'center' },
+    { title: 'Nutrition Summary', body: 'The summary bar shows total meals, calories, and protein for the week.', target: '.meal-summary', position: 'bottom' },
+  ],
+  inventory: [
+    { title: '📦 Inventory', body: 'Track your inventory with low-stock alerts, quantities, and reorder notifications.', target: null, position: 'center' },
+    { title: 'Low Stock Alerts', body: 'Items below the threshold are highlighted at the top with a ⚠ Low badge and red border.', target: '.inventory-reorder', position: 'bottom' },
+  ],
+  travel: [
+    { title: '✈️ Travel Planner', body: 'Organize your travel itinerary with cost tracking, countdown timer, and map links.', target: null, position: 'center' },
+    { title: 'Trip Summary', body: 'The summary bar shows total trip cost, number of activities, and countdown to departure.', target: '.travel-summary', position: 'bottom' },
+  ],
+  schedule: [
+    { title: '📆 Schedule', body: 'View your events sorted by time with conflict detection for overlapping events.', target: null, position: 'center' },
+    { title: 'Conflicts', body: 'Overlapping events are highlighted with a red border and ⚠ Conflict badge. Use "Today" to jump to the current day.', target: '.schedule-today-btn', position: 'bottom' },
+  ],
+  changelog: [
+    { title: '📝 Changelog', body: 'Browse version history with collapsible sections and quick navigation.', target: null, position: 'center' },
+    { title: 'Version Navigation', body: 'Use the sidebar to jump to any version. Click version headers to collapse/expand. The latest version is auto-expanded.', target: '.changelog-sidebar', position: 'left' },
+  ],
+  log: [
+    { title: '📋 Activity Log', body: 'View activity entries in reverse chronological order. Large logs are paginated for performance.', target: null, position: 'center' },
+  ],
+  poll: [
+    { title: '📊 Poll Results', body: 'Animated bar chart showing poll results with percentage labels.', target: null, position: 'center' },
+    { title: 'Live Mode', body: 'Enable live mode for automatic 10-second refresh — perfect for watching results come in.', target: '.poll-live-btn', position: 'bottom' },
+  ],
+  social: [
+    { title: '💬 Social Feed', body: 'View posts with author profiles, mood indicators, and threaded comments.', target: null, position: 'center' },
+  ],
+};
+
+/**
+ * Start a template-specific tutorial.
+ * Only shows once per template unless force=true.
+ * @param {string} key — template key (e.g. 'kanban', 'budget')
+ * @param {boolean} [force=false] — bypass completion check
+ */
+function startTemplateTutorial(key, force = false) {
+  const storageKey = `waymark_template-tutorial-${key}`;
+  if (!force) {
+    try { if (localStorage.getItem(storageKey)) return; } catch { /* ignore */ }
+    try { if (localStorage.getItem('waymark_template_tutorials_auto') === 'false') return; } catch { /* ignore */ }
+  }
+
+  const steps = TEMPLATE_TUTORIALS[key];
+  if (!steps || steps.length === 0) return;
+
+  // Use the same overlay system as the global tutorial
+  const els = getElements();
+  if (!eventsBound) { bindEvents(); eventsBound = true; }
+
+  // Save current state to restore after
+  const savedSteps = _activeSteps;
+  const savedCallback = _onComplete;
+
+  _activeSteps = steps;
+  _onComplete = () => {
+    try { localStorage.setItem(storageKey, 'true'); } catch { /* ignore */ }
+    _activeSteps = savedSteps;
+    _onComplete = savedCallback;
+  };
+
+  isActive = true;
+  currentStep = 0;
+  els.overlay.classList.remove('hidden');
+  renderStep();
+}
+
+/** Currently active step array (global or template) */
+let _activeSteps = null;
+let _onComplete = null;
+
+/**
+ * Get the active steps list (template tutorial overrides global).
+ * @returns {Array}
+ */
+function getActiveSteps() {
+  return _activeSteps || STEPS;
+}

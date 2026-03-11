@@ -490,7 +490,7 @@ function wireQuickActions() {
     if (btn) btn.addEventListener('click', fn);
   };
 
-  wire('home-action-create',   () => { if (createSheetModal) createSheetModal.classList.remove('hidden'); });
+  wire('home-action-create',   () => { openCreateSheetModal(); });
   wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
   wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
   wire('home-action-examples', () => { openExamplesModal(); });

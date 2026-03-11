@@ -9,7 +9,7 @@
  * when needed to exercise the tutorial flow.
  */
 const { test, expect } = require('@playwright/test');
-const { setupApp } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet } = require('../helpers/test-utils');
 
 /* ────────────────── Auto-start behaviour ────────────────── */
 
@@ -203,4 +203,60 @@ test('spotlight element is visible when step has a target', async ({ page }) => 
   // Step 2 (Drive Explorer) has target #sidebar — spotlight visible
   await page.locator('#tutorial-next').click();
   await expect(spotlight).not.toHaveCSS('display', 'none');
+});
+
+/* ────────────────── Template Tutorial ────────────────── */
+
+test('template tutorial auto-starts on first sheet visit', async ({ page }) => {
+  await setupApp(page, { templateTutorials: true });
+  await navigateToSheet(page, 'sheet-017'); // kanban
+  await page.waitForSelector('.kanban-board', { timeout: 3000 });
+
+  // Template tutorial should auto-start (no prior localStorage flag)
+  await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('#tutorial-title')).not.toContainText('Welcome');
+});
+
+test('template help button opens template tutorial', async ({ page }) => {
+  await setupApp(page, { templateTutorials: true });
+  await navigateToSheet(page, 'sheet-017'); // kanban
+  await page.waitForSelector('.kanban-board', { timeout: 3000 });
+
+  // Dismiss the auto-started tutorial first
+  await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 3000 });
+  await page.locator('#tutorial-skip').click();
+  await expect(page.locator('#tutorial-overlay')).toBeHidden();
+
+  // Click the help button to reopen
+  await page.locator('#template-help-btn').click();
+  await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 2000 });
+});
+
+test('template tutorial does not auto-start on second visit', async ({ page }) => {
+  await setupApp(page, { templateTutorials: true });
+  await navigateToSheet(page, 'sheet-017'); // kanban
+  await page.waitForSelector('.kanban-board', { timeout: 3000 });
+
+  // Dismiss the auto-started tutorial
+  await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 3000 });
+  await page.locator('#tutorial-skip').click();
+  await expect(page.locator('#tutorial-overlay')).toBeHidden();
+
+  // Navigate away and back
+  await page.evaluate(() => { window.location.hash = '#/'; });
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 3000 });
+  await navigateToSheet(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 3000 });
+
+  // Tutorial should NOT auto-start this time
+  await page.waitForSelector('#template-help-btn:not(.hidden)', { timeout: 3000 });
+  await expect(page.locator('#tutorial-overlay')).toBeHidden();
+});
+
+test('template help button is visible on sheet view', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-017'); // kanban
+  await page.waitForSelector('.kanban-board', { timeout: 3000 });
+
+  await expect(page.locator('#template-help-btn')).toBeVisible();
 });
