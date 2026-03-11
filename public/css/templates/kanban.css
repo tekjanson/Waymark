@@ -856,3 +856,44 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .kanban-backlog-header,
+[data-theme="dark"] .kanban-backlog-stage { color: #94a3b8; }
+[data-theme="dark"] .kanban-todo-header { color: #60a5fa; }
+[data-theme="dark"] .kanban-inprogress-header { color: #fbbf24; }
+[data-theme="dark"] .kanban-done-header { color: #4ade80; }
+[data-theme="dark"] .kanban-rejected-header { color: #ef4444; }
+[data-theme="dark"] .kanban-archived-header { color: #94a3b8; }
+[data-theme="dark"] .kanban-stage-backlog { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .kanban-stage-todo { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .kanban-stage-inprogress { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .kanban-stage-done { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .kanban-stage-rejected { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .kanban-stage-archived { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .kanban-label-bug { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .kanban-label-feature { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .kanban-label-epic { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
+[data-theme="dark"] .kanban-label-infra { background: rgba(129, 140, 248, 0.14); color: #a5b4fc; }
+[data-theme="dark"] .kanban-label-design { background: rgba(244, 114, 182, 0.16); color: #f9a8d4; }
+[data-theme="dark"] .kanban-label-docs { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .kanban-due-overdue { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .kanban-due-later { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .kanban-due-upcoming { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .kanban-due-soon { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .kanban-card { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+[data-theme="dark"] .kanban-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+[data-theme="dark"] .kanban-card-reporter { color: #c4b5fd; background: rgba(167, 139, 250, 0.16); }
+[data-theme="dark"] .kanban-done-check { border-color: #22c55e; }
+[data-theme="dark"] .kanban-done-check.checked { background: #22c55e; border-color: #22c55e; }
+[data-theme="dark"] .kanban-reject-btn:hover { background: rgba(248, 113, 113, 0.16); color: #ef4444; }
+[data-theme="dark"] .kanban-unarchive-btn:hover { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .kanban-archive-btn:hover { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .kanban-modal-overlay { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .kanban-modal { background: var(--color-surface); }
+[data-theme="dark"] .kanban-drag-over { border-color: #0284c7; }
+[data-theme="dark"] .kanban-burndown-ontrack { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .kanban-burndown-atrisk { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .kanban-burndown-offtrack { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .kanban-dir-pri-p0 { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .kanban-dir-pri-p1 { background: rgba(251, 146, 60, 0.14); color: #fdba74; }

@@ -47,3 +47,8 @@
   background: #fee2e2; padding: 2px 8px; border-radius: 8px;
   white-space: nowrap; align-self: center;
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .schedule-today-btn:hover { color: #fff; }
+[data-theme="dark"] .schedule-conflict { background: rgba(248, 113, 113, 0.1); }
+[data-theme="dark"] .schedule-conflict-badge { background: rgba(248, 113, 113, 0.16); }

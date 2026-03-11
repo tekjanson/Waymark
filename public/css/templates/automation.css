@@ -140,3 +140,21 @@
   .automation-step { gap: 4px; }
   .automation-target, .automation-value { display: none; }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .automation-card-header {
+  background: linear-gradient(140deg, rgba(124,58,237,0.12), rgba(37,99,235,0.08));
+}
+[data-theme="dark"] .automation-step { border-color: #334155; }
+[data-theme="dark"] .automation-step:hover { background: var(--color-bg); }
+[data-theme="dark"] .automation-type { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .automation-step-enabled { background: rgba(74, 222, 128, 0.16); color: #4ade80; border-color: rgba(74, 222, 128, 0.3); }
+[data-theme="dark"] .automation-step-disabled { background: rgba(248, 113, 113, 0.16); color: #fca5a5; border-color: rgba(248, 113, 113, 0.3); }
+[data-theme="dark"] .automation-step-beta { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .automation-trigger { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
+[data-theme="dark"] .automation-status-done { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .automation-status-failed { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .automation-status-running { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .automation-status-pending { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .automation-status-skipped { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .automation-progress-bar { background: #334155; }

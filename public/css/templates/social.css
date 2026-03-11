@@ -241,3 +241,14 @@
   .social-profile-name { font-size: 1rem; }
   .social-post-body { font-size: 0.85rem; }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .social-profile-header { background: linear-gradient(135deg, rgba(129, 140, 248, 0.14), rgba(129, 140, 248, 0.22)); }
+[data-theme="dark"] .social-stat-highlight { color: #818cf8; }
+[data-theme="dark"] .social-tab:hover { background: rgba(129, 140, 248, 0.12); }
+[data-theme="dark"] .social-tab.active { color: #818cf8; border-color: #818cf8; }
+[data-theme="dark"] .social-platform-badge { background: var(--color-surface); }
+[data-theme="dark"] .social-post-link,
+[data-theme="dark"] .social-post-source-name,
+[data-theme="dark"] .social-feed-more { color: #a5b4fc; }
+[data-theme="dark"] .social-feed-more:hover { background: rgba(129, 140, 248, 0.12); }

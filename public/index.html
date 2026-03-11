@@ -1,7 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
+  <script>
+    // Prevent flash of wrong theme — apply saved preference immediately
+    (function() {
+      var t = 'light';
+      try { t = JSON.parse(localStorage.getItem('waymark_theme')) || 'light'; } catch(e) {}
+      if (t === 'system') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WayMark</title>
   <link rel="stylesheet" href="css/style.css">
@@ -52,6 +61,9 @@
       </div>
 
       <div class="top-bar-right">
+        <button id="theme-toggle-btn" class="btn-theme" aria-label="Toggle theme" title="Toggle dark/light mode">
+          <span id="theme-toggle-icon">🌙</span>
+        </button>
         <button id="tutorial-btn" class="btn-icon" aria-label="Tutorial" title="Show tutorial">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
@@ -214,6 +226,7 @@
               Open in Drive
             </button>
           </div>
+          <div id="folder-loading" class="folder-loading-bar hidden"><div class="folder-loading-bar-inner"></div></div>
           <div id="folder-sheets" class="sheet-list"></div>
           <p id="no-sheets" class="empty-state hidden">No sheets found in this folder.</p>
         </section>
@@ -253,6 +266,15 @@
       <!-- Preferences -->
       <div class="settings-section">
         <h4 class="settings-section-title">Preferences</h4>
+
+        <div class="settings-row">
+          <span class="settings-label">Theme</span>
+          <div class="settings-theme-toggle">
+            <button id="settings-theme-light" class="settings-theme-btn active" data-theme="light">☀️ Light</button>
+            <button id="settings-theme-dark" class="settings-theme-btn" data-theme="dark">🌙 Dark</button>
+            <button id="settings-theme-system" class="settings-theme-btn" data-theme="system">🖥️ System</button>
+          </div>
+        </div>
 
         <label class="settings-row">
           <span class="settings-label">Auto-refresh sheets</span>

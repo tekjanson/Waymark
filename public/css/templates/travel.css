@@ -48,3 +48,15 @@
   transition: opacity 0.15s;
 }
 .travel-map-link:hover { opacity: 1; }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .travel-date-header { color: #22d3ee; border-bottom-color: rgba(34, 211, 238, 0.25); }
+[data-theme="dark"] .travel-booking-ref { color: #22d3ee; }
+[data-theme="dark"] .travel-cost { color: #fbbf24; }
+[data-theme="dark"] .travel-summary {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.1) 0%, rgba(34, 211, 238, 0.06) 100%);
+  border-color: rgba(34, 211, 238, 0.25);
+}
+[data-theme="dark"] .travel-summary-value { color: #22d3ee; }
+[data-theme="dark"] .travel-summary-cost { color: #fbbf24; }
+[data-theme="dark"] .travel-summary-countdown .travel-summary-value { color: #34d399; }

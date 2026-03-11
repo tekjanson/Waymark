@@ -122,3 +122,17 @@
   .habit-goal-cell { width: 48px; font-size: 0.7rem; }
   .habit-summary-item-name { min-width: 70px; }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .habit-toggle:hover,
+[data-theme="dark"] .habit-empty:hover { background: #334155; }
+[data-theme="dark"] .habit-done { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .habit-done:hover { background: rgba(74, 222, 128, 0.25); }
+[data-theme="dark"] .habit-partial { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .habit-partial:hover { background: rgba(251, 191, 36, 0.22); }
+[data-theme="dark"] .habit-missed { background: rgba(248, 113, 113, 0.16); color: #ef4444; }
+[data-theme="dark"] .habit-missed:hover { background: rgba(248, 113, 113, 0.25); }
+[data-theme="dark"] .habit-streak-active { color: #fbbf24; }
+[data-theme="dark"] .habit-goal-met { color: #4ade80; }
+[data-theme="dark"] .habit-summary-best { color: #4ade80; }
+[data-theme="dark"] .habit-summary-attention { color: #fbbf24; }

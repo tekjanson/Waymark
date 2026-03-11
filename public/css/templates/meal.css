@@ -72,3 +72,22 @@
 }
 .meal-dir-card-cal { color: #d97706; font-weight: 600; }
 .meal-dir-card-prot { color: #059669; font-weight: 600; }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .meal-day-header { border-bottom-color: rgba(163, 230, 53, 0.25); }
+[data-theme="dark"] .meal-day-label { color: #a3e635; }
+[data-theme="dark"] .meal-type-badge { background: rgba(163, 230, 53, 0.12); color: #a3e635; }
+[data-theme="dark"] .meal-cal { color: #fbbf24; }
+[data-theme="dark"] .meal-prot { color: #34d399; }
+[data-theme="dark"] .meal-summary {
+  background: linear-gradient(135deg, rgba(163, 230, 53, 0.08) 0%, rgba(163, 230, 53, 0.04) 100%);
+  border-color: rgba(163, 230, 53, 0.25);
+}
+[data-theme="dark"] .meal-summary-value { color: #a3e635; }
+[data-theme="dark"] .meal-summary-cal { color: #fbbf24; }
+[data-theme="dark"] .meal-summary-prot { color: #34d399; }
+[data-theme="dark"] .meal-dir-title { color: #a3e635; }
+[data-theme="dark"] .meal-dir-totals { background: rgba(163, 230, 53, 0.08); border-color: rgba(163, 230, 53, 0.25); }
+[data-theme="dark"] .meal-dir-card:hover { border-color: #65a30d; }
+[data-theme="dark"] .meal-dir-card-cal { color: #fbbf24; }
+[data-theme="dark"] .meal-dir-card-prot { color: #34d399; }

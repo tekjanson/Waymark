@@ -68,3 +68,9 @@
     position: static;
   }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .contacts-alpha-btn { color: #f472b6; }
+[data-theme="dark"] .contacts-alpha-btn:hover { background: rgba(236, 72, 153, 0.15); }
+[data-theme="dark"] .contacts-letter-header { color: #f472b6; border-bottom-color: rgba(236, 72, 153, 0.25); }
+[data-theme="dark"] .contacts-search:focus { box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2); }

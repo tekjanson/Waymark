@@ -233,6 +233,9 @@ async function boot() {
   // Wire settings modal
   initSettingsModal();
 
+  // Wire theme toggle
+  initTheme();
+
   // Listen for pin changes to re-render home
   window.addEventListener('waymark:pins-changed', renderHome);
 
@@ -700,16 +703,28 @@ window.addEventListener('waymark:sheet-refreshed', (e) => {
   }
 });
 
+/* Generation counter — incremented on each showFolderContents call so that
+   if the user navigates quickly between folders, stale async renders are
+   discarded instead of painting over the newer folder's content. */
+let _folderGen = 0;
+
 async function showFolderContents(folderId, folderName) {
+  const gen = ++_folderGen;           // snapshot for staleness checks
   currentFolderId = folderId;
   currentFolderName = folderName;
   const titleEl      = document.getElementById('folder-title');
   const sheetsEl     = document.getElementById('folder-sheets');
   const noSheetsEl   = document.getElementById('no-sheets');
+  const loadingBar   = document.getElementById('folder-loading');
 
   titleEl.textContent = folderName;
-  sheetsEl.innerHTML  = '';
   noSheetsEl.classList.add('hidden');
+
+  // Clear previous content immediately and show loading bar.
+  // If we have a cached directory view, render it instantly so the user
+  // sees useful content while fresh data loads behind the bar.
+  sheetsEl.innerHTML = '';
+  loadingBar.classList.remove('hidden');
 
   // Sync folder pin button state
   if (folderPinBtn) {
@@ -724,6 +739,7 @@ async function showFolderContents(folderId, folderName) {
   // cookbook), render the cached version immediately so the user sees
   // content while Drive data verifies in the background.
   const localIdx = storage.getFolderIndex(folderId);
+  let hasCachedView = false;
   if (localIdx) {
     const entries = Object.entries(localIdx);
     // Count templates and find dominant one
@@ -755,35 +771,55 @@ async function showFolderContents(folderId, folderName) {
         });
         sheetsEl.append(dirContainer);
         domTemplate.directoryView(dirContainer, cachedSheets, navigate);
+        hasCachedView = true;
       }
     }
   }
 
   try {
     const res = await api.drive.listChildren(folderId);
+    if (gen !== _folderGen) return;   // user navigated away — abort
     let items = res.files || [];
 
     // Apply .waymarkIgnore filtering
     items = await explorer.applyWaymarkIgnore(folderId, items);
+    if (gen !== _folderGen) return;   // user navigated away — abort
 
     const sheets  = items.filter(i => i.mimeType === 'application/vnd.google-apps.spreadsheet');
     const docs    = items.filter(i => i.mimeType === 'application/vnd.google-apps.document');
     const folders = items.filter(i => i.mimeType === 'application/vnd.google-apps.folder');
 
     if (sheets.length === 0 && folders.length === 0 && docs.length === 0) {
+      sheetsEl.innerHTML = '';
+      loadingBar.classList.add('hidden');
       noSheetsEl.classList.remove('hidden');
       return;
     }
 
-    // Render sub-folders
-    for (const f of folders) {
-      sheetsEl.append(el('div', {
-        className: 'sheet-list-item',
-        on: { click() { navigate('folder', f.id, f.name); } },
-      }, [
-        el('span', { className: 'sheet-emoji' }, ['📁']),
-        el('div', { className: 'sheet-list-item-name' }, [f.name]),
-      ]));
+    // Build folder elements (rendered after sheet-loading resolves so
+    // that innerHTML clears don't accidentally wipe them).
+    const folderEls = folders.map(f => el('div', {
+      className: 'sheet-list-item',
+      on: { click() { navigate('folder', f.id, f.name); } },
+    }, [
+      el('span', { className: 'sheet-emoji' }, ['📁']),
+      el('div', { className: 'sheet-list-item-name' }, [f.name]),
+    ]));
+
+    // Build doc elements up-front too (same reason).
+    const docEls = docs.map(d => el('div', {
+      className: 'sheet-list-item',
+      on: { click() { navigate('sheet', d.id, d.name); } },
+    }, [
+      el('span', { className: 'sheet-emoji' }, ['📄']),
+      el('div', { className: 'sheet-list-item-name' }, [d.name]),
+    ]));
+
+    // If there are no sheets, render folders + docs immediately.
+    if (sheets.length === 0) {
+      sheetsEl.innerHTML = '';
+      for (const fe of folderEls) sheetsEl.append(fe);
+      for (const de of docEls)   sheetsEl.append(de);
     }
 
     // Fetch sheet data to detect templates and enable directory views.
@@ -850,6 +886,7 @@ async function showFolderContents(folderId, folderName) {
         }
       }
 
+      if (gen !== _folderGen) return;   // user navigated away — abort
       const loadedSheets = [...cachedSheets, ...freshSheets];
 
       // --- Phase 4: Write back updated index (non-blocking) ---
@@ -929,9 +966,6 @@ async function showFolderContents(folderId, folderName) {
       let usedDirectoryView = false;
       for (const [key, group] of Object.entries(templateGroups)) {
         if (group.template.directoryView && group.sheets.length > loadedSheets.length * 0.5) {
-          // Remove instant-cached render now that real data is ready
-          const cachedDir = sheetsEl.querySelector('.directory-view-cached');
-          if (cachedDir) cachedDir.remove();
 
           // Re-fetch full data for directoryView sheets — summaries only
           // have header + first row which gives incorrect aggregates.
@@ -982,10 +1016,18 @@ async function showFolderContents(folderId, folderName) {
             }
           }
 
-          // Use the template's directory view
-          const dirContainer = el('div', { className: 'directory-view-container' });
+          if (gen !== _folderGen) return;   // user navigated away — abort
+
+          // Build the fresh directory view container
+          const dirContainer = el('div', {
+            className: 'directory-view-container',
+          });
+          // Replace all content with folders + directory view + extras
+          sheetsEl.innerHTML = '';
+          for (const fe of folderEls) sheetsEl.append(fe);
           sheetsEl.append(dirContainer);
           group.template.directoryView(dirContainer, group.sheets, navigate);
+          loadingBar.classList.add('hidden');
           usedDirectoryView = true;
 
           // Render remaining non-matching sheets normally
@@ -1007,10 +1049,11 @@ async function showFolderContents(folderId, folderName) {
 
       // If no directory view was used, render all sheets normally
       if (!usedDirectoryView) {
-        // Remove instant-cached render if it was shown (folder composition changed)
-        const cachedDir = sheetsEl.querySelector('.directory-view-cached');
-        if (cachedDir) cachedDir.remove();
+        sheetsEl.innerHTML = '';
+        loadingBar.classList.add('hidden');
 
+        // Folders first, then sheets
+        for (const fe of folderEls) sheetsEl.append(fe);
         for (const s of loadedSheets) {
           sheetsEl.append(el('div', {
             className: 'sheet-list-item',
@@ -1034,20 +1077,19 @@ async function showFolderContents(folderId, folderName) {
       }
     }
 
-    // Render docs
-    for (const d of docs) {
-      sheetsEl.append(el('div', {
-        className: 'sheet-list-item',
-        on: { click() { navigate('sheet', d.id, d.name); } },
-      }, [
-        el('span', { className: 'sheet-emoji' }, ['📄']),
-        el('div', { className: 'sheet-list-item-name' }, [d.name]),
-      ]));
+    // Append docs (if sheets were present, they weren't added yet)
+    if (sheets.length > 0) {
+      for (const de of docEls) sheetsEl.append(de);
     }
+
+    // Hide loading bar once all content is rendered
+    loadingBar.classList.add('hidden');
 
     // Register for search context
     collectKnownSheets();
   } catch (err) {
+    if (gen !== _folderGen) return;
+    loadingBar.classList.add('hidden');
     sheetsEl.innerHTML = `<p class="empty-state">Failed to load folder: ${err.message}</p>`;
   }
 }
@@ -1845,6 +1887,58 @@ function renderImportReview(analysis) {
   }
 }
 
+/* ---------- Theme ---------- */
+
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const themeToggleIcon = document.getElementById('theme-toggle-icon');
+
+function resolveTheme(pref) {
+  if (pref === 'system') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return pref;
+}
+
+function applyTheme(pref) {
+  const resolved = resolveTheme(pref);
+  document.documentElement.setAttribute('data-theme', resolved);
+  if (themeToggleIcon) themeToggleIcon.textContent = resolved === 'dark' ? '☀️' : '🌙';
+
+  // Update settings modal buttons
+  document.querySelectorAll('.settings-theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === pref);
+  });
+}
+
+function initTheme() {
+  const saved = storage.getTheme();
+  applyTheme(saved);
+
+  // Top-bar quick toggle
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+      const current = storage.getTheme();
+      const next = resolveTheme(current) === 'dark' ? 'light' : 'dark';
+      storage.setTheme(next);
+      applyTheme(next);
+    });
+  }
+
+  // Settings modal theme buttons
+  document.querySelectorAll('.settings-theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pref = btn.dataset.theme;
+      storage.setTheme(pref);
+      applyTheme(pref);
+    });
+  });
+
+  // Listen for system preference changes when set to 'system'
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (storage.getTheme() === 'system') applyTheme('system');
+  });
+}
+
 /* ---------- Settings Modal ---------- */
 
 function openSettingsModal() {
@@ -1888,6 +1982,12 @@ function openSettingsModal() {
   // Populate current preferences
   settingsAutoRefresh.checked = userData.getAutoRefresh();
   settingsSortOrder.value = userData.getSortOrder();
+
+  // Sync theme buttons
+  const currentTheme = storage.getTheme();
+  document.querySelectorAll('.settings-theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === currentTheme);
+  });
 
   // Import folder display
   const customName = userData.getImportFolderName();
