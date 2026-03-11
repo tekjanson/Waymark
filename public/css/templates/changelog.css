@@ -75,3 +75,16 @@
     min-width: unset;
   }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .changelog-version-tag { color: #d1d5db; }
+[data-theme="dark"] .changelog-type-added { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .changelog-type-fixed { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .changelog-type-changed { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .changelog-type-breaking { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .changelog-type-other { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .changelog-added { border-left-color: #22c55e; }
+[data-theme="dark"] .changelog-fixed { border-left-color: #3b82f6; }
+[data-theme="dark"] .changelog-changed { border-left-color: #f59e0b; }
+[data-theme="dark"] .changelog-breaking { border-left-color: #ef4444; }
+[data-theme="dark"] .changelog-other { border-left-color: #94a3b8; }

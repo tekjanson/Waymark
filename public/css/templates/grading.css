@@ -108,3 +108,25 @@
 .grading-dir-mini-label {
   font-size: 0.65rem; font-weight: 600; color: var(--color-text-muted);
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .grading-grade-cell { color: #d6d3d1; }
+[data-theme="dark"] .grading-grade-A { color: #4ade80; }
+[data-theme="dark"] .grading-grade-B { color: #60a5fa; }
+[data-theme="dark"] .grading-grade-C { color: #fbbf24; }
+[data-theme="dark"] .grading-grade-D { color: #ef4444; }
+[data-theme="dark"] .grading-grade-F { color: #fca5a5; }
+[data-theme="dark"] .grading-dist-a { background: #22c55e; }
+[data-theme="dark"] .grading-dist-b { background: #3b82f6; }
+[data-theme="dark"] .grading-dist-c { background: #f59e0b; }
+[data-theme="dark"] .grading-dist-d { background: #ef4444; }
+[data-theme="dark"] .grading-dist-f { background: #dc2626; }
+[data-theme="dark"] .grading-honors-summary {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.06));
+  border-color: rgba(251, 191, 36, 0.25);
+}
+[data-theme="dark"] .grading-dir-title { color: #d4a574; }
+[data-theme="dark"] .grading-dir-totals {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.06));
+  border-color: rgba(251, 191, 36, 0.25);
+}

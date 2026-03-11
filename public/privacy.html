@@ -1,7 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
+  <script>
+    (function() {
+      var t = 'light';
+      try { t = JSON.parse(localStorage.getItem('waymark_theme')) || 'light'; } catch(e) {}
+      if (t === 'system') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WayMark Privacy Policy</title>
   <link rel="stylesheet" href="/css/style.css">

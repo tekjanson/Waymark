@@ -3,6 +3,7 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './e2e',
+  testIgnore: ['**/design-audit.spec.js'],
   timeout: 30_000,
   retries: 0,
 

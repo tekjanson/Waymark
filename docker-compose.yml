@@ -1,7 +1,11 @@
 version: "3.8"
 services:
   waymark:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_HASH: ${GIT_HASH:-}
+        GIT_REPO: ${GIT_REPO:-}
     ports:
       - "3000:3000"
     env_file:

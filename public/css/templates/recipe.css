@@ -963,3 +963,150 @@
     size: auto;
   }
 }
+
+/* --- Dark Theme --- */
+
+/* Tabs & headings */
+[data-theme="dark"] .recipe-tab { color: #94a3b8; }
+[data-theme="dark"] .recipe-tab:hover { color: #fb923c; border-color: #fb923c; }
+[data-theme="dark"] .recipe-tab.active { color: #fb923c; border-color: #fb923c; }
+[data-theme="dark"] .recipe-tabs { background: rgba(180, 130, 60, 0.06); border-color: #3d3020; }
+[data-theme="dark"] .recipe-section-heading { color: #fbbf24; }
+[data-theme="dark"] .recipe-bullet::before { background: #fb923c; }
+
+/* Card structure */
+[data-theme="dark"] .recipe-card { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+[data-theme="dark"] .recipe-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+[data-theme="dark"] .recipe-card-ingredients h4,
+[data-theme="dark"] .recipe-card-instructions h4,
+[data-theme="dark"] .recipe-card-notes h4 { color: #fb923c; }
+[data-theme="dark"] .recipe-ingredients-list li::before { color: #fb923c; }
+[data-theme="dark"] .recipe-instructions-list li::before { color: #fb923c; }
+
+/* Difficulty badges */
+[data-theme="dark"] .recipe-difficulty-easy,
+[data-theme="dark"] .recipe-difficulty-badge.easy { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .recipe-difficulty-medium,
+[data-theme="dark"] .recipe-difficulty-badge.medium { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .recipe-difficulty-hard,
+[data-theme="dark"] .recipe-difficulty-badge.hard { background: rgba(248, 113, 113, 0.16); color: #f87171; }
+
+/* Status badges */
+[data-theme="dark"] .recipe-status-untested { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border-color: rgba(148, 163, 184, 0.25); }
+[data-theme="dark"] .recipe-status-approved { background: rgba(74, 222, 128, 0.16); color: #4ade80; border-color: rgba(74, 222, 128, 0.3); }
+[data-theme="dark"] .recipe-status-needs-work { background: rgba(251, 191, 36, 0.14); color: #fcd34d; border-color: rgba(251, 191, 36, 0.3); }
+
+/* Ratings */
+[data-theme="dark"] .recipe-star-filled { color: #fbbf24; }
+[data-theme="dark"] .recipe-star-empty { color: #475569; }
+[data-theme="dark"] .recipe-checked { color: #22c55e; }
+[data-theme="dark"] .recipe-ingredient-checked::before { color: #4ade80 !important; }
+[data-theme="dark"] .recipe-shopping-mode .recipe-ingredient-checked::before { color: #4ade80 !important; }
+
+/* Scale bar */
+[data-theme="dark"] .recipe-scale-bar { background: rgba(180, 130, 60, 0.08); }
+[data-theme="dark"] .recipe-scale-label { color: #fb923c; }
+[data-theme="dark"] .recipe-scale-btn:hover { border-color: #fb923c; color: #fb923c; }
+[data-theme="dark"] .recipe-scale-btn.active { background: #fb923c; color: #fff; border-color: #fb923c; }
+[data-theme="dark"] .recipe-scale-options { background: rgba(251, 146, 60, 0.1); }
+[data-theme="dark"] .recipe-scale-custom:focus { border-color: #fb923c; box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.2); }
+[data-theme="dark"] .recipe-scale-custom-active { border-color: #fb923c; color: #fb923c; }
+
+/* Convert bar */
+[data-theme="dark"] .recipe-convert-bar { background: rgba(180, 130, 60, 0.08); }
+[data-theme="dark"] .recipe-convert-label { color: #fb923c; }
+[data-theme="dark"] .recipe-convert-btn:hover { border-color: #fb923c; color: #fb923c; }
+[data-theme="dark"] .recipe-convert-btn.active { background: #d97706; border-color: #d97706; }
+
+/* Category & source */
+[data-theme="dark"] .recipe-category-badge { background: rgba(251, 146, 60, 0.14); color: #fb923c; }
+[data-theme="dark"] .recipe-source-link { color: #fb923c; }
+[data-theme="dark"] .recipe-resync-btn:hover { background: rgba(251, 146, 60, 0.1); border-color: #fb923c; color: #fb923c; }
+
+/* Ingredient styling */
+[data-theme="dark"] .recipe-ingredient-unit { color: #d4a574; }
+
+/* Notes */
+[data-theme="dark"] .recipe-serving-badge { background: rgba(251, 146, 60, 0.1); }
+[data-theme="dark"] .recipe-nutrition-header { background: rgba(251, 146, 60, 0.1); }
+[data-theme="dark"] .recipe-notes-header { background: rgba(180, 130, 60, 0.1); }
+[data-theme="dark"] .recipe-notes-body { background: rgba(180, 130, 60, 0.05); }
+
+/* Mode bar (cooking/shopping) */
+[data-theme="dark"] .recipe-shopping-mode .recipe-shopping-btn { background: #ea580c; color: #fff; border-color: #ea580c; }
+
+/* Focus & import inputs */
+[data-theme="dark"] .recipe-focus-input:focus,
+[data-theme="dark"] .recipe-import-url-bar input:focus { border-color: #fb923c; box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.2); }
+[data-theme="dark"] .recipe-import-preview .preview-section h4 { color: #fb923c; }
+
+/* Inline add controls */
+[data-theme="dark"] .recipe-inline-add-btn { color: #fb923c; }
+[data-theme="dark"] .recipe-inline-add-btn:hover { background: rgba(251, 146, 60, 0.1); border-color: #fb923c; }
+[data-theme="dark"] .recipe-inline-add-input:focus { border-color: #fb923c; box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.2); }
+[data-theme="dark"] .recipe-inline-add-submit { background: #ea580c; }
+[data-theme="dark"] .recipe-inline-add-submit:hover { background: #c2410c; }
+
+/* Print button */
+[data-theme="dark"] .recipe-print-btn:hover { background: rgba(251, 146, 60, 0.1); border-color: #fb923c; color: #fb923c; }
+
+/* CTA button */
+[data-theme="dark"] .recipe-cta-btn { background: #fb923c; color: #fff; }
+[data-theme="dark"] .recipe-cta-btn:hover { background: #ea580c; }
+
+/* ---- Cookbook Directory View ---- */
+[data-theme="dark"] .cookbook-directory {
+  background: linear-gradient(170deg, rgba(180, 130, 60, 0.06) 0%, var(--color-bg) 100%);
+  border-color: #3d3020;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] .cookbook-title-bar {
+  background: linear-gradient(135deg, rgba(180, 130, 60, 0.1) 0%, rgba(180, 130, 60, 0.05) 100%);
+  border-bottom-color: rgba(180, 130, 60, 0.25);
+}
+[data-theme="dark"] .cookbook-title { color: #d4a574; }
+[data-theme="dark"] .cookbook-count { color: #d4a574; background: rgba(180, 130, 60, 0.12); }
+
+/* Toolbar */
+[data-theme="dark"] .cookbook-toolbar {
+  background: rgba(180, 130, 60, 0.04);
+  border-bottom-color: #3d3020;
+}
+[data-theme="dark"] .cookbook-search { border-color: #3d3020; }
+[data-theme="dark"] .cookbook-search::placeholder { color: #8b7355; }
+[data-theme="dark"] .cookbook-search:focus { border-color: #fb923c; box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.2); }
+[data-theme="dark"] .cookbook-sort-select { background: var(--color-surface); color: var(--color-text); border-color: #3d3020; }
+[data-theme="dark"] .cookbook-sort-select:focus { border-color: #fb923c; }
+[data-theme="dark"] .cookbook-sort-dir { color: #d4a574; border-color: #3d3020; }
+[data-theme="dark"] .cookbook-sort-dir:hover { background: rgba(180, 130, 60, 0.1); }
+[data-theme="dark"] .cookbook-filter-select { background: var(--color-surface); color: var(--color-text); border-color: #3d3020; }
+[data-theme="dark"] .cookbook-filter-select:focus { border-color: #fb923c; }
+[data-theme="dark"] .cookbook-filter-select.active { border-color: #fb923c; color: #fb923c; background: rgba(251, 146, 60, 0.08); }
+[data-theme="dark"] .cookbook-filter-clear { color: #d4a574; border-color: #3d3020; }
+[data-theme="dark"] .cookbook-filter-clear:hover { background: rgba(180, 130, 60, 0.1); }
+
+/* Cards */
+[data-theme="dark"] .cookbook-card {
+  background: var(--color-surface);
+  border-color: #3d3020;
+}
+[data-theme="dark"] .cookbook-card:hover {
+  border-color: rgba(180, 130, 60, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+[data-theme="dark"] .cookbook-card::before {
+  background: linear-gradient(90deg, #fb923c, #d4a574);
+}
+[data-theme="dark"] .cookbook-card-name { color: #e8d5b8; }
+[data-theme="dark"] .cookbook-card-diff.easy { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .cookbook-card-diff.medium { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .cookbook-card-diff.hard { background: rgba(248, 113, 113, 0.16); color: #f87171; }
+[data-theme="dark"] .cookbook-pill { background: rgba(180, 130, 60, 0.12); color: #d4a574; }
+[data-theme="dark"] .cookbook-card-category { color: #fb923c; }
+[data-theme="dark"] .cookbook-card-header { border-bottom-color: #3d3020; }
+[data-theme="dark"] .cookbook-card-title { color: var(--color-text); }
+[data-theme="dark"] .cookbook-empty { color: #8b7355; }
+[data-theme="dark"] .cookbook-placeholder { color: #8b7355; }
+[data-theme="dark"] .cookbook-description { background: rgba(180, 130, 60, 0.05); }
+[data-theme="dark"] .cookbook-row-header { background: rgba(180, 130, 60, 0.06); }
+[data-theme="dark"] .cookbook-sort-label { color: #c4a882; }

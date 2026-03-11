@@ -47,3 +47,7 @@
   font-size: 0.85rem; font-weight: 600; min-width: 3em; text-align: right;
   color: var(--color-text-secondary);
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .tracker-milestone { background: rgba(255,255,255,0.15); }
+[data-theme="dark"] .tracker-milestone-passed { background: rgba(255,255,255,0.3); }

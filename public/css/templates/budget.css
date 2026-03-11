@@ -160,3 +160,21 @@
   .budget-dir-chart-label { width: 80px; font-size: 0.72rem; }
   .budget-dir-grid { grid-template-columns: 1fr; }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .budget-income,
+[data-theme="dark"] .budget-positive,
+[data-theme="dark"] .budget-category-subtotal,
+[data-theme="dark"] .budget-dir-income,
+[data-theme="dark"] .budget-dir-card-income { color: #34d399; }
+[data-theme="dark"] .budget-expense,
+[data-theme="dark"] .budget-negative,
+[data-theme="dark"] .budget-category-over,
+[data-theme="dark"] .budget-dir-expense,
+[data-theme="dark"] .budget-dir-card-expense { color: #ef4444; }
+[data-theme="dark"] .budget-amt-positive { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .budget-amt-negative { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .budget-dir-bar-income { background: #059669; }
+[data-theme="dark"] .budget-dir-bar-expense { background: #dc2626; }
+[data-theme="dark"] .budget-dir-card-negative { border-left-color: #ef4444; }
+[data-theme="dark"] .budget-chart-legend-over { color: #ef4444; }

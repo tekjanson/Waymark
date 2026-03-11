@@ -9,7 +9,11 @@
     "generate": "node scripts/generate-examples.js",
     "test": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js",
     "test:headed": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --headed",
-    "test:debug": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --debug"
+    "test:debug": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --debug",
+    "screenshots": "WAYMARK_LOCAL=true npx playwright test --config playwright.screenshots.config.js",
+    "design-audit": "node scripts/design-audit.js",
+    "design-review": "npm run screenshots && npm run design-audit",
+    "build-info": "node scripts/build-info.js"
   },
   "keywords": [
     "checklist",
