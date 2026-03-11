@@ -160,6 +160,20 @@ const definition = {
     }
   },
 
+  /** Compute aggregate stats from full row data for directory roll-up caching.
+   * @param {string[][]} rows — all data rows (no header)
+   * @param {Object} cols — column index map
+   * @returns {Object} { income, expense, balance, rowCount }
+   */
+  computeDirStats(rows, cols) {
+    let income = 0, expense = 0;
+    for (const row of rows) {
+      const amt = parseAmt(cell(row, cols.amount));
+      if (amt > 0) income += amt; else expense += Math.abs(amt);
+    }
+    return { income, expense, balance: income - expense, rowCount: rows.length };
+  },
+
   /* ---------- Directory View: financial overview across sheets ---------- */
   directoryView(container, sheets, navigateFn) {
     const wrapper = el('div', { className: 'budget-directory' });
@@ -173,15 +187,21 @@ const definition = {
       ]),
     ]));
 
-    /* Compute per-sheet summaries */
+    /* Compute per-sheet summaries — prefer pre-computed dirStats when available */
     let grandIncome = 0, grandExpense = 0;
     const sheetStats = [];
 
     for (const sheet of sheets) {
-      let income = 0, expense = 0;
-      for (const row of sheet.rows) {
-        const amt = parseAmt(cell(row, sheet.cols.amount));
-        if (amt > 0) income += amt; else expense += Math.abs(amt);
+      let income, expense;
+      if (sheet.dirStats) {
+        income = sheet.dirStats.income;
+        expense = sheet.dirStats.expense;
+      } else {
+        income = 0; expense = 0;
+        for (const row of sheet.rows) {
+          const amt = parseAmt(cell(row, sheet.cols.amount));
+          if (amt > 0) income += amt; else expense += Math.abs(amt);
+        }
       }
       grandIncome += income;
       grandExpense += expense;

@@ -772,10 +772,51 @@
       "fixtureFiles": [
         "social-wall"
       ]
+    },
+    {
+      "key": "automation",
+      "name": "Automation",
+      "icon": "🤖",
+      "color": "#7c3aed",
+      "priority": 21,
+      "category": "Engineering",
+      "detectSignals": [
+        "action",
+        "target",
+        "selector",
+        "workflow",
+        "automation",
+        "command"
+      ],
+      "columnRoles": [
+        "workflow",
+        "step",
+        "action",
+        "target",
+        "value",
+        "status"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "pending",
+        "running",
+        "done",
+        "failed",
+        "skipped"
+      ],
+      "hasDirectoryView": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-036"
+      ],
+      "fixtureFiles": [
+        "automation-workflow"
+      ]
     }
   ],
-  "nextSheetId": "sheet-031",
-  "totalTemplates": 21,
+  "nextSheetId": "sheet-037",
+  "totalTemplates": 22,
   "categories": [
     "Productivity",
     "Engineering",

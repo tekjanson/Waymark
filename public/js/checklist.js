@@ -55,14 +55,13 @@ export function init() {
   }
 
   if (duplicateSheetBtn) {
-    duplicateSheetBtn.addEventListener('click', () => duplicateSheet());
+    duplicateSheetBtn.addEventListener('click', () => openDuplicateModal());
   }
 
   if (shareBtn) {
     shareBtn.addEventListener('click', () => {
-      if (currentSheetId) {
-        window.open(`https://docs.google.com/spreadsheets/d/${currentSheetId}/edit?usp=sharing`, '_blank');
-      }
+      if (!currentSheetId) return;
+      openShareModal(currentSheetId, titleEl?.textContent || 'Sheet');
     });
   }
 
@@ -74,6 +73,9 @@ export function init() {
       const newState = !isLocked;
       localStorage.setItem(key, newState ? '1' : '0');
       applyLockState(newState);
+      showToast(newState ? 'Sheet locked — editing disabled' : 'Sheet unlocked — editing enabled', 'success');
+      lockBtn.classList.add('lock-bounce');
+      lockBtn.addEventListener('animationend', () => lockBtn.classList.remove('lock-bounce'), { once: true });
     });
   }
 
@@ -209,23 +211,217 @@ function downloadCsv() {
  * Duplicate the current sheet by reading its data and creating
  * a new spreadsheet with the same content.
  */
-async function duplicateSheet() {
+/** Open a duplicate sheet modal with name and folder selection */
+function openDuplicateModal() {
   if (!currentSheetId || !currentValues || currentValues.length === 0) {
     showToast('No sheet data to duplicate', 'error');
     return;
   }
-  const title = `Copy of ${currentDataTitle || 'Untitled'}`;
-  try {
-    showToast('Duplicating sheet…', 'info');
-    const result = await api.sheets.createSpreadsheet(title, currentValues);
-    showToast(`Created "${title}"`, 'success');
-    // Navigate to the new sheet
-    if (result && (result.spreadsheetId || result.id)) {
-      window.location.hash = `#/sheet/${result.spreadsheetId || result.id}`;
+
+  // Remove existing modal if open
+  const existing = document.getElementById('duplicate-modal');
+  if (existing) existing.remove();
+
+  const defaultTitle = `Copy of ${currentDataTitle || 'Untitled'}`;
+  let selectedFolderId = null;
+  let selectedFolderName = null;
+
+  const nameInput = el('input', {
+    className: 'duplicate-name-input',
+    type: 'text',
+    value: defaultTitle,
+    placeholder: 'Enter sheet name',
+  });
+
+  const folderDisplay = el('span', { className: 'duplicate-folder-name' }, ['Default (Waymark)']);
+  const folderBrowser = el('div', { className: 'duplicate-folder-browser hidden' });
+
+  const chooseFolderBtn = el('button', {
+    className: 'btn btn-secondary duplicate-choose-folder',
+    type: 'button',
+  }, ['📁 Choose Folder']);
+
+  const createBtn = el('button', {
+    className: 'btn btn-primary duplicate-create-btn',
+    type: 'button',
+  }, ['Create Copy']);
+
+  const modal = el('div', {
+    id: 'duplicate-modal',
+    className: 'modal-overlay',
+  }, [
+    el('div', { className: 'modal' }, [
+      el('div', { className: 'modal-header' }, [
+        el('h3', {}, ['Duplicate Sheet']),
+        el('button', { className: 'modal-close', type: 'button', 'aria-label': 'Close' }, ['✕']),
+      ]),
+      el('div', { className: 'modal-body' }, [
+        el('div', { className: 'duplicate-section' }, [
+          el('label', { className: 'duplicate-label' }, ['Name']),
+          nameInput,
+        ]),
+        el('div', { className: 'duplicate-section' }, [
+          el('label', { className: 'duplicate-label' }, ['Destination']),
+          el('div', { className: 'duplicate-folder-row' }, [
+            folderDisplay,
+            chooseFolderBtn,
+          ]),
+          folderBrowser,
+        ]),
+      ]),
+      el('div', { className: 'modal-footer' }, [
+        el('button', {
+          className: 'btn btn-secondary',
+          type: 'button',
+        }, ['Cancel']),
+        createBtn,
+      ]),
+    ]),
+  ]);
+
+  // Close handlers
+  const closeModal = () => modal.remove();
+  modal.querySelector('.modal-close').addEventListener('click', closeModal);
+  modal.querySelector('.modal-footer .btn-secondary').addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+  // Folder browser with breadcrumb navigation
+  const dupBreadcrumbs = [{ id: 'root', name: 'My Drive' }];
+
+  async function renderDupLevel(folderId) {
+    folderBrowser.innerHTML = '';
+    folderBrowser.classList.remove('hidden');
+
+    /* --- Breadcrumb trail --- */
+    const crumbBar = el('div', { className: 'duplicate-folder-breadcrumbs' });
+    for (let i = 0; i < dupBreadcrumbs.length; i++) {
+      const bc = dupBreadcrumbs[i];
+      if (i > 0) crumbBar.append(el('span', { className: 'duplicate-breadcrumb-sep' }, ['›']));
+      const crumb = el('button', {
+        className: 'duplicate-breadcrumb-btn',
+        type: 'button',
+      }, [bc.name]);
+      crumb.addEventListener('click', () => {
+        dupBreadcrumbs.splice(i + 1);
+        renderDupLevel(bc.id);
+      });
+      crumbBar.append(crumb);
     }
-  } catch (err) {
-    showToast(`Failed to duplicate: ${err.message}`, 'error');
+    folderBrowser.append(crumbBar);
+
+    /* --- Select-current button (not for root) --- */
+    if (folderId !== 'root') {
+      const currentCrumb = dupBreadcrumbs[dupBreadcrumbs.length - 1];
+      const selectCurrentBtn = el('button', {
+        className: 'duplicate-select-current-btn',
+        type: 'button',
+      }, [`✓ Select "${currentCrumb.name}"`]);
+      selectCurrentBtn.addEventListener('click', () => {
+        selectedFolderId = currentCrumb.id;
+        selectedFolderName = currentCrumb.name;
+        folderDisplay.textContent = currentCrumb.name;
+        folderBrowser.classList.add('hidden');
+      });
+      folderBrowser.append(selectCurrentBtn);
+    }
+
+    /* --- Loading indicator --- */
+    const loading = el('div', { className: 'duplicate-folder-item' }, ['Loading folders…']);
+    folderBrowser.append(loading);
+
+    try {
+      let folders;
+      if (folderId === 'root') {
+        const result = await api.drive.listRootFolders();
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      } else {
+        const result = await api.drive.listChildren(folderId);
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      }
+
+      loading.remove();
+
+      if (!folders.length) {
+        folderBrowser.append(
+          el('div', { className: 'duplicate-folder-item duplicate-folder-empty' }, ['No sub-folders'])
+        );
+        return;
+      }
+
+      for (const folder of folders) {
+        const item = el('div', { className: 'duplicate-folder-item' }, [
+          el('span', { className: 'duplicate-folder-icon' }, ['📁']),
+          el('span', { className: 'duplicate-folder-name-text' }, [folder.name]),
+          el('button', {
+            className: 'duplicate-folder-select-btn',
+            type: 'button',
+            title: `Select "${folder.name}"`,
+          }, ['Select']),
+        ]);
+
+        // Click folder name/icon to navigate into it
+        item.querySelector('.duplicate-folder-name-text').addEventListener('click', () => {
+          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
+          renderDupLevel(folder.id);
+        });
+        item.querySelector('.duplicate-folder-icon').addEventListener('click', () => {
+          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
+          renderDupLevel(folder.id);
+        });
+
+        // Click "Select" button to choose this folder
+        item.querySelector('.duplicate-folder-select-btn').addEventListener('click', () => {
+          selectedFolderId = folder.id;
+          selectedFolderName = folder.name;
+          folderDisplay.textContent = folder.name;
+          folderBrowser.classList.add('hidden');
+        });
+
+        folderBrowser.append(item);
+      }
+    } catch {
+      loading.remove();
+      folderBrowser.append(
+        el('div', { className: 'duplicate-folder-item' }, ['Failed to load folders'])
+      );
+    }
   }
+
+  chooseFolderBtn.addEventListener('click', () => {
+    if (!folderBrowser.classList.contains('hidden')) {
+      folderBrowser.classList.add('hidden');
+      return;
+    }
+    dupBreadcrumbs.length = 1; // Reset to root
+    renderDupLevel('root');
+  });
+
+  // Create button
+  createBtn.addEventListener('click', async () => {
+    const title = nameInput.value.trim() || defaultTitle;
+    createBtn.disabled = true;
+    createBtn.textContent = 'Creating…';
+    try {
+      const result = await api.sheets.createSpreadsheet(title, currentValues, selectedFolderId);
+      showToast(`Created "${title}"`, 'success');
+      closeModal();
+      if (result && (result.spreadsheetId || result.id)) {
+        window.location.hash = `#/sheet/${result.spreadsheetId || result.id}`;
+      }
+    } catch (err) {
+      showToast(`Failed to duplicate: ${err.message}`, 'error');
+      createBtn.disabled = false;
+      createBtn.textContent = 'Create Copy';
+    }
+  });
+
+  // Auto-select the name input on open
+  document.body.append(modal);
+  nameInput.select();
 }
 
 /* ---------- Data loading ---------- */
@@ -416,4 +612,98 @@ function updateTimestamp() {
   lastUpdatedEl.classList.toggle('freshness-aging', !fresh && !stale);
   // keep updating the relative time display
   setTimeout(updateTimestamp, 10_000);
+}
+
+/* ---------- Share Modal ---------- */
+
+/** Open a share modal with copy-link, Google sharing, and Waymark link */
+function openShareModal(sheetId, sheetName) {
+  // Remove existing modal if open
+  const existing = document.getElementById('share-modal');
+  if (existing) existing.remove();
+
+  const waymarkLink = `${window.location.origin}/#/sheet/${sheetId}`;
+  const googleEditLink = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing`;
+
+  const modal = el('div', {
+    id: 'share-modal',
+    className: 'modal-overlay',
+  }, [
+    el('div', { className: 'modal' }, [
+      el('div', { className: 'modal-header' }, [
+        el('h3', {}, [`Share "${sheetName}"`]),
+        el('button', {
+          className: 'modal-close',
+          type: 'button',
+          'aria-label': 'Close',
+        }, ['✕']),
+      ]),
+      el('div', { className: 'modal-body' }, [
+        el('div', { className: 'share-section' }, [
+          el('label', { className: 'share-label' }, ['Waymark Link']),
+          el('div', { className: 'share-link-row' }, [
+            el('input', {
+              className: 'share-link-input',
+              type: 'text',
+              value: waymarkLink,
+              readOnly: true,
+            }),
+            el('button', {
+              className: 'btn btn-primary share-copy-btn',
+              type: 'button',
+              dataset: { link: waymarkLink },
+            }, ['📋 Copy']),
+          ]),
+        ]),
+        el('div', { className: 'share-section' }, [
+          el('label', { className: 'share-label' }, ['Google Sheets Link']),
+          el('div', { className: 'share-link-row' }, [
+            el('input', {
+              className: 'share-link-input',
+              type: 'text',
+              value: googleEditLink,
+              readOnly: true,
+            }),
+            el('button', {
+              className: 'btn btn-primary share-copy-btn',
+              type: 'button',
+              dataset: { link: googleEditLink },
+            }, ['📋 Copy']),
+          ]),
+        ]),
+        el('div', { className: 'share-section share-actions' }, [
+          el('a', {
+            className: 'btn btn-share-google',
+            href: googleEditLink,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+          }, ['📤 Manage Sharing in Google Sheets']),
+        ]),
+      ]),
+    ]),
+  ]);
+
+  // Close handlers
+  modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  // Copy button handlers
+  modal.querySelectorAll('.share-copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const link = btn.dataset.link;
+      try {
+        await navigator.clipboard.writeText(link);
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+      } catch {
+        // Fallback: select the input
+        const input = btn.parentElement.querySelector('.share-link-input');
+        if (input) { input.select(); document.execCommand('copy'); }
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+      }
+    });
+  });
+
+  document.body.append(modal);
 }

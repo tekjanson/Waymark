@@ -132,6 +132,36 @@ const definition = {
     ]));
   },
 
+  /** Compute aggregate stats from full row data for directory roll-up caching.
+   * @param {string[][]} rows — all data rows (no header)
+   * @param {Object} cols — column index map
+   * @returns {Object} { students, avg, sumAvg, count, dist }
+   */
+  computeDirStats(rows, cols) {
+    function classify(num) {
+      if (num >= 90) return 'A';
+      if (num >= 80) return 'B';
+      if (num >= 70) return 'C';
+      if (num >= 60) return 'D';
+      return 'F';
+    }
+    const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+    let sSum = 0, sCount = 0;
+    for (const row of rows) {
+      let total = 0, cnt = 0;
+      for (const aIdx of (cols.assignments || [])) {
+        const num = parseFloat(cell(row, aIdx));
+        if (!isNaN(num)) { total += num; cnt++; }
+      }
+      if (cnt > 0) {
+        const avg = Math.round(total / cnt);
+        sSum += avg; sCount++;
+        dist[classify(avg)]++;
+      }
+    }
+    return { students: rows.length, avg: sCount > 0 ? Math.round(sSum / sCount) : 0, sumAvg: sSum, count: sCount, dist };
+  },
+
   /* ---------- Directory-level classroom overview ---------- */
   directoryView(container, sheets, navigateFn) {
     function classify(num) {
@@ -147,12 +177,25 @@ const definition = {
 
     container.append(el('div', { className: 'grading-dir-title' }, ['\uD83C\uDF93 Classroom Overview']));
 
-    /* Aggregate per-class stats */
+    /* Aggregate per-class stats — prefer pre-computed dirStats when available */
     const classStats = [];
     let grandStudents = 0, grandSum = 0, grandCount = 0;
     const grandDist = { A: 0, B: 0, C: 0, D: 0, F: 0 };
 
     for (const sheet of sheets) {
+      if (sheet.dirStats) {
+        const ds = sheet.dirStats;
+        grandStudents += ds.students;
+        grandSum += ds.sumAvg; grandCount += ds.count;
+        for (const letter of Object.keys(grandDist)) {
+          grandDist[letter] += (ds.dist[letter] || 0);
+        }
+        classStats.push({
+          id: sheet.id, title: sheet.name,
+          students: ds.students, avg: ds.avg, dist: ds.dist, count: ds.count,
+        });
+        continue;
+      }
       const rows = sheet.rows || [];
       const cols = sheet.cols || { student: 0, assignments: [], grade: -1 };
       const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 };
