@@ -33,6 +33,7 @@ import './roster.js';
 import './recipe/index.js';
 import './flow/index.js';
 import './social.js';
+import './automation.js';
 
 /* ---------- Detection ---------- */
 

@@ -153,6 +153,13 @@ const ROLE_LABELS = {
   'social.mood': 'Mood / Feeling emoji',
   'social.link': 'Link / URL',
   'social.comment': 'Comment / Reply',
+  // Automation
+  'automation.workflow': 'Workflow / Automation name',
+  'automation.step': 'Step / Instruction description',
+  'automation.action': 'Action (navigate, click, type, wait, assert)',
+  'automation.target': 'Target (CSS selector, URL, or element)',
+  'automation.value': 'Value / Input data',
+  'automation.status': 'Status (pending, running, done, failed, skipped)',
 };
 
 /**
@@ -232,6 +239,10 @@ const CANONICAL_HEADERS = {
   'recipe.qty': 'Qty', 'recipe.unit': 'Unit',
   'recipe.quantity': 'Quantity', 'recipe.ingredient': 'Ingredient',
   'recipe.step': 'Step', 'recipe.notes': 'Notes', 'recipe.source': 'Source',
+  // Automation
+  'automation.workflow': 'Workflow', 'automation.step': 'Step',
+  'automation.action': 'Action', 'automation.target': 'Target',
+  'automation.value': 'Value', 'automation.status': 'Status',
 };
 
 /**
