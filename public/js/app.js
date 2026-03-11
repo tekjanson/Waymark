@@ -747,6 +747,7 @@ async function showFolderContents(folderId, folderName) {
               name: v.name,
               rows: [v.firstRow || []],
               cols: domTemplate.columns(lower),
+              dirStats: v.dirStats || null,
             };
           });
         const dirContainer = el('div', {
@@ -931,6 +932,30 @@ async function showFolderContents(folderId, folderName) {
           // Remove instant-cached render now that real data is ready
           const cachedDir = sheetsEl.querySelector('.directory-view-cached');
           if (cachedDir) cachedDir.remove();
+
+          // Re-fetch full data for directoryView sheets — summaries only
+          // have header + first row which gives incorrect aggregates.
+          const fullFetches = await Promise.allSettled(
+            group.sheets.map(async (s) => {
+              try {
+                const full = await api.sheets.getSpreadsheet(s.id);
+                s.rows = (full.values || []).slice(1);
+              } catch { /* keep partial data on failure */ }
+            })
+          );
+
+          // Cache dirStats in localStorage so instant render is accurate
+          if (group.template.computeDirStats) {
+            const localIdx = storage.getFolderIndex(folderId);
+            if (localIdx) {
+              for (const s of group.sheets) {
+                if (localIdx[s.id] && s.rows.length > 1) {
+                  localIdx[s.id].dirStats = group.template.computeDirStats(s.rows, s.cols);
+                }
+              }
+              storage.setFolderIndex(folderId, localIdx);
+            }
+          }
 
           // Use the template's directory view
           const dirContainer = el('div', { className: 'directory-view-container' });
@@ -1854,49 +1879,116 @@ function closeSettingsModal() {
 }
 
 async function loadFolderBrowser() {
-  settingsFolderBrowser.innerHTML = '';
-  settingsFolderBrowser.classList.remove('hidden');
+  const breadcrumbs = [{ id: 'root', name: 'My Drive' }];
 
-  const loading = el('div', { className: 'settings-folder-item' }, ['Loading folders…']);
-  settingsFolderBrowser.append(loading);
-
-  try {
-    const result = await api.drive.listRootFolders();
-    const folders = (result.files || []).filter(f =>
-      f.mimeType === 'application/vnd.google-apps.folder'
-    );
+  async function renderLevel(folderId) {
     settingsFolderBrowser.innerHTML = '';
+    settingsFolderBrowser.classList.remove('hidden');
 
-    if (!folders.length) {
-      settingsFolderBrowser.append(
-        el('div', { className: 'settings-folder-item' }, ['No folders found'])
-      );
-      return;
+    /* --- Breadcrumb trail --- */
+    const crumbBar = el('div', { className: 'settings-folder-breadcrumbs' });
+    for (let i = 0; i < breadcrumbs.length; i++) {
+      const bc = breadcrumbs[i];
+      if (i > 0) crumbBar.append(el('span', { className: 'settings-breadcrumb-sep' }, ['›']));
+      const crumb = el('button', {
+        className: 'settings-breadcrumb-btn',
+        type: 'button',
+        dataset: { idx: String(i) },
+      }, [bc.name]);
+      crumb.addEventListener('click', () => {
+        breadcrumbs.splice(i + 1);
+        renderLevel(bc.id);
+      });
+      crumbBar.append(crumb);
     }
+    settingsFolderBrowser.append(crumbBar);
 
-    for (const folder of folders) {
-      const item = el('div', {
-        className: 'settings-folder-item',
-        dataset: { folderId: folder.id, folderName: folder.name },
-      }, [
-        el('span', {}, ['📁']),
-        el('span', {}, [folder.name]),
-      ]);
-      item.addEventListener('click', async () => {
-        await userData.setImportFolder(folder.id, folder.name);
-        settingsImportFolder.textContent = folder.name;
+    /* --- Select-current button (not for root) --- */
+    if (folderId !== 'root') {
+      const currentCrumb = breadcrumbs[breadcrumbs.length - 1];
+      const selectCurrentBtn = el('button', {
+        className: 'settings-select-current-btn',
+        type: 'button',
+      }, [`✓ Select "${currentCrumb.name}"`]);
+      selectCurrentBtn.addEventListener('click', async () => {
+        await userData.setImportFolder(currentCrumb.id, currentCrumb.name);
+        settingsImportFolder.textContent = currentCrumb.name;
         settingsResetFolder.classList.remove('hidden');
         settingsFolderBrowser.classList.add('hidden');
-        showToast(`Import folder set to "${folder.name}"`, 'success');
+        showToast(`Import folder set to "${currentCrumb.name}"`, 'success');
       });
-      settingsFolderBrowser.append(item);
+      settingsFolderBrowser.append(selectCurrentBtn);
     }
-  } catch (err) {
-    settingsFolderBrowser.innerHTML = '';
-    settingsFolderBrowser.append(
-      el('div', { className: 'settings-folder-item' }, ['Failed to load folders'])
-    );
+
+    /* --- Loading indicator --- */
+    const loading = el('div', { className: 'settings-folder-item' }, ['Loading folders…']);
+    settingsFolderBrowser.append(loading);
+
+    try {
+      let folders;
+      if (folderId === 'root') {
+        const result = await api.drive.listRootFolders();
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      } else {
+        const result = await api.drive.listChildren(folderId);
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      }
+
+      loading.remove();
+
+      if (!folders.length) {
+        settingsFolderBrowser.append(
+          el('div', { className: 'settings-folder-item settings-folder-empty' }, ['No sub-folders'])
+        );
+        return;
+      }
+
+      for (const folder of folders) {
+        const item = el('div', { className: 'settings-folder-item' }, [
+          el('span', { className: 'settings-folder-icon' }, ['📁']),
+          el('span', { className: 'settings-folder-name' }, [folder.name]),
+          el('button', {
+            className: 'settings-folder-select-btn',
+            type: 'button',
+            title: `Select "${folder.name}"`,
+          }, ['Select']),
+        ]);
+
+        // Click folder name to navigate into it
+        item.querySelector('.settings-folder-name').addEventListener('click', () => {
+          breadcrumbs.push({ id: folder.id, name: folder.name });
+          renderLevel(folder.id);
+        });
+        item.querySelector('.settings-folder-icon').addEventListener('click', () => {
+          breadcrumbs.push({ id: folder.id, name: folder.name });
+          renderLevel(folder.id);
+        });
+
+        // Click "Select" button to choose this folder
+        item.querySelector('.settings-folder-select-btn').addEventListener('click', async () => {
+          await userData.setImportFolder(folder.id, folder.name);
+          settingsImportFolder.textContent = folder.name;
+          settingsResetFolder.classList.remove('hidden');
+          settingsFolderBrowser.classList.add('hidden');
+          showToast(`Import folder set to "${folder.name}"`, 'success');
+        });
+
+        settingsFolderBrowser.append(item);
+      }
+    } catch {
+      loading.remove();
+      settingsFolderBrowser.append(
+        el('div', { className: 'settings-folder-item' }, ['Failed to load folders'])
+      );
+    }
   }
+
+  breadcrumbs.length = 1; // Reset to root
+  renderLevel('root');
 }
 
 function initSettingsModal() {

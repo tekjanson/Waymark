@@ -5,7 +5,7 @@
    registry that individual template modules register into.
    ============================================================ */
 
-import { el } from '../ui.js';
+import { el, showToast } from '../ui.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
@@ -432,8 +432,8 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
-/* Re-export el for convenience — templates only need to import from shared */
-export { el };
+/* Re-export el and showToast for convenience — templates only need to import from shared */
+export { el, showToast };
 
 /* ---------- Generic Helpers ---------- */
 

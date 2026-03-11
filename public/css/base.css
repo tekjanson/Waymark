@@ -106,6 +106,7 @@ ul { list-style: none; }
 }
 .btn-lock:hover { color: var(--color-danger); }
 .btn-lock.locked { color: var(--color-danger); }
+.lock-bounce { animation: pin-bounce 0.35s ease; }
 
 .btn-open-drive {
   display: inline-flex; align-items: center; justify-content: center;
@@ -796,6 +797,78 @@ ul { list-style: none; }
 .btn-duplicate:hover { background: #ddd6fe; box-shadow: var(--shadow); }
 .btn-duplicate svg { stroke: #5b21b6; flex-shrink: 0; }
 
+/* ---------- Duplicate Modal ---------- */
+.duplicate-section { margin-bottom: 16px; }
+.duplicate-label {
+  display: block; font-size: 0.8rem; font-weight: 600;
+  color: var(--color-text-muted); margin-bottom: 6px; text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.duplicate-name-input {
+  width: 100%; padding: 8px 10px; font-size: 0.9rem;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text);
+  box-sizing: border-box;
+}
+.duplicate-name-input:focus { outline: 2px solid var(--color-primary); }
+.duplicate-folder-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.duplicate-folder-name {
+  font-size: 0.85rem; color: var(--color-text); flex: 1;
+}
+.duplicate-choose-folder {
+  padding: 5px 12px; font-size: 0.8rem;
+}
+.duplicate-folder-browser {
+  margin-top: 8px; max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-bg);
+}
+.duplicate-folder-breadcrumbs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.8rem;
+}
+.duplicate-breadcrumb-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-primary); font-size: 0.8rem; padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.duplicate-breadcrumb-btn:hover { background: #dbeafe; }
+.duplicate-breadcrumb-sep { color: var(--color-text-muted); font-size: 0.75rem; }
+.duplicate-select-current-btn {
+  display: block; width: 100%; padding: 8px 12px;
+  background: #dbeafe; border: none; border-bottom: 1px solid var(--color-border);
+  cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  color: var(--color-primary); text-align: left;
+  transition: background var(--transition);
+}
+.duplicate-select-current-btn:hover { background: #bfdbfe; }
+.duplicate-folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem; border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+.duplicate-folder-item:last-child { border-bottom: none; }
+.duplicate-folder-item:hover { background: var(--color-surface); }
+.duplicate-folder-icon { cursor: pointer; }
+.duplicate-folder-name-text {
+  flex: 1; cursor: pointer; padding: 2px 0;
+}
+.duplicate-folder-name-text:hover { text-decoration: underline; color: var(--color-primary); }
+.duplicate-folder-select-btn {
+  padding: 3px 10px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--color-primary); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-primary);
+  cursor: pointer; transition: background var(--transition);
+}
+.duplicate-folder-select-btn:hover { background: #dbeafe; }
+.duplicate-folder-empty { color: var(--color-text-muted); font-style: italic; }
+
 /* ---------- Share Button ---------- */
 .btn-share {
   display: inline-flex; align-items: center; gap: 6px;
@@ -807,6 +880,37 @@ ul { list-style: none; }
 }
 .btn-share:hover { background: #99f6e4; box-shadow: var(--shadow); }
 .btn-share svg { stroke: #115e59; flex-shrink: 0; }
+
+/* ---------- Share Modal ---------- */
+.share-section { margin-bottom: 16px; }
+.share-section:last-child { margin-bottom: 0; }
+.share-label {
+  display: block; font-size: 0.8rem; font-weight: 600;
+  color: var(--color-text-muted); margin-bottom: 6px; text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.share-link-row {
+  display: flex; gap: 8px; align-items: center;
+}
+.share-link-input {
+  flex: 1; padding: 8px 10px; font-size: 0.85rem;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-bg); color: var(--color-text);
+  font-family: monospace;
+}
+.share-link-input:focus { outline: 2px solid var(--color-primary); }
+.share-copy-btn {
+  padding: 8px 12px; font-size: 0.8rem; white-space: nowrap;
+}
+.share-actions { text-align: center; padding-top: 8px; }
+.btn-share-google {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 20px; border-radius: var(--radius);
+  border: 1px solid #0d9488; background: #ccfbf1; color: #115e59;
+  font-size: 0.85rem; font-weight: 600; text-decoration: none;
+  transition: background var(--transition);
+}
+.btn-share-google:hover { background: #99f6e4; }
 
 /* ---------- Open in Google Drive Button ---------- */
 .btn-drive {
@@ -910,19 +1014,54 @@ ul { list-style: none; }
 }
 
 .settings-folder-browser {
-  margin-top: 8px; max-height: 200px; overflow-y: auto;
+  margin-top: 8px; max-height: 300px; overflow-y: auto;
   border: 1px solid var(--color-border); border-radius: var(--radius);
   background: var(--color-bg);
 }
+.settings-folder-breadcrumbs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.8rem;
+}
+.settings-breadcrumb-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-primary); font-size: 0.8rem; padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.settings-breadcrumb-btn:hover { background: #dbeafe; }
+.settings-breadcrumb-sep { color: var(--color-text-muted); font-size: 0.75rem; }
+.settings-select-current-btn {
+  display: block; width: 100%; padding: 8px 12px;
+  background: #dbeafe; border: none; border-bottom: 1px solid var(--color-border);
+  cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  color: var(--color-primary); text-align: left;
+  transition: background var(--transition);
+}
+.settings-select-current-btn:hover { background: #bfdbfe; }
 .settings-folder-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; cursor: pointer;
+  padding: 8px 12px;
   font-size: 0.85rem; border-bottom: 1px solid var(--color-border);
   transition: background var(--transition);
 }
 .settings-folder-item:last-child { border-bottom: none; }
 .settings-folder-item:hover { background: var(--color-surface); }
 .settings-folder-item.selected { background: #dbeafe; font-weight: 600; }
+.settings-folder-icon { cursor: pointer; }
+.settings-folder-name {
+  flex: 1; cursor: pointer; padding: 2px 0;
+}
+.settings-folder-name:hover { text-decoration: underline; color: var(--color-primary); }
+.settings-folder-select-btn {
+  padding: 3px 10px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--color-primary); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-primary);
+  cursor: pointer; transition: background var(--transition);
+}
+.settings-folder-select-btn:hover { background: #dbeafe; }
+.settings-folder-empty { color: var(--color-text-muted); font-style: italic; }
 
 /* Secondary button */
 .btn-secondary {
