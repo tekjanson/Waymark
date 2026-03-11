@@ -106,6 +106,7 @@ ul { list-style: none; }
 }
 .btn-lock:hover { color: var(--color-danger); }
 .btn-lock.locked { color: var(--color-danger); }
+.lock-bounce { animation: pin-bounce 0.35s ease; }
 
 .btn-open-drive {
   display: inline-flex; align-items: center; justify-content: center;
@@ -820,17 +821,53 @@ ul { list-style: none; }
   padding: 5px 12px; font-size: 0.8rem;
 }
 .duplicate-folder-browser {
-  margin-top: 8px; max-height: 150px; overflow-y: auto;
-  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  margin-top: 8px; max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--color-border); border-radius: var(--radius);
   background: var(--color-bg);
 }
-.duplicate-folder-item {
-  padding: 6px 10px; cursor: pointer; font-size: 0.82rem;
+.duplicate-folder-breadcrumbs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.8rem;
+}
+.duplicate-breadcrumb-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-primary); font-size: 0.8rem; padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.duplicate-breadcrumb-btn:hover { background: #dbeafe; }
+.duplicate-breadcrumb-sep { color: var(--color-text-muted); font-size: 0.75rem; }
+.duplicate-select-current-btn {
+  display: block; width: 100%; padding: 8px 12px;
+  background: #dbeafe; border: none; border-bottom: 1px solid var(--color-border);
+  cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  color: var(--color-primary); text-align: left;
+  transition: background var(--transition);
+}
+.duplicate-select-current-btn:hover { background: #bfdbfe; }
+.duplicate-folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem; border-bottom: 1px solid var(--color-border);
   transition: background var(--transition);
 }
 .duplicate-folder-item:last-child { border-bottom: none; }
 .duplicate-folder-item:hover { background: var(--color-surface); }
+.duplicate-folder-icon { cursor: pointer; }
+.duplicate-folder-name-text {
+  flex: 1; cursor: pointer; padding: 2px 0;
+}
+.duplicate-folder-name-text:hover { text-decoration: underline; color: var(--color-primary); }
+.duplicate-folder-select-btn {
+  padding: 3px 10px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--color-primary); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-primary);
+  cursor: pointer; transition: background var(--transition);
+}
+.duplicate-folder-select-btn:hover { background: #dbeafe; }
+.duplicate-folder-empty { color: var(--color-text-muted); font-style: italic; }
 
 /* ---------- Share Button ---------- */
 .btn-share {

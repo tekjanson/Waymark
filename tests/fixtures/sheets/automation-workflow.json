@@ -1,0 +1,21 @@
+{
+  "id": "sheet-036",
+  "title": "Login Automation",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Workflow", "Step", "Action", "Target", "Value", "Status"],
+    ["Login Flow", "Open login page", "navigate", "https://example.com/login", "", "Done"],
+    ["", "Enter username", "type", "#username", "admin@example.com", "Done"],
+    ["", "Enter password", "type", "#password", "secret123", "Done"],
+    ["", "Click Sign In button", "click", ".btn-login", "", "Done"],
+    ["", "Wait for redirect", "wait", ".dashboard", "", "Done"],
+    ["", "Verify welcome message", "assert", "h1.welcome", "Welcome, Admin", "Running"],
+    ["Dashboard Check", "Open settings page", "navigate", "/settings", "", "Pending"],
+    ["", "Toggle dark mode", "click", "#dark-mode-toggle", "", "Pending"],
+    ["", "Verify dark mode active", "assert", "body.dark", "", "Pending"],
+    ["", "Take screenshot", "screenshot", "viewport", "", "Pending"],
+    ["Logout Flow", "Click user menu", "click", ".user-avatar", "", "Failed"],
+    ["", "Click logout", "click", "#logout-btn", "", "Skipped"],
+    ["", "Verify redirect to login", "assert", ".login-form", "", "Skipped"]
+  ]
+}

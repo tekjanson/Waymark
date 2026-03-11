@@ -73,6 +73,9 @@ export function init() {
       const newState = !isLocked;
       localStorage.setItem(key, newState ? '1' : '0');
       applyLockState(newState);
+      showToast(newState ? 'Sheet locked — editing disabled' : 'Sheet unlocked — editing enabled', 'success');
+      lockBtn.classList.add('lock-bounce');
+      lockBtn.addEventListener('animationend', () => lockBtn.classList.remove('lock-bounce'), { once: true });
     });
   }
 
@@ -282,38 +285,119 @@ function openDuplicateModal() {
   modal.querySelector('.modal-footer .btn-secondary').addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-  // Folder browser
-  chooseFolderBtn.addEventListener('click', async () => {
+  // Folder browser with breadcrumb navigation
+  const dupBreadcrumbs = [{ id: 'root', name: 'My Drive' }];
+
+  async function renderDupLevel(folderId) {
+    folderBrowser.innerHTML = '';
+    folderBrowser.classList.remove('hidden');
+
+    /* --- Breadcrumb trail --- */
+    const crumbBar = el('div', { className: 'duplicate-folder-breadcrumbs' });
+    for (let i = 0; i < dupBreadcrumbs.length; i++) {
+      const bc = dupBreadcrumbs[i];
+      if (i > 0) crumbBar.append(el('span', { className: 'duplicate-breadcrumb-sep' }, ['›']));
+      const crumb = el('button', {
+        className: 'duplicate-breadcrumb-btn',
+        type: 'button',
+      }, [bc.name]);
+      crumb.addEventListener('click', () => {
+        dupBreadcrumbs.splice(i + 1);
+        renderDupLevel(bc.id);
+      });
+      crumbBar.append(crumb);
+    }
+    folderBrowser.append(crumbBar);
+
+    /* --- Select-current button (not for root) --- */
+    if (folderId !== 'root') {
+      const currentCrumb = dupBreadcrumbs[dupBreadcrumbs.length - 1];
+      const selectCurrentBtn = el('button', {
+        className: 'duplicate-select-current-btn',
+        type: 'button',
+      }, [`✓ Select "${currentCrumb.name}"`]);
+      selectCurrentBtn.addEventListener('click', () => {
+        selectedFolderId = currentCrumb.id;
+        selectedFolderName = currentCrumb.name;
+        folderDisplay.textContent = currentCrumb.name;
+        folderBrowser.classList.add('hidden');
+      });
+      folderBrowser.append(selectCurrentBtn);
+    }
+
+    /* --- Loading indicator --- */
+    const loading = el('div', { className: 'duplicate-folder-item' }, ['Loading folders…']);
+    folderBrowser.append(loading);
+
+    try {
+      let folders;
+      if (folderId === 'root') {
+        const result = await api.drive.listRootFolders();
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      } else {
+        const result = await api.drive.listChildren(folderId);
+        folders = (result.files || []).filter(f =>
+          f.mimeType === 'application/vnd.google-apps.folder'
+        );
+      }
+
+      loading.remove();
+
+      if (!folders.length) {
+        folderBrowser.append(
+          el('div', { className: 'duplicate-folder-item duplicate-folder-empty' }, ['No sub-folders'])
+        );
+        return;
+      }
+
+      for (const folder of folders) {
+        const item = el('div', { className: 'duplicate-folder-item' }, [
+          el('span', { className: 'duplicate-folder-icon' }, ['📁']),
+          el('span', { className: 'duplicate-folder-name-text' }, [folder.name]),
+          el('button', {
+            className: 'duplicate-folder-select-btn',
+            type: 'button',
+            title: `Select "${folder.name}"`,
+          }, ['Select']),
+        ]);
+
+        // Click folder name/icon to navigate into it
+        item.querySelector('.duplicate-folder-name-text').addEventListener('click', () => {
+          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
+          renderDupLevel(folder.id);
+        });
+        item.querySelector('.duplicate-folder-icon').addEventListener('click', () => {
+          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
+          renderDupLevel(folder.id);
+        });
+
+        // Click "Select" button to choose this folder
+        item.querySelector('.duplicate-folder-select-btn').addEventListener('click', () => {
+          selectedFolderId = folder.id;
+          selectedFolderName = folder.name;
+          folderDisplay.textContent = folder.name;
+          folderBrowser.classList.add('hidden');
+        });
+
+        folderBrowser.append(item);
+      }
+    } catch {
+      loading.remove();
+      folderBrowser.append(
+        el('div', { className: 'duplicate-folder-item' }, ['Failed to load folders'])
+      );
+    }
+  }
+
+  chooseFolderBtn.addEventListener('click', () => {
     if (!folderBrowser.classList.contains('hidden')) {
       folderBrowser.classList.add('hidden');
       return;
     }
-    folderBrowser.innerHTML = '';
-    folderBrowser.classList.remove('hidden');
-    folderBrowser.append(el('div', { className: 'duplicate-folder-item' }, ['Loading…']));
-
-    try {
-      const result = await api.drive.listRootFolders();
-      const folders = (result.files || []).filter(f =>
-        f.mimeType === 'application/vnd.google-apps.folder'
-      );
-      folderBrowser.innerHTML = '';
-      for (const f of folders) {
-        const item = el('div', { className: 'duplicate-folder-item' }, [
-          el('span', {}, ['📁 ' + f.name]),
-        ]);
-        item.addEventListener('click', () => {
-          selectedFolderId = f.id;
-          selectedFolderName = f.name;
-          folderDisplay.textContent = f.name;
-          folderBrowser.classList.add('hidden');
-        });
-        folderBrowser.append(item);
-      }
-    } catch {
-      folderBrowser.innerHTML = '';
-      folderBrowser.append(el('div', { className: 'duplicate-folder-item' }, ['Failed to load folders']));
-    }
+    dupBreadcrumbs.length = 1; // Reset to root
+    renderDupLevel('root');
   });
 
   // Create button

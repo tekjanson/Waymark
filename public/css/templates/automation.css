@@ -1,0 +1,142 @@
+/* Automation Template */
+
+.automation-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.automation-card-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #7c3aed12, #2563eb08);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automation-card-icon { font-size: 1.2rem; }
+
+.automation-card-title {
+  font-weight: 700; font-size: 1rem;
+  color: var(--color-text); flex: 1;
+}
+
+.automation-step-count {
+  font-size: 0.75rem; font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-bg); padding: 3px 10px;
+  border-radius: 10px;
+}
+
+.automation-steps { padding: 4px 0; }
+
+.automation-step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background var(--transition);
+}
+.automation-step:last-child { border-bottom: none; }
+.automation-step:hover { background: #f8fafc; }
+.automation-step-done { opacity: 0.7; }
+.automation-step-skipped { opacity: 0.5; }
+
+.automation-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 50%; font-size: 0.7rem; font-weight: 700;
+  background: var(--color-bg); color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.automation-step-done .automation-step-num {
+  background: #dcfce7; color: #16a34a; border-color: #16a34a;
+}
+.automation-step-failed .automation-step-num {
+  background: #fef2f2; color: #dc2626; border-color: #dc2626;
+}
+.automation-step-running .automation-step-num {
+  background: #dbeafe; color: #2563eb; border-color: #2563eb;
+}
+
+.automation-action-badge {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+.automation-step-text {
+  flex: 1; font-size: 0.88rem; color: var(--color-text);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+
+.automation-target {
+  font-size: 0.78rem; font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #64748b; background: #f1f5f9;
+  padding: 2px 6px; border-radius: var(--radius-sm);
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-value {
+  font-size: 0.78rem; color: #7c3aed;
+  background: #f5f3ff; padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-status {
+  display: inline-block; padding: 3px 10px;
+  border-radius: 10px; font-size: 0.72rem;
+  font-weight: 600; cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap; flex-shrink: 0;
+  user-select: none;
+}
+.automation-status:hover { filter: brightness(0.95); transform: scale(1.05); }
+.automation-status-pending  { background: #f1f5f9; color: #64748b; }
+.automation-status-running  { background: #dbeafe; color: #2563eb; }
+.automation-status-done     { background: #dcfce7; color: #16a34a; }
+.automation-status-failed   { background: #fef2f2; color: #dc2626; }
+.automation-status-skipped  { background: #fefce8; color: #a16207; }
+
+.automation-summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.automation-progress-bar {
+  flex: 1; height: 6px;
+  background: #e2e8f0; border-radius: 3px;
+  overflow: hidden;
+}
+
+.automation-progress-fill {
+  height: 100%; border-radius: 3px;
+  background: #7c3aed;
+  transition: width 0.3s ease;
+}
+
+.automation-summary-text {
+  font-size: 0.75rem; font-weight: 600;
+  color: var(--color-text-muted); white-space: nowrap;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .automation-step { flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  .automation-target { max-width: 140px; }
+  .automation-value { max-width: 80px; }
+}
+
+@media (max-width: 480px) {
+  .automation-card-header { padding: 10px 12px; }
+  .automation-step { gap: 4px; }
+  .automation-target, .automation-value { display: none; }
+}

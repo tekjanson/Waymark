@@ -635,4 +635,41 @@ export const EXAMPLE_SHEETS = {
       ['', 'Riley', '2026-03-05', '', '', '', 'Im in! Love Thai food.'],
     ],
   },
+
+  /* ---- Automation examples ---- */
+  "Login Test Suite": {
+    folder: 'Automation',
+    headers: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
+    rows: [
+      ['Login Flow', 'Open login page', 'navigate', 'https://app.example.com/login', '', 'Done'],
+      ['', 'Enter email address', 'type', '#email-input', 'user@example.com', 'Done'],
+      ['', 'Enter password', 'type', '#password-input', 'P@ssw0rd!', 'Done'],
+      ['', 'Click Sign In', 'click', '.btn-primary', '', 'Done'],
+      ['', 'Wait for dashboard', 'wait', '.dashboard-container', '', 'Done'],
+      ['', 'Verify username displayed', 'assert', '.user-name', 'User', 'Done'],
+      ['Password Reset', 'Open login page', 'navigate', 'https://app.example.com/login', '', 'Pending'],
+      ['', 'Click forgot password', 'click', 'a.forgot-password', '', 'Pending'],
+      ['', 'Enter email', 'type', '#reset-email', 'user@example.com', 'Pending'],
+      ['', 'Click send reset link', 'click', '#send-reset', '', 'Pending'],
+      ['', 'Verify success message', 'assert', '.alert-success', 'Reset link sent', 'Pending'],
+    ],
+  },
+
+  "E-Commerce Checkout": {
+    folder: 'Automation',
+    headers: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
+    rows: [
+      ['Add to Cart', 'Open product page', 'navigate', '/products/widget-pro', '', 'Done'],
+      ['', 'Select quantity', 'type', '#quantity', '2', 'Done'],
+      ['', 'Click Add to Cart', 'click', '.add-to-cart-btn', '', 'Done'],
+      ['', 'Verify cart badge count', 'assert', '.cart-badge', '2', 'Done'],
+      ['Checkout', 'Open cart', 'click', '.cart-icon', '', 'Running'],
+      ['', 'Click Proceed to Checkout', 'click', '.checkout-btn', '', 'Pending'],
+      ['', 'Fill shipping address', 'type', '#address', '123 Main St', 'Pending'],
+      ['', 'Select payment method', 'click', '#card-payment', '', 'Pending'],
+      ['', 'Click Place Order', 'click', '.place-order', '', 'Pending'],
+      ['', 'Take confirmation screenshot', 'screenshot', 'viewport', '', 'Pending'],
+      ['', 'Verify order number', 'assert', '.order-number', '', 'Pending'],
+    ],
+  },
 };

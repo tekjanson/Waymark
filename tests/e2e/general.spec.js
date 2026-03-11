@@ -179,6 +179,66 @@ test('duplicate modal has choose folder button', async ({ page }) => {
   await expect(page.locator('.duplicate-folder-name')).toContainText('Default');
 });
 
+test('duplicate folder browser shows breadcrumbs and folders', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#duplicate-sheet-btn').click();
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  // Open folder browser
+  await page.locator('.duplicate-choose-folder').click();
+  await page.waitForSelector('.duplicate-folder-breadcrumbs', { timeout: 5_000 });
+
+  // Should show My Drive breadcrumb
+  await expect(page.locator('.duplicate-breadcrumb-btn').first()).toContainText('My Drive');
+
+  // Should show folder items with select buttons
+  const items = page.locator('.duplicate-folder-item');
+  expect(await items.count()).toBeGreaterThan(0);
+});
+
+test('duplicate folder browser select button picks folder', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#duplicate-sheet-btn').click();
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  // Open folder browser and select first folder
+  await page.locator('.duplicate-choose-folder').click();
+  await page.waitForSelector('.duplicate-folder-select-btn', { timeout: 5_000 });
+
+  const firstSelectBtn = page.locator('.duplicate-folder-select-btn').first();
+  await firstSelectBtn.click();
+
+  // Browser should close and folder name should update
+  await expect(page.locator('.duplicate-folder-browser')).toHaveClass(/hidden/);
+});
+
+test('lock button shows toast feedback on toggle', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  // Click lock button
+  await page.locator('#lock-btn').click();
+
+  // Should show lock toast
+  const toast = page.locator('.toast');
+  await expect(toast).toBeVisible({ timeout: 3000 });
+  await expect(toast).toContainText('locked');
+
+  // Wait for first toast to disappear before unlocking
+  await page.waitForSelector('.toast', { state: 'hidden', timeout: 6_000 });
+
+  // Unlock and verify toast
+  await page.locator('#lock-btn').click();
+  await expect(page.locator('.toast').last()).toContainText('unlocked');
+});
+
 test('lock button visible and toggles lock state', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
@@ -213,7 +273,8 @@ test('locked sheet prevents inline editing', async ({ page }) => {
   const cell = page.locator('.editable-cell').first();
   // pointer-events: none means click won't reach JS, but verify no input appears
   await cell.dispatchEvent('click');
-  await page.waitForTimeout(500);
+  // Give time for any input to appear (if broken)
+  await page.waitForSelector('#checklist-items', { timeout: 1_000 });
   await expect(cell.locator('input')).not.toBeVisible();
 });
 
