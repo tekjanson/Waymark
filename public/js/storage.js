@@ -98,6 +98,24 @@ export function setTutorialStep(step) {
   set('tutorial_step', step);
 }
 
+/* --- Theme --- */
+
+/**
+ * Get the saved theme preference ('light', 'dark', or 'system').
+ * @returns {string}
+ */
+export function getTheme() {
+  return get('theme') || 'light';
+}
+
+/**
+ * Save the theme preference.
+ * @param {'light'|'dark'|'system'} theme
+ */
+export function setTheme(theme) {
+  set('theme', theme);
+}
+
 /* --- Recent Sheets --- */
 
 export function getRecentSheets() {

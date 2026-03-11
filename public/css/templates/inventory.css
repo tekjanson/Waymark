@@ -58,3 +58,14 @@
 .template-inv-extra {
   font-size: 0.8rem; color: var(--color-text-muted); margin-top: 6px;
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .inv-summary {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.06));
+  border-color: rgba(251, 191, 36, 0.25);
+}
+[data-theme="dark"] .inv-summary-item { color: #fcd34d; }
+[data-theme="dark"] .inv-reorder-header { border-bottom-color: rgba(248, 113, 113, 0.3); }
+[data-theme="dark"] .inv-low-stock { border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.1); }
+[data-theme="dark"] .inv-low-badge { background: rgba(248, 113, 113, 0.16); }
+[data-theme="dark"] .template-inv-qty { color: #fff; }

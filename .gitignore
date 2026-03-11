@@ -12,6 +12,10 @@ test-results/
 playwright-report/
 blob-report/
 
+# Design audit
+design-audit-screenshots/
+design-audit-report.md
+
 # Android build
 android/.gradle/
 android/build/
@@ -19,6 +23,9 @@ android/app/build/
 android/local.properties
 *.apk
 *.aab
+
+# Build artifacts
+server/build-info.json
 
 # IDE
 .vscode/

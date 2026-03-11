@@ -57,3 +57,9 @@
 }
 .poll-votes-count:hover { background: #fce7f3; }
 .poll-pct { font-size: 0.8rem; color: var(--color-text-muted); min-width: 3em; text-align: right; }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .poll-live-btn:hover { border-color: #ec4899; color: #ec4899; }
+[data-theme="dark"] .poll-live-active { background: #be185d; color: #fff; border-color: #be185d; }
+[data-theme="dark"] .poll-votes-count { color: #f472b6; }
+[data-theme="dark"] .poll-votes-count:hover { background: rgba(244, 114, 182, 0.16); }

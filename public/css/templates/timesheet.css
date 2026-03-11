@@ -123,3 +123,27 @@
   .ts-group-bar { justify-content: center; }
   .ts-invoice-btn { text-align: center; }
 }
+
+/* --- Dark Theme --- */
+[data-theme="dark"] .ts-summary-value { color: #a5b4fc; }
+[data-theme="dark"] .ts-group-header { background: rgba(129, 140, 248, 0.14); }
+[data-theme="dark"] .ts-group-title { color: #a5b4fc; }
+[data-theme="dark"] .ts-group-btn {
+  background: transparent; color: #a5b4fc; border-color: #4338ca;
+}
+[data-theme="dark"] .ts-group-btn:hover { background: rgba(129, 140, 248, 0.14); }
+[data-theme="dark"] .ts-group-btn.active { background: #4338ca; color: #fff; }
+[data-theme="dark"] .ts-row-hours { background: rgba(129, 140, 248, 0.14); color: #a5b4fc; }
+[data-theme="dark"] .ts-billable { border-color: #f59e0b; }
+[data-theme="dark"] .ts-billable-indicator { color: #fbbf24; }
+[data-theme="dark"] .ts-client { color: #a5b4fc; }
+[data-theme="dark"] .ts-invoice-btn { background: #4338ca; color: #fff; border-color: #4338ca; }
+[data-theme="dark"] .ts-invoice-btn:hover { background: #3730a3; }
+[data-theme="dark"] .ts-invoice-modal,
+[data-theme="dark"] .ts-invoice-sheet { background: var(--color-surface); color: var(--color-text); }
+[data-theme="dark"] .ts-invoice-overlay { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .ts-inv-title { color: #a5b4fc; }
+[data-theme="dark"] .ts-inv-table th { color: #94a3b8; border-color: #334155; }
+[data-theme="dark"] .ts-inv-table td { border-color: #334155; }
+[data-theme="dark"] .ts-inv-print-btn { background: #4338ca; color: #fff; }
+[data-theme="dark"] .ts-inv-print-btn:hover { background: #3730a3; }
