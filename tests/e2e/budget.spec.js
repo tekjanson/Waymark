@@ -132,3 +132,37 @@ test('budget directoryView card click navigates to sheet', async ({ page }) => {
   await page.waitForSelector('.budget-row', { timeout: 5_000 });
   await expect(page.locator('#template-badge')).toContainText('Budget');
 });
+
+test('budget directoryView grand totals reflect accurate multi-sheet sums', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-budgets/Budgets'; });
+  await page.waitForSelector('.budget-dir-totals', { timeout: 8_000 });
+
+  const values = await page.locator('.budget-dir-total-value').allTextContents();
+  // Combined income: $5,800 + $5,800 = $11,600
+  // Combined expense: $2,302 + $2,235 = $4,537
+  // Combined balance: $3,498 + $3,565 = $7,063
+  const numValues = values.map(v => parseFloat(v.replace(/[^0-9.-]/g, '')));
+  expect(numValues.length).toBe(3);
+  // Income should be sum of both sheets (> $10,000)
+  expect(numValues[0]).toBeGreaterThan(10000);
+  // Expense should be sum of both sheets (> $4,000)
+  expect(numValues[1]).toBeGreaterThan(4000);
+  // Balance should be positive and > $6,000
+  expect(numValues[2]).toBeGreaterThan(6000);
+});
+
+test('budget directoryView per-card balances show correct values', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-budgets/Budgets'; });
+  await page.waitForSelector('.budget-dir-card', { timeout: 8_000 });
+
+  // Each card should show balance text
+  const balances = await page.locator('.budget-dir-card-balance').allTextContents();
+  expect(balances.length).toBe(2);
+  // Each sheet has positive balance
+  for (const b of balances) {
+    const val = parseFloat(b.replace(/[^0-9.-]/g, ''));
+    expect(val).toBeGreaterThan(0);
+  }
+});

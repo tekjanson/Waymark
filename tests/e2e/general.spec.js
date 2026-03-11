@@ -35,6 +35,18 @@ test('duplicate sheet button visible and creates copy', async ({ page }) => {
   await expect(dupBtn).toBeVisible();
 
   await dupBtn.click();
+  // Wait for duplicate modal to appear
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  // Modal should show a pre-filled name
+  const nameInput = page.locator('.duplicate-name-input');
+  await expect(nameInput).toBeVisible();
+  const nameValue = await nameInput.inputValue();
+  expect(nameValue).toContain('Copy of');
+
+  // Click the Create Copy button
+  await page.click('.duplicate-create-btn');
+
   // Wait for toast confirming creation
   await page.waitForSelector('.toast', { timeout: 5_000 });
 
@@ -52,6 +64,119 @@ test('share button visible on sheet view', async ({ page }) => {
   const shareBtn = page.locator('#share-btn');
   await expect(shareBtn).toBeVisible();
   await expect(shareBtn).toContainText('Share');
+});
+
+test('share button opens share modal with links', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#share-btn').click();
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+  await expect(page.locator('#share-modal')).toBeVisible();
+
+  // Should show two share link inputs (Waymark + Google)
+  const inputs = page.locator('.share-link-input');
+  expect(await inputs.count()).toBe(2);
+
+  // Waymark link should contain sheet ID
+  const waymarkLink = await inputs.nth(0).inputValue();
+  expect(waymarkLink).toContain('sheet-001');
+
+  // Google link should point to docs.google.com
+  const googleLink = await inputs.nth(1).inputValue();
+  expect(googleLink).toContain('docs.google.com');
+  expect(googleLink).toContain('sheet-001');
+});
+
+test('share modal has copy buttons', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#share-btn').click();
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+
+  const copyBtns = page.locator('.share-copy-btn');
+  expect(await copyBtns.count()).toBe(2);
+  await expect(copyBtns.first()).toContainText('Copy');
+});
+
+test('share modal closes on close button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#share-btn').click();
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+  await expect(page.locator('#share-modal')).toBeVisible();
+
+  await page.locator('#share-modal .modal-close').click();
+  await expect(page.locator('#share-modal')).toHaveCount(0);
+});
+
+test('share modal closes on overlay click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#share-btn').click();
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+
+  // Click the overlay (outside the modal content)
+  await page.locator('#share-modal').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('#share-modal')).toHaveCount(0);
+});
+
+test('share modal has manage sharing link', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#share-btn').click();
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+
+  const manageLink = page.locator('.btn-share-google');
+  await expect(manageLink).toBeVisible();
+  await expect(manageLink).toContainText('Manage Sharing');
+  const href = await manageLink.getAttribute('href');
+  expect(href).toContain('docs.google.com');
+});
+
+test('duplicate modal closes on close button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#duplicate-sheet-btn').click();
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  await page.locator('#duplicate-modal .modal-close').click();
+  await expect(page.locator('#duplicate-modal')).toHaveCount(0);
+});
+
+test('duplicate modal closes on cancel button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#duplicate-sheet-btn').click();
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  await page.locator('#duplicate-modal .modal-footer .btn-secondary').click();
+  await expect(page.locator('#duplicate-modal')).toHaveCount(0);
+});
+
+test('duplicate modal has choose folder button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+
+  await page.locator('#duplicate-sheet-btn').click();
+  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
+
+  await expect(page.locator('.duplicate-choose-folder')).toBeVisible();
+  await expect(page.locator('.duplicate-folder-name')).toContainText('Default');
 });
 
 test('lock button visible and toggles lock state', async ({ page }) => {

@@ -107,3 +107,44 @@ test('settings choose folder opens folder browser', async ({ page }) => {
   const items = page.locator('.settings-folder-item');
   expect(await items.count()).toBeGreaterThan(0);
 });
+
+test('settings folder browser shows breadcrumb trail', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#user-name').click();
+  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
+
+  await page.locator('#settings-choose-folder').click();
+  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
+
+  // Should show breadcrumbs with at least "My Drive" root
+  const breadcrumbs = page.locator('.settings-folder-breadcrumbs');
+  await expect(breadcrumbs).toBeVisible();
+});
+
+test('settings folder browser clicking folder navigates into it', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#user-name').click();
+  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
+
+  await page.locator('#settings-choose-folder').click();
+  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
+
+  // Find "Home Projects" folder item (which has sub-folder f2-sub "Backyard")
+  const folderItems = page.locator('.settings-folder-item');
+  const count = await folderItems.count();
+  let targetIdx = -1;
+  for (let i = 0; i < count; i++) {
+    const text = await folderItems.nth(i).textContent();
+    if (text.includes('Home Projects')) { targetIdx = i; break; }
+  }
+  expect(targetIdx).toBeGreaterThanOrEqual(0);
+
+  // Click the folder name to navigate into it
+  await folderItems.nth(targetIdx).locator('.settings-folder-name').click();
+
+  // After navigating into a sub-folder, the select current button should appear
+  await page.waitForSelector('.settings-select-current-btn', { timeout: 5_000 });
+  await expect(page.locator('.settings-select-current-btn')).toBeVisible();
+});

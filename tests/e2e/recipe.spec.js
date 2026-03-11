@@ -920,6 +920,123 @@ test('recipe interactive rating stars are clickable', async ({ page }) => {
   expect(await stars.count()).toBe(5);
 });
 
+test('recipe status cycling emits cell-update record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-status-badge', { timeout: 5_000 });
+
+  // Click status badge to cycle Approved → Needs Work
+  await page.locator('.recipe-status-badge').click();
+  await expect(page.locator('.recipe-status-badge')).toContainText('Needs Work');
+
+  const records = await getCreatedRecords(page);
+  const statusRecord = records.find(r => r.type === 'cell-update' && r.value === 'Needs Work');
+  expect(statusRecord).toBeTruthy();
+});
+
+test('recipe status full cycle returns to original state', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-status-badge', { timeout: 5_000 });
+
+  // Approved → Needs Work → Untested → Approved
+  await page.locator('.recipe-status-badge').click();
+  await expect(page.locator('.recipe-status-badge')).toContainText('Needs Work');
+  await page.locator('.recipe-status-badge').click();
+  await expect(page.locator('.recipe-status-badge')).toContainText('Untested');
+  await page.locator('.recipe-status-badge').click();
+  await expect(page.locator('.recipe-status-badge')).toContainText('Approved');
+});
+
+test('recipe rating star click emits cell-update record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-your-rating', { timeout: 5_000 });
+
+  // Click the 4th star
+  await page.locator('.recipe-rate-star').nth(3).click();
+
+  const records = await getCreatedRecords(page);
+  const ratingRecord = records.find(r => r.type === 'cell-update' && r.value && r.value.includes(':4'));
+  expect(ratingRecord).toBeTruthy();
+});
+
+test('recipe rating star click updates average stars visually', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-your-rating', { timeout: 5_000 });
+
+  // Click the 5th star (highest)
+  await page.locator('.recipe-rate-star').nth(4).click();
+
+  // The clicked star should become filled
+  await expect(page.locator('.recipe-rate-star').nth(4)).toHaveClass(/recipe-star-filled/);
+
+  // Average display should update
+  const filledAvg = page.locator('.recipe-rating-avg .recipe-star-filled');
+  expect(await filledAvg.count()).toBeGreaterThanOrEqual(4);
+});
+
+test('recipe reset button is visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-reset-btn', { timeout: 5_000 });
+  await expect(page.locator('.recipe-reset-btn')).toBeVisible();
+  await expect(page.locator('.recipe-reset-btn')).toContainText('Reset');
+});
+
+test('recipe reset button clears checked ingredients', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredients-list li', { timeout: 5_000 });
+
+  // Check off a few ingredients by clicking (use evaluate to avoid hitting editable cells)
+  const items = page.locator('.recipe-ingredients-list li');
+  await items.nth(0).evaluate(el => el.click());
+  await items.nth(1).evaluate(el => el.click());
+  await expect(items.nth(0)).toHaveClass(/recipe-ingredient-checked/);
+  await expect(items.nth(1)).toHaveClass(/recipe-ingredient-checked/);
+
+  // Click reset
+  await page.locator('.recipe-reset-btn').click();
+
+  // All checkmarks should be cleared
+  await expect(items.nth(0)).not.toHaveClass(/recipe-ingredient-checked/);
+  await expect(items.nth(1)).not.toHaveClass(/recipe-ingredient-checked/);
+});
+
+test('recipe reset button shows toast notification', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-reset-btn', { timeout: 5_000 });
+
+  // Check off at least one ingredient first
+  const li = page.locator('.recipe-ingredients-list li').first();
+  await li.evaluate(el => el.click());
+  await expect(li).toHaveClass(/recipe-ingredient-checked/);
+
+  await page.locator('.recipe-reset-btn').click();
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+  await expect(page.locator('.toast')).toContainText('Checkmarks cleared');
+});
+
+test('recipe reset button clears step checkmarks too', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-instructions-list li', { timeout: 5_000 });
+
+  // Manually add step-checked class to simulate a checked step
+  const step = page.locator('.recipe-instructions-list li').first();
+  await step.evaluate(el => el.classList.add('recipe-step-checked'));
+  await expect(step).toHaveClass(/recipe-step-checked/);
+
+  // Click reset
+  await page.locator('.recipe-reset-btn').click();
+
+  // Step checkmark should be cleared
+  await expect(step).not.toHaveClass(/recipe-step-checked/);
+});
+
 test('recipe renders photo when Photo column has an image URL', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
