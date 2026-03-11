@@ -12,7 +12,7 @@
 
 import {
   el, cell, editableCell, registerTemplate, emitEdit, delegateEvent,
-  getUserName, isImageUrl,
+  getUserName, isImageUrl, showToast,
 } from '../shared.js';
 import {
   formatNumber, scaleQuantity, scaleServings, parseQtyNumber,
@@ -294,7 +294,7 @@ const definition = {
           const nextClass = next.toLowerCase().replace(/\s+/g, '-');
           badge.textContent = `${STATUS_ICONS[next] || ''} ${next}`;
           badge.className = `recipe-status-badge recipe-status-${nextClass}`;
-          emitEdit({ row: firstRowIdx, col: cols.status, value: next });
+          emitEdit(firstRowIdx, cols.status, next);
         });
         items.push(badge);
       }
@@ -364,7 +364,7 @@ const definition = {
           ratings.set(userName, val);
           // Serialize back to "Name:N,Name:N"
           const serialized = [...ratings].map(([n, v]) => `${n}:${v}`).join(',');
-          emitEdit({ row: firstRowIdx, col: cols.rating, value: serialized });
+          emitEdit(firstRowIdx, cols.rating, serialized);
           // Update star visuals
           yourRow.querySelectorAll('.recipe-rate-star').forEach(b => {
             const bv = parseInt(b.dataset.star, 10);
@@ -448,6 +448,9 @@ const definition = {
           unitSpanEl.dataset.colIdx = String(cols.unit);
 
           unitSpans.push(unitSpanEl);
+        } else {
+          // Create empty spacer to maintain consistent ingredient alignment
+          unitSpanEl = el('span', { className: 'recipe-ingredient-unit' });
         }
 
         const li = el('li', {}, [
@@ -549,13 +552,18 @@ const definition = {
         'Add Ingredient', addCols, totalCols, addRow, addPlaceholders
       );
 
-      /* Mode toggle buttons: Cooking + Shopping List */
+      /* Mode toggle buttons: Cooking + Shopping List + Reset */
       shoppingBtn = el('button', {
         className: 'recipe-mode-btn recipe-shopping-btn',
         title: 'Shopping list view',
       }, ['\uD83D\uDED2 Shopping List']);
 
-      const modeBar = el('div', { className: 'recipe-mode-bar' }, [shoppingBtn]);
+      const resetBtn = el('button', {
+        className: 'recipe-mode-btn recipe-reset-btn',
+        title: 'Reset all checkmarks',
+      }, ['\u21BA Reset']);
+
+      const modeBar = el('div', { className: 'recipe-mode-bar' }, [shoppingBtn, resetBtn]);
 
       ingredSection = el('div', { className: 'recipe-card-ingredients' }, [
         el('h4', {}, ['Ingredients']),
@@ -569,6 +577,21 @@ const definition = {
         // Don't toggle when clicking editable cells or inputs
         if (e.target.closest('.editable-cell') || e.target.closest('input')) return;
         li.classList.toggle('recipe-ingredient-checked');
+      });
+
+      /* Reset all checkmarks */
+      resetBtn.addEventListener('click', () => {
+        ul.querySelectorAll('.recipe-ingredient-checked').forEach(li => {
+          li.classList.remove('recipe-ingredient-checked');
+        });
+        // Also reset any step checkmarks if instructions exist
+        const stepsUl = card?.querySelector('.recipe-instructions-list');
+        if (stepsUl) {
+          stepsUl.querySelectorAll('.recipe-step-checked').forEach(li => {
+            li.classList.remove('recipe-step-checked');
+          });
+        }
+        showToast('Checkmarks cleared', 'success');
       });
     }
 

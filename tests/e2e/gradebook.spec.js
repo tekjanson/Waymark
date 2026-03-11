@@ -110,3 +110,38 @@ test('gradebook directoryView card click navigates to sheet', async ({ page }) =
   await page.waitForSelector('.grading-row', { timeout: 5_000 });
   await expect(page.locator('#template-badge')).toContainText('Gradebook');
 });
+
+test('gradebook directoryView totals show accurate student count', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-grades/Gradebooks'; });
+  await page.waitForSelector('.grading-dir-totals', { timeout: 8_000 });
+
+  const text = await page.locator('.grading-dir-totals').textContent();
+  // Math 101: 8 students + Science 101: 6 students = 14 total
+  expect(text).toContain('14');
+  expect(text).toContain('students');
+});
+
+test('gradebook directoryView totals show accurate class count', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-grades/Gradebooks'; });
+  await page.waitForSelector('.grading-dir-totals', { timeout: 8_000 });
+
+  const text = await page.locator('.grading-dir-totals').textContent();
+  expect(text).toContain('2');
+  expect(text).toContain('classes');
+});
+
+test('gradebook directoryView per-card shows student counts', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-grades/Gradebooks'; });
+  await page.waitForSelector('.grading-dir-card', { timeout: 8_000 });
+
+  const cards = page.locator('.grading-dir-card');
+  expect(await cards.count()).toBe(2);
+
+  // Each card should contain a student count reference
+  const cardTexts = await cards.allTextContents();
+  const hasStudentInfo = cardTexts.every(t => /\d/.test(t));
+  expect(hasStudentInfo).toBe(true);
+});
