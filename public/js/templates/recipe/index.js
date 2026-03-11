@@ -792,6 +792,12 @@ const definition = {
   },
 
   directoryView: cookbookDirectoryView,
+
+  // Cookbook directory view only uses the first data row per sheet
+  // (recipe name, servings, prep/cook time, category, difficulty).
+  // The summary fetch already provides header + first row, so no
+  // full re-fetch is needed — saves N×2 Sheets API calls.
+  needsFullData: false,
 };
 
 registerTemplate('recipe', definition);

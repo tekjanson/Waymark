@@ -791,8 +791,9 @@ async function showFolderContents(folderId, folderName) {
     // individual Sheets API calls. Typically loads in 3 Drive API calls
     // (listChildren + findFile + readJsonFile) instead of N Sheets calls.
     if (sheets.length > 0) {
-      const BATCH_SIZE = 3;
-      const BATCH_DELAY_MS = 1500;
+      // Batch size for summary fetches — the global throttle in sheets.js
+      // handles concurrency and rate-limiting, so no inter-batch delay needed.
+      const BATCH_SIZE = 5;
 
       // --- Phase 1: Look up and read the folder index ---
       // The index is application/json so listChildren (which filters to
@@ -829,7 +830,9 @@ async function showFolderContents(folderId, folderName) {
         }
       }
 
-      // --- Phase 3: Fetch only new/modified sheets (small batches with long gaps) ---
+      // --- Phase 3: Fetch only new/modified sheets (batched) ---
+      // Global throttle in sheets.js controls concurrency & rate — no
+      // inter-batch delay needed here, just avoid queueing everything at once.
       const freshSheets = [];
       const failedSheets = [];
 
@@ -844,9 +847,6 @@ async function showFolderContents(folderId, folderName) {
           } else {
             failedSheets.push(batch[j]);
           }
-        }
-        if (i + BATCH_SIZE < toFetch.length) {
-          await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
         }
       }
 
@@ -935,14 +935,39 @@ async function showFolderContents(folderId, folderName) {
 
           // Re-fetch full data for directoryView sheets — summaries only
           // have header + first row which gives incorrect aggregates.
-          const fullFetches = await Promise.allSettled(
-            group.sheets.map(async (s) => {
-              try {
-                const full = await api.sheets.getSpreadsheet(s.id);
-                s.rows = (full.values || []).slice(1);
-              } catch { /* keep partial data on failure */ }
-            })
-          );
+          // Skip entirely for templates that only need the first row
+          // (e.g. recipe/cookbook) — avoids N×2 wasted API calls.
+          if (group.template.needsFullData !== false) {
+            // Use cached dirStats from localStorage when available
+            // for sheets whose modifiedTime hasn't changed, avoiding
+            // full re-fetch when aggregates are already computed.
+            const localIdx = storage.getFolderIndex(folderId) || {};
+            const sheetsToFetch = group.sheets.filter(s => {
+              const cached = localIdx[s.id];
+              if (cached?.dirStats && group.template.computeDirStats) {
+                // Inject cached stats so directoryView can use them
+                s.dirStats = cached.dirStats;
+                return false;   // skip API call
+              }
+              return true;
+            });
+
+            // Fetch remaining sheets in small batches.
+            // The global throttle in sheets.js gates concurrency, so we
+            // just need batches to avoid queueing hundreds at once.
+            const DIR_BATCH = 3;
+            for (let bi = 0; bi < sheetsToFetch.length; bi += DIR_BATCH) {
+              const dirBatch = sheetsToFetch.slice(bi, bi + DIR_BATCH);
+              await Promise.allSettled(
+                dirBatch.map(async (s) => {
+                  try {
+                    const full = await api.sheets.getSpreadsheet(s.id);
+                    s.rows = (full.values || []).slice(1);
+                  } catch { /* keep partial data on failure */ }
+                })
+              );
+            }
+          }
 
           // Cache dirStats in localStorage so instant render is accurate
           if (group.template.computeDirStats) {

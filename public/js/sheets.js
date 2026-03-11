@@ -4,21 +4,73 @@
 
 const BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+/* ---------- Global throttled request queue ---------- */
+
+// Google Sheets API quota: 60 read requests/user/minute.
+// We allow at most MAX_CONCURRENT in-flight requests and enforce a
+// minimum gap of MIN_GAP_MS between request starts to stay well
+// under the quota (~40 req/min at 1500 ms gap).
+const MAX_CONCURRENT = 2;
+const MIN_GAP_MS = 1500;
+
+let _inFlight = 0;
+let _lastRequestTime = 0;
+const _queue = [];        // Array of { resolve }
+
+/**
+ * Acquire a slot from the global throttle.  Returns a promise that
+ * resolves once the caller is allowed to fire a request.  Call
+ * `releaseSlot()` when the response is received.
+ */
+function acquireSlot() {
+  return new Promise(resolve => {
+    _queue.push({ resolve });
+    _drain();
+  });
+}
+
+function releaseSlot() {
+  _inFlight = Math.max(0, _inFlight - 1);
+  _drain();
+}
+
+function _drain() {
+  while (_queue.length > 0 && _inFlight < MAX_CONCURRENT) {
+    const now = Date.now();
+    const wait = Math.max(0, _lastRequestTime + MIN_GAP_MS - now);
+    if (wait > 0) {
+      setTimeout(() => _drain(), wait);
+      return;   // will re-enter after the gap elapses
+    }
+    const next = _queue.shift();
+    _inFlight++;
+    _lastRequestTime = Date.now();
+    next.resolve();
+  }
+}
+
 /* ---------- Rate-limit retry helper ---------- */
 
-const MAX_RETRIES = 4;
-const BASE_DELAY_MS = 1000;
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 2000;
 
 /**
  * Fetch with automatic retry on 429 (rate-limit) responses.
- * Uses exponential backoff with jitter.
+ * Uses exponential backoff with jitter and the global throttle queue.
  * @param {string} url
  * @param {RequestInit} opts
  * @returns {Promise<Response>}
  */
 async function fetchWithRetry(url, opts) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, opts);
+    await acquireSlot();
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } finally {
+      releaseSlot();
+    }
+
     if (res.status !== 429) return res;
 
     if (attempt === MAX_RETRIES) return res; // give up, let caller handle
@@ -29,6 +81,7 @@ async function fetchWithRetry(url, opts) {
       ? parseInt(retryAfter, 10) * 1000
       : BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 500;
 
+    console.warn(`[sheets] 429 on attempt ${attempt + 1}, retrying in ${Math.round(delay)}ms`);
     await new Promise(r => setTimeout(r, delay));
   }
 }
@@ -40,31 +93,29 @@ async function fetchWithRetry(url, opts) {
  * @returns {Promise<Object>}  { properties, sheets, values }
  */
 export async function getSpreadsheet(token, spreadsheetId) {
-  // Fetch metadata (with 429 retry)
-  const metaRes = await fetchWithRetry(`${BASE}/${spreadsheetId}?fields=properties,sheets.properties`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!metaRes.ok) throw new Error(`Sheets API ${metaRes.status}`);
-  const meta = await metaRes.json();
-
-  // Fetch values from the first sheet (with 429 retry)
-  const sheetTitle = meta.sheets?.[0]?.properties?.title || 'Sheet1';
-  const valRes = await fetchWithRetry(
-    `${BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetTitle)}`,
+  // Single API call: fetch metadata + all cell data for the first sheet.
+  // Uses includeGridData to avoid a separate values request (halves API usage).
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  let values = [];
-  if (valRes.ok) {
-    const data = await valRes.json();
-    values = data.values || [];
-  }
+  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+  const body = await res.json();
 
-  return {
-    id: spreadsheetId,
-    title: meta.properties?.title || 'Untitled',
-    sheetTitle,
-    values,
-  };
+  const title = body.properties?.title || 'Untitled';
+  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
+
+  // Convert gridData into simple 2D string array (same format as values endpoint)
+  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
+  const values = rowData.map(row =>
+    (row.values || []).map(cell => {
+      const v = cell?.userEnteredValue;
+      if (!v) return '';
+      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
+    })
+  );
+
+  return { id: spreadsheetId, title, sheetTitle, values };
 }
 
 /**
