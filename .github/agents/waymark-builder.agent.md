@@ -66,6 +66,7 @@ LOOP:
   3. IF new work found:
      → Read the full workboard via MCP (mcp_google-sheets_sheets_values_get)
      → Pick the highest-priority To Do item
+     → **Sync to tip of main BEFORE branching** (§1.1 — fetch + reset --hard origin/main)
      → Execute the full WORK cycle (§1-§6)
      → After completing, go back to step 1.
 
@@ -104,12 +105,21 @@ When you call `get_terminal_output`, scan the most recent lines for `@@WATCHER:`
 > **⚠️ NEVER COMMIT TO `main`. This is a HARD REJECT rule — no exceptions.**
 
 ### 1.1 Branch Before Any Code Change
-Before writing **any** code — even a one-line fix — you MUST create a feature branch:
+Before writing **any** code — even a one-line fix — you MUST sync to the **tip of `main`** and create a feature branch. This avoids merge conflicts and ensures every task starts from the latest codebase.
 
 ```bash
-git checkout main && git pull origin main
+# 1. Discard any uncommitted changes (safety net)
+git checkout -- . && git clean -fd
+# 2. Switch to main and pull the very latest
+git checkout main
+git fetch origin
+git reset --hard origin/main
+# 3. Create the feature branch from the fresh tip
 git checkout -b feature/{kebab-case-task-name}
 ```
+
+**Why `fetch + reset --hard` instead of `pull`?**
+`git pull` can fail or create merge commits if local main diverged. `fetch + reset --hard` guarantees local main matches remote — no merge commits, no conflicts, no stale code.
 
 ### 1.2 Pre-Work Branch Verification
 **EVERY TIME** before making edits, run:
@@ -518,21 +528,32 @@ For every feature, the MINIMUM test count depends on scope:
 ### Step-by-step for every task:
 
 1. **Read the task** from the workboard (including all sub-row notes for context)
-2. **Create feature branch** from main (§1.1 — MANDATORY, no exceptions)
-3. **Verify branch** — run `git branch --show-current` and confirm it is NOT `main`. If it is `main`, STOP and go back to step 2.
-4. **Claim the task** (update Stage to In Progress, Assignee to AI)
-5. **Plan the implementation** — break into sub-tasks using manage_todo_list
-6. **Read existing code** — understand the module you're modifying
-7. **Implement the feature** — follow all AI_LAWS rules
-8. **Write fixture data** if needed
-9. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
-10. **Run `npm test`** — ALL tests must pass (not just yours)
-11. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
-12. **Commit** with descriptive message: `feat({scope}): {description}`
-13. **Push branch to remote** — `git push -u origin feature/{branch-name}`
-14. **Update workboard** — mark stage as `QA`, add completion note sub-row (include branch name)
-15. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
-16. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→POLL. If in single-task mode (Mode B), stop.
+2. **Sync to tip of main** — EVERY new task starts from the latest remote main. Run:
+   ```bash
+   git checkout -- . && git clean -fd
+   git checkout main
+   git fetch origin
+   git reset --hard origin/main
+   ```
+   This is non-negotiable. Skipping this causes merge conflicts and stale-code bugs.
+3. **Create feature branch** from the freshly synced main (§1.1 — MANDATORY, no exceptions):
+   ```bash
+   git checkout -b feature/{kebab-case-task-name}
+   ```
+4. **Verify branch** — run `git branch --show-current` and confirm it is NOT `main`. If it is `main`, STOP and go back to step 3.
+5. **Claim the task** (update Stage to In Progress, Assignee to AI)
+6. **Plan the implementation** — break into sub-tasks using manage_todo_list
+7. **Read existing code** — understand the module you're modifying
+8. **Implement the feature** — follow all AI_LAWS rules
+9. **Write fixture data** if needed
+10. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
+11. **Run `npm test`** — ALL tests must pass (not just yours)
+12. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
+13. **Commit** with descriptive message: `feat({scope}): {description}`
+14. **Push branch to remote** — `git push -u origin feature/{branch-name}`
+15. **Update workboard** — mark stage as `QA`, add completion note sub-row (include branch name)
+16. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
+17. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→POLL. If in single-task mode (Mode B), stop.
 
 > The agent does NOT create PRs, merge, or move items to Done. That is the human's job after QA.
 
@@ -564,6 +585,7 @@ Before marking any task as QA, verify:
 - [ ] No build step required
 - [ ] `npm test` passes ALL tests
 - [ ] **ON A FEATURE BRANCH** — run `git branch --show-current` and confirm it is NOT `main` (§1 HARD REJECT)
+- [ ] **Branched from tip of main** — feature branch parent is `origin/main` HEAD (no stale base)
 - [ ] No commits exist on `main` that aren't on `origin/main`
 - [ ] Branch pushed to remote (`git push -u origin feature/{branch-name}`)
 - [ ] Workboard stage set to `QA` (NOT `Done` — human moves to Done after review)
