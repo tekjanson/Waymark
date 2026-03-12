@@ -124,7 +124,6 @@ function sortByPriority(tasks) {
 
 /* ---------- State ---------- */
 
-let knownTodoIds = new Set();  // track row numbers we've already announced
 let firstRun = true;
 
 /* ---------- Display helpers ---------- */
@@ -199,7 +198,6 @@ async function poll() {
         }
       }
 
-      todoItems.forEach(t => knownTodoIds.add(t.row));
       firstRun = false;
       // Reset backoff after initial run — agent will process existing items
       if (BACKOFF_MODE) {
@@ -209,16 +207,14 @@ async function poll() {
       return;
     }
 
-    // Check for NEW To Do items we haven't seen before
-    const currentTodoRows = new Set(todoItems.map(t => t.row));
-    const newItems = todoItems.filter(t => !knownTodoIds.has(t.row));
+    // Check for ACTIONABLE To Do items — items with stage "To Do" that
+    // aren't already claimed by AI. This uses LIVE data every poll,
+    // no caching. Backlog items are excluded — only "To Do" is actionable.
+    const actionableItems = todoItems.filter(t =>
+      t.stage === 'To Do' && t.assignee !== 'AI'
+    );
 
-    // Clean up items no longer in To Do (completed or moved)
-    for (const id of knownTodoIds) {
-      if (!currentTodoRows.has(id)) knownTodoIds.delete(id);
-    }
-
-    if (newItems.length === 0) {
+    if (actionableItems.length === 0) {
       if (AGENT_MODE) {
         if (BACKOFF_MODE) {
           consecutiveIdles++;
@@ -236,12 +232,12 @@ async function poll() {
       return;
     }
 
-    // NEW WORK FOUND — reset backoff
+    // ACTIONABLE WORK FOUND — reset backoff
     if (BACKOFF_MODE) {
       consecutiveIdles = 0;
       currentInterval = BASE_INTERVAL;
     }
-    const sorted = sortByPriority(newItems);
+    const sorted = sortByPriority(actionableItems);
 
     if (AGENT_MODE) {
       agentMarker('NEW_WORK', {
@@ -255,7 +251,7 @@ async function poll() {
     } else {
       console.log(`\n\x07`); // terminal bell
       console.log(`${BOLD}═══════════════════════════════════════════════════════${RESET}`);
-      console.log(`${BOLD}  🆕 NEW WORK DETECTED — ${fmtTime()}${RESET}`);
+      console.log(`${BOLD}  🆕 ACTIONABLE WORK — ${fmtTime()}${RESET}`);
       console.log(`${BOLD}═══════════════════════════════════════════════════════${RESET}`);
       for (const t of sorted) {
         const pc = priorityColor(t.priority);
@@ -265,8 +261,6 @@ async function poll() {
       }
       console.log();
     }
-
-    sorted.forEach(t => knownTodoIds.add(t.row));
 
   } catch (err) {
     if (AGENT_MODE) {
