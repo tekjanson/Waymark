@@ -14,7 +14,14 @@
    Usage:
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js --agent
+     GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js --agent --backoff
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js --interval 30
+
+   Flags:
+     --agent       Output JSON markers for agent consumption (@@WATCHER:)
+     --backoff     Exponential backoff: double poll interval on each idle cycle,
+                   reset to base interval when new work appears. Caps at 10 min.
+     --interval N  Set the base poll interval in seconds (default: 60, min: 10)
 
    ============================================================ */
 
@@ -31,6 +38,16 @@ if (idxInterval !== -1 && args[idxInterval + 1]) {
   intervalSec = Math.max(10, parseInt(args[idxInterval + 1], 10) || 60);
 }
 const AGENT_MODE = args.includes('--agent');
+const BACKOFF_MODE = args.includes('--backoff');
+
+/* ---------- Backoff state ---------- */
+// When --backoff is enabled, the poll interval doubles on each idle cycle
+// and resets to the base interval when new work is found.
+const BASE_INTERVAL = intervalSec;
+const MAX_INTERVAL  = 600; // Cap at 10 minutes
+let currentInterval = intervalSec;
+let consecutiveIdles = 0;
+let pollTimer = null;
 
 /* ---------- Auth ---------- */
 
@@ -184,6 +201,11 @@ async function poll() {
 
       todoItems.forEach(t => knownTodoIds.add(t.row));
       firstRun = false;
+      // Reset backoff after initial run — agent will process existing items
+      if (BACKOFF_MODE) {
+        consecutiveIdles = 0;
+        currentInterval = BASE_INTERVAL;
+      }
       return;
     }
 
@@ -198,14 +220,27 @@ async function poll() {
 
     if (newItems.length === 0) {
       if (AGENT_MODE) {
-        agentMarker('IDLE', { todo: todoItems.length });
+        if (BACKOFF_MODE) {
+          consecutiveIdles++;
+          currentInterval = Math.min(BASE_INTERVAL * Math.pow(2, consecutiveIdles), MAX_INTERVAL);
+        }
+        agentMarker('IDLE', {
+          todo: todoItems.length,
+          consecutiveIdles,
+          nextInterval: BACKOFF_MODE ? currentInterval : intervalSec,
+        });
       } else {
         process.stdout.write(`${DIM}.${RESET}`);
       }
+      if (BACKOFF_MODE) reschedule();
       return;
     }
 
-    // NEW WORK FOUND
+    // NEW WORK FOUND — reset backoff
+    if (BACKOFF_MODE) {
+      consecutiveIdles = 0;
+      currentInterval = BASE_INTERVAL;
+    }
     const sorted = sortByPriority(newItems);
 
     if (AGENT_MODE) {
@@ -214,6 +249,8 @@ async function poll() {
           row: t.row, task: t.task, priority: t.priority,
           project: t.project, label: t.label, desc: t.desc.slice(0, 200),
         })),
+        intervalReset: BACKOFF_MODE,
+        nextInterval: BASE_INTERVAL,
       });
     } else {
       console.log(`\n\x07`); // terminal bell
@@ -240,16 +277,40 @@ async function poll() {
   }
 }
 
+/* ---------- Reschedule (backoff mode) ---------- */
+// Clears the existing timer and sets a new one with the current interval.
+function reschedule() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setTimeout(async () => {
+    await poll();
+    // If not in backoff mode, setInterval handles repeats.
+    // In backoff mode, poll() calls reschedule() on each cycle.
+    if (!BACKOFF_MODE) {
+      pollTimer = setInterval(poll, intervalSec * 1000);
+    }
+  }, currentInterval * 1000);
+}
+
 /* ---------- Main ---------- */
 
 if (AGENT_MODE) {
-  agentMarker('STARTED', { interval: intervalSec });
+  agentMarker('STARTED', {
+    interval: intervalSec,
+    backoff: BACKOFF_MODE,
+    maxInterval: BACKOFF_MODE ? MAX_INTERVAL : intervalSec,
+  });
 } else {
-  console.log(`${DIM}Starting workboard watcher (interval: ${intervalSec}s)…${RESET}`);
+  console.log(`${DIM}Starting workboard watcher (interval: ${intervalSec}s${BACKOFF_MODE ? ', backoff enabled' : ''})…${RESET}`);
 }
 
 poll().then(() => {
-  setInterval(poll, intervalSec * 1000);
+  if (BACKOFF_MODE) {
+    // In backoff mode, use dynamic scheduling via reschedule()
+    reschedule();
+  } else {
+    // Fixed interval mode
+    pollTimer = setInterval(poll, intervalSec * 1000);
+  }
 });
 
 /* Graceful shutdown */
