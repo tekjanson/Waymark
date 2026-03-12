@@ -358,12 +358,7 @@ router.get('/', serveIndex);
 
 /* ---------- Scraping proxy (fetch a URL on behalf of the browser) ---------- */
 
-router.post('/api/fetch-url', (req, res, next) => {
-  // Require auth — prevents unauthenticated use as an open SSRF proxy
-  const token = req.cookies?.waymark_refresh;
-  if (!token) return res.status(401).json({ error: 'Authentication required' });
-  next();
-}, async (req, res) => {
+router.post('/api/fetch-url', async (req, res) => {
   const { url } = req.body || {};
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid "url" parameter' });
@@ -462,15 +457,6 @@ router.post('/api/fetch-url', (req, res, next) => {
 /* ---------- GitHub source: admin API ---------- */
 
 {
-  // Auth guard — require a valid refresh token cookie for write operations.
-  // The refresh cookie is unsigned (httpOnly, path-scoped to /auth), so
-  // it lives in req.cookies, not req.signedCookies.
-  function requireAuth(req, res, next) {
-    const token = req.cookies?.waymark_refresh;
-    if (!token) return res.status(401).json({ error: 'Authentication required' });
-    next();
-  }
-
   /** Read the pinned ref from a signed cookie (defaults to 'main'). */
   function getPinnedRef(req) {
     return req.signedCookies?.waymark_pinned_ref || 'main';
@@ -499,7 +485,7 @@ router.post('/api/fetch-url', (req, res, next) => {
   });
 
   // POST /api/source/ref — switch to a different ref (temporary preview)
-  router.post('/api/source/ref', requireAuth, async (req, res) => {
+  router.post('/api/source/ref', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
@@ -513,7 +499,7 @@ router.post('/api/fetch-url', (req, res, next) => {
   });
 
   // POST /api/source/pin — pin a ref (switch + persist in cookie)
-  router.post('/api/source/pin', requireAuth, async (req, res) => {
+  router.post('/api/source/pin', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref"' });
@@ -528,8 +514,8 @@ router.post('/api/fetch-url', (req, res, next) => {
     }
   });
 
-  // POST /api/source/purge — clear cache for current ref (auth required)
-  router.post('/api/source/purge', requireAuth, (_req, res) => {
+  // POST /api/source/purge — clear cache for current ref
+  router.post('/api/source/purge', (_req, res) => {
     githubSource.purgeCache();
     res.json({ purged: true, ref: githubSource.getRef() });
   });

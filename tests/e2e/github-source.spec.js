@@ -336,3 +336,62 @@ test('re-opening settings modal shows version section each time', async ({ page 
   await openSettings(page);
   await expect(page.locator('#settings-version-section')).toBeVisible();
 });
+
+/* ============================================================
+   Server endpoint integration — hit real endpoints (no mocks)
+   These tests verify the actual server middleware pipeline works,
+   catching issues like broken auth guards or cookie-path bugs
+   that browser-level route mocks would miss.
+   ============================================================ */
+
+test('GET /api/source returns 200 with ref info', async ({ page }) => {
+  await setupApp(page);
+  const res = await page.evaluate(async () => {
+    const r = await fetch('/api/source');
+    return { status: r.status, body: await r.json() };
+  });
+  expect(res.status).toBe(200);
+  expect(res.body).toHaveProperty('ref');
+  expect(res.body.ref).toBeTruthy();
+});
+
+test('POST /api/source/ref returns 200 without auth cookie', async ({ page }) => {
+  await setupApp(page);
+  const res = await page.evaluate(async () => {
+    const r = await fetch('/api/source/ref', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    return { status: r.status, body: await r.json() };
+  });
+  expect(res.status).toBe(200);
+  expect(res.body).toHaveProperty('ref');
+});
+
+test('POST /api/source/pin returns 200 without auth cookie', async ({ page }) => {
+  await setupApp(page);
+  const res = await page.evaluate(async () => {
+    const r = await fetch('/api/source/pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    return { status: r.status, body: await r.json() };
+  });
+  expect(res.status).toBe(200);
+  expect(res.body).toHaveProperty('ref');
+});
+
+test('POST /api/source/ref with missing ref returns 400', async ({ page }) => {
+  await setupApp(page);
+  const res = await page.evaluate(async () => {
+    const r = await fetch('/api/source/ref', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return { status: r.status };
+  });
+  expect(res.status).toBe(400);
+});
