@@ -2,7 +2,7 @@
 name: waymark-builder
 description: Persistent build agent that watches the Waymark Workboard Google Sheet for To Do items, picks them up automatically, implements features in branches following AI_LAWS, writes isolated E2E tests, and loops forever waiting for the next task.
 argument-hint: "'start' to begin the persistent watch loop, 'pick next' for a single task, or a specific task name/row number"
-tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo']
+tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo', 'mcp']
 ---
 
 # Waymark Builder Agent
@@ -35,15 +35,18 @@ Traditional one-shot mode: read workboard → select task → implement → done
 2. **Start the watcher** — Launch the workboard poller as a background process:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS \
-     node scripts/watch-workboard.js --agent --interval 60
+     node scripts/watch-workboard.js --agent --backoff --interval 60
    ```
    Use `run_in_terminal` with `isBackground: true`. **Save the terminal ID** — you'll need it to check for new work.
+   
+   The `--backoff` flag enables exponential backoff: the watcher doubles its poll interval on each idle cycle (60s → 120s → 240s → …, capped at 600s). When new work appears, the interval resets to 60s. This drastically reduces API calls and token usage during long idle periods.
 3. **Check initial status** — Use `get_terminal_output` on the watcher terminal to read the initial `@@WATCHER:{"type":"STATUS",...}` marker. This tells you the current board state.
-4. **Read the workboard** — Use the Google Sheets MCP tools to fetch the current state:
+4. **Read the workboard** — Fetch the current state using one of these methods (try MCP first, fall back to Node.js REST):
+   - **MCP (preferred):** Use `mcp_google-sheets_sheets_values_get` with range `Sheet1!A1:I500`
+   - **Node.js REST (fallback):** See §8.2 for the terminal command
    - Spreadsheet ID: `1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4`
    - Sheet: `Sheet1`
    - Columns: `A=Task, B=Description, C=Stage, D=Project, E=Assignee, F=Priority, G=Due, H=Label, I=Note`
-   - Use `mcp_google-sheets_sheets_values_get` with range `Sheet1!A1:I500`
 5. **Parse tasks** — Identify all task rows (column A non-empty) and their sub-rows (column A empty). Group them using the kanban §15.2 rules from AI_LAWS.
 6. **Select first task** — Pick the highest-priority `To Do` item (P0 > P1 > P2 > P3). If no To Do items exist, enter the SLEEP→POLL loop immediately.
 
@@ -58,13 +61,15 @@ LOOP:
   1. Run `sleep 60` in the terminal (isBackground: false, timeout: 65000)
      → This blocks for 60 seconds. ZERO tokens consumed during the sleep.
      → The watcher script is running in the background, polling the sheet.
+     → With --backoff, the watcher's actual poll interval may be longer than 60s,
+       but the agent always sleeps 60s between checks to stay responsive.
 
   2. Use `get_terminal_output` on the watcher terminal ID.
      → Parse the output for @@WATCHER: JSON markers.
      → Look for type: "NEW_WORK" — this means new To Do items appeared.
 
   3. IF new work found:
-     → Read the full workboard via MCP (mcp_google-sheets_sheets_values_get)
+     → Read the full workboard (see §8 for how — prefer Node.js REST if MCP unavailable)
      → Pick the highest-priority To Do item
      → **Sync to tip of main BEFORE branching** (§1.1 — fetch + reset --hard origin/main)
      → Execute the full WORK cycle (§1-§6)
@@ -75,28 +80,42 @@ LOOP:
 
   5. IF error (type: "ERROR"):
      → Log the error, go back to step 1. (Retry on next cycle.)
+
+  6. IF watcher output is empty or watcher has crashed:
+     → Restart the watcher (re-run the boot command from §0.1 step 2).
+     → Go back to step 1.
 ```
+
+### Hanging Recovery
+If the agent appears to hang (no output from `get_terminal_output` for multiple cycles), perform these recovery steps:
+1. Check if the watcher terminal is still alive by calling `get_terminal_output`.
+2. If output is empty or the watcher process has exited, restart it.
+3. If `sleep` blocks beyond its timeout, the tool returns whatever output was collected. Continue the loop normally.
+4. Never let a single failed `get_terminal_output` call stop the loop — always default to sleeping and retrying.
 
 ### Why This Is Token-Efficient
 - **During sleep:** The `sleep 60` terminal command blocks. No LLM inference happens. Zero tokens.
 - **During poll check:** One `get_terminal_output` call + parsing a few lines of text. ~50 tokens.
 - **Per idle cycle:** ~50 tokens every 60 seconds = ~3,000 tokens/hour when idle. Negligible.
+- **With backoff:** The watcher itself polls less frequently (60s → 120s → 240s → 480s → 600s cap), reducing Google Sheets API calls. The agent still checks every 60 seconds but the watcher output will be the same IDLE marker until the next poll fires.
 - **During work:** Normal token usage (necessary — you're writing code).
 
 ### Parsing Watcher Output
 The watcher outputs JSON markers prefixed with `@@WATCHER:`. Each marker is on its own line:
 ```
+@@WATCHER:{"type":"STARTED","ts":1741788000000,"interval":60,"backoff":true,"maxInterval":600}
 @@WATCHER:{"type":"STATUS","ts":1741788000000,"todo":3,"inProgress":1,"done":45,"items":[...]}
-@@WATCHER:{"type":"IDLE","ts":1741788060000,"todo":3}
-@@WATCHER:{"type":"NEW_WORK","ts":1741788120000,"items":[{"row":142,"task":"New feature","priority":"P1",...}]}
+@@WATCHER:{"type":"IDLE","ts":1741788060000,"todo":3,"consecutiveIdles":2,"nextInterval":240}
+@@WATCHER:{"type":"NEW_WORK","ts":1741788120000,"items":[...],"intervalReset":true,"nextInterval":60}
 @@WATCHER:{"type":"ERROR","ts":1741788180000,"message":"Sheets API 429: rate limited"}
 ```
 
 When you call `get_terminal_output`, scan the most recent lines for `@@WATCHER:`. If the last marker is:
-- `NEW_WORK` → extract the items array, pick the highest priority, start working
-- `IDLE` → sleep again
+- `NEW_WORK` → extract the items array, pick the highest priority, start working. Backoff resets automatically.
+- `IDLE` → sleep again. The `nextInterval` field shows the watcher's current poll cadence.
 - `ERROR` → sleep again (the watcher retries automatically)
 - `STATUS` → initial state, check if todo > 0
+- **Empty output** → watcher may have crashed. Restart it (§0.2 step 6).
 
 ---
 
@@ -158,7 +177,7 @@ When you start working on a task, update the workboard:
 - Set column C (Stage) to `In Progress`
 - Set column E (Assignee) to `AI`
 
-Use `mcp_google-sheets_sheets_values_update` with range `Sheet1!C{row}:E{row}`.
+Use MCP tools if available (`mcp_google-sheets_sheets_values_update`), or fall back to Node.js REST (§8.2). Range: `Sheet1!C{row}:E{row}`.
 
 ### 2.2 Progress Notes
 As you complete significant milestones, **insert note sub-rows** below the task (per §15.2 of AI_LAWS):
@@ -167,7 +186,7 @@ As you complete significant milestones, **insert note sub-rows** below the task 
 | | | | | AI | | {today's date YYYY-MM-DD} | | {note text} |
 ```
 
-Use `mcp_google-sheets_sheets_values_append` or calculate the correct insert position.
+Use MCP tools or Node.js REST (§8.2) to write note sub-rows. Calculate the correct insert position.
 
 **CRITICAL:** Notes go on SUB-ROWS (column A empty), never on the task row's Note column. The task row's column I must stay empty.
 
@@ -175,8 +194,30 @@ Use `mcp_google-sheets_sheets_values_append` or calculate the correct insert pos
 When implementation + tests pass:
 1. **Push the feature branch to remote:** `git push -u origin feature/{branch-name}`
 2. Update column C (Stage) to `QA` (NOT `Done` — the human owner reviews, tests in prod, creates the PR, merges, and moves to `Done`)
-3. Insert a completion note sub-row with summary of what was built
-4. Include: branch name, files changed, LOC estimate, test count, total test count
+3. Insert a **completion note sub-row** with summary of what was built
+4. Insert a **testing notes sub-row** with QA verification instructions
+
+The completion note must include:
+- Branch name
+- Files changed (list each file path)
+- LOC estimate (lines added/modified)
+- Test count (new tests added / total test count)
+
+The testing notes sub-row must include step-by-step instructions for QA:
+- What to look for when reviewing the changes
+- How to manually verify the feature works (specific user actions to perform)
+- What the E2E tests cover vs. what needs manual verification
+- Any edge cases or known limitations
+
+**Example completion note:**
+```
+Branch: feature/kanban-collapsible-lanes | Files: kanban/index.js, kanban.css, kanban.spec.js | +120 LOC | 6 new tests (89 total)
+```
+
+**Example testing notes:**
+```
+QA: 1) Open any kanban sheet 2) Click lane header to collapse — cards should hide with animation 3) Refresh page — collapsed state should persist 4) Mobile: lanes stack vertically, collapse still works. E2E covers: collapse toggle, persistence, card count. Manual: verify animation smoothness, check dark mode.
+```
 
 > **IMPORTANT:** The agent NEVER moves a task to `Done`. The lifecycle is:
 > `To Do` → (agent claims) → `In Progress` → (agent finishes) → `QA` → (human reviews, PRs, merges) → `Done`
@@ -551,7 +592,9 @@ For every feature, the MINIMUM test count depends on scope:
 12. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
 13. **Commit** with descriptive message: `feat({scope}): {description}`
 14. **Push branch to remote** — `git push -u origin feature/{branch-name}`
-15. **Update workboard** — mark stage as `QA`, add completion note sub-row (include branch name)
+15. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
+    - **Completion note:** branch name, files changed, LOC, test count
+    - **Testing note:** step-by-step QA verification instructions (see §2.3 for format)
 16. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
 17. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→POLL. If in single-task mode (Mode B), stop.
 
@@ -589,6 +632,8 @@ Before marking any task as QA, verify:
 - [ ] No commits exist on `main` that aren't on `origin/main`
 - [ ] Branch pushed to remote (`git push -u origin feature/{branch-name}`)
 - [ ] Workboard stage set to `QA` (NOT `Done` — human moves to Done after review)
+- [ ] Completion note sub-row includes: branch, files, LOC, test count
+- [ ] Testing note sub-row includes: step-by-step QA instructions, what E2E covers, what needs manual check
 
 ---
 
@@ -602,16 +647,19 @@ Before marking any task as QA, verify:
 
 ---
 
-## 8. REFERENCE: MCP TOOL USAGE
+## 8. REFERENCE: WORKBOARD INTERACTION
 
-### Reading the workboard
+### 8.1 Preferred Method: MCP Google Sheets Tools
+If MCP tools are available, use them directly:
+
+#### Reading the workboard
 ```
 mcp_google-sheets_sheets_values_get
   spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
   range: Sheet1!A1:I500
 ```
 
-### Updating a cell (e.g., claiming task on row 42)
+#### Updating a cell (e.g., claiming task on row 42)
 ```
 mcp_google-sheets_sheets_values_update
   spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
@@ -619,7 +667,7 @@ mcp_google-sheets_sheets_values_update
   values: [["In Progress", "Waymark", "AI"]]
 ```
 
-### Appending a note sub-row after row 42
+#### Appending a note sub-row after row 42
 ```
 mcp_google-sheets_sheets_values_update
   spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
@@ -627,7 +675,62 @@ mcp_google-sheets_sheets_values_update
   values: [["", "", "", "", "AI", "", "2026-03-12", "", "Progress note text here"]]
 ```
 
-**Note:** For inserting rows between existing data, you may need to shift rows down first or append at the end of the task's sub-row block.
+### 8.2 Fallback Method: Node.js REST via Terminal
+If MCP tools are unavailable or fail, use direct REST calls via Node.js in the terminal. The service account key is at the path in `$GOOGLE_APPLICATION_CREDENTIALS`.
+
+#### Reading the workboard (fallback)
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS node -e "
+const { GoogleAuth } = require('google-auth-library');
+const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+const auth = new GoogleAuth({ keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+(async () => {
+  const client = await auth.getClient();
+  const { token } = await client.getAccessToken();
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent('Sheet1!A1:I500');
+  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+  const data = await res.json();
+  console.log(JSON.stringify(data.values || []));
+})();
+"
+```
+
+#### Updating a cell (fallback) — e.g., claiming task on row 42
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS node -e "
+const { GoogleAuth } = require('google-auth-library');
+const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+const auth = new GoogleAuth({ keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+(async () => {
+  const client = await auth.getClient();
+  const { token } = await client.getAccessToken();
+  const range = 'Sheet1!C42:E42';
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW';
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [['In Progress', 'Waymark AI', 'AI']] })
+  });
+  const data = await res.json();
+  console.log('Updated:', JSON.stringify(data));
+})();
+"
+```
+
+### 8.3 Writing Completion + Testing Notes
+When marking a task as QA, write **two** sub-rows below the task:
+
+**Sub-row 1: Completion summary**
+```
+["", "", "", "", "AI", "", "2026-03-12", "", "Branch: feature/task-name | Files: file1.js, file2.css | +80 LOC | 4 new tests (87 total)"]
+```
+
+**Sub-row 2: QA testing instructions**
+```
+["", "", "", "", "AI", "", "2026-03-12", "", "QA: 1) Open sheet-NNN 2) Click X to verify Y 3) Check mobile at 375px. E2E covers: detection, rendering, interaction. Manual: verify animation, dark mode."]
+```
+
+**Note:** For inserting rows between existing data, you may need to shift rows down first or append at the end of the task's sub-row block. When possible, calculate the correct row position to avoid overwriting.
 
 ---
 
@@ -687,7 +790,8 @@ Before implementing, always read these files for current state:
 |---|---|---|---|
 | Sleep | 60 seconds | 0 | `sleep 60` blocks — no inference |
 | Poll check | ~1 second | ~50 | Parse watcher output, decide: work or sleep |
-| Idle hour | 60 minutes | ~3,000 | 60 poll cycles × 50 tokens |
+| Idle hour (no backoff) | 60 minutes | ~3,000 | 60 poll cycles × 50 tokens |
+| Idle hour (with backoff) | 60 minutes | ~3,000 agent / fewer API calls | Agent still polls output every 60s, but watcher reduces Sheets API calls via backoff |
 | Active work | varies | normal | Writing code, running tests — unavoidable |
 
 ### 10.3 Starting the Agent
@@ -696,22 +800,107 @@ Before implementing, always read these files for current state:
 ```
 This boots the agent into persistent mode. It will:
 1. Read AI_LAWS
-2. Start the background watcher
+2. Start the background watcher with `--backoff` (exponential backoff enabled)
 3. Process all existing To Do items (highest priority first)
-4. Enter the idle loop, sleeping 60s between polls
+4. Enter the idle loop, sleeping 60s between checks
 5. Automatically pick up new work when To Do items appear (ignores QA and Done items — those are the human's responsibility)
+6. If the watcher crashes or output goes silent, restart it automatically
 
-### 10.4 Standalone Watcher (no agent)
+### 10.4 Watcher Backoff Behavior
+With `--backoff` enabled, the watcher's poll interval doubles on each idle cycle:
+```
+Cycle 1: poll at 60s
+Cycle 2: poll at 120s
+Cycle 3: poll at 240s
+Cycle 4: poll at 480s
+Cycle 5+: poll at 600s (cap)
+```
+When new To Do items appear, the interval resets to 60s immediately. This reduces Google Sheets API calls from ~60/hour to ~10/hour during long idle periods while ensuring new work is detected within a few minutes.
+
+### 10.5 Standalone Watcher (no agent)
 The watcher also works standalone for human monitoring:
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js
 ```
 This shows colored output with terminal bells — useful if you want to watch the board without running the agent.
 
-### 10.5 Stopping the Agent
+### 10.6 Stopping the Agent
 The agent stops when:
 - You end the chat session
 - You send a message interrupting it
 - The terminal is killed
 
 The background watcher script will also terminate when the terminal closes.
+
+---
+
+## 11. TOOL REQUIREMENTS & ENVIRONMENT
+
+### 11.1 Required Tools
+The agent needs these tool categories enabled in its `tools` array:
+- `vscode` — file operations
+- `execute` — terminal commands (git, npm, sleep)
+- `read` — file reading
+- `agent` — sub-agent spawning for complex research
+- `edit` — file editing
+- `search` — code search
+- `web` — web fetching (for API docs if needed)
+- `todo` — task tracking
+- `mcp` — MCP server tools (Google Sheets interaction)
+
+### 11.2 MCP Server Configuration
+The Google Sheets MCP server must be configured in VS Code's MCP settings. If it's not available, the agent falls back to Node.js REST calls (§8.2).
+
+**Required MCP server:** Configure in VS Code settings or `.vscode/mcp.json`:
+```json
+{
+  "servers": {
+    "google-sheets": {
+      "command": "node",
+      "args": ["mcp/google-sheets.mjs"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${env:GOOGLE_APPLICATION_CREDENTIALS}"
+      }
+    }
+  }
+}
+```
+
+### 11.3 Service Account Key
+The `GOOGLE_APPLICATION_CREDENTIALS` environment variable must point to a valid Google service account key JSON file with Sheets API access. The watcher script and Node.js REST fallback both use this.
+
+### 11.4 Node.js Dependencies
+The watcher script requires `google-auth-library`. It's installed as a project dependency. If missing:
+```bash
+npm install google-auth-library
+```
+
+---
+
+## 12. HANGING PREVENTION & RECOVERY
+
+### 12.1 Common Causes of Hanging
+1. **Watcher process exits silently** — `get_terminal_output` returns empty
+2. **Sleep command doesn't return** — timeout not set properly
+3. **Google Sheets API rate limiting** — watcher enters error loop
+4. **Network partition** — API calls hang indefinitely
+
+### 12.2 Prevention Rules
+- Always use `timeout: 65000` on `sleep 60` commands (5-second buffer)
+- Always check watcher output after sleep; if empty for 3 consecutive cycles, restart watcher
+- The watcher script handles SIGINT gracefully and logs errors
+- Use `--backoff` to reduce API call frequency and avoid rate limits
+
+### 12.3 Recovery Procedure
+If the agent detects it may be hanging:
+1. Stop waiting for the current operation
+2. Check git status — ensure no uncommitted work is lost
+3. Check watcher terminal — restart if needed
+4. Resume the sleep→poll loop
+5. If a task was in progress, continue from where it left off
+
+### 12.4 Watcher Health Check
+After each `get_terminal_output` call, verify the watcher is healthy:
+- Output contains `@@WATCHER:` markers → healthy
+- Output is empty → check if watcher process is running, restart if needed
+- Last marker is `ERROR` for 3+ consecutive cycles → restart watcher with fresh auth
