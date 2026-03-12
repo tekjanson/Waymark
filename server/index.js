@@ -61,46 +61,36 @@ app.use((_req, res, next) => {
 });
 
 /* ---------- GitHub source setup ---------- */
-// Always active — serves frontend files from GitHub, falls back to local disk.
-// The ref starts at 'main' and is switched at runtime when a user has a pinned ref.
+// In production: clone the repo and serve files from a local git checkout.
+// In WAYMARK_LOCAL mode: skip the clone, serve from local public/ only.
 
-const githubSource = createGitHubSource({
-  owner: config.GITHUB_OWNER,
-  repo: config.GITHUB_REPO,
-  ref: config.GITHUB_REF,
-  token: config.GITHUB_TOKEN || undefined,
-});
-console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
+let githubSource;
+if (config.WAYMARK_LOCAL) {
+  // Stub — tests serve from the local public/ directory
+  githubSource = {
+    middleware: (_req, _res, next) => next(),
+    setRef() {},
+    getRef() { return config.GITHUB_REF; },
+    preWarm() {},
+    purgeCache() {},
+    listCachedRefs() { return []; },
+    readFile() { return null; },
+  };
+} else {
+  githubSource = createGitHubSource({
+    owner: config.GITHUB_OWNER,
+    repo: config.GITHUB_REPO,
+    ref: config.GITHUB_REF,
+    token: config.GITHUB_TOKEN || undefined,
+  });
+  console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
+}
 
 /* ---------- Helper: serve index.html with injections ---------- */
 
-async function serveIndex(_req, res) {
-  let html;
-
-  // Fetch index.html from GitHub, fall back to local file
-  try {
-    const https = require('https');
-    const ref = githubSource.getRef();
-    const url = `https://raw.githubusercontent.com/${config.GITHUB_OWNER}/${config.GITHUB_REPO}/${ref}/public/index.html`;
-    html = await new Promise((resolve, reject) => {
-      const opts = {
-        headers: { 'User-Agent': 'WayMark-GitHubSource/1.0' },
-      };
-      if (config.GITHUB_TOKEN) opts.headers['Authorization'] = `token ${config.GITHUB_TOKEN}`;
-      https.get(url, opts, (r) => {
-        if (r.statusCode !== 200) return reject(new Error(`HTTP ${r.statusCode}`));
-        const chunks = [];
-        r.on('data', (c) => chunks.push(c));
-        r.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-        r.on('error', reject);
-      }).on('error', reject);
-    });
-  } catch (err) {
-    console.warn('[github-source] Failed to fetch index.html, falling back to local:', err.message);
-    html = null;
-  }
-
-  // Fallback to local file
+function serveIndex(_req, res) {
+  // Read index.html from the git checkout, fall back to local file
+  let html = githubSource.readFile('index.html');
   if (!html) {
     const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
     html = fs.readFileSync(htmlPath, 'utf-8');
@@ -120,8 +110,10 @@ async function serveIndex(_req, res) {
   if (gitRepoUrl) {
     injections.push(`window.__WAYMARK_REPO='${gitRepoUrl}';`);
   }
-  injections.push(`window.__WAYMARK_GITHUB_REF='${githubSource.getRef()}';`);
-  injections.push(`window.__WAYMARK_GITHUB_SOURCE=true;`);
+  if (!config.WAYMARK_LOCAL) {
+    injections.push(`window.__WAYMARK_GITHUB_REF='${githubSource.getRef()}';`);
+    injections.push(`window.__WAYMARK_GITHUB_SOURCE=true;`);
+  }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
@@ -263,16 +255,18 @@ router.post('/api/fetch-url', async (req, res) => {
     });
   });
 
-  // POST /api/source/ref — switch to a different ref (auth required)
-  router.post('/api/source/ref', requireAuth, (req, res) => {
+  // POST /api/source/ref — switch to a different ref (no auth — public repo)
+  router.post('/api/source/ref', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
     }
-    githubSource.setRef(ref.trim());
-    // Re-warm the file tree in the background
-    githubSource.preWarm().catch(() => {});
-    res.json({ ref: githubSource.getRef() });
+    try {
+      await githubSource.setRef(ref.trim());
+      res.json({ ref: githubSource.getRef() });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // POST /api/source/purge — clear cache for current ref (auth required)
@@ -288,7 +282,7 @@ setupAuth(router);
 
 /* ---------- Static files ---------- */
 
-// GitHub source middleware — serves cached files from GitHub.
+// GitHub source middleware — serves files from the local git checkout.
 // Misses fall through to the local public/ directory as a safety net.
 router.use(githubSource.middleware);
 
