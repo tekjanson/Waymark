@@ -19,7 +19,7 @@ This agent has two modes based on the user's input:
 This is the primary mode. The agent runs **forever** in a poll→work→poll cycle:
 
 1. **BOOT** — Read AI_LAWS, start the watcher, process any existing To Do items
-2. **WORK** — Implement the highest-priority To Do item (full cycle: branch → implement → test → commit → update workboard)
+2. **WORK** — Implement the highest-priority To Do item (full cycle: branch → implement → test → commit → push → mark QA on workboard)
 3. **SLEEP** — When no work remains, sleep 60 seconds in the terminal (zero tokens burned during sleep)
 4. **POLL** — Check the watcher output for new work. If found, go to WORK. If not, go to SLEEP.
 5. **REPEAT** — Steps 3-4 loop forever until you are stopped.
@@ -99,20 +99,45 @@ When you call `get_terminal_output`, scan the most recent lines for `@@WATCHER:`
 
 ---
 
-## 1. BRANCH STRATEGY
+## 1. BRANCH STRATEGY — ABSOLUTE RULE
 
-Before writing any code, create a feature branch:
+> **⚠️ NEVER COMMIT TO `main`. This is a HARD REJECT rule — no exceptions.**
+
+### 1.1 Branch Before Any Code Change
+Before writing **any** code — even a one-line fix — you MUST create a feature branch:
 
 ```bash
 git checkout main && git pull origin main
 git checkout -b feature/{kebab-case-task-name}
 ```
 
-**Branch naming:** `feature/{task-key}` — use the task title converted to lowercase kebab-case, truncated to 50 chars. Examples:
+### 1.2 Pre-Work Branch Verification
+**EVERY TIME** before making edits, run:
+```bash
+git branch --show-current
+```
+If the output is `main`, **STOP IMMEDIATELY**. Create a feature branch first. Do NOT edit files, stage, or commit while on `main`.
+
+### 1.3 Pre-Commit Branch Guard
+**EVERY TIME** before running `git commit`, verify you are NOT on main:
+```bash
+[[ "$(git branch --show-current)" != "main" ]] || { echo "ERROR: Cannot commit on main!"; exit 1; }
+```
+If this fails, you have made a critical error. Do NOT proceed.
+
+### 1.4 Branch Naming
+`feature/{task-key}` — use the task title converted to lowercase kebab-case, truncated to 50 chars. Examples:
 - "Recipe rating is confusing" → `feature/recipe-rating-clarity`
 - "Test case directory roll up view" → `feature/testcase-directory-view`
 
-**Never commit directly to `main`.**
+### 1.5 One Branch Per Task (or Bulk)
+Each workboard task (or explicitly grouped bulk of tasks) gets its own feature branch. Never reuse a branch from a previous task. Never push to `main`.
+
+### 1.6 Recovery: If Commits Land on Main by Mistake
+If you discover commits on `main` that shouldn't be there:
+1. Ensure the commits exist on a feature branch (create one if needed)
+2. Reset main: `git checkout main && git reset --hard origin/main`
+3. Continue work on the feature branch
 
 ---
 
@@ -138,9 +163,14 @@ Use `mcp_google-sheets_sheets_values_append` or calculate the correct insert pos
 
 ### 2.3 Completing a Task
 When implementation + tests pass:
-1. Update column C (Stage) to `Done`
-2. Insert a completion note sub-row with summary of what was built
-3. Include: files changed, LOC estimate, test count, total test count
+1. **Push the feature branch to remote:** `git push -u origin feature/{branch-name}`
+2. Update column C (Stage) to `QA` (NOT `Done` — the human owner reviews, tests in prod, creates the PR, merges, and moves to `Done`)
+3. Insert a completion note sub-row with summary of what was built
+4. Include: branch name, files changed, LOC estimate, test count, total test count
+
+> **IMPORTANT:** The agent NEVER moves a task to `Done`. The lifecycle is:
+> `To Do` → (agent claims) → `In Progress` → (agent finishes) → `QA` → (human reviews, PRs, merges) → `Done`
+> Only once an item reaches `Done` (moved by the human) does the agent consider it complete and eligible to be skipped when scanning for work.
 
 ---
 
@@ -468,7 +498,7 @@ Every test needs fixture data in `tests/fixtures/sheets/{key}-{desc}.json`:
 npm test                           # Run all tests
 npx playwright test tests/e2e/{file}.spec.js  # Run specific test file
 ```
-Always run from the project root. Always run the full suite before marking done.
+Always run from the project root. Always run the full suite before marking QA.
 
 ### 4.9 Test Count Minimums
 For every feature, the MINIMUM test count depends on scope:
@@ -488,18 +518,23 @@ For every feature, the MINIMUM test count depends on scope:
 ### Step-by-step for every task:
 
 1. **Read the task** from the workboard (including all sub-row notes for context)
-2. **Create feature branch** from main
-3. **Claim the task** (update Stage to In Progress, Assignee to AI)
-4. **Plan the implementation** — break into sub-tasks using manage_todo_list
-5. **Read existing code** — understand the module you're modifying
-6. **Implement the feature** — follow all AI_LAWS rules
-7. **Write fixture data** if needed
-8. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
-9. **Run `npm test`** — ALL tests must pass (not just yours)
-10. **Commit** with descriptive message: `feat({scope}): {description}`
-11. **Update workboard** — mark Done, add completion note sub-row
-12. **Report results** — tell the user what was built, test count, branch name
-13. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→POLL. If in single-task mode (Mode B), stop.
+2. **Create feature branch** from main (§1.1 — MANDATORY, no exceptions)
+3. **Verify branch** — run `git branch --show-current` and confirm it is NOT `main`. If it is `main`, STOP and go back to step 2.
+4. **Claim the task** (update Stage to In Progress, Assignee to AI)
+5. **Plan the implementation** — break into sub-tasks using manage_todo_list
+6. **Read existing code** — understand the module you're modifying
+7. **Implement the feature** — follow all AI_LAWS rules
+8. **Write fixture data** if needed
+9. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
+10. **Run `npm test`** — ALL tests must pass (not just yours)
+11. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
+12. **Commit** with descriptive message: `feat({scope}): {description}`
+13. **Push branch to remote** — `git push -u origin feature/{branch-name}`
+14. **Update workboard** — mark stage as `QA`, add completion note sub-row (include branch name)
+15. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
+16. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→POLL. If in single-task mode (Mode B), stop.
+
+> The agent does NOT create PRs, merge, or move items to Done. That is the human's job after QA.
 
 ### Commit Message Convention
 ```
@@ -513,7 +548,7 @@ refactor(flow): split into folder layout per §2.2
 
 ## 6. QUALITY GATES
 
-Before marking any task as Done, verify:
+Before marking any task as QA, verify:
 
 - [ ] No new server-side business logic
 - [ ] All DOM built via `el()` — no unsafe `innerHTML`
@@ -528,7 +563,10 @@ Before marking any task as Done, verify:
 - [ ] Sheet data uses row-per-item format (§4.7)
 - [ ] No build step required
 - [ ] `npm test` passes ALL tests
-- [ ] Feature branch created (not on main)
+- [ ] **ON A FEATURE BRANCH** — run `git branch --show-current` and confirm it is NOT `main` (§1 HARD REJECT)
+- [ ] No commits exist on `main` that aren't on `origin/main`
+- [ ] Branch pushed to remote (`git push -u origin feature/{branch-name}`)
+- [ ] Workboard stage set to `QA` (NOT `Done` — human moves to Done after review)
 
 ---
 
@@ -556,7 +594,7 @@ mcp_google-sheets_sheets_values_get
 mcp_google-sheets_sheets_values_update
   spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
   range: Sheet1!C42:E42
-  values: [["In Progress", "Project Name", "AI"]]
+  values: [["In Progress", "Waymark", "AI"]]
 ```
 
 ### Appending a note sub-row after row 42
@@ -599,8 +637,8 @@ Before implementing, always read these files for current state:
 │  │ Read    │    │ Branch   │    │ sleep 60│    │ get_terminal │ │
 │  │ AI_LAWS │    │ Implement│    │ (0 tok) │    │ _output     │ │
 │  │ Start   │    │ Test     │    │         │    │ (~50 tok)   │ │
-│  │ watcher │    │ Commit   │    │         │    │             │ │
-│  └─────────┘    │ Update WB│    └────┬────┘    └──────┬──────┘ │
+│  │ watcher │    │ Push     │    │         │    │             │ │
+│  └─────────┘    │ Mark QA  │    └────┬────┘    └──────┬──────┘ │
 │                 └──────────┘         │                │        │
 │                      ↑               │     no work    │        │
 │                      │               ←────────────────┘        │
@@ -639,7 +677,7 @@ This boots the agent into persistent mode. It will:
 2. Start the background watcher
 3. Process all existing To Do items (highest priority first)
 4. Enter the idle loop, sleeping 60s between polls
-5. Automatically pick up new work when items are added to the workboard
+5. Automatically pick up new work when To Do items appear (ignores QA and Done items — those are the human's responsibility)
 
 ### 10.4 Standalone Watcher (no agent)
 The watcher also works standalone for human monitoring:
