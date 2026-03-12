@@ -44,6 +44,7 @@ function defaultUserData() {
       sortOrder: 'name',        // explorer sort: 'name' | 'modified'
       importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
       importFolderName: null,   // display name of custom import folder
+      githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       // Future: theme, density, viewMode
     },
 
@@ -504,6 +505,26 @@ export async function setImportFolder(folderId, folderName) {
   await save({ preferences: prefs });
 }
 
+/* ---------- GitHub Ref (Version Pinning) ---------- */
+
+/**
+ * Get the user's pinned GitHub ref (branch, tag, or commit SHA).
+ * Defaults to 'main' if not set.
+ * @returns {string}
+ */
+export function getGithubRef() {
+  return _userData?.preferences?.githubRef || 'main';
+}
+
+/**
+ * Pin the user to a specific GitHub ref.
+ * @param {string} ref  branch name, tag, or commit SHA
+ */
+export async function setGithubRef(ref) {
+  const prefs = { ...(_userData?.preferences || {}), githubRef: ref || 'main' };
+  await save({ preferences: prefs });
+}
+
 /* ---------- localStorage migration / fallback ---------- */
 
 /**
@@ -518,6 +539,7 @@ function migrateFromLocalStorage() {
       autoRefresh: storage.getAutoRefresh(),
       sidebarOpen: storage.getSidebarOpen(),
       sortOrder: storage.getSortOrder?.() || 'name',
+      githubRef: storage.getGithubRef?.() || 'main',
     },
     tutorialCompleted: storage.getTutorialCompleted(),
     tutorialStep: storage.getTutorialStep?.() || 0,
@@ -553,6 +575,7 @@ function syncToLocalStorage(data) {
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
+    if (storage.setGithubRef) storage.setGithubRef(data.preferences?.githubRef || 'main');
   } catch { /* localStorage quota / private mode */ }
 }
 

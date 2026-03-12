@@ -196,6 +196,16 @@ export function setSortOrder(order) {
   set('sort_order', order);
 }
 
+/* --- GitHub Ref --- */
+
+export function getGithubRef() {
+  return get('github_ref') || 'main';
+}
+
+export function setGithubRef(ref) {
+  set('github_ref', ref || 'main');
+}
+
 /* --- Folder Index Cache --- */
 
 /**
