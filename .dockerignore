@@ -1,0 +1,47 @@
+# Git and version control
+.git
+.gitignore
+
+# Server runtime directories (created at boot, not needed in image)
+server/.git-repo
+server/.git-checkout
+server/.github-cache
+
+# Tests and development files
+tests/
+test-results/
+playwright-report/
+playwright.config.js
+playwright.screenshots.config.js
+
+# Scripts (not needed at runtime)
+scripts/
+generated/
+
+# Design audit screenshots
+design-audit-screenshots/
+
+# Documentation
+*.md
+LICENSE
+EULA.md
+
+# MCP tools
+mcp/
+
+# Nginx (deployed separately)
+nginx/
+
+# Node modules (npm ci runs in Dockerfile)
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Build info (generated during docker build)
+server/build-info.json
