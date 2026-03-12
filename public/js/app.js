@@ -291,24 +291,6 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
-  // GitHub source: keep the user's saved ref in sync with whatever the
-  // server is actually serving.  The server is the source of truth — it may
-  // have been changed via the server-injected settings widget (which can't
-  // update Drive) or may have reverted to the default ref after a restart.
-  // Instead of fighting the server, we simply persist its current ref.
-  if (window.__WAYMARK_GITHUB_SOURCE) {
-    const serverRef = window.__WAYMARK_GITHUB_REF || 'main';
-    const savedRef = userData.getGithubRef();
-    if (savedRef !== serverRef) {
-      try {
-        await userData.setGithubRef(serverRef);
-        console.log(`[version-pin] Synced saved ref to server: ${serverRef}`);
-      } catch (err) {
-        console.warn('[version-pin] Failed to persist server ref:', err);
-      }
-    }
-  }
-
   // Load explorer & collect known sheets before routing
   await explorer.load();
   await collectKnownSheets();

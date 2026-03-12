@@ -112,17 +112,16 @@ function serveIndex(_req, res) {
   }
   if (!config.WAYMARK_LOCAL) {
     injections.push(`window.__WAYMARK_GITHUB_REF='${githubSource.getRef()}';`);
-    injections.push(`window.__WAYMARK_GITHUB_SOURCE=true;`);
   }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
 
-  // In production mode, inject a settings-panel version switcher.
-  // This script watches for the settings modal to open and inserts a
-  // version section if the frontend code doesn't already provide one.
-  // It also updates localStorage so the boot-time ref sync in app.js
-  // doesn't revert the change.
+  // In production mode, inject a ref-switcher into the settings modal.
+  // This is the ONLY mechanism for version switching — no frontend code
+  // should auto-switch refs.  The injected script runs as a regular <script>
+  // before any <script type="module"> (app.js), so it can set localStorage
+  // first to prevent stale boot-time sync code in old branches.
   if (!config.WAYMARK_LOCAL) {
     const currentRef = githubSource.getRef();
     html = html.replace('</body>', `${buildSettingsRefInjector(currentRef)}\n</body>`);
@@ -135,13 +134,12 @@ function serveIndex(_req, res) {
 /* ---------- Server-injected settings version section ---------- */
 
 /**
- * Build a self-contained script that injects a version-switching section
- * into the settings modal.  Works on any frontend version — old branches
- * that lack the native #settings-version-section get a dynamically created
- * one.  New branches that already have it are left untouched.
- *
- * Critically, this also updates localStorage('waymark_github_ref') so that
- * the boot-time ref sync in app.js doesn't fight the user's choice.
+ * Build a self-contained <script> that:
+ * 1. Immediately syncs localStorage to match the server's ref (runs before
+ *    any <script type="module">, preventing stale boot-time sync in old branches)
+ * 2. When the settings modal opens, hides any native #settings-version-section
+ *    and injects its own version-switcher section
+ * 3. On apply: POSTs to /api/source/ref, updates localStorage, reloads
  */
 function buildSettingsRefInjector(currentRef) {
   return `
@@ -150,90 +148,78 @@ function buildSettingsRefInjector(currentRef) {
   var BASE = window.__WAYMARK_BASE || '';
   var CURRENT_REF = '${currentRef}';
 
-  // Watch for the settings modal to become visible, then inject if needed.
+  // ------- CRITICAL: sync localStorage IMMEDIATELY -------
+  // This runs before app.js (which is type=module, hence deferred).
+  // Old branches check localStorage-backed savedRef vs serverRef on boot.
+  // By writing the current ref NOW, savedRef === serverRef and no switch fires.
+  try { localStorage.setItem('waymark_github_ref', JSON.stringify(CURRENT_REF)); } catch(e) {}
+
+  // ------- Inject version section when settings modal opens -------
+  var injected = false;
   var obs = new MutationObserver(function() {
     var modal = document.getElementById('settings-modal');
     if (!modal || modal.classList.contains('hidden')) return;
-
-    // If the frontend already has #settings-version-section and it's NOT hidden,
-    // the native picker is handling it — do nothing.
-    var existing = document.getElementById('settings-version-section');
-    if (existing && !existing.classList.contains('hidden')) return;
-
-    // Inject our version section (or un-hide + populate the existing hidden one).
-    injectVersionSection(modal, existing);
+    if (injected) return;
+    inject(modal);
   });
   obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
 
-  function injectVersionSection(modal, existing) {
-    // If there's an existing hidden section, populate it and show it.
-    if (existing) {
-      existing.classList.remove('hidden');
-      populateExistingSection();
-      return;
-    }
+  function inject(modal) {
+    injected = true;
 
-    // Build a new section and insert before the modal footer.
+    // Hide any native version section to prevent doubles
+    var native = document.getElementById('settings-version-section');
+    if (native) native.style.display = 'none';
+
+    // Don't double-inject if somehow called twice
+    if (document.getElementById('wm-inj-version')) return;
+
     var footer = modal.querySelector('.modal-footer');
     if (!footer) return;
 
     var section = document.createElement('div');
-    section.id = 'wm-injected-version';
+    section.id = 'wm-inj-version';
     section.className = 'settings-section';
     section.innerHTML =
       '<h4 class="settings-section-title">App Version</h4>' +
-      '<p style="font-size:0.8rem;color:var(--color-text-muted,#94a3b8);margin:0 0 12px;">Pin to a specific branch, tag, or commit.</p>' +
+      '<p style="font-size:0.8rem;color:var(--color-text-muted,#94a3b8);margin:0 0 8px;">Switch branch, tag, or commit.</p>' +
       '<div class="settings-row">' +
-        '<span class="settings-label">Branch / Version</span>' +
+        '<span class="settings-label">Branch / Ref</span>' +
         '<div style="display:flex;gap:6px;align-items:center;">' +
-          '<input id="wm-inj-ref-input" type="text" value="' + CURRENT_REF + '" ' +
+          '<input id="wm-inj-ref" type="text" value="' + CURRENT_REF + '" ' +
             'placeholder="main" autocomplete="off" spellcheck="false" ' +
-            'style="padding:6px 10px;border-radius:6px;border:1px solid var(--color-border,#334155);' +
-            'background:var(--color-bg,#0f172a);color:var(--color-text,#e2e8f0);font-size:13px;' +
-            'font-family:monospace;width:140px;outline:none;">' +
-          '<button id="wm-inj-ref-apply" class="btn btn-primary btn-sm">Apply</button>' +
+            'style="padding:6px 10px;border-radius:6px;border:1px solid var(--color-border,#e2e8f0);' +
+            'background:var(--color-surface,#fff);color:var(--color-text,#1e293b);font-size:13px;' +
+            'font-family:ui-monospace,monospace;width:140px;outline:none;">' +
+          '<button id="wm-inj-apply" class="btn btn-primary btn-sm">Apply</button>' +
         '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;" id="wm-inj-tags"></div>' +
+      '<div id="wm-inj-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>' +
       '<div id="wm-inj-status" style="font-size:0.8rem;min-height:18px;margin-top:4px;"></div>' +
-      '<div class="settings-row" style="margin-top:8px;">' +
+      '<div class="settings-row" style="margin-top:4px;">' +
         '<span class="settings-label">Currently serving</span>' +
-        '<code id="wm-inj-current" style="font-size:0.85rem;color:var(--color-primary,#60a5fa);">' +
+        '<code id="wm-inj-cur" style="font-size:0.85rem;color:var(--color-primary,#2563eb);">' +
           CURRENT_REF + '</code>' +
       '</div>';
 
     footer.parentNode.insertBefore(section, footer);
     wireUp();
-    fetchInfo();
-  }
-
-  function populateExistingSection() {
-    // The existing section is the native one — its JS in app.js handles it.
-    // But if the frontend is an old version with a hidden section that app.js
-    // never un-hides (missing __WAYMARK_GITHUB_SOURCE check), we do it and
-    // the native JS will re-populate when settings opens.  Fetch info to update.
-    var input = document.getElementById('settings-github-ref');
-    if (input) input.value = CURRENT_REF;
-    var cur = document.getElementById('settings-current-ref');
-    if (cur) cur.textContent = CURRENT_REF;
+    fetchTags();
   }
 
   function wireUp() {
-    var input = document.getElementById('wm-inj-ref-input');
-    var apply = document.getElementById('wm-inj-ref-apply');
+    var input  = document.getElementById('wm-inj-ref');
+    var apply  = document.getElementById('wm-inj-apply');
     var status = document.getElementById('wm-inj-status');
-    var current = document.getElementById('wm-inj-current');
+    var cur    = document.getElementById('wm-inj-cur');
     if (!input || !apply) return;
 
-    function showStatus(msg, color) {
-      status.style.color = color;
-      status.textContent = msg;
-    }
+    function msg(txt, color) { status.style.color = color; status.textContent = txt; }
 
     function doApply() {
       var ref = (input.value || '').trim();
-      if (!ref) { showStatus('Enter a branch, tag, or SHA', 'var(--color-error,#f87171)'); return; }
-      showStatus('Switching\\u2026', 'var(--color-primary,#60a5fa)');
+      if (!ref) { msg('Enter a branch, tag, or SHA', 'var(--color-error,#dc2626)'); return; }
+      msg('Switching\\u2026', 'var(--color-primary,#2563eb)');
       apply.disabled = true;
       fetch(BASE + '/api/source/ref', {
         method: 'POST',
@@ -243,45 +229,38 @@ function buildSettingsRefInjector(currentRef) {
         if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
         return r.json();
       }).then(function(d) {
-        current.textContent = d.ref;
-        // Update localStorage so boot-time sync doesn't revert
+        cur.textContent = d.ref;
         try { localStorage.setItem('waymark_github_ref', JSON.stringify(d.ref)); } catch(e) {}
-        showStatus('Switched to ' + d.ref + ' \\u2014 reloading\\u2026', 'var(--color-success,#4ade80)');
-        setTimeout(function() { window.location.reload(); }, 800);
+        msg('Switched to ' + d.ref + ' \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
+        setTimeout(function() { window.location.reload(); }, 600);
       }).catch(function(e) {
-        showStatus('Failed: ' + e.message, 'var(--color-error,#f87171)');
-      }).finally(function() {
-        apply.disabled = false;
-      });
+        msg('Error: ' + e.message, 'var(--color-error,#dc2626)');
+      }).finally(function() { apply.disabled = false; });
     }
 
     apply.onclick = doApply;
     input.onkeydown = function(e) { if (e.key === 'Enter') doApply(); };
   }
 
-  function fetchInfo() {
-    var tags = document.getElementById('wm-inj-tags');
+  function fetchTags() {
+    var tags  = document.getElementById('wm-inj-tags');
+    var input = document.getElementById('wm-inj-ref');
+    var cur   = document.getElementById('wm-inj-cur');
     if (!tags) return;
-    var input = document.getElementById('wm-inj-ref-input');
-    var current = document.getElementById('wm-inj-current');
 
     fetch(BASE + '/api/source').then(function(r) { return r.json(); }).then(function(d) {
-      if (current) current.textContent = d.ref;
+      if (cur) cur.textContent = d.ref;
       tags.innerHTML = '';
       var refs = d.cachedRefs || ['main'];
-      if (!refs.includes('main')) refs.unshift('main');
+      if (refs.indexOf('main') === -1) refs.unshift('main');
       refs.forEach(function(r) {
-        if (r.startsWith('.')) return;
+        if (r.charAt(0) === '.') return;
         var btn = document.createElement('button');
         btn.textContent = r;
         btn.className = 'btn btn-secondary btn-sm';
         btn.style.cssText = 'font-size:12px;padding:3px 10px;border-radius:12px;' +
-          (r === d.ref ? 'border-color:var(--color-primary,#2563eb);color:var(--color-primary,#60a5fa);' : '');
-        btn.onclick = function() {
-          if (input) input.value = r;
-          var apply = document.getElementById('wm-inj-ref-apply');
-          if (apply) apply.click();
-        };
+          (r === d.ref ? 'border-color:var(--color-primary,#2563eb);color:var(--color-primary,#2563eb);font-weight:600;' : '');
+        btn.onclick = function() { input.value = r; document.getElementById('wm-inj-apply').click(); };
         tags.appendChild(btn);
       });
     }).catch(function() {});
