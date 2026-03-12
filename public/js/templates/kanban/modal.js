@@ -3,11 +3,21 @@
 
    Opens a full-screen overlay with editable title, stage
    cycling, metadata badges, and the full detail panel.
+   Integrates with browser history so the mobile back button
+   closes the modal instead of navigating away.
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, cycleStatus } from '../shared.js';
 import { projectColor, dueBadgeClass, formatDue } from './helpers.js';
 import { buildCardDetail } from './cards.js';
+
+/* ---------- History-aware modal state ---------- */
+
+/** Active popstate handler for the current modal (if any). */
+let _activePopHandler = null;
+
+/** Whether a history entry has been pushed for the current modal. */
+let _hasModalHistoryEntry = false;
 
 /* ---------- Focus modal ---------- */
 
@@ -20,9 +30,16 @@ import { buildCardDetail } from './cards.js';
 export function openCardModal(group, ctx) {
   const { cols, template } = ctx;
 
-  // Close any existing modal
+  // Close any existing modal (preserve history entry if re-opening)
   const existing = document.querySelector('.kanban-modal-overlay');
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+    if (_activePopHandler) {
+      window.removeEventListener('popstate', _activePopHandler);
+      _activePopHandler = null;
+    }
+    // Keep _hasModalHistoryEntry — reuse the existing entry for the new modal
+  }
 
   const { row, idx } = group;
   const rowIdx = idx + 1;
@@ -111,7 +128,27 @@ export function openCardModal(group, ctx) {
   headerContent.append(headerMeta);
 
   const closeBtn = el('button', { className: 'kanban-modal-close', title: 'Close' }, ['✕']);
-  closeBtn.addEventListener('click', () => overlay.remove());
+
+  /* -- Close helper: removes overlay + cleans up listeners -- */
+  function closeModal() {
+    if (overlay.parentNode) overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (_activePopHandler) {
+      window.removeEventListener('popstate', _activePopHandler);
+      _activePopHandler = null;
+    }
+  }
+
+  /* Close via UI action (X, backdrop, Escape) — also pops history entry */
+  function closeFromUI() {
+    closeModal();
+    if (_hasModalHistoryEntry) {
+      _hasModalHistoryEntry = false;
+      history.back();
+    }
+  }
+
+  closeBtn.addEventListener('click', () => closeFromUI());
 
   modal.append(el('div', { className: 'kanban-modal-header' }, [headerContent, closeBtn]));
 
@@ -124,17 +161,28 @@ export function openCardModal(group, ctx) {
 
   // Close on backdrop click
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) closeFromUI();
   });
 
   // Close on Escape
   function onKey(e) {
-    if (e.key === 'Escape') {
-      overlay.remove();
-      document.removeEventListener('keydown', onKey);
-    }
+    if (e.key === 'Escape') closeFromUI();
   }
   document.addEventListener('keydown', onKey);
+
+  // Push history state so browser back button closes modal instead of navigating
+  if (!_hasModalHistoryEntry) {
+    history.pushState({ kanbanModal: true }, '');
+    _hasModalHistoryEntry = true;
+  }
+
+  // Handle popstate (back button) — close modal without calling history.back()
+  function onPopState() {
+    _hasModalHistoryEntry = false;
+    closeModal();
+  }
+  _activePopHandler = onPopState;
+  window.addEventListener('popstate', onPopState);
 
   document.body.append(overlay);
 }
