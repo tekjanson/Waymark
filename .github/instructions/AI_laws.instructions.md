@@ -648,10 +648,101 @@ Imported sheets go to `Waymark/Imports/{TemplateName}/` — one sub-folder per t
 | Use AI/Gemini for analysis | AI features are removed; all analysis is code-based |
 | Pack multiple values into one cell with delimiters | Sheet data must be human-friendly: one item per row (§4.7) |
 | Run `npx playwright test` from a subdirectory | Config lives at `tests/playwright.config.js`; run from project root via `npm test` (§7.9) |
+| Put notes/progress in the task row's Note column | Notes are sub-rows inserted BELOW the task row (§15.2) |
 
 ---
 
-## 14. CHECKLIST — Before Submitting Any Change
+## 15. WAYMARK WORKBOARD — KANBAN SHEET INTERACTION
+
+> **Context:** The Waymark development workboard is itself a kanban Google Sheet rendered by Waymark. When AI agents update this sheet (or any kanban sheet), they **must** follow the row-per-item format (§4.7) as it applies to the kanban template specifically.
+
+### 15.1 Kanban Column Layout
+The workboard uses these columns (headers in row 1):
+
+| Column | Index | Purpose |
+|---|---|---|
+| Task | A | Primary identifier — non-empty = new task. Empty = sub-row. |
+| Description | B | Task description (task rows) or sub-task text (sub-rows) |
+| Stage | C | `To Do`, `In Progress`, `Done`, `Backlog`, `Archived` |
+| Project | D | Project grouping label |
+| Assignee | E | Person responsible (task rows) or note author (note sub-rows) |
+| Priority | F | `P0`, `P1`, `P2`, `P3` |
+| Due | G | ISO date `YYYY-MM-DD` |
+| Label | H | `bug`, `feature`, `design`, `infra`, etc. |
+| Note | I | Note text — **ONLY on sub-rows, NEVER on task rows** |
+
+### 15.2 Task Row vs Sub-Row Rules
+
+**Task row** (column A is non-empty):
+```
+| Task Name | Description of the task | Stage | Project | Assignee | P2 | 2026-03-11 | feature | |
+```
+- Column A (Task): the task title — **must be non-empty**
+- Column I (Note): **must be EMPTY** on task rows
+- All metadata (stage, project, priority, etc.) lives here
+
+**Note sub-row** (column A is empty):
+```
+| | | | | Author Name | | 2026-03-11 | | The note text goes here |
+```
+- Column A (Task): **EMPTY** — this is what makes it a sub-row
+- Columns B, C, D: **EMPTY**
+- Column E (Assignee): the author of the note
+- Column G (Due): date the note was written
+- Column I (Note): the actual note content
+- All other columns: **EMPTY**
+
+**Sub-task sub-row** (column A is empty, column B has text, column I is empty):
+```
+| | Sub-task description text | Stage | | Assignee | | 2026-03-11 | | |
+```
+- Column A (Task): **EMPTY**
+- Column B (Description): the sub-task text
+- Column C (Stage): sub-task status
+- Column I (Note): **EMPTY** (this distinguishes it from a note sub-row)
+
+### 15.3 How Waymark Renders This
+The kanban template uses `parseGroups()` (§4.1a) to group rows:
+1. A row with a **non-empty Task column** starts a new group (card).
+2. Subsequent rows with an **empty Task column** are children of that group.
+3. Children are classified by `classifyChild()`:
+   - If column I (Note) has content → it's a **note** (shown in notes section)
+   - If column I is empty → it's a **sub-task** (shown in sub-tasks section)
+
+**Critical:** If you put note text in column I of a **task row** (where column A is non-empty), Waymark ignores it — it is not rendered as a note. The note will be invisible in the UI.
+
+### 15.4 Updating the Workboard — Correct Procedure
+
+**To update a task's stage:**
+- Update column C (Stage) of the **task row** directly.
+
+**To add a progress note:**
+- **INSERT a new row** below the task row (or below existing sub-rows).
+- The new row must have: column A empty, column E = author, column G = date, column I = note text.
+- **Do NOT** write into the task row's Note column.
+
+**To update an existing note:**
+- Update column I of the **note sub-row** directly.
+
+**Example — marking a task Done and adding a completion note:**
+If the task is on row 180:
+1. Update `Sheet1!C180` to `Done`
+2. Count existing sub-rows below row 180 (rows 181, 182… where column A is empty)
+3. **Insert** a new row after the last sub-row with: `["", "", "", "", "AI", "", "2026-03-11", "", "Completed: summary of what was done"]`
+
+### 15.5 Common Mistakes to Avoid
+
+| Mistake | Why It Breaks |
+|---|---|
+| Writing note text into column I of a task row | Waymark's `classifyChild()` only checks sub-rows; task-row notes are invisible |
+| Inserting a note row without clearing column A | Waymark treats it as a new task instead of a sub-row |
+| Putting sub-task text in column I | Makes it render as a note instead of a sub-task |
+| Updating column C on a note sub-row | Notes don't have stages; this data is ignored |
+| Forgetting to leave columns B-D empty on note sub-rows | May confuse the group parser |
+
+---
+
+## 16. CHECKLIST — Before Submitting Any Change
 
 - [ ] No new server-side business logic added
 - [ ] All DOM built via `el()` — no unsafe `innerHTML`

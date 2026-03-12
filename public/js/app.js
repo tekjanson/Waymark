@@ -490,7 +490,7 @@ function wireQuickActions() {
     if (btn) btn.addEventListener('click', fn);
   };
 
-  wire('home-action-create',   () => { if (createSheetModal) createSheetModal.classList.remove('hidden'); });
+  wire('home-action-create',   () => { openCreateSheetModal(); });
   wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
   wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
   wire('home-action-examples', () => { openExamplesModal(); });
@@ -609,8 +609,10 @@ function renderPinnedSheets() {
 
 const openInDriveBtn = document.getElementById('open-in-drive-btn');
 const folderPinBtn   = document.getElementById('folder-pin-btn');
+const dirHelpBtn     = document.getElementById('dir-help-btn');
 let currentFolderId  = null;
 let currentFolderName = null;
+let currentDirKey    = null;
 
 if (openInDriveBtn) {
   openInDriveBtn.addEventListener('click', () => {
@@ -637,6 +639,12 @@ if (folderPinBtn) {
     folderPinBtn.classList.add('pin-bounce');
     folderPinBtn.addEventListener('animationend', () => folderPinBtn.classList.remove('pin-bounce'), { once: true });
     window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
+  });
+}
+
+if (dirHelpBtn) {
+  dirHelpBtn.addEventListener('click', () => {
+    if (currentDirKey) Tutorial.startTemplateTutorial('dir-' + currentDirKey, true);
   });
 }
 
@@ -719,6 +727,8 @@ async function showFolderContents(folderId, folderName) {
 
   titleEl.textContent = folderName;
   noSheetsEl.classList.add('hidden');
+  if (dirHelpBtn) dirHelpBtn.classList.add('hidden');
+  currentDirKey = null;
 
   // Clear previous content immediately and show loading bar.
   // If we have a cached directory view, render it instantly so the user
@@ -1029,6 +1039,11 @@ async function showFolderContents(folderId, folderName) {
           group.template.directoryView(dirContainer, group.sheets, navigate);
           loadingBar.classList.add('hidden');
           usedDirectoryView = true;
+
+          // Show directory view help button and trigger first-time tutorial
+          currentDirKey = key;
+          if (dirHelpBtn) dirHelpBtn.classList.remove('hidden');
+          Tutorial.startTemplateTutorial('dir-' + key);
 
           // Render remaining non-matching sheets normally
           for (const [otherKey, otherGroup] of Object.entries(templateGroups)) {
