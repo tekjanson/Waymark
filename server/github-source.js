@@ -321,10 +321,10 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', ref);
     res.setHeader('X-Served-From', 'github-source');
 
-    if (filePath.endsWith('.html')) {
+    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js')) {
+      // No browser caching for code files — ensures ref switches
+      // serve fresh content immediately after page reload.
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    } else if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
-      res.setHeader('Cache-Control', 'public, max-age=300');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=3600');
     }
@@ -347,6 +347,13 @@ function createGitHubSource(opts) {
     }
     // Fetch latest to make sure we have the ref
     await fetchOrigin();
+
+    // Force-purge the existing checkout for this ref so extractPublicDir
+    // does a full re-extract instead of short-circuiting on a stale SHA
+    // marker.  Guarantees the user gets the latest code after a push.
+    const safeRef = newRef.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const refDir = path.join(CHECKOUT_DIR, safeRef);
+    fs.rmSync(refDir, { recursive: true, force: true });
 
     // Resolve and extract
     const outDir = extractPublicDir(newRef);
