@@ -50,7 +50,7 @@ app.use((_req, res, next) => {
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
-        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com",
+        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
       ].join('; ')
@@ -86,6 +86,17 @@ if (config.WAYMARK_LOCAL) {
   console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
 }
 
+/* ---------- Injection safety ---------- */
+
+/**
+ * Escape a value for safe embedding inside an inline <script> block.
+ * JSON.stringify handles quotes/backslashes; the replace covers </script>
+ * and <!-- sequences that could break out of the script element.
+ */
+function safeJsString(val) {
+  return JSON.stringify(String(val)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+}
+
 /* ---------- Helper: serve index.html with injections ---------- */
 
 function serveIndex(_req, res) {
@@ -96,22 +107,22 @@ function serveIndex(_req, res) {
     html = fs.readFileSync(htmlPath, 'utf-8');
   }
 
-  // Inject the base path so client-side JS can build correct URLs
+  // Inject runtime flags — all values are escaped to prevent XSS
   const injections = [];
   if (basePath) {
-    injections.push(`window.__WAYMARK_BASE='${basePath}';`);
+    injections.push(`window.__WAYMARK_BASE=${safeJsString(basePath)};`);
   }
   if (config.WAYMARK_LOCAL) {
     injections.push('window.__WAYMARK_LOCAL=true;');
   }
   if (gitHash) {
-    injections.push(`window.__WAYMARK_HASH='${gitHash}';`);
+    injections.push(`window.__WAYMARK_HASH=${safeJsString(gitHash)};`);
   }
   if (gitRepoUrl) {
-    injections.push(`window.__WAYMARK_REPO='${gitRepoUrl}';`);
+    injections.push(`window.__WAYMARK_REPO=${safeJsString(gitRepoUrl)};`);
   }
   if (!config.WAYMARK_LOCAL) {
-    injections.push(`window.__WAYMARK_GITHUB_REF='${githubSource.getRef()}';`);
+    injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(githubSource.getRef())};`);
   }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
@@ -147,11 +158,12 @@ function serveIndex(_req, res) {
  *              via window.__waymarkSavePinnedRef(), reloads
  */
 function buildSettingsRefInjector(currentRef) {
+  const safeRef = safeJsString(currentRef);
   return `
 <script>
 (function() {
   var BASE = window.__WAYMARK_BASE || '';
-  var CURRENT_REF = '${currentRef}';
+  var CURRENT_REF = ${safeRef};
 
   // Sync localStorage immediately (before type=module scripts run)
   try { localStorage.setItem('waymark_github_ref', JSON.stringify(CURRENT_REF)); } catch(e) {}
@@ -346,7 +358,12 @@ router.get('/', serveIndex);
 
 /* ---------- Scraping proxy (fetch a URL on behalf of the browser) ---------- */
 
-router.post('/api/fetch-url', async (req, res) => {
+router.post('/api/fetch-url', (req, res, next) => {
+  // Require auth — prevents unauthenticated use as an open SSRF proxy
+  const token = req.cookies?.waymark_refresh;
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  next();
+}, async (req, res) => {
   const { url } = req.body || {};
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'Missing or invalid "url" parameter' });
@@ -445,9 +462,11 @@ router.post('/api/fetch-url', async (req, res) => {
 /* ---------- GitHub source: admin API ---------- */
 
 {
-  // Auth guard — require a valid refresh token cookie for write operations
+  // Auth guard — require a valid refresh token cookie for write operations.
+  // The refresh cookie is unsigned (httpOnly, path-scoped to /auth), so
+  // it lives in req.cookies, not req.signedCookies.
   function requireAuth(req, res, next) {
-    const token = req.signedCookies?.waymark_refresh;
+    const token = req.cookies?.waymark_refresh;
     if (!token) return res.status(401).json({ error: 'Authentication required' });
     next();
   }
@@ -457,9 +476,9 @@ router.post('/api/fetch-url', async (req, res) => {
     return req.signedCookies?.waymark_pinned_ref || 'main';
   }
 
-  /** Cookie options for the pinned ref (30 days, path root). */
+  /** Cookie options for the pinned ref (1 year, path root). */
   const PIN_COOKIE_OPTS = {
-    httpOnly: false,           // frontend script reads it for display
+    httpOnly: true,            // no frontend code reads this cookie directly
     signed: true,
     secure: config.NODE_ENV === 'production',
     sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
@@ -480,7 +499,7 @@ router.post('/api/fetch-url', async (req, res) => {
   });
 
   // POST /api/source/ref — switch to a different ref (temporary preview)
-  router.post('/api/source/ref', async (req, res) => {
+  router.post('/api/source/ref', requireAuth, async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
@@ -494,7 +513,7 @@ router.post('/api/fetch-url', async (req, res) => {
   });
 
   // POST /api/source/pin — pin a ref (switch + persist in cookie)
-  router.post('/api/source/pin', async (req, res) => {
+  router.post('/api/source/pin', requireAuth, async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref"' });

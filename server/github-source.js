@@ -27,6 +27,26 @@ const { execSync, exec } = require('child_process');
 const REPO_DIR = path.join(__dirname, '.git-repo');
 const CHECKOUT_DIR = path.join(__dirname, '.git-checkout');
 
+/* ---------- Ref validation ---------- */
+
+/**
+ * Validate a git ref (branch, tag, or SHA) for safe use in shell commands
+ * and HTML/JS injection contexts.  Rejects anything that could escape
+ * shell quoting, path traversal, or HTML attribute boundaries.
+ * @param {string} ref
+ * @returns {boolean}
+ */
+function isValidRef(ref) {
+  if (!ref || typeof ref !== 'string') return false;
+  if (ref.length > 200) return false;
+  // Allow alphanumeric, dot, dash, underscore, slash (for branch names like feature/foo)
+  if (!/^[a-zA-Z0-9._\/-]+$/.test(ref)) return false;
+  // Git-specific invalid patterns
+  if (ref.includes('..') || ref.endsWith('.') || ref.endsWith('/')) return false;
+  if (ref.includes('@{') || ref.startsWith('-')) return false;
+  return true;
+}
+
 /* ---------- Helpers ---------- */
 
 /** MIME types for common frontend assets */
@@ -147,6 +167,9 @@ async function fetchOrigin() {
  * (for tags and SHAs).
  */
 function resolveRef(ref) {
+  if (!isValidRef(ref)) {
+    throw new Error(`Invalid ref: ${String(ref).slice(0, 80)}`);
+  }
   // Try as a remote branch first
   try {
     return git(`rev-parse "refs/remotes/origin/${ref}"`);
@@ -308,6 +331,9 @@ function createGitHubSource(opts) {
 
   /** Switch to a different ref. Fetches from origin first. */
   async function setRef(newRef) {
+    if (!isValidRef(newRef)) {
+      throw new Error(`Invalid ref: ${String(newRef).slice(0, 80)}`);
+    }
     // Fetch latest to make sure we have the ref
     await fetchOrigin();
 
