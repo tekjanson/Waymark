@@ -40,6 +40,8 @@ const MOCK_AUTH_COOKIE = {
  * @param {boolean}  [opts.templateTutorials]        template tutorial auto-start (default false — suppressed in tests)
  * @param {string}   [opts.hash]                    initial URL hash (e.g. '#/sheet/sheet-001')
  * @param {Object}   [opts.textFiles]               seed window.__WAYMARK_TEXT_FILES (id → content)
+ * @param {boolean}  [opts.githubSource]             simulate GitHub source mode (sets __WAYMARK_GITHUB_SOURCE)
+ * @param {string}   [opts.githubRef]                ref to inject as __WAYMARK_GITHUB_REF (default 'main')
  */
 async function setupApp(page, opts = {}) {
   const {
@@ -51,6 +53,8 @@ async function setupApp(page, opts = {}) {
     templateTutorials = false,
     hash,
     textFiles,
+    githubSource,
+    githubRef = 'main',
   } = opts;
 
   /* 1. Auth — inject cookie before any navigation */
@@ -64,6 +68,8 @@ async function setupApp(page, opts = {}) {
   lsEntries.tutorial_completed = tutorialCompleted;
   // Suppress template tutorial auto-start unless explicitly enabled
   if (!templateTutorials) lsEntries.template_tutorials_auto = false;
+  // GitHub source: seed localStorage ref so boot-time sync matches server ref
+  if (githubSource) lsEntries.github_ref = githubRef;
 
   if (Object.keys(lsEntries).length) {
     await page.addInitScript((entries) => {
@@ -79,6 +85,14 @@ async function setupApp(page, opts = {}) {
       window.__WAYMARK_TEXT_FILES = window.__WAYMARK_TEXT_FILES || {};
       Object.assign(window.__WAYMARK_TEXT_FILES, files);
     }, textFiles);
+  }
+
+  /* 2c. GitHub source mode — inject window flags before app JS runs */
+  if (githubSource) {
+    await page.addInitScript((ref) => {
+      window.__WAYMARK_GITHUB_SOURCE = true;
+      window.__WAYMARK_GITHUB_REF = ref;
+    }, githubRef);
   }
 
   /* 3. Navigate */

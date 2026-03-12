@@ -5,10 +5,14 @@ WORKDIR /app
 ARG GIT_HASH=""
 ARG GIT_REPO=""
 
+
 COPY package*.json ./
 RUN npm ci --production
 COPY server/ ./server/
 COPY public/ ./public/
+
+# Create cache directory for GitHub source mode
+RUN mkdir -p server/.github-cache
 
 # Write build-info.json so the server can read it without git
 RUN printf '{"hash":"%s","repo":"%s","builtAt":"%s"}\n' \

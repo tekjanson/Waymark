@@ -61,6 +61,14 @@ const settingsChooseFolder = document.getElementById('settings-choose-folder');
 const settingsResetFolder  = document.getElementById('settings-reset-folder');
 const settingsFolderBrowser = document.getElementById('settings-folder-browser');
 
+/* ---------- Version Picker refs ---------- */
+const settingsVersionSection = document.getElementById('settings-version-section');
+const settingsGithubRef      = document.getElementById('settings-github-ref');
+const settingsApplyRef       = document.getElementById('settings-apply-ref');
+const settingsRefStatus      = document.getElementById('settings-ref-status');
+const settingsRefSuggestions = document.getElementById('settings-ref-suggestions');
+const settingsCurrentRef     = document.getElementById('settings-current-ref');
+
 /* ---------- Import Modal refs ---------- */
 const importModal         = document.getElementById('import-modal');
 const importModalClose    = document.getElementById('import-modal-close');
@@ -281,6 +289,31 @@ async function showApp(user) {
     await userData.init();
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
+  }
+
+  // GitHub source: sync the user's pinned ref with the backend
+  if (window.__WAYMARK_GITHUB_SOURCE) {
+    const savedRef = userData.getGithubRef();
+    const serverRef = window.__WAYMARK_GITHUB_REF || 'main';
+    if (savedRef && savedRef !== serverRef) {
+      // User has a pinned ref that differs from what the server is serving — switch it
+      try {
+        const base = window.__WAYMARK_BASE || '';
+        const res = await fetch(`${base}/api/source/ref`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: savedRef }),
+        });
+        if (res.ok) {
+          console.log(`[version-pin] Synced server to user's pinned ref: ${savedRef}`);
+          // Reload so the new frontend version takes effect
+          window.location.reload();
+          return;
+        }
+      } catch (err) {
+        console.warn('[version-pin] Failed to sync ref with server:', err);
+      }
+    }
   }
 
   // Load explorer & collect known sheets before routing
@@ -1935,6 +1968,7 @@ function initTheme() {
       const current = storage.getTheme();
       const next = resolveTheme(current) === 'dark' ? 'light' : 'dark';
       storage.setTheme(next);
+      userData.setTheme(next);
       applyTheme(next);
     });
   }
@@ -1944,6 +1978,7 @@ function initTheme() {
     btn.addEventListener('click', () => {
       const pref = btn.dataset.theme;
       storage.setTheme(pref);
+      userData.setTheme(pref);
       applyTheme(pref);
     });
   });
@@ -2010,12 +2045,123 @@ function openSettingsModal() {
   settingsResetFolder.classList.toggle('hidden', !customName);
   settingsFolderBrowser.classList.add('hidden');
 
+  // Version picker (only visible when GitHub source is active)
+  if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {
+    settingsVersionSection.classList.remove('hidden');
+    const savedRef = userData.getGithubRef();
+    settingsGithubRef.value = savedRef;
+    settingsCurrentRef.textContent = window.__WAYMARK_GITHUB_REF || savedRef;
+
+    // Highlight the active quick-switch button
+    settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.ref === savedRef);
+    });
+
+    // Fetch available info from backend (best-effort)
+    fetchSourceInfo();
+  }
+
   settingsModal.classList.remove('hidden');
 }
 
 function closeSettingsModal() {
   if (settingsModal) settingsModal.classList.add('hidden');
   if (settingsFolderBrowser) settingsFolderBrowser.classList.add('hidden');
+}
+
+/* ---------- Version Picker helpers ---------- */
+
+/**
+ * Apply a new GitHub ref: save to Drive, tell the backend, and reload.
+ */
+async function applyGithubRef() {
+  const ref = (settingsGithubRef.value || '').trim();
+  if (!ref) {
+    showRefStatus('Please enter a branch, tag, or commit SHA.', 'error');
+    return;
+  }
+
+  showRefStatus('Switching…', 'info');
+  settingsApplyRef.disabled = true;
+
+  try {
+    // Tell the backend to switch refs
+    const base = window.__WAYMARK_BASE || '';
+    const res = await fetch(`${base}/api/source/ref`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server responded with ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    // Save the ref to Drive so it persists across sessions/devices
+    await userData.setGithubRef(data.ref);
+
+    showRefStatus(`Switched to "${data.ref}". Reloading…`, 'success');
+
+    // Update quick-switch highlights
+    settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.ref === data.ref);
+    });
+    settingsCurrentRef.textContent = data.ref;
+
+    // Reload after a brief delay so the user sees the success message
+    setTimeout(() => window.location.reload(), 800);
+  } catch (err) {
+    showRefStatus(`Failed: ${err.message}`, 'error');
+  } finally {
+    settingsApplyRef.disabled = false;
+  }
+}
+
+/**
+ * Show a status message below the ref input.
+ */
+function showRefStatus(message, type) {
+  if (!settingsRefStatus) return;
+  settingsRefStatus.textContent = message;
+  settingsRefStatus.className = `settings-ref-status settings-ref-status-${type}`;
+  settingsRefStatus.classList.remove('hidden');
+}
+
+/**
+ * Fetch current source info from the backend and populate suggestions.
+ */
+async function fetchSourceInfo() {
+  try {
+    const base = window.__WAYMARK_BASE || '';
+    const res = await fetch(`${base}/api/source`);
+    if (!res.ok) return;
+    const info = await res.json();
+
+    settingsCurrentRef.textContent = info.ref;
+
+    // Add cached refs as quick-switch options
+    if (info.cachedRefs && info.cachedRefs.length > 0) {
+      // Clear existing tags (except the main one)
+      const existing = new Set();
+      settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
+        existing.add(btn.dataset.ref);
+      });
+
+      const currentSaved = userData.getGithubRef();
+      for (const cachedRef of info.cachedRefs) {
+        if (existing.has(cachedRef)) continue;
+        const tag = el('button', {
+          className: `settings-ref-tag${cachedRef === currentSaved ? ' active' : ''}`,
+          dataset: { ref: cachedRef },
+          type: 'button',
+        }, [cachedRef]);
+        settingsRefSuggestions.appendChild(tag);
+      }
+    }
+  } catch { /* best-effort */ }
 }
 
 async function loadFolderBrowser() {
@@ -2174,6 +2320,24 @@ function initSettingsModal() {
     settingsFolderBrowser.classList.add('hidden');
     showToast('Import folder reset to default', 'success');
   });
+
+  // Version picker — apply button
+  if (settingsApplyRef) {
+    settingsApplyRef.addEventListener('click', () => applyGithubRef());
+    settingsGithubRef.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') applyGithubRef();
+    });
+  }
+
+  // Version picker — quick-switch tag buttons
+  if (settingsRefSuggestions) {
+    settingsRefSuggestions.addEventListener('click', (e) => {
+      const btn = e.target.closest('.settings-ref-tag');
+      if (!btn) return;
+      settingsGithubRef.value = btn.dataset.ref;
+      applyGithubRef();
+    });
+  }
 }
 
 /* ---------- Known sheets for search context ---------- */

@@ -27,6 +27,9 @@ android/local.properties
 # Build artifacts
 server/build-info.json
 
+# GitHub source cache
+server/.github-cache/
+
 # IDE
 .vscode/
 .idea/

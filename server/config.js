@@ -12,6 +12,14 @@ const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   WAYMARK_LOCAL: process.env.WAYMARK_LOCAL === 'true',
 
+  // GitHub source — frontend files are served from GitHub by default,
+  // falling back to local public/ if a fetch fails.  The ref starts at
+  // 'main' and is overridden at runtime when the user has a pinned ref.
+  GITHUB_OWNER: 'tekjanson',
+  GITHUB_REPO:  'Waymark',
+  GITHUB_REF:   'main',
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',  // optional PAT for higher rate limits
+
   SCOPES: [
     'openid',
     'email',
