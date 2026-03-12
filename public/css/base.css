@@ -1226,14 +1226,14 @@ ul { list-style: none; }
 }
 .settings-ref-input:focus {
   outline: none; border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .settings-ref-status {
   padding: 6px 0; font-size: 0.82rem; transition: color var(--transition);
 }
-.settings-ref-status--info { color: var(--color-text-muted); }
-.settings-ref-status--success { color: #16a34a; }
-.settings-ref-status--error { color: #dc2626; }
+.settings-ref-status-info { color: var(--color-text-muted); }
+.settings-ref-status-success { color: var(--color-success); }
+.settings-ref-status-error { color: var(--color-error); }
 .settings-ref-suggestions {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
@@ -1250,7 +1250,7 @@ ul { list-style: none; }
 }
 .settings-current-ref {
   font-family: monospace; font-size: 0.82rem; font-weight: 600;
-  color: var(--color-primary); background: rgba(67, 56, 202, 0.08);
+  color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   padding: 3px 8px; border-radius: var(--radius-sm);
 }
 .settings-current-ref-row {

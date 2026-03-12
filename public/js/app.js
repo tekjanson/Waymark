@@ -2124,7 +2124,7 @@ async function applyGithubRef() {
 function showRefStatus(message, type) {
   if (!settingsRefStatus) return;
   settingsRefStatus.textContent = message;
-  settingsRefStatus.className = `settings-ref-status settings-ref-status--${type}`;
+  settingsRefStatus.className = `settings-ref-status settings-ref-status-${type}`;
   settingsRefStatus.classList.remove('hidden');
 }
 

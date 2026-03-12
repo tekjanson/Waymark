@@ -250,7 +250,14 @@ router.post('/api/fetch-url', async (req, res) => {
 /* ---------- GitHub source: admin API ---------- */
 
 if (githubSource) {
-  // GET /api/source — current ref + cached refs
+  // Auth guard — require a valid refresh token cookie for write operations
+  function requireAuth(req, res, next) {
+    const token = req.signedCookies?.waymark_refresh;
+    if (!token) return res.status(401).json({ error: 'Authentication required' });
+    next();
+  }
+
+  // GET /api/source — current ref + cached refs (read-only, no auth needed)
   router.get('/api/source', (_req, res) => {
     res.json({
       mode: 'github',
@@ -261,8 +268,8 @@ if (githubSource) {
     });
   });
 
-  // POST /api/source/ref — switch to a different ref
-  router.post('/api/source/ref', (req, res) => {
+  // POST /api/source/ref — switch to a different ref (auth required)
+  router.post('/api/source/ref', requireAuth, (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
@@ -273,8 +280,8 @@ if (githubSource) {
     res.json({ ref: githubSource.getRef() });
   });
 
-  // POST /api/source/purge — clear cache for current ref
-  router.post('/api/source/purge', (_req, res) => {
+  // POST /api/source/purge — clear cache for current ref (auth required)
+  router.post('/api/source/purge', requireAuth, (_req, res) => {
     githubSource.purgeCache();
     res.json({ purged: true, ref: githubSource.getRef() });
   });
