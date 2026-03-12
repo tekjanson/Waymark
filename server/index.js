@@ -135,11 +135,16 @@ function serveIndex(_req, res) {
 
 /**
  * Build a self-contained <script> that:
- * 1. Immediately syncs localStorage to match the server's ref (runs before
- *    any <script type="module">, preventing stale boot-time sync in old branches)
- * 2. When the settings modal opens, hides any native #settings-version-section
- *    and injects its own version-switcher section
- * 3. On apply: POSTs to /api/source/ref, updates localStorage, reloads
+ * 1. Immediately syncs localStorage to match the server's ref (prevents
+ *    stale boot-time sync in old branches)
+ * 2. When the settings modal opens, injects a version section with:
+ *    - Input + Switch button (temporary preview)
+ *    - Pin button (persists via Google Drive + cookie cache)
+ *    - Quick-switch tag buttons for cached refs
+ *    - Current/pinned ref display
+ * 3. On switch: POSTs to /api/source/ref, sets sessionStorage flag, reloads
+ * 4. On pin:    POSTs to /api/source/pin (cookie cache), saves to Drive
+ *              via window.__waymarkSavePinnedRef(), reloads
  */
 function buildSettingsRefInjector(currentRef) {
   return `
@@ -148,13 +153,9 @@ function buildSettingsRefInjector(currentRef) {
   var BASE = window.__WAYMARK_BASE || '';
   var CURRENT_REF = '${currentRef}';
 
-  // ------- CRITICAL: sync localStorage IMMEDIATELY -------
-  // This runs before app.js (which is type=module, hence deferred).
-  // Old branches check localStorage-backed savedRef vs serverRef on boot.
-  // By writing the current ref NOW, savedRef === serverRef and no switch fires.
+  // Sync localStorage immediately (before type=module scripts run)
   try { localStorage.setItem('waymark_github_ref', JSON.stringify(CURRENT_REF)); } catch(e) {}
 
-  // ------- Inject version section when settings modal opens -------
   var injected = false;
   var obs = new MutationObserver(function() {
     var modal = document.getElementById('settings-modal');
@@ -167,60 +168,68 @@ function buildSettingsRefInjector(currentRef) {
   function inject(modal) {
     injected = true;
 
-    // Hide any native version section to prevent doubles
+    // Hide native version section
     var native = document.getElementById('settings-version-section');
     if (native) native.style.display = 'none';
-
-    // Don't double-inject if somehow called twice
-    if (document.getElementById('wm-inj-version')) return;
+    if (document.getElementById('wm-ver')) return;
 
     var footer = modal.querySelector('.modal-footer');
     if (!footer) return;
 
-    var section = document.createElement('div');
-    section.id = 'wm-inj-version';
-    section.className = 'settings-section';
-    section.innerHTML =
+    var s = document.createElement('div');
+    s.id = 'wm-ver';
+    s.className = 'settings-section';
+    s.innerHTML =
       '<h4 class="settings-section-title">App Version</h4>' +
-      '<p style="font-size:0.8rem;color:var(--color-text-muted,#94a3b8);margin:0 0 8px;">Switch branch, tag, or commit.</p>' +
       '<div class="settings-row">' +
         '<span class="settings-label">Branch / Ref</span>' +
-        '<div style="display:flex;gap:6px;align-items:center;">' +
-          '<input id="wm-inj-ref" type="text" value="' + CURRENT_REF + '" ' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+          '<input id="wm-ref" type="text" value="' + CURRENT_REF + '" ' +
             'placeholder="main" autocomplete="off" spellcheck="false" ' +
             'style="padding:6px 10px;border-radius:6px;border:1px solid var(--color-border,#e2e8f0);' +
             'background:var(--color-surface,#fff);color:var(--color-text,#1e293b);font-size:13px;' +
-            'font-family:ui-monospace,monospace;width:140px;outline:none;">' +
-          '<button id="wm-inj-apply" class="btn btn-primary btn-sm">Apply</button>' +
+            'font-family:ui-monospace,monospace;width:130px;outline:none;">' +
+          '<button id="wm-switch" class="btn btn-secondary btn-sm" title="Preview this version (reverts on login/logout)">Switch</button>' +
+          '<button id="wm-pin" class="btn btn-primary btn-sm" title="Pin this version as your default">\\u{1F4CC} Pin</button>' +
         '</div>' +
       '</div>' +
-      '<div id="wm-inj-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>' +
-      '<div id="wm-inj-status" style="font-size:0.8rem;min-height:18px;margin-top:4px;"></div>' +
+      '<div id="wm-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>' +
+      '<div id="wm-status" style="font-size:0.8rem;min-height:18px;margin-top:4px;"></div>' +
       '<div class="settings-row" style="margin-top:4px;">' +
-        '<span class="settings-label">Currently serving</span>' +
-        '<code id="wm-inj-cur" style="font-size:0.85rem;color:var(--color-primary,#2563eb);">' +
-          CURRENT_REF + '</code>' +
-      '</div>';
+        '<span class="settings-label">Serving</span>' +
+        '<code id="wm-cur" style="font-size:0.85rem;color:var(--color-primary,#2563eb);">' + CURRENT_REF + '</code>' +
+      '</div>' +
+      '<div class="settings-row" style="margin-top:2px;">' +
+        '<span class="settings-label">Pinned</span>' +
+        '<code id="wm-pinned" style="font-size:0.85rem;color:var(--color-success,#16a34a);">loading\\u2026</code>' +
+        '<button id="wm-unpin" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px;margin-left:6px;display:none;" title="Unpin (revert to main)">Unpin</button>' +
+      '</div>' +
+      '<p style="font-size:0.75rem;color:var(--color-text-muted,#94a3b8);margin:8px 0 0;">' +
+        '<b>Switch</b> = temporary preview (reverts on sign-out). ' +
+        '<b>Pin</b> = your default version (saved to Google Drive, persists across sessions and devices).</p>';
 
-    footer.parentNode.insertBefore(section, footer);
+    footer.parentNode.insertBefore(s, footer);
     wireUp();
-    fetchTags();
+    fetchInfo();
   }
 
   function wireUp() {
-    var input  = document.getElementById('wm-inj-ref');
-    var apply  = document.getElementById('wm-inj-apply');
-    var status = document.getElementById('wm-inj-status');
-    var cur    = document.getElementById('wm-inj-cur');
-    if (!input || !apply) return;
+    var input   = document.getElementById('wm-ref');
+    var switchB = document.getElementById('wm-switch');
+    var pinB    = document.getElementById('wm-pin');
+    var unpinB  = document.getElementById('wm-unpin');
+    var status  = document.getElementById('wm-status');
+    var cur     = document.getElementById('wm-cur');
+    var pinned  = document.getElementById('wm-pinned');
+    if (!input || !switchB || !pinB) return;
 
     function msg(txt, color) { status.style.color = color; status.textContent = txt; }
 
-    function doApply() {
+    function doSwitch() {
       var ref = (input.value || '').trim();
       if (!ref) { msg('Enter a branch, tag, or SHA', 'var(--color-error,#dc2626)'); return; }
       msg('Switching\\u2026', 'var(--color-primary,#2563eb)');
-      apply.disabled = true;
+      switchB.disabled = pinB.disabled = true;
       fetch(BASE + '/api/source/ref', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -231,25 +240,72 @@ function buildSettingsRefInjector(currentRef) {
       }).then(function(d) {
         cur.textContent = d.ref;
         try { localStorage.setItem('waymark_github_ref', JSON.stringify(d.ref)); } catch(e) {}
-        msg('Switched to ' + d.ref + ' \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
+        // Mark session as synced so boot-time sync doesn't revert this temporary switch
+        try { sessionStorage.setItem('waymark_ref_synced', '1'); } catch(e) {}
+        msg('Switched to ' + d.ref + ' (preview) \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
         setTimeout(function() { window.location.reload(); }, 600);
       }).catch(function(e) {
         msg('Error: ' + e.message, 'var(--color-error,#dc2626)');
-      }).finally(function() { apply.disabled = false; });
+      }).finally(function() { switchB.disabled = pinB.disabled = false; });
     }
 
-    apply.onclick = doApply;
-    input.onkeydown = function(e) { if (e.key === 'Enter') doApply(); };
+    function doPin() {
+      var ref = (input.value || '').trim();
+      if (!ref) { msg('Enter a branch, tag, or SHA', 'var(--color-error,#dc2626)'); return; }
+      msg('Pinning\\u2026', 'var(--color-primary,#2563eb)');
+      switchB.disabled = pinB.disabled = true;
+      fetch(BASE + '/api/source/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: ref })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
+        return r.json();
+      }).then(function(d) {
+        cur.textContent = d.ref;
+        pinned.textContent = d.pinnedRef;
+        try { localStorage.setItem('waymark_github_ref', JSON.stringify(d.ref)); } catch(e) {}
+        // Save pinned ref to Google Drive for cross-device persistence.
+        // The cookie (set by /api/source/pin) is a server-readable cache;
+        // Drive is the source of truth.
+        var saveFn = window.__waymarkSavePinnedRef;
+        return (saveFn ? saveFn(d.pinnedRef) : Promise.resolve()).then(function() {
+          // Clear session flag — pinned ref matches Drive, boot sync is safe
+          try { sessionStorage.removeItem('waymark_ref_synced'); } catch(e) {}
+          msg('\\u{1F4CC} Pinned to ' + d.pinnedRef + ' \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
+          setTimeout(function() { window.location.reload(); }, 600);
+        });
+      }).catch(function(e) {
+        msg('Error: ' + e.message, 'var(--color-error,#dc2626)');
+      }).finally(function() { switchB.disabled = pinB.disabled = false; });
+    }
+
+    function doUnpin() {
+      input.value = 'main';
+      doPin();
+    }
+
+    switchB.onclick = doSwitch;
+    pinB.onclick = doPin;
+    unpinB.onclick = doUnpin;
+    input.onkeydown = function(e) { if (e.key === 'Enter') doSwitch(); };
   }
 
-  function fetchTags() {
-    var tags  = document.getElementById('wm-inj-tags');
-    var input = document.getElementById('wm-inj-ref');
-    var cur   = document.getElementById('wm-inj-cur');
+  function fetchInfo() {
+    var tags   = document.getElementById('wm-tags');
+    var input  = document.getElementById('wm-ref');
+    var cur    = document.getElementById('wm-cur');
+    var pinned = document.getElementById('wm-pinned');
+    var unpinB = document.getElementById('wm-unpin');
     if (!tags) return;
 
     fetch(BASE + '/api/source').then(function(r) { return r.json(); }).then(function(d) {
       if (cur) cur.textContent = d.ref;
+      if (pinned) pinned.textContent = d.pinnedRef || 'main';
+      // Show unpin button if pinned to something other than main
+      if (unpinB && d.pinnedRef && d.pinnedRef !== 'main') unpinB.style.display = '';
+      else if (unpinB) unpinB.style.display = 'none';
+
       tags.innerHTML = '';
       var refs = d.cachedRefs || ['main'];
       if (refs.indexOf('main') === -1) refs.unshift('main');
@@ -258,9 +314,14 @@ function buildSettingsRefInjector(currentRef) {
         var btn = document.createElement('button');
         btn.textContent = r;
         btn.className = 'btn btn-secondary btn-sm';
+        var isActive = r === d.ref;
+        var isPinned = r === d.pinnedRef;
         btn.style.cssText = 'font-size:12px;padding:3px 10px;border-radius:12px;' +
-          (r === d.ref ? 'border-color:var(--color-primary,#2563eb);color:var(--color-primary,#2563eb);font-weight:600;' : '');
-        btn.onclick = function() { input.value = r; document.getElementById('wm-inj-apply').click(); };
+          (isActive ? 'border-color:var(--color-primary,#2563eb);color:var(--color-primary,#2563eb);font-weight:600;' : '') +
+          (isPinned ? 'box-shadow:0 0 0 2px var(--color-success,#16a34a);' : '');
+        btn.title = (isActive ? 'Currently serving' : 'Click to switch') +
+          (isPinned ? ' (pinned)' : '');
+        btn.onclick = function() { input.value = r; document.getElementById('wm-switch').click(); };
         tags.appendChild(btn);
       });
     }).catch(function() {});
@@ -391,18 +452,34 @@ router.post('/api/fetch-url', async (req, res) => {
     next();
   }
 
-  // GET /api/source — current ref + cached refs (read-only, no auth needed)
-  router.get('/api/source', (_req, res) => {
+  /** Read the pinned ref from a signed cookie (defaults to 'main'). */
+  function getPinnedRef(req) {
+    return req.signedCookies?.waymark_pinned_ref || 'main';
+  }
+
+  /** Cookie options for the pinned ref (30 days, path root). */
+  const PIN_COOKIE_OPTS = {
+    httpOnly: false,           // frontend script reads it for display
+    signed: true,
+    secure: config.NODE_ENV === 'production',
+    sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: (config.BASE_PATH || '') + '/',
+    maxAge: 365 * 24 * 60 * 60 * 1000,  // 1 year
+  };
+
+  // GET /api/source — current ref + pinned ref + cached refs
+  router.get('/api/source', (req, res) => {
     res.json({
       mode: 'github',
       owner: config.GITHUB_OWNER,
       repo: config.GITHUB_REPO,
       ref: githubSource.getRef(),
+      pinnedRef: getPinnedRef(req),
       cachedRefs: githubSource.listCachedRefs(),
     });
   });
 
-  // POST /api/source/ref — switch to a different ref (no auth — public repo)
+  // POST /api/source/ref — switch to a different ref (temporary preview)
   router.post('/api/source/ref', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
@@ -410,7 +487,23 @@ router.post('/api/fetch-url', async (req, res) => {
     }
     try {
       await githubSource.setRef(ref.trim());
-      res.json({ ref: githubSource.getRef() });
+      res.json({ ref: githubSource.getRef(), pinnedRef: getPinnedRef(req) });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // POST /api/source/pin — pin a ref (switch + persist in cookie)
+  router.post('/api/source/pin', async (req, res) => {
+    const { ref } = req.body || {};
+    if (!ref || typeof ref !== 'string') {
+      return res.status(400).json({ error: 'Missing "ref"' });
+    }
+    const trimmed = ref.trim();
+    try {
+      await githubSource.setRef(trimmed);
+      res.cookie('waymark_pinned_ref', trimmed, PIN_COOKIE_OPTS);
+      res.json({ ref: githubSource.getRef(), pinnedRef: trimmed, pinned: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
@@ -424,6 +517,10 @@ router.post('/api/fetch-url', async (req, res) => {
 }
 
 /* ---------- Auth routes ---------- */
+
+// Expose githubSource on the Express app so auth.js can access it on
+// login/logout to restore/revert the user's pinned ref.
+app.set('githubSource', githubSource);
 
 setupAuth(router);
 

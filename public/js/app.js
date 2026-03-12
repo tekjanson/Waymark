@@ -291,6 +291,37 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
+  // Expose Drive-save function so the server-injected version picker can
+  // persist the pinned ref to Google Drive (cross-device persistence).
+  window.__waymarkSavePinnedRef = (ref) => userData.setGithubRef(ref);
+
+  // Boot-time sync: if the user's Drive-stored pinned ref differs from
+  // what the server is currently serving, switch the server to match.
+  // Uses sessionStorage to run only once per session (prevents reverting
+  // temporary switches on normal page refreshes).
+  const serverRef = window.__WAYMARK_GITHUB_REF;
+  if (serverRef && !sessionStorage.getItem('waymark_ref_synced')) {
+    sessionStorage.setItem('waymark_ref_synced', '1');
+    const pinnedRef = userData.getGithubRef();
+    if (pinnedRef && pinnedRef !== serverRef) {
+      try {
+        const base = window.__WAYMARK_BASE || '';
+        const syncRes = await fetch(`${base}/api/source/pin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: pinnedRef }),
+        });
+        if (syncRes.ok) {
+          console.log(`[version] Restored pinned ref from Drive: ${pinnedRef}`);
+          window.location.reload();
+          return; // stop further init — page is reloading
+        }
+      } catch (err) {
+        console.warn('[version] Boot sync failed, continuing with current ref:', err);
+      }
+    }
+  }
+
   // Load explorer & collect known sheets before routing
   await explorer.load();
   await collectKnownSheets();
