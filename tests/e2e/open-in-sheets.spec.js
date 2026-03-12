@@ -15,7 +15,6 @@ test('Edit in Sheets button is visible when viewing a sheet', async ({ page }) =
   await waitForChecklistRows(page);
 
   await expect(page.locator('#open-in-sheets-btn')).toBeVisible();
-  await expect(page.locator('#open-in-sheets-btn')).toContainText('Edit in Sheets');
 });
 
 test('Edit in Sheets button is not visible on home view', async ({ page }) => {

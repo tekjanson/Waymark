@@ -9,7 +9,7 @@
  * when needed to exercise the tutorial flow.
  */
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet, openOverflowMenu } = require('../helpers/test-utils');
 
 /* ────────────────── Auto-start behaviour ────────────────── */
 
@@ -227,7 +227,8 @@ test('template help button opens template tutorial', async ({ page }) => {
   await page.locator('#tutorial-skip').click();
   await expect(page.locator('#tutorial-overlay')).toBeHidden();
 
-  // Click the help button to reopen
+  // Click the help button to reopen (in overflow menu)
+  await openOverflowMenu(page);
   await page.locator('#template-help-btn').click();
   await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 2000 });
 });
@@ -249,15 +250,18 @@ test('template tutorial does not auto-start on second visit', async ({ page }) =
   await page.waitForSelector('.kanban-board', { timeout: 3000 });
 
   // Tutorial should NOT auto-start this time
+  // Verify template help button is available in overflow menu
+  await openOverflowMenu(page);
   await page.waitForSelector('#template-help-btn:not(.hidden)', { timeout: 3000 });
   await expect(page.locator('#tutorial-overlay')).toBeHidden();
 });
 
-test('template help button is visible on sheet view', async ({ page }) => {
+test('template help button is visible in overflow menu', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-017'); // kanban
   await page.waitForSelector('.kanban-board', { timeout: 3000 });
 
+  await openOverflowMenu(page);
   await expect(page.locator('#template-help-btn')).toBeVisible();
 });
 

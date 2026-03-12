@@ -20,6 +20,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn;
+let moreActionsBtn, overflowMenu;
 let currentTemplateKey = null;
 
 /* ---------- Public ---------- */
@@ -38,6 +39,21 @@ export function init() {
   shareBtn          = document.getElementById('share-btn');
   lockBtn           = document.getElementById('lock-btn');
   templateHelpBtn   = document.getElementById('template-help-btn');
+  moreActionsBtn    = document.getElementById('more-actions-btn');
+  overflowMenu      = document.querySelector('.header-overflow-menu');
+
+  /* Overflow menu: toggle on click, close on outside click */
+  if (moreActionsBtn && overflowMenu) {
+    moreActionsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      overflowMenu.classList.toggle('hidden');
+    });
+    overflowMenu.addEventListener('click', (e) => {
+      // Close menu when a button/label item is clicked (but not the toggle checkbox)
+      if (e.target.closest('button.overflow-item')) overflowMenu.classList.add('hidden');
+    });
+    document.addEventListener('click', () => overflowMenu.classList.add('hidden'));
+  }
 
   if (templateHelpBtn) {
     templateHelpBtn.addEventListener('click', () => {
@@ -138,7 +154,10 @@ export function init() {
 function applyLockState(locked) {
   setEditLocked(locked);
   if (lockBtn) {
-    lockBtn.textContent = locked ? '\u{1F512}' : '\u{1F513}';
+    const emojiSpan = lockBtn.querySelector('.overflow-item-emoji');
+    const textSpan = lockBtn.querySelector('.overflow-item-emoji + span');
+    if (emojiSpan) emojiSpan.textContent = locked ? '\u{1F512}' : '\u{1F513}';
+    if (textSpan) textSpan.textContent = locked ? 'Unlock editing' : 'Lock editing';
     lockBtn.classList.toggle('locked', locked);
     lockBtn.title = locked ? 'Unlock editing' : 'Lock editing';
     lockBtn.setAttribute('aria-label', locked ? 'Unlock editing' : 'Lock editing');

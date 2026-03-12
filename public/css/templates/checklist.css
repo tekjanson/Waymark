@@ -1,12 +1,10 @@
 /* ---------- Checklist Template ---------- */
 .checklist-header {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 20px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; flex-wrap: nowrap;
+  min-height: 40px;
 }
-.checklist-header h2 { flex: 1; margin-bottom: 0; }
-.checklist-actions {
-  display: flex; align-items: center; gap: 10px;
-}
+.checklist-header h2 { flex: 1; margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .checklist-row {
   display: flex; align-items: center; gap: 12px;
@@ -70,6 +68,6 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 480px) {
-  .checklist-actions { flex-wrap: wrap; }
+  .checklist-actions { flex-wrap: wrap; gap: 6px; }
   .checklist-item-notes { display: none; }
 }

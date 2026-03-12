@@ -597,6 +597,60 @@ ul { list-style: none; }
   border-color: var(--color-primary);
 }
 
+/* ---------- Header Icon Buttons ---------- */
+.btn-header-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  border: none; background: transparent;
+  color: var(--color-text-secondary); cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  flex-shrink: 0; padding: 0;
+}
+.btn-header-icon:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* ---------- Header Updated Timestamp ---------- */
+.header-updated {
+  font-size: 0.75rem; white-space: nowrap; flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ---------- Overflow Menu ---------- */
+.header-overflow-wrapper {
+  position: relative; flex-shrink: 0;
+}
+.header-overflow-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 190px; padding: 6px 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  z-index: 100;
+}
+.overflow-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 14px;
+  border: none; background: none;
+  font-size: 0.85rem; color: var(--color-text);
+  cursor: pointer; text-align: left;
+  transition: background var(--transition);
+}
+.overflow-item:hover { background: var(--color-bg); }
+.overflow-item svg { flex-shrink: 0; stroke: var(--color-text-secondary); }
+.overflow-item .overflow-item-emoji { flex-shrink: 0; font-size: 0.9rem; width: 15px; text-align: center; }
+.overflow-item-toggle {
+  font-size: 0.85rem;
+}
+.overflow-item-toggle input[type="checkbox"] { accent-color: var(--color-primary); }
+.overflow-item-lock.locked { color: var(--color-error); }
+.overflow-divider {
+  height: 1px; margin: 4px 10px;
+  background: var(--color-border);
+}
+
 /* ---------- Generate Progress ---------- */
 .generate-progress {
   margin-top: 12px; padding: 12px; background: var(--color-bg);
@@ -1502,10 +1556,8 @@ ul { list-style: none; }
   #content { padding: 16px; }
   .examples-grid { grid-template-columns: 1fr; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
-  .btn-sheets span { display: none; }
-  .btn-csv span { display: none; }
-  .btn-duplicate span { display: none; }
-  .btn-share span { display: none; }
+  .header-updated { display: none; }
+  .template-badge { display: none; }
 
   /* --- Home: mobile-first warmth --- */
   .home-greeting {
@@ -1643,6 +1695,14 @@ ul { list-style: none; }
 }
 [data-theme="dark"] .btn-share:hover { background: rgba(94, 234, 212, 0.22); }
 [data-theme="dark"] .btn-share svg { stroke: #5eead4; }
+
+/* Overflow menu */
+[data-theme="dark"] .header-overflow-menu {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+[data-theme="dark"] .overflow-item:hover { background: var(--color-bg); }
 
 /* Open in Drive button */
 [data-theme="dark"] .btn-drive {
