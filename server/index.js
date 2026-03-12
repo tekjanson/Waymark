@@ -118,8 +118,182 @@ function serveIndex(_req, res) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
 
+  // In production mode, inject a standalone version-switcher widget.
+  // This widget is fully self-contained (inline CSS + JS) so it works
+  // even when the active ref is an old branch that lacks the settings
+  // version picker.  Without this, switching to an old ref is a one-way
+  // trip — you'd have no UI to switch back.
+  if (!config.WAYMARK_LOCAL) {
+    const currentRef = githubSource.getRef();
+    html = html.replace('</body>', `${buildRefWidget(currentRef)}\n</body>`);
+  }
+
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.type('html').send(html);
+}
+
+/* ---------- Server-injected ref-switcher widget ---------- */
+
+/**
+ * Build a self-contained floating widget that lets the user switch refs
+ * regardless of what frontend code is running.  All CSS is inline so it
+ * has zero dependency on the frontend's stylesheets.
+ */
+function buildRefWidget(currentRef) {
+  return `
+<!-- Server-injected ref switcher — works on ANY frontend version -->
+<div id="wm-ref-widget" style="
+  position:fixed; bottom:16px; right:16px; z-index:999999;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:13px;
+">
+  <!-- Toggle button -->
+  <button id="wm-ref-toggle" title="Switch frontend version" style="
+    width:40px; height:40px; border-radius:50%; border:none; cursor:pointer;
+    background:#2563eb; color:#fff; font-size:18px; line-height:40px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.25); display:flex; align-items:center;
+    justify-content:center; transition:transform 0.2s;
+  " aria-label="Switch frontend version">⚙</button>
+
+  <!-- Panel (hidden by default) -->
+  <div id="wm-ref-panel" style="
+    display:none; position:absolute; bottom:52px; right:0;
+    width:300px; background:#1e293b; color:#e2e8f0; border-radius:10px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4); padding:16px;
+  ">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <span style="font-weight:600; font-size:14px;">🔀 Version Switcher</span>
+      <button id="wm-ref-close" style="
+        background:none; border:none; color:#94a3b8; cursor:pointer;
+        font-size:18px; line-height:1; padding:0;
+      ">✕</button>
+    </div>
+
+    <div style="margin-bottom:10px; font-size:12px; color:#94a3b8;">
+      Serving from: <strong id="wm-ref-current" style="color:#60a5fa;">${currentRef}</strong>
+    </div>
+
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <input id="wm-ref-input" type="text" value="${currentRef}" placeholder="branch, tag, or SHA" style="
+        flex:1; padding:7px 10px; border-radius:6px; border:1px solid #334155;
+        background:#0f172a; color:#e2e8f0; font-size:13px; font-family:monospace;
+        outline:none;
+      ">
+      <button id="wm-ref-apply" style="
+        padding:7px 14px; border-radius:6px; border:none; cursor:pointer;
+        background:#2563eb; color:#fff; font-size:13px; font-weight:500;
+        white-space:nowrap;
+      ">Apply</button>
+    </div>
+
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+      <button class="wm-ref-tag" data-ref="main" style="
+        padding:4px 10px; border-radius:12px; border:1px solid #334155;
+        background:transparent; color:#94a3b8; cursor:pointer; font-size:12px;
+      ">main</button>
+    </div>
+
+    <div id="wm-ref-status" style="
+      font-size:12px; min-height:18px; margin-top:4px;
+    "></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var toggle = document.getElementById('wm-ref-toggle');
+  var panel = document.getElementById('wm-ref-panel');
+  var close = document.getElementById('wm-ref-close');
+  var input = document.getElementById('wm-ref-input');
+  var apply = document.getElementById('wm-ref-apply');
+  var status = document.getElementById('wm-ref-status');
+  var current = document.getElementById('wm-ref-current');
+  var base = window.__WAYMARK_BASE || '';
+
+  toggle.onclick = function() {
+    var showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    if (!showing) fetchInfo();
+  };
+  close.onclick = function() { panel.style.display = 'none'; };
+
+  function showStatus(msg, type) {
+    var colors = { info: '#60a5fa', success: '#4ade80', error: '#f87171' };
+    status.style.color = colors[type] || '#94a3b8';
+    status.textContent = msg;
+  }
+
+  function fetchInfo() {
+    fetch(base + '/api/source').then(function(r) { return r.json(); }).then(function(d) {
+      current.textContent = d.ref;
+      // Add cached ref tags
+      var container = panel.querySelector('.wm-ref-tag').parentNode;
+      container.innerHTML = '';
+      (d.cachedRefs || ['main']).forEach(function(ref) {
+        if (ref.startsWith('.')) return;
+        var btn = document.createElement('button');
+        btn.className = 'wm-ref-tag';
+        btn.dataset.ref = ref;
+        btn.textContent = ref;
+        btn.style.cssText = 'padding:4px 10px;border-radius:12px;border:1px solid ' +
+          (ref === d.ref ? '#2563eb' : '#334155') + ';background:' +
+          (ref === d.ref ? '#1e3a5f' : 'transparent') + ';color:' +
+          (ref === d.ref ? '#60a5fa' : '#94a3b8') + ';cursor:pointer;font-size:12px;';
+        btn.onclick = function() { input.value = ref; doApply(); };
+        container.appendChild(btn);
+      });
+      // Always ensure "main" is present
+      if (!(d.cachedRefs || []).includes('main')) {
+        var mainBtn = document.createElement('button');
+        mainBtn.className = 'wm-ref-tag';
+        mainBtn.dataset.ref = 'main';
+        mainBtn.textContent = 'main';
+        mainBtn.style.cssText = 'padding:4px 10px;border-radius:12px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer;font-size:12px;';
+        mainBtn.onclick = function() { input.value = 'main'; doApply(); };
+        container.insertBefore(mainBtn, container.firstChild);
+      }
+    }).catch(function() {});
+  }
+
+  function doApply() {
+    var ref = (input.value || '').trim();
+    if (!ref) { showStatus('Enter a branch, tag, or SHA', 'error'); return; }
+    showStatus('Switching…', 'info');
+    apply.disabled = true;
+    fetch(base + '/api/source/ref', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: ref })
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
+      return r.json();
+    }).then(function(d) {
+      current.textContent = d.ref;
+      showStatus('Switched to ' + d.ref + ' — reloading…', 'success');
+      setTimeout(function() { window.location.reload(); }, 800);
+    }).catch(function(e) {
+      showStatus('Failed: ' + e.message, 'error');
+    }).finally(function() {
+      apply.disabled = false;
+    });
+  }
+
+  apply.onclick = doApply;
+  input.onkeydown = function(e) { if (e.key === 'Enter') doApply(); };
+
+  // If the frontend app has its own settings version picker, hide this widget
+  // to avoid redundancy (the app's picker is prettier and Drive-integrated).
+  var observer = new MutationObserver(function() {
+    if (document.getElementById('settings-version-section')) {
+      document.getElementById('wm-ref-widget').style.display = 'none';
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  // Disconnect after 10s to avoid memory leaks
+  setTimeout(function() { observer.disconnect(); }, 10000);
+})();
+</script>`;
 }
 
 /* ---------- Local-only mode ---------- */
