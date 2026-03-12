@@ -52,27 +52,25 @@ test('recipe renders instructions as numbered steps', async ({ page }) => {
 test('recipe scale bar is visible with default 1× active', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
-  const scaleBar = page.locator('.recipe-scale-bar');
-  await expect(scaleBar).toBeVisible();
+  const toolbar = page.locator('.recipe-toolbar');
+  await expect(toolbar).toBeVisible();
 
-  // 1× button should be active by default
-  const activeBtn = page.locator('.recipe-scale-btn.active');
-  await expect(activeBtn).toContainText('1×');
+  // Scale select should default to '1'
+  await expect(page.locator('.recipe-scale-select')).toHaveValue('1');
 });
 
 test('recipe scaling doubles quantities when 2× is clicked', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
-  // Click 2× button
-  const btn2x = page.locator('.recipe-scale-btn[data-scale="2"]');
-  await btn2x.click();
+  // Select 2× from dropdown
+  await page.locator('.recipe-scale-select').selectOption('2');
 
-  // 2× should now be active
-  await expect(btn2x).toHaveClass(/active/);
+  // 2× should now be selected
+  await expect(page.locator('.recipe-scale-select')).toHaveValue('2');
 
   // Spaghetti (index 3) quantity "400" → "800", unit stays "g"
   const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
@@ -87,11 +85,10 @@ test('recipe scaling doubles quantities when 2× is clicked', async ({ page }) =
 test('recipe scaling halves quantities when ½× is clicked', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
-  // Click ½× button
-  const btnHalf = page.locator('.recipe-scale-btn[data-scale="0.5"]');
-  await btnHalf.click();
+  // Select ½× from dropdown
+  await page.locator('.recipe-scale-select').selectOption('0.5');
 
   // Spaghetti (index 3) quantity "400" → "200"
   const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
@@ -105,15 +102,15 @@ test('recipe scaling halves quantities when ½× is clicked', async ({ page }) =
 test('recipe scaling resets to original when 1× is clicked back', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
   // Scale to 3×
-  await page.locator('.recipe-scale-btn[data-scale="3"]').click();
+  await page.locator('.recipe-scale-select').selectOption('3');
   const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('1200');
 
   // Reset to 1×
-  await page.locator('.recipe-scale-btn[data-scale="1"]').click();
+  await page.locator('.recipe-scale-select').selectOption('1');
   await expect(firstQty).toContainText('400');
 });
 
@@ -138,7 +135,10 @@ test('recipe inline edit commits on Enter', async ({ page }) => {
 test('recipe custom scale input scales quantities', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
+
+  // Select "Custom…" option to reveal the custom input
+  await page.locator('.recipe-scale-select').selectOption('custom');
 
   // Type a custom scale of 4
   const customInput = page.locator('.recipe-scale-custom');
@@ -153,29 +153,30 @@ test('recipe custom scale input scales quantities', async ({ page }) => {
   const servings = page.locator('.recipe-meta-item .meta-label').first();
   await expect(servings).toContainText('16');
 
-  // Preset buttons should not be active
-  const activePresets = page.locator('.recipe-scale-btn.active');
-  await expect(activePresets).toHaveCount(0);
+  // Scale select should show 'custom'
+  await expect(page.locator('.recipe-scale-select')).toHaveValue('custom');
 });
 
 test('recipe custom scale input clears when preset is clicked', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
+
+  // Select "Custom…" option first
+  await page.locator('.recipe-scale-select').selectOption('custom');
 
   // Type a custom scale
   const customInput = page.locator('.recipe-scale-custom');
   await customInput.fill('5');
 
-  // Now click a preset button
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+  // Now select a preset option
+  await page.locator('.recipe-scale-select').selectOption('2');
 
-  // Custom input should be cleared
-  await expect(customInput).toHaveValue('');
+  // Custom input should be hidden after preset is selected
+  await expect(customInput).toBeHidden();
 
-  // 2× should be active
-  const activeBtn = page.locator('.recipe-scale-btn.active');
-  await expect(activeBtn).toContainText('2×');
+  // 2× should be selected
+  await expect(page.locator('.recipe-scale-select')).toHaveValue('2');
 });
 
 test('recipe displays source URL when present', async ({ page }) => {
@@ -224,10 +225,10 @@ test('recipe quantity is editable at 1× scale and commits on Enter', async ({ p
 test('recipe quantity is not editable when scaled to 2×', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
   // Scale to 2×
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+  await page.locator('.recipe-scale-select').selectOption('2');
 
   // Quantity should NOT have editable-cell class
   const qtyCell = page.locator('.recipe-ingredient-qty').first();
@@ -242,15 +243,15 @@ test('recipe quantity is not editable when scaled to 2×', async ({ page }) => {
 test('recipe quantity becomes editable again when returning to 1×', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
   // Scale to 3×
-  await page.locator('.recipe-scale-btn[data-scale="3"]').click();
+  await page.locator('.recipe-scale-select').selectOption('3');
   const qtyCell = page.locator('.recipe-ingredient-qty').first();
   await expect(qtyCell).not.toHaveClass(/editable-cell/);
 
   // Return to 1×
-  await page.locator('.recipe-scale-btn[data-scale="1"]').click();
+  await page.locator('.recipe-scale-select').selectOption('1');
   await expect(qtyCell).toHaveClass(/editable-cell/);
 
   // Should be editable — click and verify input appears
@@ -277,7 +278,7 @@ test('recipe renders notes section when notes exist', async ({ page }) => {
 test('recipe print button is visible', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
   const printBtn = page.locator('.recipe-print-btn');
   await expect(printBtn).toBeVisible();
@@ -307,28 +308,25 @@ test('recipe renders separate unit column for ingredients', async ({ page }) => 
 test('recipe unit conversion bar is visible with three buttons', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
-  const bar = page.locator('.recipe-convert-bar');
-  await expect(bar).toBeVisible();
+  const select = page.locator('.recipe-convert-select');
+  await expect(select).toBeVisible();
 
-  const buttons = page.locator('.recipe-convert-btn');
-  await expect(buttons).toHaveCount(3);
+  const options = page.locator('.recipe-convert-select option');
+  await expect(options).toHaveCount(3);
 
-  // "Original" should be active by default
-  const activeBtn = page.locator('.recipe-convert-btn.active');
-  await expect(activeBtn).toContainText('Original');
+  // "Original" should be selected by default
+  await expect(page.locator('.recipe-convert-select')).toHaveValue('original');
 });
 
 test('recipe converts grams to imperial (oz/lb) when Imperial is clicked', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
-  // Click "Imperial" button
-  const imperialBtn = page.locator('.recipe-convert-btn[data-conversion="imperial"]');
-  await imperialBtn.click();
-  await expect(imperialBtn).toHaveClass(/active/);
+  // Select "Imperial" from dropdown
+  await page.locator('.recipe-convert-select').selectOption('imperial');
 
   // 400 g spaghetti (index 3) → unit span now shows "oz"
   const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
@@ -342,12 +340,10 @@ test('recipe converts grams to imperial (oz/lb) when Imperial is clicked', async
 test('recipe converts tbsp/tsp to metric (ml) when Metric is clicked', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
-  // Click "Metric" button
-  const metricBtn = page.locator('.recipe-convert-btn[data-conversion="metric"]');
-  await metricBtn.click();
-  await expect(metricBtn).toHaveClass(/active/);
+  // Select "Metric" from dropdown
+  await page.locator('.recipe-convert-select').selectOption('metric');
 
   // 2 tbsp tomato paste (index 7) → unit span now shows "ml"
   const sixthUnit = page.locator('.recipe-ingredient-unit').nth(7);
@@ -367,10 +363,10 @@ test('recipe converts tbsp/tsp to metric (ml) when Metric is clicked', async ({ 
 test('recipe non-convertible units stay unchanged during conversion', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
-  // Click "Imperial"
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  // Select "Imperial"
+  await page.locator('.recipe-convert-select').selectOption('imperial');
 
   // "3 cloves" garlic (index 5) — not convertible: qty stays "3", unit stays "cloves"
   const fourthQty = page.locator('.recipe-ingredient-qty').nth(5);
@@ -386,43 +382,42 @@ test('recipe non-convertible units stay unchanged during conversion', async ({ p
 test('recipe restores original values when Original is clicked after conversion', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
   // Convert to Imperial
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('oz');
 
   // Switch back to Original
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('400');
   await expect(firstUnit).toContainText('g');
 
-  // Original button should be active
-  const activeBtn = page.locator('.recipe-convert-btn.active');
-  await expect(activeBtn).toContainText('Original');
+  // Original should be selected
+  await expect(page.locator('.recipe-convert-select')).toHaveValue('original');
 });
 
 test('recipe unit conversion combines with scaling', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
   // Scale to 2× first
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+  await page.locator('.recipe-scale-select').selectOption('2');
   const firstQty = page.locator('.recipe-ingredient-qty').nth(3);
   await expect(firstQty).toContainText('800');
   const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 
   // Now convert to Imperial — should show 2× scaled imperial value
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   // 800 g → 800 >= 453.592 → lb: 800/453.592 = 1.76 → unit span shows "lb"
   await expect(firstUnit).toContainText('lb');
 
   // Back to Original restores scaled values
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   await expect(firstQty).toContainText('800');
   await expect(firstUnit).toContainText('g');
 });
@@ -430,28 +425,28 @@ test('recipe unit conversion combines with scaling', async ({ page }) => {
 test('recipe quantity is not editable when unit conversion is active', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
   // At default (1× scale, original units), qty should be editable
   const qtyCell = page.locator('.recipe-ingredient-qty').first();
   await expect(qtyCell).toHaveClass(/editable-cell/);
 
   // Convert to Metric — qty should no longer be editable
-  await page.locator('.recipe-convert-btn[data-conversion="metric"]').click();
+  await page.locator('.recipe-convert-select').selectOption('metric');
   await expect(qtyCell).not.toHaveClass(/editable-cell/);
 
   // Back to Original — should be editable again
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   await expect(qtyCell).toHaveClass(/editable-cell/);
 });
 
 test('recipe imperial units (tbsp/tsp) stay when Imperial conversion is selected', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
-  // Click "Imperial"
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  // Select "Imperial"
+  await page.locator('.recipe-convert-select').selectOption('imperial');
 
   // "2 tbsp" tomato paste (index 7) is already imperial — qty stays "2", unit stays "tbsp"
   const sixthQty = page.locator('.recipe-ingredient-qty').nth(7);
@@ -482,10 +477,10 @@ test('recipe empty unit does not show em-dash', async ({ page }) => {
 test('recipe scaling produces vulgar fractions for common values', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-scale-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
 
   // Scale ½×: qty "3" cloves garlic → should show "1 ½" (or similar fraction)
-  await page.locator('.recipe-scale-btn[data-scale="0.5"]').click();
+  await page.locator('.recipe-scale-select').selectOption('0.5');
 
   // 1 tsp dried oregano (index 8) → 0.5 → should show "½"
   const seventhQty = page.locator('.recipe-ingredient-qty').nth(8);
@@ -499,40 +494,40 @@ test('recipe scaling produces vulgar fractions for common values', async ({ page
 test('recipe unit span updates correctly during conversion', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
   // Spaghetti (index 3): unit is "g"
   const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toContainText('g');
 
   // Convert to Imperial — unit span should update to "oz"
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   await expect(firstUnit).toContainText('oz');
 
   // Convert to Metric — should return to "g" (already metric)
-  await page.locator('.recipe-convert-btn[data-conversion="metric"]').click();
+  await page.locator('.recipe-convert-select').selectOption('metric');
   await expect(firstUnit).toContainText('g');
 
   // Back to Original
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   await expect(firstUnit).toContainText('g');
 });
 
 test('recipe unit span is not editable during conversion', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.recipe-convert-bar', { timeout: 5_000 });
+  await page.waitForSelector('.recipe-convert-select', { timeout: 5_000 });
 
   // Default: spaghetti (index 3) unit span should be editable
   const firstUnit = page.locator('.recipe-ingredient-unit').nth(3);
   await expect(firstUnit).toHaveClass(/editable-cell/);
 
   // Convert to Imperial — unit span should not be editable
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   await expect(firstUnit).not.toHaveClass(/editable-cell/);
 
   // Back to Original — editable again
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   await expect(firstUnit).toHaveClass(/editable-cell/);
 });
 
@@ -550,7 +545,7 @@ test('recipe qty styling stays consistent when scaled', async ({ page }) => {
   });
 
   // Scale to 2× — editable-cell removed, but styles must stay the same
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+  await page.locator('.recipe-scale-select').selectOption('2');
   const scaledStyles = await qtySpan.evaluate(el => {
     const s = getComputedStyle(el);
     return { fontSize: s.fontSize, fontWeight: s.fontWeight, padding: s.padding };
@@ -560,7 +555,7 @@ test('recipe qty styling stays consistent when scaled', async ({ page }) => {
   expect(scaledStyles.padding).toBe(baseStyles.padding);
 
   // Scale to ½×
-  await page.locator('.recipe-scale-btn[data-scale="0.5"]').click();
+  await page.locator('.recipe-scale-select').selectOption('0.5');
   const halfStyles = await qtySpan.evaluate(el => {
     const s = getComputedStyle(el);
     return { fontSize: s.fontSize, fontWeight: s.fontWeight, padding: s.padding };
@@ -584,7 +579,7 @@ test('recipe qty styling stays consistent during unit conversion', async ({ page
   });
 
   // Convert to Imperial — editable-cell removed, styles must stay the same
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   const imperialStyles = await qtySpan.evaluate(el => {
     const s = getComputedStyle(el);
     return { fontSize: s.fontSize, fontWeight: s.fontWeight, padding: s.padding };
@@ -594,7 +589,7 @@ test('recipe qty styling stays consistent during unit conversion', async ({ page
   expect(imperialStyles.padding).toBe(baseStyles.padding);
 
   // Convert to Metric
-  await page.locator('.recipe-convert-btn[data-conversion="metric"]').click();
+  await page.locator('.recipe-convert-select').selectOption('metric');
   const metricStyles = await qtySpan.evaluate(el => {
     const s = getComputedStyle(el);
     return { fontSize: s.fontSize, fontWeight: s.fontWeight, padding: s.padding };
@@ -625,7 +620,7 @@ test('recipe unit styling matches qty and stays consistent during conversion', a
   expect(unitStyles.fontWeight).toBe(qtyStyles.fontWeight);
 
   // Unit styling stays consistent during conversion
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   const unitConvertedStyles = await unitSpan.evaluate(el => {
     const s = getComputedStyle(el);
     return { fontSize: s.fontSize, fontWeight: s.fontWeight, padding: s.padding };
@@ -646,17 +641,17 @@ test('recipe qty bounding box height stays identical across scale changes', asyn
   const baseHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
 
   // Scale to 2× — height must not change
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
+  await page.locator('.recipe-scale-select').selectOption('2');
   const scaledHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(scaledHeight).toBe(baseHeight);
 
   // Scale to ½× — height must not change
-  await page.locator('.recipe-scale-btn[data-scale="0.5"]').click();
+  await page.locator('.recipe-scale-select').selectOption('0.5');
   const halfHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(halfHeight).toBe(baseHeight);
 
   // Back to 1× — height must not change
-  await page.locator('.recipe-scale-btn[data-scale="1"]').click();
+  await page.locator('.recipe-scale-select').selectOption('1');
   const restoredHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(restoredHeight).toBe(baseHeight);
 });
@@ -672,17 +667,17 @@ test('recipe qty bounding box height stays identical across unit conversions', a
   const baseHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
 
   // Imperial — height must not change
-  await page.locator('.recipe-convert-btn[data-conversion="imperial"]').click();
+  await page.locator('.recipe-convert-select').selectOption('imperial');
   const imperialHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(imperialHeight).toBe(baseHeight);
 
   // Metric — height must not change
-  await page.locator('.recipe-convert-btn[data-conversion="metric"]').click();
+  await page.locator('.recipe-convert-select').selectOption('metric');
   const metricHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(metricHeight).toBe(baseHeight);
 
   // Back to Original — height must not change
-  await page.locator('.recipe-convert-btn[data-conversion="original"]').click();
+  await page.locator('.recipe-convert-select').selectOption('original');
   const restoredHeight = await qtySpan.evaluate(el => el.getBoundingClientRect().height);
   expect(restoredHeight).toBe(baseHeight);
 });
@@ -762,8 +757,8 @@ test('recipe initial qty display uses formatNumber for consistency', async ({ pa
   expect(initialText).toBe('400');
 
   // Scale to 2× and back to 1× — text should be identical to initial
-  await page.locator('.recipe-scale-btn[data-scale="2"]').click();
-  await page.locator('.recipe-scale-btn[data-scale="1"]').click();
+  await page.locator('.recipe-scale-select').selectOption('2');
+  await page.locator('.recipe-scale-select').selectOption('1');
   const afterRoundTrip = await firstQty.textContent();
   expect(afterRoundTrip).toBe(initialText);
 });
@@ -827,7 +822,12 @@ test('recipe shopping list mode hides instructions and metadata', async ({ page 
   // Instructions and metadata should be hidden
   await expect(page.locator('.recipe-card-instructions')).toBeHidden();
   await expect(page.locator('.recipe-card-notes')).toBeHidden();
-  await expect(page.locator('.recipe-scale-bar')).toBeHidden();
+  await expect(page.locator('.recipe-scale-select')).toBeHidden();
+  await expect(page.locator('.recipe-print-btn')).toBeHidden();
+
+  // Shopping / Reset buttons should still be visible in toolbar
+  await expect(page.locator('.recipe-shopping-btn')).toBeVisible();
+  await expect(page.locator('.recipe-reset-btn')).toBeVisible();
 
   // Ingredients should still be visible
   await expect(page.locator('.recipe-ingredients-list')).toBeVisible();
@@ -1048,18 +1048,18 @@ test('recipe renders photo when Photo column has an image URL', async ({ page })
   expect(src).toContain('.jpg');
 });
 
-test('recipe photo appears between header and scale bar', async ({ page }) => {
+test('recipe photo appears between header and toolbar', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-027');
   await page.waitForSelector('.recipe-photo', { timeout: 5_000 });
 
-  // Photo should be a sibling after header and before scale bar
+  // Photo should be a sibling after header and before toolbar
   const card = page.locator('.recipe-card');
   const children = card.locator('> *');
   const classes = await children.evaluateAll(els => els.map(e => e.className));
   const headerIdx = classes.findIndex(c => c.includes('recipe-card-header'));
   const photoIdx = classes.findIndex(c => c.includes('recipe-photo'));
-  const scaleIdx = classes.findIndex(c => c.includes('recipe-scale-bar'));
+  const scaleIdx = classes.findIndex(c => c.includes('recipe-toolbar'));
   expect(photoIdx).toBeGreaterThan(headerIdx);
   expect(photoIdx).toBeLessThan(scaleIdx);
 });

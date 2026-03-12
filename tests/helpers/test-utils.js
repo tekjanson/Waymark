@@ -158,6 +158,12 @@ async function getExplorerFolderNames(page) {
   return page.$$eval('.folder-name', els => els.map(e => e.textContent.trim()));
 }
 
+/** Open the header overflow "⋯" menu */
+async function openOverflowMenu(page) {
+  await page.locator('#more-actions-btn').click();
+  await page.waitForSelector('.header-overflow-menu:not(.hidden)', { timeout: 3000 });
+}
+
 /* ────────── Exports ────────── */
 
 module.exports = {
@@ -171,4 +177,5 @@ module.exports = {
   getCompletedCount,
   waitForExplorer,
   getExplorerFolderNames,
+  openOverflowMenu,
 };
