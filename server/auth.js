@@ -135,6 +135,22 @@ module.exports = function setupAuth(app) {
         res.cookie('waymark_refresh', tokens.refresh_token, REFRESH_COOKIE_OPTS);
       }
 
+      // On login, restore the user's pinned version (cookie-based).
+      // The pinned ref cookie is read by index.js at boot and after auth.
+      const pinnedRef = req.signedCookies?.waymark_pinned_ref;
+      if (pinnedRef && pinnedRef !== 'main') {
+        try {
+          // Lazy-require to avoid circular deps — index.js sets this at startup
+          const githubSource = req.app.get('githubSource');
+          if (githubSource && githubSource.setRef) {
+            await githubSource.setRef(pinnedRef);
+            console.log(`[auth] Restored pinned ref on login: ${pinnedRef}`);
+          }
+        } catch (err) {
+          console.warn(`[auth] Failed to restore pinned ref "${pinnedRef}":`, err.message);
+        }
+      }
+
       // Redirect to app — frontend calls /auth/refresh to get the access token
       res.redirect(bp + '/#auth_success');
     } catch (err) {
@@ -188,8 +204,21 @@ module.exports = function setupAuth(app) {
   });
 
   /* --- POST /auth/logout --- */
-  app.post('/auth/logout', (_req, res) => {
+  app.post('/auth/logout', async (req, res) => {
     res.clearCookie('waymark_refresh', { path: bp + '/auth' });
+
+    // On logout, revert to the user's pinned ref (defaults to 'main').
+    const pinnedRef = req.signedCookies?.waymark_pinned_ref || 'main';
+    try {
+      const githubSource = req.app.get('githubSource');
+      if (githubSource && githubSource.setRef && githubSource.getRef() !== pinnedRef) {
+        await githubSource.setRef(pinnedRef);
+        console.log(`[auth] Reverted to pinned ref on logout: ${pinnedRef}`);
+      }
+    } catch (err) {
+      console.warn(`[auth] Failed to revert to pinned ref on logout:`, err.message);
+    }
+
     res.json({ success: true });
   });
 };

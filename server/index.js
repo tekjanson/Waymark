@@ -50,7 +50,7 @@ app.use((_req, res, next) => {
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
-        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com",
+        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
       ].join('; ')
@@ -61,73 +61,285 @@ app.use((_req, res, next) => {
 });
 
 /* ---------- GitHub source setup ---------- */
-// Always active — serves frontend files from GitHub, falls back to local disk.
-// The ref starts at 'main' and is switched at runtime when a user has a pinned ref.
+// In production: clone the repo and serve files from a local git checkout.
+// In WAYMARK_LOCAL mode: skip the clone, serve from local public/ only.
 
-const githubSource = createGitHubSource({
-  owner: config.GITHUB_OWNER,
-  repo: config.GITHUB_REPO,
-  ref: config.GITHUB_REF,
-  token: config.GITHUB_TOKEN || undefined,
-});
-console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
+let githubSource;
+if (config.WAYMARK_LOCAL) {
+  // Stub — tests serve from the local public/ directory
+  githubSource = {
+    middleware: (_req, _res, next) => next(),
+    setRef() {},
+    getRef() { return config.GITHUB_REF; },
+    preWarm() {},
+    purgeCache() {},
+    listCachedRefs() { return []; },
+    readFile() { return null; },
+  };
+} else {
+  githubSource = createGitHubSource({
+    owner: config.GITHUB_OWNER,
+    repo: config.GITHUB_REPO,
+    ref: config.GITHUB_REF,
+    token: config.GITHUB_TOKEN || undefined,
+  });
+  console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
+}
+
+/* ---------- Injection safety ---------- */
+
+/**
+ * Escape a value for safe embedding inside an inline <script> block.
+ * JSON.stringify handles quotes/backslashes; the replace covers </script>
+ * and <!-- sequences that could break out of the script element.
+ */
+function safeJsString(val) {
+  return JSON.stringify(String(val)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+}
 
 /* ---------- Helper: serve index.html with injections ---------- */
 
-async function serveIndex(_req, res) {
-  let html;
-
-  // Fetch index.html from GitHub, fall back to local file
-  try {
-    const https = require('https');
-    const ref = githubSource.getRef();
-    const url = `https://raw.githubusercontent.com/${config.GITHUB_OWNER}/${config.GITHUB_REPO}/${ref}/public/index.html`;
-    html = await new Promise((resolve, reject) => {
-      const opts = {
-        headers: { 'User-Agent': 'WayMark-GitHubSource/1.0' },
-      };
-      if (config.GITHUB_TOKEN) opts.headers['Authorization'] = `token ${config.GITHUB_TOKEN}`;
-      https.get(url, opts, (r) => {
-        if (r.statusCode !== 200) return reject(new Error(`HTTP ${r.statusCode}`));
-        const chunks = [];
-        r.on('data', (c) => chunks.push(c));
-        r.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-        r.on('error', reject);
-      }).on('error', reject);
-    });
-  } catch (err) {
-    console.warn('[github-source] Failed to fetch index.html, falling back to local:', err.message);
-    html = null;
-  }
-
-  // Fallback to local file
+function serveIndex(_req, res) {
+  // Read index.html from the git checkout, fall back to local file
+  let html = githubSource.readFile('index.html');
   if (!html) {
     const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
     html = fs.readFileSync(htmlPath, 'utf-8');
   }
 
-  // Inject the base path so client-side JS can build correct URLs
+  // Inject runtime flags — all values are escaped to prevent XSS
   const injections = [];
   if (basePath) {
-    injections.push(`window.__WAYMARK_BASE='${basePath}';`);
+    injections.push(`window.__WAYMARK_BASE=${safeJsString(basePath)};`);
   }
   if (config.WAYMARK_LOCAL) {
     injections.push('window.__WAYMARK_LOCAL=true;');
   }
   if (gitHash) {
-    injections.push(`window.__WAYMARK_HASH='${gitHash}';`);
+    injections.push(`window.__WAYMARK_HASH=${safeJsString(gitHash)};`);
   }
   if (gitRepoUrl) {
-    injections.push(`window.__WAYMARK_REPO='${gitRepoUrl}';`);
+    injections.push(`window.__WAYMARK_REPO=${safeJsString(gitRepoUrl)};`);
   }
-  injections.push(`window.__WAYMARK_GITHUB_REF='${githubSource.getRef()}';`);
-  injections.push(`window.__WAYMARK_GITHUB_SOURCE=true;`);
+  if (!config.WAYMARK_LOCAL) {
+    injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(githubSource.getRef())};`);
+  }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
 
+  // In production mode, inject a ref-switcher into the settings modal.
+  // This is the ONLY mechanism for version switching — no frontend code
+  // should auto-switch refs.  The injected script runs as a regular <script>
+  // before any <script type="module"> (app.js), so it can set localStorage
+  // first to prevent stale boot-time sync code in old branches.
+  if (!config.WAYMARK_LOCAL) {
+    const currentRef = githubSource.getRef();
+    html = html.replace('</body>', `${buildSettingsRefInjector(currentRef)}\n</body>`);
+  }
+
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.type('html').send(html);
+}
+
+/* ---------- Server-injected settings version section ---------- */
+
+/**
+ * Build a self-contained <script> that:
+ * 1. Immediately syncs localStorage to match the server's ref (prevents
+ *    stale boot-time sync in old branches)
+ * 2. When the settings modal opens, injects a version section with:
+ *    - Input + Switch button (temporary preview)
+ *    - Pin button (persists via Google Drive + cookie cache)
+ *    - Quick-switch tag buttons for cached refs
+ *    - Current/pinned ref display
+ * 3. On switch: POSTs to /api/source/ref, sets sessionStorage flag, reloads
+ * 4. On pin:    POSTs to /api/source/pin (cookie cache), saves to Drive
+ *              via window.__waymarkSavePinnedRef(), reloads
+ */
+function buildSettingsRefInjector(currentRef) {
+  const safeRef = safeJsString(currentRef);
+  return `
+<script>
+(function() {
+  var BASE = window.__WAYMARK_BASE || '';
+  var CURRENT_REF = ${safeRef};
+
+  // Sync localStorage immediately (before type=module scripts run)
+  try { localStorage.setItem('waymark_github_ref', JSON.stringify(CURRENT_REF)); } catch(e) {}
+
+  var injected = false;
+  var obs = new MutationObserver(function() {
+    var modal = document.getElementById('settings-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (injected) return;
+    inject(modal);
+  });
+  obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+
+  function inject(modal) {
+    injected = true;
+
+    // Hide native version section
+    var native = document.getElementById('settings-version-section');
+    if (native) native.style.display = 'none';
+    if (document.getElementById('wm-ver')) return;
+
+    var footer = modal.querySelector('.modal-footer');
+    if (!footer) return;
+
+    var s = document.createElement('div');
+    s.id = 'wm-ver';
+    s.className = 'settings-section';
+    s.innerHTML =
+      '<h4 class="settings-section-title">App Version</h4>' +
+      '<div class="settings-row">' +
+        '<span class="settings-label">Branch / Ref</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+          '<input id="wm-ref" type="text" value="' + CURRENT_REF + '" ' +
+            'placeholder="main" autocomplete="off" spellcheck="false" ' +
+            'style="padding:6px 10px;border-radius:6px;border:1px solid var(--color-border,#e2e8f0);' +
+            'background:var(--color-surface,#fff);color:var(--color-text,#1e293b);font-size:13px;' +
+            'font-family:ui-monospace,monospace;width:130px;outline:none;">' +
+          '<button id="wm-switch" class="btn btn-secondary btn-sm" title="Preview this version (reverts on login/logout)">Switch</button>' +
+          '<button id="wm-pin" class="btn btn-primary btn-sm" title="Pin this version as your default">\\u{1F4CC} Pin</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="wm-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>' +
+      '<div id="wm-status" style="font-size:0.8rem;min-height:18px;margin-top:4px;"></div>' +
+      '<div class="settings-row" style="margin-top:4px;">' +
+        '<span class="settings-label">Serving</span>' +
+        '<code id="wm-cur" style="font-size:0.85rem;color:var(--color-primary,#2563eb);">' + CURRENT_REF + '</code>' +
+      '</div>' +
+      '<div class="settings-row" style="margin-top:2px;">' +
+        '<span class="settings-label">Pinned</span>' +
+        '<code id="wm-pinned" style="font-size:0.85rem;color:var(--color-success,#16a34a);">loading\\u2026</code>' +
+        '<button id="wm-unpin" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px;margin-left:6px;display:none;" title="Unpin (revert to main)">Unpin</button>' +
+      '</div>' +
+      '<p style="font-size:0.75rem;color:var(--color-text-muted,#94a3b8);margin:8px 0 0;">' +
+        '<b>Switch</b> = temporary preview (reverts on sign-out). ' +
+        '<b>Pin</b> = your default version (saved to Google Drive, persists across sessions and devices).</p>';
+
+    footer.parentNode.insertBefore(s, footer);
+    wireUp();
+    fetchInfo();
+  }
+
+  function wireUp() {
+    var input   = document.getElementById('wm-ref');
+    var switchB = document.getElementById('wm-switch');
+    var pinB    = document.getElementById('wm-pin');
+    var unpinB  = document.getElementById('wm-unpin');
+    var status  = document.getElementById('wm-status');
+    var cur     = document.getElementById('wm-cur');
+    var pinned  = document.getElementById('wm-pinned');
+    if (!input || !switchB || !pinB) return;
+
+    function msg(txt, color) { status.style.color = color; status.textContent = txt; }
+
+    function doSwitch() {
+      var ref = (input.value || '').trim();
+      if (!ref) { msg('Enter a branch, tag, or SHA', 'var(--color-error,#dc2626)'); return; }
+      msg('Switching\\u2026', 'var(--color-primary,#2563eb)');
+      switchB.disabled = pinB.disabled = true;
+      fetch(BASE + '/api/source/ref', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: ref })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
+        return r.json();
+      }).then(function(d) {
+        cur.textContent = d.ref;
+        try { localStorage.setItem('waymark_github_ref', JSON.stringify(d.ref)); } catch(e) {}
+        // Mark session as synced so boot-time sync doesn't revert this temporary switch
+        try { sessionStorage.setItem('waymark_ref_synced', '1'); } catch(e) {}
+        msg('Switched to ' + d.ref + ' (preview) \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
+        setTimeout(function() { window.location.reload(); }, 600);
+      }).catch(function(e) {
+        msg('Error: ' + e.message, 'var(--color-error,#dc2626)');
+      }).finally(function() { switchB.disabled = pinB.disabled = false; });
+    }
+
+    function doPin() {
+      var ref = (input.value || '').trim();
+      if (!ref) { msg('Enter a branch, tag, or SHA', 'var(--color-error,#dc2626)'); return; }
+      msg('Pinning\\u2026', 'var(--color-primary,#2563eb)');
+      switchB.disabled = pinB.disabled = true;
+      fetch(BASE + '/api/source/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: ref })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Failed'); });
+        return r.json();
+      }).then(function(d) {
+        cur.textContent = d.ref;
+        pinned.textContent = d.pinnedRef;
+        try { localStorage.setItem('waymark_github_ref', JSON.stringify(d.ref)); } catch(e) {}
+        // Save pinned ref to Google Drive for cross-device persistence.
+        // The cookie (set by /api/source/pin) is a server-readable cache;
+        // Drive is the source of truth.
+        var saveFn = window.__waymarkSavePinnedRef;
+        return (saveFn ? saveFn(d.pinnedRef) : Promise.resolve()).then(function() {
+          // Clear session flag — pinned ref matches Drive, boot sync is safe
+          try { sessionStorage.removeItem('waymark_ref_synced'); } catch(e) {}
+          msg('\\u{1F4CC} Pinned to ' + d.pinnedRef + ' \\u2014 reloading\\u2026', 'var(--color-success,#16a34a)');
+          setTimeout(function() { window.location.reload(); }, 600);
+        });
+      }).catch(function(e) {
+        msg('Error: ' + e.message, 'var(--color-error,#dc2626)');
+      }).finally(function() { switchB.disabled = pinB.disabled = false; });
+    }
+
+    function doUnpin() {
+      input.value = 'main';
+      doPin();
+    }
+
+    switchB.onclick = doSwitch;
+    pinB.onclick = doPin;
+    unpinB.onclick = doUnpin;
+    input.onkeydown = function(e) { if (e.key === 'Enter') doSwitch(); };
+  }
+
+  function fetchInfo() {
+    var tags   = document.getElementById('wm-tags');
+    var input  = document.getElementById('wm-ref');
+    var cur    = document.getElementById('wm-cur');
+    var pinned = document.getElementById('wm-pinned');
+    var unpinB = document.getElementById('wm-unpin');
+    if (!tags) return;
+
+    fetch(BASE + '/api/source').then(function(r) { return r.json(); }).then(function(d) {
+      if (cur) cur.textContent = d.ref;
+      if (pinned) pinned.textContent = d.pinnedRef || 'main';
+      // Show unpin button if pinned to something other than main
+      if (unpinB && d.pinnedRef && d.pinnedRef !== 'main') unpinB.style.display = '';
+      else if (unpinB) unpinB.style.display = 'none';
+
+      tags.innerHTML = '';
+      var refs = d.cachedRefs || ['main'];
+      if (refs.indexOf('main') === -1) refs.unshift('main');
+      refs.forEach(function(r) {
+        if (r.charAt(0) === '.') return;
+        var btn = document.createElement('button');
+        btn.textContent = r;
+        btn.className = 'btn btn-secondary btn-sm';
+        var isActive = r === d.ref;
+        var isPinned = r === d.pinnedRef;
+        btn.style.cssText = 'font-size:12px;padding:3px 10px;border-radius:12px;' +
+          (isActive ? 'border-color:var(--color-primary,#2563eb);color:var(--color-primary,#2563eb);font-weight:600;' : '') +
+          (isPinned ? 'box-shadow:0 0 0 2px var(--color-success,#16a34a);' : '');
+        btn.title = (isActive ? 'Currently serving' : 'Click to switch') +
+          (isPinned ? ' (pinned)' : '');
+        btn.onclick = function() { input.value = r; document.getElementById('wm-switch').click(); };
+        tags.appendChild(btn);
+      });
+    }).catch(function() {});
+  }
+})();
+</script>`;
 }
 
 /* ---------- Local-only mode ---------- */
@@ -245,38 +457,65 @@ router.post('/api/fetch-url', async (req, res) => {
 /* ---------- GitHub source: admin API ---------- */
 
 {
-  // Auth guard — require a valid refresh token cookie for write operations
-  function requireAuth(req, res, next) {
-    const token = req.signedCookies?.waymark_refresh;
-    if (!token) return res.status(401).json({ error: 'Authentication required' });
-    next();
+  /** Read the pinned ref from a signed cookie (defaults to 'main'). */
+  function getPinnedRef(req) {
+    return req.signedCookies?.waymark_pinned_ref || 'main';
   }
 
-  // GET /api/source — current ref + cached refs (read-only, no auth needed)
-  router.get('/api/source', (_req, res) => {
+  /** Cookie options for the pinned ref (1 year, path root). */
+  const PIN_COOKIE_OPTS = {
+    httpOnly: true,            // no frontend code reads this cookie directly
+    signed: true,
+    secure: config.NODE_ENV === 'production',
+    sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: (config.BASE_PATH || '') + '/',
+    maxAge: 365 * 24 * 60 * 60 * 1000,  // 1 year
+  };
+
+  // GET /api/source — current ref + pinned ref + cached refs
+  router.get('/api/source', (req, res) => {
     res.json({
       mode: 'github',
       owner: config.GITHUB_OWNER,
       repo: config.GITHUB_REPO,
       ref: githubSource.getRef(),
+      pinnedRef: getPinnedRef(req),
       cachedRefs: githubSource.listCachedRefs(),
     });
   });
 
-  // POST /api/source/ref — switch to a different ref (auth required)
-  router.post('/api/source/ref', requireAuth, (req, res) => {
+  // POST /api/source/ref — switch to a different ref (temporary preview)
+  router.post('/api/source/ref', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
     }
-    githubSource.setRef(ref.trim());
-    // Re-warm the file tree in the background
-    githubSource.preWarm().catch(() => {});
-    res.json({ ref: githubSource.getRef() });
+    try {
+      await githubSource.setRef(ref.trim());
+      res.json({ ref: githubSource.getRef(), pinnedRef: getPinnedRef(req) });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
-  // POST /api/source/purge — clear cache for current ref (auth required)
-  router.post('/api/source/purge', requireAuth, (_req, res) => {
+  // POST /api/source/pin — pin a ref (switch + persist in cookie)
+  router.post('/api/source/pin', async (req, res) => {
+    const { ref } = req.body || {};
+    if (!ref || typeof ref !== 'string') {
+      return res.status(400).json({ error: 'Missing "ref"' });
+    }
+    const trimmed = ref.trim();
+    try {
+      await githubSource.setRef(trimmed);
+      res.cookie('waymark_pinned_ref', trimmed, PIN_COOKIE_OPTS);
+      res.json({ ref: githubSource.getRef(), pinnedRef: trimmed, pinned: true });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // POST /api/source/purge — clear cache for current ref
+  router.post('/api/source/purge', (_req, res) => {
     githubSource.purgeCache();
     res.json({ purged: true, ref: githubSource.getRef() });
   });
@@ -284,11 +523,15 @@ router.post('/api/fetch-url', async (req, res) => {
 
 /* ---------- Auth routes ---------- */
 
+// Expose githubSource on the Express app so auth.js can access it on
+// login/logout to restore/revert the user's pinned ref.
+app.set('githubSource', githubSource);
+
 setupAuth(router);
 
 /* ---------- Static files ---------- */
 
-// GitHub source middleware — serves cached files from GitHub.
+// GitHub source middleware — serves files from the local git checkout.
 // Misses fall through to the local public/ directory as a safety net.
 router.use(githubSource.middleware);
 

@@ -27,8 +27,11 @@ android/local.properties
 # Build artifacts
 server/build-info.json
 
-# GitHub source cache
-server/.github-cache/
+
+# GitHub source (bare clone + extracted checkouts)
+server/.git-repo/
+server/.git-checkout/
+server/.github-cache
 
 # IDE
 .vscode/

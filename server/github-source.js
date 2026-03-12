@@ -1,31 +1,51 @@
 /**
- * github-source.js — Fetch and cache frontend files from a GitHub repo.
+ * github-source.js — Serve frontend files from a local git clone.
  *
- * This module serves frontend files from GitHub instead of the local
- * public/ directory.  It extends the server's existing "serve static
- * files" responsibility — no business logic is added.
+ * This module clones the Waymark repo (bare) and checks out the public/
+ * directory for whichever ref (branch, tag, commit SHA) is active.
+ * Switching refs is a local git operation — no GitHub API calls needed
+ * after the initial clone and periodic fetches.
  *
  * How it works:
- *   1. On first request for a file, fetch it from GitHub's raw content API
- *      at the configured commit hash / branch / tag.
- *   2. Write the file to a local disk cache (`server/.github-cache/<ref>/`).
- *   3. Subsequent requests for the same ref+path are served from disk.
- *   4. Changing the ref (API call) invalidates the cache automatically
- *      because the cache key includes the ref.
+ *   1. On first boot, `git clone --bare` the repo to server/.git-repo/
+ *   2. Extract public/ files for the active ref into server/.git-checkout/<ref>/
+ *   3. Serve files from disk via Express middleware.
+ *   4. Switching refs: `git fetch`, then extract the new ref's public/ files.
+ *   5. Periodic `git fetch` keeps the bare repo up-to-date (every 5 min).
  *
  * Configuration (hardcoded in config.js):
  *   GITHUB_OWNER   — repo owner ('tekjanson')
  *   GITHUB_REPO    — repo name  ('Waymark')
  *   GITHUB_REF     — default ref ('main')
- *   GITHUB_TOKEN   — optional PAT for private repos / rate-limit relief (env var)
+ *   GITHUB_TOKEN   — optional PAT for private repos (env var)
  */
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const crypto = require('crypto');
+const { execSync, exec } = require('child_process');
 
-const CACHE_DIR = path.join(__dirname, '.github-cache');
+const REPO_DIR = path.join(__dirname, '.git-repo');
+const CHECKOUT_DIR = path.join(__dirname, '.git-checkout');
+
+/* ---------- Ref validation ---------- */
+
+/**
+ * Validate a git ref (branch, tag, or SHA) for safe use in shell commands
+ * and HTML/JS injection contexts.  Rejects anything that could escape
+ * shell quoting, path traversal, or HTML attribute boundaries.
+ * @param {string} ref
+ * @returns {boolean}
+ */
+function isValidRef(ref) {
+  if (!ref || typeof ref !== 'string') return false;
+  if (ref.length > 200) return false;
+  // Allow alphanumeric, dot, dash, underscore, slash (for branch names like feature/foo)
+  if (!/^[a-zA-Z0-9._\/-]+$/.test(ref)) return false;
+  // Git-specific invalid patterns
+  if (ref.includes('..') || ref.endsWith('.') || ref.endsWith('/')) return false;
+  if (ref.includes('@{') || ref.startsWith('-')) return false;
+  return true;
+}
 
 /* ---------- Helpers ---------- */
 
@@ -57,194 +77,214 @@ function getMimeType(filePath) {
   return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
-function isTextMime(mime) {
-  return mime.startsWith('text/') || mime.includes('javascript') || mime.includes('json') || mime.includes('xml');
+/**
+ * Build HTTPS clone URL, optionally embedding a PAT for private repos.
+ */
+function buildCloneUrl(owner, repo, token) {
+  if (token) {
+    return `https://${token}@github.com/${owner}/${repo}.git`;
+  }
+  return `https://github.com/${owner}/${repo}.git`;
 }
 
 /**
- * Fetch a raw file from GitHub.
- * Uses the raw.githubusercontent.com endpoint — no API rate limit auth needed
- * for public repos, but we send the token if provided for private repos.
+ * Run a git command inside the bare repo. Returns stdout as a string.
  */
-function fetchFromGitHub(owner, repo, ref, filePath, token) {
+function git(args, opts = {}) {
+  const cmd = `git --git-dir="${REPO_DIR}" ${args}`;
+  return execSync(cmd, {
+    encoding: 'utf-8',
+    timeout: opts.timeout || 60000,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    ...opts,
+  }).trim();
+}
+
+/**
+ * Run a git command asynchronously (non-blocking).
+ * Returns a promise that resolves with stdout.
+ */
+function gitAsync(args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const urlPath = `/${owner}/${repo}/${ref}/${filePath}`;
-    const options = {
-      hostname: 'raw.githubusercontent.com',
-      path: urlPath,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'WayMark-GitHubSource/1.0',
-      },
-    };
-
-    if (token) {
-      options.headers['Authorization'] = `token ${token}`;
-    }
-
-    const req = https.request(options, (res) => {
-      if (res.statusCode === 404) {
-        return resolve(null); // file not found at this ref
+    const cmd = `git --git-dir="${REPO_DIR}" ${args}`;
+    exec(cmd, {
+      encoding: 'utf-8',
+      timeout: opts.timeout || 60000,
+      ...opts,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        err.stderr = stderr;
+        return reject(err);
       }
-      if (res.statusCode !== 200) {
-        return reject(new Error(`GitHub responded with ${res.statusCode} for ${urlPath}`));
-      }
-
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-      res.on('error', reject);
+      resolve(stdout.trim());
     });
-
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('GitHub request timed out')); });
-    req.setTimeout(15000);
-    req.end();
   });
 }
 
-/* ---------- Cache ---------- */
+/* ---------- Clone / Fetch ---------- */
 
-function getCachePath(ref, filePath) {
-  // Sanitize ref to be filesystem-safe
-  const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return path.join(CACHE_DIR, safeRef, filePath);
+/**
+ * Ensure the bare repo exists. Clone if not, update remote URL if it does.
+ */
+function ensureRepo(owner, repo, token) {
+  const url = buildCloneUrl(owner, repo, token);
+
+  if (fs.existsSync(path.join(REPO_DIR, 'HEAD'))) {
+    // Already cloned — update the remote URL in case token changed
+    try {
+      git(`remote set-url origin "${url}"`);
+    } catch { /* ignore if remote doesn't exist yet */ }
+    return;
+  }
+
+  console.log(`[github-source] Cloning ${owner}/${repo} (bare)...`);
+  fs.mkdirSync(REPO_DIR, { recursive: true });
+  execSync(`git clone --bare "${url}" "${REPO_DIR}"`, {
+    encoding: 'utf-8',
+    timeout: 120000,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  console.log(`[github-source] Clone complete.`);
 }
 
-function readFromCache(ref, filePath) {
-  const cachePath = getCachePath(ref, filePath);
+/**
+ * Fetch latest refs from origin (async, non-blocking).
+ */
+async function fetchOrigin() {
   try {
-    return fs.readFileSync(cachePath);
-  } catch {
-    return null;
+    await gitAsync('fetch origin --prune', { timeout: 60000 });
+    console.log('[github-source] Fetched latest from origin.');
+  } catch (err) {
+    console.warn('[github-source] Fetch failed:', err.message);
   }
 }
 
-function writeToCache(ref, filePath, data) {
-  const cachePath = getCachePath(ref, filePath);
-  const dir = path.dirname(cachePath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(cachePath, data);
-}
-
-/* ---------- In-memory LRU for hot files ---------- */
-
-class MemoryCache {
-  constructor(maxEntries = 500) {
-    this.max = maxEntries;
-    this.map = new Map();
-  }
-
-  get(key) {
-    const val = this.map.get(key);
-    if (val !== undefined) {
-      // Move to end (most recently used)
-      this.map.delete(key);
-      this.map.set(key, val);
-    }
-    return val ?? null;
-  }
-
-  set(key, val) {
-    this.map.delete(key);
-    this.map.set(key, val);
-    if (this.map.size > this.max) {
-      // Evict oldest
-      const oldest = this.map.keys().next().value;
-      this.map.delete(oldest);
-    }
-  }
-
-  clear() {
-    this.map.clear();
-  }
-}
-
-const memCache = new MemoryCache(500);
-
-/* ---------- Pre-warm: fetch the full tree ---------- */
+/* ---------- Checkout / Extract ---------- */
 
 /**
- * Fetch the repo tree at a given ref using the GitHub Trees API.
- * This tells us every file path that exists, so we can 404 immediately
- * for paths that don't exist instead of hitting GitHub every time.
+ * Resolve a ref (branch name, tag, short SHA) to a full commit SHA.
+ * Tries refs/remotes/origin/<ref> first (for branches), then the raw ref
+ * (for tags and SHAs).
  */
-async function fetchTree(owner, repo, ref, token) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'WayMark-GitHubSource/1.0',
-        'Accept': 'application/vnd.github.v3+json',
-      },
-    };
+function resolveRef(ref) {
+  if (!isValidRef(ref)) {
+    throw new Error(`Invalid ref: ${String(ref).slice(0, 80)}`);
+  }
+  // Try as a remote branch first
+  try {
+    return git(`rev-parse "refs/remotes/origin/${ref}"`);
+  } catch { /* not a remote branch */ }
 
-    if (token) {
-      options.headers['Authorization'] = `token ${token}`;
-    }
+  // Try as a tag
+  try {
+    return git(`rev-parse "refs/tags/${ref}^{}"`);
+  } catch { /* not a tag */ }
 
-    const req = https.request(options, (res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => {
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString());
-          if (res.statusCode !== 200) {
-            return reject(new Error(`GitHub Trees API: ${res.statusCode} — ${body.message || 'unknown error'}`));
-          }
-          // Extract just the file paths under public/
-          const paths = new Set();
-          for (const item of body.tree || []) {
-            if (item.type === 'blob' && item.path.startsWith('public/')) {
-              paths.add(item.path.slice('public/'.length)); // strip 'public/' prefix
-            }
-          }
-          resolve(paths);
-        } catch (e) {
-          reject(e);
-        }
-      });
-      res.on('error', reject);
-    });
-
-    req.on('error', reject);
-    req.setTimeout(30000);
-    req.end();
-  });
+  // Try as a raw ref (SHA)
+  try {
+    return git(`rev-parse "${ref}"`);
+  } catch {
+    throw new Error(`Could not resolve ref: ${ref}`);
+  }
 }
 
-/* ---------- Main export: GitHub source middleware ---------- */
+/**
+ * Extract public/ files for a given ref into CHECKOUT_DIR/<safeName>/.
+ * Uses `git archive` to extract without a full working tree.
+ */
+function extractPublicDir(ref) {
+  const commitSha = resolveRef(ref);
+  const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const outDir = path.join(CHECKOUT_DIR, safeRef);
+
+  // If already extracted for this exact commit, skip
+  const shaMarker = path.join(outDir, '.git-sha');
+  if (fs.existsSync(shaMarker)) {
+    try {
+      const cached = fs.readFileSync(shaMarker, 'utf-8').trim();
+      if (cached === commitSha) {
+        return outDir;
+      }
+    } catch { /* re-extract */ }
+  }
+
+  // Clean and re-extract
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+
+  try {
+    // Use git archive to extract just the public/ subtree
+    execSync(
+      `git --git-dir="${REPO_DIR}" archive "${commitSha}" -- public/ | tar -x -C "${outDir}" --strip-components=1`,
+      { encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+  } catch (err) {
+    // Fallback: try without --strip-components (some systems)
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.mkdirSync(outDir, { recursive: true });
+    execSync(
+      `git --git-dir="${REPO_DIR}" archive "${commitSha}" -- public/ | tar -x -C "${outDir}"`,
+      { encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    // Move public/* up one level
+    const nested = path.join(outDir, 'public');
+    if (fs.existsSync(nested)) {
+      for (const item of fs.readdirSync(nested)) {
+        fs.renameSync(path.join(nested, item), path.join(outDir, item));
+      }
+      fs.rmSync(nested, { recursive: true, force: true });
+    }
+  }
+
+  // Write SHA marker so we know this extraction is current
+  fs.writeFileSync(shaMarker, commitSha);
+  console.log(`[github-source] Extracted public/ for ${ref} (${commitSha.slice(0, 8)}) -> ${outDir}`);
+  return outDir;
+}
+
+/* ---------- Main export ---------- */
 
 /**
- * Creates an Express middleware that serves files from a GitHub repo.
+ * Creates an Express middleware that serves files from a local git clone.
  *
  * @param {object} opts
- * @param {string} opts.owner      — GitHub repo owner
- * @param {string} opts.repo       — GitHub repo name
- * @param {string} opts.ref        — commit SHA, branch name, or tag
- * @param {string} [opts.token]    — optional GitHub PAT
- * @param {string} [opts.basePath] — public/ subdir prefix in the repo
- * @returns {{ middleware: Function, setRef: Function, getRef: Function, preWarm: Function }}
+ * @param {string} opts.owner   — GitHub repo owner
+ * @param {string} opts.repo    — GitHub repo name
+ * @param {string} opts.ref     — initial ref (branch, tag, SHA)
+ * @param {string} [opts.token] — optional GitHub PAT for private repos
+ * @returns {{ middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile }}
  */
 function createGitHubSource(opts) {
-  let { owner, repo, ref, token, basePath = 'public' } = opts;
+  const { owner, repo, token } = opts;
+  let ref = opts.ref;
+  let publicDir = null;  // path to extracted public/ for current ref
 
-  // Known file set — populated by preWarm()
-  let knownFiles = null; // Set<string> or null (if tree fetch failed)
+  // Clone the repo (synchronous on first boot, fast on subsequent boots)
+  try {
+    ensureRepo(owner, repo, token);
+  } catch (err) {
+    console.error('[github-source] Failed to clone repo:', err.message);
+    console.warn('[github-source] Will serve from local public/ only.');
+  }
 
-  const middleware = async (req, res, next) => {
+  // Extract public/ for the initial ref
+  try {
+    publicDir = extractPublicDir(ref);
+  } catch (err) {
+    console.warn(`[github-source] Could not extract ref "${ref}":`, err.message);
+  }
+
+  /* ---------- Middleware ---------- */
+
+  const middleware = (req, res, next) => {
     // Only handle GET/HEAD
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
 
-    // Resolve the file path
+    // No checkout available — fall through to local public/
+    if (!publicDir) return next();
+
     let filePath = req.path;
-
-    // Strip leading slash
     if (filePath.startsWith('/')) filePath = filePath.slice(1);
-
-    // Default to index.html for empty path
     if (!filePath) filePath = 'index.html';
 
     // Security: no path traversal
@@ -252,44 +292,16 @@ function createGitHubSource(opts) {
       return res.status(400).end();
     }
 
-    // Skip auth and API routes
+    // Skip auth, API, and fixture routes
     if (filePath.startsWith('auth/') || filePath.startsWith('api/') || filePath.startsWith('__fixtures')) {
       return next();
     }
 
-    // If we have the file tree, do a fast 404 check
-    if (knownFiles && !knownFiles.has(filePath)) {
-      // Could be an SPA route — let the caller handle fallback
-      return next();
-    }
+    const fullPath = path.join(publicDir, filePath);
 
-    const cacheKey = `${ref}:${filePath}`;
-
-    // 1. Check in-memory cache
-    let data = memCache.get(cacheKey);
-
-    // 2. Check disk cache
-    if (!data) {
-      data = readFromCache(ref, filePath);
-      if (data) memCache.set(cacheKey, data);
-    }
-
-    // 3. Fetch from GitHub
-    if (!data) {
-      try {
-        const repoPath = `${basePath}/${filePath}`;
-        data = await fetchFromGitHub(owner, repo, ref, repoPath, token);
-        if (!data) {
-          // File doesn't exist at this ref — pass to next handler (SPA fallback)
-          return next();
-        }
-        // Cache it
-        writeToCache(ref, filePath, data);
-        memCache.set(cacheKey, data);
-      } catch (err) {
-        console.error(`[github-source] Failed to fetch ${filePath}@${ref}:`, err.message);
-        return next(); // fall through to local static or 404
-      }
+    // Check file exists
+    if (!fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
+      return next(); // SPA fallback or local static
     }
 
     // Serve the file
@@ -298,7 +310,6 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', ref);
     res.setHeader('X-Served-From', 'github-source');
 
-    // Cache headers
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
@@ -308,58 +319,102 @@ function createGitHubSource(opts) {
     }
 
     if (req.method === 'HEAD') {
-      res.setHeader('Content-Length', data.length);
+      const stat = fs.statSync(fullPath);
+      res.setHeader('Content-Length', stat.size);
       return res.end();
     }
 
-    res.send(data);
+    res.sendFile(fullPath);
   };
 
-  /** Change the ref at runtime (e.g. via admin API) */
-  function setRef(newRef) {
+  /* ---------- API ---------- */
+
+  /** Switch to a different ref. Fetches from origin first. */
+  async function setRef(newRef) {
+    if (!isValidRef(newRef)) {
+      throw new Error(`Invalid ref: ${String(newRef).slice(0, 80)}`);
+    }
+    // Fetch latest to make sure we have the ref
+    await fetchOrigin();
+
+    // Resolve and extract
+    const outDir = extractPublicDir(newRef);
     ref = newRef;
-    memCache.clear();
-    console.log(`[github-source] Ref changed to: ${ref}`);
+    publicDir = outDir;
+    console.log(`[github-source] Switched to ref: ${ref}`);
   }
 
-  /** Get the current ref */
   function getRef() {
     return ref;
   }
 
-  /** Pre-warm the cache by fetching the file tree */
+  /**
+   * Pre-warm: fetch from origin and re-extract current ref.
+   * Called on startup and periodically.
+   */
   async function preWarm() {
     try {
-      console.log(`[github-source] Fetching file tree for ${owner}/${repo}@${ref}...`);
-      knownFiles = await fetchTree(owner, repo, ref, token);
-      console.log(`[github-source] Found ${knownFiles.size} files in public/ at ${ref}`);
+      await fetchOrigin();
+      publicDir = extractPublicDir(ref);
     } catch (err) {
-      console.warn(`[github-source] Could not fetch tree (will fetch on demand): ${err.message}`);
-      knownFiles = null;
+      console.warn('[github-source] Pre-warm failed:', err.message);
     }
   }
 
-  /** Purge all cached files for the current ref */
+  /** Purge extracted files for the current ref. */
   function purgeCache() {
-    memCache.clear();
     const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const refDir = path.join(CACHE_DIR, safeRef);
-    try {
-      fs.rmSync(refDir, { recursive: true, force: true });
-      console.log(`[github-source] Purged cache for ${ref}`);
-    } catch { /* ignore */ }
+    const refDir = path.join(CHECKOUT_DIR, safeRef);
+    fs.rmSync(refDir, { recursive: true, force: true });
+    publicDir = null;
+    console.log(`[github-source] Purged checkout for ${ref}`);
   }
 
-  /** List all cached refs */
+  /** List all extracted refs. */
   function listCachedRefs() {
     try {
-      return fs.readdirSync(CACHE_DIR);
+      return fs.readdirSync(CHECKOUT_DIR).filter(d => !d.startsWith('.'));
     } catch {
       return [];
     }
   }
 
-  return { middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs };
+  /**
+   * Read a file from the current ref's extracted public/ directory.
+   * Used by serveIndex() to get index.html without going through middleware.
+   * Returns the file contents as a string, or null if not found.
+   */
+  function readFile(relPath) {
+    if (!publicDir) return null;
+    const fullPath = path.join(publicDir, relPath);
+    try {
+      return fs.readFileSync(fullPath, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  /* ---------- Periodic fetch (keep repo up-to-date) ---------- */
+
+  // Fetch from origin every 5 minutes to pick up new commits
+  const _fetchInterval = setInterval(async () => {
+    try {
+      await fetchOrigin();
+      // Re-extract current ref in case it moved (branch tips do)
+      const newDir = extractPublicDir(ref);
+      if (newDir !== publicDir) {
+        publicDir = newDir;
+        console.log(`[github-source] Auto-updated ref ${ref}`);
+      }
+    } catch (err) {
+      console.warn('[github-source] Periodic fetch failed:', err.message);
+    }
+  }, 5 * 60 * 1000);
+
+  // Don't let the interval keep the process alive during tests
+  if (_fetchInterval.unref) _fetchInterval.unref();
+
+  return { middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile };
 }
 
 module.exports = { createGitHubSource };
