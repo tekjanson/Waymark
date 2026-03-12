@@ -19,7 +19,7 @@ import './schedule.js';
 import './inventory.js';
 import './contacts.js';
 import './log.js';
-import './budget.js';
+import './budget/index.js';
 import './kanban/index.js';
 import './habit/index.js';
 import './grading.js';
