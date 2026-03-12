@@ -1122,6 +1122,12 @@ ul { list-style: none; }
 
 /* ---------- Settings Modal ---------- */
 .settings-modal { max-width: 480px; }
+.settings-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
 
 .settings-profile {
   display: flex; align-items: center; gap: 14px;
@@ -1588,6 +1594,12 @@ ul { list-style: none; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
+  /* Modal: full-height on mobile with reduced padding */
+  .modal-overlay { padding: 12px; }
+  .modal {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
   #sidebar {
     position: fixed; top: var(--topbar-height); bottom: 0; left: 0;
     z-index: 51; box-shadow: var(--shadow-lg);
