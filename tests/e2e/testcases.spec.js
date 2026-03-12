@@ -289,3 +289,113 @@ test('test cases copy failures button is rendered', async ({ page }) => {
   await expect(copyBtn).toBeVisible();
   await expect(copyBtn).toContainText('Copy Failures');
 });
+
+/* ---------- Directory View ---------- */
+
+test('testcases directoryView shows test suite overview title', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-title', { timeout: 8_000 });
+
+  await expect(page.locator('.tc-dir-title')).toContainText('Test Suite Overview');
+});
+
+test('testcases directoryView shows per-suite cards', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-card', { timeout: 8_000 });
+
+  const cards = page.locator('.tc-dir-card');
+  expect(await cards.count()).toBe(2);
+});
+
+test('testcases directoryView shows grand totals bar with accurate counts', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-totals', { timeout: 8_000 });
+
+  const text = await page.locator('.tc-dir-totals').textContent();
+  // 10 + 12 = 22 total tests
+  expect(text).toContain('22 tests');
+  // 5 + 7 = 12 pass → 55% pass rate
+  expect(text).toContain('55%');
+  expect(text).toContain('2 suites');
+});
+
+test('testcases directoryView totals show pass and fail counts', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-totals', { timeout: 8_000 });
+
+  // Grand pass = 12
+  await expect(page.locator('.tc-dir-totals-pass')).toContainText('12');
+  // Grand fail = 4
+  await expect(page.locator('.tc-dir-totals-fail')).toContainText('4');
+  // Grand blocked = 2
+  await expect(page.locator('.tc-dir-totals-blocked')).toContainText('2');
+});
+
+test('testcases directoryView card click navigates to sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-card', { timeout: 8_000 });
+
+  await page.locator('.tc-dir-card').first().click();
+  await page.waitForSelector('.tc-row', { timeout: 5_000 });
+  await expect(page.locator('#template-badge')).toContainText('Test Cases');
+});
+
+test('testcases directoryView cards show per-suite pass rate', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-card', { timeout: 8_000 });
+
+  const rates = page.locator('.tc-dir-card-rate');
+  expect(await rates.count()).toBe(2);
+  // Each card should show a percentage
+  const texts = await rates.allTextContents();
+  expect(texts.every(t => /%/.test(t))).toBe(true);
+});
+
+test('testcases directoryView cards show status breakdown counts', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-card-counts', { timeout: 8_000 });
+
+  // Each card has individual pass/fail/blocked/skip/untested counts
+  const counts = page.locator('.tc-dir-card-counts');
+  expect(await counts.count()).toBe(2);
+
+  // First card (Login) should show pass count of 5
+  const firstText = await counts.first().textContent();
+  expect(firstText).toContain('5');
+});
+
+test('testcases directoryView cards show proportional status bar', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-bar', { timeout: 8_000 });
+
+  const bars = page.locator('.tc-dir-bar');
+  expect(await bars.count()).toBe(2);
+
+  // Each bar should have pass segment
+  const passSeg = page.locator('.tc-dir-bar-pass');
+  expect(await passSeg.count()).toBeGreaterThanOrEqual(2);
+});
+
+test('testcases directoryView cards have pointer cursor for click interaction', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-card', { timeout: 8_000 });
+
+  await expect(page.locator('.tc-dir-card').first()).toHaveCSS('cursor', 'pointer');
+});
+
+test('testcases directoryView uses grid layout for cards', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-grid', { timeout: 8_000 });
+
+  await expect(page.locator('.tc-dir-grid')).toHaveCSS('display', 'grid');
+});

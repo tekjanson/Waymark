@@ -41,11 +41,14 @@
       ],
       "exampleCount": 2,
       "fixtureIds": [
-        "sheet-015"
+        "sheet-015",
+        "sheet-037"
       ],
       "fixtureFiles": [
-        "testcases-login"
-      ]
+        "testcases-login",
+        "testcases-api"
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "checklist",
@@ -815,7 +818,7 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-037",
+  "nextSheetId": "sheet-038",
   "totalTemplates": 22,
   "categories": [
     "Productivity",

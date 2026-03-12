@@ -1,0 +1,20 @@
+{
+  "id": "sheet-037",
+  "title": "API Endpoint Tests",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Test Case", "Result", "Expected", "Actual", "Priority", "Notes"],
+    ["GET /users returns 200", "Pass", "200 OK with user list", "200 OK with user list", "High", ""],
+    ["GET /users/:id returns single user", "Pass", "200 with user object", "200 with user object", "High", ""],
+    ["POST /users creates new user", "Fail", "201 Created", "500 Server Error", "High", "Bug #201"],
+    ["PUT /users/:id updates user", "Pass", "200 with updated user", "200 with updated user", "Medium", ""],
+    ["DELETE /users/:id removes user", "Blocked", "204 No Content", "Cannot test — auth broken", "High", "Waiting on auth fix"],
+    ["GET /users with pagination", "Pass", "Paginated results", "Paginated results", "Medium", ""],
+    ["POST /users with invalid data", "Pass", "400 Bad Request", "400 Bad Request", "High", "Validation test"],
+    ["GET /health returns 200", "Pass", "200 OK", "200 OK", "Low", ""],
+    ["POST /auth/login returns token", "Untested", "JWT token in response", "", "High", ""],
+    ["Rate limit returns 429", "Skip", "429 Too Many Requests", "", "Medium", "Deferred to phase 2"],
+    ["CORS headers present", "Pass", "Access-Control headers set", "Access-Control headers set", "Medium", ""],
+    ["GET /users/:id not found returns 404", "Fail", "404 Not Found", "200 with empty body", "High", "Bug #205"]
+  ]
+}
