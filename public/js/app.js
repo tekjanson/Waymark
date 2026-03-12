@@ -1968,6 +1968,7 @@ function initTheme() {
       const current = storage.getTheme();
       const next = resolveTheme(current) === 'dark' ? 'light' : 'dark';
       storage.setTheme(next);
+      userData.setTheme(next);
       applyTheme(next);
     });
   }
@@ -1977,6 +1978,7 @@ function initTheme() {
     btn.addEventListener('click', () => {
       const pref = btn.dataset.theme;
       storage.setTheme(pref);
+      userData.setTheme(pref);
       applyTheme(pref);
     });
   });

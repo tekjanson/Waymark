@@ -39,13 +39,13 @@ function defaultUserData() {
 
     /* ── Preferences ── */
     preferences: {
+      theme: 'light',           // 'light' | 'dark' | 'system'
       autoRefresh: true,        // auto-reload sheet every 60 s
       sidebarOpen: true,        // explorer sidebar visible
       sortOrder: 'name',        // explorer sort: 'name' | 'modified'
       importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
       importFolderName: null,   // display name of custom import folder
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
-      // Future: theme, density, viewMode
     },
 
     /* ── Tutorial ── */
@@ -120,7 +120,13 @@ async function _doInit() {
       _dataFileId = existing.id;
       _userData = await api.drive.readJsonFile(existing.id);
       // Merge with defaults for forward-compat (new fields added later)
-      _userData = { ...defaultUserData(), ..._userData };
+      // Deep-merge preferences so newly-added preference fields aren't lost
+      const defaults = defaultUserData();
+      _userData = {
+        ...defaults,
+        ..._userData,
+        preferences: { ...defaults.preferences, ...(_userData.preferences || {}) },
+      };
     } else {
       // Seed from localStorage for migration
       _userData = migrateFromLocalStorage();
@@ -477,6 +483,25 @@ export async function setSortOrder(order) {
   await save({ preferences: prefs });
 }
 
+/* ---------- Theme ---------- */
+
+/**
+ * Get the user's theme preference ('light', 'dark', or 'system').
+ * @returns {string}
+ */
+export function getTheme() {
+  return _userData?.preferences?.theme || 'light';
+}
+
+/**
+ * Set the theme preference.
+ * @param {'light'|'dark'|'system'} theme
+ */
+export async function setTheme(theme) {
+  const prefs = { ...(_userData?.preferences || {}), theme: theme || 'light' };
+  await save({ preferences: prefs });
+}
+
 /* ---------- Import Folder ---------- */
 
 /**
@@ -536,9 +561,12 @@ function migrateFromLocalStorage() {
     pinnedFolders: storage.getPinnedFolders(),
     pinnedSheets: storage.getPinnedSheets?.() || [],
     preferences: {
+      theme: storage.getTheme?.() || 'light',
       autoRefresh: storage.getAutoRefresh(),
       sidebarOpen: storage.getSidebarOpen(),
       sortOrder: storage.getSortOrder?.() || 'name',
+      importFolderId: storage.getImportFolderId?.() || null,
+      importFolderName: storage.getImportFolderName?.() || null,
       githubRef: storage.getGithubRef?.() || 'main',
     },
     tutorialCompleted: storage.getTutorialCompleted(),
@@ -575,6 +603,9 @@ function syncToLocalStorage(data) {
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
+    if (storage.setTheme) storage.setTheme(data.preferences?.theme || 'light');
+    if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
+    if (storage.setImportFolderName) storage.setImportFolderName(data.preferences?.importFolderName || null);
     if (storage.setGithubRef) storage.setGithubRef(data.preferences?.githubRef || 'main');
   } catch { /* localStorage quota / private mode */ }
 }

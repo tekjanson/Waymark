@@ -196,6 +196,26 @@ export function setSortOrder(order) {
   set('sort_order', order);
 }
 
+/* --- Import Folder --- */
+
+export function getImportFolderId() {
+  return get('import_folder_id') || null;
+}
+
+export function setImportFolderId(folderId) {
+  if (folderId) set('import_folder_id', folderId);
+  else remove('import_folder_id');
+}
+
+export function getImportFolderName() {
+  return get('import_folder_name') || null;
+}
+
+export function setImportFolderName(folderName) {
+  if (folderName) set('import_folder_name', folderName);
+  else remove('import_folder_name');
+}
+
 /* --- GitHub Ref --- */
 
 export function getGithubRef() {
