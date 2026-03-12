@@ -224,6 +224,24 @@
       ]
     },
     {
+      "id": "f-testcases",
+      "name": "Test Suites",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-015",
+          "name": "Login Feature Tests",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-037",
+          "name": "API Endpoint Tests",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
       "id": "f-grades",
       "name": "Gradebooks",
       "mimeType": "application/vnd.google-apps.folder",

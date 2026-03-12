@@ -142,6 +142,109 @@ const definition = {
 
   resultStates: STATES,
   resultClass: classify,
+  hasDirectoryView: true,
+
+  /** Pre-compute aggregate test stats for directory-level caching.
+   * @param {string[][]} rows — data rows (header excluded)
+   * @param {object} cols — column map from columns()
+   * @returns {{ total: number, pass: number, fail: number, blocked: number, skip: number, untested: number, passRate: number }}
+   */
+  computeDirStats(rows, cols) {
+    const counts = { pass: 0, fail: 0, blocked: 0, skip: 0, untested: 0 };
+    for (const row of rows) counts[classify(cell(row, cols.result))]++;
+    const total = rows.length;
+    const passRate = total > 0 ? Math.round((counts.pass / total) * 100) : 0;
+    return { total, ...counts, passRate };
+  },
+
+  /** Render directory-level test suite overview across multiple sheets.
+   * @param {HTMLElement} container
+   * @param {Array<{ id: string, name: string, rows: string[][], cols: object, dirStats?: object }>} sheets
+   * @param {function} navigateFn
+   */
+  directoryView(container, sheets, navigateFn) {
+    container.append(el('div', { className: 'tc-dir-title' }, ['🧪 Test Suite Overview']));
+
+    /* Aggregate stats across all sheets */
+    const suiteStats = [];
+    let grandTotal = 0, grandPass = 0, grandFail = 0, grandBlocked = 0, grandSkip = 0, grandUntested = 0;
+
+    for (const sheet of sheets) {
+      let stats;
+      if (sheet.dirStats) {
+        stats = sheet.dirStats;
+      } else {
+        const rows = sheet.rows || [];
+        const cols = sheet.cols || { result: -1 };
+        const counts = { pass: 0, fail: 0, blocked: 0, skip: 0, untested: 0 };
+        for (const row of rows) counts[classify(cell(row, cols.result))]++;
+        const total = rows.length;
+        const passRate = total > 0 ? Math.round((counts.pass / total) * 100) : 0;
+        stats = { total, ...counts, passRate };
+      }
+      grandTotal += stats.total;
+      grandPass += stats.pass;
+      grandFail += stats.fail;
+      grandBlocked += stats.blocked;
+      grandSkip += stats.skip;
+      grandUntested += stats.untested;
+      suiteStats.push({ id: sheet.id, title: sheet.name, ...stats });
+    }
+
+    const grandPassRate = grandTotal > 0 ? Math.round((grandPass / grandTotal) * 100) : 0;
+    const rateClass = grandPassRate >= 80 ? 'tc-dir-rate-good' : grandPassRate >= 50 ? 'tc-dir-rate-warn' : 'tc-dir-rate-bad';
+
+    /* Grand totals bar */
+    container.append(el('div', { className: 'tc-dir-totals' }, [
+      el('span', { className: 'tc-dir-totals-count' }, [`${grandTotal} tests`]),
+      el('span', { className: `tc-dir-totals-rate ${rateClass}` }, [`${grandPassRate}% pass rate`]),
+      el('span', { className: 'tc-dir-totals-pass' }, [`✓ ${grandPass}`]),
+      el('span', { className: 'tc-dir-totals-fail' }, [`✗ ${grandFail}`]),
+      el('span', { className: 'tc-dir-totals-blocked' }, [`⊘ ${grandBlocked}`]),
+      el('span', {}, [`${sheets.length} suites`]),
+    ]));
+
+    /* Per-sheet cards */
+    const grid = el('div', { className: 'tc-dir-grid' });
+
+    for (const s of suiteStats) {
+      const cardRate = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0;
+      const cardRateClass = cardRate >= 80 ? 'tc-dir-rate-good' : cardRate >= 50 ? 'tc-dir-rate-warn' : 'tc-dir-rate-bad';
+
+      /* Mini status bar showing proportions */
+      const barSegments = [];
+      if (s.pass > 0) barSegments.push(el('div', { className: 'tc-dir-bar-seg tc-dir-bar-pass', style: `flex:${s.pass}` }));
+      if (s.fail > 0) barSegments.push(el('div', { className: 'tc-dir-bar-seg tc-dir-bar-fail', style: `flex:${s.fail}` }));
+      if (s.blocked > 0) barSegments.push(el('div', { className: 'tc-dir-bar-seg tc-dir-bar-blocked', style: `flex:${s.blocked}` }));
+      if (s.skip > 0) barSegments.push(el('div', { className: 'tc-dir-bar-seg tc-dir-bar-skip', style: `flex:${s.skip}` }));
+      if (s.untested > 0) barSegments.push(el('div', { className: 'tc-dir-bar-seg tc-dir-bar-untested', style: `flex:${s.untested}` }));
+
+      grid.append(el('div', {
+        className: 'tc-dir-card',
+        dataset: { sheetId: s.id, sheetName: s.title },
+      }, [
+        el('div', { className: 'tc-dir-card-title' }, [s.title]),
+        el('div', { className: 'tc-dir-card-stats' }, [
+          el('span', { className: `tc-dir-card-rate ${cardRateClass}` }, [`${cardRate}%`]),
+          el('span', {}, [`${s.total} tests`]),
+        ]),
+        el('div', { className: 'tc-dir-card-counts' }, [
+          el('span', { className: 'tc-dir-count-pass' }, [`✓ ${s.pass}`]),
+          el('span', { className: 'tc-dir-count-fail' }, [`✗ ${s.fail}`]),
+          el('span', { className: 'tc-dir-count-blocked' }, [`⊘ ${s.blocked}`]),
+          el('span', { className: 'tc-dir-count-skip' }, [`— ${s.skip}`]),
+          el('span', { className: 'tc-dir-count-untested' }, [`? ${s.untested}`]),
+        ]),
+        el('div', { className: 'tc-dir-bar' }, barSegments),
+      ]));
+    }
+
+    container.append(grid);
+
+    delegateEvent(grid, 'click', '.tc-dir-card', (e, card) => {
+      navigateFn('sheet', card.dataset.sheetId, card.dataset.sheetName);
+    });
+  },
 
   render(container, rows, cols, template) {
     /* ---------- Summary bar ---------- */
