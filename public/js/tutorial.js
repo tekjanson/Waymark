@@ -358,6 +358,38 @@ const TEMPLATE_TUTORIALS = {
   social: [
     { title: '💬 Social Feed', body: 'View posts with author profiles, mood indicators, and threaded comments.', target: null, position: 'center' },
   ],
+
+  /* ---------- Directory View Tutorials ---------- */
+
+  'dir-budget': [
+    { title: '💰 Financial Overview', body: 'When a folder contains mostly budget sheets, Waymark creates a combined financial dashboard — grand totals, trend charts, and per-sheet summaries all in one view.', target: null, position: 'center' },
+    { title: 'Grand Totals', body: 'The totals bar shows combined income, expenses, and net balance across all budgets in this folder.', target: '.budget-dir-totals', position: 'bottom' },
+    { title: 'Trend Chart', body: 'The horizontal bar chart compares income vs expenses for each budget, sorted by balance. Hover a bar to see exact amounts.', target: '.budget-dir-chart', position: 'bottom' },
+    { title: 'Budget Cards', body: 'Each card shows one budget sheet with its balance. Click any card to open the full budget view.', target: '.budget-dir-card', position: 'bottom' },
+  ],
+  'dir-grading': [
+    { title: '🎓 Classroom Overview', body: 'When a folder contains mostly gradebooks, Waymark creates a combined classroom dashboard — student counts, class averages, and grade distributions at a glance.', target: null, position: 'center' },
+    { title: 'Grand Totals', body: 'The totals bar shows total students, number of classes, and the overall average grade across all gradebooks.', target: '.grading-dir-totals', position: 'bottom' },
+    { title: 'Class Cards', body: 'Each card shows one gradebook with its class average and grade distribution. Click any card to open the full gradebook.', target: '.grading-dir-card', position: 'bottom' },
+  ],
+  'dir-recipe': [
+    { title: '🍳 Cookbook', body: 'When a folder contains mostly recipe sheets, Waymark creates a cookbook — a sortable, filterable grid of all your recipes.', target: null, position: 'center' },
+    { title: 'Sort & Filter', body: 'Use the toolbar to sort by name, category, difficulty, or cooking time. Filter by any column to find recipes quickly.', target: '.cookbook-toolbar', position: 'bottom' },
+    { title: 'Recipe Cards', body: 'Each card shows servings, prep/cook times, and difficulty. Click any card to open the full recipe view.', target: '.cookbook-card', position: 'bottom' },
+  ],
+  'dir-meal': [
+    { title: '🍽️ Meal Plans Overview', body: 'When a folder contains mostly meal plan sheets, Waymark creates a combined nutrition dashboard — total calories, protein, and meal counts across all plans.', target: null, position: 'center' },
+    { title: 'Nutrition Totals', body: 'The totals bar shows combined calories, protein, and total meals across all meal plans in this folder.', target: '.meal-dir-totals', position: 'bottom' },
+    { title: 'Meal Plan Cards', body: 'Each card shows one meal plan with its stats. Click any card to open the full meal planner view.', target: '.meal-dir-card', position: 'bottom' },
+  ],
+  'dir-kanban': [
+    { title: '📋 Project Boards', body: 'When a folder contains mostly kanban sheets, Waymark creates a portfolio dashboard — see all your project boards with stage breakdowns and priority items at a glance.', target: null, position: 'center' },
+    { title: 'Board Cards', body: 'Each card shows a project board with a stage breakdown bar (Backlog, To Do, In Progress, Done) and high-priority items. Click any card to open the full board.', target: '.kanban-dir-card', position: 'bottom' },
+  ],
+  'dir-social': [
+    { title: '💬 Social Feed', body: 'When a folder contains mostly social sheets, Waymark creates a combined feed — all posts from every sheet merged into one timeline, sorted by date.', target: null, position: 'center' },
+    { title: 'Combined Timeline', body: 'Posts from all sheets are merged and sorted chronologically. Each card shows the author, date, mood, and source sheet.', target: '.social-dir-card', position: 'bottom' },
+  ],
 };
 
 /**
