@@ -134,6 +134,12 @@ function ensureRepo(owner, repo, token) {
     try {
       git(`remote set-url origin "${url}"`);
     } catch { /* ignore if remote doesn't exist yet */ }
+    // Bare clones have no fetch refspec by default, so
+    // `git fetch origin` silently skips new branches.
+    // Ensure the refspec is always configured.
+    try {
+      git('config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"');
+    } catch { /* best-effort */ }
     return;
   }
 
@@ -144,6 +150,11 @@ function ensureRepo(owner, repo, token) {
     timeout: 120000,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  // Bare clones omit the fetch refspec — add it so future fetches
+  // actually pull new branches into refs/remotes/origin/*.
+  try {
+    git('config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"');
+  } catch { /* best-effort */ }
   console.log(`[github-source] Clone complete.`);
 }
 
