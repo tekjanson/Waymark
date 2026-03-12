@@ -663,7 +663,7 @@ The workboard uses these columns (headers in row 1):
 |---|---|---|
 | Task | A | Primary identifier — non-empty = new task. Empty = sub-row. |
 | Description | B | Task description (task rows) or sub-task text (sub-rows) |
-| Stage | C | `To Do`, `In Progress`, `Done`, `Backlog`, `Archived` |
+| Stage | C | `To Do`, `In Progress`, `QA`, `Done`, `Backlog`, `Archived` |
 | Project | D | Project grouping label |
 | Assignee | E | Person responsible (task rows) or note author (note sub-rows) |
 | Priority | F | `P0`, `P1`, `P2`, `P3` |
@@ -726,7 +726,7 @@ The kanban template uses `parseGroups()` (§4.1a) to group rows:
 
 **Example — marking a task Done and adding a completion note:**
 If the task is on row 180:
-1. Update `Sheet1!C180` to `Done`
+1. Update `Sheet1!C180` to `QA` (or `Done` if the human has reviewed and approved)
 2. Count existing sub-rows below row 180 (rows 181, 182… where column A is empty)
 3. **Insert** a new row after the last sub-row with: `["", "", "", "", "AI", "", "2026-03-11", "", "Completed: summary of what was done"]`
 

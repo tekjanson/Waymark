@@ -74,7 +74,7 @@ const definition = {
     return [
       { role: 'text',        label: 'Task',        colIndex: cols.text,        type: 'text',   placeholder: 'Task title', required: true },
       { role: 'description', label: 'Description',  colIndex: cols.description, type: 'textarea', placeholder: 'Details (optional)' },
-      { role: 'stage',       label: 'Stage',        colIndex: cols.stage,       type: 'select', options: ['Backlog', 'To Do', 'In Progress', 'Done'], defaultValue: 'Backlog' },
+      { role: 'stage',       label: 'Stage',        colIndex: cols.stage,       type: 'select', options: ['Backlog', 'To Do', 'In Progress', 'QA', 'Done'], defaultValue: 'Backlog' },
       { role: 'project',     label: 'Project',      colIndex: cols.project,     type: 'combo',  placeholder: 'Select or type new…' },
       { role: 'assignee',    label: 'Assignee',     colIndex: cols.assignee,    type: 'combo',  placeholder: 'Select or type new…' },
       { role: 'priority',    label: 'Priority',     colIndex: cols.priority,    type: 'select', options: ['P0', 'P1', 'P2', 'P3'], defaultValue: 'P2' },
@@ -84,13 +84,14 @@ const definition = {
     ];
   },
 
-  stageStates: ['Backlog', 'To Do', 'In Progress', 'Done', 'Rejected'],
+  stageStates: ['Backlog', 'To Do', 'In Progress', 'QA', 'Done', 'Rejected'],
 
   stageClass(val) {
     const v = (val || '').toLowerCase().trim();
     if (/^(archived|archive)/.test(v)) return 'archived';
     if (/^(reject|declined|refused|denied|wontfix|won't.?fix|invalid)/.test(v)) return 'rejected';
     if (/^(done|complete|finished|closed|shipped)/.test(v)) return 'done';
+    if (/^(qa|review|testing|verify|verification)/.test(v)) return 'qa';
     if (/^(in.?progress|doing|active|wip|started)/.test(v)) return 'inprogress';
     if (/^(to.?do|ready|planned|next|queued)/.test(v)) return 'todo';
     return 'backlog';

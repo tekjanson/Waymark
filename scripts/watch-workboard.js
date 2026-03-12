@@ -147,6 +147,7 @@ async function poll() {
       t.stage === 'To Do' || t.stage === 'Backlog'
     );
     const inProgress = allTasks.filter(t => t.stage === 'In Progress');
+    const qa = allTasks.filter(t => t.stage === 'QA');
     const done = allTasks.filter(t => t.stage === 'Done');
 
     if (firstRun) {
@@ -154,6 +155,7 @@ async function poll() {
         agentMarker('STATUS', {
           todo: todoItems.length,
           inProgress: inProgress.length,
+          qa: qa.length,
           done: done.length,
           items: sortByPriority(todoItems).map(t => ({
             row: t.row, task: t.task, priority: t.priority,
@@ -163,7 +165,7 @@ async function poll() {
       } else {
         console.log(`\n${BOLD}═══════════════════════════════════════════════════════${RESET}`);
         console.log(`${BOLD}  📋 Waymark Workboard Watcher${RESET}`);
-        console.log(`${DIM}  Polling every ${intervalSec}s | ${todoItems.length} To Do | ${inProgress.length} In Progress | ${done.length} Done${RESET}`);
+        console.log(`${DIM}  Polling every ${intervalSec}s | ${todoItems.length} To Do | ${inProgress.length} In Progress | ${qa.length} QA | ${done.length} Done${RESET}`);
         console.log(`${BOLD}═══════════════════════════════════════════════════════${RESET}\n`);
 
         if (todoItems.length === 0) {
