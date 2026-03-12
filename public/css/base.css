@@ -507,9 +507,9 @@ ul { list-style: none; }
 }
 .pinned-card:hover { box-shadow: var(--shadow); border-color: var(--color-primary); }
 .pinned-card .folder-emoji { font-size: 1.5rem; }
-.pinned-card-info { flex: 1; min-width: 0; }
+.pinned-card-info { flex: 1; min-width: 0; overflow: hidden; }
 .pinned-card-name { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pinned-card-owner { font-size: 0.8rem; color: var(--color-text-muted); }
+.pinned-card-owner { font-size: 0.8rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Sheet List ---------- */
 .sheet-list { display: flex; flex-direction: column; gap: 4px; }

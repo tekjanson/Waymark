@@ -600,7 +600,9 @@ function renderPinnedFolders() {
       el('div', { className: 'pinned-card-info' }, [
         el('div', { className: 'pinned-card-name' }, [folder.name]),
         folder.owner
-          ? el('div', { className: 'pinned-card-owner' }, [folder.owner])
+          ? el('div', { className: 'pinned-card-owner', title: folder.owner }, [
+              folder.owner.includes('@') ? folder.owner.split('@')[0] : folder.owner,
+            ])
           : null,
         folder.shared
           ? el('span', { className: 'badge-shared' }, ['shared'])
