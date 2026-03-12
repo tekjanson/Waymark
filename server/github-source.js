@@ -1,24 +1,23 @@
 /**
  * github-source.js — Fetch and cache frontend files from a GitHub repo.
  *
- * NOTE: This module is part of an EXPERIMENTAL branch exploring dynamic
- * frontend versioning via GitHub.  It extends the server's existing
- * "serve static files" responsibility — no business logic is added.
+ * This module serves frontend files from GitHub instead of the local
+ * public/ directory.  It extends the server's existing "serve static
+ * files" responsibility — no business logic is added.
  *
  * How it works:
  *   1. On first request for a file, fetch it from GitHub's raw content API
  *      at the configured commit hash / branch / tag.
  *   2. Write the file to a local disk cache (`server/.github-cache/<ref>/`).
  *   3. Subsequent requests for the same ref+path are served from disk.
- *   4. Changing the ref (env var or API) invalidates the cache automatically
+ *   4. Changing the ref (API call) invalidates the cache automatically
  *      because the cache key includes the ref.
  *
- * Environment variables (see config.js):
- *   GITHUB_OWNER   — repo owner (e.g. 'user')
- *   GITHUB_REPO    — repo name  (e.g. 'Waymark')
- *   GITHUB_REF     — commit SHA, branch, or tag (default: 'main')
- *   GITHUB_TOKEN   — optional PAT for private repos
- *   GITHUB_SOURCE  — set to 'true' to enable this mode
+ * Configuration (hardcoded in config.js):
+ *   GITHUB_OWNER   — repo owner ('tekjanson')
+ *   GITHUB_REPO    — repo name  ('Waymark')
+ *   GITHUB_REF     — default ref ('main')
+ *   GITHUB_TOKEN   — optional PAT for private repos / rate-limit relief (env var)
  */
 
 const fs = require('fs');
