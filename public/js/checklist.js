@@ -9,6 +9,7 @@ import { el, showToast, timeAgo } from './ui.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations } from './templates/shared.js';
+import { Tutorial } from './tutorial.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -18,7 +19,8 @@ let currentValues  = null;
 let currentDataTitle = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn;
+let currentTemplateKey = null;
 
 /* ---------- Public ---------- */
 
@@ -35,6 +37,13 @@ export function init() {
   duplicateSheetBtn = document.getElementById('duplicate-sheet-btn');
   shareBtn          = document.getElementById('share-btn');
   lockBtn           = document.getElementById('lock-btn');
+  templateHelpBtn   = document.getElementById('template-help-btn');
+
+  if (templateHelpBtn) {
+    templateHelpBtn.addEventListener('click', () => {
+      if (currentTemplateKey) Tutorial.startTemplateTutorial(currentTemplateKey, true);
+    });
+  }
 
   autoToggle.checked = userData.getAutoRefresh();
 
@@ -531,6 +540,13 @@ function renderWithTemplate(values) {
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
 
+  // Show template help button and trigger first-time tutorial
+  currentTemplateKey = key;
+  if (templateHelpBtn) {
+    templateHelpBtn.classList.remove('hidden');
+  }
+  Tutorial.startTemplateTutorial(key);
+
   // Migration banner: suggest adding missing columns the template now supports
   const missing = getMissingMigrations(template, cols);
   if (missing.length > 0) {
@@ -622,7 +638,8 @@ function openShareModal(sheetId, sheetName) {
   const existing = document.getElementById('share-modal');
   if (existing) existing.remove();
 
-  const waymarkLink = `${window.location.origin}/#/sheet/${sheetId}`;
+  const base = window.__WAYMARK_BASE || '';
+  const waymarkLink = `${window.location.origin}${base}/#/sheet/${sheetId}`;
   const googleEditLink = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing`;
 
   const modal = el('div', {

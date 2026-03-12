@@ -65,10 +65,20 @@ export function openCardModal(group, ctx) {
     }, [project]));
   }
 
-  if (priority) {
-    headerMeta.append(el('span', {
-      className: `kanban-pri-dot kanban-pri-${priority.toLowerCase().trim()}`,
-    }));
+  if (cols.priority >= 0) {
+    const priDot = el('button', {
+      className: `kanban-pri-dot kanban-pri-${(priority || '').toLowerCase().trim()}`,
+      title: `Priority: ${priority || 'None'} (click to change)`,
+    }, [priority || '']);
+    const priStates = ['P0', 'P1', 'P2', 'P3'];
+    const priClassify = v => (v || '').toLowerCase().trim();
+    priDot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const next = cycleStatus(priDot, priStates, priClassify, 'kanban-pri-dot kanban-pri-');
+      priDot.title = `Priority: ${next} (click to change)`;
+      emitEdit(rowIdx, cols.priority, next);
+    });
+    headerMeta.append(priDot);
   }
 
   if (due) {

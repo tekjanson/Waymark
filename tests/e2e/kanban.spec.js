@@ -620,6 +620,41 @@ test('kanban add-row combo selects option from dropdown', async ({ page }) => {
   await expect(comboInput).toHaveValue(optionText || '');
 });
 
+test('kanban priority dot cycles on click and records edit', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand first card to access detail panel
+  const expandBtn = page.locator('.kanban-card-expand').first();
+  await expandBtn.click();
+  await page.waitForSelector('.kanban-card-detail', { timeout: 3_000 });
+
+  // Click priority dot on the card header
+  const priDot = page.locator('.kanban-card .kanban-pri-dot').first();
+  await expect(priDot).toBeVisible();
+  await priDot.click();
+
+  // Verify a priority edit was recorded
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && /P[0-3]/.test(r.value))).toBe(true);
+});
+
+test('kanban detail panel shows editable priority field', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand first card
+  const expandBtn = page.locator('.kanban-card-expand').first();
+  await expandBtn.click();
+  await page.waitForSelector('.kanban-card-detail', { timeout: 3_000 });
+
+  // Priority field should exist in the detail metadata
+  const priLabel = page.locator('.kanban-detail-field-label').filter({ hasText: 'Priority' });
+  await expect(priLabel).toBeVisible();
+});
+
 test('kanban add-row description is a textarea', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-028');
@@ -633,4 +668,41 @@ test('kanban add-row description is a textarea', async ({ page }) => {
   const form = page.locator('.add-row-form:not(.hidden)');
   const textarea = form.locator('.add-row-field-textarea');
   await expect(textarea).toBeVisible();
+});
+
+test('kanban lane collapse button hides cards', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Click collapse button on first lane
+  const collapseBtn = page.locator('.kanban-lane-collapse').first();
+  await collapseBtn.click();
+
+  // Lane should have collapsed class
+  const firstLane = page.locator('.kanban-lane').first();
+  await expect(firstLane).toHaveClass(/kanban-lane-collapsed/);
+
+  // Lane body should be hidden
+  const laneBody = firstLane.locator('.kanban-lane-body');
+  await expect(laneBody).toBeHidden();
+});
+
+test('kanban lane collapse toggles back on second click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const collapseBtn = page.locator('.kanban-lane-collapse').first();
+  // Collapse
+  await collapseBtn.click();
+  const firstLane = page.locator('.kanban-lane').first();
+  await expect(firstLane).toHaveClass(/kanban-lane-collapsed/);
+
+  // Expand
+  const expandBtn = firstLane.locator('.kanban-lane-collapse');
+  await expandBtn.click();
+  await expect(firstLane).not.toHaveClass(/kanban-lane-collapsed/);
+  const laneBody = firstLane.locator('.kanban-lane-body');
+  await expect(laneBody).toBeVisible();
 });

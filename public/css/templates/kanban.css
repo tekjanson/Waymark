@@ -95,6 +95,22 @@
   transition: width var(--transition);
 }
 
+/* ---------- Lane collapse toggle ---------- */
+
+.kanban-lane-collapse {
+  background: none; border: none; cursor: pointer; padding: 0 2px;
+  font-size: 0.85rem; color: inherit; opacity: 0.6;
+  transition: opacity var(--transition), transform var(--transition);
+}
+.kanban-lane-collapse:hover { opacity: 1; }
+
+.kanban-lane-collapsed {
+  min-height: auto; padding: 4px 8px;
+}
+.kanban-lane-collapsed .kanban-lane-header {
+  margin-bottom: 0;
+}
+
 /* ---------- Cards ---------- */
 
 .kanban-card {
@@ -174,9 +190,18 @@
 
 /* ---------- Priority dots ---------- */
 
+button.kanban-pri-dot {
+  border: none; padding: 0; background: none;
+  cursor: pointer; font-size: 0; color: transparent;
+  overflow: hidden;
+}
 .kanban-pri-dot {
   width: 8px; height: 8px; border-radius: 50%;
   display: inline-block; flex-shrink: 0; margin-top: 4px;
+  transition: transform var(--transition);
+}
+.kanban-pri-dot:hover {
+  transform: scale(1.6);
 }
 
 .kanban-pri-dot.kanban-pri-p0 { background: #dc2626; }

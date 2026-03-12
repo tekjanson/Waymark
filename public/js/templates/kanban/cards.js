@@ -52,10 +52,11 @@ export function buildCard(group, ctx, laneKey) {
   /* -- Card header: priority dot + title + open + expand toggle -- */
   const cardHeader = el('div', { className: 'kanban-card-header' });
 
-  if (priority) {
-    cardHeader.append(el('span', {
-      className: `kanban-pri-dot kanban-pri-${priority.toLowerCase().trim()}`,
-    }));
+  if (cols.priority >= 0) {
+    cardHeader.append(el('button', {
+      className: `kanban-pri-dot kanban-pri-${(priority || '').toLowerCase().trim()}`,
+      title: `Priority: ${priority || 'None'} (click to change)`,
+    }, [priority || '']));
   }
 
   cardHeader.append(editableCell('span', { className: 'kanban-card-title' }, taskName, rowIdx, cols.text));
@@ -224,6 +225,12 @@ export function buildCardDetail(group, ctx) {
     metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
       el('span', { className: 'kanban-detail-field-label' }, ['Reported By']),
       comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.reporter), rowIdx, cols.reporter, allReporters || []),
+    ]));
+  }
+  if (cols.priority >= 0) {
+    metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
+      el('span', { className: 'kanban-detail-field-label' }, ['Priority']),
+      comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.priority), rowIdx, cols.priority, ['P0', 'P1', 'P2', 'P3']),
     ]));
   }
   if (metaGrid.children.length > 0) detail.append(metaGrid);

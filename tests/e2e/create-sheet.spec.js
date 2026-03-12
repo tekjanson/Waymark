@@ -230,3 +230,16 @@ test('modal resets state when reopened', async ({ page }) => {
   const selectedCards = page.locator('.create-sheet-card.selected');
   await expect(selectedCards).toHaveCount(0);
 });
+
+test('home action create button opens modal with template grid populated', async ({ page }) => {
+  await setupApp(page);
+
+  // Click the home view create button
+  const homeBtn = page.locator('#home-action-create');
+  await homeBtn.click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  // Template cards should be rendered (not empty)
+  const cards = page.locator('.create-sheet-card');
+  expect(await cards.count()).toBeGreaterThan(0);
+});
