@@ -51,12 +51,12 @@
 /* ---------- Board ---------- */
 
 .kanban-board {
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   gap: 12px; min-height: 200px;
 }
 
-.kanban-board.kanban-board-6 {
-  grid-template-columns: repeat(6, 1fr);
+.kanban-board.kanban-board-7 {
+  grid-template-columns: repeat(7, 1fr);
 }
 
 .kanban-lane {
@@ -652,8 +652,8 @@ button.kanban-pri-dot {
 
 @media (max-width: 768px) {
   .kanban-board,
-  .kanban-board.kanban-board-5,
-  .kanban-board.kanban-board-6 {
+  .kanban-board.kanban-board-6,
+  .kanban-board.kanban-board-7 {
     grid-template-columns: 1fr;
   }
 

@@ -14,7 +14,7 @@ export const PROJECT_PALETTE = [
 
 export const LANE_LABELS = {
   backlog: 'Backlog', todo: 'To Do', inprogress: 'In Progress',
-  done: 'Done', rejected: 'Rejected', archived: 'Archived',
+  qa: 'QA', done: 'Done', rejected: 'Rejected', archived: 'Archived',
 };
 
 /** Number of cards rendered per lane before showing "Show more" */

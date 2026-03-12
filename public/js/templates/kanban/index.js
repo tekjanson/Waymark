@@ -515,7 +515,7 @@ const definition = {
     }
 
     /** All possible lane keys */
-    const allLaneKeys = ['backlog', 'todo', 'inprogress', 'done', 'rejected', 'archived'];
+    const allLaneKeys = ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected', 'archived'];
 
     // Build lane skeletons once (delegated handlers survive across updates)
     for (const laneKey of allLaneKeys) {
@@ -529,12 +529,12 @@ const definition = {
     function updateBoard() {
       // Determine visible lanes
       const laneOrder = _showArchived
-        ? ['backlog', 'todo', 'inprogress', 'done', 'rejected', 'archived']
-        : ['backlog', 'todo', 'inprogress', 'done', 'rejected'];
+        ? ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected', 'archived']
+        : ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected'];
 
       // Update grid class
-      boardEl.classList.toggle('kanban-board-6', _showArchived);
-      boardEl.classList.toggle('kanban-board-5', !_showArchived);
+      boardEl.classList.toggle('kanban-board-7', _showArchived);
+      boardEl.classList.toggle('kanban-board-6', !_showArchived);
 
       // Detach all lanes, then re-append in order (preserves skeleton)
       boardEl.innerHTML = '';
