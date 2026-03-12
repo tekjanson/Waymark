@@ -146,63 +146,71 @@ const definition = {
       window.print();
     });
 
-    // --- Scale controls ---
+    // --- Scale controls (dropdown) ---
     const SCALES = [
       { label: '\u00BD\u00D7', value: 0.5 },
       { label: '1\u00D7', value: 1 },
       { label: '2\u00D7', value: 2 },
       { label: '3\u00D7', value: 3 },
     ];
-    const scaleButtons = [];
-    const scaleBar = el('div', { className: 'recipe-scale-bar' }, [
-      el('span', { className: 'recipe-scale-label' }, ['Scale:']),
-    ]);
-    for (const s of SCALES) {
-      const btn = el('button', {
-        className: `recipe-scale-btn${s.value === 1 ? ' active' : ''}`,
-        type: 'button',
-      }, [s.label]);
-      btn.dataset.scale = String(s.value);
-      scaleButtons.push(btn);
-      scaleBar.append(btn);
-    }
+    const scaleButtons = [];  // kept for compatibility with applyScale()
 
-    // Custom scale input
+    const scaleSelect = el('select', {
+      className: 'recipe-scale-select',
+      title: 'Scale recipe',
+    });
+    for (const s of SCALES) {
+      const opt = el('option', { value: String(s.value) }, [s.label]);
+      if (s.value === 1) opt.selected = true;
+      scaleSelect.append(opt);
+    }
+    const customOpt = el('option', { value: 'custom' }, ['Custom…']);
+    scaleSelect.append(customOpt);
+
+    // Custom scale input (hidden until "Custom…" selected)
     const customScaleInput = el('input', {
       type: 'number',
-      className: 'recipe-scale-custom',
-      placeholder: 'Custom',
+      className: 'recipe-scale-custom hidden',
+      placeholder: 'e.g. 1.5',
       min: '0.1',
       step: '0.1',
       title: 'Enter a custom scale multiplier',
     });
-    scaleBar.append(customScaleInput);
-    scaleBar.append(printBtn);
 
-    // --- Unit conversion controls (split mode only) ---
+    // --- Unit conversion controls (dropdown, split mode only) ---
     let currentConversion = 'original';
-    let convertBar = null;
+    let convertSelect = null;
     const CONVERSIONS = [
       { label: 'Original', value: 'original' },
       { label: 'Metric',   value: 'metric'   },
       { label: 'Imperial', value: 'imperial'  },
     ];
-    const convertButtons = [];
+    const convertButtons = [];  // kept for compatibility with applyConversion()
 
     if (useSplitQty) {
-      convertBar = el('div', { className: 'recipe-convert-bar' }, [
-        el('span', { className: 'recipe-convert-label' }, ['Units:']),
-      ]);
+      convertSelect = el('select', {
+        className: 'recipe-convert-select',
+        title: 'Unit system',
+      });
       for (const c of CONVERSIONS) {
-        const btn = el('button', {
-          className: `recipe-convert-btn${c.value === 'original' ? ' active' : ''}`,
-          type: 'button',
-        }, [c.label]);
-        btn.dataset.conversion = c.value;
-        convertButtons.push(btn);
-        convertBar.append(btn);
+        const opt = el('option', { value: c.value }, [c.label]);
+        if (c.value === 'original') opt.selected = true;
+        convertSelect.append(opt);
       }
     }
+
+    // --- Combined toolbar: Scale + Units + Print ---
+    const toolbarItems = [
+      el('span', { className: 'recipe-toolbar-label' }, ['Scale:']),
+      scaleSelect,
+      customScaleInput,
+    ];
+    if (convertSelect) {
+      toolbarItems.push(el('span', { className: 'recipe-toolbar-label' }, ['Units:']));
+      toolbarItems.push(convertSelect);
+    }
+    toolbarItems.push(printBtn);
+    const recipeToolbar = el('div', { className: 'recipe-toolbar' }, toolbarItems);
 
     // --- Meta badges ---
     const metaItems = [];
@@ -278,6 +286,9 @@ const definition = {
     if (cols.status >= 0 || cols.rating >= 0) {
       const items = [];
 
+      /* --- Top row: status badge + average stars side by side --- */
+      const topRow = el('div', { className: 'recipe-status-rating-row' });
+
       /* --- Status badge --- */
       if (cols.status >= 0) {
         const statusText = STATUSES.includes(statusRaw) ? statusRaw : 'Untested';
@@ -296,7 +307,7 @@ const definition = {
           badge.className = `recipe-status-badge recipe-status-${nextClass}`;
           emitEdit(firstRowIdx, cols.status, next);
         });
-        items.push(badge);
+        topRow.append(badge);
       }
 
       /* --- Rating --- */
@@ -382,13 +393,14 @@ const definition = {
         });
 
         const ratingWrap = el('div', { className: 'recipe-rating-section' }, [
-          avgStars,
           breakdown,
           yourRow,
         ]);
+        topRow.append(avgStars);
         items.push(ratingWrap);
       }
 
+      items.unshift(topRow);
       statusRatingSection = el('div', { className: 'recipe-status-rating' }, items);
     }
 
@@ -563,11 +575,11 @@ const definition = {
         title: 'Reset all checkmarks',
       }, ['\u21BA Reset']);
 
-      const modeBar = el('div', { className: 'recipe-mode-bar' }, [shoppingBtn, resetBtn]);
+      // Append mode buttons to the toolbar (after Print)
+      recipeToolbar.append(shoppingBtn, resetBtn);
 
       ingredSection = el('div', { className: 'recipe-card-ingredients' }, [
         el('h4', {}, ['Ingredients']),
-        modeBar,
         ul,
         addIngredient,
       ]);
@@ -716,31 +728,35 @@ const definition = {
 
     function applyScale(scale, fromPreset = false) {
       currentScale = scale;
-      // Update button active states
       const matchesPreset = SCALES.some(s => s.value === scale);
-      for (const btn of scaleButtons) {
-        btn.classList.toggle('active', Number(btn.dataset.scale) === scale);
-      }
-      // Sync custom input: clear it when a preset is clicked, populate when custom
-      if (fromPreset) {
+      // Sync dropdown value
+      if (fromPreset && matchesPreset) {
+        scaleSelect.value = String(scale);
         customScaleInput.value = '';
-        customScaleInput.classList.remove('recipe-scale-custom-active');
+        customScaleInput.classList.add('hidden');
       } else if (!matchesPreset) {
-        customScaleInput.classList.add('recipe-scale-custom-active');
+        scaleSelect.value = 'custom';
+        customScaleInput.classList.remove('hidden');
       }
       updateIngredientDisplay();
     }
 
     function applyConversion(system) {
       currentConversion = system;
-      for (const btn of convertButtons) {
-        btn.classList.toggle('active', btn.dataset.conversion === system);
-      }
+      if (convertSelect) convertSelect.value = system;
       updateIngredientDisplay();
     }
-    // Delegated scale-button clicks (one listener instead of N)
-    delegateEvent(scaleBar, 'click', '.recipe-scale-btn', (_e, btn) => {
-      applyScale(Number(btn.dataset.scale), true);
+    // Scale dropdown change handler
+    scaleSelect.addEventListener('change', () => {
+      const val = scaleSelect.value;
+      if (val === 'custom') {
+        customScaleInput.classList.remove('hidden');
+        customScaleInput.focus();
+      } else {
+        customScaleInput.classList.add('hidden');
+        customScaleInput.value = '';
+        applyScale(Number(val), true);
+      }
     });
     // Custom scale input events
     function handleCustomScale() {
@@ -753,25 +769,26 @@ const definition = {
     customScaleInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); handleCustomScale(); }
     });
-    // Delegated conversion-button clicks (one listener instead of N)
-    if (convertBar) {
-      delegateEvent(convertBar, 'click', '.recipe-convert-btn', (_e, btn) => {
-        applyConversion(btn.dataset.conversion);
+    // Conversion dropdown change handler
+    if (convertSelect) {
+      convertSelect.addEventListener('change', () => {
+        applyConversion(convertSelect.value);
       });
     }
 
     // --- Assemble single recipe card ---
+    // --- Assemble single recipe card ---
+    // statusRatingSection goes at the bottom, after notes
     const card = el('div', { className: 'recipe-card recipe-single' }, [
       header,
       photoSection,
-      scaleBar,
-      convertBar,
       meta,
-      statusRatingSection,
+      recipeToolbar,
       sourceSection,
       ingredSection,
       instrSection,
       notesSection,
+      statusRatingSection,
     ]);
 
     /* Shopping list mode — hides everything except title + ingredients */

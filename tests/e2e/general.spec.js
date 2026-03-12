@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet, waitForChecklistRows, getChecklistTexts, getCreatedRecords } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet, waitForChecklistRows, getChecklistTexts, getCreatedRecords, openOverflowMenu } = require('../helpers/test-utils');
 
 test('template badge hidden for empty sheets', async ({ page }) => {
   await setupApp(page);
@@ -31,6 +31,7 @@ test('duplicate sheet button visible and creates copy', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   const dupBtn = page.locator('#duplicate-sheet-btn');
   await expect(dupBtn).toBeVisible();
 
@@ -56,11 +57,12 @@ test('duplicate sheet button visible and creates copy', async ({ page }) => {
   expect(copyRecord.rows.length).toBeGreaterThan(0);
 });
 
-test('share button visible on sheet view', async ({ page }) => {
+test('share button visible in overflow menu', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   const shareBtn = page.locator('#share-btn');
   await expect(shareBtn).toBeVisible();
   await expect(shareBtn).toContainText('Share');
@@ -71,6 +73,7 @@ test('share button opens share modal with links', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
@@ -94,6 +97,7 @@ test('share modal has copy buttons', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -107,6 +111,7 @@ test('share modal closes on close button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
@@ -120,6 +125,7 @@ test('share modal closes on overlay click', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -133,6 +139,7 @@ test('share modal has manage sharing link', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -148,6 +155,7 @@ test('duplicate modal closes on close button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
@@ -160,6 +168,7 @@ test('duplicate modal closes on cancel button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
@@ -172,6 +181,7 @@ test('duplicate modal has choose folder button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
@@ -184,6 +194,7 @@ test('duplicate folder browser shows breadcrumbs and folders', async ({ page }) 
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
@@ -204,6 +215,7 @@ test('duplicate folder browser select button picks folder', async ({ page }) => 
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
@@ -223,7 +235,8 @@ test('lock button shows toast feedback on toggle', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  // Click lock button
+  // Click lock button via overflow menu
+  await openOverflowMenu(page);
   await page.locator('#lock-btn').click();
 
   // Should show lock toast
@@ -235,28 +248,30 @@ test('lock button shows toast feedback on toggle', async ({ page }) => {
   await page.waitForSelector('.toast', { state: 'hidden', timeout: 6_000 });
 
   // Unlock and verify toast
+  await openOverflowMenu(page);
   await page.locator('#lock-btn').click();
   await expect(page.locator('.toast').last()).toContainText('unlocked');
 });
 
-test('lock button visible and toggles lock state', async ({ page }) => {
+test('lock button visible in overflow and toggles lock state', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
+  await openOverflowMenu(page);
   const lockBtn = page.locator('#lock-btn');
   await expect(lockBtn).toBeVisible();
   // Initially unlocked
   await expect(lockBtn).not.toHaveClass(/locked/);
 
-  // Click to lock
+  // Click to lock (menu closes, re-open to verify state)
   await lockBtn.click();
-  await expect(lockBtn).toHaveClass(/locked/);
   await expect(page.locator('#checklist-items')).toHaveClass(/sheet-locked/);
 
-  // Click to unlock
+  // Re-open menu and unlock
+  await openOverflowMenu(page);
+  await expect(lockBtn).toHaveClass(/locked/);
   await lockBtn.click();
-  await expect(lockBtn).not.toHaveClass(/locked/);
   await expect(page.locator('#checklist-items')).not.toHaveClass(/sheet-locked/);
 });
 
@@ -265,7 +280,8 @@ test('locked sheet prevents inline editing', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('.editable-cell', { timeout: 5_000 });
 
-  // Lock the sheet
+  // Lock the sheet via overflow menu
+  await openOverflowMenu(page);
   await page.locator('#lock-btn').click();
   await expect(page.locator('#checklist-items')).toHaveClass(/sheet-locked/);
 
