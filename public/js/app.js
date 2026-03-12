@@ -291,27 +291,20 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
-  // GitHub source: sync the user's pinned ref with the backend
+  // GitHub source: keep the user's saved ref in sync with whatever the
+  // server is actually serving.  The server is the source of truth — it may
+  // have been changed via the server-injected settings widget (which can't
+  // update Drive) or may have reverted to the default ref after a restart.
+  // Instead of fighting the server, we simply persist its current ref.
   if (window.__WAYMARK_GITHUB_SOURCE) {
-    const savedRef = userData.getGithubRef();
     const serverRef = window.__WAYMARK_GITHUB_REF || 'main';
-    if (savedRef && savedRef !== serverRef) {
-      // User has a pinned ref that differs from what the server is serving — switch it
+    const savedRef = userData.getGithubRef();
+    if (savedRef !== serverRef) {
       try {
-        const base = window.__WAYMARK_BASE || '';
-        const res = await fetch(`${base}/api/source/ref`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: savedRef }),
-        });
-        if (res.ok) {
-          console.log(`[version-pin] Synced server to user's pinned ref: ${savedRef}`);
-          // Reload so the new frontend version takes effect
-          window.location.reload();
-          return;
-        }
+        await userData.setGithubRef(serverRef);
+        console.log(`[version-pin] Synced saved ref to server: ${serverRef}`);
       } catch (err) {
-        console.warn('[version-pin] Failed to sync ref with server:', err);
+        console.warn('[version-pin] Failed to persist server ref:', err);
       }
     }
   }
