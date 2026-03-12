@@ -316,6 +316,34 @@
         <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
       </div>
 
+      <!-- Version Pinning (only visible when GitHub source is active) -->
+      <div id="settings-version-section" class="settings-section hidden">
+        <h4 class="settings-section-title">App Version</h4>
+        <p class="settings-version-desc">Pin yourself to a specific version. Updates become optional — you choose when to move forward.</p>
+
+        <div class="settings-row">
+          <span class="settings-label">Branch / Version</span>
+          <div class="settings-version-picker">
+            <input type="text" id="settings-github-ref" class="settings-ref-input" placeholder="main" autocomplete="off" spellcheck="false">
+            <button id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
+          </div>
+        </div>
+
+        <div id="settings-ref-status" class="settings-ref-status hidden"></div>
+
+        <div class="settings-row">
+          <span class="settings-label">Quick switch</span>
+          <div id="settings-ref-suggestions" class="settings-ref-suggestions">
+            <button class="settings-ref-tag active" data-ref="main">main (latest)</button>
+          </div>
+        </div>
+
+        <div class="settings-row settings-current-ref-row">
+          <span class="settings-label">Currently serving</span>
+          <code id="settings-current-ref" class="settings-current-ref">main</code>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <span class="text-muted">Changes save automatically</span>
         <button id="settings-done-btn" class="btn btn-primary">Done</button>

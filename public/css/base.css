@@ -1208,6 +1208,54 @@ ul { list-style: none; }
   flex: 1; cursor: pointer; padding: 2px 0;
 }
 .settings-folder-name:hover { text-decoration: underline; color: var(--color-primary); }
+
+/* Version picker */
+.settings-version-desc {
+  font-size: 0.82rem; color: var(--color-text-muted);
+  margin: 0 0 12px; line-height: 1.4;
+}
+.settings-version-picker {
+  display: flex; align-items: center; gap: 8px;
+}
+.settings-ref-input {
+  padding: 5px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border); font-size: 0.85rem;
+  font-family: monospace; background: var(--color-surface);
+  width: 160px;
+  transition: border-color var(--transition);
+}
+.settings-ref-input:focus {
+  outline: none; border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+.settings-ref-status {
+  padding: 6px 0; font-size: 0.82rem; transition: color var(--transition);
+}
+.settings-ref-status-info { color: var(--color-text-muted); }
+.settings-ref-status-success { color: var(--color-success); }
+.settings-ref-status-error { color: var(--color-error); }
+.settings-ref-suggestions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.settings-ref-tag {
+  padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 500;
+  border: 1px solid var(--color-border); background: transparent;
+  color: var(--color-text-secondary); cursor: pointer;
+  font-family: monospace;
+  transition: all var(--transition);
+}
+.settings-ref-tag:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.settings-ref-tag.active {
+  background: var(--color-primary); color: #fff; border-color: var(--color-primary);
+}
+.settings-current-ref {
+  font-family: monospace; font-size: 0.82rem; font-weight: 600;
+  color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  padding: 3px 8px; border-radius: var(--radius-sm);
+}
+.settings-current-ref-row {
+  margin-top: 4px;
+}
 .settings-folder-select-btn {
   padding: 3px 10px; font-size: 0.75rem; font-weight: 600;
   border: 1px solid var(--color-primary); border-radius: var(--radius-sm);
