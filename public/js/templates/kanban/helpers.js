@@ -114,8 +114,8 @@ export function nowTimestamp() {
 
 /**
  * Format a date/datetime string for display in note headers.
- * Shows relative time for recent dates, friendly format for older ones.
- * Handles both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM" formats.
+ * Always shows the actual datetime stamp so users know exactly when
+ * things happened. Handles both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM" formats.
  * @param {string} dateStr
  * @returns {string}
  */
@@ -127,24 +127,40 @@ export function formatNoteDate(dateStr) {
   if (isNaN(d.getTime())) return dateStr;
 
   const now = new Date();
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  let str = d.toLocaleDateString('en-US', opts);
+  // Always include time when available
+  if (hasTime) {
+    str += ` ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return str;
+}
+
+/**
+ * Format a date/datetime as a short relative label for card badges.
+ * @param {string} dateStr
+ * @returns {string}
+ */
+export function formatRelativeDate(dateStr) {
+  if (!dateStr) return '';
+  const hasTime = /\d{2}:\d{2}/.test(dateStr);
+  const d = hasTime ? new Date(dateStr.replace(' ', 'T')) : new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+
+  const now = new Date();
   const diffMs = now - d;
   const diffMin = Math.round(diffMs / 60000);
   const diffHr = Math.round(diffMs / 3600000);
   const diffDay = Math.round(diffMs / 86400000);
 
-  // Recent: relative time
   if (diffMin < 1) return 'just now';
   if (diffMin < 60) return `${diffMin}m ago`;
   if (diffHr < 24) return `${diffHr}h ago`;
   if (diffDay === 1) return 'yesterday';
   if (diffDay < 7) return `${diffDay}d ago`;
 
-  // Older: friendly date (+ time if available)
   const opts = { month: 'short', day: 'numeric' };
   if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
-  let str = d.toLocaleDateString('en-US', opts);
-  if (hasTime) {
-    str += ` ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  return str;
+  return d.toLocaleDateString('en-US', opts);
 }

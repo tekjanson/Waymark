@@ -737,13 +737,15 @@ test('kanban activity items show formatted timestamps', async ({ page }) => {
   await card.locator('.kanban-card-expand').click();
   await page.waitForSelector('.kanban-activity-date', { timeout: 3_000 });
 
-  // Status-change dates should be formatted (not raw ISO), e.g. "Feb 20" or "14d ago"
+  // Status-change dates should be formatted with date AND time, not raw ISO
   const firstDate = card.locator('.kanban-activity-date').first();
   const dateText = await firstDate.textContent();
   // Should not be raw ISO format like "2026-02-20 09:15"
   expect(dateText).not.toMatch(/^\d{4}-\d{2}-\d{2}/);
-  // Should contain some formatted text (month name, relative time, etc.)
-  expect(dateText.length).toBeGreaterThan(0);
+  // Should contain a time component (AM/PM)
+  expect(dateText).toMatch(/AM|PM/i);
+  // Should contain the month abbreviation
+  expect(dateText).toMatch(/Feb|Mar|Jan|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/);
 
   // Tooltip should show original date string
   const titleAttr = await firstDate.getAttribute('title');
@@ -869,4 +871,37 @@ test('kanban Fix Search Bug card shows activity from status change', async ({ pa
   expect(await activity.count()).toBe(1);
   await expect(activity.first()).toContainText('To Do');
   await expect(activity.first()).toContainText('In Progress');
+});
+
+test('kanban card shows last-moved timestamp on card surface', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has status-change notes — should show ⟳ moved badge
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  const movedBadge = card.locator('.kanban-card-moved');
+  await expect(movedBadge).toBeVisible();
+
+  // Badge should contain the ⟳ symbol and a formatted datetime
+  const badgeText = await movedBadge.textContent();
+  expect(badgeText).toContain('⟳');
+  // Should contain a datetime like "Mar 10 2:00 PM"
+  expect(badgeText).toMatch(/AM|PM/i);
+
+  // Tooltip should show original datetime string
+  const titleAttr = await movedBadge.getAttribute('title');
+  expect(titleAttr).toContain('Last status change');
+  expect(titleAttr).toMatch(/\d{4}-\d{2}-\d{2}/);
+});
+
+test('kanban card without status changes has no moved badge', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "API Rate Limiting" has no status-change notes — should NOT show moved badge
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const movedBadge = card.locator('.kanban-card-moved');
+  expect(await movedBadge.count()).toBe(0);
 });

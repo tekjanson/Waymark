@@ -278,6 +278,14 @@ button.kanban-pri-dot {
   font-size: 0.7rem; color: var(--color-text-muted); font-weight: 500;
 }
 
+.kanban-card-moved {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
 /* ---------- Archive / Unarchive / Reject buttons ---------- */
 
 .kanban-archive-btn,

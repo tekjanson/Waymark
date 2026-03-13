@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, comboCell, textareaCell, getUserName } from '../shared.js';
-import { projectColor, dueBadgeClass, formatDue, isStatusNote, formatNoteDate } from './helpers.js';
+import { projectColor, dueBadgeClass, formatDue, isStatusNote, formatNoteDate, formatRelativeDate, nowTimestamp, STATUS_PREFIX } from './helpers.js';
 
 /* ---------- Card builder (lightweight — no detail panel, no per-card listeners) ---------- */
 
@@ -134,6 +134,21 @@ export function buildCard(group, ctx, laneKey) {
   if (hasSubtasks) {
     const stDone = group.subtasks.filter(st => template.stageClass(cell(st.row, cols.stage)) === 'done').length;
     meta.append(el('span', { className: 'kanban-card-subtask-count' }, [`☑ ${stDone}/${group.subtasks.length}`]));
+  }
+
+  // Last moved timestamp — show when the card last changed stage
+  if (cols.note >= 0) {
+    const statusNotes = group.notes.filter(n => isStatusNote(cell(n.row, cols.note)));
+    if (statusNotes.length > 0) {
+      const lastNote = statusNotes[statusNotes.length - 1];
+      const lastDate = cols.due >= 0 ? cell(lastNote.row, cols.due) : '';
+      if (lastDate) {
+        meta.append(el('span', {
+          className: 'kanban-card-moved',
+          title: `Last status change: ${lastDate}`,
+        }, [`⟳ ${formatNoteDate(lastDate)}`]));
+      }
+    }
   }
 
   preview.append(meta);
@@ -377,7 +392,7 @@ export function buildCardDetail(group, ctx) {
         const newRow = new Array(template._totalColumns || 0).fill('');
         if (cols.note >= 0) newRow[cols.note] = noteVal;
         if (cols.assignee >= 0) newRow[cols.assignee] = nameInput.value.trim();
-        if (cols.due >= 0) newRow[cols.due] = new Date().toISOString().slice(0, 10);
+        if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
         noteInput.value = '';
         nameInput.value = '';
         addForm.classList.add('hidden');
