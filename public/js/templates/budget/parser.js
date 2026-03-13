@@ -10,8 +10,10 @@
 
 /* ---------- PDF.js (vendored, lazy-loaded) ---------- */
 
-const PDFJS_PATH = '/js/vendor/pdfjs/pdf.min.mjs';
-const PDFJS_WORKER_PATH = '/js/vendor/pdfjs/pdf.worker.min.mjs';
+// Use __WAYMARK_BASE so paths resolve correctly behind the /waymark proxy
+const _BASE = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
+const PDFJS_PATH = _BASE + '/js/vendor/pdfjs/pdf.min.mjs';
+const PDFJS_WORKER_PATH = _BASE + '/js/vendor/pdfjs/pdf.worker.min.mjs';
 let _pdfjsPromise = null;
 
 /**
