@@ -383,6 +383,180 @@ test('budget upload PDF apply mapping shows preview', async ({ page }) => {
   await expect(page.locator('.budget-upload-import-btn')).toBeEnabled();
 });
 
+/* ---------- Multi-section CSV (BofA-style) ---------- */
+
+test('budget upload parses multi-section CSV with summary header', async ({ page }) => {
+  const csvPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.csv');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', csvPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // Status should show correct transaction count — 13 real transactions
+  // (excludes summary section + beginning/ending balance rows)
+  await expect(page.locator('.budget-upload-status')).toContainText('13 transactions');
+  await expect(page.locator('.budget-upload-status')).toContainText('CSV');
+
+  // Verify the correct number of rows rendered
+  const rows = await page.locator('.budget-upload-table-row').count();
+  expect(rows).toBe(13);
+
+  // Import button should be enabled
+  await expect(page.locator('.budget-upload-import-btn')).toBeEnabled();
+});
+
+test('budget upload multi-section CSV shows correct amounts', async ({ page }) => {
+  const csvPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.csv');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', csvPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // First row is MOBILE CARRIER (-95) — negative styling
+  const firstAmt = page.locator('.budget-upload-table-row').first().locator('.budget-upload-col-amt');
+  await expect(firstAmt).toHaveClass(/budget-amt-negative/);
+
+  // Third row is ACME CORP PAYROLL (1850.25) — positive styling
+  const thirdAmt = page.locator('.budget-upload-table-row').nth(2).locator('.budget-upload-col-amt');
+  await expect(thirdAmt).toHaveClass(/budget-amt-positive/);
+});
+
+test('budget upload multi-section CSV import appends correct records', async ({ page }) => {
+  const csvPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.csv');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', csvPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // Click import
+  await page.click('.budget-upload-import-btn');
+  await page.waitForSelector('#budget-upload-modal', { state: 'detached', timeout: 5000 });
+
+  // Toast should confirm
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast').first()).toContainText('added');
+
+  // Records should have 13 transaction rows
+  const records = await getCreatedRecords(page);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  expect(appendRecord.rows.length).toBe(13);
+});
+
+/* ---------- TXT fixed-width parsing ---------- */
+
+test('budget upload file input accepts TXT files', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+
+  const accept = await page.locator('.budget-upload-file-input').getAttribute('accept');
+  expect(accept).toContain('.txt');
+});
+
+test('budget upload drop zone hint mentions TXT', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('.budget-upload-drop-zone', { timeout: 3000 });
+
+  await expect(page.locator('.budget-upload-drop-hint')).toContainText('TXT');
+});
+
+test('budget upload parses TXT fixed-width statement', async ({ page }) => {
+  const txtPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.txt');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', txtPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // Status should show TXT format and correct count
+  await expect(page.locator('.budget-upload-status')).toContainText('13 transactions');
+  await expect(page.locator('.budget-upload-status')).toContainText('TXT');
+
+  // Preview should render all 13 rows
+  const rows = await page.locator('.budget-upload-table-row').count();
+  expect(rows).toBe(13);
+
+  // Import button should be enabled
+  await expect(page.locator('.budget-upload-import-btn')).toBeEnabled();
+});
+
+test('budget upload TXT preview shows correct positive and negative amounts', async ({ page }) => {
+  const txtPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.txt');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', txtPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // First row is MOBILE CARRIER (-95) — negative styling
+  const firstAmt = page.locator('.budget-upload-table-row').first().locator('.budget-upload-col-amt');
+  await expect(firstAmt).toHaveClass(/budget-amt-negative/);
+
+  // Third row is ACME CORP PAYROLL (1850.25) — positive styling
+  const thirdAmt = page.locator('.budget-upload-table-row').nth(2).locator('.budget-upload-col-amt');
+  await expect(thirdAmt).toHaveClass(/budget-amt-positive/);
+});
+
+test('budget upload TXT import appends transactions to sheet', async ({ page }) => {
+  const txtPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-multisection.txt');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', txtPath);
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 5000 });
+
+  // Click import
+  await page.click('.budget-upload-import-btn');
+  await page.waitForSelector('#budget-upload-modal', { state: 'detached', timeout: 5000 });
+
+  // Toast should confirm
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast').first()).toContainText('added');
+
+  // Records should have 13 rows
+  const records = await getCreatedRecords(page);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  expect(appendRecord.rows.length).toBe(13);
+});
+
+/* ---------- PDF support ---------- */
+
 test('budget upload PDF shows loading state while parsing', async ({ page }) => {
   const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
 

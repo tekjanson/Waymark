@@ -247,6 +247,11 @@ function parseAmount(raw) {
 
 /**
  * Parse a CSV bank statement into normalised transaction objects.
+ * Handles multi-section CSVs (e.g. BofA) where a summary section
+ * precedes the actual transaction table. Scans for the row that
+ * looks most like a transaction header (contains Date + Amount columns),
+ * then uses that as the header and everything after as data.
+ *
  * @param {string} text — raw CSV content
  * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}>, columns: Object, rawHeaders: string[] }}
  */
@@ -254,8 +259,42 @@ export function parseCSVStatement(text) {
   const rows = parseCSVRows(text);
   if (rows.length < 2) return { transactions: [], columns: {}, rawHeaders: [] };
 
-  const headers = rows[0];
-  const dataRows = rows.slice(1);
+  // Find the best header row — the one that looks most like a transaction header.
+  // In multi-section CSVs (e.g. BofA), the summary section comes first with
+  // different columns (Description, Summary Amt), and the real transaction
+  // header (Date, Description, Amount, Running Bal.) is further down.
+  let headerIdx = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < Math.min(rows.length - 1, 20); i++) {
+    const row = rows[i];
+    let score = 0;
+    const joined = row.map(c => (c || '').toLowerCase().trim()).join(' ');
+
+    // Strong signals: row contains canonical transaction header names
+    if (row.some(c => DATE_HEADERS.test((c || '').trim()))) score += 3;
+    if (row.some(c => AMOUNT_HEADERS.test((c || '').trim()))) score += 3;
+    if (row.some(c => DESC_HEADERS.test((c || '').trim()))) score += 2;
+
+    // Bonus: row has more columns (transaction tables tend to be wider)
+    if (row.length >= 3) score += 1;
+    if (row.length >= 4) score += 1;
+
+    // Penalty: if any cell looks like data (dates, amounts), it's a data row not a header
+    const hasDateData = row.some(c => /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test((c || '').trim()));
+    if (hasDateData) score -= 5;
+
+    // Penalty: if part of a summary section (common BofA pattern)
+    if (/total\s+(credits?|debits?)|(beginning|ending)\s+balance/i.test(joined)) score -= 5;
+
+    if (score > bestScore) {
+      bestScore = score;
+      headerIdx = i;
+    }
+  }
+
+  const headers = rows[headerIdx];
+  const dataRows = rows.slice(headerIdx + 1);
   const colMap = detectCSVColumns(headers, dataRows);
 
   const transactions = [];
@@ -264,9 +303,16 @@ export function parseCSVStatement(text) {
     const nonEmpty = row.filter(c => c.trim()).length;
     if (nonEmpty === 0) continue;
 
+    // Skip summary/balance rows that aren't real transactions
+    const rowText = row.join(' ').toLowerCase();
+    if (/^(beginning|ending)\s+balance/i.test(rowText)) continue;
+    if (/^total\s+(credits?|debits?|deposits?|withdrawals?)/i.test(rowText)) continue;
+
     let amount;
     if (colMap.amount >= 0) {
-      amount = parseAmount(row[colMap.amount] || '');
+      const amtStr = (row[colMap.amount] || '').trim();
+      if (!amtStr) continue; // Skip rows with no amount (e.g. opening balance lines)
+      amount = parseAmount(amtStr);
     } else if (colMap.debitCol >= 0 || colMap.creditCol >= 0) {
       const debit = parseAmount(row[colMap.debitCol] || '');
       const credit = parseAmount(row[colMap.creditCol] || '');
@@ -670,11 +716,99 @@ export function reParsePDFTransactions(rawTable, colMap) {
 /* ---------- Public API ---------- */
 
 /**
+ * Parse a fixed-width / space-aligned text statement (e.g. BofA .txt export).
+ * Uses a right-to-left parsing strategy: numeric values (amount, balance) are
+ * found at the right edge of each line, then everything between the date and
+ * the first number is the description. This handles long descriptions that
+ * overflow past the nominal "Amount" column position.
+ *
+ * @param {string} text — raw text content
+ * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}>, format: string }}
+ */
+export function parseFixedWidthStatement(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  // Find the header line containing column names
+  let headerLineIdx = -1;
+  let hasBalanceColumn = false;
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
+    const line = lines[i];
+    const lower = line.toLowerCase();
+    if (/\bdate\b/.test(lower) && (/\bamount\b/.test(lower) || /\bdescription?\b/.test(lower))) {
+      headerLineIdx = i;
+      hasBalanceColumn = /\bbal(ance)?\.?\b/i.test(lower);
+      break;
+    }
+  }
+
+  if (headerLineIdx === -1) {
+    // No recognisable header — fall back to CSV parser
+    return parseCSVStatement(text);
+  }
+
+  // Pattern: one or two right-aligned numbers at end of line
+  // Match amounts like: -2,507.62   19,786.58  or just  -185.02
+  const TRAILING_NUMBERS_RE = /\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s*$/;
+  const SINGLE_NUMBER_RE = /\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s*$/;
+  const DATE_START_RE = /^(\d{2}\/\d{2}\/\d{4})\s+/;
+
+  const transactions = [];
+  for (let i = headerLineIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    // Must start with a date
+    const dateMatch = line.match(DATE_START_RE);
+    if (!dateMatch) continue;
+
+    const dateStr = dateMatch[1];
+
+    // Strip the date from the front
+    let rest = line.substring(dateMatch[0].length);
+
+    // Extract trailing numbers (amount + optional balance) from the right
+    let amountStr = '';
+    let twoNumMatch = rest.match(TRAILING_NUMBERS_RE);
+    if (twoNumMatch) {
+      // Two numbers: first is amount, second is running balance
+      amountStr = twoNumMatch[1];
+      // Remove both numbers from description
+      rest = rest.substring(0, twoNumMatch.index).trim();
+    } else {
+      let oneNumMatch = rest.match(SINGLE_NUMBER_RE);
+      if (oneNumMatch) {
+        amountStr = oneNumMatch[1];
+        rest = rest.substring(0, oneNumMatch.index).trim();
+      }
+    }
+
+    const description = rest.trim();
+
+    // Skip summary rows
+    if (/^(beginning|ending)\s+balance/i.test(description)) continue;
+    if (/^total\s+(credits?|debits?)/i.test(description)) continue;
+
+    if (!amountStr) continue;
+    const amount = parseAmount(amountStr);
+    if (amount === 0) continue;
+
+    transactions.push({
+      date: normaliseDate(dateStr),
+      description: description || 'Unknown transaction',
+      amount: String(amount),
+      category: '',
+    });
+  }
+
+  return { transactions, format: 'TXT' };
+}
+
+/**
  * Detect file type and parse a statement file into transactions.
  * Now async to support PDF parsing (pdf.js loaded from CDN).
- * For CSV/OFX, resolves immediately. For PDF, awaits pdf.js load + extraction.
+ * For CSV/OFX/TXT, resolves immediately. For PDF, awaits pdf.js load + extraction.
  *
- * @param {string|ArrayBuffer} data — file content (text for CSV/OFX, ArrayBuffer for PDF)
+ * @param {string|ArrayBuffer} data — file content (text for CSV/OFX/TXT, ArrayBuffer for PDF)
  * @param {string} filename — original filename for type detection
  * @returns {Promise<{transactions: Array, format: string}>}
  */
@@ -692,6 +826,12 @@ export async function parseStatement(data, filename) {
   if (ext === 'ofx' || ext === 'qfx' || text.includes('<OFX>') || text.includes('<STMTTRN>')) {
     const result = parseOFXStatement(text);
     return { ...result, format: 'OFX' };
+  }
+
+  // TXT files: try fixed-width parsing first
+  if (ext === 'txt') {
+    const result = parseFixedWidthStatement(text);
+    return { ...result, format: result.format || 'TXT' };
   }
 
   const result = parseCSVStatement(text);

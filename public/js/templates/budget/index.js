@@ -38,13 +38,13 @@ function openUploadModal(cols, totalColumns, onAddRow) {
   const fileInput = el('input', {
     className: 'budget-upload-file-input',
     type: 'file',
-    accept: '.csv,.ofx,.qfx,.pdf',
+    accept: '.csv,.ofx,.qfx,.pdf,.txt',
   });
 
   const dropZone = el('div', { className: 'budget-upload-drop-zone' }, [
     el('div', { className: 'budget-upload-drop-icon' }, ['\uD83D\uDCC4']),
     el('div', { className: 'budget-upload-drop-text' }, ['Drop a statement file here']),
-    el('div', { className: 'budget-upload-drop-hint' }, ['CSV, OFX, QFX, or PDF from your bank']),
+    el('div', { className: 'budget-upload-drop-hint' }, ['CSV, TXT, OFX, QFX, or PDF from your bank']),
     el('button', { className: 'btn btn-secondary budget-upload-browse-btn', type: 'button' }, ['Browse Files']),
   ]);
 
