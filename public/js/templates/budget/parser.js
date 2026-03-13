@@ -1,10 +1,38 @@
 /* ============================================================
    templates/budget/parser.js — Bank statement parser
    ============================================================
-   Parses CSV, OFX, and QFX bank/credit card statements into
+   Parses CSV, OFX, QFX, and PDF bank/credit card statements into
    normalised transaction arrays for the budget template.
    All logic runs in the browser — no server-side processing.
+   PDF parsing uses pdf.js loaded lazily from CDN on first use.
    ============================================================ */
+
+/* ---------- PDF.js CDN (lazy-loaded) ---------- */
+
+const PDFJS_VERSION = '4.4.168';
+const PDFJS_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`;
+const PDFJS_WORKER_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+let _pdfjsPromise = null;
+
+/**
+ * Lazily load pdf.js from CDN. Cached after first successful load.
+ * Sets the worker source so pdf.js can parse documents correctly.
+ * @returns {Promise<Object>} pdf.js library
+ */
+async function loadPdfJs() {
+  if (!_pdfjsPromise) {
+    _pdfjsPromise = import(/* webpackIgnore: true */ PDFJS_CDN)
+      .then(pdfjsLib => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+        return pdfjsLib;
+      })
+      .catch(err => {
+        _pdfjsPromise = null;
+        throw new Error('Failed to load PDF library. Check your internet connection and try again.');
+      });
+  }
+  return _pdfjsPromise;
+}
 
 /* ---------- CSV Parsing ---------- */
 
@@ -321,16 +349,162 @@ export function parseOFXStatement(text) {
   return { transactions };
 }
 
+/* ---------- PDF Parsing ---------- */
+
+/**
+ * Group text items into visual rows based on Y position.
+ * Items within Y_TOLERANCE pixels of each other are on the same row.
+ * @param {Array<{text:string, x:number, y:number}>} items
+ * @returns {Array<Array<{text:string, x:number, y:number}>>}
+ */
+function groupTextIntoRows(items) {
+  if (!items.length) return [];
+
+  const Y_TOLERANCE = 3;
+  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
+
+  const rows = [];
+  let currentY = sorted[0].y;
+  let currentRow = [];
+
+  for (const item of sorted) {
+    if (Math.abs(item.y - currentY) > Y_TOLERANCE) {
+      if (currentRow.length) rows.push(currentRow);
+      currentRow = [];
+      currentY = item.y;
+    }
+    currentRow.push(item);
+  }
+  if (currentRow.length) rows.push(currentRow);
+
+  for (const row of rows) {
+    row.sort((a, b) => a.x - b.x);
+  }
+
+  return rows;
+}
+
+/** Date pattern for PDF row scanning */
+const PDF_DATE_RE = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/;
+/** Amount pattern: optional sign, optional $, digits with commas, decimal */
+const PDF_AMOUNT_RE = /[-+]?\$?\d{1,3}(?:,\d{3})*\.\d{2}/g;
+
+/**
+ * Extract transactions from PDF text rows using pattern matching.
+ * A transaction row typically contains a date and at least one dollar amount.
+ * @param {Array<Array<{text:string, x:number, y:number}>>} rows
+ * @returns {Array<{date:string, description:string, amount:string, category:string}>}
+ */
+function extractTransactionsFromRows(rows) {
+  const transactions = [];
+
+  for (const row of rows) {
+    const rowText = row.map(item => item.text).join(' ');
+
+    if (rowText.length < 8) continue;
+
+    const dateMatch = rowText.match(PDF_DATE_RE);
+    if (!dateMatch) continue;
+
+    const amounts = [];
+    let m;
+    const amountRe = new RegExp(PDF_AMOUNT_RE.source, 'g');
+    while ((m = amountRe.exec(rowText)) !== null) {
+      amounts.push({ value: m[0], index: m.index });
+    }
+    if (amounts.length === 0) continue;
+
+    // Pick the transaction amount:
+    // - 1 amount → use it
+    // - 2+ amounts → use second-to-last (last is typically running balance)
+    const amtEntry = amounts.length >= 2
+      ? amounts[amounts.length - 2]
+      : amounts[0];
+
+    const amount = parseAmount(amtEntry.value);
+    if (amount === 0) continue;
+
+    // Description: text between the date and the chosen amount
+    const dateEnd = rowText.indexOf(dateMatch[0]) + dateMatch[0].length;
+    const amtStart = amtEntry.index;
+    let description = (amtStart > dateEnd)
+      ? rowText.slice(dateEnd, amtStart).trim()
+      : rowText.slice(dateEnd).replace(/[-+]?\$?\d[\d,]*\.\d{2}/g, '').trim();
+
+    description = description.replace(/\s+/g, ' ').trim();
+    if (!description) description = 'Unknown transaction';
+
+    transactions.push({
+      date: normaliseDate(dateMatch[1]),
+      description,
+      amount: String(amount),
+      category: '',
+    });
+  }
+
+  return transactions;
+}
+
+/**
+ * Parse a PDF bank statement into normalised transactions.
+ * Loads pdf.js lazily from CDN on first use, then extracts text
+ * with position data and applies transaction pattern matching.
+ * @param {ArrayBuffer} arrayBuffer — PDF file content
+ * @returns {Promise<{transactions: Array, format: string}>}
+ */
+export async function parsePDFStatement(arrayBuffer) {
+  const pdfjsLib = await loadPdfJs();
+
+  const doc = await pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    useSystemFonts: true,
+  }).promise;
+
+  const allItems = [];
+
+  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+    const page = await doc.getPage(pageNum);
+    const content = await page.getTextContent();
+
+    for (const item of content.items) {
+      const text = (item.str || '').trim();
+      if (!text) continue;
+
+      allItems.push({
+        text,
+        x: Math.round(item.transform[4]),
+        y: Math.round(item.transform[5]),
+      });
+    }
+  }
+
+  const rows = groupTextIntoRows(allItems);
+  const transactions = extractTransactionsFromRows(rows);
+
+  return { transactions };
+}
+
 /* ---------- Public API ---------- */
 
 /**
  * Detect file type and parse a statement file into transactions.
- * @param {string} text — file content as text
+ * Now async to support PDF parsing (pdf.js loaded from CDN).
+ * For CSV/OFX, resolves immediately. For PDF, awaits pdf.js load + extraction.
+ *
+ * @param {string|ArrayBuffer} data — file content (text for CSV/OFX, ArrayBuffer for PDF)
  * @param {string} filename — original filename for type detection
- * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}>, format: string }}
+ * @returns {Promise<{transactions: Array, format: string}>}
  */
-export function parseStatement(text, filename) {
+export async function parseStatement(data, filename) {
   const ext = (filename || '').toLowerCase().split('.').pop();
+
+  if (ext === 'pdf') {
+    const result = await parsePDFStatement(data);
+    return { ...result, format: 'PDF' };
+  }
+
+  // Text-based formats — ensure we have a string
+  const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
 
   if (ext === 'ofx' || ext === 'qfx' || text.includes('<OFX>') || text.includes('<STMTTRN>')) {
     const result = parseOFXStatement(text);
