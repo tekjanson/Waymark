@@ -354,6 +354,7 @@
       ],
       "columnRoles": [
         "text",
+        "weekOf",
         "days",
         "streak",
         "notes"
@@ -366,10 +367,12 @@
       ],
       "exampleCount": 2,
       "fixtureIds": [
-        "sheet-018"
+        "sheet-018",
+        "sheet-038"
       ],
       "fixtureFiles": [
-        "habit-morning"
+        "habit-morning",
+        "habit-multiweek"
       ]
     },
     {
