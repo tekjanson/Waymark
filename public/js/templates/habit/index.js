@@ -14,7 +14,7 @@ import {
   habitState, STATE_CHAR, STATE_CYCLE, STATE_VALUE,
   computeStreak, parseGoal, WEEK_COL_PATTERN,
   getUniqueWeeks, formatWeekLabel, formatWeekISO,
-  computeMultiWeekStreak,
+  computeMultiWeekStreak, getCurrentMonday, getNextWeekStart,
 } from './helpers.js';
 
 import { buildSummaryPanel, updateSummary } from './stats.js';
@@ -27,6 +27,10 @@ const definition = {
   color: '#d97706',
   priority: 22,
   itemNoun: 'Habit',
+
+  migrations: [
+    { role: 'weekOf', header: 'Week Of' },
+  ],
 
   detect(lower) {
     return lower.some(h => /^(habit|routine|daily)/.test(h))
@@ -71,7 +75,7 @@ const definition = {
     return fields;
   },
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     const hasCategories = cols.category >= 0;
     const hasGoals      = cols.goal >= 0;
     const isMultiWeek   = cols.weekOf >= 0;
@@ -165,6 +169,44 @@ const definition = {
       ]);
 
       nav.append(prevBtn, weekLabel, weekCounter, nextBtn);
+
+      /* ---- "+ New Week" button ---- */
+      const addWeekBtn = el('button', {
+        className: 'habit-add-week-btn',
+        title: 'Add a new week with all current habits',
+      }, ['+ New Week']);
+
+      addWeekBtn.addEventListener('click', () => {
+        if (!template?._onInsertAfterRow) return;
+        // Get habit names from the latest week
+        const latestWeek = weeks[weeks.length - 1];
+        if (!latestWeek || latestWeek.rows.length === 0) return;
+
+        const nextDate = getNextWeekStart(latestWeek.date);
+        const nextISO = formatWeekISO(nextDate);
+        const totalCols = template._totalColumns || 10;
+
+        // Build one row per habit
+        const newRows = [];
+        for (const entry of latestWeek.rows) {
+          const habitName = cell(entry.row, cols.text) || '';
+          if (!habitName) continue;
+          const newRow = Array(totalCols).fill('');
+          newRow[cols.text] = habitName;
+          newRow[cols.weekOf] = nextISO;
+          if (cols.category >= 0) newRow[cols.category] = cell(entry.row, cols.category) || '';
+          if (cols.goal >= 0) newRow[cols.goal] = cell(entry.row, cols.goal) || '';
+          if (cols.streak >= 0) newRow[cols.streak] = '0';
+          newRows.push(newRow);
+        }
+
+        if (newRows.length === 0) return;
+        // Insert after the last data row (rows array length = last 0-based values index)
+        const afterIdx = rows.length; // rows is the full sheet data rows (0-based)
+        template._onInsertAfterRow(afterIdx, newRows);
+      });
+
+      nav.append(addWeekBtn);
       container.append(nav);
 
       function rebuildGrid() {
@@ -259,6 +301,33 @@ const definition = {
 
       container.append(buildSummaryPanel());
       updateSummary(container, cols, null, -1);
+
+      /* ---- "Start Tracking Weeks" upgrade button (single-week only) ---- */
+      if (template?._onInsertAfterRow && rows.length > 0) {
+        const upgradeBtn = el('button', {
+          className: 'habit-start-multiweek-btn',
+          title: 'Add a "Week Of" column to track habits across multiple weeks',
+        }, ['\uD83D\uDCC5 Start Tracking Weeks']);
+
+        upgradeBtn.addEventListener('click', () => {
+          const monday = getCurrentMonday();
+          const mondayISO = formatWeekISO(monday);
+          const newColIdx = template._totalColumns || 10;
+
+          // Build pendingEdits: set header + all data rows' new "Week Of" column
+          const pendingEdits = [
+            { rowIdx: 0, colIdx: newColIdx, value: 'Week Of' },
+          ];
+          for (let i = 0; i < rows.length; i++) {
+            pendingEdits.push({ rowIdx: i + 1, colIdx: newColIdx, value: mondayISO });
+          }
+
+          // Apply edits with no new rows — reloads the sheet
+          template._onInsertAfterRow(rows.length, [], pendingEdits);
+        });
+
+        container.append(upgradeBtn);
+      }
     }
   },
 };

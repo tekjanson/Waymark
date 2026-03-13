@@ -302,3 +302,109 @@ test('multi-week summary has design token styling', async ({ page }) => {
   expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
   await expect(summary).toHaveCSS('border-radius', /\d+px/);
 });
+
+/* ==================================================================
+   v2: Add Week + Start Tracking Weeks buttons
+   ================================================================== */
+
+test('multi-week mode shows "+ New Week" button in navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  const addBtn = page.locator('.habit-add-week-btn');
+  await expect(addBtn).toBeVisible();
+  await expect(addBtn).toContainText('New Week');
+  await expect(addBtn).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking "+ New Week" creates sheet-replace record with new rows', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-add-week-btn', { timeout: 5_000 });
+
+  await page.click('.habit-add-week-btn');
+  // After clicking, the app should create a sheet-replace record
+  // (via _onInsertAfterRow which calls replaceSheetData)
+  await page.waitForTimeout(500); // small delay for async operation
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  // The new data should include rows for the next week
+  if (replaceRecord && replaceRecord.values) {
+    const allRows = replaceRecord.values;
+    // Original: 1 header + 12 data rows (3 weeks × 4 habits) = 13
+    // After adding week: 13 + 4 new habit rows = 17
+    expect(allRows.length).toBeGreaterThanOrEqual(17);
+
+    // The new rows should have the next week's date (2026-03-24 = week after 2026-03-17)
+    const newWeekRows = allRows.filter(r => r.includes('2026-03-24'));
+    expect(newWeekRows.length).toBe(4); // One per habit
+  }
+});
+
+test('single-week mode shows "Start Tracking Weeks" button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-grid', { timeout: 5_000 });
+
+  const upgradeBtn = page.locator('.habit-start-multiweek-btn');
+  await expect(upgradeBtn).toBeVisible();
+  await expect(upgradeBtn).toContainText('Start Tracking Weeks');
+  await expect(upgradeBtn).toHaveCSS('cursor', 'pointer');
+});
+
+test('single-week mode does not show week navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-grid', { timeout: 5_000 });
+
+  await expect(page.locator('.habit-week-nav')).not.toBeVisible();
+  await expect(page.locator('.habit-add-week-btn')).not.toBeVisible();
+});
+
+test('clicking "Start Tracking Weeks" emits sheet-replace with Week Of column', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-start-multiweek-btn', { timeout: 5_000 });
+
+  await page.click('.habit-start-multiweek-btn');
+  await page.waitForTimeout(500);
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  if (replaceRecord && replaceRecord.values) {
+    const header = replaceRecord.values[0];
+    // The header should now include "Week Of"
+    expect(header).toContain('Week Of');
+
+    // All data rows should have a date in the Week Of column
+    const weekOfIdx = header.indexOf('Week Of');
+    for (let i = 1; i < replaceRecord.values.length; i++) {
+      const weekVal = replaceRecord.values[i][weekOfIdx];
+      // Should match ISO date pattern YYYY-MM-DD
+      expect(weekVal).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  }
+});
+
+test('multi-week "+ New Week" button has dashed border style in single-week mode', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-start-multiweek-btn', { timeout: 5_000 });
+
+  const btn = page.locator('.habit-start-multiweek-btn');
+  await expect(btn).toHaveCSS('border-style', 'dashed');
+});
+
+test('multi-week + New Week button positioned after nav buttons', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Verify the add-week button is inside the week nav container
+  const btnInNav = page.locator('.habit-week-nav .habit-add-week-btn');
+  await expect(btnInNav).toBeVisible();
+});

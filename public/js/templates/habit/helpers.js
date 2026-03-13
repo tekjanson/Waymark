@@ -168,6 +168,29 @@ export function computeMultiWeekStreak(habitName, weeks, textCol, dayCols, upToW
   return streak;
 }
 
+/* ---------- Week Date Helpers ---------- */
+
+/**
+ * Get the most recent Monday (or today if Monday) as a Date.
+ * @returns {Date}
+ */
+export function getCurrentMonday() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  const diff = day === 0 ? 6 : day - 1; // days since Monday
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+  return monday;
+}
+
+/**
+ * Get the Monday after a given date (next week start).
+ * @param {Date} date
+ * @returns {Date}
+ */
+export function getNextWeekStart(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7);
+}
+
 /* ---------- Goal Parsing ---------- */
 
 /**
