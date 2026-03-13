@@ -72,16 +72,20 @@ export function openCardModal(group, ctx) {
     e.stopPropagation();
     const prev = stageBadge.textContent.trim();
     const next = cycleStatus(stageBadge, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
-    emitEdit(rowIdx, cols.stage, next);
-    // Insert status-change note sub-row
+    // Bundle stage change + note atomically to prevent replaceSheetData race
+    let noteInserted = false;
     if (prev !== next && typeof template._onInsertAfterRow === 'function' && cols.note >= 0) {
       const lastIdx = Math.max(idx, ...group.subtasks.map(s => s.idx), ...group.notes.map(n => n.idx));
       const newRow = new Array(template._totalColumns || 0).fill('');
       if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${prev || 'Backlog'} → ${next}`;
       if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
       if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
-      template._onInsertAfterRow(lastIdx + 1, [newRow]);
+      const pendingEdits = [];
+      if (cols.stage >= 0) pendingEdits.push({ rowIdx: idx + 1, colIdx: cols.stage, value: next });
+      template._onInsertAfterRow(lastIdx + 1, [newRow], pendingEdits);
+      noteInserted = true;
     }
+    if (!noteInserted) emitEdit(rowIdx, cols.stage, next);
   });
   headerMeta.append(stageBadge);
 

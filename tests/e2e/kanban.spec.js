@@ -198,9 +198,25 @@ test('kanban archive button hides card', async ({ page }) => {
   const cardsAfter = await doneLane.locator('.kanban-card').count();
   expect(cardsAfter).toBe(cardsBefore - 1);
 
-  // Verify edit record
+  // Wait for the async sheet-replace operation to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r =>
+      (r.type === 'cell-update' && r.value === 'Archived') ||
+      (r.type === 'sheet-replace' && r.rows && r.rows.some(row => row.includes('Archived')))
+    );
+  }, { timeout: 5_000 });
+
+  // Verify edit record — archive bundles stage change atomically
   const records = await getCreatedRecords(page);
-  expect(records.some(r => r.type === 'cell-update' && r.value === 'Archived')).toBe(true);
+  const hasArchive = records.some(r => {
+    if (r.type === 'cell-update') return r.value === 'Archived';
+    if (r.type === 'sheet-replace') {
+      return r.rows && r.rows.some(row => row.includes('Archived'));
+    }
+    return false;
+  });
+  expect(hasArchive).toBe(true);
 });
 
 test('kanban show archived toggle reveals archived lane', async ({ page }) => {
@@ -806,7 +822,7 @@ test('kanban regular note dates are formatted', async ({ page }) => {
   expect(titleAttr).toBe('2026-03-01');
 });
 
-test('kanban stage badge click inserts status-change record', async ({ page }) => {
+test('kanban stage badge click bundles stage change and note atomically', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
@@ -814,17 +830,66 @@ test('kanban stage badge click inserts status-change record', async ({ page }) =
   // Click a stage badge to cycle status
   const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
   const stageBadge = card.locator('.kanban-stage-btn');
-  const prevText = await stageBadge.textContent();
+  const prevText = (await stageBadge.textContent()).trim();
   await stageBadge.click();
-  const newText = await stageBadge.textContent();
+  const newText = (await stageBadge.textContent()).trim();
 
   // Stage should have changed
   expect(newText).not.toBe(prevText);
 
-  // Verify cell-update record was created for the stage change
+  // Wait for the async operation to complete (sheet-replace)
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
   const records = await getCreatedRecords(page);
-  const stageEdit = records.find(r => r.type === 'cell-update' && r.value === newText.trim());
-  expect(stageEdit).toBeTruthy();
+
+  // The stage change should be bundled in a sheet-replace (not a separate cell-update)
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  // Find "API Rate Limiting" row in the replaced data — stage should be the new value
+  const rows = replaceRecord.rows;
+  const apiRow = rows.find(r => r[0] === 'API Rate Limiting');
+  expect(apiRow).toBeTruthy();
+  // Column 2 is "stage" in the fixture
+  expect(apiRow[2]).toBe(newText);
+
+  // A status-change note row should also be in the replaced data
+  const noteRow = rows.find(r => (r[8] || '').startsWith('⟳') && (r[8] || '').includes(newText));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban stage change persists in sheet data after note insertion', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click stage badge on "Dark Mode Support" (currently "In Progress")
+  const card = page.locator('.kanban-card', { hasText: 'Dark Mode Support' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const prevStage = (await stageBadge.textContent()).trim();
+  await stageBadge.click();
+  const newStage = (await stageBadge.textContent()).trim();
+  expect(newStage).not.toBe(prevStage);
+
+  // Wait for sheet-replace to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  // The sheet-replace record should have the updated stage value
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  const darkModeRow = replaceRecord.rows.find(r => r[0] === 'Dark Mode Support');
+  expect(darkModeRow).toBeTruthy();
+  expect(darkModeRow[2]).toBe(newStage);
+
+  // There should NOT be a separate cell-update for the stage (it's bundled)
+  const cellUpdate = records.find(r => r.type === 'cell-update' && r.value === newStage);
+  expect(cellUpdate).toBeFalsy();
 });
 
 test('kanban activity timeline has design token styling', async ({ page }) => {
@@ -904,4 +969,87 @@ test('kanban card without status changes has no moved badge', async ({ page }) =
   const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
   const movedBadge = card.locator('.kanban-card-moved');
   expect(await movedBadge.count()).toBe(0);
+});
+
+test('kanban archive button bundles stage change to Archived atomically', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Find "Upgrade Dependencies" in Done lane — it has an archive button
+  const card = page.locator('.kanban-card', { hasText: 'Upgrade Dependencies' });
+  const archiveBtn = card.locator('.kanban-archive-btn');
+  await archiveBtn.click();
+
+  // Wait for sheet-replace to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  // Stage should be "Archived" in the replaced data
+  const row = replaceRecord.rows.find(r => r[0] === 'Upgrade Dependencies');
+  expect(row).toBeTruthy();
+  expect(row[2]).toBe('Archived');
+
+  // Note row should exist
+  const noteRow = replaceRecord.rows.find(r => (r[8] || '').includes('→ Archived'));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban reject button bundles stage change to Rejected atomically', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Mobile Layout Polish" is in To Do — has a reject button
+  const card = page.locator('.kanban-card', { hasText: 'Mobile Layout Polish' });
+  const rejectBtn = card.locator('.kanban-reject-btn');
+  await rejectBtn.click();
+
+  // Wait for sheet-replace
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+
+  // Stage should be "Rejected" in replaced data
+  const row = replaceRecord.rows.find(r => r[0] === 'Mobile Layout Polish');
+  expect(row).toBeTruthy();
+  expect(row[2]).toBe('Rejected');
+
+  // Note row should exist with reject transition
+  const noteRow = replaceRecord.rows.find(r => (r[8] || '').includes('→ Rejected'));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban no separate cell-update emitted when note is inserted', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click stage on a card — the change should be bundled, NOT a separate cell-update
+  const card = page.locator('.kanban-card', { hasText: 'Mobile Layout Polish' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  await stageBadge.click();
+
+  // Wait for the async write
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+
+  // Should have a sheet-replace but NOT a cell-update for the stage
+  expect(records.some(r => r.type === 'sheet-replace')).toBe(true);
+  const stageUpdates = records.filter(r => r.type === 'cell-update' && r.col === 2);
+  expect(stageUpdates.length).toBe(0);
 });

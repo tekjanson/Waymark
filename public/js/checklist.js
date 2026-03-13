@@ -542,10 +542,21 @@ function renderWithTemplate(values) {
   template._totalColumns = totalCols;
 
   // Insert-after-row callback for sub-tasks and notes (kanban)
-  template._onInsertAfterRow = async (afterValuesIdx, newRows) => {
+  // pendingEdits: optional [{rowIdx (0-based), colIdx, value}] applied atomically
+  template._onInsertAfterRow = async (afterValuesIdx, newRows, pendingEdits) => {
     try {
       const data = await api.sheets.getSpreadsheet(currentSheetId);
       const values = data.values || [];
+      // Apply any pending cell edits BEFORE inserting rows (atomic with write)
+      if (pendingEdits && pendingEdits.length > 0) {
+        for (const edit of pendingEdits) {
+          const row = values[edit.rowIdx];
+          if (row && edit.colIdx >= 0) {
+            while (row.length <= edit.colIdx) row.push('');
+            row[edit.colIdx] = edit.value;
+          }
+        }
+      }
       const insertAt = afterValuesIdx + 1;
       values.splice(insertAt, 0, ...newRows);
       await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, values);

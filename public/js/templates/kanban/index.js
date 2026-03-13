@@ -331,16 +331,19 @@ const definition = {
 
     /**
      * Insert a status-change note sub-row below a card's group.
-     * Records: "⟳ {from} → {to}" with the current user and timestamp.
+     * Bundles the stage change atomically with the note insertion to
+     * prevent the replaceSheetData call from reverting the stage edit.
+     *
      * @param {number} rowIdx — 1-based row index of the card
      * @param {string} fromStage — previous stage label
      * @param {string} toStage — new stage label
+     * @returns {boolean} true if the note was inserted (stage is bundled)
      */
     function insertStageNote(rowIdx, fromStage, toStage) {
-      if (typeof template._onInsertAfterRow !== 'function') return;
-      if (cols.note < 0) return;
+      if (typeof template._onInsertAfterRow !== 'function') return false;
+      if (cols.note < 0) return false;
       const group = groupMap.get(rowIdx);
-      if (!group) return;
+      if (!group) return false;
 
       const lastIdx = Math.max(
         group.idx,
@@ -353,7 +356,18 @@ const definition = {
       if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${fromStage || 'Backlog'} → ${toStage}`;
       if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
       if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
-      template._onInsertAfterRow(afterValuesIdx, [newRow]);
+
+      // Bundle the stage change as a pending edit so it's written atomically
+      // with the note row — prevents replaceSheetData from reverting the stage.
+      // Note: group.idx is 0-based in data rows (header excluded), but
+      // _onInsertAfterRow operates on the full values array (header at [0]),
+      // so we add 1 to account for the header row.
+      const pendingEdits = [];
+      if (cols.stage >= 0) {
+        pendingEdits.push({ rowIdx: group.idx + 1, colIdx: cols.stage, value: toStage });
+      }
+      template._onInsertAfterRow(afterValuesIdx, [newRow], pendingEdits);
+      return true;
     }
 
     // Card element cache: avoids recreating DOM on filter/sort
@@ -392,8 +406,11 @@ const definition = {
           // Capture previous stage from badge before updating
           const prevBadge = _dragCard ? _dragCard.querySelector('.kanban-stage-btn') : null;
           const prevStage = prevBadge ? prevBadge.textContent.trim() : '';
-          emitEdit(_dragRowIdx, cols.stage, stageValue);
-          if (prevStage && prevStage !== stageValue) insertStageNote(_dragRowIdx, prevStage, stageValue);
+          // Bundle both the stage change and the note insertion atomically
+          const noteInserted = (prevStage && prevStage !== stageValue)
+            ? insertStageNote(_dragRowIdx, prevStage, stageValue)
+            : false;
+          if (!noteInserted) emitEdit(_dragRowIdx, cols.stage, stageValue);
           if (_dragCard) {
             _dragCard.classList.remove('kanban-card-dragging');
             const addForm = lane.querySelector('.add-row-lane');
@@ -421,8 +438,9 @@ const definition = {
         if (!rowIdx) return;
         const prev = btn.textContent.trim();
         const next = cycleStatus(btn, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
-        emitEdit(rowIdx, cols.stage, next);
-        if (prev !== next) insertStageNote(rowIdx, prev, next);
+        // Bundle stage change + note atomically; fall back to emitEdit if no note
+        const noteInserted = (prev !== next) ? insertStageNote(rowIdx, prev, next) : false;
+        if (!noteInserted) emitEdit(rowIdx, cols.stage, next);
       });
 
       // Priority dot cycling
@@ -449,8 +467,7 @@ const definition = {
         const prev = prevBadge ? prevBadge.textContent.trim() : LANE_LABELS[laneKey] || laneKey;
         card.classList.add('kanban-card-archiving');
         setTimeout(() => card.remove(), 300);
-        emitEdit(rowIdx, cols.stage, 'Archived');
-        insertStageNote(rowIdx, prev, 'Archived');
+        if (!insertStageNote(rowIdx, prev, 'Archived')) emitEdit(rowIdx, cols.stage, 'Archived');
       });
 
       // Unarchive / Restore button
@@ -464,8 +481,7 @@ const definition = {
         setTimeout(() => card.remove(), 300);
         // Restore rejected tickets to Backlog, archived tickets to Done
         const destination = laneKey === 'rejected' ? 'Backlog' : 'Done';
-        emitEdit(rowIdx, cols.stage, destination);
-        insertStageNote(rowIdx, prev, destination);
+        if (!insertStageNote(rowIdx, prev, destination)) emitEdit(rowIdx, cols.stage, destination);
       });
 
       // Reject button
@@ -478,8 +494,7 @@ const definition = {
         const prev = prevBadge ? prevBadge.textContent.trim() : LANE_LABELS[laneKey] || laneKey;
         card.classList.add('kanban-card-archiving');
         setTimeout(() => card.remove(), 300);
-        emitEdit(rowIdx, cols.stage, 'Rejected');
-        insertStageNote(rowIdx, prev, 'Rejected');
+        if (!insertStageNote(rowIdx, prev, 'Rejected')) emitEdit(rowIdx, cols.stage, 'Rejected');
       });
 
       // Open modal button
