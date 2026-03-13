@@ -55,7 +55,8 @@ test('pinning shared folder shows owner info', async ({ page }) => {
   await page.waitForSelector('#home-view:not(.hidden)');
 
   const card = page.locator('.pinned-card', { hasText: 'Team Tasks' });
-  await expect(card.locator('.pinned-card-owner')).toContainText('boss@work.com');
+  await expect(card.locator('.pinned-card-owner')).toContainText('boss');
+  await expect(card.locator('.pinned-card-owner')).toHaveAttribute('title', 'boss@work.com');
 });
 
 test('multiple folders can be pinned simultaneously', async ({ page }) => {
