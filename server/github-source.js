@@ -54,6 +54,7 @@ const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css':  'text/css; charset=utf-8',
   '.js':   'application/javascript; charset=utf-8',
+  '.mjs':  'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg':  'image/svg+xml',
   '.png':  'image/png',
@@ -321,7 +322,7 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', ref);
     res.setHeader('X-Served-From', 'github-source');
 
-    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js')) {
+    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
       // No browser caching for code files — ensures ref switches
       // serve fresh content immediately after page reload.
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');

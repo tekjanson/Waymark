@@ -1,0 +1,46 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 353 >>
+stream
+BT
+/F1 10 Tf
+72 720 Td
+(Statement Period: 03/01/2026 - 03/31/2026) Tj
+0 -20 Td
+(Date Description Amount Balance) Tj
+0 -15 Td
+(03/01/2026 COFFEE SHOP PURCHASE -4.50 1245.50) Tj
+0 -15 Td
+(03/05/2026 GROCERY STORE -85.42 1160.08) Tj
+0 -15 Td
+(03/10/2026 DIRECT DEPOSIT PAYROLL 2500.00 3660.08) Tj
+0 -15 Td
+(03/15/2026 ELECTRIC COMPANY -95.00 3565.08) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000645 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+715
+%%EOF
