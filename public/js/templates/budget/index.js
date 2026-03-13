@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate } from '../shared.js';
-import { parseStatement } from './parser.js';
+import { parseStatement, reParsePDFTransactions } from './parser.js';
 
 /* ---------- Helpers ---------- */
 
@@ -32,6 +32,8 @@ function openUploadModal(cols, totalColumns, onAddRow) {
   if (existing) existing.remove();
 
   let parsedTransactions = [];
+  let rawPDFTable = null;     // for column mapping re-parse
+  let currentPDFMapping = null;
 
   const fileInput = el('input', {
     className: 'budget-upload-file-input',
@@ -46,6 +48,7 @@ function openUploadModal(cols, totalColumns, onAddRow) {
     el('button', { className: 'btn btn-secondary budget-upload-browse-btn', type: 'button' }, ['Browse Files']),
   ]);
 
+  const mappingSection = el('div', { className: 'budget-upload-mapping hidden' });
   const previewSection = el('div', { className: 'budget-upload-preview hidden' });
   const statusBar = el('div', { className: 'budget-upload-status hidden' });
 
@@ -68,6 +71,7 @@ function openUploadModal(cols, totalColumns, onAddRow) {
         dropZone,
         fileInput,
         statusBar,
+        mappingSection,
         previewSection,
       ]),
       el('div', { className: 'modal-footer' }, [
@@ -77,13 +81,124 @@ function openUploadModal(cols, totalColumns, onAddRow) {
     ]),
   ]);
 
+  /* ---------- Column mapping UI for PDF ---------- */
+
+  const COLUMN_ROLES = [
+    { value: 'skip', label: 'Skip' },
+    { value: 'date', label: 'Date' },
+    { value: 'description', label: 'Description' },
+    { value: 'amount', label: 'Amount' },
+    { value: 'balance', label: 'Balance' },
+  ];
+
+  /**
+   * Render the column mapping interface for PDF files.
+   * Shows a sample of the parsed table with dropdown column selectors.
+   */
+  function renderColumnMapping(tableRows, autoMapping) {
+    mappingSection.innerHTML = '';
+    if (!tableRows.length) return;
+
+    const numCols = tableRows[0].length;
+    const previewRows = tableRows.slice(0, 8);
+
+    // Build reverse mapping: colIndex → role
+    const colRoles = new Array(numCols).fill('skip');
+    if (autoMapping.date >= 0 && autoMapping.date < numCols) colRoles[autoMapping.date] = 'date';
+    if (autoMapping.description >= 0 && autoMapping.description < numCols) colRoles[autoMapping.description] = 'description';
+    if (autoMapping.amount >= 0 && autoMapping.amount < numCols) colRoles[autoMapping.amount] = 'amount';
+    if (autoMapping.balance >= 0 && autoMapping.balance < numCols) colRoles[autoMapping.balance] = 'balance';
+
+    // Warning banner
+    const warning = el('div', { className: 'budget-upload-pdf-warning' }, [
+      '\u26A0\uFE0F PDF import is experimental. Please verify the column mapping below.',
+    ]);
+
+    // Column selector row
+    const selectors = [];
+    const selectorRow = el('div', { className: 'budget-upload-mapping-header' },
+      Array.from({ length: numCols }, (_, i) => {
+        const select = el('select', {
+          className: 'budget-upload-col-select',
+          'data-col': String(i),
+        }, COLUMN_ROLES.map(role =>
+          el('option', {
+            value: role.value,
+            ...(role.value === colRoles[i] ? { selected: true } : {}),
+          }, [role.label])
+        ));
+        selectors.push(select);
+        return el('div', { className: 'budget-upload-mapping-cell budget-upload-mapping-select' }, [select]);
+      })
+    );
+
+    // Sample data rows
+    const dataRowEls = previewRows.map(row =>
+      el('div', { className: 'budget-upload-mapping-row' },
+        row.map(cell =>
+          el('div', { className: 'budget-upload-mapping-cell' }, [cell || '\u2014'])
+        )
+      )
+    );
+
+    if (previewRows.length < tableRows.length) {
+      dataRowEls.push(el('div', { className: 'budget-upload-mapping-more' }, [
+        `+ ${tableRows.length - previewRows.length} more rows`,
+      ]));
+    }
+
+    // Apply mapping button
+    const applyBtn = el('button', {
+      className: 'btn btn-primary budget-upload-apply-mapping-btn',
+      type: 'button',
+    }, ['Apply Mapping']);
+
+    applyBtn.addEventListener('click', () => {
+      // Read current dropdown values
+      const mapping = { date: -1, amount: -1, description: -1, balance: -1 };
+      selectors.forEach((sel, i) => {
+        const role = sel.value;
+        if (role !== 'skip') mapping[role] = i;
+      });
+
+      currentPDFMapping = mapping;
+      const result = reParsePDFTransactions(rawPDFTable, mapping);
+      parsedTransactions = result.transactions;
+
+      if (parsedTransactions.length === 0) {
+        statusBar.textContent = 'No transactions matched with this mapping. Try adjusting columns.';
+        statusBar.className = 'budget-upload-status budget-upload-status-error';
+        statusBar.classList.remove('hidden');
+        previewSection.classList.add('hidden');
+        importBtn.disabled = true;
+        return;
+      }
+
+      statusBar.textContent = `Found ${parsedTransactions.length} transaction${parsedTransactions.length !== 1 ? 's' : ''} (PDF format)`;
+      statusBar.className = 'budget-upload-status budget-upload-status-success';
+      statusBar.classList.remove('hidden');
+
+      renderPreview(parsedTransactions, previewSection);
+      previewSection.classList.remove('hidden');
+      mappingSection.classList.add('hidden');
+      importBtn.disabled = false;
+    });
+
+    const mappingTable = el('div', { className: 'budget-upload-mapping-table' }, [
+      selectorRow,
+      ...dataRowEls,
+    ]);
+
+    mappingSection.append(warning, mappingTable, applyBtn);
+  }
+
   /* ---------- File handling ---------- */
 
   function handleFile(file) {
     if (!file) return;
     const isPDF = file.name.toLowerCase().endsWith('.pdf');
 
-    // Show loading state for PDF (requires CDN library load)
+    // Show loading state for PDF
     if (isPDF) {
       statusBar.textContent = 'Loading PDF parser\u2026';
       statusBar.className = 'budget-upload-status';
@@ -95,6 +210,23 @@ function openUploadModal(cols, totalColumns, onAddRow) {
     reader.onload = async () => {
       try {
         const result = await parseStatement(reader.result, file.name);
+
+        if (isPDF && result.rawTable && result.rawTable.length > 0) {
+          // PDF: show column mapping step
+          rawPDFTable = result.rawTable;
+          currentPDFMapping = result.autoMapping;
+          parsedTransactions = result.transactions;
+
+          statusBar.classList.add('hidden');
+          dropZone.classList.add('hidden');
+          renderColumnMapping(result.rawTable, result.autoMapping);
+          mappingSection.classList.remove('hidden');
+          previewSection.classList.add('hidden');
+          importBtn.disabled = true; // until user confirms mapping
+          return;
+        }
+
+        // CSV/OFX: direct preview (existing flow)
         parsedTransactions = result.transactions;
 
         if (parsedTransactions.length === 0) {
@@ -119,6 +251,7 @@ function openUploadModal(cols, totalColumns, onAddRow) {
         statusBar.className = 'budget-upload-status budget-upload-status-error';
         statusBar.classList.remove('hidden');
         previewSection.classList.add('hidden');
+        mappingSection.classList.add('hidden');
         importBtn.disabled = true;
       }
     };

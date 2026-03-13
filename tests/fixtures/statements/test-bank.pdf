@@ -9,22 +9,58 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
 endobj
 4 0 obj
-<< /Length 353 >>
+<< /Length 909 >>
 stream
 BT
 /F1 10 Tf
-72 720 Td
+1 0 0 1 72 720 Tm
+(Bank of America - Statement) Tj
+1 0 0 1 72 700 Tm
+(Account: ****1234) Tj
+1 0 0 1 72 680 Tm
 (Statement Period: 03/01/2026 - 03/31/2026) Tj
-0 -20 Td
-(Date Description Amount Balance) Tj
-0 -15 Td
-(03/01/2026 COFFEE SHOP PURCHASE -4.50 1245.50) Tj
-0 -15 Td
-(03/05/2026 GROCERY STORE -85.42 1160.08) Tj
-0 -15 Td
-(03/10/2026 DIRECT DEPOSIT PAYROLL 2500.00 3660.08) Tj
-0 -15 Td
-(03/15/2026 ELECTRIC COMPANY -95.00 3565.08) Tj
+1 0 0 1 72 650 Tm
+(Date) Tj
+1 0 0 1 180 650 Tm
+(Description) Tj
+1 0 0 1 400 650 Tm
+(Amount) Tj
+1 0 0 1 490 650 Tm
+(Balance) Tj
+1 0 0 1 72 635 Tm
+(03/01/2026) Tj
+1 0 0 1 180 635 Tm
+(COFFEE SHOP DOWNTOWN) Tj
+1 0 0 1 400 635 Tm
+(-4.50) Tj
+1 0 0 1 490 635 Tm
+(1,995.50) Tj
+1 0 0 1 72 620 Tm
+(03/05/2026) Tj
+1 0 0 1 180 620 Tm
+(GROCERY STORE) Tj
+1 0 0 1 400 620 Tm
+(-85.42) Tj
+1 0 0 1 490 620 Tm
+(1,910.08) Tj
+1 0 0 1 72 605 Tm
+(03/10/2026) Tj
+1 0 0 1 180 605 Tm
+(DIRECT DEPOSIT PAYROLL) Tj
+1 0 0 1 400 605 Tm
+(2,500.00) Tj
+1 0 0 1 490 605 Tm
+(4,410.08) Tj
+1 0 0 1 72 590 Tm
+(03/15/2026) Tj
+1 0 0 1 180 590 Tm
+(ELECTRIC COMPANY BILL PAY) Tj
+1 0 0 1 400 590 Tm
+(-95.00) Tj
+1 0 0 1 490 590 Tm
+(4,315.08) Tj
+1 0 0 1 250 560 Tm
+(Page 1 of 1) Tj
 ET
 endstream
 endobj
@@ -38,9 +74,9 @@ xref
 0000000058 00000 n 
 0000000115 00000 n 
 0000000241 00000 n 
-0000000645 00000 n 
+0000001200 00000 n 
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
-715
+1270
 %%EOF

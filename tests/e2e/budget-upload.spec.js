@@ -292,7 +292,7 @@ test('budget upload drop zone hint mentions PDF', async ({ page }) => {
   await expect(page.locator('.budget-upload-drop-hint')).toContainText('PDF');
 });
 
-test('budget upload parses PDF statement and shows transactions', async ({ page }) => {
+test('budget upload parses PDF and shows column mapping interface', async ({ page }) => {
   const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
 
   await setupApp(page);
@@ -305,22 +305,82 @@ test('budget upload parses PDF statement and shows transactions', async ({ page 
   // Upload the PDF via the hidden file input
   await page.setInputFiles('.budget-upload-file-input', pdfPath);
 
-  // Wait for preview to render (PDF parsing is async — needs CDN load)
-  await page.waitForSelector('.budget-upload-table-row', { timeout: 30000 });
+  // Wait for column mapping to appear (PDF shows mapping UI, not direct preview)
+  await page.waitForSelector('.budget-upload-mapping:not(.hidden)', { timeout: 30000 });
+
+  // Mapping section should be visible with the warning banner
+  await expect(page.locator('.budget-upload-pdf-warning')).toBeVisible();
+  await expect(page.locator('.budget-upload-pdf-warning')).toContainText('experimental');
+
+  // Column dropdowns should be visible
+  const selects = await page.locator('.budget-upload-col-select').count();
+  expect(selects).toBeGreaterThanOrEqual(3);
+
+  // Sample data rows should be visible
+  const mappingRows = await page.locator('.budget-upload-mapping-row').count();
+  expect(mappingRows).toBeGreaterThanOrEqual(2);
+
+  // Import button should be disabled (user must confirm mapping first)
+  await expect(page.locator('.budget-upload-import-btn')).toBeDisabled();
+
+  // Drop zone should be hidden
+  await expect(page.locator('.budget-upload-drop-zone')).toBeHidden();
+});
+
+test('budget upload PDF column mapping dropdowns have role options', async ({ page }) => {
+  const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', pdfPath);
+  await page.waitForSelector('.budget-upload-mapping:not(.hidden)', { timeout: 30000 });
+
+  // Each dropdown should have the role options: Skip, Date, Description, Amount, Balance
+  const firstSelect = page.locator('.budget-upload-col-select').first();
+  const options = await firstSelect.locator('option').allTextContents();
+  expect(options).toContain('Skip');
+  expect(options).toContain('Date');
+  expect(options).toContain('Description');
+  expect(options).toContain('Amount');
+  expect(options).toContain('Balance');
+});
+
+test('budget upload PDF apply mapping shows preview', async ({ page }) => {
+  const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', pdfPath);
+  await page.waitForSelector('.budget-upload-mapping:not(.hidden)', { timeout: 30000 });
+
+  // Click Apply Mapping
+  await page.click('.budget-upload-apply-mapping-btn');
+
+  // After applying, preview should appear
+  await page.waitForSelector('.budget-upload-preview:not(.hidden)', { timeout: 5000 });
+  await expect(page.locator('.budget-upload-preview')).toBeVisible();
+
+  // Mapping section should be hidden
+  await expect(page.locator('.budget-upload-mapping')).toBeHidden();
 
   // Status should show success with PDF format
   await expect(page.locator('.budget-upload-status')).toContainText('PDF');
   await expect(page.locator('.budget-upload-status')).toHaveClass(/budget-upload-status-success/);
 
-  // Should have found transactions (at least 2 from test fixture)
+  // Transaction rows should appear
   const rows = await page.locator('.budget-upload-table-row').count();
   expect(rows).toBeGreaterThanOrEqual(2);
 
-  // Import button should be enabled
+  // Import button should now be enabled
   await expect(page.locator('.budget-upload-import-btn')).toBeEnabled();
-
-  // Drop zone should be hidden (replaced by preview)
-  await expect(page.locator('.budget-upload-drop-zone')).toBeHidden();
 });
 
 test('budget upload PDF shows loading state while parsing', async ({ page }) => {
@@ -336,11 +396,13 @@ test('budget upload PDF shows loading state while parsing', async ({ page }) => 
   // Upload PDF — should show loading state before results
   await page.setInputFiles('.budget-upload-file-input', pdfPath);
 
-  // Status bar should become visible (either loading or success)
-  await page.waitForSelector('.budget-upload-status:not(.hidden)', { timeout: 30000 });
+  // Status bar should become visible initially (loading state)
+  // Then mapping UI should appear
+  await page.waitForSelector('.budget-upload-mapping:not(.hidden)', { timeout: 30000 });
 
-  // Eventually should show success (wait for parsing to complete)
-  await page.waitForSelector('.budget-upload-status-success', { timeout: 30000 });
+  // Apply mapping to get to preview with success status
+  await page.click('.budget-upload-apply-mapping-btn');
+  await page.waitForSelector('.budget-upload-status-success', { timeout: 5000 });
   await expect(page.locator('.budget-upload-status')).toContainText('transaction');
 });
 
@@ -355,8 +417,12 @@ test('budget upload PDF import appends transactions to sheet', async ({ page }) 
   await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
   await page.setInputFiles('.budget-upload-file-input', pdfPath);
 
-  // Wait for parsing to complete
-  await page.waitForSelector('.budget-upload-import-btn:not([disabled])', { timeout: 30000 });
+  // Wait for mapping UI
+  await page.waitForSelector('.budget-upload-mapping:not(.hidden)', { timeout: 30000 });
+
+  // Apply mapping to get preview
+  await page.click('.budget-upload-apply-mapping-btn');
+  await page.waitForSelector('.budget-upload-import-btn:not([disabled])', { timeout: 5000 });
 
   // Click import
   await page.click('.budget-upload-import-btn');
