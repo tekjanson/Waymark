@@ -546,8 +546,8 @@ router.use(express.static(path.join(__dirname, '..', 'public'), {
     if (filePath.endsWith('.html')) {
       // HTML: always revalidate
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    } else if (filePath.endsWith('.css') || filePath.endsWith('.js')) {
-      // CSS/JS: short cache so updates land quickly
+    } else if (filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      // CSS/JS/MJS: short cache so updates land quickly
       res.setHeader('Cache-Control', 'public, max-age=300');
     } else {
       // Everything else (images, SVGs, etc.): 1 hour
