@@ -2,7 +2,8 @@
    kanban/helpers.js — Constants & pure helper functions
 
    Deterministic color mapping, priority ranking, due-date
-   formatting, and lane configuration for the Kanban template.
+   formatting, lane configuration, and status-change timestamp
+   utilities for the Kanban template.
    ============================================================ */
 
 /* ---------- Constants ---------- */
@@ -84,4 +85,82 @@ export function formatDue(dateStr) {
   if (diff < -1) return `${Math.abs(diff)}d overdue`;
   if (diff <= 7) return `${diff}d`;
   return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/* ---------- Status-Change Timestamps ---------- */
+
+/** Prefix used to identify auto-generated status-change notes. */
+export const STATUS_PREFIX = '⟳ ';
+
+/**
+ * Check whether a note's text is an auto-generated status-change note.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isStatusNote(text) {
+  return (text || '').startsWith(STATUS_PREFIX);
+}
+
+/**
+ * Current timestamp as a compact ISO string (YYYY-MM-DD HH:MM).
+ * Uses a space separator instead of T for human readability in the sheet.
+ * @returns {string}
+ */
+export function nowTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Format a date/datetime string for display in note headers.
+ * Always shows the actual datetime stamp so users know exactly when
+ * things happened. Handles both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM" formats.
+ * @param {string} dateStr
+ * @returns {string}
+ */
+export function formatNoteDate(dateStr) {
+  if (!dateStr) return '';
+  // Parse: support "YYYY-MM-DD" and "YYYY-MM-DD HH:MM"
+  const hasTime = /\d{2}:\d{2}/.test(dateStr);
+  const d = hasTime ? new Date(dateStr.replace(' ', 'T')) : new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+
+  const now = new Date();
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  let str = d.toLocaleDateString('en-US', opts);
+  // Always include time when available
+  if (hasTime) {
+    str += ` ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return str;
+}
+
+/**
+ * Format a date/datetime as a short relative label for card badges.
+ * @param {string} dateStr
+ * @returns {string}
+ */
+export function formatRelativeDate(dateStr) {
+  if (!dateStr) return '';
+  const hasTime = /\d{2}:\d{2}/.test(dateStr);
+  const d = hasTime ? new Date(dateStr.replace(' ', 'T')) : new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.round(diffMs / 60000);
+  const diffHr = Math.round(diffMs / 3600000);
+  const diffDay = Math.round(diffMs / 86400000);
+
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay === 1) return 'yesterday';
+  if (diffDay < 7) return `${diffDay}d ago`;
+
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString('en-US', opts);
 }
