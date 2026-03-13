@@ -4,31 +4,32 @@
    Parses CSV, OFX, QFX, and PDF bank/credit card statements into
    normalised transaction arrays for the budget template.
    All logic runs in the browser — no server-side processing.
-   PDF parsing uses pdf.js loaded lazily from CDN on first use.
+   PDF parsing uses pdf.js v4.4.168 vendored locally in
+   public/js/vendor/pdfjs/ — loaded lazily on first PDF upload.
    ============================================================ */
 
-/* ---------- PDF.js CDN (lazy-loaded) ---------- */
+/* ---------- PDF.js (vendored, lazy-loaded) ---------- */
 
-const PDFJS_VERSION = '4.4.168';
-const PDFJS_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`;
-const PDFJS_WORKER_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+const PDFJS_PATH = '/js/vendor/pdfjs/pdf.min.mjs';
+const PDFJS_WORKER_PATH = '/js/vendor/pdfjs/pdf.worker.min.mjs';
 let _pdfjsPromise = null;
 
 /**
- * Lazily load pdf.js from CDN. Cached after first successful load.
+ * Lazily load pdf.js from the vendored local copy.
+ * Cached after first successful load.
  * Sets the worker source so pdf.js can parse documents correctly.
  * @returns {Promise<Object>} pdf.js library
  */
 async function loadPdfJs() {
   if (!_pdfjsPromise) {
-    _pdfjsPromise = import(/* webpackIgnore: true */ PDFJS_CDN)
+    _pdfjsPromise = import(/* webpackIgnore: true */ PDFJS_PATH)
       .then(pdfjsLib => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_PATH;
         return pdfjsLib;
       })
       .catch(err => {
         _pdfjsPromise = null;
-        throw new Error('Failed to load PDF library. Check your internet connection and try again.');
+        throw new Error('Failed to load PDF library. Please try again.');
       });
   }
   return _pdfjsPromise;
