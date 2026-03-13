@@ -75,6 +75,7 @@ async function loadMockSheet(sheetId) {
     'sheet-035': 'grading-science',
     'sheet-036': 'automation-workflow',
     'sheet-037': 'testcases-api',
+    'sheet-038': 'habit-multiweek',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;
