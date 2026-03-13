@@ -198,9 +198,25 @@ test('kanban archive button hides card', async ({ page }) => {
   const cardsAfter = await doneLane.locator('.kanban-card').count();
   expect(cardsAfter).toBe(cardsBefore - 1);
 
-  // Verify edit record
+  // Wait for the async sheet-replace operation to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r =>
+      (r.type === 'cell-update' && r.value === 'Archived') ||
+      (r.type === 'sheet-replace' && r.rows && r.rows.some(row => row.includes('Archived')))
+    );
+  }, { timeout: 5_000 });
+
+  // Verify edit record — archive bundles stage change atomically
   const records = await getCreatedRecords(page);
-  expect(records.some(r => r.type === 'cell-update' && r.value === 'Archived')).toBe(true);
+  const hasArchive = records.some(r => {
+    if (r.type === 'cell-update') return r.value === 'Archived';
+    if (r.type === 'sheet-replace') {
+      return r.rows && r.rows.some(row => row.includes('Archived'));
+    }
+    return false;
+  });
+  expect(hasArchive).toBe(true);
 });
 
 test('kanban show archived toggle reveals archived lane', async ({ page }) => {
@@ -705,4 +721,335 @@ test('kanban lane collapse toggles back on second click', async ({ page }) => {
   await expect(firstLane).not.toHaveClass(/kanban-lane-collapsed/);
   const laneBody = firstLane.locator('.kanban-lane-body');
   await expect(laneBody).toBeVisible();
+});
+
+/* ---------- Status-Change Timestamps ---------- */
+
+test('kanban activity section shows status-change history', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has 3 status-change notes
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-list', { timeout: 3_000 });
+
+  const activityItems = card.locator('.kanban-activity-item');
+  expect(await activityItems.count()).toBe(3);
+
+  // Verify transition text format (from → to)
+  await expect(activityItems.first()).toContainText('Backlog');
+  await expect(activityItems.first()).toContainText('To Do');
+});
+
+test('kanban activity items show formatted timestamps', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand "Kanban Board Redesign" which has status-change notes with timestamps
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-date', { timeout: 3_000 });
+
+  // Status-change dates should be formatted with date AND time, not raw ISO
+  const firstDate = card.locator('.kanban-activity-date').first();
+  const dateText = await firstDate.textContent();
+  // Should not be raw ISO format like "2026-02-20 09:15"
+  expect(dateText).not.toMatch(/^\d{4}-\d{2}-\d{2}/);
+  // Should contain a time component (AM/PM)
+  expect(dateText).toMatch(/AM|PM/i);
+  // Should contain the month abbreviation
+  expect(dateText).toMatch(/Feb|Mar|Jan|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/);
+
+  // Tooltip should show original date string
+  const titleAttr = await firstDate.getAttribute('title');
+  expect(titleAttr).toContain('2026-02-20');
+});
+
+test('kanban activity icon displays transition symbol', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-icon', { timeout: 3_000 });
+
+  const icon = card.locator('.kanban-activity-icon').first();
+  await expect(icon).toContainText('⟳');
+  await expect(icon).toHaveCSS('color', /./);
+});
+
+test('kanban status notes separated from regular notes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has 1 regular note and 3 status notes
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+
+  // Regular notes still show in notes section
+  const regularNotes = card.locator('.kanban-note');
+  expect(await regularNotes.count()).toBe(1);
+  await expect(regularNotes.first()).toContainText('Looks great in testing!');
+
+  // Status notes show in activity section
+  const activityItems = card.locator('.kanban-activity-item');
+  expect(await activityItems.count()).toBe(3);
+});
+
+test('kanban regular note dates are formatted', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand "Kanban Board Redesign" to see the regular note
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-note-date', { timeout: 3_000 });
+
+  const noteDate = card.locator('.kanban-note-date').first();
+  const dateText = await noteDate.textContent();
+  // Regular note date should be formatted, not raw "2026-03-01"
+  expect(dateText).not.toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(dateText.length).toBeGreaterThan(0);
+
+  // Tooltip shows original date
+  const titleAttr = await noteDate.getAttribute('title');
+  expect(titleAttr).toBe('2026-03-01');
+});
+
+test('kanban stage badge click bundles stage change and note atomically', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click a stage badge to cycle status
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const prevText = (await stageBadge.textContent()).trim();
+  await stageBadge.click();
+  const newText = (await stageBadge.textContent()).trim();
+
+  // Stage should have changed
+  expect(newText).not.toBe(prevText);
+
+  // Wait for the async operation to complete (sheet-replace)
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+
+  // The stage change should be bundled in a sheet-replace (not a separate cell-update)
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  // Find "API Rate Limiting" row in the replaced data — stage should be the new value
+  const rows = replaceRecord.rows;
+  const apiRow = rows.find(r => r[0] === 'API Rate Limiting');
+  expect(apiRow).toBeTruthy();
+  // Column 2 is "stage" in the fixture
+  expect(apiRow[2]).toBe(newText);
+
+  // A status-change note row should also be in the replaced data
+  const noteRow = rows.find(r => (r[8] || '').startsWith('⟳') && (r[8] || '').includes(newText));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban stage change persists in sheet data after note insertion', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click stage badge on "Dark Mode Support" (currently "In Progress")
+  const card = page.locator('.kanban-card', { hasText: 'Dark Mode Support' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const prevStage = (await stageBadge.textContent()).trim();
+  await stageBadge.click();
+  const newStage = (await stageBadge.textContent()).trim();
+  expect(newStage).not.toBe(prevStage);
+
+  // Wait for sheet-replace to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  // The sheet-replace record should have the updated stage value
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  const darkModeRow = replaceRecord.rows.find(r => r[0] === 'Dark Mode Support');
+  expect(darkModeRow).toBeTruthy();
+  expect(darkModeRow[2]).toBe(newStage);
+
+  // There should NOT be a separate cell-update for the stage (it's bundled)
+  const cellUpdate = records.find(r => r.type === 'cell-update' && r.value === newStage);
+  expect(cellUpdate).toBeFalsy();
+});
+
+test('kanban activity timeline has design token styling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-list', { timeout: 3_000 });
+
+  // Activity list should have the timeline border-left
+  const activityList = card.locator('.kanban-activity-list');
+  const borderLeft = await activityList.evaluate(el =>
+    getComputedStyle(el).getPropertyValue('border-left-style')
+  );
+  expect(borderLeft).toBe('solid');
+
+  // Activity text should have non-empty styling
+  const activityText = card.locator('.kanban-activity-text').first();
+  const fontSize = await activityText.evaluate(el =>
+    getComputedStyle(el).getPropertyValue('font-size')
+  );
+  expect(fontSize).not.toBe('');
+});
+
+test('kanban Fix Search Bug card shows activity from status change', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Fix Search Bug" has 1 regular note and 1 status note
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-item', { timeout: 3_000 });
+
+  // 1 regular note
+  const notes = card.locator('.kanban-note');
+  expect(await notes.count()).toBe(1);
+  await expect(notes.first()).toContainText('Found the regex issue');
+
+  // 1 activity entry
+  const activity = card.locator('.kanban-activity-item');
+  expect(await activity.count()).toBe(1);
+  await expect(activity.first()).toContainText('To Do');
+  await expect(activity.first()).toContainText('In Progress');
+});
+
+test('kanban card shows last-moved timestamp on card surface', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has status-change notes — should show ⟳ moved badge
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  const movedBadge = card.locator('.kanban-card-moved');
+  await expect(movedBadge).toBeVisible();
+
+  // Badge should contain the ⟳ symbol and a formatted datetime
+  const badgeText = await movedBadge.textContent();
+  expect(badgeText).toContain('⟳');
+  // Should contain a datetime like "Mar 10 2:00 PM"
+  expect(badgeText).toMatch(/AM|PM/i);
+
+  // Tooltip should show original datetime string
+  const titleAttr = await movedBadge.getAttribute('title');
+  expect(titleAttr).toContain('Last status change');
+  expect(titleAttr).toMatch(/\d{4}-\d{2}-\d{2}/);
+});
+
+test('kanban card without status changes has no moved badge', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "API Rate Limiting" has no status-change notes — should NOT show moved badge
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const movedBadge = card.locator('.kanban-card-moved');
+  expect(await movedBadge.count()).toBe(0);
+});
+
+test('kanban archive button bundles stage change to Archived atomically', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Find "Upgrade Dependencies" in Done lane — it has an archive button
+  const card = page.locator('.kanban-card', { hasText: 'Upgrade Dependencies' });
+  const archiveBtn = card.locator('.kanban-archive-btn');
+  await archiveBtn.click();
+
+  // Wait for sheet-replace to complete
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+
+  // Stage should be "Archived" in the replaced data
+  const row = replaceRecord.rows.find(r => r[0] === 'Upgrade Dependencies');
+  expect(row).toBeTruthy();
+  expect(row[2]).toBe('Archived');
+
+  // Note row should exist
+  const noteRow = replaceRecord.rows.find(r => (r[8] || '').includes('→ Archived'));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban reject button bundles stage change to Rejected atomically', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Mobile Layout Polish" is in To Do — has a reject button
+  const card = page.locator('.kanban-card', { hasText: 'Mobile Layout Polish' });
+  const rejectBtn = card.locator('.kanban-reject-btn');
+  await rejectBtn.click();
+
+  // Wait for sheet-replace
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+
+  // Stage should be "Rejected" in replaced data
+  const row = replaceRecord.rows.find(r => r[0] === 'Mobile Layout Polish');
+  expect(row).toBeTruthy();
+  expect(row[2]).toBe('Rejected');
+
+  // Note row should exist with reject transition
+  const noteRow = replaceRecord.rows.find(r => (r[8] || '').includes('→ Rejected'));
+  expect(noteRow).toBeTruthy();
+});
+
+test('kanban no separate cell-update emitted when note is inserted', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click stage on a card — the change should be bundled, NOT a separate cell-update
+  const card = page.locator('.kanban-card', { hasText: 'Mobile Layout Polish' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  await stageBadge.click();
+
+  // Wait for the async write
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+
+  // Should have a sheet-replace but NOT a cell-update for the stage
+  expect(records.some(r => r.type === 'sheet-replace')).toBe(true);
+  const stageUpdates = records.filter(r => r.type === 'cell-update' && r.col === 2);
+  expect(stageUpdates.length).toBe(0);
 });
