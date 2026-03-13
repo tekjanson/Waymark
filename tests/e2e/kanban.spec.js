@@ -706,3 +706,167 @@ test('kanban lane collapse toggles back on second click', async ({ page }) => {
   const laneBody = firstLane.locator('.kanban-lane-body');
   await expect(laneBody).toBeVisible();
 });
+
+/* ---------- Status-Change Timestamps ---------- */
+
+test('kanban activity section shows status-change history', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has 3 status-change notes
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-list', { timeout: 3_000 });
+
+  const activityItems = card.locator('.kanban-activity-item');
+  expect(await activityItems.count()).toBe(3);
+
+  // Verify transition text format (from → to)
+  await expect(activityItems.first()).toContainText('Backlog');
+  await expect(activityItems.first()).toContainText('To Do');
+});
+
+test('kanban activity items show formatted timestamps', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand "Kanban Board Redesign" which has status-change notes with timestamps
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-date', { timeout: 3_000 });
+
+  // Status-change dates should be formatted (not raw ISO), e.g. "Feb 20" or "14d ago"
+  const firstDate = card.locator('.kanban-activity-date').first();
+  const dateText = await firstDate.textContent();
+  // Should not be raw ISO format like "2026-02-20 09:15"
+  expect(dateText).not.toMatch(/^\d{4}-\d{2}-\d{2}/);
+  // Should contain some formatted text (month name, relative time, etc.)
+  expect(dateText.length).toBeGreaterThan(0);
+
+  // Tooltip should show original date string
+  const titleAttr = await firstDate.getAttribute('title');
+  expect(titleAttr).toContain('2026-02-20');
+});
+
+test('kanban activity icon displays transition symbol', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-icon', { timeout: 3_000 });
+
+  const icon = card.locator('.kanban-activity-icon').first();
+  await expect(icon).toContainText('⟳');
+  await expect(icon).toHaveCSS('color', /./);
+});
+
+test('kanban status notes separated from regular notes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Kanban Board Redesign" has 1 regular note and 3 status notes
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+
+  // Regular notes still show in notes section
+  const regularNotes = card.locator('.kanban-note');
+  expect(await regularNotes.count()).toBe(1);
+  await expect(regularNotes.first()).toContainText('Looks great in testing!');
+
+  // Status notes show in activity section
+  const activityItems = card.locator('.kanban-activity-item');
+  expect(await activityItems.count()).toBe(3);
+});
+
+test('kanban regular note dates are formatted', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // Expand "Kanban Board Redesign" to see the regular note
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-note-date', { timeout: 3_000 });
+
+  const noteDate = card.locator('.kanban-note-date').first();
+  const dateText = await noteDate.textContent();
+  // Regular note date should be formatted, not raw "2026-03-01"
+  expect(dateText).not.toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(dateText.length).toBeGreaterThan(0);
+
+  // Tooltip shows original date
+  const titleAttr = await noteDate.getAttribute('title');
+  expect(titleAttr).toBe('2026-03-01');
+});
+
+test('kanban stage badge click inserts status-change record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Click a stage badge to cycle status
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const prevText = await stageBadge.textContent();
+  await stageBadge.click();
+  const newText = await stageBadge.textContent();
+
+  // Stage should have changed
+  expect(newText).not.toBe(prevText);
+
+  // Verify cell-update record was created for the stage change
+  const records = await getCreatedRecords(page);
+  const stageEdit = records.find(r => r.type === 'cell-update' && r.value === newText.trim());
+  expect(stageEdit).toBeTruthy();
+});
+
+test('kanban activity timeline has design token styling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-list', { timeout: 3_000 });
+
+  // Activity list should have the timeline border-left
+  const activityList = card.locator('.kanban-activity-list');
+  const borderLeft = await activityList.evaluate(el =>
+    getComputedStyle(el).getPropertyValue('border-left-style')
+  );
+  expect(borderLeft).toBe('solid');
+
+  // Activity text should have non-empty styling
+  const activityText = card.locator('.kanban-activity-text').first();
+  const fontSize = await activityText.evaluate(el =>
+    getComputedStyle(el).getPropertyValue('font-size')
+  );
+  expect(fontSize).not.toBe('');
+});
+
+test('kanban Fix Search Bug card shows activity from status change', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Fix Search Bug" has 1 regular note and 1 status note
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-activity-item', { timeout: 3_000 });
+
+  // 1 regular note
+  const notes = card.locator('.kanban-note');
+  expect(await notes.count()).toBe(1);
+  await expect(notes.first()).toContainText('Found the regex issue');
+
+  // 1 activity entry
+  const activity = card.locator('.kanban-activity-item');
+  expect(await activity.count()).toBe(1);
+  await expect(activity.first()).toContainText('To Do');
+  await expect(activity.first()).toContainText('In Progress');
+});

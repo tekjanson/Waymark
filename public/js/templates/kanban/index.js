@@ -11,9 +11,9 @@
 
 import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
-  parseGroups, delegateEvent, cycleStatus, lazySection,
+  parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
 } from '../shared.js';
-import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank } from './helpers.js';
+import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 
@@ -329,6 +329,33 @@ const definition = {
     const groupMap = new Map();
     for (const g of groups) groupMap.set(g.idx + 1, g);
 
+    /**
+     * Insert a status-change note sub-row below a card's group.
+     * Records: "⟳ {from} → {to}" with the current user and timestamp.
+     * @param {number} rowIdx — 1-based row index of the card
+     * @param {string} fromStage — previous stage label
+     * @param {string} toStage — new stage label
+     */
+    function insertStageNote(rowIdx, fromStage, toStage) {
+      if (typeof template._onInsertAfterRow !== 'function') return;
+      if (cols.note < 0) return;
+      const group = groupMap.get(rowIdx);
+      if (!group) return;
+
+      const lastIdx = Math.max(
+        group.idx,
+        ...group.subtasks.map(s => s.idx),
+        ...group.notes.map(n => n.idx),
+      );
+      const afterValuesIdx = lastIdx + 1;
+
+      const newRow = new Array(template._totalColumns || 0).fill('');
+      if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${fromStage || 'Backlog'} → ${toStage}`;
+      if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
+      if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
+      template._onInsertAfterRow(afterValuesIdx, [newRow]);
+    }
+
     // Card element cache: avoids recreating DOM on filter/sort
     const cardCache = new Map();
 
@@ -362,7 +389,11 @@ const definition = {
         lane.classList.remove('kanban-lane-dragover');
         if (_dragRowIdx && cols.stage >= 0) {
           const stageValue = LANE_LABELS[laneKey] || laneKey;
+          // Capture previous stage from badge before updating
+          const prevBadge = _dragCard ? _dragCard.querySelector('.kanban-stage-btn') : null;
+          const prevStage = prevBadge ? prevBadge.textContent.trim() : '';
           emitEdit(_dragRowIdx, cols.stage, stageValue);
+          if (prevStage && prevStage !== stageValue) insertStageNote(_dragRowIdx, prevStage, stageValue);
           if (_dragCard) {
             _dragCard.classList.remove('kanban-card-dragging');
             const addForm = lane.querySelector('.add-row-lane');
@@ -388,8 +419,10 @@ const definition = {
         e.stopPropagation();
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
+        const prev = btn.textContent.trim();
         const next = cycleStatus(btn, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
         emitEdit(rowIdx, cols.stage, next);
+        if (prev !== next) insertStageNote(rowIdx, prev, next);
       });
 
       // Priority dot cycling
@@ -412,9 +445,12 @@ const definition = {
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
+        const prevBadge = card.querySelector('.kanban-stage-btn');
+        const prev = prevBadge ? prevBadge.textContent.trim() : LANE_LABELS[laneKey] || laneKey;
         card.classList.add('kanban-card-archiving');
         setTimeout(() => card.remove(), 300);
         emitEdit(rowIdx, cols.stage, 'Archived');
+        insertStageNote(rowIdx, prev, 'Archived');
       });
 
       // Unarchive / Restore button
@@ -423,11 +459,13 @@ const definition = {
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
+        const prev = LANE_LABELS[laneKey] || laneKey;
         card.classList.add('kanban-card-archiving');
         setTimeout(() => card.remove(), 300);
         // Restore rejected tickets to Backlog, archived tickets to Done
         const destination = laneKey === 'rejected' ? 'Backlog' : 'Done';
         emitEdit(rowIdx, cols.stage, destination);
+        insertStageNote(rowIdx, prev, destination);
       });
 
       // Reject button
@@ -436,9 +474,12 @@ const definition = {
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
+        const prevBadge = card.querySelector('.kanban-stage-btn');
+        const prev = prevBadge ? prevBadge.textContent.trim() : LANE_LABELS[laneKey] || laneKey;
         card.classList.add('kanban-card-archiving');
         setTimeout(() => card.remove(), 300);
         emitEdit(rowIdx, cols.stage, 'Rejected');
+        insertStageNote(rowIdx, prev, 'Rejected');
       });
 
       // Open modal button

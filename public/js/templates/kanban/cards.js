@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, comboCell, textareaCell, getUserName } from '../shared.js';
-import { projectColor, dueBadgeClass, formatDue } from './helpers.js';
+import { projectColor, dueBadgeClass, formatDue, isStatusNote, formatNoteDate } from './helpers.js';
 
 /* ---------- Card builder (lightweight — no detail panel, no per-card listeners) ---------- */
 
@@ -329,14 +329,18 @@ export function buildCardDetail(group, ctx) {
     detail.append(stSection);
   }
 
-  // Notes section
+  // Notes & Activity section
   if (group.notes.length > 0 || cols.note >= 0) {
+    // Separate status-change notes from regular notes
+    const statusNotes = group.notes.filter(n => isStatusNote(cell(n.row, cols.note)));
+    const regularNotes = group.notes.filter(n => !isStatusNote(cell(n.row, cols.note)));
+
     const noteSection = el('div', { className: 'kanban-detail-section' }, [
       el('div', { className: 'kanban-detail-label' }, ['Notes']),
     ]);
 
     const noteList = el('div', { className: 'kanban-note-list' });
-    for (const n of group.notes) {
+    for (const n of regularNotes) {
       const nRowIdx = n.idx + 1;
       const noteText = cell(n.row, cols.note);
       const noteBy = cols.assignee >= 0 ? cell(n.row, cols.assignee) : '';
@@ -345,7 +349,7 @@ export function buildCardDetail(group, ctx) {
       noteList.append(el('div', { className: 'kanban-note' }, [
         el('div', { className: 'kanban-note-header' }, [
           el('span', { className: 'kanban-note-author' }, [noteBy || 'Anonymous']),
-          noteDate ? el('span', { className: 'kanban-note-date' }, [noteDate]) : null,
+          noteDate ? el('span', { className: 'kanban-note-date', title: noteDate }, [formatNoteDate(noteDate)]) : null,
         ]),
         editableCell('div', { className: 'kanban-note-text' }, noteText, nRowIdx, cols.note),
       ]));
@@ -402,6 +406,35 @@ export function buildCardDetail(group, ctx) {
     }
 
     detail.append(noteSection);
+
+    // Activity section — status-change history (timeline)
+    if (statusNotes.length > 0) {
+      const activitySection = el('div', { className: 'kanban-detail-section' }, [
+        el('div', { className: 'kanban-detail-label' }, ['Activity']),
+      ]);
+
+      const activityList = el('div', { className: 'kanban-activity-list' });
+      for (const n of statusNotes) {
+        const noteText = cell(n.row, cols.note);
+        const noteBy = cols.assignee >= 0 ? cell(n.row, cols.assignee) : '';
+        const noteDate = cols.due >= 0 ? cell(n.row, cols.due) : '';
+        // Strip the prefix for display
+        const transitionText = noteText.replace(/^⟳\s*/, '');
+
+        activityList.append(el('div', { className: 'kanban-activity-item' }, [
+          el('span', { className: 'kanban-activity-icon' }, ['⟳']),
+          el('div', { className: 'kanban-activity-content' }, [
+            el('span', { className: 'kanban-activity-text' }, [transitionText]),
+            el('div', { className: 'kanban-activity-meta' }, [
+              el('span', { className: 'kanban-activity-author' }, [noteBy || 'System']),
+              noteDate ? el('span', { className: 'kanban-activity-date', title: noteDate }, [formatNoteDate(noteDate)]) : null,
+            ]),
+          ]),
+        ]));
+      }
+      activitySection.append(activityList);
+      detail.append(activitySection);
+    }
   }
 
   return detail;

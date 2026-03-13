@@ -7,8 +7,8 @@
    closes the modal instead of navigating away.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, cycleStatus } from '../shared.js';
-import { projectColor, dueBadgeClass, formatDue } from './helpers.js';
+import { el, cell, editableCell, emitEdit, cycleStatus, getUserName } from '../shared.js';
+import { projectColor, dueBadgeClass, formatDue, STATUS_PREFIX, nowTimestamp } from './helpers.js';
 import { buildCardDetail } from './cards.js';
 
 /* ---------- History-aware modal state ---------- */
@@ -70,8 +70,18 @@ export function openCardModal(group, ctx) {
   }, [stage || 'Backlog']);
   stageBadge.addEventListener('click', (e) => {
     e.stopPropagation();
+    const prev = stageBadge.textContent.trim();
     const next = cycleStatus(stageBadge, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
     emitEdit(rowIdx, cols.stage, next);
+    // Insert status-change note sub-row
+    if (prev !== next && typeof template._onInsertAfterRow === 'function' && cols.note >= 0) {
+      const lastIdx = Math.max(idx, ...group.subtasks.map(s => s.idx), ...group.notes.map(n => n.idx));
+      const newRow = new Array(template._totalColumns || 0).fill('');
+      if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${prev || 'Backlog'} → ${next}`;
+      if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
+      if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
+      template._onInsertAfterRow(lastIdx + 1, [newRow]);
+    }
   });
   headerMeta.append(stageBadge);
 

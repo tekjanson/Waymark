@@ -420,6 +420,52 @@ button.kanban-pri-dot {
   white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
 }
 
+/* ---------- Activity / Status-Change Timeline ---------- */
+
+.kanban-activity-list {
+  display: flex; flex-direction: column; gap: 4px;
+  border-left: 2px solid var(--color-border);
+  margin-left: 8px; padding-left: 12px;
+}
+
+.kanban-activity-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  position: relative; padding: 4px 0;
+}
+
+.kanban-activity-item::before {
+  content: ''; position: absolute; left: -18px; top: 8px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--color-primary); border: 2px solid var(--color-surface);
+}
+
+.kanban-activity-icon {
+  font-size: 0.85rem; color: var(--color-primary); flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.kanban-activity-content {
+  flex: 1; min-width: 0;
+}
+
+.kanban-activity-text {
+  font-size: 0.78rem; font-weight: 500; color: var(--color-text);
+  line-height: 1.4;
+}
+
+.kanban-activity-meta {
+  display: flex; align-items: center; gap: 6px; margin-top: 1px;
+}
+
+.kanban-activity-author {
+  font-size: 0.68rem; color: var(--color-text-muted);
+}
+
+.kanban-activity-date {
+  font-size: 0.68rem; color: var(--color-text-muted);
+  cursor: default;
+}
+
 /* ---------- Inline add forms (sub-tasks & notes) ---------- */
 
 .kanban-add-inline-trigger {
