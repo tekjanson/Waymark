@@ -2,6 +2,83 @@
 .habit-grid {
   margin-bottom: 8px;
 }
+
+/* Week Navigation */
+.habit-week-nav {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 10px 0 14px;
+  border-bottom: 1px solid var(--color-border); margin-bottom: 12px;
+}
+.habit-week-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); background: var(--color-bg);
+  color: var(--color-text); cursor: pointer; font-size: 0.75rem;
+  transition: all var(--transition);
+}
+.habit-week-btn:hover:not(:disabled) { background: var(--color-border); }
+.habit-week-btn:disabled { opacity: 0.35; cursor: default; }
+.habit-week-label {
+  font-weight: 700; font-size: 0.95rem; color: var(--color-text);
+  min-width: 180px; text-align: center;
+}
+.habit-week-counter {
+  font-size: 0.75rem; color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Trend indicators */
+.habit-trend {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; margin-bottom: 10px;
+  border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600;
+}
+.habit-trend-up { background: #dcfce7; color: #16a34a; }
+.habit-trend-down { background: #fee2e2; color: #dc2626; }
+.habit-trend-same { background: #f1f5f9; color: var(--color-text-muted); }
+.habit-trend-arrow { font-size: 1rem; }
+.habit-trend-list {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+}
+.habit-trend-badge {
+  font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; white-space: nowrap;
+}
+.habit-trend-badge.habit-trend-up { background: #dcfce7; color: #16a34a; }
+.habit-trend-badge.habit-trend-down { background: #fee2e2; color: #dc2626; }
+
+/* Weekly history chart */
+.habit-week-history { margin-top: 14px; }
+.habit-week-history-title {
+  margin: 0 0 8px; font-size: 0.85rem; font-weight: 700;
+  color: var(--color-text);
+}
+.habit-week-history-grid {
+  display: flex; gap: 6px; align-items: flex-end;
+  height: 80px; padding: 0 4px;
+}
+.habit-week-history-bar {
+  flex: 1; min-width: 32px; max-width: 60px;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; height: 100%;
+  position: relative;
+}
+.habit-week-history-fill {
+  width: 100%; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-border); transition: height var(--transition);
+  min-height: 2px;
+}
+.habit-week-history-selected .habit-week-history-fill {
+  background: #d97706;
+}
+.habit-week-history-label {
+  font-size: 0.6rem; color: var(--color-text-muted);
+  margin-top: 4px; white-space: nowrap;
+}
+.habit-week-history-pct {
+  font-size: 0.6rem; font-weight: 700; color: var(--color-text);
+  position: absolute; top: -14px;
+}
 .habit-grid-row {
   display: flex; align-items: center;
   border-bottom: 1px solid var(--color-border);
@@ -136,3 +213,9 @@
 [data-theme="dark"] .habit-goal-met { color: #4ade80; }
 [data-theme="dark"] .habit-summary-best { color: #4ade80; }
 [data-theme="dark"] .habit-summary-attention { color: #fbbf24; }
+[data-theme="dark"] .habit-trend-up { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
+[data-theme="dark"] .habit-trend-down { background: rgba(248, 113, 113, 0.14); color: #ef4444; }
+[data-theme="dark"] .habit-trend-same { background: rgba(100, 116, 139, 0.2); }
+[data-theme="dark"] .habit-trend-badge.habit-trend-up { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
+[data-theme="dark"] .habit-trend-badge.habit-trend-down { background: rgba(248, 113, 113, 0.14); color: #ef4444; }
+[data-theme="dark"] .habit-week-history-selected .habit-week-history-fill { background: #fbbf24; }

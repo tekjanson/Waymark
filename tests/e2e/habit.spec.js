@@ -2,6 +2,10 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToSheet, waitForChecklistRows, getChecklistTexts, getCreatedRecords } = require('../helpers/test-utils');
 
+/* ==================================================================
+   Single-week mode (backward-compatible — sheet-018)
+   ================================================================== */
+
 test('habit tracker detected as Habit Tracker template', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
@@ -41,4 +45,260 @@ test('habit toggle emits cell-update on click', async ({ page }) => {
   const dayUpdate = updates.find(u => String(u.col) === colAttr && String(u.row) === rowAttr);
   expect(dayUpdate).toBeTruthy();
   expect(dayUpdate.value).toBe('✓');
+});
+
+test('single-week habit has no week navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
+  // No week nav should exist for single-week sheet
+  await expect(page.locator('.habit-week-nav')).toHaveCount(0);
+});
+
+test('single-week summary panel shows Weekly Summary title', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-summary', { timeout: 5_000 });
+  await expect(page.locator('.habit-summary-title')).toContainText('Weekly Summary');
+});
+
+/* ==================================================================
+   Multi-week mode (sheet-038 with "Week Of" column)
+   ================================================================== */
+
+test('multi-week habit tracker detected as Habit Tracker template', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
+  await expect(page.locator('#template-badge')).toContainText('Habit');
+});
+
+test('multi-week habit shows week navigator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  const nav = page.locator('.habit-week-nav');
+  await expect(nav).toBeVisible();
+
+  // Should show week label
+  const label = nav.locator('.habit-week-label');
+  await expect(label).toContainText('Week of');
+
+  // Should show week counter
+  const counter = nav.locator('.habit-week-counter');
+  await expect(counter).toContainText('of 3');
+
+  // Prev/Next buttons should exist
+  await expect(nav.locator('.habit-week-prev')).toBeVisible();
+  await expect(nav.locator('.habit-week-next')).toBeVisible();
+});
+
+test('multi-week defaults to most recent week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Default to most recent (3rd week = Mar 17)
+  const label = page.locator('.habit-week-label');
+  await expect(label).toContainText('Mar 17');
+
+  const counter = page.locator('.habit-week-counter');
+  await expect(counter).toContainText('3 of 3');
+
+  // Next button should be disabled (already at last week)
+  await expect(page.locator('.habit-week-next')).toBeDisabled();
+  // Prev button should be enabled
+  await expect(page.locator('.habit-week-prev')).not.toBeDisabled();
+});
+
+test('multi-week shows only current week rows', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
+
+  // The most recent week (Mar 17) has 4 habits
+  const dataRows = page.locator('.habit-grid-row:not(.habit-grid-header):not(.habit-grid-footer)');
+  expect(await dataRows.count()).toBe(4);
+});
+
+test('multi-week prev button navigates to earlier week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Click prev to go to week 2 (Mar 10)
+  await page.click('.habit-week-prev');
+  await expect(page.locator('.habit-week-label')).toContainText('Mar 10');
+  await expect(page.locator('.habit-week-counter')).toContainText('2 of 3');
+
+  // Both buttons should now be enabled
+  await expect(page.locator('.habit-week-prev')).not.toBeDisabled();
+  await expect(page.locator('.habit-week-next')).not.toBeDisabled();
+
+  // Click prev again to go to week 1 (Mar 3)
+  await page.click('.habit-week-prev');
+  await expect(page.locator('.habit-week-label')).toContainText('Mar 3');
+  await expect(page.locator('.habit-week-counter')).toContainText('1 of 3');
+
+  // Prev should now be disabled
+  await expect(page.locator('.habit-week-prev')).toBeDisabled();
+});
+
+test('multi-week next button navigates forward', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Go to earliest week first
+  await page.click('.habit-week-prev');
+  await page.click('.habit-week-prev');
+  await expect(page.locator('.habit-week-counter')).toContainText('1 of 3');
+
+  // Navigate forward
+  await page.click('.habit-week-next');
+  await expect(page.locator('.habit-week-label')).toContainText('Mar 10');
+  await expect(page.locator('.habit-week-counter')).toContainText('2 of 3');
+});
+
+test('multi-week grid shows correct data for each week', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
+
+  // Week 3 (Mar 17) — partially filled, default view
+  const week3Done = await page.locator('.habit-done').count();
+  expect(week3Done).toBeGreaterThan(0);
+  expect(week3Done).toBeLessThan(20); // Not many done in partial week
+
+  // Navigate to week 1 (Mar 3) — more filled in
+  await page.click('.habit-week-prev');
+  await page.click('.habit-week-prev');
+  const week1Done = await page.locator('.habit-done').count();
+  expect(week1Done).toBeGreaterThan(week3Done); // Week 1 is more complete
+});
+
+test('multi-week toggle emits cell-update with correct row index', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
+
+  // Click an empty cell in the current week view
+  const unchecked = page.locator('.habit-toggle.habit-empty').first();
+  const rowAttr = await unchecked.getAttribute('data-row-idx');
+  const colAttr = await unchecked.getAttribute('data-col-idx');
+  await unchecked.click();
+
+  const clicked = page.locator(`.habit-toggle[data-row-idx="${rowAttr}"][data-col-idx="${colAttr}"]`);
+  await expect(clicked).toHaveClass(/habit-done/);
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.length).toBeGreaterThanOrEqual(1);
+  const dayUpdate = updates.find(u => String(u.col) === colAttr && String(u.row) === rowAttr);
+  expect(dayUpdate).toBeTruthy();
+  expect(dayUpdate.value).toBe('✓');
+});
+
+test('multi-week summary shows week label in title', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-summary', { timeout: 5_000 });
+
+  const title = page.locator('.habit-summary-title');
+  await expect(title).toContainText('Week of');
+  await expect(title).toContainText('Mar 17');
+});
+
+test('multi-week summary shows trend comparison', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-summary', { timeout: 5_000 });
+
+  // Should show trend indicator comparing to previous week
+  const trend = page.locator('.habit-trend');
+  await expect(trend).toBeVisible();
+  await expect(trend).toContainText('vs last week');
+});
+
+test('multi-week summary shows weekly history chart', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-summary', { timeout: 5_000 });
+
+  const history = page.locator('.habit-week-history');
+  await expect(history).toBeVisible();
+  await expect(page.locator('.habit-week-history-title')).toContainText('Weekly History');
+
+  // Should have 3 bars (one per week)
+  const bars = page.locator('.habit-week-history-bar');
+  expect(await bars.count()).toBe(3);
+
+  // Current week should be highlighted
+  await expect(page.locator('.habit-week-history-selected')).toHaveCount(1);
+});
+
+test('multi-week week navigator buttons have pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  await expect(page.locator('.habit-week-prev')).toHaveCSS('cursor', 'pointer');
+});
+
+test('multi-week grid rebuilds when navigating weeks', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Get done count for week 3
+  const week3Done = await page.locator('.habit-done').count();
+
+  // Navigate to week 1
+  await page.click('.habit-week-prev');
+  await page.click('.habit-week-prev');
+
+  // Grid should have rebuilt — check done count changed
+  const week1Done = await page.locator('.habit-done').count();
+  expect(week1Done).not.toBe(week3Done);
+
+  // The summary title should now reflect week 1
+  await expect(page.locator('.habit-summary-title')).toContainText('Mar 3');
+});
+
+test('multi-week renders at mobile width without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-week-nav', { timeout: 5_000 });
+
+  // Verify nav is still visible
+  await expect(page.locator('.habit-week-nav')).toBeVisible();
+
+  // Check no elements overflow viewport
+  const overflows = await page.evaluate(() => {
+    const problems = [];
+    document.querySelectorAll('.habit-week-nav *, .habit-grid *').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 2) {
+        problems.push(el.className);
+      }
+    });
+    return problems;
+  });
+  expect(overflows).toHaveLength(0);
+});
+
+test('multi-week summary has design token styling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-summary', { timeout: 5_000 });
+
+  const summary = page.locator('.habit-summary');
+  const bgColor = await summary.evaluate(el =>
+    getComputedStyle(el).getPropertyValue('background-color')
+  );
+  expect(bgColor).not.toBe('');
+  expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+  await expect(summary).toHaveCSS('border-radius', /\d+px/);
 });
