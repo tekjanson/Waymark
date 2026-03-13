@@ -1,8 +1,10 @@
 /* ============================================================
-   templates/budget.js — Budget: grouped by category, subtotals, chart
+   templates/budget/index.js — Budget: grouped by category,
+   subtotals, chart, and statement upload
    ============================================================ */
 
-import { el, cell, editableCell, delegateEvent, groupByColumn, registerTemplate } from './shared.js';
+import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate } from '../shared.js';
+import { parseStatement } from './parser.js';
 
 /* ---------- Helpers ---------- */
 
@@ -14,9 +16,225 @@ function parseAmt(raw) {
 /** Stable color palette for category chart segments */
 const CAT_COLORS = ['#059669','#2563eb','#d97706','#7c3aed','#dc2626','#0891b2','#be185d','#65a30d'];
 
+/* ---------- Statement Upload Modal ---------- */
+
+/**
+ * Open an upload modal to import bank/credit card statements.
+ * Parsed transactions are appended to the current sheet via the
+ * template's _onAddRow callback (injected by checklist.js).
+ *
+ * @param {Object} cols — column index map from template.columns()
+ * @param {number} totalColumns — total number of columns in the sheet
+ * @param {function} onAddRow — callback(rowsToAppend: string[][])
+ */
+function openUploadModal(cols, totalColumns, onAddRow) {
+  const existing = document.getElementById('budget-upload-modal');
+  if (existing) existing.remove();
+
+  let parsedTransactions = [];
+
+  const fileInput = el('input', {
+    className: 'budget-upload-file-input',
+    type: 'file',
+    accept: '.csv,.ofx,.qfx,.pdf',
+  });
+
+  const dropZone = el('div', { className: 'budget-upload-drop-zone' }, [
+    el('div', { className: 'budget-upload-drop-icon' }, ['\uD83D\uDCC4']),
+    el('div', { className: 'budget-upload-drop-text' }, ['Drop a statement file here']),
+    el('div', { className: 'budget-upload-drop-hint' }, ['CSV, OFX, QFX, or PDF from your bank']),
+    el('button', { className: 'btn btn-secondary budget-upload-browse-btn', type: 'button' }, ['Browse Files']),
+  ]);
+
+  const previewSection = el('div', { className: 'budget-upload-preview hidden' });
+  const statusBar = el('div', { className: 'budget-upload-status hidden' });
+
+  const importBtn = el('button', {
+    className: 'btn btn-primary budget-upload-import-btn',
+    type: 'button',
+    disabled: true,
+  }, ['Import Transactions']);
+
+  const modal = el('div', {
+    id: 'budget-upload-modal',
+    className: 'modal-overlay',
+  }, [
+    el('div', { className: 'modal budget-upload-modal-content' }, [
+      el('div', { className: 'modal-header' }, [
+        el('h3', {}, ['\uD83C\uDFE6 Upload Statement']),
+        el('button', { className: 'modal-close', type: 'button', 'aria-label': 'Close' }, ['\u2715']),
+      ]),
+      el('div', { className: 'modal-body' }, [
+        dropZone,
+        fileInput,
+        statusBar,
+        previewSection,
+      ]),
+      el('div', { className: 'modal-footer' }, [
+        el('button', { className: 'btn btn-secondary', type: 'button' }, ['Cancel']),
+        importBtn,
+      ]),
+    ]),
+  ]);
+
+  /* ---------- File handling ---------- */
+
+  function handleFile(file) {
+    if (!file) return;
+    const isPDF = file.name.toLowerCase().endsWith('.pdf');
+
+    // Show loading state for PDF (requires CDN library load)
+    if (isPDF) {
+      statusBar.textContent = 'Loading PDF parser\u2026';
+      statusBar.className = 'budget-upload-status';
+      statusBar.classList.remove('hidden');
+      importBtn.disabled = true;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const result = await parseStatement(reader.result, file.name);
+        parsedTransactions = result.transactions;
+
+        if (parsedTransactions.length === 0) {
+          statusBar.textContent = 'No transactions found in this file. Check the format and try again.';
+          statusBar.className = 'budget-upload-status budget-upload-status-error';
+          statusBar.classList.remove('hidden');
+          previewSection.classList.add('hidden');
+          importBtn.disabled = true;
+          return;
+        }
+
+        statusBar.textContent = `Found ${parsedTransactions.length} transaction${parsedTransactions.length !== 1 ? 's' : ''} (${result.format} format)`;
+        statusBar.className = 'budget-upload-status budget-upload-status-success';
+        statusBar.classList.remove('hidden');
+
+        renderPreview(parsedTransactions, previewSection);
+        previewSection.classList.remove('hidden');
+        dropZone.classList.add('hidden');
+        importBtn.disabled = false;
+      } catch (err) {
+        statusBar.textContent = `Parse error: ${err.message}`;
+        statusBar.className = 'budget-upload-status budget-upload-status-error';
+        statusBar.classList.remove('hidden');
+        previewSection.classList.add('hidden');
+        importBtn.disabled = true;
+      }
+    };
+    reader.onerror = () => {
+      statusBar.textContent = 'Failed to read file';
+      statusBar.className = 'budget-upload-status budget-upload-status-error';
+      statusBar.classList.remove('hidden');
+    };
+
+    if (isPDF) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
+  }
+
+  function renderPreview(transactions, container) {
+    container.innerHTML = '';
+    const maxShow = Math.min(transactions.length, 20);
+    const remaining = transactions.length - maxShow;
+
+    const table = el('div', { className: 'budget-upload-table' }, [
+      el('div', { className: 'budget-upload-table-header' }, [
+        el('span', { className: 'budget-upload-col-date' }, ['Date']),
+        el('span', { className: 'budget-upload-col-desc' }, ['Description']),
+        el('span', { className: 'budget-upload-col-amt' }, ['Amount']),
+        el('span', { className: 'budget-upload-col-cat' }, ['Category']),
+      ]),
+    ]);
+
+    for (let i = 0; i < maxShow; i++) {
+      const t = transactions[i];
+      const amt = parseFloat(t.amount) || 0;
+      table.append(el('div', { className: 'budget-upload-table-row' }, [
+        el('span', { className: 'budget-upload-col-date' }, [t.date || '\u2014']),
+        el('span', { className: 'budget-upload-col-desc' }, [t.description]),
+        el('span', { className: `budget-upload-col-amt ${amt >= 0 ? 'budget-amt-positive' : 'budget-amt-negative'}` }, [
+          `$${Math.abs(amt).toFixed(2)}`,
+        ]),
+        el('span', { className: 'budget-upload-col-cat' }, [t.category || '\u2014']),
+      ]));
+    }
+
+    if (remaining > 0) {
+      table.append(el('div', { className: 'budget-upload-table-more' }, [
+        `+ ${remaining} more transaction${remaining !== 1 ? 's' : ''}`,
+      ]));
+    }
+
+    container.append(table);
+  }
+
+  /* ---------- Event wiring ---------- */
+
+  // Browse button
+  dropZone.querySelector('.budget-upload-browse-btn').addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  // File input change
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
+  });
+
+  // Drag and drop
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('budget-upload-drop-active');
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('budget-upload-drop-active');
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('budget-upload-drop-active');
+    if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+  });
+
+  // Import button
+  importBtn.addEventListener('click', async () => {
+    if (parsedTransactions.length === 0 || !onAddRow) return;
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing\u2026';
+
+    try {
+      const newRows = parsedTransactions.map(t => {
+        const row = new Array(totalColumns).fill('');
+        if (cols.text >= 0) row[cols.text] = t.description;
+        if (cols.amount >= 0) row[cols.amount] = t.amount;
+        if (cols.category >= 0) row[cols.category] = t.category;
+        if (cols.date >= 0) row[cols.date] = t.date;
+        return row;
+      });
+
+      await onAddRow(newRows);
+      modal.remove();
+    } catch (err) {
+      showToast(`Import failed: ${err.message}`, 'error');
+      importBtn.disabled = false;
+      importBtn.textContent = 'Import Transactions';
+    }
+  });
+
+  // Close handlers
+  modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+  modal.querySelector('.modal-footer .btn-secondary').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  document.body.append(modal);
+}
+
+/* ---------- Template Definition ---------- */
+
 const definition = {
   name: 'Budget',
-  icon: '💰',
+  icon: '\uD83D\uDCB0',
   color: '#059669',
   priority: 20,
   itemNoun: 'Transaction',
@@ -47,7 +265,7 @@ const definition = {
     ];
   },
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     /* ---------- Compute totals ---------- */
     let totalIncome = 0, totalExpense = 0;
     for (const row of rows) {
@@ -56,8 +274,8 @@ const definition = {
     }
     const balance = totalIncome - totalExpense;
 
-    /* ---------- Summary bar ---------- */
-    container.append(el('div', { className: 'budget-summary' }, [
+    /* ---------- Summary bar with upload button ---------- */
+    const summaryBar = el('div', { className: 'budget-summary' }, [
       el('div', { className: 'budget-summary-item budget-income' }, [
         el('span', { className: 'budget-summary-label' }, ['Income']),
         el('span', { className: 'budget-summary-value' }, [`$${totalIncome.toLocaleString()}`]),
@@ -70,7 +288,22 @@ const definition = {
         el('span', { className: 'budget-summary-label' }, ['Balance']),
         el('span', { className: 'budget-summary-value' }, [`$${balance.toLocaleString()}`]),
       ]),
-    ]));
+    ]);
+    container.append(summaryBar);
+
+    /* ---------- Upload Statement button ---------- */
+    const uploadBtn = el('button', {
+      className: 'btn budget-upload-btn',
+      type: 'button',
+      title: 'Upload a bank or credit card statement',
+    }, ['\uD83C\uDFE6 Upload Statement']);
+
+    uploadBtn.addEventListener('click', () => {
+      const totalCols = template._totalColumns || 5;
+      openUploadModal(cols, totalCols, template._onAddRow);
+    });
+
+    container.append(el('div', { className: 'budget-actions' }, [uploadBtn]));
 
     /* ---------- Group by category ---------- */
     const groups = groupByColumn(rows, cols.category, 'Uncategorized');
@@ -102,7 +335,7 @@ const definition = {
         chartBar.append(el('div', {
           className: `budget-chart-segment ${s.over ? 'budget-chart-over' : ''}`,
           style: `width:${Math.max(s.pct, 3)}%;background:${s.color}`,
-          title: `${s.cat}: $${s.spent.toLocaleString()} (${s.pct}%)${s.over ? ' — OVER BUDGET' : ''}`,
+          title: `${s.cat}: $${s.spent.toLocaleString()} (${s.pct}%)${s.over ? ' \u2014 OVER BUDGET' : ''}`,
         }));
       }
 
