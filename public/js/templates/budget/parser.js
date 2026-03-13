@@ -10,8 +10,10 @@
 
 /* ---------- PDF.js (vendored, lazy-loaded) ---------- */
 
-const PDFJS_PATH = '/js/vendor/pdfjs/pdf.min.mjs';
-const PDFJS_WORKER_PATH = '/js/vendor/pdfjs/pdf.worker.min.mjs';
+// Use __WAYMARK_BASE so paths resolve correctly behind the /waymark proxy
+const _BASE = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
+const PDFJS_PATH = _BASE + '/js/vendor/pdfjs/pdf.min.mjs';
+const PDFJS_WORKER_PATH = _BASE + '/js/vendor/pdfjs/pdf.worker.min.mjs';
 let _pdfjsPromise = null;
 
 /**
@@ -245,6 +247,11 @@ function parseAmount(raw) {
 
 /**
  * Parse a CSV bank statement into normalised transaction objects.
+ * Handles multi-section CSVs (e.g. BofA) where a summary section
+ * precedes the actual transaction table. Scans for the row that
+ * looks most like a transaction header (contains Date + Amount columns),
+ * then uses that as the header and everything after as data.
+ *
  * @param {string} text — raw CSV content
  * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}>, columns: Object, rawHeaders: string[] }}
  */
@@ -252,8 +259,42 @@ export function parseCSVStatement(text) {
   const rows = parseCSVRows(text);
   if (rows.length < 2) return { transactions: [], columns: {}, rawHeaders: [] };
 
-  const headers = rows[0];
-  const dataRows = rows.slice(1);
+  // Find the best header row — the one that looks most like a transaction header.
+  // In multi-section CSVs (e.g. BofA), the summary section comes first with
+  // different columns (Description, Summary Amt), and the real transaction
+  // header (Date, Description, Amount, Running Bal.) is further down.
+  let headerIdx = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < Math.min(rows.length - 1, 20); i++) {
+    const row = rows[i];
+    let score = 0;
+    const joined = row.map(c => (c || '').toLowerCase().trim()).join(' ');
+
+    // Strong signals: row contains canonical transaction header names
+    if (row.some(c => DATE_HEADERS.test((c || '').trim()))) score += 3;
+    if (row.some(c => AMOUNT_HEADERS.test((c || '').trim()))) score += 3;
+    if (row.some(c => DESC_HEADERS.test((c || '').trim()))) score += 2;
+
+    // Bonus: row has more columns (transaction tables tend to be wider)
+    if (row.length >= 3) score += 1;
+    if (row.length >= 4) score += 1;
+
+    // Penalty: if any cell looks like data (dates, amounts), it's a data row not a header
+    const hasDateData = row.some(c => /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test((c || '').trim()));
+    if (hasDateData) score -= 5;
+
+    // Penalty: if part of a summary section (common BofA pattern)
+    if (/total\s+(credits?|debits?)|(beginning|ending)\s+balance/i.test(joined)) score -= 5;
+
+    if (score > bestScore) {
+      bestScore = score;
+      headerIdx = i;
+    }
+  }
+
+  const headers = rows[headerIdx];
+  const dataRows = rows.slice(headerIdx + 1);
   const colMap = detectCSVColumns(headers, dataRows);
 
   const transactions = [];
@@ -262,9 +303,16 @@ export function parseCSVStatement(text) {
     const nonEmpty = row.filter(c => c.trim()).length;
     if (nonEmpty === 0) continue;
 
+    // Skip summary/balance rows that aren't real transactions
+    const rowText = row.join(' ').toLowerCase();
+    if (/^(beginning|ending)\s+balance/i.test(rowText)) continue;
+    if (/^total\s+(credits?|debits?|deposits?|withdrawals?)/i.test(rowText)) continue;
+
     let amount;
     if (colMap.amount >= 0) {
-      amount = parseAmount(row[colMap.amount] || '');
+      const amtStr = (row[colMap.amount] || '').trim();
+      if (!amtStr) continue; // Skip rows with no amount (e.g. opening balance lines)
+      amount = parseAmount(amtStr);
     } else if (colMap.debitCol >= 0 || colMap.creditCol >= 0) {
       const debit = parseAmount(row[colMap.debitCol] || '');
       const credit = parseAmount(row[colMap.creditCol] || '');
@@ -353,6 +401,50 @@ export function parseOFXStatement(text) {
 /* ---------- PDF Parsing ---------- */
 
 /**
+ * Detect column boundaries by clustering text item X-positions.
+ * Items whose X positions are within CLUSTER_GAP of each other
+ * belong to the same column.
+ * @param {Array<{text:string, x:number, y:number}>} items
+ * @returns {number[]} — sorted array of column left-edge X positions
+ */
+function detectColumnBoundaries(items) {
+  if (!items.length) return [];
+
+  const CLUSTER_GAP = 25; // px gap that separates distinct columns
+  const xs = items.map(i => i.x).sort((a, b) => a - b);
+
+  const clusters = [[xs[0]]];
+  for (let i = 1; i < xs.length; i++) {
+    const last = clusters[clusters.length - 1];
+    if (xs[i] - last[last.length - 1] <= CLUSTER_GAP) {
+      last.push(xs[i]);
+    } else {
+      clusters.push([xs[i]]);
+    }
+  }
+
+  // Minimum items per cluster to count as a real column (10% of rows)
+  const minClusterSize = Math.max(2, Math.floor(items.length * 0.02));
+  return clusters
+    .filter(c => c.length >= minClusterSize)
+    .map(c => Math.min(...c));
+}
+
+/**
+ * Assign a text item to a column based on its X position.
+ * Returns the index of the closest column boundary to the left.
+ * @param {number} x — item X position
+ * @param {number[]} boundaries — sorted column boundaries
+ * @returns {number}
+ */
+function assignToColumn(x, boundaries) {
+  for (let i = boundaries.length - 1; i >= 0; i--) {
+    if (x >= boundaries[i] - 15) return i; // 15px tolerance for right-aligned text
+  }
+  return 0;
+}
+
+/**
  * Group text items into visual rows based on Y position.
  * Items within Y_TOLERANCE pixels of each other are on the same row.
  * @param {Array<{text:string, x:number, y:number}>} items
@@ -361,7 +453,7 @@ export function parseOFXStatement(text) {
 function groupTextIntoRows(items) {
   if (!items.length) return [];
 
-  const Y_TOLERANCE = 3;
+  const Y_TOLERANCE = 5;
   const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
 
   const rows = [];
@@ -385,59 +477,173 @@ function groupTextIntoRows(items) {
   return rows;
 }
 
-/** Date pattern for PDF row scanning */
-const PDF_DATE_RE = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/;
-/** Amount pattern: optional sign, optional $, digits with commas, decimal */
-const PDF_AMOUNT_RE = /[-+]?\$?\d{1,3}(?:,\d{3})*\.\d{2}/g;
+/**
+ * Build a structured 2D table from PDF text items.
+ * Uses X-position clustering to detect column boundaries,
+ * then assigns each text item to its column within its row.
+ * @param {Array<{text:string, x:number, y:number}>} items
+ * @returns {{ table: string[][], boundaries: number[] }}
+ */
+function buildPDFTable(items) {
+  const boundaries = detectColumnBoundaries(items);
+  if (!boundaries.length) return { table: [], boundaries: [] };
+
+  const numCols = boundaries.length;
+  const rawRows = groupTextIntoRows(items);
+  const table = [];
+
+  for (const row of rawRows) {
+    const cells = new Array(numCols).fill('');
+    for (const item of row) {
+      const col = assignToColumn(item.x, boundaries);
+      cells[col] = cells[col] ? cells[col] + ' ' + item.text : item.text;
+    }
+    // Skip completely empty rows
+    if (cells.some(c => c.trim())) {
+      table.push(cells.map(c => c.trim()));
+    }
+  }
+
+  return { table, boundaries };
+}
 
 /**
- * Extract transactions from PDF text rows using pattern matching.
- * A transaction row typically contains a date and at least one dollar amount.
- * @param {Array<Array<{text:string, x:number, y:number}>>} rows
+ * Filter out non-data rows from a PDF table.
+ * Removes likely headers, footers, page markers, and blank rows.
+ * @param {string[][]} table
+ * @returns {string[][]}
+ */
+function filterNonDataRows(table) {
+  if (table.length <= 1) return table;
+
+  // Patterns for rows to skip
+  const SKIP_PATTERNS = [
+    /^page\s+\d+/i,
+    /^\d+\s+of\s+\d+$/i,
+    /statement\s+(period|date|ending)/i,
+    /account\s+(number|summary|type)/i,
+    /^continued\b/i,
+    /^\*{3,}/,
+    /^-{5,}$/,
+    /^={5,}$/,
+    /beginning\s+balance/i,
+    /ending\s+balance/i,
+    /total\s+(deposits?|withdrawals?|charges?|credits?|debits?)/i,
+    /^daily\s+balance/i,
+    /this\s+statement/i,
+  ];
+
+  return table.filter(row => {
+    const text = row.join(' ').trim();
+    if (!text) return false;
+    if (text.length < 5) return false;
+    for (const pattern of SKIP_PATTERNS) {
+      if (pattern.test(text)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Detect column roles in a PDF table using content analysis.
+ * Similar to CSV column detection but works on the PDF table structure.
+ * @param {string[][]} dataRows — rows of cell values (after filtering)
+ * @returns {{ date: number, amount: number, description: number, balance: number }}
+ */
+function detectPDFColumnRoles(dataRows) {
+  const numCols = dataRows.length > 0 ? dataRows[0].length : 0;
+  if (numCols === 0) return { date: -1, amount: -1, description: -1, balance: -1 };
+
+  const scores = {
+    date: new Array(numCols).fill(0),
+    amount: new Array(numCols).fill(0),
+    description: new Array(numCols).fill(0),
+  };
+
+  // Analyse sample rows (up to 20)
+  const samples = dataRows.slice(0, 20);
+
+  for (let col = 0; col < numCols; col++) {
+    const vals = samples.map(r => (r[col] || '').trim()).filter(Boolean);
+    if (!vals.length) continue;
+
+    scores.date[col] = scoreDateColumn(vals);
+    scores.amount[col] = scoreAmountColumn(vals);
+    scores.description[col] = scoreDescriptionColumn(vals);
+  }
+
+  // Assign roles: highest-scoring column for each role, without overlap
+  const assigned = new Set();
+  const mapping = { date: -1, amount: -1, description: -1, balance: -1 };
+
+  // Date first (most distinctive)
+  let bestDate = -1, bestDateScore = 0.3; // minimum threshold
+  for (let col = 0; col < numCols; col++) {
+    if (scores.date[col] > bestDateScore) {
+      bestDate = col;
+      bestDateScore = scores.date[col];
+    }
+  }
+  if (bestDate >= 0) { mapping.date = bestDate; assigned.add(bestDate); }
+
+  // Description (longest text, most alphabetic)
+  let bestDesc = -1, bestDescScore = 0.3;
+  for (let col = 0; col < numCols; col++) {
+    if (assigned.has(col)) continue;
+    if (scores.description[col] > bestDescScore) {
+      bestDesc = col;
+      bestDescScore = scores.description[col];
+    }
+  }
+  if (bestDesc >= 0) { mapping.description = bestDesc; assigned.add(bestDesc); }
+
+  // Amount: pick the first (leftmost) high-scoring numeric column
+  const amountCols = [];
+  for (let col = 0; col < numCols; col++) {
+    if (assigned.has(col)) continue;
+    if (scores.amount[col] > 0.3) {
+      amountCols.push(col);
+    }
+  }
+
+  if (amountCols.length >= 2) {
+    // Multiple amount columns: first is transaction amount, last is balance
+    mapping.amount = amountCols[0];
+    mapping.balance = amountCols[amountCols.length - 1];
+  } else if (amountCols.length === 1) {
+    mapping.amount = amountCols[0];
+  }
+
+  return mapping;
+}
+
+/**
+ * Extract transactions from a PDF table using a column mapping.
+ * @param {string[][]} tableRows — 2D string table
+ * @param {{ date: number, amount: number, description: number, balance?: number }} colMap
  * @returns {Array<{date:string, description:string, amount:string, category:string}>}
  */
-function extractTransactionsFromRows(rows) {
+function applyColumnMapping(tableRows, colMap) {
   const transactions = [];
 
-  for (const row of rows) {
-    const rowText = row.map(item => item.text).join(' ');
+  for (const row of tableRows) {
+    const dateStr = colMap.date >= 0 ? (row[colMap.date] || '').trim() : '';
+    const descStr = colMap.description >= 0 ? (row[colMap.description] || '').trim() : '';
+    const amtStr = colMap.amount >= 0 ? (row[colMap.amount] || '').trim() : '';
 
-    if (rowText.length < 8) continue;
+    // Must have at least a date or an amount to be a transaction
+    const hasDate = dateStr && PDF_DATE_RE.test(dateStr);
+    const hasAmount = amtStr && PDF_AMOUNT_RE.test(amtStr);
 
-    const dateMatch = rowText.match(PDF_DATE_RE);
-    if (!dateMatch) continue;
+    if (!hasDate && !hasAmount) continue;
+    if (!hasAmount) continue; // Amount is required
 
-    const amounts = [];
-    let m;
-    const amountRe = new RegExp(PDF_AMOUNT_RE.source, 'g');
-    while ((m = amountRe.exec(rowText)) !== null) {
-      amounts.push({ value: m[0], index: m.index });
-    }
-    if (amounts.length === 0) continue;
-
-    // Pick the transaction amount:
-    // - 1 amount → use it
-    // - 2+ amounts → use second-to-last (last is typically running balance)
-    const amtEntry = amounts.length >= 2
-      ? amounts[amounts.length - 2]
-      : amounts[0];
-
-    const amount = parseAmount(amtEntry.value);
+    const amount = parseAmount(amtStr);
     if (amount === 0) continue;
 
-    // Description: text between the date and the chosen amount
-    const dateEnd = rowText.indexOf(dateMatch[0]) + dateMatch[0].length;
-    const amtStart = amtEntry.index;
-    let description = (amtStart > dateEnd)
-      ? rowText.slice(dateEnd, amtStart).trim()
-      : rowText.slice(dateEnd).replace(/[-+]?\$?\d[\d,]*\.\d{2}/g, '').trim();
-
-    description = description.replace(/\s+/g, ' ').trim();
-    if (!description) description = 'Unknown transaction';
-
     transactions.push({
-      date: normaliseDate(dateMatch[1]),
-      description,
+      date: hasDate ? normaliseDate(dateStr.match(PDF_DATE_RE)[1]) : '',
+      description: descStr || 'Unknown transaction',
       amount: String(amount),
       category: '',
     });
@@ -446,12 +652,20 @@ function extractTransactionsFromRows(rows) {
   return transactions;
 }
 
+/** Date pattern for PDF row scanning */
+const PDF_DATE_RE = /\b(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/;
+/** Amount pattern: optional sign, optional $, digits with commas, decimal */
+const PDF_AMOUNT_RE = /[-+]?\$?\d{1,3}(?:,\d{3})*\.\d{2}/;
+
 /**
  * Parse a PDF bank statement into normalised transactions.
- * Loads pdf.js lazily from CDN on first use, then extracts text
- * with position data and applies transaction pattern matching.
+ * Uses column detection to build a proper table structure,
+ * then auto-detects column roles (date, description, amount).
+ * Returns both the raw table and transactions so the UI can
+ * offer column mapping adjustment.
+ *
  * @param {ArrayBuffer} arrayBuffer — PDF file content
- * @returns {Promise<{transactions: Array, format: string}>}
+ * @returns {Promise<{transactions: Array, rawTable: string[][], autoMapping: Object, format: string}>}
  */
 export async function parsePDFStatement(arrayBuffer) {
   const pdfjsLib = await loadPdfJs();
@@ -479,20 +693,122 @@ export async function parsePDFStatement(arrayBuffer) {
     }
   }
 
-  const rows = groupTextIntoRows(allItems);
-  const transactions = extractTransactionsFromRows(rows);
+  const { table } = buildPDFTable(allItems);
+  const filtered = filterNonDataRows(table);
+  const autoMapping = detectPDFColumnRoles(filtered);
+  const transactions = applyColumnMapping(filtered, autoMapping);
 
+  return { transactions, rawTable: filtered, autoMapping };
+}
+
+/**
+ * Re-parse a previously extracted PDF table with a different column mapping.
+ * Used when the user adjusts column assignments in the mapping UI.
+ * @param {string[][]} rawTable — raw table rows from parsePDFStatement
+ * @param {{ date: number, amount: number, description: number }} colMap
+ * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}> }}
+ */
+export function reParsePDFTransactions(rawTable, colMap) {
+  const transactions = applyColumnMapping(rawTable, colMap);
   return { transactions };
 }
 
 /* ---------- Public API ---------- */
 
 /**
+ * Parse a fixed-width / space-aligned text statement (e.g. BofA .txt export).
+ * Uses a right-to-left parsing strategy: numeric values (amount, balance) are
+ * found at the right edge of each line, then everything between the date and
+ * the first number is the description. This handles long descriptions that
+ * overflow past the nominal "Amount" column position.
+ *
+ * @param {string} text — raw text content
+ * @returns {{ transactions: Array<{date:string, description:string, amount:string, category:string}>, format: string }}
+ */
+export function parseFixedWidthStatement(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  // Find the header line containing column names
+  let headerLineIdx = -1;
+  let hasBalanceColumn = false;
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
+    const line = lines[i];
+    const lower = line.toLowerCase();
+    if (/\bdate\b/.test(lower) && (/\bamount\b/.test(lower) || /\bdescription?\b/.test(lower))) {
+      headerLineIdx = i;
+      hasBalanceColumn = /\bbal(ance)?\.?\b/i.test(lower);
+      break;
+    }
+  }
+
+  if (headerLineIdx === -1) {
+    // No recognisable header — fall back to CSV parser
+    return parseCSVStatement(text);
+  }
+
+  // Pattern: one or two right-aligned numbers at end of line
+  // Match amounts like: -2,507.62   19,786.58  or just  -185.02
+  const TRAILING_NUMBERS_RE = /\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s*$/;
+  const SINGLE_NUMBER_RE = /\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})\s*$/;
+  const DATE_START_RE = /^(\d{2}\/\d{2}\/\d{4})\s+/;
+
+  const transactions = [];
+  for (let i = headerLineIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    // Must start with a date
+    const dateMatch = line.match(DATE_START_RE);
+    if (!dateMatch) continue;
+
+    const dateStr = dateMatch[1];
+
+    // Strip the date from the front
+    let rest = line.substring(dateMatch[0].length);
+
+    // Extract trailing numbers (amount + optional balance) from the right
+    let amountStr = '';
+    let twoNumMatch = rest.match(TRAILING_NUMBERS_RE);
+    if (twoNumMatch) {
+      // Two numbers: first is amount, second is running balance
+      amountStr = twoNumMatch[1];
+      // Remove both numbers from description
+      rest = rest.substring(0, twoNumMatch.index).trim();
+    } else {
+      let oneNumMatch = rest.match(SINGLE_NUMBER_RE);
+      if (oneNumMatch) {
+        amountStr = oneNumMatch[1];
+        rest = rest.substring(0, oneNumMatch.index).trim();
+      }
+    }
+
+    const description = rest.trim();
+
+    // Skip summary rows
+    if (/^(beginning|ending)\s+balance/i.test(description)) continue;
+    if (/^total\s+(credits?|debits?)/i.test(description)) continue;
+
+    if (!amountStr) continue;
+    const amount = parseAmount(amountStr);
+    if (amount === 0) continue;
+
+    transactions.push({
+      date: normaliseDate(dateStr),
+      description: description || 'Unknown transaction',
+      amount: String(amount),
+      category: '',
+    });
+  }
+
+  return { transactions, format: 'TXT' };
+}
+
+/**
  * Detect file type and parse a statement file into transactions.
  * Now async to support PDF parsing (pdf.js loaded from CDN).
- * For CSV/OFX, resolves immediately. For PDF, awaits pdf.js load + extraction.
+ * For CSV/OFX/TXT, resolves immediately. For PDF, awaits pdf.js load + extraction.
  *
- * @param {string|ArrayBuffer} data — file content (text for CSV/OFX, ArrayBuffer for PDF)
+ * @param {string|ArrayBuffer} data — file content (text for CSV/OFX/TXT, ArrayBuffer for PDF)
  * @param {string} filename — original filename for type detection
  * @returns {Promise<{transactions: Array, format: string}>}
  */
@@ -510,6 +826,12 @@ export async function parseStatement(data, filename) {
   if (ext === 'ofx' || ext === 'qfx' || text.includes('<OFX>') || text.includes('<STMTTRN>')) {
     const result = parseOFXStatement(text);
     return { ...result, format: 'OFX' };
+  }
+
+  // TXT files: try fixed-width parsing first
+  if (ext === 'txt') {
+    const result = parseFixedWidthStatement(text);
+    return { ...result, format: result.format || 'TXT' };
   }
 
   const result = parseCSVStatement(text);
