@@ -78,6 +78,7 @@ const ROLE_LABELS = {
   'kanban.reporter': 'Reported By / Submitter',
   // Habit
   'habit.text': 'Habit / Routine',
+  'habit.weekOf': 'Week Of / Date',
   'habit.streak': 'Streak Count',
   'habit.days': 'Day Tracking (Mon–Sun)',
   // Grading
@@ -201,7 +202,7 @@ const CANONICAL_HEADERS = {
   'kanban.due': 'Due', 'kanban.label': 'Label', 'kanban.note': 'Note',
   'kanban.reporter': 'Reported By',
   // Habit
-  'habit.text': 'Habit', 'habit.streak': 'Streak',
+  'habit.text': 'Habit', 'habit.weekOf': 'Week Of', 'habit.streak': 'Streak',
   // Grading
   'grading.student': 'Student', 'grading.grade': 'Grade',
   // Timesheet

@@ -2,7 +2,7 @@
    templates/habit/index.js — Habit Tracker barrel module.
    Features: 4-state toggle, streaks, completion bars,
    category grouping (via parseGroups), goal tracking,
-   and summary analytics panel.
+   multi-week date navigation, and summary analytics panel.
    ============================================================ */
 
 import {
@@ -12,7 +12,9 @@ import {
 
 import {
   habitState, STATE_CHAR, STATE_CYCLE, STATE_VALUE,
-  computeStreak, parseGoal,
+  computeStreak, parseGoal, WEEK_COL_PATTERN,
+  getUniqueWeeks, formatWeekLabel, formatWeekISO,
+  computeMultiWeekStreak,
 } from './helpers.js';
 
 import { buildSummaryPanel, updateSummary } from './stats.js';
@@ -32,7 +34,7 @@ const definition = {
   },
 
   columns(lower) {
-    const cols = { text: -1, days: [], streak: -1, category: -1, goal: -1 };
+    const cols = { text: -1, days: [], streak: -1, category: -1, goal: -1, weekOf: -1 };
     cols.text     = lower.findIndex(h => /^(habit|routine|daily|activity|task|name)/.test(h));
     if (cols.text === -1) cols.text = 0;
     cols.streak   = lower.findIndex(h => /^(streak|total|count|score)/.test(h));
@@ -42,9 +44,12 @@ const definition = {
     cols.goal = lower.findIndex((h, i) =>
       i !== cols.text && i !== cols.streak && i !== cols.category
       && /^(goal|target|frequency|aim)/.test(h));
+    cols.weekOf = lower.findIndex((h, i) =>
+      i !== cols.text && i !== cols.streak && i !== cols.category && i !== cols.goal
+      && WEEK_COL_PATTERN.test(h));
     const dayPattern = /^(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/;
     for (let i = 0; i < lower.length; i++) {
-      if ([cols.text, cols.streak, cols.category, cols.goal].includes(i)) continue;
+      if ([cols.text, cols.streak, cols.category, cols.goal, cols.weekOf].includes(i)) continue;
       if (dayPattern.test(lower[i])) cols.days.push(i);
     }
     return cols;
@@ -54,6 +59,9 @@ const definition = {
     const fields = [
       { role: 'text', label: 'Habit', colIndex: cols.text, type: 'text', placeholder: 'New habit', required: true },
     ];
+    if (cols.weekOf >= 0) {
+      fields.push({ role: 'weekOf', label: 'Week Of', colIndex: cols.weekOf, type: 'text', placeholder: 'e.g. 2026-03-10' });
+    }
     if (cols.category >= 0) {
       fields.push({ role: 'category', label: 'Category', colIndex: cols.category, type: 'text', placeholder: 'e.g. Health' });
     }
@@ -66,6 +74,16 @@ const definition = {
   render(container, rows, cols) {
     const hasCategories = cols.category >= 0;
     const hasGoals      = cols.goal >= 0;
+    const isMultiWeek   = cols.weekOf >= 0;
+
+    /* ---- Multi-week state ---- */
+    let weeks = [];
+    let selectedWeekIdx = -1;
+
+    if (isMultiWeek) {
+      weeks = getUniqueWeeks(rows, cols.weekOf);
+      selectedWeekIdx = weeks.length > 0 ? weeks.length - 1 : -1; // default to most recent
+    }
 
     /* ---- Delegated day toggle ---- */
     delegateEvent(container, 'click', '.habit-toggle', (e, dayCell) => {
@@ -85,15 +103,24 @@ const definition = {
       const gridRow  = dayCell.closest('.habit-grid-row');
       const streakEl = gridRow?.querySelector('.habit-streak-cell');
       if (streakEl) {
-        const toggles = gridRow.querySelectorAll('.habit-toggle');
-        let streak = 0;
-        for (let d = toggles.length - 1; d >= 0; d--) {
-          if (toggles[d].dataset.state === 'done') streak++;
-          else break;
+        if (isMultiWeek && weeks.length > 1) {
+          // Multi-week streak: compute across weeks for this habit
+          const nameEl = gridRow.querySelector('.habit-name-cell');
+          const habitName = nameEl ? nameEl.textContent.trim() : '';
+          const streak = computeMultiWeekStreak(habitName, weeks, cols.text, cols.days, selectedWeekIdx);
+          streakEl.textContent = streak > 0 ? `\uD83D\uDD25 ${streak}` : '\u2014';
+          streakEl.classList.toggle('habit-streak-active', streak > 0);
+        } else {
+          const toggles = gridRow.querySelectorAll('.habit-toggle');
+          let streak = 0;
+          for (let d = toggles.length - 1; d >= 0; d--) {
+            if (toggles[d].dataset.state === 'done') streak++;
+            else break;
+          }
+          streakEl.textContent = streak > 0 ? `\uD83D\uDD25 ${streak}` : '\u2014';
+          streakEl.classList.toggle('habit-streak-active', streak > 0);
+          if (cols.streak >= 0) emitEdit(rowIdx, cols.streak, String(streak));
         }
-        streakEl.textContent = streak > 0 ? `\uD83D\uDD25 ${streak}` : '\u2014';
-        streakEl.classList.toggle('habit-streak-active', streak > 0);
-        if (cols.streak >= 0) emitEdit(rowIdx, cols.streak, String(streak));
       }
 
       /* Update goal progress for this row */
@@ -110,38 +137,129 @@ const definition = {
       }
 
       updateCompletionBars(container, cols);
-      updateSummary(container, cols);
+      updateSummary(container, cols, isMultiWeek ? weeks : null, selectedWeekIdx);
     });
 
-    /* ---- Build grids ---- */
-    if (hasCategories) {
-      const groups = parseGroups(rows, cols.category);
-      for (const group of groups) {
-        const section = el('div', { className: 'habit-category-section' });
-        const catName = cell(group.row, cols.category) || 'Uncategorized';
-        section.append(el('div', { className: 'habit-category-header' }, [
-          el('span', { className: 'habit-category-icon' }, ['\uD83D\uDCC2']),
-          el('h4', { className: 'habit-category-title' }, [catName]),
-          el('span', { className: 'habit-category-count' }, [
-            `${1 + group.children.length} habit${group.children.length ? 's' : ''}`,
-          ]),
-        ]));
-        const allGroupRows = [group.row, ...group.children.map(c => c.row)];
-        const allGroupIdxs = [group.idx, ...group.children.map(c => c.idx)];
-        const grid = el('div', { className: 'habit-grid' });
-        renderGrid(grid, allGroupRows, cols, hasGoals, allGroupIdxs);
-        section.append(grid);
-        container.append(section);
-      }
-    } else {
-      const grid = el('div', { className: 'habit-grid' });
-      renderGrid(grid, rows, cols, hasGoals, null);
-      container.append(grid);
-    }
+    /* ---- Week Navigation (multi-week only) ---- */
+    if (isMultiWeek && weeks.length > 0) {
+      const nav = el('div', { className: 'habit-week-nav' });
 
-    /* ---- Summary panel ---- */
-    container.append(buildSummaryPanel());
-    updateSummary(container, cols);
+      const prevBtn = el('button', {
+        className: 'habit-week-btn habit-week-prev',
+        title: 'Previous week',
+        disabled: selectedWeekIdx <= 0,
+      }, ['\u25C0']);
+
+      const nextBtn = el('button', {
+        className: 'habit-week-btn habit-week-next',
+        title: 'Next week',
+        disabled: selectedWeekIdx >= weeks.length - 1,
+      }, ['\u25B6']);
+
+      const weekLabel = el('span', { className: 'habit-week-label' }, [
+        weeks[selectedWeekIdx]?.label || 'No data',
+      ]);
+
+      const weekCounter = el('span', { className: 'habit-week-counter' }, [
+        `${selectedWeekIdx + 1} of ${weeks.length}`,
+      ]);
+
+      nav.append(prevBtn, weekLabel, weekCounter, nextBtn);
+      container.append(nav);
+
+      function rebuildGrid() {
+        // Update nav state
+        weekLabel.textContent = weeks[selectedWeekIdx]?.label || 'No data';
+        weekCounter.textContent = `${selectedWeekIdx + 1} of ${weeks.length}`;
+        prevBtn.disabled = selectedWeekIdx <= 0;
+        nextBtn.disabled = selectedWeekIdx >= weeks.length - 1;
+
+        // Remove old grids, categories, and summary
+        container.querySelectorAll('.habit-grid, .habit-category-section, .habit-summary').forEach(
+          e => e.remove()
+        );
+
+        const weekRows = weeks[selectedWeekIdx]?.rows || [];
+        const filteredRows = weekRows.map(r => r.row);
+        const filteredIdxs = weekRows.map(r => r.origIdx);
+
+        if (hasCategories) {
+          const groups = parseGroups(filteredRows, cols.category);
+          for (const group of groups) {
+            const section = el('div', { className: 'habit-category-section' });
+            const catName = cell(group.row, cols.category) || 'Uncategorized';
+            section.append(el('div', { className: 'habit-category-header' }, [
+              el('span', { className: 'habit-category-icon' }, ['\uD83D\uDCC2']),
+              el('h4', { className: 'habit-category-title' }, [catName]),
+              el('span', { className: 'habit-category-count' }, [
+                `${1 + group.children.length} habit${group.children.length ? 's' : ''}`,
+              ]),
+            ]));
+            const allGroupRows = [group.row, ...group.children.map(c => c.row)];
+            // Map group indices back to original sheet indices
+            const allGroupIdxs = [group.idx, ...group.children.map(c => c.idx)].map(
+              gi => filteredIdxs[gi] !== undefined ? filteredIdxs[gi] : gi
+            );
+            const grid = el('div', { className: 'habit-grid' });
+            renderGrid(grid, allGroupRows, cols, hasGoals, allGroupIdxs, isMultiWeek, weeks, selectedWeekIdx);
+            section.append(grid);
+            container.append(section);
+          }
+        } else {
+          const grid = el('div', { className: 'habit-grid' });
+          renderGrid(grid, filteredRows, cols, hasGoals, filteredIdxs, isMultiWeek, weeks, selectedWeekIdx);
+          container.append(grid);
+        }
+
+        container.append(buildSummaryPanel());
+        updateSummary(container, cols, weeks, selectedWeekIdx);
+      }
+
+      prevBtn.addEventListener('click', () => {
+        if (selectedWeekIdx > 0) {
+          selectedWeekIdx--;
+          rebuildGrid();
+        }
+      });
+      nextBtn.addEventListener('click', () => {
+        if (selectedWeekIdx < weeks.length - 1) {
+          selectedWeekIdx++;
+          rebuildGrid();
+        }
+      });
+
+      // Initial render for selected week
+      rebuildGrid();
+    } else {
+      /* ---- Single-week mode (backward compatible) ---- */
+      if (hasCategories) {
+        const groups = parseGroups(rows, cols.category);
+        for (const group of groups) {
+          const section = el('div', { className: 'habit-category-section' });
+          const catName = cell(group.row, cols.category) || 'Uncategorized';
+          section.append(el('div', { className: 'habit-category-header' }, [
+            el('span', { className: 'habit-category-icon' }, ['\uD83D\uDCC2']),
+            el('h4', { className: 'habit-category-title' }, [catName]),
+            el('span', { className: 'habit-category-count' }, [
+              `${1 + group.children.length} habit${group.children.length ? 's' : ''}`,
+            ]),
+          ]));
+          const allGroupRows = [group.row, ...group.children.map(c => c.row)];
+          const allGroupIdxs = [group.idx, ...group.children.map(c => c.idx)];
+          const grid = el('div', { className: 'habit-grid' });
+          renderGrid(grid, allGroupRows, cols, hasGoals, allGroupIdxs, false, null, -1);
+          section.append(grid);
+          container.append(section);
+        }
+      } else {
+        const grid = el('div', { className: 'habit-grid' });
+        renderGrid(grid, rows, cols, hasGoals, null, false, null, -1);
+        container.append(grid);
+      }
+
+      container.append(buildSummaryPanel());
+      updateSummary(container, cols, null, -1);
+    }
   },
 };
 
@@ -153,9 +271,12 @@ const definition = {
  * @param {string[][]}    rows
  * @param {Object}        cols
  * @param {boolean}       hasGoals
- * @param {number[]|null} idxOverrides — original row indices (for grouped mode)
+ * @param {number[]|null} idxOverrides — original row indices (for grouped/filtered mode)
+ * @param {boolean}       isMultiWeek  — whether multi-week mode is active
+ * @param {Array|null}    weeks        — sorted week objects (multi-week only)
+ * @param {number}        weekIdx      — selected week index (multi-week only)
  */
-function renderGrid(grid, rows, cols, hasGoals, idxOverrides) {
+function renderGrid(grid, rows, cols, hasGoals, idxOverrides, isMultiWeek, weeks, weekIdx) {
   /* Header */
   const headerRow = el('div', { className: 'habit-grid-row habit-grid-header' });
   headerRow.append(el('div', { className: 'habit-grid-cell habit-name-cell' }, ['Habit']));
@@ -190,7 +311,12 @@ function renderGrid(grid, rows, cols, hasGoals, idxOverrides) {
 
     /* Streak */
     const sheetStreak = cols.streak >= 0 ? cell(row, cols.streak) : '';
-    const streak = sheetStreak ? Number(sheetStreak) || 0 : computeStreak(row, cols.days);
+    let streak;
+    if (isMultiWeek && weeks && weeks.length > 1) {
+      streak = computeMultiWeekStreak(text, weeks, cols.text, cols.days, weekIdx);
+    } else {
+      streak = sheetStreak ? Number(sheetStreak) || 0 : computeStreak(row, cols.days);
+    }
     gridRow.append(el('div', {
       className: `habit-grid-cell habit-streak-cell ${streak > 0 ? 'habit-streak-active' : ''}`,
     }, [streak > 0 ? `\uD83D\uDD25 ${streak}` : '\u2014']));
