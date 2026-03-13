@@ -263,3 +263,110 @@ test('budget upload drop zone has correct visual structure', async ({ page }) =>
   await expect(page.locator('.budget-upload-drop-hint')).toContainText('CSV');
   await expect(page.locator('.budget-upload-browse-btn')).toBeVisible();
 });
+
+/* ---------- PDF support ---------- */
+
+test('budget upload file input accepts PDF files', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+
+  // File input should accept .pdf along with other formats
+  const accept = await page.locator('.budget-upload-file-input').getAttribute('accept');
+  expect(accept).toContain('.pdf');
+  expect(accept).toContain('.csv');
+  expect(accept).toContain('.ofx');
+});
+
+test('budget upload drop zone hint mentions PDF', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('.budget-upload-drop-zone', { timeout: 3000 });
+
+  await expect(page.locator('.budget-upload-drop-hint')).toContainText('PDF');
+});
+
+test('budget upload parses PDF statement and shows transactions', async ({ page }) => {
+  const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+
+  // Upload the PDF via the hidden file input
+  await page.setInputFiles('.budget-upload-file-input', pdfPath);
+
+  // Wait for preview to render (PDF parsing is async — needs CDN load)
+  await page.waitForSelector('.budget-upload-table-row', { timeout: 30000 });
+
+  // Status should show success with PDF format
+  await expect(page.locator('.budget-upload-status')).toContainText('PDF');
+  await expect(page.locator('.budget-upload-status')).toHaveClass(/budget-upload-status-success/);
+
+  // Should have found transactions (at least 2 from test fixture)
+  const rows = await page.locator('.budget-upload-table-row').count();
+  expect(rows).toBeGreaterThanOrEqual(2);
+
+  // Import button should be enabled
+  await expect(page.locator('.budget-upload-import-btn')).toBeEnabled();
+
+  // Drop zone should be hidden (replaced by preview)
+  await expect(page.locator('.budget-upload-drop-zone')).toBeHidden();
+});
+
+test('budget upload PDF shows loading state while parsing', async ({ page }) => {
+  const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+
+  // Upload PDF — should show loading state before results
+  await page.setInputFiles('.budget-upload-file-input', pdfPath);
+
+  // Status bar should become visible (either loading or success)
+  await page.waitForSelector('.budget-upload-status:not(.hidden)', { timeout: 30000 });
+
+  // Eventually should show success (wait for parsing to complete)
+  await page.waitForSelector('.budget-upload-status-success', { timeout: 30000 });
+  await expect(page.locator('.budget-upload-status')).toContainText('transaction');
+});
+
+test('budget upload PDF import appends transactions to sheet', async ({ page }) => {
+  const pdfPath = path.join(__dirname, '..', 'fixtures', 'statements', 'test-bank.pdf');
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-upload-btn', { timeout: 5000 });
+
+  await page.click('.budget-upload-btn');
+  await page.waitForSelector('#budget-upload-modal', { timeout: 3000 });
+  await page.setInputFiles('.budget-upload-file-input', pdfPath);
+
+  // Wait for parsing to complete
+  await page.waitForSelector('.budget-upload-import-btn:not([disabled])', { timeout: 30000 });
+
+  // Click import
+  await page.click('.budget-upload-import-btn');
+
+  // Modal should close
+  await page.waitForSelector('#budget-upload-modal', { state: 'detached', timeout: 5000 });
+
+  // Records should contain appended rows
+  const records = await getCreatedRecords(page);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  expect(appendRecord.rows.length).toBeGreaterThanOrEqual(2);
+});
