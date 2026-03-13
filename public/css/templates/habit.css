@@ -1,7 +1,78 @@
-/* Habit Tracker Template */
-.habit-grid {
-  margin-bottom: 8px;
+/* ============================================================
+   Habit Tracker Template — Full Calendar Views
+   Day / Week / Month / Quarter / Year
+   ============================================================ */
+
+/* ---- View Switcher ---- */
+.habit-view-switcher {
+  display: flex; gap: 4px; margin-bottom: 12px;
+  border-bottom: 2px solid var(--color-border); padding-bottom: 8px;
 }
+.habit-view-tab {
+  padding: 6px 14px; border: none; background: none;
+  font-size: 0.82rem; font-weight: 500; color: var(--color-text-muted);
+  cursor: pointer; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: all var(--transition);
+}
+.habit-view-tab:hover { background: var(--color-bg); color: var(--color-text); }
+.habit-view-tab-active {
+  background: var(--color-bg); color: #d97706; font-weight: 700;
+  border-bottom: 2px solid #d97706; margin-bottom: -2px;
+}
+
+/* ---- Time Navigator ---- */
+.habit-time-nav {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; padding: 8px 0;
+}
+.habit-time-btn {
+  background: var(--color-bg); border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); padding: 6px 10px;
+  cursor: pointer; font-size: 0.8rem; color: var(--color-text);
+  transition: all var(--transition);
+}
+.habit-time-btn:hover { background: var(--color-border); }
+.habit-time-label {
+  font-weight: 600; font-size: 0.95rem; color: var(--color-text);
+  flex: 1; text-align: center; min-width: 180px;
+}
+.habit-time-today {
+  background: none; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); padding: 4px 10px;
+  font-size: 0.75rem; color: var(--color-text-muted); cursor: pointer;
+  transition: all var(--transition);
+}
+.habit-time-today:hover { background: var(--color-bg); color: var(--color-text); }
+
+/* ---- Add Week Button ---- */
+.habit-add-week-btn {
+  background: none; border: 2px solid #d97706; color: #d97706;
+  border-radius: var(--radius-sm); padding: 4px 12px;
+  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  transition: all var(--transition); margin-left: auto;
+}
+.habit-add-week-btn:hover { background: #d97706; color: #fff; }
+.habit-add-week-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- Upgrade Button ---- */
+.habit-upgrade-btn {
+  display: block; width: 100%; padding: 14px 20px;
+  border: 2px dashed var(--color-border); border-radius: var(--radius);
+  background: var(--color-bg); color: var(--color-text);
+  font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  text-align: center; margin-bottom: 16px;
+  transition: all var(--transition);
+}
+.habit-upgrade-btn:hover { border-color: #d97706; color: #d97706; background: rgba(217, 119, 6, 0.05); }
+.habit-upgrade-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- View Content Area ---- */
+.habit-view-content { min-height: 120px; }
+
+/* ================================================================
+   Week View — The 7-day grid
+   ================================================================ */
+.habit-grid { margin-bottom: 8px; }
 .habit-grid-row {
   display: flex; align-items: center;
   border-bottom: 1px solid var(--color-border);
@@ -64,7 +135,191 @@
 }
 .habit-completion-pct { font-size: 0.65rem; color: var(--color-text-muted); }
 
-/* Summary panel */
+/* ================================================================
+   Day View — Simple daily checklist
+   ================================================================ */
+.habit-day-header { margin-bottom: 12px; }
+.habit-day-title {
+  margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--color-text);
+}
+.habit-day-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+.habit-day-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius);
+  border: 1px solid var(--color-border); cursor: pointer;
+  transition: all var(--transition); user-select: none;
+}
+.habit-day-item:hover { border-color: var(--color-text-muted); }
+.habit-day-item-done { background: #dcfce7; border-color: #86efac; }
+.habit-day-item-partial { background: #fef9c3; border-color: #fde68a; }
+.habit-day-item-missed { background: #fee2e2; border-color: #fecaca; }
+.habit-day-item-empty { background: var(--color-surface); }
+.habit-day-check {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 700; border-radius: 50%;
+  background: var(--color-bg); border: 2px solid var(--color-border);
+  flex-shrink: 0;
+}
+.habit-day-item-done .habit-day-check { background: #16a34a; color: #fff; border-color: #16a34a; }
+.habit-day-item-partial .habit-day-check { background: #ca8a04; color: #fff; border-color: #ca8a04; }
+.habit-day-item-missed .habit-day-check { background: #dc2626; color: #fff; border-color: #dc2626; }
+.habit-day-info { display: flex; flex-direction: column; gap: 2px; }
+.habit-day-name { font-weight: 600; font-size: 0.9rem; color: var(--color-text); }
+.habit-day-streak { font-size: 0.75rem; color: var(--color-text-muted); }
+.habit-day-empty {
+  text-align: center; padding: 32px; color: var(--color-text-muted);
+  font-style: italic; font-size: 0.9rem;
+}
+.habit-day-progress {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px; background: var(--color-bg); border-radius: var(--radius);
+}
+.habit-day-progress-text { font-size: 0.85rem; font-weight: 600; color: var(--color-text); }
+.habit-day-progress-bar {
+  height: 8px; border-radius: 4px; background: var(--color-border); overflow: hidden;
+}
+.habit-day-progress-fill {
+  height: 100%; border-radius: 4px; background: #16a34a;
+  transition: width var(--transition);
+}
+
+/* ================================================================
+   Month View — Calendar grid
+   ================================================================ */
+.habit-month-grid { margin-bottom: 12px; }
+.habit-month-row {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+}
+.habit-month-header { margin-bottom: 4px; }
+.habit-month-cell {
+  aspect-ratio: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); font-size: 0.8rem;
+  padding: 4px; min-height: 36px;
+}
+.habit-month-day-name {
+  font-weight: 600; font-size: 0.7rem; text-transform: uppercase;
+  color: var(--color-text-muted); letter-spacing: 0.05em;
+}
+.habit-month-empty { background: transparent; }
+.habit-month-day {
+  transition: all var(--transition); position: relative;
+  border: 1px solid transparent;
+}
+.habit-month-day:hover { border-color: var(--color-text-muted); }
+.habit-month-day-num { font-weight: 500; color: var(--color-text); font-size: 0.78rem; }
+.habit-month-day-dot {
+  width: 6px; height: 6px; border-radius: 50%; margin-top: 2px;
+}
+
+/* Rate color classes (shared across views) */
+.habit-rate-high { background: #dcfce7; }
+.habit-rate-high .habit-month-day-dot { background: #16a34a; }
+.habit-rate-mid { background: #fef9c3; }
+.habit-rate-mid .habit-month-day-dot { background: #ca8a04; }
+.habit-rate-low { background: #fee2e2; }
+.habit-rate-low .habit-month-day-dot { background: #dc2626; }
+.habit-rate-zero { background: #f1f5f9; }
+.habit-rate-zero .habit-month-day-dot { background: #94a3b8; }
+.habit-rate-none { background: transparent; }
+
+/* Month legend */
+.habit-month-legend {
+  display: flex; gap: 12px; justify-content: center;
+  margin-top: 8px; flex-wrap: wrap;
+}
+.habit-legend-item {
+  display: flex; align-items: center; gap: 4px; font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+.habit-legend-swatch {
+  width: 12px; height: 12px; border-radius: 2px;
+  border: 1px solid var(--color-border);
+}
+
+/* ================================================================
+   Quarter View — Heatmap table
+   ================================================================ */
+.habit-quarter-table { overflow-x: auto; margin-bottom: 12px; }
+.habit-quarter-row { display: flex; border-bottom: 1px solid var(--color-border); }
+.habit-quarter-header {
+  font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
+  color: var(--color-text-muted); letter-spacing: 0.03em;
+  background: var(--color-bg);
+}
+.habit-quarter-cell {
+  padding: 6px 4px; text-align: center; font-size: 0.75rem;
+  min-width: 60px; flex-shrink: 0;
+}
+.habit-quarter-week-label {
+  min-width: 64px; text-align: left; font-weight: 500;
+  color: var(--color-text-muted); font-size: 0.72rem;
+}
+.habit-quarter-habit-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100px; font-size: 0.7rem;
+}
+.habit-quarter-heat {
+  border-radius: 3px; margin: 1px; min-height: 20px;
+}
+.habit-quarter-avg { font-weight: 600; font-size: 0.72rem; color: var(--color-text); }
+.habit-quarter-empty {
+  text-align: center; padding: 24px; color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ================================================================
+   Year View — Contribution heatmap
+   ================================================================ */
+.habit-year-heatmap {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-bottom: 8px; overflow-x: auto;
+}
+.habit-year-day-labels {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-right: 4px; flex-shrink: 0;
+}
+.habit-year-day-label {
+  height: 12px; font-size: 0.6rem; color: var(--color-text-muted);
+  display: flex; align-items: center; line-height: 1;
+}
+.habit-year-grid {
+  display: flex; gap: 2px; overflow-x: auto;
+}
+.habit-year-col { display: flex; flex-direction: column; gap: 2px; }
+.habit-year-cell {
+  width: 12px; height: 12px; border-radius: 2px;
+  border: 1px solid transparent;
+}
+.habit-year-cell.habit-rate-none { background: var(--color-bg); border-color: var(--color-border); }
+.habit-year-cell.habit-rate-zero { background: #e2e8f0; }
+.habit-year-cell.habit-rate-low { background: #fca5a5; }
+.habit-year-cell.habit-rate-mid { background: #fde68a; }
+.habit-year-cell.habit-rate-high { background: #86efac; }
+
+.habit-year-month-labels {
+  display: flex; gap: 0; margin-top: 4px; padding-left: 20px;
+}
+.habit-year-month-label {
+  font-size: 0.6rem; color: var(--color-text-muted);
+  min-width: 28px;
+}
+.habit-year-legend {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.65rem; color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+.habit-year-legend .habit-legend-swatch {
+  width: 12px; height: 12px; border-radius: 2px;
+}
+.habit-year-stats {
+  display: flex; gap: 16px; font-size: 0.8rem; color: var(--color-text-muted);
+}
+.habit-year-stat { font-weight: 500; }
+
+/* ================================================================
+   Summary Panel
+   ================================================================ */
 .habit-summary {
   margin-top: 20px; padding: 16px;
   background: var(--color-bg); border-radius: var(--radius);
@@ -109,11 +364,59 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Responsive */
+/* Trend comparison */
+.habit-trend {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  font-size: 0.82rem; font-weight: 500; margin-bottom: 12px;
+}
+.habit-trend-up { background: #dcfce7; color: #16a34a; }
+.habit-trend-down { background: #fee2e2; color: #dc2626; }
+.habit-trend-same { background: #f1f5f9; color: var(--color-text-muted); }
+.habit-trend-arrow { font-size: 1.1rem; font-weight: 700; }
+
+/* Weekly history chart */
+.habit-history { margin-top: 16px; }
+.habit-history-title {
+  margin: 0 0 8px; font-size: 0.82rem; font-weight: 600;
+  color: var(--color-text-muted);
+}
+.habit-history-grid {
+  display: flex; gap: 4px; align-items: flex-end; height: 80px;
+}
+.habit-history-bar-container {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  flex: 1; min-width: 20px;
+}
+.habit-history-bar {
+  width: 100%; height: 60px; background: var(--color-bg);
+  border-radius: 3px 3px 0 0; display: flex; align-items: flex-end;
+  overflow: hidden;
+}
+.habit-history-fill {
+  width: 100%; background: #d97706; border-radius: 3px 3px 0 0;
+  transition: height var(--transition); min-height: 2px;
+}
+.habit-history-fill.habit-history-active {
+  background: #16a34a;
+}
+.habit-history-label {
+  font-size: 0.55rem; color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* ================================================================
+   Responsive
+   ================================================================ */
 @media (max-width: 768px) {
   .habit-day-cell { width: 36px; }
   .habit-goal-cell { width: 56px; }
   .habit-summary-highlights { flex-direction: column; gap: 6px; }
+  .habit-view-switcher { overflow-x: auto; }
+  .habit-view-tab { padding: 6px 10px; font-size: 0.76rem; white-space: nowrap; }
+  .habit-time-nav { flex-wrap: wrap; }
+  .habit-time-label { font-size: 0.85rem; min-width: 140px; }
+  .habit-quarter-cell { min-width: 48px; }
 }
 @media (max-width: 480px) {
   .habit-day-cell { width: 28px; font-size: 0.75rem; }
@@ -121,9 +424,15 @@
   .habit-streak-cell { width: 48px; font-size: 0.75rem; }
   .habit-goal-cell { width: 48px; font-size: 0.7rem; }
   .habit-summary-item-name { min-width: 70px; }
+  .habit-view-tab { padding: 5px 8px; font-size: 0.72rem; }
+  .habit-month-cell { min-height: 28px; padding: 2px; }
+  .habit-month-day-num { font-size: 0.68rem; }
+  .habit-day-item { padding: 10px 12px; gap: 10px; }
 }
 
-/* --- Dark Theme --- */
+/* ================================================================
+   Dark Theme
+   ================================================================ */
 [data-theme="dark"] .habit-toggle:hover,
 [data-theme="dark"] .habit-empty:hover { background: #334155; }
 [data-theme="dark"] .habit-done { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
@@ -136,3 +445,37 @@
 [data-theme="dark"] .habit-goal-met { color: #4ade80; }
 [data-theme="dark"] .habit-summary-best { color: #4ade80; }
 [data-theme="dark"] .habit-summary-attention { color: #fbbf24; }
+
+/* Dark: Day View */
+[data-theme="dark"] .habit-day-item-done { background: rgba(74, 222, 128, 0.12); border-color: rgba(74, 222, 128, 0.3); }
+[data-theme="dark"] .habit-day-item-partial { background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.3); }
+[data-theme="dark"] .habit-day-item-missed { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.3); }
+[data-theme="dark"] .habit-day-item-empty { background: var(--color-surface); }
+[data-theme="dark"] .habit-day-check { background: var(--color-bg); border-color: var(--color-border); }
+[data-theme="dark"] .habit-day-item-done .habit-day-check { background: #16a34a; border-color: #16a34a; }
+[data-theme="dark"] .habit-day-item-partial .habit-day-check { background: #ca8a04; border-color: #ca8a04; }
+[data-theme="dark"] .habit-day-item-missed .habit-day-check { background: #dc2626; border-color: #dc2626; }
+
+/* Dark: Month View */
+[data-theme="dark"] .habit-rate-high { background: rgba(74, 222, 128, 0.16); }
+[data-theme="dark"] .habit-rate-mid { background: rgba(251, 191, 36, 0.14); }
+[data-theme="dark"] .habit-rate-low { background: rgba(248, 113, 113, 0.14); }
+[data-theme="dark"] .habit-rate-zero { background: rgba(148, 163, 184, 0.1); }
+[data-theme="dark"] .habit-rate-none { background: transparent; }
+
+/* Dark: Year heatmap */
+[data-theme="dark"] .habit-year-cell.habit-rate-high { background: rgba(74, 222, 128, 0.6); }
+[data-theme="dark"] .habit-year-cell.habit-rate-mid { background: rgba(251, 191, 36, 0.5); }
+[data-theme="dark"] .habit-year-cell.habit-rate-low { background: rgba(248, 113, 113, 0.4); }
+[data-theme="dark"] .habit-year-cell.habit-rate-zero { background: rgba(148, 163, 184, 0.15); }
+[data-theme="dark"] .habit-year-cell.habit-rate-none { background: var(--color-bg); border-color: var(--color-border); }
+
+/* Dark: Trend */
+[data-theme="dark"] .habit-trend-up { background: rgba(74, 222, 128, 0.12); color: #4ade80; }
+[data-theme="dark"] .habit-trend-down { background: rgba(248, 113, 113, 0.12); color: #ef4444; }
+[data-theme="dark"] .habit-trend-same { background: rgba(148, 163, 184, 0.1); }
+
+/* Dark: Add/Upgrade buttons */
+[data-theme="dark"] .habit-add-week-btn { border-color: #fbbf24; color: #fbbf24; }
+[data-theme="dark"] .habit-add-week-btn:hover { background: #fbbf24; color: #1e293b; }
+[data-theme="dark"] .habit-upgrade-btn:hover { border-color: #fbbf24; color: #fbbf24; }
