@@ -15,7 +15,7 @@
     ["", "Define dark color tokens", "Done", "", "Carol", "", "2026-03-05", "", ""],
     ["", "Apply dark tokens to base.css", "In Progress", "", "Carol", "", "2026-03-10", "", ""],
     ["", "", "", "", "System", "", "2026-03-08 10:22", "", "⟳ Backlog → In Progress"],
-    ["API Rate Limiting", "Implement request throttling for Google API calls", "To Do", "Backend", "Bob", "P1", "2026-03-20", "infra", ""],
+    ["API Rate Limiting", "Implement request throttling for Google API calls", "To Do", "Backend", "Bob", "P1", "2026-03-20", "security", ""],
     ["Fix Search Bug", "Search results don't highlight matching text", "In Progress", "Frontend", "Alice", "P0", "2026-03-05", "bug", ""],
     ["", "", "", "", "Alice", "", "2026-03-03", "", "Found the regex issue in search.js"],
     ["", "", "", "", "Alice", "", "2026-03-04 08:45", "", "⟳ To Do → In Progress"],

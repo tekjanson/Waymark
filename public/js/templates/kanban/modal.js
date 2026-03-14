@@ -66,26 +66,55 @@ export function openCardModal(group, ctx) {
 
   const stageBadge = el('button', {
     className: `kanban-stage-btn kanban-stage-${template.stageClass(stage)}`,
-    title: 'Click to cycle stage',
+    title: 'Click to change stage',
   }, [stage || 'Backlog']);
   stageBadge.addEventListener('click', (e) => {
     e.stopPropagation();
-    const prev = stageBadge.textContent.trim();
-    const next = cycleStatus(stageBadge, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
-    // Bundle stage change + note atomically to prevent replaceSheetData race
-    let noteInserted = false;
-    if (prev !== next && typeof template._onInsertAfterRow === 'function' && cols.note >= 0) {
-      const lastIdx = Math.max(idx, ...group.subtasks.map(s => s.idx), ...group.notes.map(n => n.idx));
-      const newRow = new Array(template._totalColumns || 0).fill('');
-      if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${prev || 'Backlog'} → ${next}`;
-      if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
-      if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
-      const pendingEdits = [];
-      if (cols.stage >= 0) pendingEdits.push({ rowIdx: idx + 1, colIdx: cols.stage, value: next });
-      template._onInsertAfterRow(lastIdx + 1, [newRow], pendingEdits);
-      noteInserted = true;
+    // If a dropdown already exists, close it
+    const existingDD = headerMeta.querySelector('.kanban-stage-dropdown');
+    if (existingDD) { existingDD.remove(); return; }
+    document.querySelectorAll('.kanban-stage-dropdown').forEach(d => d.remove());
+
+    const current = stageBadge.textContent.trim();
+    const dropdown = el('div', { className: 'kanban-stage-dropdown' });
+    for (const state of template.stageStates) {
+      const cls = template.stageClass(state);
+      const item = el('button', {
+        className: `kanban-stage-dropdown-item kanban-stage-${cls}${state === current ? ' active' : ''}`,
+      }, [state]);
+      item.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        dropdown.remove();
+        if (state === current) return;
+        stageBadge.textContent = state;
+        stageBadge.className = `kanban-stage-btn kanban-stage-${cls}`;
+        // Bundle stage change + note atomically
+        let noteInserted = false;
+        if (typeof template._onInsertAfterRow === 'function' && cols.note >= 0) {
+          const lastIdx = Math.max(idx, ...group.subtasks.map(s => s.idx), ...group.notes.map(n => n.idx));
+          const newRow = new Array(template._totalColumns || 0).fill('');
+          if (cols.note >= 0) newRow[cols.note] = `${STATUS_PREFIX}${current || 'Backlog'} → ${state}`;
+          if (cols.assignee >= 0) newRow[cols.assignee] = getUserName() || 'System';
+          if (cols.due >= 0) newRow[cols.due] = nowTimestamp();
+          const pendingEdits = [];
+          if (cols.stage >= 0) pendingEdits.push({ rowIdx: idx + 1, colIdx: cols.stage, value: state });
+          template._onInsertAfterRow(lastIdx + 1, [newRow], pendingEdits);
+          noteInserted = true;
+        }
+        if (!noteInserted) emitEdit(rowIdx, cols.stage, state);
+      });
+      dropdown.append(item);
     }
-    if (!noteInserted) emitEdit(rowIdx, cols.stage, next);
+    headerMeta.style.position = 'relative';
+    headerMeta.append(dropdown);
+
+    const closeDropdown = (ev) => {
+      if (!dropdown.contains(ev.target) && ev.target !== stageBadge) {
+        dropdown.remove();
+        document.removeEventListener('click', closeDropdown, true);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeDropdown, true), 0);
   });
   headerMeta.append(stageBadge);
 

@@ -23,7 +23,7 @@ test('kanban renders swim lanes with cards', async ({ page }) => {
   expect(await cards.count()).toBe(9);
 });
 
-test('kanban stage badge cycles on click', async ({ page }) => {
+test('kanban stage badge opens dropdown on click', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-017');
   await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
@@ -32,9 +32,12 @@ test('kanban stage badge cycles on click', async ({ page }) => {
   const initialText = await firstBtn.textContent();
   await firstBtn.click();
 
-  // Should have changed text
-  const newText = await firstBtn.textContent();
-  expect(newText).not.toBe(initialText);
+  // Should show a dropdown instead of cycling
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  await expect(page.locator('.kanban-stage-dropdown')).toBeVisible();
+
+  // Badge text should NOT have changed yet
+  expect(await firstBtn.textContent()).toBe(initialText);
 });
 
 /* ---------- Enhanced: 9-column sheet (sheet-028) ---------- */
@@ -410,7 +413,8 @@ test('kanban combo cell selects option from dropdown', async ({ page }) => {
   const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
   await card.locator('.kanban-card-expand').click();
 
-  const projectField = card.locator('.kanban-detail-field-value.combo-cell').first();
+  // Target the Project combo cell specifically (label is also combo now)
+  const projectField = card.locator('.kanban-detail-field').filter({ hasText: 'Project' }).locator('.combo-cell');
   await projectField.click();
 
   // Clear input to see all options, then pick one different from current
@@ -827,14 +831,31 @@ test('kanban stage badge click bundles stage change and note atomically', async 
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
 
-  // Click a stage badge to cycle status
+  // Click a stage badge to open dropdown
   const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
   const stageBadge = card.locator('.kanban-stage-btn');
   const prevText = (await stageBadge.textContent()).trim();
   await stageBadge.click();
+
+  // Dropdown should appear
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  // Click a different stage in the dropdown
+  const items = page.locator('.kanban-stage-dropdown-item');
+  // Pick the first item that isn't the current stage
+  let targetItem = null;
+  let targetText = '';
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const text = (await items.nth(i).textContent()).trim();
+    if (text !== prevText) { targetItem = items.nth(i); targetText = text; break; }
+  }
+  expect(targetItem).toBeTruthy();
+  await targetItem.click();
   const newText = (await stageBadge.textContent()).trim();
 
   // Stage should have changed
+  expect(newText).toBe(targetText);
   expect(newText).not.toBe(prevText);
 
   // Wait for the async operation to complete (sheet-replace)
@@ -871,7 +892,21 @@ test('kanban stage change persists in sheet data after note insertion', async ({
   const stageBadge = card.locator('.kanban-stage-btn');
   const prevStage = (await stageBadge.textContent()).trim();
   await stageBadge.click();
+
+  // Dropdown should appear — pick a different stage
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  const items = page.locator('.kanban-stage-dropdown-item');
+  let targetItem = null;
+  let targetText = '';
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const text = (await items.nth(i).textContent()).trim();
+    if (text !== prevStage) { targetItem = items.nth(i); targetText = text; break; }
+  }
+  expect(targetItem).toBeTruthy();
+  await targetItem.click();
   const newStage = (await stageBadge.textContent()).trim();
+  expect(newStage).toBe(targetText);
   expect(newStage).not.toBe(prevStage);
 
   // Wait for sheet-replace to complete
@@ -1038,7 +1073,20 @@ test('kanban no separate cell-update emitted when note is inserted', async ({ pa
   // Click stage on a card — the change should be bundled, NOT a separate cell-update
   const card = page.locator('.kanban-card', { hasText: 'Mobile Layout Polish' });
   const stageBadge = card.locator('.kanban-stage-btn');
+  const prevStage = (await stageBadge.textContent()).trim();
   await stageBadge.click();
+
+  // Pick a different stage from dropdown
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  const items = page.locator('.kanban-stage-dropdown-item');
+  let targetItem = null;
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const text = (await items.nth(i).textContent()).trim();
+    if (text !== prevStage) { targetItem = items.nth(i); break; }
+  }
+  expect(targetItem).toBeTruthy();
+  await targetItem.click();
 
   // Wait for the async write
   await page.waitForFunction(() => {
@@ -1052,4 +1100,323 @@ test('kanban no separate cell-update emitted when note is inserted', async ({ pa
   expect(records.some(r => r.type === 'sheet-replace')).toBe(true);
   const stageUpdates = records.filter(r => r.type === 'cell-update' && r.col === 2);
   expect(stageUpdates.length).toBe(0);
+});
+
+/* ============================================================
+   Stage Dropdown Tests
+   ============================================================ */
+
+test('kanban stage badge click opens dropdown instead of cycling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const originalText = (await stageBadge.textContent()).trim();
+  await stageBadge.click();
+
+  // Dropdown should appear
+  const dropdown = page.locator('.kanban-stage-dropdown');
+  await expect(dropdown).toBeVisible();
+
+  // Stage badge text should NOT have changed yet (no cycling)
+  const currentText = (await stageBadge.textContent()).trim();
+  expect(currentText).toBe(originalText);
+});
+
+test('kanban stage dropdown shows all six stages', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-stage-btn').click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  const items = page.locator('.kanban-stage-dropdown-item');
+  const count = await items.count();
+  expect(count).toBe(6);
+
+  // Verify stage names
+  const texts = [];
+  for (let i = 0; i < count; i++) {
+    texts.push((await items.nth(i).textContent()).trim());
+  }
+  expect(texts).toEqual(['Backlog', 'To Do', 'In Progress', 'QA', 'Done', 'Rejected']);
+});
+
+test('kanban stage dropdown highlights current stage', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // "Fix Search Bug" is "In Progress"
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-stage-btn').click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  // The "In Progress" item should have the .active class
+  const activeItem = page.locator('.kanban-stage-dropdown-item.active');
+  await expect(activeItem).toHaveCount(1);
+  const activeText = (await activeItem.textContent()).trim();
+  expect(activeText).toBe('In Progress');
+});
+
+test('kanban stage dropdown closes on outside click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  await card.locator('.kanban-stage-btn').click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  await expect(page.locator('.kanban-stage-dropdown')).toBeVisible();
+
+  // Click outside the dropdown
+  await page.click('.kanban-board', { position: { x: 5, y: 5 } });
+  await expect(page.locator('.kanban-stage-dropdown')).toHaveCount(0);
+});
+
+test('kanban stage dropdown closes when clicking badge again', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  await stageBadge.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  await expect(page.locator('.kanban-stage-dropdown')).toBeVisible();
+
+  // Click badge again to close
+  await stageBadge.click();
+  await expect(page.locator('.kanban-stage-dropdown')).toHaveCount(0);
+});
+
+test('kanban stage dropdown items have pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  await card.locator('.kanban-stage-btn').click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  const item = page.locator('.kanban-stage-dropdown-item').first();
+  await expect(item).toHaveCSS('cursor', 'pointer');
+});
+
+test('kanban selecting stage from dropdown updates badge and emits record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  expect((await stageBadge.textContent()).trim()).toBe('To Do');
+
+  // Open dropdown and select "QA"
+  await stageBadge.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  const qaItem = page.locator('.kanban-stage-dropdown-item', { hasText: 'QA' });
+  await qaItem.click();
+
+  // Badge should now say "QA"
+  expect((await stageBadge.textContent()).trim()).toBe('QA');
+
+  // Dropdown should be closed
+  await expect(page.locator('.kanban-stage-dropdown')).toHaveCount(0);
+
+  // Should have emitted a sheet-replace record
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+  const records = await getCreatedRecords(page);
+  const replaceRecord = records.find(r => r.type === 'sheet-replace');
+  expect(replaceRecord).toBeTruthy();
+});
+
+test('kanban clicking current stage in dropdown does nothing', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const stageBadge = card.locator('.kanban-stage-btn');
+  const currentStage = (await stageBadge.textContent()).trim();
+
+  // Capture record count before action
+  const recordsBefore = await getCreatedRecords(page);
+  const countBefore = recordsBefore.length;
+
+  // Open dropdown and click the current stage
+  await stageBadge.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+  const currentItem = page.locator('.kanban-stage-dropdown-item.active');
+  await currentItem.click();
+
+  // Badge text should be unchanged
+  expect((await stageBadge.textContent()).trim()).toBe(currentStage);
+
+  // Dropdown should be closed
+  await expect(page.locator('.kanban-stage-dropdown')).toHaveCount(0);
+
+  // No NEW records should have been emitted
+  const recordsAfter = await getCreatedRecords(page);
+  expect(recordsAfter.length).toBe(countBefore);
+});
+
+/* ============================================================
+   Lane Visibility Tests
+   ============================================================ */
+
+test('kanban lane visibility button shows panel with checkboxes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+
+  const lanesBtn = page.locator('.kanban-lane-vis-btn');
+  await expect(lanesBtn).toBeVisible();
+  await expect(lanesBtn).toContainText('Lanes');
+
+  // Panel should be hidden initially
+  const panel = page.locator('.kanban-lane-vis-panel');
+  await expect(panel).toBeHidden();
+
+  // Click to open panel
+  await lanesBtn.click();
+  await expect(panel).toBeVisible();
+
+  // Should have 6 checkboxes (core lanes)
+  const checkboxes = panel.locator('input[type="checkbox"]');
+  await expect(checkboxes).toHaveCount(6);
+});
+
+test('kanban unchecking a lane hides it from the board', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+
+  // Count initial visible lanes
+  const initialCount = await page.locator('.kanban-lane').count();
+  expect(initialCount).toBeGreaterThanOrEqual(5);
+
+  // Open lane visibility panel
+  await page.click('.kanban-lane-vis-btn');
+  await page.waitForSelector('.kanban-lane-vis-panel:not(.hidden)', { timeout: 3_000 });
+
+  // Uncheck the "backlog" lane
+  const backlogCheckbox = page.locator('.kanban-lane-vis-item input[data-lane="backlog"]');
+  await backlogCheckbox.uncheck();
+
+  // Board should have one fewer lane
+  const newCount = await page.locator('.kanban-lane').count();
+  expect(newCount).toBe(initialCount - 1);
+
+  // The backlog lane should not be visible
+  await expect(page.locator('.kanban-lane-backlog')).toHaveCount(0);
+});
+
+test('kanban re-checking a lane restores it to the board', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+
+  const initialCount = await page.locator('.kanban-lane').count();
+
+  // Hide backlog lane
+  await page.click('.kanban-lane-vis-btn');
+  await page.waitForSelector('.kanban-lane-vis-panel:not(.hidden)', { timeout: 3_000 });
+  const backlogCb = page.locator('.kanban-lane-vis-item input[data-lane="backlog"]');
+  await backlogCb.uncheck();
+  expect(await page.locator('.kanban-lane').count()).toBe(initialCount - 1);
+
+  // Re-check backlog lane
+  await backlogCb.check();
+  expect(await page.locator('.kanban-lane').count()).toBe(initialCount);
+  await expect(page.locator('.kanban-lane-backlog')).toHaveCount(1);
+});
+
+test('kanban lane visibility panel closes on outside click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+
+  await page.click('.kanban-lane-vis-btn');
+  const panel = page.locator('.kanban-lane-vis-panel');
+  await expect(panel).toBeVisible();
+
+  // Click outside
+  await page.click('.kanban-board', { position: { x: 5, y: 5 } });
+  await expect(panel).toBeHidden();
+});
+
+test('kanban hiding multiple lanes adjusts grid columns', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+
+  // Open lane visibility panel and hide 2 lanes
+  await page.click('.kanban-lane-vis-btn');
+  await page.waitForSelector('.kanban-lane-vis-panel:not(.hidden)', { timeout: 3_000 });
+  await page.locator('.kanban-lane-vis-item input[data-lane="backlog"]').uncheck();
+  await page.locator('.kanban-lane-vis-item input[data-lane="rejected"]').uncheck();
+
+  // Board should have kanban-board-4 class (6 - 2 = 4)
+  const board = page.locator('.kanban-board');
+  const hasClass = await board.evaluate(el => el.classList.contains('kanban-board-4'));
+  expect(hasClass).toBe(true);
+});
+
+/* ============================================================
+   Dynamic Label Tests
+   ============================================================ */
+
+test('kanban custom label "security" is displayed on card', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "API Rate Limiting" has the custom label "security"
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const label = card.locator('.kanban-card-label');
+  await expect(label).toBeVisible();
+  await expect(label).toContainText('security');
+});
+
+test('kanban custom label has fallback styling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "security" is not a known label — should use fallback style
+  const card = page.locator('.kanban-card', { hasText: 'API Rate Limiting' });
+  const label = card.locator('.kanban-card-label');
+
+  // Should have a class but not a specific known label class
+  const classList = await label.evaluate(el => el.className);
+  expect(classList).toContain('kanban-card-label');
+  expect(classList).toContain('kanban-label-security');
+
+  // Fallback style should have non-transparent background
+  const bg = await label.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('kanban known labels still have specific styling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Fix Search Bug" has label "bug"
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  const label = card.locator('.kanban-card-label');
+  await expect(label).toBeVisible();
+  await expect(label).toContainText('bug');
+
+  // Should have the specific bug label class
+  const classList = await label.evaluate(el => el.className);
+  expect(classList).toContain('kanban-label-bug');
 });

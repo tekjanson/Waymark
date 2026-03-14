@@ -88,7 +88,7 @@ export function buildCard(group, ctx, laneKey) {
   // Stage badge (delegated click on lane)
   meta.append(el('button', {
     className: `kanban-stage-btn kanban-stage-${template.stageClass(stage)}`,
-    title: 'Click to cycle stage',
+    title: 'Click to change stage',
   }, [stage || 'Backlog']));
 
   // Project badge
@@ -196,7 +196,7 @@ export function buildCard(group, ctx, laneKey) {
  * @returns {HTMLElement}
  */
 export function buildCardDetail(group, ctx) {
-  const { cols, template, allProjects, allAssignees, allReporters } = ctx;
+  const { cols, template, allProjects, allAssignees, allReporters, allLabels } = ctx;
   const detail = el('div', { className: 'kanban-card-detail' });
   const { row, idx } = group;
   const rowIdx = idx + 1;
@@ -221,7 +221,7 @@ export function buildCardDetail(group, ctx) {
   if (cols.label >= 0) {
     metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
       el('span', { className: 'kanban-detail-field-label' }, ['Label']),
-      editableCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.label), rowIdx, cols.label),
+      comboCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.label), rowIdx, cols.label, allLabels || []),
     ]));
   }
   if (cols.project >= 0) {
