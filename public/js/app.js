@@ -339,6 +339,9 @@ async function showApp(user) {
   if (tutorialBtn) {
     tutorialBtn.addEventListener('click', () => Tutorial.start());
   }
+
+  // Start version checker for auto-update detection (production only)
+  initUpdateChecker();
 }
 
 async function handleLogout() {
@@ -2374,6 +2377,51 @@ async function collectKnownSheets() {
   } catch { /* ignore — this is a best-effort enrichment */ }
 
   search.registerSheets(sheets);
+}
+
+/* ---------- Auto-update checker ---------- */
+
+let _bootHash = '';
+let _updateToast = null;
+let _lastCheckTime = 0;
+const UPDATE_CHECK_INTERVAL = 120_000; // 2 minutes
+const UPDATE_CHECK_MIN_GAP  = 30_000;  // min 30 s between checks
+
+/** Start polling for app updates (production only). */
+function initUpdateChecker() {
+  _bootHash = window.__WAYMARK_HASH || '';
+  if (!_bootHash || window.__WAYMARK_LOCAL) return;
+
+  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkForUpdate();
+  });
+}
+
+/** Check if the server has a newer build hash. */
+async function checkForUpdate() {
+  if (_updateToast) return;
+  const now = Date.now();
+  if (now - _lastCheckTime < UPDATE_CHECK_MIN_GAP) return;
+  _lastCheckTime = now;
+
+  try {
+    const base = window.__WAYMARK_BASE || '';
+    const res = await fetch(`${base}/`, { method: 'HEAD', cache: 'no-store' });
+    const serverHash = res.headers.get('X-Waymark-Hash');
+    if (serverHash && serverHash !== _bootHash) {
+      showUpdateBanner();
+    }
+  } catch { /* network error — retry next cycle */ }
+}
+
+/** Show a persistent toast prompting the user to refresh. */
+function showUpdateBanner() {
+  if (_updateToast) return;
+  _updateToast = showToast('\u{1F504} Update available \u2014 tap to refresh', 'update', 0);
+  if (_updateToast) {
+    _updateToast.addEventListener('click', () => location.reload());
+  }
 }
 
 /* ---------- Start ---------- */
