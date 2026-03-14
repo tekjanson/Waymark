@@ -25,6 +25,8 @@ let _showArchived = false;
 let _expandedCards = new Set();
 /** Collapsed lane keys */
 let _collapsedLanes = new Set();
+/** Hidden lane keys — lanes not shown at all */
+let _hiddenLanes = new Set();
 /** Per-lane render counts: how many cards are currently shown */
 let _laneRendered = {};
 
@@ -79,7 +81,7 @@ const definition = {
       { role: 'assignee',    label: 'Assignee',     colIndex: cols.assignee,    type: 'combo',  placeholder: 'Select or type new…' },
       { role: 'priority',    label: 'Priority',     colIndex: cols.priority,    type: 'select', options: ['P0', 'P1', 'P2', 'P3'], defaultValue: 'P2' },
       { role: 'due',         label: 'Due Date',     colIndex: cols.due,         type: 'date' },
-      { role: 'label',       label: 'Label',        colIndex: cols.label,       type: 'select', options: ['', 'feature', 'bug', 'infra', 'design', 'docs'] },
+      { role: 'label',       label: 'Label',        colIndex: cols.label,       type: 'combo',  placeholder: 'Select or type new…' },
       { role: 'reporter',    label: 'Reported By',  colIndex: cols.reporter,    type: 'combo',  placeholder: 'Select or type…' },
     ];
   },
@@ -256,9 +258,15 @@ const definition = {
     const allReporters = cols.reporter >= 0
       ? [...new Set(groups.map(g => cell(g.row, cols.reporter)).filter(Boolean))].sort()
       : [];
+    // Collect unique labels from data + known defaults
+    const knownLabels = ['feature', 'bug', 'infra', 'design', 'docs'];
+    const dataLabels = cols.label >= 0
+      ? [...new Set(groups.map(g => cell(g.row, cols.label)).filter(Boolean))]
+      : [];
+    const allLabels = [...new Set([...dataLabels, ...knownLabels])].sort();
 
     /** Shared render context passed to card/modal builders */
-    const ctx = { cols, template, allProjects, allAssignees, allReporters, expandedCards: _expandedCards };
+    const ctx = { cols, template, allProjects, allAssignees, allReporters, allLabels, expandedCards: _expandedCards };
 
     // Project filter pills list (same as allProjects for toolbar)
     const projects = allProjects;
@@ -316,6 +324,36 @@ const definition = {
     archiveCheck.addEventListener('change', () => { _showArchived = archiveCheck.checked; updateBoard(); });
     archiveLabel.append(archiveCheck, ' Show Archived');
     controls.append(archiveLabel);
+
+    // Lane visibility toggle
+    const laneVisWrap = el('div', { className: 'kanban-lane-vis-wrap' });
+    const laneVisBtn = el('button', { className: 'kanban-lane-vis-btn', title: 'Show/hide lanes' }, ['⚙ Lanes']);
+    const laneVisPanel = el('div', { className: 'kanban-lane-vis-panel hidden' });
+
+    const coreLanes = ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected'];
+    for (const lk of coreLanes) {
+      const lbl = el('label', { className: 'kanban-lane-vis-item' });
+      const cb = el('input', { type: 'checkbox', dataset: { lane: lk } });
+      cb.checked = !_hiddenLanes.has(lk);
+      cb.addEventListener('change', () => {
+        if (cb.checked) _hiddenLanes.delete(lk);
+        else _hiddenLanes.add(lk);
+        updateBoard();
+      });
+      lbl.append(cb, ` ${LANE_LABELS[lk]}`);
+      laneVisPanel.append(lbl);
+    }
+
+    laneVisBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      laneVisPanel.classList.toggle('hidden');
+    });
+    // Close panel on outside click
+    document.addEventListener('click', (e) => {
+      if (!laneVisWrap.contains(e.target)) laneVisPanel.classList.add('hidden');
+    });
+    laneVisWrap.append(laneVisBtn, laneVisPanel);
+    controls.append(laneVisWrap);
 
     toolbar.append(controls);
     container.append(toolbar);
@@ -429,18 +467,50 @@ const definition = {
 
       /* ---- Delegated click handlers on lane ---- */
 
-      // Stage badge cycling
+      // Stage badge dropdown — shows available stages to pick from
       delegateEvent(lane, 'click', '.kanban-stage-btn', (e, btn) => {
         const card = btn.closest('.kanban-card');
         if (!card) return;
         e.stopPropagation();
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
-        const prev = btn.textContent.trim();
-        const next = cycleStatus(btn, template.stageStates, template.stageClass, 'kanban-stage-btn kanban-stage-');
-        // Bundle stage change + note atomically; fall back to emitEdit if no note
-        const noteInserted = (prev !== next) ? insertStageNote(rowIdx, prev, next) : false;
-        if (!noteInserted) emitEdit(rowIdx, cols.stage, next);
+
+        // If a dropdown already exists, close it
+        const existing = btn.parentElement.querySelector('.kanban-stage-dropdown');
+        if (existing) { existing.remove(); return; }
+
+        // Close any other open stage dropdowns
+        document.querySelectorAll('.kanban-stage-dropdown').forEach(d => d.remove());
+
+        const current = btn.textContent.trim();
+        const dropdown = el('div', { className: 'kanban-stage-dropdown' });
+        for (const state of template.stageStates) {
+          const cls = template.stageClass(state);
+          const item = el('button', {
+            className: `kanban-stage-dropdown-item kanban-stage-${cls}${state === current ? ' active' : ''}`,
+          }, [state]);
+          item.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            dropdown.remove();
+            if (state === current) return;
+            btn.textContent = state;
+            btn.className = `kanban-stage-btn kanban-stage-${cls}`;
+            const noteInserted = insertStageNote(rowIdx, current, state);
+            if (!noteInserted) emitEdit(rowIdx, cols.stage, state);
+          });
+          dropdown.append(item);
+        }
+        btn.parentElement.style.position = 'relative';
+        btn.parentElement.append(dropdown);
+
+        // Close on outside click
+        const closeDropdown = (ev) => {
+          if (!dropdown.contains(ev.target) && ev.target !== btn) {
+            dropdown.remove();
+            document.removeEventListener('click', closeDropdown, true);
+          }
+        };
+        setTimeout(() => document.addEventListener('click', closeDropdown, true), 0);
       });
 
       // Priority dot cycling
@@ -559,6 +629,7 @@ const definition = {
             project: ['', ...allProjects],
             assignee: ['', ...allAssignees],
             reporter: ['', ...allReporters],
+            label: ['', ...allLabels],
           },
         });
         laneForm.classList.add('add-row-lane');
@@ -584,13 +655,14 @@ const definition = {
      */
     function updateBoard() {
       // Determine visible lanes
-      const laneOrder = _showArchived
+      const allLanes = _showArchived
         ? ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected', 'archived']
         : ['backlog', 'todo', 'inprogress', 'qa', 'done', 'rejected'];
+      const laneOrder = allLanes.filter(lk => !_hiddenLanes.has(lk));
 
-      // Update grid class
-      boardEl.classList.toggle('kanban-board-7', _showArchived);
-      boardEl.classList.toggle('kanban-board-6', !_showArchived);
+      // Update grid class based on visible lane count
+      const visibleCount = laneOrder.length;
+      for (let i = 1; i <= 7; i++) boardEl.classList.toggle(`kanban-board-${i}`, visibleCount === i);
 
       // Detach all lanes, then re-append in order (preserves skeleton)
       boardEl.innerHTML = '';
