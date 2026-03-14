@@ -145,30 +145,49 @@ If you discover commits on `main` that shouldn't be there:
 
 ## 2. WORKBOARD INTERACTION PROTOCOL
 
-### 2.1 Claiming a Task
-When you start working on a task, update the workboard:
-- Set column C (Stage) to `In Progress`
-- Set column E (Assignee) to `AI`
+> **⚠️ NEVER use raw PUT to write note sub-rows.** Always use `scripts/update-workboard.js` which
+> INSERTS a blank row first, then writes to it. This prevents overwriting user data.
 
-Use MCP tools if available (`mcp_google-sheets_sheets_values_update`), or fall back to Node.js REST (§8.2). Range: `Sheet1!C{row}:E{row}`.
+### 2.1 Claiming a Task
+When you start working on a task:
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js claim {row}
+```
+This safely sets column C to "In Progress" and column E to "AI" without touching other columns (preserves project in column D).
 
 ### 2.2 Progress Notes
-As you complete significant milestones, **insert note sub-rows** below the task (per §15.2 of AI_LAWS):
-
+As you complete significant milestones, **insert note sub-rows** below the task:
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js note {row} "note text here"
 ```
-| | | | | AI | | {today's date YYYY-MM-DD} | | {note text} |
-```
-
-Use MCP tools or Node.js REST (§8.2) to write note sub-rows. Calculate the correct insert position.
+This script:
+1. Finds the last sub-row belonging to the task (scans for next non-empty column A)
+2. **INSERTS a blank row** using the Sheets `insertDimension` API
+3. Writes the note to the newly inserted row
+4. **Never overwrites existing data** — guaranteed safe
 
 **CRITICAL:** Notes go on SUB-ROWS (column A empty), never on the task row's Note column. The task row's column I must stay empty.
 
 ### 2.3 Completing a Task
 When implementation + tests pass:
 1. **Push the feature branch to remote:** `git push -u origin feature/{branch-name}`
-2. Update column C (Stage) to `QA` (NOT `Done` — the human owner reviews, tests in prod, creates the PR, merges, and moves to `Done`)
-3. Insert a **completion note sub-row** with summary of what was built
-4. Insert a **testing notes sub-row** with QA verification instructions
+2. Update stage to QA:
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js stage {row} QA
+   ```
+3. Insert a **completion note sub-row** (uses safe insert — never overwrites):
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js note {row} "Branch: feature/... | Files: ... | +N LOC | N tests"
+   ```
+4. Insert a **testing notes sub-row** (also safe insert):
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js note {row} "QA: 1) ... 2) ... E2E covers: ... Manual: ..."
+   ```
 
 The completion note must include:
 - Branch name
@@ -739,88 +758,87 @@ Before marking any task as QA, verify:
 
 ## 8. REFERENCE: WORKBOARD INTERACTION
 
-### 8.1 Preferred Method: MCP Google Sheets Tools
-If MCP tools are available, use them directly:
+> **⚠️ ALWAYS use `scripts/update-workboard.js` for write operations.**
+> This script uses the Sheets `insertDimension` API to create blank rows before
+> writing notes, preventing data overwrites. Raw PUT operations are dangerous
+> because row numbering can drift when the user adds or moves rows.
 
-#### Reading the workboard
-```
-mcp_google-sheets_sheets_values_get
-  spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
-  range: Sheet1!A1:I500
-```
+### 8.1 Safe Write Script — `scripts/update-workboard.js`
 
-#### Updating a cell (e.g., claiming task on row 42)
-```
-mcp_google-sheets_sheets_values_update
-  spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
-  range: Sheet1!C42:E42
-  values: [["In Progress", "Waymark", "AI"]]
-```
+All workboard write operations go through this script. It provides three commands:
 
-#### Appending a note sub-row after row 42
-```
-mcp_google-sheets_sheets_values_update
-  spreadsheetId: 1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4
-  range: Sheet1!A43:I43
-  values: [["", "", "", "", "AI", "", "2026-03-12", "", "Progress note text here"]]
-```
-
-### 8.2 Fallback Method: Node.js REST via Terminal
-If MCP tools are unavailable or fail, use direct REST calls via Node.js in the terminal. The service account key is at the path in `$GOOGLE_APPLICATION_CREDENTIALS`.
-
-#### Reading the workboard (fallback)
+#### Claiming a task
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS node -e "
-const { GoogleAuth } = require('google-auth-library');
-const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const auth = new GoogleAuth({ keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-(async () => {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent('Sheet1!A1:I500');
-  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  const data = await res.json();
-  console.log(JSON.stringify(data.values || []));
-})();
-"
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js claim {row}
+```
+- Sets column C to "In Progress" and column E to "AI"
+- **Only touches columns C and E** — preserves project (D) and all other data
+- Verifies the target row is a task row (column A non-empty) before writing
+- Warns if the task is not in "To Do" or "Backlog" stage
+
+#### Updating stage
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js stage {row} {stage}
+```
+- Updates only column C (stage) — e.g., "QA", "In Progress"
+- Verifies the target row is a task row before writing
+
+#### Inserting a note (SAFE — never overwrites)
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js note {row} "note text here"
+```
+- Scans rows below the task to find the last sub-row
+- **INSERTS a blank row** at the correct position using `insertDimension` API
+- Writes the note content to the newly inserted blank row
+- Automatically sets column E to "AI" and column G to today's date
+- **Guaranteed safe** — impossible to overwrite existing data
+
+#### Output format
+All commands print JSON to stdout:
+```json
+{"ok":true,"action":"note","taskRow":263,"insertedAt":266,"text":"Progress note..."}
 ```
 
-#### Updating a cell (fallback) — e.g., claiming task on row 42
+### 8.2 Reading the Workboard
+For reading, use `scripts/check-workboard.js` which queries the full board:
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS node -e "
-const { GoogleAuth } = require('google-auth-library');
-const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const auth = new GoogleAuth({ keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-(async () => {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  const range = 'Sheet1!C42:E42';
-  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SPREADSHEET_ID + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW';
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [['In Progress', 'Waymark AI', 'AI']] })
-  });
-  const data = await res.json();
-  console.log('Updated:', JSON.stringify(data));
-})();
-"
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/check-workboard.js
 ```
 
 ### 8.3 Writing Completion + Testing Notes
-When marking a task as QA, write **two** sub-rows below the task:
+When marking a task as QA, use TWO `note` commands in sequence:
 
-**Sub-row 1: Completion summary**
-```
-["", "", "", "", "AI", "", "2026-03-12", "", "Branch: feature/task-name | Files: file1.js, file2.css | +80 LOC | 4 new tests (87 total)"]
+```bash
+# Step 1: Mark stage as QA
+GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js stage {row} QA
+
+# Step 2: Insert completion note (safe insert — never overwrites)
+GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
+  "Branch: feature/task-name | Files: file1.js, file2.css | +80 LOC | 4 new tests (87 total)"
+
+# Step 3: Insert QA testing note (safe insert — never overwrites)
+GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
+  "QA: 1) Open sheet-NNN 2) Click X to verify Y. E2E covers: ... Manual: ..."
 ```
 
-**Sub-row 2: QA testing instructions**
-```
-["", "", "", "", "AI", "", "2026-03-12", "", "QA: 1) Open sheet-NNN 2) Click X to verify Y 3) Check mobile at 375px. E2E covers: detection, rendering, interaction. Manual: verify animation, dark mode."]
-```
+Each `note` command safely inserts a new row — they can be called multiple times without risk.
 
-**Note:** For inserting rows between existing data, you may need to shift rows down first or append at the end of the task's sub-row block. When possible, calculate the correct row position to avoid overwriting.
+### 8.4 Why Raw PUT is Dangerous (DO NOT USE)
+The old pattern used `PUT` to write directly to calculated row numbers:
+```
+PUT Sheet1!A267:I267 → [["", "", "", "", "AI", "", "2026-03-14", "", "note text"]]
+```
+**Problems with this approach:**
+1. If the user added rows between the agent's read and write, the target row shifts
+2. The agent overwrites whatever was at that row — user data lost silently
+3. No verification that the target row is empty
+4. No atomic insert — just a blind overwrite
+
+The `update-workboard.js` script solves all of these by INSERTING then writing.
 
 ---
 
@@ -838,6 +856,8 @@ Before implementing, always read these files for current state:
 - `public/css/base.css` — design tokens, shared styles
 - `public/css/style.css` — CSS aggregator imports
 - `tests/e2e/unit-*.spec.js` — existing unit tests (pattern reference for new tests)
+- `scripts/update-workboard.js` — safe workboard writes (claim, stage, note with row insertion)
+- `scripts/check-workboard.js` — read-only workboard query (used in idle loop)
 
 ---
 
