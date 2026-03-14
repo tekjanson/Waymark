@@ -252,9 +252,12 @@ When adding a new template, **ALL** of these artifacts are required:
 
 ---
 
-## 4. E2E TEST REQUIREMENTS — NON-NEGOTIABLE
+## 4. TEST REQUIREMENTS — NON-NEGOTIABLE
 
-Every feature MUST include Playwright E2E tests. Tests are the **first-class deliverable**, not an afterthought. Tests must simulate real human usage — clicking through workflows, verifying visual polish, and locking down design consistency.
+Every feature MUST include both **E2E tests** (user workflow verification) and **unit tests** (pure function correctness). Tests are the **first-class deliverable**, not an afterthought.
+
+- **E2E tests** simulate real human usage — clicking through workflows, verifying visual polish, and locking down design consistency.
+- **Unit tests** verify pure helper functions in isolation — state classifiers, parsers, formatters, date utilities, and data transformers.
 
 ### 4.1 Test Structure Rules (§7.2)
 ```javascript
@@ -519,21 +522,132 @@ Every test needs fixture data in `tests/fixtures/sheets/{key}-{desc}.json`:
 
 ### 4.8 Running Tests
 ```bash
-npm test                           # Run all tests
+npm test                           # Run ALL tests (E2E + unit)
+npm run test:unit                  # Run only unit tests
+npm run test:e2e                   # Run only E2E tests
 npx playwright test tests/e2e/{file}.spec.js  # Run specific test file
 ```
-Always run from the project root. Always run the full suite before marking QA.
+Always run from the project root. Always run the **full suite** (`npm test`) before marking QA — this includes both E2E and unit tests.
 
 ### 4.9 Test Count Minimums
 For every feature, the MINIMUM test count depends on scope:
 
-| Scope | Min Tests | Required Layers |
-|---|---|---|
-| New template | 8+ | Detection, rendering, 2+ interactions, style check, mobile, workflow, records |
-| Template upgrade | 4+ | Rendering, interaction, style check, workflow |
-| Bug fix | 2+ | Regression test + verification of the fix |
-| Refactor | 0 new (existing must pass) | All existing tests still pass |
-| New UI component | 5+ | Rendering, click flow, modal lifecycle, style, mobile |
+| Scope | Min E2E | Min Unit | Required Layers |
+|---|---|---|---|
+| New template | 8+ | 5+ per helper module | Detection, rendering, interactions, style, mobile, workflow, records + all pure functions |
+| Template upgrade | 4+ | 3+ for changed helpers | Rendering, interaction, style, workflow + updated helper functions |
+| Bug fix | 2+ | 1+ if fix touches helpers | Regression test + verification of the fix |
+| Refactor | 0 new (existing must pass) | 0 new (existing must pass) | All existing tests still pass |
+| New UI component | 5+ | N/A | Rendering, click flow, modal lifecycle, style, mobile |
+| New helper module | N/A | 5+ per export | All exported pure functions with edge cases |
+
+### 4.10 Unit Testing — Browser-Based Pure Function Tests
+
+Unit tests verify **pure functions** (helpers, parsers, formatters, classifiers) in isolation.
+They use the same Playwright infrastructure as E2E tests but test functions directly via
+`page.evaluate()` + dynamic `import()` — no build tools, no Node.js ESM shims.
+
+#### File Naming Convention
+```
+tests/e2e/unit-{module-name}.spec.js
+```
+Examples:
+- `unit-habit-helpers.spec.js` — tests for `public/js/templates/habit/helpers.js`
+- `unit-kanban-helpers.spec.js` — tests for `public/js/templates/kanban/helpers.js`
+- `unit-shared.spec.js` — tests for `public/js/templates/shared.js` pure utilities
+
+#### Test Pattern
+Unit tests use `setupApp(page)` then `page.evaluate()` with dynamic `import()`.
+The module is imported inside the browser context — its real ESM environment.
+Results are returned to Node.js for assertion with Playwright's `expect()`.
+
+```javascript
+const { test, expect } = require('@playwright/test');
+const { setupApp } = require('../helpers/test-utils');
+
+test('habitState classifies done values', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { habitState } = await import('/js/templates/habit/helpers.js');
+    return {
+      checkmark: habitState('✓'),
+      yes: habitState('yes'),
+      done: habitState('done'),
+    };
+  });
+  expect(results.checkmark).toBe('done');
+  expect(results.yes).toBe('done');
+  expect(results.done).toBe('done');
+});
+```
+
+#### What Gets Unit Tests
+**DO test** (pure functions — no DOM, no API, no localStorage):
+- State classifiers: `habitState()`, `normaliseType()`, `priRank()`
+- Parsers: `parseGoal()`, `parseWeekDate()`, `parseQuantity()`, `parseQtyNumber()`
+- Formatters: `formatNumber()`, `formatWeekISO()`, `formatDue()`, `scaleQuantity()`
+- Data transformers: `parseFlowGroups()`, `getUniqueWeeks()`, `parseGroups()`, `groupByColumn()`
+- Math/geometry: `isPointInNode()`, `computeStreak()`, `weekCompletionRate()`
+- Constants: verify shape, length, and key values of exported objects/arrays
+
+**DO NOT unit test** (these belong in E2E tests):
+- DOM builders: `el()`, `editableCell()`, `svg()`
+- Event handlers and callbacks
+- Functions that require localStorage or API access
+- Render functions that build UI
+
+#### Time-Dependent Function Testing
+For functions that depend on `Date.now()` (e.g., `dueBadgeClass`, `formatDue`):
+1. Test with extreme values (far past → overdue, far future → later)
+2. Test with frozen Date for precise urgency-level verification:
+
+```javascript
+test('dueBadgeClass with frozen date', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { dueBadgeClass } = await import('/js/templates/kanban/helpers.js');
+    const RealDate = Date;
+    const frozenNow = new RealDate('2026-06-15T12:00:00');
+    globalThis.Date = class extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) return new RealDate(frozenNow);
+        super(...args);
+      }
+    };
+    globalThis.Date.now = () => frozenNow.getTime();
+    try {
+      return {
+        overdue: dueBadgeClass('2026-06-13'),
+        soon: dueBadgeClass('2026-06-15'),
+        upcoming: dueBadgeClass('2026-06-18'),
+        later: dueBadgeClass('2026-06-30'),
+      };
+    } finally { globalThis.Date = RealDate; }
+  });
+  expect(results.overdue).toBe('kanban-due-overdue');
+  expect(results.soon).toBe('kanban-due-soon');
+  expect(results.upcoming).toBe('kanban-due-upcoming');
+  expect(results.later).toBe('kanban-due-later');
+});
+```
+
+#### Edge Cases to Always Test
+For every pure function, test these boundaries:
+- **Empty/null/undefined** input → graceful fallback, no crash
+- **Case insensitivity** → `'Done'`, `'DONE'`, `'done'` all work
+- **Boundary values** → zero, negative, very large numbers
+- **Invalid format** → garbage strings return sensible defaults
+
+#### Existing Unit Test Coverage
+| Module | Test File | Tests | Covers |
+|---|---|---|---|
+| habit/helpers.js | unit-habit-helpers.spec.js | 44 | habitState, computeStreak, parseGoal, parseWeekDate, date utils, completion rates |
+| kanban/helpers.js | unit-kanban-helpers.spec.js | 21 | projectColor, priRank, dueBadgeClass, formatDue, isStatusNote, formatNoteDate |
+| flow/helpers.js | unit-flow-helpers.spec.js | 13 | normaliseType, buildStepLookup, parseFlowGroups, isPointInNode |
+| recipe/helpers.js | unit-recipe-helpers.spec.js | 37 | parseQuantity, formatNumber, scaleQuantity, normaliseUnit, convertUnit |
+| shared.js | unit-shared.spec.js | 17 | cell, parseProgress, isImageUrl, parseGroups, groupByColumn, getMissingMigrations |
+
+When adding new helper functions, add corresponding unit tests to the appropriate `unit-*.spec.js` file (or create a new one following the naming convention).
 
 ---
 
@@ -561,7 +675,8 @@ For every feature, the MINIMUM test count depends on scope:
 8. **Implement the feature** — follow all AI_LAWS rules
 9. **Write fixture data** if needed
 10. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
-11. **Run `npm test`** — ALL tests must pass (not just yours)
+10b. **Write unit tests** — for any new or modified pure functions in helper modules (§4.10)
+11. **Run `npm test`** — ALL tests must pass (not just yours) — both E2E and unit
 12. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
 13. **Commit** with descriptive message: `feat({scope}): {description}`
 14. **Push branch to remote** — `git push -u origin feature/{branch-name}`
@@ -599,7 +714,9 @@ Before marking any task as QA, verify:
 - [ ] `template-registry.json` updated if adding/modifying templates
 - [ ] Sheet data uses row-per-item format (§4.7)
 - [ ] No build step required
-- [ ] `npm test` passes ALL tests
+- [ ] `npm test` passes ALL tests (E2E + unit)
+- [ ] Unit tests written for any new/modified pure helper functions (§4.10)
+- [ ] Unit test files follow `tests/e2e/unit-{module}.spec.js` naming convention
 - [ ] **ON A FEATURE BRANCH** — run `git branch --show-current` and confirm it is NOT `main` (§1 HARD REJECT)
 - [ ] **Branched from tip of main** — feature branch parent is `origin/main` HEAD (no stale base)
 - [ ] No commits exist on `main` that aren't on `origin/main`
@@ -720,6 +837,7 @@ Before implementing, always read these files for current state:
 - `template-registry.json` — template metadata registry
 - `public/css/base.css` — design tokens, shared styles
 - `public/css/style.css` — CSS aggregator imports
+- `tests/e2e/unit-*.spec.js` — existing unit tests (pattern reference for new tests)
 
 ---
 
