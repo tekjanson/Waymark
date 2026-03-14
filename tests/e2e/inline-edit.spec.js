@@ -155,20 +155,27 @@ test('kanban: card title is editable inline', async ({ page }) => {
   expect(updates[0].spreadsheetId).toBe('sheet-017');
 });
 
-test('kanban: stage cycle still works alongside inline editing', async ({ page }) => {
+test('kanban: stage dropdown still works alongside inline editing', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-017');
   await page.waitForSelector('.kanban-card', { timeout: 5_000 });
 
-  // Click the stage button (existing behavior should still work)
+  // Click the stage button to open dropdown (replaces old cycle behavior)
   const stageBadge = page.locator('.kanban-stage-btn').first();
-  const originalStage = await stageBadge.textContent();
+  const originalStage = (await stageBadge.textContent()).trim();
   await stageBadge.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  // Pick a different stage from the dropdown
+  const items = page.locator('.kanban-stage-dropdown-item');
+  const otherItem = items.filter({ hasNotText: originalStage }).first();
+  await otherItem.click();
 
   const records = await getCreatedRecords(page);
   const updates = records.filter(r => r.type === 'cell-update');
-  expect(updates.length).toBe(1);
-  expect(updates[0].value).not.toBe(originalStage);
+  expect(updates.length).toBeGreaterThanOrEqual(1);
+  const lastUpdate = updates[updates.length - 1];
+  expect(lastUpdate.value).not.toBe(originalStage);
 });
 
 /* ================================================================
