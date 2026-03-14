@@ -260,15 +260,37 @@ const definition = {
     /** Shared render context passed to card/modal builders */
     const ctx = { cols, template, allProjects, allAssignees, allReporters, expandedCards: _expandedCards };
 
-    // Project filter pills list (same as allProjects for toolbar)
-    const projects = allProjects;
+    // Count cards per project for relevance sorting
+    const projectCounts = {};
+    if (cols.project >= 0) {
+      for (const g of groups) {
+        const proj = cell(g.row, cols.project);
+        if (proj) projectCounts[proj] = (projectCounts[proj] || 0) + 1;
+      }
+    }
 
     /* ---- Toolbar: filter pills + sort + archive toggle ---- */
 
     const toolbar = el('div', { className: 'kanban-toolbar' });
 
-    // Project filter pills (delegated on filterBar)
-    if (projects.length > 0) {
+    /**
+     * Build (or rebuild) the filter bar with overflow-aware layout.
+     * Projects are sorted by relevance: active first, then by card count.
+     * Pills that overflow to a second row are collapsed into a "+N" dropdown.
+     */
+    function buildFilterBar() {
+      const existing = toolbar.querySelector('.kanban-filter-bar');
+      if (existing) existing.remove();
+
+      if (allProjects.length === 0) return;
+
+      // Sort: active project first, then by card count descending, then alphabetically
+      const sorted = [...allProjects].sort((a, b) => {
+        if (a === _activeProject) return -1;
+        if (b === _activeProject) return 1;
+        return (projectCounts[b] || 0) - (projectCounts[a] || 0) || a.localeCompare(b);
+      });
+
       const filterBar = el('div', { className: 'kanban-filter-bar' });
 
       filterBar.append(el('button', {
@@ -276,7 +298,7 @@ const definition = {
         dataset: { project: '' },
       }, ['All']));
 
-      for (const proj of projects) {
+      for (const proj of sorted) {
         const color = projectColor(proj);
         filterBar.append(el('button', {
           className: `kanban-filter-pill ${_activeProject === proj ? 'active' : ''}`,
@@ -285,17 +307,130 @@ const definition = {
         }, [proj]));
       }
 
-      // Single delegated listener for all filter pills
-      delegateEvent(filterBar, 'click', '.kanban-filter-pill', (e, pill) => {
+      // Delegated click for regular pills (exclude overflow trigger)
+      delegateEvent(filterBar, 'click', '.kanban-filter-pill:not(.kanban-filter-overflow)', (e, pill) => {
+        if (pill.closest('.kanban-filter-dropdown')) return;
         const proj = pill.dataset.project;
         _activeProject = proj || null;
-        filterBar.querySelectorAll('.kanban-filter-pill').forEach(p => p.classList.remove('active'));
-        pill.classList.add('active');
         updateBoard();
+        buildFilterBar();
       });
 
-      toolbar.append(filterBar);
+      toolbar.insertBefore(filterBar, toolbar.firstChild);
+
+      // Record current width to prevent immediate ResizeObserver re-trigger
+      _lastFilterWidth = Math.round(toolbar.getBoundingClientRect().width);
+
+      // Detect overflow after DOM layout and collapse extra pills into dropdown
+      requestAnimationFrame(() => {
+        collapseOverflow(filterBar, sorted);
+      });
     }
+
+    /**
+     * After filter bar is in the DOM, detect which pills wrap to row 2+
+     * and collapse them into a "+N" dropdown.  Handles cascading overflow:
+     * after hiding wrapped pills and adding the "+N" button, re-checks
+     * until every visible element fits on a single row.
+     */
+    function collapseOverflow(filterBar, sorted) {
+      const pills = [...filterBar.querySelectorAll('.kanban-filter-pill')];
+      if (pills.length <= 1) return;
+
+      const baseTop = pills[0].getBoundingClientRect().top;
+
+      // First pass: hide all pills that wrapped to row 2+
+      const overflowed = [];
+      for (const pill of pills) {
+        if (pill.getBoundingClientRect().top > baseTop + 2) {
+          overflowed.push({
+            name: pill.dataset.project,
+            color: pill.style.getPropertyValue('--pill-color'),
+          });
+          pill.classList.add('hidden');
+        }
+      }
+
+      if (overflowed.length === 0) return;
+
+      // Build "+N" overflow trigger
+      const wrap = el('div', { className: 'kanban-filter-overflow-wrap' });
+      const moreBtn = el('button', {
+        className: 'kanban-filter-pill kanban-filter-overflow',
+      }, [`+${overflowed.length}`]);
+
+      wrap.append(moreBtn);
+      filterBar.append(wrap);
+
+      // Second pass: if the "+N" button itself pushed to row 2, keep hiding
+      // the last visible project pill until everything fits on one row.
+      let safety = 30;
+      while (moreBtn.getBoundingClientRect().top > baseTop + 2 && safety-- > 0) {
+        const visible = [...filterBar.querySelectorAll(
+          '.kanban-filter-pill:not(.hidden):not(.kanban-filter-overflow)',
+        )];
+        const lastProject = visible.filter(p => p.dataset.project !== '').pop();
+        if (!lastProject) break;
+        overflowed.push({
+          name: lastProject.dataset.project,
+          color: lastProject.style.getPropertyValue('--pill-color'),
+        });
+        lastProject.classList.add('hidden');
+        moreBtn.textContent = `+${overflowed.length}`;
+      }
+
+      // Build dropdown with all overflowed items
+      const dropdown = el('div', { className: 'kanban-filter-dropdown' });
+      for (const item of overflowed) {
+        const isActive = _activeProject === item.name;
+        const dotStyle = item.color ? `background: ${item.color}` : '';
+        dropdown.append(el('button', {
+          className: `kanban-filter-dropdown-item ${isActive ? 'active' : ''}`,
+          dataset: { project: item.name },
+        }, [
+          el('span', { className: 'kanban-filter-dropdown-dot', style: dotStyle }),
+          item.name,
+        ]));
+      }
+
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('kanban-filter-dropdown-open');
+      });
+
+      // Select from dropdown → filter + rebuild bar (selected gets priority placement)
+      delegateEvent(dropdown, 'click', '.kanban-filter-dropdown-item', (e, item) => {
+        e.stopPropagation();
+        _activeProject = item.dataset.project || null;
+        dropdown.classList.remove('kanban-filter-dropdown-open');
+        updateBoard();
+        buildFilterBar();
+      });
+
+      wrap.append(dropdown);
+
+      // Close dropdown on outside click
+      const closeHandler = (e) => {
+        if (!wrap.contains(e.target)) {
+          dropdown.classList.remove('kanban-filter-dropdown-open');
+        }
+      };
+      document.addEventListener('click', closeHandler);
+    }
+
+    /** Re-layout filter bar on container width changes (debounced) */
+    let _filterResizeTimer = null;
+    let _lastFilterWidth = 0;
+    const filterObserver = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (w === _lastFilterWidth) return;
+      _lastFilterWidth = w;
+      clearTimeout(_filterResizeTimer);
+      _filterResizeTimer = setTimeout(buildFilterBar, 120);
+    });
+    filterObserver.observe(toolbar);
+
+    if (allProjects.length > 0) buildFilterBar();
 
     // Sort + Archive controls
     const controls = el('div', { className: 'kanban-controls' });

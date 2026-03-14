@@ -1053,3 +1053,201 @@ test('kanban no separate cell-update emitted when note is inserted', async ({ pa
   const stageUpdates = records.filter(r => r.type === 'cell-update' && r.col === 2);
   expect(stageUpdates.length).toBe(0);
 });
+
+/* ---------- Filter overflow (many-project board, sheet-039) ---------- */
+
+test('kanban many-projects fixture detects as Kanban Board', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+  await expect(page.locator('#template-badge')).toContainText('Kanban');
+});
+
+test('kanban filter overflow button appears when too many projects', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  // Wait for overflow detection (runs in requestAnimationFrame)
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  const overflowBtn = page.locator('.kanban-filter-overflow');
+  await expect(overflowBtn).toBeVisible();
+  // Should show "+N" where N > 0
+  const text = await overflowBtn.textContent();
+  expect(text).toMatch(/^\+\d+$/);
+});
+
+test('kanban All pill is always visible even with overflow', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  const allPill = page.locator('.kanban-filter-pill', { hasText: 'All' });
+  await expect(allPill).toBeVisible();
+  await expect(allPill).toHaveClass(/active/);
+});
+
+test('kanban overflow dropdown opens on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  const overflowBtn = page.locator('.kanban-filter-overflow');
+  await overflowBtn.click();
+
+  const dropdown = page.locator('.kanban-filter-dropdown');
+  await expect(dropdown).toHaveClass(/kanban-filter-dropdown-open/);
+
+  // Dropdown should contain project items
+  const items = page.locator('.kanban-filter-dropdown-item');
+  expect(await items.count()).toBeGreaterThan(0);
+});
+
+test('kanban overflow dropdown items have color dots', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+
+  const firstItem = page.locator('.kanban-filter-dropdown-item').first();
+  const dot = firstItem.locator('.kanban-filter-dropdown-dot');
+  await expect(dot).toBeVisible();
+});
+
+test('kanban overflow dropdown closes on outside click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+
+  // Click outside the dropdown
+  await page.click('.kanban-board');
+  await expect(page.locator('.kanban-filter-dropdown')).not.toHaveClass(/kanban-filter-dropdown-open/);
+});
+
+test('kanban selecting from overflow dropdown filters board', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // Count total cards before filtering
+  const totalBefore = await page.locator('.kanban-card').count();
+  expect(totalBefore).toBeGreaterThan(0);
+
+  // Open dropdown and click a project
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+
+  const firstItem = page.locator('.kanban-filter-dropdown-item').first();
+  const projectName = await firstItem.textContent();
+  await firstItem.click();
+
+  // Cards should now be filtered (fewer or same count)
+  const totalAfter = await page.locator('.kanban-card').count();
+  expect(totalAfter).toBeLessThan(totalBefore);
+
+  // "All" pill should no longer be active
+  await expect(page.locator('.kanban-filter-pill[data-project=""]')).not.toHaveClass(/active/);
+});
+
+test('kanban selected overflow project moves to visible pills', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // Open dropdown, get first overflow project name
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+  const firstItem = page.locator('.kanban-filter-dropdown-item').first();
+  const projectName = (await firstItem.textContent()).trim();
+  await firstItem.click();
+
+  // After selection and rebuild, the selected project should be a visible pill (not hidden)
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+  const visiblePill = page.locator(`.kanban-filter-pill:not(.hidden):not(.kanban-filter-overflow)[data-project="${projectName}"]`);
+  await expect(visiblePill).toBeVisible();
+  await expect(visiblePill).toHaveClass(/active/);
+});
+
+test('kanban visible pills sorted by card count (most used first)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // Get visible project pills (exclude "All" and hidden ones)
+  const visiblePills = page.locator('.kanban-filter-pill:not(.hidden):not(.kanban-filter-overflow)[data-project]:not([data-project=""])');
+  const count = await visiblePills.count();
+  expect(count).toBeGreaterThan(0);
+
+  // The first visible project pill should be one of the projects with the most cards
+  // In the fixture: Search Engine (3 cards), Billing System (3 cards), Integrations Hub (3 cards)
+  const firstProject = await visiblePills.first().textContent();
+  expect(['Search Engine', 'Billing System', 'Integrations Hub']).toContain(firstProject.trim());
+});
+
+test('kanban filter bar stays single-row with overflow', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // All visible pills (including overflow button) should be on the same row
+  const allOnOneRow = await page.evaluate(() => {
+    const bar = document.querySelector('.kanban-filter-bar');
+    const visiblePills = [...bar.querySelectorAll('.kanban-filter-pill:not(.hidden)')]
+      .filter(p => !p.closest('.kanban-filter-dropdown'));
+    if (visiblePills.length === 0) return true;
+    const baseTop = visiblePills[0].getBoundingClientRect().top;
+    return visiblePills.every(p => Math.abs(p.getBoundingClientRect().top - baseTop) <= 2);
+  });
+  expect(allOnOneRow).toBe(true);
+});
+
+test('kanban clicking All after overflow selection resets filter', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // Select a project from overflow
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+  await page.locator('.kanban-filter-dropdown-item').first().click();
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  const filteredCount = await page.locator('.kanban-card').count();
+
+  // Click All to reset
+  await page.locator('.kanban-filter-pill[data-project=""]').click();
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  const allCount = await page.locator('.kanban-card').count();
+  expect(allCount).toBeGreaterThan(filteredCount);
+  await expect(page.locator('.kanban-filter-pill[data-project=""]')).toHaveClass(/active/);
+});
+
+test('kanban overflow dropdown has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  await expect(page.locator('.kanban-filter-overflow')).toHaveCSS('cursor', 'pointer');
+});
+
+test('kanban filter overflow at narrow viewport shows more in dropdown', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 800 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-overflow', { timeout: 5_000 });
+
+  // At narrow width, more projects should overflow
+  await page.locator('.kanban-filter-overflow').click();
+  await page.waitForSelector('.kanban-filter-dropdown-open', { timeout: 3_000 });
+
+  const dropdownCount = await page.locator('.kanban-filter-dropdown-item').count();
+  // With 14 projects at 600px, most should overflow (at least 10)
+  expect(dropdownCount).toBeGreaterThanOrEqual(8);
+});

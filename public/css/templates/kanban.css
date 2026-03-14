@@ -26,6 +26,42 @@
   color: #fff; border-color: var(--pill-color, var(--color-primary));
 }
 
+/* ---------- Filter overflow dropdown ---------- */
+
+.kanban-filter-overflow-wrap {
+  position: relative; display: inline-block;
+}
+
+.kanban-filter-overflow {
+  font-weight: 600; color: var(--color-text-muted);
+}
+
+.kanban-filter-dropdown {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 180px; max-height: 260px; overflow-y: auto;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12));
+  z-index: 50; padding: 4px 0;
+}
+
+.kanban-filter-dropdown-open { display: flex; flex-direction: column; }
+
+.kanban-filter-dropdown-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border: none; background: none;
+  font-size: 0.78rem; color: var(--color-text); cursor: pointer;
+  text-align: left; width: 100%;
+}
+
+.kanban-filter-dropdown-item:hover { background: var(--color-hover, rgba(0,0,0,.04)); }
+
+.kanban-filter-dropdown-item.active { font-weight: 600; color: var(--color-primary); }
+
+.kanban-filter-dropdown-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--color-border);
+}
+
 .kanban-controls {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
 }
