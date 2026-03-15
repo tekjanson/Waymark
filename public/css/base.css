@@ -800,6 +800,7 @@ ul { list-style: none; }
 }
 .toast.toast-error { background: var(--color-error); }
 .toast.toast-success { background: var(--color-success); }
+.toast.toast-update { background: var(--color-primary); cursor: pointer; }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---------- Loading Overlay ---------- */
@@ -1807,6 +1808,7 @@ ul { list-style: none; }
 
 /* Toast — dark bg with slight adjustment */
 [data-theme="dark"] .toast { background: #334155; }
+[data-theme="dark"] .toast.toast-update { background: var(--color-primary); }
 
 /* Theme toggle button */
 .btn-theme {

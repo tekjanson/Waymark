@@ -139,6 +139,7 @@ function serveIndex(_req, res) {
   }
 
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  if (gitHash) res.setHeader('X-Waymark-Hash', gitHash);
   res.type('html').send(html);
 }
 
@@ -547,8 +548,8 @@ router.use(express.static(path.join(__dirname, '..', 'public'), {
       // HTML: always revalidate
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else if (filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
-      // CSS/JS/MJS: short cache so updates land quickly
-      res.setHeader('Cache-Control', 'public, max-age=300');
+      // CSS/JS/MJS: always revalidate via ETag — instant updates on mobile
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
       // Everything else (images, SVGs, etc.): 1 hour
       res.setHeader('Cache-Control', 'public, max-age=3600');
