@@ -47,7 +47,10 @@ export function showToast(message, type = 'info', duration = 4000) {
   if (!toastContainer) toastContainer = document.getElementById('toast-container');
   const toast = el('div', { className: `toast toast-${type}` }, [message]);
   toastContainer.append(toast);
-  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
+  if (duration > 0) {
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
+  }
+  return toast;
 }
 
 /* ---------- Loading overlay ---------- */
