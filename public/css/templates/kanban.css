@@ -10,6 +10,8 @@
 .kanban-filter-bar {
   display: flex; align-items: center; gap: 6px;
   flex-wrap: wrap; padding: 4px 0;
+  max-height: 76px; overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .kanban-filter-pill {
@@ -779,8 +781,19 @@ button.kanban-pri-dot {
     grid-template-columns: 1fr;
   }
 
-  .kanban-filter-bar { gap: 4px; }
-  .kanban-filter-pill { font-size: 0.72rem; padding: 3px 8px; }
+  .kanban-filter-bar {
+    gap: 4px; flex-wrap: nowrap;
+    overflow-x: auto; overflow-y: hidden;
+    max-height: none;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .kanban-filter-bar::-webkit-scrollbar { display: none; }
+  .kanban-filter-pill {
+    font-size: 0.72rem; padding: 3px 8px;
+    flex-shrink: 0; white-space: nowrap;
+  }
 
   .kanban-modal-overlay { padding: 16px 8px; }
   .kanban-modal-header { padding: 16px 16px 12px; }
