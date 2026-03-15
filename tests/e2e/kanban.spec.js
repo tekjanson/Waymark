@@ -1420,3 +1420,135 @@ test('kanban known labels still have specific styling', async ({ page }) => {
   const classList = await label.evaluate(el => el.className);
   expect(classList).toContain('kanban-label-bug');
 });
+
+/* ---------- Filter bar overflow (many projects — sheet-039) ---------- */
+
+test('kanban many-projects fixture renders all 15 project pills plus All', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  const pills = page.locator('.kanban-filter-pill');
+  // "All" + 17 unique projects = 18 pills
+  expect(await pills.count()).toBe(18);
+  await expect(pills.first()).toContainText('All');
+});
+
+test('kanban filter bar does not overflow viewport on desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  const filterBar = page.locator('.kanban-filter-bar');
+
+  // Filter bar should have a max-height constraint (76px)
+  const height = await filterBar.evaluate(el => el.getBoundingClientRect().height);
+  expect(height).toBeLessThanOrEqual(80); // 76px max-height + tolerance
+
+  // Board should still be visible below the toolbar
+  await expect(page.locator('.kanban-board')).toBeVisible();
+});
+
+test('kanban filter bar scrolls horizontally on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  const filterBar = page.locator('.kanban-filter-bar');
+
+  // On mobile, filter bar should have nowrap and overflow-x: auto
+  await expect(filterBar).toHaveCSS('flex-wrap', 'nowrap');
+
+  // Filter bar should be a single row (height ≤ ~40px for one line of pills)
+  const height = await filterBar.evaluate(el => el.getBoundingClientRect().height);
+  expect(height).toBeLessThanOrEqual(45);
+
+  // The filter bar should have scrollable content wider than its visible width
+  const overflows = await filterBar.evaluate(el => el.scrollWidth > el.clientWidth);
+  expect(overflows).toBe(true);
+
+  // Board should still be visible below
+  await expect(page.locator('.kanban-board')).toBeVisible();
+});
+
+test('kanban filter pills do not shrink on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-pill', { timeout: 5_000 });
+
+  const pills = page.locator('.kanban-filter-pill');
+  const firstPillWidth = await pills.first().evaluate(el => el.getBoundingClientRect().width);
+
+  // Pills should maintain minimum readable width (not shrunk to tiny)
+  expect(firstPillWidth).toBeGreaterThan(20);
+
+  // Each pill should have white-space: nowrap to prevent text wrapping
+  await expect(pills.nth(5)).toHaveCSS('white-space', 'nowrap');
+});
+
+test('kanban filter bar on mobile has no visible scrollbar', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  // Verify scrollbar-width is none on the filter bar (Firefox)
+  await expect(page.locator('.kanban-filter-bar')).toHaveCSS('scrollbar-width', 'none');
+});
+
+test('kanban project filter works with many projects', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  // Count all cards initially
+  const totalBefore = await page.locator('.kanban-card').count();
+  expect(totalBefore).toBeGreaterThan(0);
+
+  // Click a specific project pill to filter
+  const pill = page.locator('.kanban-filter-pill', { hasText: 'Auth System' });
+  await pill.click();
+
+  // Should show only that project's cards
+  const filtered = await page.locator('.kanban-card').count();
+  expect(filtered).toBeLessThan(totalBefore);
+  expect(filtered).toBeGreaterThan(0);
+
+  // Click "All" to reset
+  await page.locator('.kanban-filter-pill', { hasText: 'All' }).click();
+  expect(await page.locator('.kanban-card').count()).toBe(totalBefore);
+});
+
+test('kanban filter bar desktop has scroll for overflowing pills', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  const filterBar = page.locator('.kanban-filter-bar');
+
+  // On desktop, overflow-y should be 'auto' or 'scroll'
+  const overflowY = await filterBar.evaluate(el => getComputedStyle(el).overflowY);
+  expect(['auto', 'scroll']).toContain(overflowY);
+
+  // The filter bar should use a thin scrollbar on desktop
+  await expect(filterBar).toHaveCSS('scrollbar-width', 'thin');
+});
+
+test('kanban board is not pushed below fold by filter bar on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-039');
+  await page.waitForSelector('.kanban-board', { timeout: 5_000 });
+
+  // The board should start within the visible viewport
+  const boardTop = await page.locator('.kanban-board').evaluate(el => {
+    return el.getBoundingClientRect().top;
+  });
+
+  // Board should not be pushed below the fold (should be within viewport height)
+  expect(boardTop).toBeLessThan(812);
+});

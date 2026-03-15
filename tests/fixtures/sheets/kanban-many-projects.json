@@ -1,0 +1,25 @@
+{
+  "id": "sheet-039",
+  "title": "Kanban – Many Projects",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Task", "Description", "Stage", "Project", "Assignee", "Priority", "Due", "Label", "Note"],
+    ["Design homepage", "Create homepage mockup", "In Progress", "Website Redesign", "Alice", "P1", "2026-03-20", "design", ""],
+    ["Fix login bug", "Users can't login on Safari", "To Do", "Auth System", "Bob", "P0", "2026-03-15", "bug", ""],
+    ["Add dark mode", "Theme toggle in settings", "Done", "UI Framework", "Carol", "P2", "2026-03-10", "feature", ""],
+    ["Write API docs", "Document REST API v2", "In Progress", "API Gateway", "Dave", "P1", "2026-03-18", "docs", ""],
+    ["Setup CI/CD", "GitHub Actions pipeline", "Done", "DevOps Pipeline", "Eve", "P2", "2026-03-08", "infra", ""],
+    ["User analytics", "Track page views", "To Do", "Analytics Dashboard", "Frank", "P3", "2026-04-01", "feature", ""],
+    ["Mobile navigation", "Bottom tab bar", "In Progress", "Mobile App", "Grace", "P1", "2026-03-22", "design", ""],
+    ["Database migration", "Upgrade to v14", "Backlog", "Data Platform", "Hank", "P3", "2026-04-15", "infra", ""],
+    ["Payment gateway", "Stripe integration", "To Do", "Billing System", "Ivy", "P0", "2026-03-17", "feature", ""],
+    ["Email templates", "Transactional emails", "In Progress", "Notification Service", "Jack", "P2", "2026-03-25", "design", ""],
+    ["Search indexing", "Elasticsearch setup", "Backlog", "Search Engine", "Kate", "P3", "2026-04-10", "infra", ""],
+    ["Onboarding flow", "First-run experience", "To Do", "User Onboarding", "Leo", "P1", "2026-03-19", "feature", ""],
+    ["Load testing", "Stress test API endpoints", "Backlog", "Performance Testing", "Mia", "P2", "2026-04-05", "infra", ""],
+    ["Content CMS", "Blog post editor", "To Do", "Content Platform", "Nick", "P2", "2026-03-28", "feature", ""],
+    ["Accessibility audit", "WCAG compliance check", "In Progress", "Accessibility", "Olivia", "P1", "2026-03-21", "design", ""],
+    ["Caching layer", "Redis integration", "Backlog", "Infrastructure", "Pat", "P3", "2026-04-20", "infra", ""],
+    ["Feature flags", "Toggle features per env", "To Do", "Feature Management", "Quinn", "P2", "2026-03-30", "feature", ""]
+  ]
+}
