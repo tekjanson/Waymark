@@ -261,3 +261,48 @@ test('user configures API key via settings modal save button', async ({ page }) 
   await expect(page.locator('.agent-empty')).toBeVisible();
   await expect(page.locator('.agent-welcome')).toHaveCount(0);
 });
+
+/* ---------- Conversation Persistence ---------- */
+
+test('conversation persists in localStorage after navigating away and back', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    // Simulate a saved conversation
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      { role: 'user', content: 'Hello agent' },
+      { role: 'assistant', content: 'Hello! How can I help?' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-message', { timeout: 5000 });
+
+  // Verify the messages are restored
+  const messages = page.locator('.agent-message');
+  await expect(messages).toHaveCount(2);
+  await expect(messages.first()).toContainText('Hello agent');
+  await expect(messages.nth(1)).toContainText('Hello! How can I help?');
+});
+
+test('clearing conversation removes it from localStorage', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      { role: 'user', content: 'test message' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-message', { timeout: 5000 });
+  await expect(page.locator('.agent-message')).toHaveCount(1);
+
+  // Clear conversation
+  await page.click('.agent-clear-btn');
+  await page.waitForSelector('.agent-empty', { timeout: 3000 });
+
+  // Verify localStorage is cleared
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_agent_conversation'))
+  );
+  expect(saved).toEqual([]);
+});

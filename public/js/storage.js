@@ -216,6 +216,14 @@ export function setAgentModel(model) {
   else remove('agent_model');
 }
 
+export function getAgentConversation() {
+  return get('agent_conversation') || [];
+}
+
+export function setAgentConversation(messages) {
+  set('agent_conversation', messages || []);
+}
+
 /* --- Import Folder --- */
 
 export function getImportFolderId() {

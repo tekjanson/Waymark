@@ -50,6 +50,11 @@ let _isStreaming = false;
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
+  // Restore conversation from localStorage
+  const saved = storage.getAgentConversation();
+  if (saved.length && _messages.length === 0) {
+    _messages = saved;
+  }
   _renderUI();
 }
 
@@ -382,8 +387,13 @@ function _showSettings() {
 
 /* ---------- Conversation Logic ---------- */
 
+function _persistConversation() {
+  storage.setAgentConversation(_messages);
+}
+
 function _clearConversation() {
   _messages = [];
+  _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
     const apiKey = storage.getAgentApiKey();
@@ -446,6 +456,7 @@ async function _sendMessage(text) {
     const msgEl = _buildMessage({ role: 'assistant', content: response });
     _chatBody.appendChild(msgEl);
     _chatBody.scrollTop = _chatBody.scrollHeight;
+    _persistConversation();
   } catch (err) {
     typing.remove();
     showToast('AI error: ' + err.message, 'error');
