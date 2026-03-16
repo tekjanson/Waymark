@@ -460,5 +460,21 @@ export function buildCardDetail(group, ctx) {
     }
   }
 
+  // "Open in Google Sheets" link — jumps to the exact row
+  const sheetMatch = window.location.hash.match(/#\/sheet\/(.+)/);
+  if (sheetMatch) {
+    const sheetId = sheetMatch[1];
+    const sheetRow = rowIdx + 1; // +1 for header row in sheet
+    const sheetsUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=0&range=A${sheetRow}`;
+    detail.append(el('div', { className: 'kanban-detail-section kanban-detail-sheets-link' }, [
+      el('a', {
+        href: sheetsUrl,
+        target: '_blank',
+        rel: 'noopener',
+        className: 'kanban-open-sheets-btn',
+      }, ['📄 Open row in Google Sheets']),
+    ]));
+  }
+
   return detail;
 }

@@ -1575,3 +1575,46 @@ test('kanban board is not pushed below fold by filter bar on mobile', async ({ p
   // Board should not be pushed below the fold (should be within viewport height)
   expect(boardTop).toBeLessThan(812);
 });
+
+/* ---------- Open in Google Sheets button ---------- */
+
+test('expanded kanban card shows open in Google Sheets button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const expandBtn = page.locator('.kanban-card-expand').first();
+  await expandBtn.click();
+  await page.waitForSelector('.kanban-card-detail', { timeout: 3000 });
+
+  const sheetsBtn = page.locator('.kanban-open-sheets-btn').first();
+  await expect(sheetsBtn).toBeVisible();
+  await expect(sheetsBtn).toContainText('Open row in Google Sheets');
+});
+
+test('open in Google Sheets button has correct URL with row number', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const expandBtn = page.locator('.kanban-card-expand').first();
+  await expandBtn.click();
+  await page.waitForSelector('.kanban-open-sheets-btn', { timeout: 3000 });
+
+  const href = await page.locator('.kanban-open-sheets-btn').first().getAttribute('href');
+  expect(href).toContain('docs.google.com/spreadsheets/d/sheet-028');
+  expect(href).toMatch(/range=A\d+/);
+});
+
+test('open in Google Sheets button opens in new tab', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const expandBtn = page.locator('.kanban-card-expand').first();
+  await expandBtn.click();
+  await page.waitForSelector('.kanban-open-sheets-btn', { timeout: 3000 });
+
+  const target = await page.locator('.kanban-open-sheets-btn').first().getAttribute('target');
+  expect(target).toBe('_blank');
+});
