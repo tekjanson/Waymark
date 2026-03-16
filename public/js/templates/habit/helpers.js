@@ -142,6 +142,8 @@ export function formatWeekISO(date) {
 
 /**
  * Group rows by their Week Of value. Attaches _sourceIndex to each row.
+ * Normalises each date to the Monday of its week so that view-level
+ * lookups (which always use getWeekStart → formatWeekISO) find matches.
  * @param {string[][]} rows — data rows (values.slice(1))
  * @param {number} weekOfCol — column index of Week Of
  * @returns {Array<{date: Date, iso: string, label: string, rows: string[][]}>}
@@ -152,8 +154,9 @@ export function getUniqueWeeks(rows, weekOfCol) {
     const raw = cell(row, weekOfCol);
     const d = parseWeekDate(raw);
     if (!d) return;
-    const iso = formatWeekISO(d);
-    if (!map.has(iso)) map.set(iso, { date: d, iso, label: formatWeekLabel(d), rows: [] });
+    const monday = getWeekStart(d);
+    const iso = formatWeekISO(monday);
+    if (!map.has(iso)) map.set(iso, { date: monday, iso, label: formatWeekLabel(monday), rows: [] });
     row._sourceIndex = idx;
     map.get(iso).rows.push(row);
   });

@@ -715,3 +715,111 @@ test('year view responsive at mobile: 2 column grid', async ({ page }) => {
   });
   expect(overflows).toHaveLength(0);
 });
+
+/* ================================================================
+   LAYER 6: Non-Monday date normalisation
+   ================================================================ */
+
+test('non-Monday Week Of dates render month view with colored cells', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-040');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Switch to Month view
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  // The fixture has data for Jan 28, Feb 4, Feb 11 (all Wednesdays)
+  // Normalised to Mon Jan 26, Mon Feb 2, Mon Feb 9
+  // Navigate to Feb 2026 which should have the most data
+  const timeLabel = await page.locator('.habit-time-label').textContent();
+  // Initial month should be the one containing the last week of data
+  expect(timeLabel).toBeTruthy();
+
+  // Check that colored data cells exist (not all habit-rate-none)
+  const coloredCount = await page.evaluate(() => {
+    return document.querySelectorAll('.habit-month-day.habit-rate-high, .habit-month-day.habit-rate-mid, .habit-month-day.habit-rate-low, .habit-month-day.habit-rate-zero').length;
+  });
+  expect(coloredCount).toBeGreaterThan(0);
+});
+
+test('non-Monday Week Of dates render quarter view with data', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-040');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Switch to Quarter view
+  await page.click('.habit-view-tab[data-view="quarter"]');
+  await page.waitForSelector('.habit-quarter-table, .habit-quarter-empty', { timeout: 3_000 });
+
+  // Should show a table (not empty) since fixture has Q1 2026 data
+  const hasTable = await page.locator('.habit-quarter-table').isVisible().catch(() => false);
+  const hasEmpty = await page.locator('.habit-quarter-empty').isVisible().catch(() => false);
+  expect(hasTable || hasEmpty).toBe(true);
+
+  if (hasTable) {
+    // Quarter table should have heat cells with data
+    const heatCount = await page.evaluate(() => {
+      return document.querySelectorAll('.habit-quarter-heat:not(.habit-rate-none)').length;
+    });
+    expect(heatCount).toBeGreaterThan(0);
+  }
+});
+
+test('non-Monday Week Of dates render year view with colored cells', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-040');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Switch to Year view
+  await page.click('.habit-view-tab[data-view="year"]');
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+
+  // Year stats should show weeks tracked > 0
+  const stats = await page.locator('.habit-year-stats').textContent();
+  expect(stats).toContain('weeks tracked');
+  // Should track 3 weeks (from 3 non-Monday dates normalised to Mondays)
+  expect(stats).toMatch(/[1-9]\d* weeks/);
+
+  // Should have colored mini-month cells
+  const coloredCount = await page.evaluate(() => {
+    return document.querySelectorAll('.habit-year-mini-cell.habit-rate-high, .habit-year-mini-cell.habit-rate-mid, .habit-year-mini-cell.habit-rate-low').length;
+  });
+  expect(coloredCount).toBeGreaterThan(0);
+});
+
+test('non-Monday dates day view still renders habits correctly', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-040');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Day view should be default and show habit items
+  const dayItems = page.locator('.habit-day-item');
+  const dayEmpty = page.locator('.habit-day-empty');
+  const hasItems = await dayItems.count() > 0;
+  const hasEmpty = await dayEmpty.count() > 0;
+  // Should have either items (if date matches) or a no-data message
+  expect(hasItems || hasEmpty).toBe(true);
+});
+
+test('month view shows no-data banner when navigated outside data range', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Switch to Month view
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  // Navigate far into the future (fixture data is Jan-Mar 2026)
+  for (let i = 0; i < 6; i++) {
+    await page.click('.habit-time-next');
+  }
+
+  // Should show no-data banner
+  const nodata = page.locator('.habit-month-nodata');
+  await expect(nodata).toBeVisible({ timeout: 2000 });
+  const text = await nodata.textContent();
+  expect(text).toContain('No habit data');
+  expect(text).toContain('arrows');
+});

@@ -270,6 +270,20 @@ export function renderMonthView(container, weeks, cols, year, month, onDayClick)
   }
   container.append(calGrid);
 
+  /* Check if this month has any data */
+  const monthWeekISOs = getWeekStartsInRange(new Date(year, month, 1), new Date(year, month + 1, 0));
+  const hasMonthData = monthWeekISOs.some(iso => weekMap.has(iso));
+  if (!hasMonthData && weeks.length > 0) {
+    const firstWeek = weeks[0];
+    const lastWeek = weeks[weeks.length - 1];
+    container.append(el('div', { className: 'habit-month-nodata' }, [
+      el('span', { className: 'habit-month-nodata-icon' }, ['\uD83D\uDCC5']),
+      el('span', {}, [
+        `No habit data for ${MONTH_ABBR[month]} ${year}. Your data spans ${firstWeek.label.replace('Week of ', '')} \u2013 ${lastWeek.label.replace('Week of ', '')}. Use the arrows to navigate.`,
+      ]),
+    ]));
+  }
+
   /* Legend */
   container.append(el('div', { className: 'habit-month-legend' }, [
     el('span', { className: 'habit-legend-item' }, [
@@ -523,6 +537,18 @@ export function renderYearView(container, weeks, cols, year, onDayClick) {
     totalRate += weekCompletionRate(w.rows, cols.days);
   }
   const avgRate = totalWeeks ? Math.round((totalRate / totalWeeks) * 100) : 0;
+  if (totalWeeks === 0 && weeks.length > 0) {
+    const firstYear = weeks[0].date.getFullYear();
+    const lastYear = weeks[weeks.length - 1].date.getFullYear();
+    const yearsWithData = [...new Set([firstYear, lastYear])];
+    container.append(el('div', { className: 'habit-year-nodata' }, [
+      el('span', { className: 'habit-year-nodata-icon' }, ['\uD83D\uDCC5']),
+      el('span', {}, [
+        `No habit data for ${year}. Your data spans ${yearsWithData.join('\u2013')}. Use the arrows to navigate.`,
+      ]),
+    ]));
+  }
+
   container.append(el('div', { className: 'habit-year-stats' }, [
     el('span', { className: 'habit-year-stat' }, [
       `${totalWeeks} weeks tracked`,

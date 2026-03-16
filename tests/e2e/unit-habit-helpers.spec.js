@@ -370,9 +370,10 @@ test('getUniqueWeeks groups rows by week and sorts ascending', async ({ page }) 
     return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length }));
   });
   expect(result).toHaveLength(2);
-  expect(result[0].iso).toBe('2026-03-10');
+  // Dates are normalised to Monday: Mar 10 (Tue) → Mar 9 (Mon), Mar 17 (Tue) → Mar 16 (Mon)
+  expect(result[0].iso).toBe('2026-03-09');
   expect(result[0].rowCount).toBe(2);
-  expect(result[1].iso).toBe('2026-03-17');
+  expect(result[1].iso).toBe('2026-03-16');
   expect(result[1].rowCount).toBe(2);
 });
 
@@ -388,6 +389,48 @@ test('getUniqueWeeks skips rows with invalid dates', async ({ page }) => {
     return getUniqueWeeks(rows, 0).length;
   });
   expect(result).toBe(1);
+});
+
+test('getUniqueWeeks normalises non-Monday dates to Monday', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { getUniqueWeeks } = await import('/js/templates/habit/helpers.js');
+    // All three rows are in the same week (Mon Jan 26)
+    // but use Wed Jan 28, Thu Jan 29, Sun Feb 1
+    const rows = [
+      ['1/28/2026', 'Exercise', '\u2713'],   // Wednesday → Mon Jan 26
+      ['1/29/2026', 'Reading', '\u2713'],     // Thursday  → Mon Jan 26
+      ['2/1/2026',  'Stretch', '\u2713'],     // Sunday    → Mon Jan 26
+    ];
+    const weeks = getUniqueWeeks(rows, 0);
+    return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length }));
+  });
+  // All three rows should merge into one week (Mon Jan 26)
+  expect(result).toHaveLength(1);
+  expect(result[0].iso).toBe('2026-01-26');
+  expect(result[0].rowCount).toBe(3);
+});
+
+test('getUniqueWeeks normalises mixed format non-Monday dates', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { getUniqueWeeks } = await import('/js/templates/habit/helpers.js');
+    const rows = [
+      ['1/28/2026', 'A', '\u2713'],           // US format Wed → Mon Jan 26
+      ['2026-02-04', 'A', '\u2713'],           // ISO format Wed → Mon Feb 2
+      ['February 11, 2026', 'A', '\u2713'],    // Natural Wed → Mon Feb 9
+    ];
+    const weeks = getUniqueWeeks(rows, 0);
+    return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length, label: w.label }));
+  });
+  expect(result).toHaveLength(3);
+  expect(result[0].iso).toBe('2026-01-26');
+  expect(result[1].iso).toBe('2026-02-02');
+  expect(result[2].iso).toBe('2026-02-09');
+  // Labels should reference the normalised Monday date
+  expect(result[0].label).toContain('Jan 26');
+  expect(result[1].label).toContain('Feb 2');
+  expect(result[2].label).toContain('Feb 9');
 });
 
 /* ================================================================

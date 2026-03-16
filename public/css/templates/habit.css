@@ -223,6 +223,18 @@
 .habit-rate-zero .habit-month-day-dot { background: #94a3b8; }
 .habit-rate-none { background: transparent; }
 
+/* No-data banners (month + year) */
+.habit-month-nodata,
+.habit-year-nodata {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; margin: 8px 0;
+  background: var(--color-surface); border: 1px dashed var(--color-border);
+  border-radius: var(--radius); font-size: 0.8rem;
+  color: var(--color-text-muted); line-height: 1.4;
+}
+.habit-month-nodata-icon,
+.habit-year-nodata-icon { font-size: 1.1rem; flex-shrink: 0; }
+
 /* Month legend */
 .habit-month-legend {
   display: flex; gap: 12px; justify-content: center;
