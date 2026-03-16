@@ -1,0 +1,537 @@
+/* Agent View */
+
+.agent-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-height) - 2px);
+  max-width: 900px;
+  margin: 0 auto;
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* ---------- Header ---------- */
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.agent-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-header-icon {
+  font-size: 1.5rem;
+}
+
+.agent-header-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.agent-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-settings-btn,
+.agent-clear-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.agent-settings-btn:hover,
+.agent-clear-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+
+/* ---------- Chat Body ---------- */
+
+.agent-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- Welcome ---------- */
+
+.agent-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+  gap: 12px;
+  flex: 1;
+}
+
+.agent-welcome-icon {
+  font-size: 3rem;
+}
+
+.agent-welcome h3 {
+  font-size: 1.3rem;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.agent-welcome p {
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.agent-welcome-hint {
+  font-size: 0.85rem;
+}
+
+.agent-welcome-hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.agent-welcome-hint a:hover {
+  text-decoration: underline;
+}
+
+.agent-welcome-btn {
+  padding: 10px 24px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background var(--transition);
+  margin-top: 8px;
+}
+
+.agent-welcome-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+/* ---------- Empty State ---------- */
+
+.agent-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  gap: 16px;
+  flex: 1;
+}
+
+.agent-empty-text {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 600px;
+}
+
+.agent-suggestion {
+  padding: 8px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.agent-suggestion:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ---------- Messages ---------- */
+
+.agent-message {
+  display: flex;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.agent-message-user {
+  flex-direction: row-reverse;
+}
+
+.agent-message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  background: var(--color-bg);
+}
+
+.agent-message-user .agent-message-avatar {
+  background: var(--color-primary-light);
+}
+
+.agent-message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-message-user .agent-message-content {
+  background: var(--color-primary-light);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border-top-right-radius: var(--radius-sm);
+}
+
+.agent-message-user .agent-message-content p {
+  margin: 0;
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+.agent-message-assistant .agent-message-content p {
+  margin: 0 0 8px;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.agent-message-assistant .agent-message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Inline Code ---------- */
+
+.agent-inline-code {
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.85em;
+  color: #e11d48;
+}
+
+[data-theme="dark"] .agent-inline-code {
+  color: #fb7185;
+}
+
+/* ---------- Code Blocks ---------- */
+
+.agent-code-block {
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 8px 0;
+  border: 1px solid var(--color-border);
+}
+
+.agent-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agent-code-lang {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: lowercase;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.agent-code-copy {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.agent-code-copy:hover {
+  background: var(--color-bg);
+}
+
+.agent-code-pre {
+  margin: 0;
+  padding: 14px;
+  overflow-x: auto;
+  background: var(--color-bg);
+}
+
+.agent-code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--color-text);
+  white-space: pre;
+}
+
+/* ---------- Typing Indicator ---------- */
+
+.agent-typing .agent-message-content {
+  padding: 12px 16px;
+}
+
+.agent-typing-dots {
+  display: flex;
+  gap: 4px;
+  font-size: 1.5rem;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+.agent-typing-dots span {
+  animation: agentBounce 1.4s infinite ease-in-out both;
+}
+
+.agent-typing-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.agent-typing-dots span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes agentBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ---------- Input Row ---------- */
+
+.agent-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.agent-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: none;
+  line-height: 1.5;
+  min-height: 40px;
+  max-height: 150px;
+  transition: border-color var(--transition);
+}
+
+.agent-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.agent-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-send-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background var(--transition);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-send-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.agent-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Settings Modal ---------- */
+
+.agent-settings-modal {
+  max-width: 440px;
+}
+
+.agent-settings-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+
+.agent-settings-model-label {
+  margin-top: 16px;
+}
+
+.agent-settings-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-family: 'SF Mono', monospace;
+  box-sizing: border-box;
+}
+
+.agent-settings-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.agent-settings-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.agent-settings-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin: 6px 0 0;
+}
+
+.agent-settings-hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.agent-settings-hint a:hover {
+  text-decoration: underline;
+}
+
+.agent-settings-save {
+  padding: 8px 20px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.agent-settings-save:hover {
+  background: var(--color-primary-dark);
+}
+
+.agent-settings-remove {
+  padding: 8px 16px;
+  background: none;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.agent-settings-remove:hover {
+  background: var(--color-error-light);
+}
+
+.agent-settings-close {
+  font-size: 1.2rem;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 768px) {
+  .agent-container {
+    height: calc(100vh - var(--topbar-height));
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .agent-header {
+    padding: 10px 12px;
+  }
+
+  .agent-header-title {
+    font-size: 1rem;
+  }
+
+  .agent-chat-body {
+    padding: 12px;
+  }
+
+  .agent-suggestions {
+    flex-direction: column;
+  }
+
+  .agent-suggestion {
+    text-align: left;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-header-actions {
+    gap: 4px;
+  }
+
+  .agent-settings-btn,
+  .agent-clear-btn {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+}

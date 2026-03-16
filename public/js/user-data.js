@@ -71,6 +71,9 @@ function defaultUserData() {
     /* ── Hidden Drive items ── */
     hiddenItems: [],            // { id, name }[] — items hidden from explorer (e.g. shared)
 
+    /* ── AI Agent ── */
+    agentConversations: [],     // { id, title, messages[], createdAt, updatedAt }[] (max 10)
+
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
   };
@@ -80,6 +83,8 @@ function defaultUserData() {
 const MAX_RECENT_SHEETS  = 20;
 const MAX_SEARCH_HISTORY = 30;
 const MAX_IMPORT_HISTORY = 50;
+const MAX_AGENT_CONVERSATIONS = 10;
+const MAX_AGENT_MESSAGES = 50;
 
 /* ---------- Internal state ---------- */
 
@@ -548,6 +553,40 @@ export function getGithubRef() {
 export async function setGithubRef(ref) {
   const prefs = { ...(_userData?.preferences || {}), githubRef: ref || 'main' };
   await save({ preferences: prefs });
+}
+
+/* ---------- Agent Conversations ---------- */
+
+/**
+ * Get all stored agent conversations.
+ * @returns {Array}
+ */
+export function getAgentConversations() {
+  return _userData?.agentConversations || [];
+}
+
+/**
+ * Save or update an agent conversation.
+ * @param {{ id: string, title: string, messages: Array, createdAt: string, updatedAt: string }} conversation
+ */
+export async function saveAgentConversation(conversation) {
+  const convos = getAgentConversations().filter(c => c.id !== conversation.id);
+  conversation.updatedAt = new Date().toISOString();
+  // Truncate messages to limit
+  if (conversation.messages.length > MAX_AGENT_MESSAGES) {
+    conversation.messages = conversation.messages.slice(-MAX_AGENT_MESSAGES);
+  }
+  convos.unshift(conversation);
+  // Limit total conversations
+  await save({ agentConversations: convos.slice(0, MAX_AGENT_CONVERSATIONS) });
+}
+
+/**
+ * Delete an agent conversation by ID.
+ * @param {string} conversationId
+ */
+export async function deleteAgentConversation(conversationId) {
+  await save({ agentConversations: getAgentConversations().filter(c => c.id !== conversationId) });
 }
 
 /* ---------- localStorage migration / fallback ---------- */
