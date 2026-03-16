@@ -238,6 +238,47 @@ test('month view shows legend for completion rates', async ({ page }) => {
   expect(await swatches.count()).toBeGreaterThanOrEqual(4);
 });
 
+test('month view calendar stays compact on desktop (no oversized cells)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  const grid = page.locator('.habit-month-grid');
+  const gridBox = await grid.boundingBox();
+  expect(gridBox).toBeTruthy();
+  expect(gridBox.width).toBeLessThanOrEqual(560);
+
+  const firstDay = page.locator('.habit-month-day').first();
+  await expect(firstDay).toBeVisible();
+  const dayBox = await firstDay.boundingBox();
+  expect(dayBox).toBeTruthy();
+  expect(dayBox.height).toBeLessThanOrEqual(90);
+});
+
+test('month view header row stays shorter than day cells', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  const headerCell = page.locator('.habit-month-day-name').first();
+  await expect(headerCell).toBeVisible();
+
+  const headerBox = await headerCell.boundingBox();
+  const dayBox = await page.locator('.habit-month-day').first().boundingBox();
+  expect(headerBox).toBeTruthy();
+  expect(dayBox).toBeTruthy();
+  expect(headerBox.height).toBeLessThan(dayBox.height);
+  expect(headerBox.height).toBeLessThanOrEqual(50);
+});
+
 test('month view navigation changes displayed month', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
