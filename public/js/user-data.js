@@ -73,6 +73,7 @@ function defaultUserData() {
 
     /* ── AI Agent ── */
     agentConversations: [],     // { id, title, messages[], createdAt, updatedAt }[] (max 10)
+    agentSettings: null,        // { apiKey, model } — null = opt-out (use localStorage only)
 
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
@@ -587,6 +588,24 @@ export async function saveAgentConversation(conversation) {
  */
 export async function deleteAgentConversation(conversationId) {
   await save({ agentConversations: getAgentConversations().filter(c => c.id !== conversationId) });
+}
+
+/* ---------- Agent Settings (Drive-backed) ---------- */
+
+/**
+ * Get agent settings from Drive. Returns null if not synced to Drive.
+ * @returns {{ apiKey: string, model: string } | null}
+ */
+export function getAgentSettings() {
+  return _userData?.agentSettings || null;
+}
+
+/**
+ * Save agent settings to Drive. Pass null to opt out of Drive sync.
+ * @param {{ apiKey: string, model: string } | null} settings
+ */
+export async function saveAgentSettings(settings) {
+  await save({ agentSettings: settings });
 }
 
 /* ---------- localStorage migration / fallback ---------- */

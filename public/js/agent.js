@@ -6,33 +6,65 @@
 
 import { el, showToast } from './ui.js';
 import * as storage from './storage.js';
+import * as userData from './user-data.js';
+import { api } from './api-client.js';
 
 /* ---------- Constants ---------- */
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
 
-const SYSTEM_PROMPT = `You are the Waymark AI coding assistant. You help developers build and modify the Waymark application — a browser-based Google Sheets viewer/editor built with vanilla JavaScript (no frameworks, no build tools).
+const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users with their spreadsheet data and can create new Google Sheets in Waymark template formats.
 
-Key architecture rules you MUST follow:
+When a user asks you to create a sheet, tracker, list, or any structured data:
+1. Identify the best Waymark template format (kanban, budget, checklist, tracker, contacts, etc.)
+2. Use the create_sheet tool to build the sheet with appropriate headers and data
+3. The tool will create a real Google Sheet in their Waymark folder
+
+Available template formats and their typical headers:
+- Checklist: Task, Status, Priority, Due, Notes
+- Budget: Description, Category, Amount, Date, Notes
+- Kanban: Task, Description, Stage, Project, Assignee, Priority, Due, Label, Note
+- Tracker: Item, Status, Category, Progress, Updated
+- Contacts: Name, Email, Phone, Company, Role, Notes
+- Schedule: Event, Date, Time, Location, Notes
+
+When generating code, follow these Waymark architecture rules:
 - Vanilla JS only: no React, Vue, Tailwind, TypeScript, or build tools
 - All DOM built via the el() factory function — never innerHTML with dynamic content
-- ES Modules loaded directly in the browser via <script type="module">
-- All Google API calls go through api-client.js — never import drive.js or sheets.js directly
-- Template files only import from shared.js
 - CSS uses custom properties from :root (var(--color-*), var(--radius), etc.)
-- CSS class naming: .{key}-{element} — flat, no BEM
-- No backend business logic — server only serves static files and brokers OAuth
-- Tests use Playwright with flat test() calls, no describe() blocks, CSS selectors only
-
-When generating code:
-- Use the el() factory: el('div', { className: 'my-class', on: { click: handler } }, [children])
 - Use async/await, never .then() chains
-- Use module-scoped let variables, no classes or global state
-- Add JSDoc @param/@returns on exported functions
-- Follow the file comment header pattern with /* === filename.js — description === */
 
-You provide helpful, accurate code following these patterns. Always show complete, working code blocks.`;
+You provide helpful, accurate responses. When creating sheets, always confirm what was created.`;
+
+/** Maximum number of messages to keep in context for API calls */
+const MAX_CONTEXT_MESSAGES = 20;
+
+/** Tool definitions for Gemini function calling */
+const TOOL_DECLARATIONS = [{
+  functionDeclarations: [{
+    name: 'create_sheet',
+    description: 'Create a new Google Sheet with headers and data rows. Use this when the user asks to create a spreadsheet, tracker, list, board, or any structured data.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: {
+          type: 'STRING',
+          description: 'The title for the new spreadsheet (e.g. "My Budget Tracker", "Project Tasks")',
+        },
+        rows: {
+          type: 'ARRAY',
+          description: 'The spreadsheet data as a 2D array. First row is headers, subsequent rows are data. All values must be strings.',
+          items: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
+          },
+        },
+      },
+      required: ['title', 'rows'],
+    },
+  }],
+}];
 
 /* ---------- State ---------- */
 
@@ -50,6 +82,12 @@ let _isStreaming = false;
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
+  // Sync API key from Drive if available and not already in localStorage
+  const driveSettings = userData.getAgentSettings();
+  if (driveSettings?.apiKey && !storage.getAgentApiKey()) {
+    storage.setAgentApiKey(driveSettings.apiKey);
+    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+  }
   // Restore conversation from localStorage
   const saved = storage.getAgentConversation();
   if (saved.length && _messages.length === 0) {
@@ -298,6 +336,8 @@ function _showSettings() {
 
   const currentKey = storage.getAgentApiKey() || '';
   const currentModel = storage.getAgentModel() || DEFAULT_MODEL;
+  const driveSettings = userData.getAgentSettings();
+  const cloudSyncEnabled = driveSettings !== null;
 
   const keyInput = el('input', {
     type: 'password',
@@ -314,15 +354,28 @@ function _showSettings() {
     el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
   ]);
 
+  const toggleAttrs = {
+    type: 'checkbox',
+    className: 'agent-settings-toggle',
+  };
+  if (cloudSyncEnabled) toggleAttrs.checked = 'checked';
+  const cloudToggle = el('input', toggleAttrs);
+
   const saveBtn = el('button', {
     className: 'agent-settings-save',
     on: {
-      click: () => {
+      click: async () => {
         const key = keyInput.value.trim();
         if (key) {
           storage.setAgentApiKey(key);
           storage.setAgentModel(modelSelect.value);
-          showToast('API key saved', 'success');
+          // Sync to Drive if cloud toggle is checked
+          if (cloudToggle.checked) {
+            await userData.saveAgentSettings({ apiKey: key, model: modelSelect.value });
+          } else {
+            await userData.saveAgentSettings(null);
+          }
+          showToast('Settings saved', 'success');
           overlay.remove();
           show(_container);
         } else {
@@ -335,8 +388,9 @@ function _showSettings() {
   const removeBtn = el('button', {
     className: 'agent-settings-remove',
     on: {
-      click: () => {
+      click: async () => {
         storage.setAgentApiKey('');
+        await userData.saveAgentSettings(null);
         showToast('API key removed', 'info');
         overlay.remove();
         show(_container);
@@ -367,6 +421,13 @@ function _showSettings() {
       ]),
       el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
       modelSelect,
+      el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
+        cloudToggle,
+        ' Sync API key across devices',
+      ]),
+      el('p', { className: 'agent-settings-hint' }, [
+        'When enabled, your API key and model are stored in your Google Drive so they work across all your devices.',
+      ]),
     ]),
     el('div', { className: 'modal-footer' }, [
       currentKey ? removeBtn : el('span'),
@@ -482,25 +543,12 @@ async function _callGemini(apiKey, userMessage) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
 
-  // Build conversation contents
-  const contents = [];
-
-  // Add history
-  for (const msg of _messages.slice(0, -1)) {
-    contents.push({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
-    });
-  }
-
-  // Add current message
-  contents.push({
-    role: 'user',
-    parts: [{ text: userMessage }],
-  });
+  // Build conversation contents with context trimming
+  const contents = _buildContents(userMessage);
 
   const body = {
     contents,
+    tools: TOOL_DECLARATIONS,
     systemInstruction: {
       parts: [{ text: SYSTEM_PROMPT }],
     },
@@ -511,6 +559,185 @@ async function _callGemini(apiKey, userMessage) {
     },
   };
 
+  const data = await _fetchGemini(url, body);
+  const candidate = data.candidates?.[0];
+
+  if (!candidate?.content?.parts?.length) {
+    throw new Error('No response from AI');
+  }
+
+  // Check for function call in response
+  const functionCall = candidate.content.parts.find(p => p.functionCall);
+  if (functionCall) {
+    return _handleToolCall(apiKey, url, contents, candidate.content, functionCall.functionCall);
+  }
+
+  return candidate.content.parts.map(p => p.text || '').join('');
+}
+
+/**
+ * Build contents array with context management — trim old messages.
+ * @param {string} userMessage
+ * @returns {Array}
+ */
+function _buildContents(userMessage) {
+  const contents = [];
+  // Take recent messages, skipping the last (it's the just-added user msg)
+  const history = _messages.slice(0, -1);
+  const trimmed = history.length > MAX_CONTEXT_MESSAGES
+    ? history.slice(-MAX_CONTEXT_MESSAGES)
+    : history;
+
+  for (const msg of trimmed) {
+    contents.push({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }],
+    });
+  }
+
+  contents.push({
+    role: 'user',
+    parts: [{ text: userMessage }],
+  });
+
+  return contents;
+}
+
+/**
+ * Handle a tool/function call from the model.
+ * Executes the tool, sends results back, returns final text.
+ * @param {string} apiKey
+ * @param {string} url
+ * @param {Array} contents
+ * @param {Object} modelContent — the model's response content with the function call
+ * @param {{ name: string, args: Object }} functionCall
+ * @returns {Promise<string>}
+ */
+async function _handleToolCall(apiKey, url, contents, modelContent, functionCall) {
+  const { name, args } = functionCall;
+
+  // Show tool execution indicator
+  _showToolIndicator(name, args);
+
+  // Execute the tool
+  let result;
+  try {
+    result = await _executeTool(name, args);
+  } catch (err) {
+    result = { error: err.message };
+  }
+
+  // Remove tool indicator
+  _removeToolIndicator();
+
+  // Send tool result back to model for final response
+  const followUp = {
+    contents: [
+      ...contents,
+      modelContent,
+      {
+        role: 'function',
+        parts: [{
+          functionResponse: {
+            name,
+            response: { content: result },
+          },
+        }],
+      },
+    ],
+    tools: TOOL_DECLARATIONS,
+    systemInstruction: {
+      parts: [{ text: SYSTEM_PROMPT }],
+    },
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.95,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  const data = await _fetchGemini(url, followUp);
+  const candidate = data.candidates?.[0];
+
+  if (!candidate?.content?.parts?.length) {
+    // Tool succeeded but model gave no text — construct a response
+    if (result && !result.error) {
+      return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+    }
+    throw new Error('No response from AI after tool execution');
+  }
+
+  return candidate.content.parts.map(p => p.text || '').join('');
+}
+
+/**
+ * Execute a registered tool function.
+ * @param {string} name
+ * @param {Object} args
+ * @returns {Promise<Object>}
+ */
+async function _executeTool(name, args) {
+  if (name === 'create_sheet') {
+    return _toolCreateSheet(args);
+  }
+  throw new Error(`Unknown tool: ${name}`);
+}
+
+/**
+ * Tool: create_sheet — creates a new Google Sheet with headers and data.
+ * @param {{ title: string, rows: string[][] }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolCreateSheet({ title, rows }) {
+  if (!title || !rows || !rows.length) {
+    throw new Error('Missing title or rows');
+  }
+
+  // Ensure all values are strings
+  const cleanRows = rows.map(row => row.map(cell => String(cell ?? '')));
+
+  const result = await api.sheets.createSpreadsheet(title, cleanRows);
+
+  return {
+    spreadsheetId: result.spreadsheetId,
+    title,
+    rowCount: cleanRows.length - 1, // exclude header
+    headerCount: cleanRows[0]?.length || 0,
+  };
+}
+
+/**
+ * Show an inline indicator that a tool is executing.
+ * @param {string} toolName
+ * @param {Object} args
+ */
+function _showToolIndicator(toolName, args) {
+  if (!_chatBody) return;
+  const label = toolName === 'create_sheet'
+    ? `Creating sheet "${args.title || 'Untitled'}"...`
+    : `Running ${toolName}...`;
+  const indicator = el('div', { className: 'agent-tool-indicator' }, [
+    el('span', { className: 'agent-tool-icon' }, ['🔧']),
+    el('span', {}, [label]),
+  ]);
+  _chatBody.appendChild(indicator);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
+/** Remove tool execution indicator from chat. */
+function _removeToolIndicator() {
+  if (!_chatBody) return;
+  const ind = _chatBody.querySelector('.agent-tool-indicator');
+  if (ind) ind.remove();
+}
+
+/**
+ * Fetch from Gemini API with rate-limit handling.
+ * @param {string} url
+ * @param {Object} body
+ * @returns {Promise<Object>}
+ */
+async function _fetchGemini(url, body) {
   const fetchOpts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -536,12 +763,7 @@ async function _callGemini(apiKey, userMessage) {
     if (delay <= 15) {
       await new Promise(r => setTimeout(r, delay * 1000));
       const retry = await fetch(url, fetchOpts);
-      if (retry.ok) {
-        const retryData = await retry.json();
-        const retryCandidate = retryData.candidates?.[0];
-        if (!retryCandidate?.content?.parts?.length) throw new Error('No response from AI');
-        return retryCandidate.content.parts.map(p => p.text).join('');
-      }
+      if (retry.ok) return retry.json();
     }
 
     throw new Error(`Rate limited — please wait ${Math.ceil(delay)} seconds and try again.`);
@@ -553,12 +775,5 @@ async function _callGemini(apiKey, userMessage) {
     throw new Error(errMsg);
   }
 
-  const data = await res.json();
-  const candidate = data.candidates?.[0];
-
-  if (!candidate?.content?.parts?.length) {
-    throw new Error('No response from AI');
-  }
-
-  return candidate.content.parts.map(p => p.text).join('');
+  return res.json();
 }
