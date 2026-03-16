@@ -1575,3 +1575,56 @@ test('kanban board is not pushed below fold by filter bar on mobile', async ({ p
   // Board should not be pushed below the fold (should be within viewport height)
   expect(boardTop).toBeLessThan(812);
 });
+
+/* ---------- AI Agent Status Indicator ---------- */
+
+test('kanban shows AI status indicator when sheet has AI-authored notes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-043');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+
+  const aiStatus = page.locator('.kanban-ai-status');
+  await expect(aiStatus).toBeVisible();
+  await expect(aiStatus).toContainText('AI');
+});
+
+test('kanban AI status shows offline state for old timestamps', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-043');
+  await page.waitForSelector('.kanban-ai-status', { timeout: 5000 });
+
+  // Fixture timestamps are from 2026-03-15, which is >15min in the past
+  const aiStatus = page.locator('.kanban-ai-status');
+  await expect(aiStatus).toHaveClass(/kanban-ai-offline/);
+  await expect(aiStatus).toContainText('AI Offline');
+});
+
+test('kanban AI status shows dot indicator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-043');
+  await page.waitForSelector('.kanban-ai-status', { timeout: 5000 });
+
+  const dot = page.locator('.kanban-ai-dot');
+  await expect(dot).toBeVisible();
+});
+
+test('kanban AI status shows relative timestamp', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-043');
+  await page.waitForSelector('.kanban-ai-time', { timeout: 5000 });
+
+  const timeText = page.locator('.kanban-ai-time');
+  await expect(timeText).toBeVisible();
+  // The timestamp "2026-03-15 09:00" should render as a date since it's far in the past
+  const text = await timeText.textContent();
+  expect(text.length).toBeGreaterThan(0);
+});
+
+test('kanban does not show AI status for boards without AI activity', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+
+  const aiStatus = page.locator('.kanban-ai-status');
+  await expect(aiStatus).toHaveCount(0);
+});
