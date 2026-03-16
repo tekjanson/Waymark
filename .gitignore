@@ -4,7 +4,6 @@ node_modules/
 client_secret*
 dist/
 *.log
-.waymark-builder-watch.pid
 .DS_Store
 Thumbs.db
 

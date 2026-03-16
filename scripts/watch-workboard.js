@@ -159,8 +159,9 @@ async function poll() {
     const rows = await fetchWorkboard();
     const allTasks = parseTasks(rows);
 
-    const todoItems = allTasks.filter(t => t.stage === 'To Do');
-    const backlogItems = allTasks.filter(t => t.stage === 'Backlog');
+    const todoItems = allTasks.filter(t =>
+      t.stage === 'To Do' || t.stage === 'Backlog'
+    );
     const inProgress = allTasks.filter(t => t.stage === 'In Progress');
     const qa = allTasks.filter(t => t.stage === 'QA');
     const done = allTasks.filter(t => t.stage === 'Done');
@@ -169,30 +170,28 @@ async function poll() {
       if (AGENT_MODE) {
         agentMarker('STATUS', {
           todo: todoItems.length,
-          backlog: backlogItems.length,
           inProgress: inProgress.length,
           qa: qa.length,
           done: done.length,
-          items: sortByPriority([...todoItems, ...backlogItems]).map(t => ({
+          items: sortByPriority(todoItems).map(t => ({
             row: t.row, task: t.task, priority: t.priority,
-            stage: t.stage,
             project: t.project, label: t.label, desc: t.desc.slice(0, 200),
           })),
         });
       } else {
         console.log(`\n${BOLD}═══════════════════════════════════════════════════════${RESET}`);
         console.log(`${BOLD}  📋 Waymark Workboard Watcher${RESET}`);
-        console.log(`${DIM}  Polling every ${intervalSec}s | ${todoItems.length} To Do | ${backlogItems.length} Backlog | ${inProgress.length} In Progress | ${qa.length} QA | ${done.length} Done${RESET}`);
+        console.log(`${DIM}  Polling every ${intervalSec}s | ${todoItems.length} To Do | ${inProgress.length} In Progress | ${qa.length} QA | ${done.length} Done${RESET}`);
         console.log(`${BOLD}═══════════════════════════════════════════════════════${RESET}\n`);
 
-        if (todoItems.length === 0 && backlogItems.length === 0) {
-          console.log(`${DIM}[${fmtTime()}]${RESET} ${GREEN}✓ No To Do/Backlog items — board is clear.${RESET}\n`);
+        if (todoItems.length === 0) {
+          console.log(`${DIM}[${fmtTime()}]${RESET} ${GREEN}✓ No To Do items — board is clear.${RESET}\n`);
         } else {
-          const sorted = sortByPriority([...todoItems, ...backlogItems]);
-          console.log(`${BOLD}  Pending items (To Do + Backlog):${RESET}`);
+          const sorted = sortByPriority(todoItems);
+          console.log(`${BOLD}  Pending items:${RESET}`);
           for (const t of sorted) {
             const pc = priorityColor(t.priority);
-            console.log(`    ${pc}${t.priority}${RESET} ${BOLD}${t.task}${RESET} ${DIM}(${t.stage}, row ${t.row}, ${t.label || 'no label'})${RESET}`);
+            console.log(`    ${pc}${t.priority}${RESET} ${BOLD}${t.task}${RESET} ${DIM}(row ${t.row}, ${t.label || 'no label'})${RESET}`);
             if (t.desc) console.log(`         ${DIM}${t.desc.slice(0, 100)}${t.desc.length > 100 ? '…' : ''}${RESET}`);
           }
           console.log();
@@ -223,7 +222,6 @@ async function poll() {
         }
         agentMarker('IDLE', {
           todo: todoItems.length,
-          backlog: backlogItems.length,
           consecutiveIdles,
           nextInterval: BACKOFF_MODE ? currentInterval : intervalSec,
         });
