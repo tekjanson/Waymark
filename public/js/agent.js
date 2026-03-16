@@ -1,38 +1,122 @@
 /* ============================================================
-   agent.js — Browser-based AI coding agent
-   Provides a chat interface for AI-assisted code generation
-   using the Gemini API, running entirely in the frontend.
+   agent.js — Waymark AI user assistant
+   Chat interface that helps users organise their data with
+   Waymark-powered Google Sheets via the Gemini API.
    ============================================================ */
 
 import { el, showToast } from './ui.js';
 import * as storage from './storage.js';
+import * as userData from './user-data.js';
+import { api } from './api-client.js';
 
 /* ---------- Constants ---------- */
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
 
-const SYSTEM_PROMPT = `You are the Waymark AI coding assistant. You help developers build and modify the Waymark application — a browser-based Google Sheets viewer/editor built with vanilla JavaScript (no frameworks, no build tools).
+/**
+ * Template schemas — maps template key to its fixed headers.
+ * The tool uses these to construct sheets deterministically;
+ * the AI only picks a key and provides data values.
+ */
+const TEMPLATE_SCHEMAS = {
+  checklist:  { name: 'Checklist ✓',        headers: ['Item', 'Status', 'Priority', 'Due', 'Notes'] },
+  budget:     { name: 'Budget 💰',          headers: ['Description', 'Amount', 'Category', 'Date', 'Notes'] },
+  kanban:     { name: 'Kanban Board 📋',    headers: ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label'] },
+  tracker:    { name: 'Progress Tracker 📊',headers: ['Goal', 'Progress', 'Target', 'Started', 'Notes'] },
+  schedule:   { name: 'Schedule 📅',        headers: ['Day', 'Time', 'Activity', 'Location'] },
+  contacts:   { name: 'Contacts 📇',       headers: ['Name', 'Phone', 'Email', 'Role'] },
+  inventory:  { name: 'Inventory 📦',      headers: ['Item', 'Quantity', 'Category', 'Location'] },
+  log:        { name: 'Activity Log 📝',    headers: ['Timestamp', 'Activity', 'Duration', 'Type'] },
+  habit:      { name: 'Habit Tracker 🔄',   headers: ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'] },
+  timesheet:  { name: 'Timesheet ⏱️',      headers: ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'] },
+  crm:        { name: 'CRM 🤝',            headers: ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'] },
+  meal:       { name: 'Meal Planner 🍽️',   headers: ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'] },
+  travel:     { name: 'Travel Itinerary ✈️',headers: ['Activity', 'Date', 'Location', 'Booking', 'Cost'] },
+  roster:     { name: 'Roster 👥',         headers: ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+  testcases:  { name: 'Test Cases 🧪',     headers: ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'] },
+  recipe:     { name: 'Recipe 📖',          headers: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'] },
+  poll:       { name: 'Poll 📊',           headers: ['Option', 'Votes', 'Percent', 'Notes'] },
+  changelog:  { name: 'Changelog 📋',      headers: ['Version', 'Date', 'Type', 'What Changed'] },
+  social:     { name: 'Social Feed 💬',     headers: ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'] },
+  flow:       { name: 'Flow Diagram 🔀',    headers: ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'] },
+  automation: { name: 'Automation 🤖',     headers: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'] },
+  grading:    { name: 'Gradebook 🎓',      headers: ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'] },
+};
 
-Key architecture rules you MUST follow:
-- Vanilla JS only: no React, Vue, Tailwind, TypeScript, or build tools
-- All DOM built via the el() factory function — never innerHTML with dynamic content
-- ES Modules loaded directly in the browser via <script type="module">
-- All Google API calls go through api-client.js — never import drive.js or sheets.js directly
-- Template files only import from shared.js
-- CSS uses custom properties from :root (var(--color-*), var(--radius), etc.)
-- CSS class naming: .{key}-{element} — flat, no BEM
-- No backend business logic — server only serves static files and brokers OAuth
-- Tests use Playwright with flat test() calls, no describe() blocks, CSS selectors only
+// Build the template list for the system prompt
+const _templateList = Object.entries(TEMPLATE_SCHEMAS)
+  .map(([key, s]) => `- "${key}" → ${s.name} (columns: ${s.headers.join(', ')})`)
+  .join('\n');
 
-When generating code:
-- Use the el() factory: el('div', { className: 'my-class', on: { click: handler } }, [children])
-- Use async/await, never .then() chains
-- Use module-scoped let variables, no classes or global state
-- Add JSDoc @param/@returns on exported functions
-- Follow the file comment header pattern with /* === filename.js — description === */
+const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
-You provide helpful, accurate code following these patterns. Always show complete, working code blocks.`;
+Your primary capability is creating sheets with the create_sheet tool. When a user wants to create, track, organise, or list anything, use the tool immediately.
+
+## How the tool works
+You call create_sheet with:
+- "template": one of the template keys below (this determines the columns automatically)
+- "title": a name for the sheet
+- "data": a 2D array of DATA rows ONLY (no headers — headers are added automatically based on the template)
+
+Each row in "data" must have the same number of values as the template has columns. All values must be strings.
+
+## Available templates
+${_templateList}
+
+## Template selection guide
+- Simple to-do lists / shopping lists → "checklist"
+- Project management / task boards → "kanban" (Stage values: To Do, In Progress, Done, Backlog)
+- Money tracking / expenses → "budget"
+- Contacts / people → "contacts"
+- Weekly schedules → "schedule"
+- Meal planning → "meal"
+- Recipes → "recipe" (use row-per-item: first row has recipe name, continuation rows leave Recipe column blank)
+- Tracking habits → "habit"
+- Travel planning → "travel"
+- Time tracking / billing → "timesheet"
+- Sales / leads → "crm"
+- Inventory / stock → "inventory"
+
+## Rules
+- Always populate with realistic example data (at least 3–5 rows).
+- All values must be strings — even numbers ("500"), dates ("2026-03-15").
+- For row-per-item templates (recipe), leave the primary column blank on continuation rows.
+- Be conversational — explain what you created and how Waymark will render it.
+- If unsure which template, ask the user or default to "checklist".`;
+
+/** Maximum number of messages to keep in context for API calls */
+const MAX_CONTEXT_MESSAGES = 20;
+
+/** Tool definitions for Gemini function calling */
+const TOOL_DECLARATIONS = [{
+  functionDeclarations: [{
+    name: 'create_sheet',
+    description: 'Create a new Waymark Google Sheet. Pick a template type and provide data rows — headers are added automatically.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        template: {
+          type: 'STRING',
+          description: 'The template key. Must be one of: ' + Object.keys(TEMPLATE_SCHEMAS).join(', '),
+        },
+        title: {
+          type: 'STRING',
+          description: 'Title for the new spreadsheet',
+        },
+        data: {
+          type: 'ARRAY',
+          description: 'Data rows only (no headers). Each row is an array of strings matching the template column count.',
+          items: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
+          },
+        },
+      },
+      required: ['template', 'title', 'data'],
+    },
+  }],
+}];
 
 /* ---------- State ---------- */
 
@@ -50,6 +134,12 @@ let _isStreaming = false;
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
+  // Sync API key from Drive if available and not already in localStorage
+  const driveSettings = userData.getAgentSettings();
+  if (driveSettings?.apiKey && !storage.getAgentApiKey()) {
+    storage.setAgentApiKey(driveSettings.apiKey);
+    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+  }
   // Restore conversation from localStorage
   const saved = storage.getAgentConversation();
   if (saved.length && _messages.length === 0) {
@@ -74,7 +164,7 @@ function _renderUI() {
   const header = el('div', { className: 'agent-header' }, [
     el('div', { className: 'agent-header-left' }, [
       el('span', { className: 'agent-header-icon' }, ['🤖']),
-      el('h2', { className: 'agent-header-title' }, ['Waymark AI Agent']),
+      el('h2', { className: 'agent-header-title' }, ['Waymark AI']),
     ]),
     el('div', { className: 'agent-header-actions' }, [
       el('button', {
@@ -114,8 +204,8 @@ function _renderUI() {
 function _buildWelcome() {
   return el('div', { className: 'agent-welcome' }, [
     el('div', { className: 'agent-welcome-icon' }, ['🤖']),
-    el('h3', {}, ['Welcome to Waymark AI Agent']),
-    el('p', {}, ['To get started, configure your Gemini API key in Settings.']),
+    el('h3', {}, ['Welcome to Waymark AI']),
+    el('p', {}, ['I can help you create and organise Google Sheets — budgets, project boards, meal plans, and more. Set up your API key to get started.']),
     el('p', { className: 'agent-welcome-hint' }, [
       'Get a free API key at ',
       el('a', {
@@ -133,12 +223,12 @@ function _buildWelcome() {
 
 function _buildEmptyState() {
   return el('div', { className: 'agent-empty' }, [
-    el('p', { className: 'agent-empty-text' }, ['Ask me anything about the Waymark codebase, or describe a feature to implement.']),
+    el('p', { className: 'agent-empty-text' }, ['I can help you create and organise Google Sheets that Waymark renders as rich views. What would you like to build?']),
     el('div', { className: 'agent-suggestions' }, [
-      _buildSuggestion('How do I add a new template?'),
-      _buildSuggestion('Generate a render() function for a contacts template'),
-      _buildSuggestion('Write a Playwright test for the budget view'),
-      _buildSuggestion('Explain the el() factory pattern'),
+      _buildSuggestion('Create a project board to track my tasks'),
+      _buildSuggestion('Build a weekly meal planner'),
+      _buildSuggestion('Set up a budget tracker for this month'),
+      _buildSuggestion('Make a recipe sheet for my favourite dishes'),
     ]),
   ]);
 }
@@ -153,7 +243,7 @@ function _buildSuggestion(text) {
 function _buildInputRow(apiKey) {
   const inputAttrs = {
     className: 'agent-input',
-    placeholder: apiKey ? 'Ask about the codebase or describe what to build...' : 'Configure API key in Settings first...',
+    placeholder: apiKey ? 'Describe what you\'d like to create or organise...' : 'Configure API key in Settings first...',
     rows: 1,
     on: {
       keydown: (e) => {
@@ -298,6 +388,8 @@ function _showSettings() {
 
   const currentKey = storage.getAgentApiKey() || '';
   const currentModel = storage.getAgentModel() || DEFAULT_MODEL;
+  const driveSettings = userData.getAgentSettings();
+  const cloudSyncEnabled = driveSettings !== null;
 
   const keyInput = el('input', {
     type: 'password',
@@ -314,15 +406,28 @@ function _showSettings() {
     el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
   ]);
 
+  const toggleAttrs = {
+    type: 'checkbox',
+    className: 'agent-settings-toggle',
+  };
+  if (cloudSyncEnabled) toggleAttrs.checked = 'checked';
+  const cloudToggle = el('input', toggleAttrs);
+
   const saveBtn = el('button', {
     className: 'agent-settings-save',
     on: {
-      click: () => {
+      click: async () => {
         const key = keyInput.value.trim();
         if (key) {
           storage.setAgentApiKey(key);
           storage.setAgentModel(modelSelect.value);
-          showToast('API key saved', 'success');
+          // Sync to Drive if cloud toggle is checked
+          if (cloudToggle.checked) {
+            await userData.saveAgentSettings({ apiKey: key, model: modelSelect.value });
+          } else {
+            await userData.saveAgentSettings(null);
+          }
+          showToast('Settings saved', 'success');
           overlay.remove();
           show(_container);
         } else {
@@ -335,8 +440,9 @@ function _showSettings() {
   const removeBtn = el('button', {
     className: 'agent-settings-remove',
     on: {
-      click: () => {
+      click: async () => {
         storage.setAgentApiKey('');
+        await userData.saveAgentSettings(null);
         showToast('API key removed', 'info');
         overlay.remove();
         show(_container);
@@ -367,6 +473,13 @@ function _showSettings() {
       ]),
       el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
       modelSelect,
+      el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
+        cloudToggle,
+        ' Sync API key across devices',
+      ]),
+      el('p', { className: 'agent-settings-hint' }, [
+        'When enabled, your API key and model are stored in your Google Drive so they work across all your devices.',
+      ]),
     ]),
     el('div', { className: 'modal-footer' }, [
       currentKey ? removeBtn : el('span'),
@@ -482,35 +595,220 @@ async function _callGemini(apiKey, userMessage) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
 
-  // Build conversation contents
-  const contents = [];
+  // Build conversation contents with context trimming
+  const contents = _buildContents(userMessage);
 
-  // Add history
-  for (const msg of _messages.slice(0, -1)) {
+  const body = {
+    contents,
+    tools: TOOL_DECLARATIONS,
+    systemInstruction: {
+      parts: [{ text: SYSTEM_PROMPT }],
+    },
+    generationConfig: {
+      temperature: 0.4,
+      topP: 0.9,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  const data = await _fetchGemini(url, body);
+  const candidate = data.candidates?.[0];
+
+  if (!candidate?.content?.parts?.length) {
+    throw new Error('No response from AI');
+  }
+
+  // Check for function call in response
+  const functionCall = candidate.content.parts.find(p => p.functionCall);
+  if (functionCall) {
+    return _handleToolCall(apiKey, url, contents, candidate.content, functionCall.functionCall);
+  }
+
+  return candidate.content.parts.map(p => p.text || '').join('');
+}
+
+/**
+ * Build contents array with context management — trim old messages.
+ * @param {string} userMessage
+ * @returns {Array}
+ */
+function _buildContents(userMessage) {
+  const contents = [];
+  // Take recent messages, skipping the last (it's the just-added user msg)
+  const history = _messages.slice(0, -1);
+  const trimmed = history.length > MAX_CONTEXT_MESSAGES
+    ? history.slice(-MAX_CONTEXT_MESSAGES)
+    : history;
+
+  for (const msg of trimmed) {
     contents.push({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.content }],
     });
   }
 
-  // Add current message
   contents.push({
     role: 'user',
     parts: [{ text: userMessage }],
   });
 
-  const body = {
-    contents,
+  return contents;
+}
+
+/**
+ * Handle a tool/function call from the model.
+ * Executes the tool, sends results back, returns final text.
+ * @param {string} apiKey
+ * @param {string} url
+ * @param {Array} contents
+ * @param {Object} modelContent — the model's response content with the function call
+ * @param {{ name: string, args: Object }} functionCall
+ * @returns {Promise<string>}
+ */
+async function _handleToolCall(apiKey, url, contents, modelContent, functionCall) {
+  const { name, args } = functionCall;
+
+  // Show tool execution indicator
+  _showToolIndicator(name, args);
+
+  // Execute the tool
+  let result;
+  try {
+    result = await _executeTool(name, args);
+  } catch (err) {
+    result = { error: err.message };
+  }
+
+  // Remove tool indicator
+  _removeToolIndicator();
+
+  // Send tool result back to model for final response
+  const followUp = {
+    contents: [
+      ...contents,
+      modelContent,
+      {
+        role: 'function',
+        parts: [{
+          functionResponse: {
+            name,
+            response: { content: result },
+          },
+        }],
+      },
+    ],
+    tools: TOOL_DECLARATIONS,
     systemInstruction: {
       parts: [{ text: SYSTEM_PROMPT }],
     },
     generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
+      temperature: 0.4,
+      topP: 0.9,
       maxOutputTokens: 8192,
     },
   };
 
+  const data = await _fetchGemini(url, followUp);
+  const candidate = data.candidates?.[0];
+
+  if (!candidate?.content?.parts?.length) {
+    // Tool succeeded but model gave no text — construct a response
+    if (result && !result.error) {
+      return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+    }
+    throw new Error('No response from AI after tool execution');
+  }
+
+  return candidate.content.parts.map(p => p.text || '').join('');
+}
+
+/**
+ * Execute a registered tool function.
+ * @param {string} name
+ * @param {Object} args
+ * @returns {Promise<Object>}
+ */
+async function _executeTool(name, args) {
+  if (name === 'create_sheet') {
+    return _toolCreateSheet(args);
+  }
+  throw new Error(`Unknown tool: ${name}`);
+}
+
+/**
+ * Tool: create_sheet — deterministically creates a sheet using a known template.
+ * Headers are looked up from TEMPLATE_SCHEMAS; the AI only provides data values.
+ * @param {{ template: string, title: string, data: string[][] }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolCreateSheet({ template, title, data }) {
+  if (!title) throw new Error('Missing title');
+  if (!data || !data.length) throw new Error('Missing data rows');
+
+  // Look up template schema for correct headers
+  const schema = TEMPLATE_SCHEMAS[template];
+  if (!schema) {
+    throw new Error(`Unknown template "${template}". Use one of: ${Object.keys(TEMPLATE_SCHEMAS).join(', ')}`);
+  }
+
+  const headers = schema.headers;
+
+  // Pad or trim each data row to match header count
+  const cleanData = data.map(row => {
+    const clean = (row || []).map(cell => String(cell ?? ''));
+    while (clean.length < headers.length) clean.push('');
+    return clean.slice(0, headers.length);
+  });
+
+  // Prepend headers as first row
+  const rows = [headers, ...cleanData];
+
+  const result = await api.sheets.createSpreadsheet(title, rows);
+
+  return {
+    spreadsheetId: result.spreadsheetId,
+    title,
+    template: schema.name,
+    rowCount: cleanData.length,
+    columns: headers.join(', '),
+  };
+}
+
+/**
+ * Show an inline indicator that a tool is executing.
+ * @param {string} toolName
+ * @param {Object} args
+ */
+function _showToolIndicator(toolName, args) {
+  if (!_chatBody) return;
+  let label = `Running ${toolName}...`;
+  if (toolName === 'create_sheet') {
+    const schema = TEMPLATE_SCHEMAS[args.template];
+    const templateName = schema ? schema.name : args.template;
+    label = `Creating ${templateName} sheet "${args.title || 'Untitled'}"...`;
+  }
+  const indicator = el('div', { className: 'agent-tool-indicator' }, [
+    el('span', { className: 'agent-tool-icon' }, ['🔧']),
+    el('span', {}, [label]),
+  ]);
+  _chatBody.appendChild(indicator);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
+/** Remove tool execution indicator from chat. */
+function _removeToolIndicator() {
+  if (!_chatBody) return;
+  const ind = _chatBody.querySelector('.agent-tool-indicator');
+  if (ind) ind.remove();
+}
+
+/**
+ * Fetch from Gemini API with rate-limit handling.
+ * @param {string} url
+ * @param {Object} body
+ * @returns {Promise<Object>}
+ */
+async function _fetchGemini(url, body) {
   const fetchOpts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -536,12 +834,7 @@ async function _callGemini(apiKey, userMessage) {
     if (delay <= 15) {
       await new Promise(r => setTimeout(r, delay * 1000));
       const retry = await fetch(url, fetchOpts);
-      if (retry.ok) {
-        const retryData = await retry.json();
-        const retryCandidate = retryData.candidates?.[0];
-        if (!retryCandidate?.content?.parts?.length) throw new Error('No response from AI');
-        return retryCandidate.content.parts.map(p => p.text).join('');
-      }
+      if (retry.ok) return retry.json();
     }
 
     throw new Error(`Rate limited — please wait ${Math.ceil(delay)} seconds and try again.`);
@@ -553,12 +846,5 @@ async function _callGemini(apiKey, userMessage) {
     throw new Error(errMsg);
   }
 
-  const data = await res.json();
-  const candidate = data.candidates?.[0];
-
-  if (!candidate?.content?.parts?.length) {
-    throw new Error('No response from AI');
-  }
-
-  return candidate.content.parts.map(p => p.text).join('');
+  return res.json();
 }
