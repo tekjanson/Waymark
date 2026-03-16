@@ -1603,7 +1603,7 @@ test('open in Google Sheets button has correct URL with row number', async ({ pa
 
   const href = await page.locator('.kanban-open-sheets-btn').first().getAttribute('href');
   expect(href).toContain('docs.google.com/spreadsheets/d/sheet-028');
-  expect(href).toMatch(/range=A\d+/);
+  expect(href).toMatch(/range=\d+:\d+/);
 });
 
 test('open in Google Sheets button opens in new tab', async ({ page }) => {
