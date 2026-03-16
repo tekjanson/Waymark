@@ -346,9 +346,17 @@ export function buildCardDetail(group, ctx) {
 
   // Notes & Activity section
   if (group.notes.length > 0 || cols.note >= 0) {
-    // Separate status-change notes from regular notes
-    const statusNotes = group.notes.filter(n => isStatusNote(cell(n.row, cols.note)));
-    const regularNotes = group.notes.filter(n => !isStatusNote(cell(n.row, cols.note)));
+    // Separate status-change notes from regular notes, sort by date
+    const sortByDate = (a, b) => {
+      const da = cols.due >= 0 ? cell(a.row, cols.due) : '';
+      const db = cols.due >= 0 ? cell(b.row, cols.due) : '';
+      if (!da && !db) return a.idx - b.idx;
+      if (!da) return -1;
+      if (!db) return 1;
+      return da.localeCompare(db) || a.idx - b.idx;
+    };
+    const statusNotes = group.notes.filter(n => isStatusNote(cell(n.row, cols.note))).sort(sortByDate);
+    const regularNotes = group.notes.filter(n => !isStatusNote(cell(n.row, cols.note))).sort(sortByDate);
 
     const noteSection = el('div', { className: 'kanban-detail-section' }, [
       el('div', { className: 'kanban-detail-label' }, ['Notes']),

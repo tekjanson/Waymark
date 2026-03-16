@@ -168,7 +168,10 @@ async function cmdStage(row, stage) {
  */
 async function cmdNote(afterRow, text) {
   const token = await getToken();
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10)
+    + ' ' + String(now.getHours()).padStart(2, '0')
+    + ':' + String(now.getMinutes()).padStart(2, '0');
 
   // Find the last sub-row belonging to this task.
   // Read rows below the task to find where sub-rows end.
