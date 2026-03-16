@@ -465,14 +465,14 @@ export function buildCardDetail(group, ctx) {
   if (sheetMatch) {
     const sheetId = sheetMatch[1];
     const sheetRow = rowIdx + 1; // +1 for header row in sheet
-    const sheetsUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?gid=0&range=${sheetRow}:${sheetRow}`;
+    const sheetsUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=0&range=A${sheetRow}`;
     detail.append(el('div', { className: 'kanban-detail-section kanban-detail-sheets-link' }, [
       el('a', {
         href: sheetsUrl,
         target: '_blank',
         rel: 'noopener',
         className: 'kanban-open-sheets-btn',
-      }, ['📄 Open row in Google Sheets']),
+      }, [`📄 Open in Google Sheets (row ${sheetRow})`]),
     ]));
   }
 

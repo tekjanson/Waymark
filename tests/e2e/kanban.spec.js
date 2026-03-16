@@ -1589,7 +1589,7 @@ test('expanded kanban card shows open in Google Sheets button', async ({ page })
 
   const sheetsBtn = page.locator('.kanban-open-sheets-btn').first();
   await expect(sheetsBtn).toBeVisible();
-  await expect(sheetsBtn).toContainText('Open row in Google Sheets');
+  await expect(sheetsBtn).toContainText('Open in Google Sheets (row');
 });
 
 test('open in Google Sheets button has correct URL with row number', async ({ page }) => {
@@ -1603,7 +1603,7 @@ test('open in Google Sheets button has correct URL with row number', async ({ pa
 
   const href = await page.locator('.kanban-open-sheets-btn').first().getAttribute('href');
   expect(href).toContain('docs.google.com/spreadsheets/d/sheet-028');
-  expect(href).toMatch(/range=\d+:\d+/);
+  expect(href).toMatch(/range=A\d+/);
 });
 
 test('open in Google Sheets button opens in new tab', async ({ page }) => {
