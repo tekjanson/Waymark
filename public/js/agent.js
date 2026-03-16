@@ -516,6 +516,29 @@ async function _callGemini(apiKey, userMessage) {
     body: JSON.stringify(body),
   });
 
+  if (res.status === 429) {
+    // Rate limited — retry once after a short delay
+    await new Promise(r => setTimeout(r, 3000));
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (retry.status === 429) {
+      throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+    }
+    if (!retry.ok) {
+      const errData = await retry.json().catch(() => ({}));
+      throw new Error(errData?.error?.message || `API ${retry.status}`);
+    }
+    const retryData = await retry.json();
+    const retryCandidate = retryData.candidates?.[0];
+    if (!retryCandidate?.content?.parts?.length) {
+      throw new Error('No response from AI');
+    }
+    return retryCandidate.content.parts.map(p => p.text).join('');
+  }
+
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API ${res.status}`;
