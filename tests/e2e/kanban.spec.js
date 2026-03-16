@@ -956,14 +956,14 @@ test('kanban Fix Search Bug card shows activity from status change', async ({ pa
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5_000 });
 
-  // "Fix Search Bug" has 1 regular note and 1 status note
+  // "Fix Search Bug" has 3 regular notes and 1 status note
   const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
   await card.locator('.kanban-card-expand').click();
   await page.waitForSelector('.kanban-activity-item', { timeout: 3_000 });
 
-  // 1 regular note
+  // 3 regular notes
   const notes = card.locator('.kanban-note');
-  expect(await notes.count()).toBe(1);
+  expect(await notes.count()).toBe(3);
   await expect(notes.first()).toContainText('Found the regex issue');
 
   // 1 activity entry
@@ -971,6 +971,29 @@ test('kanban Fix Search Bug card shows activity from status change', async ({ pa
   expect(await activity.count()).toBe(1);
   await expect(activity.first()).toContainText('To Do');
   await expect(activity.first()).toContainText('In Progress');
+});
+
+test('kanban notes display in chronological order regardless of row order', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  // "Fix Search Bug" has 3 notes in non-chronological row order:
+  //   row order: Bob 2026-03-05, Alice 2026-03-03, Alice 2026-03-04
+  //   expected display: Alice 2026-03-03, Alice 2026-03-04, Bob 2026-03-05 (chronological)
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-note', { timeout: 3_000 });
+
+  const notes = card.locator('.kanban-note');
+  expect(await notes.count()).toBe(3);
+
+  // First note should be the oldest (2026-03-03)
+  await expect(notes.nth(0)).toContainText('Found the regex issue');
+  // Second note (2026-03-04)
+  await expect(notes.nth(1)).toContainText('Working on a fix');
+  // Third note should be the newest (2026-03-05)
+  await expect(notes.nth(2)).toContainText('Confirmed');
 });
 
 test('kanban card shows last-moved timestamp on card surface', async ({ page }) => {
