@@ -50,7 +50,30 @@ Traditional one-shot mode: read workboard → select task → implement → done
 
 ## 0.2 THE PERSISTENT LOOP — How to Run Forever
 
-After completing a task (or when no tasks exist at boot), enter this loop:
+After completing a task (or when no tasks exist at boot), enter this loop.
+
+### Important: “Indefinite” in Chat Environments
+Some host environments will stop an agent run after it prints a final response (even if the instructions say “loop forever”). This is a platform limitation, not a workflow bug.
+
+To make Waymark Builder *effectively* persistent anyway, use a **background watcher process** to keep polling the workboard even when the model stops producing turns. When new work appears, the watcher prints an `@@WATCHER:NEW_WORK` JSON marker in the terminal output.
+
+This repo already includes [scripts/watch-workboard.js](scripts/watch-workboard.js) for this purpose.
+
+### Persistence-safe idle strategy (preferred)
+1. Start the watcher in **agent mode** (background process):
+  ```bash
+  GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+    node scripts/watch-workboard.js --agent --backoff --interval 60
+  ```
+2. While idle, periodically read the watcher terminal output and look for:
+  - `@@WATCHER:{"type":"NEW_WORK", ...}` → claim the first item and begin the WORK cycle.
+  - `@@WATCHER:{"type":"IDLE", ...}` → keep waiting.
+3. If the chat agent run stops unexpectedly:
+  - Do **not** restart the watcher (it’s already polling).
+  - Re-run the agent with `start`/`resume` and immediately check the watcher output for `NEW_WORK`.
+
+### Legacy loop (works, but can be stopped by the host)
+If you cannot use a background watcher, fall back to the `sleep 60` → `check-workboard.js` loop below.
 
 ```
 LOOP:
