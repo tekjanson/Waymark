@@ -18,6 +18,7 @@ import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
+import * as notifications from './notifications.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -177,6 +178,7 @@ async function boot() {
   checklist.init();
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
+  notifications.init(document.querySelector('.top-bar-right'));
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());
@@ -184,6 +186,12 @@ async function boot() {
   sidebarToggle.addEventListener('click', () => {
     const open = toggleSidebar();
     userData.setSidebarOpen(open);
+  });
+
+  // Evaluate notifications when a sheet is rendered
+  document.addEventListener('waymark:sheet-rendered', (e) => {
+    const { sheetId, title, templateKey, rows, cols } = e.detail;
+    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols);
   });
 
   // Persist sidebar state from swipe/overlay events
