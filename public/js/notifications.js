@@ -263,7 +263,12 @@ function _renderPanelContent() {
   _panel.appendChild(header);
 
   if (_notifications.length === 0) {
-    _panel.appendChild(el('div', { className: 'notif-empty' }, ['No notifications']));
+    _panel.appendChild(el('div', { className: 'notif-empty' }, [
+      el('div', {}, ['No notifications yet']),
+      el('div', { className: 'notif-empty-hint' }, [
+        'Alerts appear here when sheets have overdue tasks, high-priority items, or budget warnings. Open a sheet to check.',
+      ]),
+    ]));
     return;
   }
 
