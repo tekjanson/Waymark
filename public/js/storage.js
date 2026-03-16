@@ -196,6 +196,26 @@ export function setSortOrder(order) {
   set('sort_order', order);
 }
 
+/* --- Agent --- */
+
+export function getAgentApiKey() {
+  return get('agent_api_key') || '';
+}
+
+export function setAgentApiKey(key) {
+  if (key) set('agent_api_key', key);
+  else remove('agent_api_key');
+}
+
+export function getAgentModel() {
+  return get('agent_model') || '';
+}
+
+export function setAgentModel(model) {
+  if (model) set('agent_model', model);
+  else remove('agent_model');
+}
+
 /* --- Import Folder --- */
 
 export function getImportFolderId() {

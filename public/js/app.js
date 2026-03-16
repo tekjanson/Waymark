@@ -17,6 +17,7 @@ import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
+import * as agent from './agent.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -37,6 +38,7 @@ const menuExplorerBtn  = document.getElementById('menu-explorer-btn');
 const menuCreateBtn    = document.getElementById('menu-create-btn');
 const menuImportBtn    = document.getElementById('menu-import-btn');
 const menuExamplesBtn  = document.getElementById('menu-examples-btn');
+const menuAgentBtn     = document.getElementById('menu-agent-btn');
 const explorerRefreshBtn = document.getElementById('explorer-refresh-btn');
 
 /* ---------- Example Modal refs ---------- */
@@ -225,6 +227,12 @@ async function boot() {
       autoCloseSidebarMobile();
     });
   }
+  if (menuAgentBtn) {
+    menuAgentBtn.addEventListener('click', () => {
+      window.location.hash = '#/agent';
+      autoCloseSidebarMobile();
+    });
+  }
   if (explorerRefreshBtn) {
     explorerRefreshBtn.addEventListener('click', () => explorer.refresh());
   }
@@ -391,6 +399,7 @@ function handleRoute() {
   }
 
   checklist.hide(); // stop any running timer
+  agent.hide();
 
   // Auto-close sidebar on narrow screens when navigating to a detail view
   if (window.innerWidth <= 768 && isSidebarOpen()) {
@@ -420,6 +429,11 @@ function handleRoute() {
   } else if (hash === '#/explorer') {
     showView('explorer');
     updateMenuActive('explorer');
+    userData.setLastView(hash);
+  } else if (hash === '#/agent') {
+    showView('agent');
+    agent.show(document.getElementById('agent-view'));
+    updateMenuActive('agent');
     userData.setLastView(hash);
   } else {
     // Home
