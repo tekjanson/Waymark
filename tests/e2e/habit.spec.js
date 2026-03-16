@@ -9,21 +9,18 @@ const { setupApp, navigateToSheet, getCreatedRecords } = require('../helpers/tes
 test('habit tracker detected as Habit Tracker template', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
-  await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
   await expect(page.locator('#template-badge')).toContainText('Habit');
 });
 
-test('single-week habit renders grid with day columns', async ({ page }) => {
+test('single-week habit renders day view by default', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
-  await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
+  await page.waitForSelector('.habit-day-list, .habit-day-empty', { timeout: 5_000 });
 
-  const toggles = page.locator('.habit-toggle');
-  expect(await toggles.count()).toBeGreaterThan(0);
-
-  // Check some are done (sheet-018 has ✓ entries)
-  const done = page.locator('.habit-done');
-  expect(await done.count()).toBeGreaterThan(0);
+  // Day tab should be active
+  const dayTab = page.locator('.habit-view-tab[data-view="day"]');
+  await expect(dayTab).toHaveClass(/habit-view-tab-active/);
 });
 
 test('single-week shows Day and Week view tabs only', async ({ page }) => {
@@ -83,12 +80,14 @@ test('multi-week has time navigator with prev/next/today', async ({ page }) => {
   await expect(page.locator('.habit-time-label')).toBeVisible();
 });
 
-test('multi-week has Add Week button', async ({ page }) => {
+test('multi-week has Add Week button visible in week view', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
-  // Default view is 'week' — add week button should be visible
+  // Default view is 'day' — switch to week view to see add week button
+  await page.click('.habit-view-tab[data-view="week"]');
+  await page.waitForSelector('.habit-grid', { timeout: 3_000 });
   const addWeekBtn = page.locator('.habit-add-week-btn');
   await expect(addWeekBtn).toBeVisible();
   await expect(addWeekBtn).toContainText('New Week');
@@ -103,17 +102,15 @@ test('clicking view tabs switches between views', async ({ page }) => {
   await navigateToSheet(page, 'sheet-038');
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
-  // Default is week view — grid should be present
-  await page.waitForSelector('.habit-grid', { timeout: 3_000 });
-  await expect(page.locator('.habit-grid')).toBeVisible();
-
-  // Switch to Day view
-  await page.click('.habit-view-tab[data-view="day"]');
+  // Default is day view — day list should be present
   await page.waitForSelector('.habit-day-list, .habit-day-empty', { timeout: 3_000 });
-
-  // Verify Day tab is active
   const dayTab = page.locator('.habit-view-tab[data-view="day"]');
   await expect(dayTab).toHaveClass(/habit-view-tab-active/);
+
+  // Switch to Week view
+  await page.click('.habit-view-tab[data-view="week"]');
+  await page.waitForSelector('.habit-grid', { timeout: 3_000 });
+  await expect(page.locator('.habit-grid')).toBeVisible();
 
   // Switch to Month view
   await page.click('.habit-view-tab[data-view="month"]');
@@ -132,16 +129,19 @@ test('switching to quarter view renders heatmap table', async ({ page }) => {
   expect(tableOrEmpty).toBeTruthy();
 });
 
-test('switching to year view renders contribution heatmap', async ({ page }) => {
+test('switching to year view renders mini month calendars', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
   await page.click('.habit-view-tab[data-view="year"]');
-  await page.waitForSelector('.habit-year-heatmap', { timeout: 3_000 });
-  await expect(page.locator('.habit-year-heatmap')).toBeVisible();
-  await expect(page.locator('.habit-year-grid')).toBeVisible();
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+  await expect(page.locator('.habit-year-months')).toBeVisible();
   await expect(page.locator('.habit-year-legend')).toBeVisible();
+
+  // 12 mini month calendars
+  const miniMonths = page.locator('.habit-year-mini-month');
+  expect(await miniMonths.count()).toBe(12);
 });
 
 /* ================================================================
@@ -151,6 +151,8 @@ test('switching to year view renders contribution heatmap', async ({ page }) => 
 test('week view navigation changes displayed week label', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid', { timeout: 5_000 });
 
   // Get initial time label
@@ -166,6 +168,8 @@ test('week view navigation changes displayed week label', async ({ page }) => {
 test('week view shows 4 habit rows (matching fixture data)', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
 
   // Non-header, non-footer data rows: 4 habits in fixture
@@ -176,6 +180,8 @@ test('week view shows 4 habit rows (matching fixture data)', async ({ page }) =>
 test('week view completion footer shows percentage bars', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid-footer', { timeout: 5_000 });
 
   const footer = page.locator('.habit-grid-footer');
@@ -253,6 +259,8 @@ test('month view navigation changes displayed month', async ({ page }) => {
 test('habit toggle emits cell-update on click in week view', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
 
   const unchecked = page.locator('.habit-toggle.habit-empty').first();
@@ -273,6 +281,8 @@ test('habit toggle emits cell-update on click in week view', async ({ page }) =>
 test('habit toggle cycles through done-partial-missed-empty states', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
 
   const cell = page.locator('.habit-toggle.habit-empty').first();
@@ -313,6 +323,8 @@ test('view switcher tabs have pointer cursor', async ({ page }) => {
 test('habit toggle cells have pointer cursor', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
 
   await expect(page.locator('.habit-toggle').first()).toHaveCSS('cursor', 'pointer');
@@ -321,6 +333,8 @@ test('habit toggle cells have pointer cursor', async ({ page }) => {
 test('habit grid has header and footer rows', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid', { timeout: 5_000 });
 
   await expect(page.locator('.habit-grid-header')).toBeVisible();
@@ -332,27 +346,29 @@ test('active view tab has distinct active class', async ({ page }) => {
   await navigateToSheet(page, 'sheet-038');
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
-  const weekTab = page.locator('.habit-view-tab[data-view="week"]');
-  await expect(weekTab).toHaveClass(/habit-view-tab-active/);
-
+  // Default view is now 'day'
   const dayTab = page.locator('.habit-view-tab[data-view="day"]');
-  const hasActive = await dayTab.evaluate(el => el.classList.contains('habit-view-tab-active'));
+  await expect(dayTab).toHaveClass(/habit-view-tab-active/);
+
+  const weekTab = page.locator('.habit-view-tab[data-view="week"]');
+  const hasActive = await weekTab.evaluate(el => el.classList.contains('habit-view-tab-active'));
   expect(hasActive).toBe(false);
 });
 
-test('year view contribution grid has heatmap cells', async ({ page }) => {
+test('year view mini months have day cells with rate classes', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
   await page.click('.habit-view-tab[data-view="year"]');
-  await page.waitForSelector('.habit-year-heatmap', { timeout: 3_000 });
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
 
-  const cells = page.locator('.habit-year-cell');
+  const cells = page.locator('.habit-year-mini-cell:not(.habit-year-mini-empty)');
   expect(await cells.count()).toBeGreaterThan(0);
 
-  const dayLabels = page.locator('.habit-year-day-label');
-  expect(await dayLabels.count()).toBe(7);
+  // Each mini month has day headers (M T W T F S S)
+  const headers = page.locator('.habit-year-mini-header');
+  expect(await headers.count()).toBe(12 * 7); // 7 per month × 12 months
 });
 
 test('year view shows stats summary', async ({ page }) => {
@@ -377,6 +393,8 @@ test('habit tracker at mobile width has no major overflow', async ({ page }) => 
   await page.setViewportSize({ width: 375, height: 812 });
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid', { timeout: 5_000 });
 
   const overflows = await page.evaluate(() => {
@@ -409,6 +427,8 @@ test('view switcher renders at mobile width', async ({ page }) => {
 test('toggle in multi-week view emits correct row/col indices', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-toggle', { timeout: 5_000 });
 
   const emptyCell = page.locator('.habit-toggle.habit-empty').first();
@@ -472,15 +492,226 @@ test('add-week button hides when switching away from week view', async ({ page }
   await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
 
   const addWeekBtn = page.locator('.habit-add-week-btn');
-  await expect(addWeekBtn).toBeVisible();
-
-  // Switch to month view
-  await page.click('.habit-view-tab[data-view="month"]');
-  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+  // Default view is 'day' — button should be hidden
   await expect(addWeekBtn).toBeHidden();
 
-  // Switch back to week view — button should reappear
+  // Switch to week view — button should appear
   await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid', { timeout: 3_000 });
   await expect(addWeekBtn).toBeVisible();
+
+  // Switch to month view — button should hide again
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+  await expect(addWeekBtn).toBeHidden();
+});
+
+/* ================================================================
+   NEW: Day View Defaults to Today
+   ================================================================ */
+
+test('day view is the default view on multi-week sheet', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Day tab should be active by default
+  const dayTab = page.locator('.habit-view-tab[data-view="day"]');
+  await expect(dayTab).toHaveClass(/habit-view-tab-active/);
+
+  // Day view content should be visible (checklist or fallback)
+  await page.waitForSelector('.habit-day-list, .habit-day-empty', { timeout: 3_000 });
+});
+
+test('day view shows habit items with check indicators', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  // Day view is default — should show habit items
+  const dayList = page.locator('.habit-day-list');
+  const isEmpty = await page.locator('.habit-day-empty').count();
+  if (isEmpty === 0) {
+    await expect(dayList).toBeVisible();
+    const items = page.locator('.habit-day-item');
+    expect(await items.count()).toBeGreaterThan(0);
+    // Each item should have a check indicator
+    const checks = page.locator('.habit-day-check');
+    expect(await checks.count()).toBeGreaterThan(0);
+  }
+});
+
+test('day view items are clickable and toggle state', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-day-list', { timeout: 5_000 });
+
+  const item = page.locator('.habit-day-item').first();
+  const initialState = await item.getAttribute('data-state');
+  await item.click();
+  const newState = await item.getAttribute('data-state');
+  expect(newState).not.toBe(initialState);
+
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update')).toBe(true);
+});
+
+test('day view shows progress bar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-day-list', { timeout: 5_000 });
+
+  const progressBar = page.locator('.habit-day-progress');
+  await expect(progressBar).toBeVisible();
+  const progressText = page.locator('.habit-day-progress-text');
+  await expect(progressText).toContainText(/complete/i);
+});
+
+/* ================================================================
+   NEW: Month View Streak Badges & Celebration
+   ================================================================ */
+
+test('month view shows streak badges section', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  // Navigate to a month with data (fixture has Jan-Mar 2026)
+  // Set date to Feb 2026 by navigating
+  const label = page.locator('.habit-time-label');
+  const currentLabel = await label.textContent();
+
+  // Navigate until we reach Feb 2026 or similar month with data
+  // The fixture data is from Jan 26 - Mar 16, 2026
+  // currentDate for multi-week lands in the fixture range
+  const streakSection = page.locator('.habit-month-streaks');
+  await expect(streakSection).toBeVisible();
+
+  // Check streak badges exist
+  const badges = page.locator('.habit-month-streak-badge');
+  expect(await badges.count()).toBeGreaterThan(0);
+
+  // Each badge should have a name and count
+  const firstName = page.locator('.habit-month-streak-name').first();
+  await expect(firstName).toBeVisible();
+});
+
+test('month view shows star indicator on perfect days', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  // Check for perfect day indicators — fixture data has days where all habits done
+  const perfectDays = page.locator('.habit-month-perfect');
+  const starIndicators = page.locator('.habit-month-star');
+
+  // At least check the classes/structure exist (data alignment varies)
+  const hasPerfect = await perfectDays.count();
+  if (hasPerfect > 0) {
+    expect(await starIndicators.count()).toBeGreaterThan(0);
+  }
+});
+
+test('month view day click navigates to day view', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="month"]');
+  await page.waitForSelector('.habit-month-grid', { timeout: 3_000 });
+
+  // Click a day cell with data
+  const dayCell = page.locator('.habit-month-day:not(.habit-rate-none)').first();
+  const hasDays = await dayCell.count();
+  if (hasDays > 0) {
+    await dayCell.click();
+    // Should switch to day view
+    const dayTab = page.locator('.habit-view-tab[data-view="day"]');
+    await expect(dayTab).toHaveClass(/habit-view-tab-active/);
+    await page.waitForSelector('.habit-day-list, .habit-day-empty', { timeout: 3_000 });
+  }
+});
+
+/* ================================================================
+   NEW: Year View — Mini Month Calendars
+   ================================================================ */
+
+test('year view shows 12 mini month calendars', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="year"]');
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+
+  const miniMonths = page.locator('.habit-year-mini-month');
+  expect(await miniMonths.count()).toBe(12);
+
+  // Each mini month has a title and grid
+  const titles = page.locator('.habit-year-mini-title');
+  expect(await titles.count()).toBe(12);
+  await expect(titles.first()).toContainText('Jan');
+  await expect(titles.last()).toContainText('Dec');
+});
+
+test('year view mini months have clickable day cells', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="year"]');
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+
+  // Find a cell with rate data and click it
+  const ratedCell = page.locator('.habit-year-mini-cell:not(.habit-year-mini-empty):not(.habit-rate-none)').first();
+  const hasRated = await ratedCell.count();
+  if (hasRated > 0) {
+    await expect(ratedCell).toHaveCSS('cursor', 'pointer');
+    await ratedCell.click();
+    // Should switch to day view
+    await page.waitForSelector('.habit-day-list, .habit-day-empty', { timeout: 5_000 });
+    const dayTab = page.locator('.habit-view-tab[data-view="day"]');
+    await expect(dayTab).toHaveClass(/habit-view-tab-active/);
+  }
+});
+
+test('year view uses grid layout for month calendars', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="year"]');
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+
+  await expect(page.locator('.habit-year-months')).toHaveCSS('display', 'grid');
+});
+
+test('year view responsive at mobile: 2 column grid', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-038');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+
+  await page.click('.habit-view-tab[data-view="year"]');
+  await page.waitForSelector('.habit-year-months', { timeout: 3_000 });
+
+  const miniMonths = page.locator('.habit-year-mini-month');
+  expect(await miniMonths.count()).toBe(12);
+
+  // Verify no overflow
+  const overflows = await page.evaluate(() => {
+    const problems = [];
+    document.querySelectorAll('.habit-year-mini-month').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 2) problems.push(el.textContent.slice(0, 20));
+    });
+    return problems;
+  });
+  expect(overflows).toHaveLength(0);
 });

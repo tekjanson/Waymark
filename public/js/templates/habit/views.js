@@ -18,7 +18,7 @@ import {
   formatMonthLabel, formatQuarterLabel,
   getMonthCalendar, getQuarter, getQuarterMonths,
   getWeekStartsInRange, dayCompletionRate, weekCompletionRate,
-  findWeekForDate,
+  findWeekForDate, computeMonthHabitStreaks,
 } from './helpers.js';
 
 /* ================================================================
@@ -248,13 +248,15 @@ export function renderMonthView(container, weeks, cols, year, month, onDayClick)
         : 'habit-rate-zero';
 
       const dayCell = el('div', {
-        className: `habit-month-cell habit-month-day ${rateClass}`,
+        className: `habit-month-cell habit-month-day ${rateClass}${rate >= 1.0 ? ' habit-month-perfect' : ''}`,
         title: rate >= 0 ? `${Math.round(rate * 100)}% complete` : 'No data',
       }, [
         el('span', { className: 'habit-month-day-num' }, [String(dayNum)]),
-        rate >= 0
-          ? el('div', { className: 'habit-month-day-dot' })
-          : null,
+        rate >= 1.0
+          ? el('span', { className: 'habit-month-star' }, ['\u2B50'])
+          : rate >= 0
+            ? el('div', { className: 'habit-month-day-dot' })
+            : null,
       ].filter(Boolean));
 
       if (onDayClick) {
@@ -291,6 +293,35 @@ export function renderMonthView(container, weeks, cols, year, month, onDayClick)
       el('span', {}, ['No data']),
     ]),
   ]));
+
+  /* Streak badges section */
+  const streaks = computeMonthHabitStreaks(weeks, cols, year, month);
+  if (streaks.length > 0) {
+    const allPerfect = streaks.every(h => h.allDone);
+    if (allPerfect) {
+      container.append(el('div', { className: 'habit-month-perfect-banner' }, [
+        el('span', { className: 'habit-month-perfect-icon' }, ['\uD83C\uDF89']),
+        el('span', {}, ['Perfect Month! All habits completed every day!']),
+      ]));
+    }
+    const streakSection = el('div', { className: 'habit-month-streaks' });
+    streakSection.append(el('h4', { className: 'habit-month-streaks-title' }, [
+      '\uD83D\uDD25 Habit Streaks',
+    ]));
+    const streakList = el('div', { className: 'habit-month-streaks-list' });
+    for (const h of streaks) {
+      streakList.append(el('div', { className: 'habit-month-streak-badge' }, [
+        el('span', { className: 'habit-month-streak-name' }, [h.name]),
+        el('span', {
+          className: `habit-month-streak-count${h.allDone ? ' habit-month-streak-perfect' : ''}`,
+        }, [
+          h.streak > 0 ? `\uD83D\uDD25 ${h.streak}` : '\u2014',
+        ]),
+      ]));
+    }
+    streakSection.append(streakList);
+    container.append(streakSection);
+  }
 }
 
 /* ================================================================
@@ -399,90 +430,91 @@ export function renderQuarterView(container, weeks, cols, year, quarter) {
 }
 
 /* ================================================================
-   Year View — GitHub-style contribution heatmap
+   Year View — 12 mini month calendars (month plan scaled up)
    ================================================================ */
 
 /**
- * Render the Year View: a contribution heatmap grid (52 cols × 7 rows).
+ * Render the Year View: a 4×3 grid of mini month calendars with
+ * daily completion indicators. Click any day to jump to Day view.
  * @param {HTMLElement} container
  * @param {Array} weeks — all week objects
  * @param {Object} cols
  * @param {number} year
+ * @param {function} [onDayClick] — callback(date) when a day cell is clicked
  */
-export function renderYearView(container, weeks, cols, year) {
+export function renderYearView(container, weeks, cols, year, onDayClick) {
   const weekMap = new Map();
   for (const w of weeks) weekMap.set(w.iso, w);
 
-  /* Generate all 52/53 week columns */
+  const yearGrid = el('div', { className: 'habit-year-months' });
+
+  for (let month = 0; month < 12; month++) {
+    const miniMonth = el('div', { className: 'habit-year-mini-month' });
+    miniMonth.append(el('div', { className: 'habit-year-mini-title' }, [MONTH_ABBR[month]]));
+
+    const calendar = getMonthCalendar(year, month);
+    const miniGrid = el('div', { className: 'habit-year-mini-grid' });
+
+    /* Day headers */
+    const headerRow = el('div', { className: 'habit-year-mini-row' });
+    for (const letter of ['M', 'T', 'W', 'T', 'F', 'S', 'S']) {
+      headerRow.append(el('div', { className: 'habit-year-mini-header' }, [letter]));
+    }
+    miniGrid.append(headerRow);
+
+    /* Calendar weeks */
+    for (const week of calendar) {
+      const row = el('div', { className: 'habit-year-mini-row' });
+      for (let d = 0; d < 7; d++) {
+        const date = week[d];
+        if (!date) {
+          row.append(el('div', { className: 'habit-year-mini-cell habit-year-mini-empty' }));
+          continue;
+        }
+
+        const weekISO = formatWeekISO(getWeekStart(date));
+        const weekData = weekMap.get(weekISO);
+        const dayIdx = dateToDayIndex(date);
+        const dayColIdx = cols.days[dayIdx];
+
+        let rate = -1;
+        if (weekData && dayColIdx !== undefined) {
+          rate = dayCompletionRate(weekData.rows, dayColIdx);
+        }
+
+        const rateClass = rate < 0 ? 'habit-rate-none'
+          : rate >= 0.75 ? 'habit-rate-high'
+          : rate >= 0.25 ? 'habit-rate-mid'
+          : rate > 0 ? 'habit-rate-low'
+          : 'habit-rate-zero';
+
+        const dayCell = el('div', {
+          className: `habit-year-mini-cell ${rateClass}${rate >= 1.0 ? ' habit-year-mini-perfect' : ''}`,
+          title: rate >= 0
+            ? `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${Math.round(rate * 100)}%`
+            : '',
+        });
+
+        if (onDayClick) {
+          dayCell.style.cursor = 'pointer';
+          dayCell.addEventListener('click', () => onDayClick(date));
+        }
+
+        row.append(dayCell);
+      }
+      miniGrid.append(row);
+    }
+
+    miniMonth.append(miniGrid);
+    yearGrid.append(miniMonth);
+  }
+
+  container.append(yearGrid);
+
+  /* Yearly stats summary */
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year, 11, 31);
   const weekISOs = getWeekStartsInRange(yearStart, yearEnd);
-
-  /* Contribution grid */
-  const heatmap = el('div', { className: 'habit-year-heatmap' });
-
-  /* Day labels (left column) */
-  const dayLabels = el('div', { className: 'habit-year-day-labels' });
-  for (let d = 0; d < 7; d++) {
-    dayLabels.append(el('div', { className: 'habit-year-day-label' }, [
-      d % 2 === 0 ? DAY_ABBR[d] : '',
-    ]));
-  }
-  heatmap.append(dayLabels);
-
-  /* Week columns */
-  const grid = el('div', { className: 'habit-year-grid' });
-  for (const iso of weekISOs) {
-    const w = weekMap.get(iso);
-    const col = el('div', { className: 'habit-year-col' });
-
-    for (let d = 0; d < 7; d++) {
-      let rate = -1;
-      if (w && cols.days[d] !== undefined) {
-        rate = dayCompletionRate(w.rows, cols.days[d]);
-      }
-      const rateClass = rate < 0 ? 'habit-rate-none'
-        : rate >= 0.75 ? 'habit-rate-high'
-        : rate >= 0.25 ? 'habit-rate-mid'
-        : rate > 0 ? 'habit-rate-low'
-        : 'habit-rate-zero';
-
-      const monthNum = Number(iso.slice(5, 7));
-      const dayNum = Number(iso.slice(8, 10)) + d;
-      col.append(el('div', {
-        className: `habit-year-cell ${rateClass}`,
-        title: rate >= 0 ? `${MONTH_ABBR[monthNum - 1]} ${dayNum}: ${Math.round(rate * 100)}%` : '',
-      }));
-    }
-    grid.append(col);
-  }
-  heatmap.append(grid);
-
-  /* Month labels along the bottom */
-  const monthLabels = el('div', { className: 'habit-year-month-labels' });
-  let lastMonth = -1;
-  for (const iso of weekISOs) {
-    const m = Number(iso.slice(5, 7)) - 1;
-    if (m !== lastMonth) {
-      monthLabels.append(el('span', { className: 'habit-year-month-label' }, [MONTH_ABBR[m]]));
-      lastMonth = m;
-    }
-  }
-  heatmap.append(monthLabels);
-
-  container.append(heatmap);
-
-  /* Legend */
-  container.append(el('div', { className: 'habit-year-legend' }, [
-    el('span', {}, ['Less']),
-    el('span', { className: 'habit-legend-swatch habit-rate-zero' }),
-    el('span', { className: 'habit-legend-swatch habit-rate-low' }),
-    el('span', { className: 'habit-legend-swatch habit-rate-mid' }),
-    el('span', { className: 'habit-legend-swatch habit-rate-high' }),
-    el('span', {}, ['More']),
-  ]));
-
-  /* Yearly stats summary */
   let totalWeeks = 0, totalRate = 0;
   for (const iso of weekISOs) {
     const w = weekMap.get(iso);
@@ -498,6 +530,16 @@ export function renderYearView(container, weeks, cols, year) {
     el('span', { className: 'habit-year-stat' }, [
       `${avgRate}% average completion`,
     ]),
+  ]));
+
+  /* Legend */
+  container.append(el('div', { className: 'habit-year-legend' }, [
+    el('span', {}, ['Less']),
+    el('span', { className: 'habit-legend-swatch habit-rate-zero' }),
+    el('span', { className: 'habit-legend-swatch habit-rate-low' }),
+    el('span', { className: 'habit-legend-swatch habit-rate-mid' }),
+    el('span', { className: 'habit-legend-swatch habit-rate-high' }),
+    el('span', {}, ['More']),
   ]));
 }
 

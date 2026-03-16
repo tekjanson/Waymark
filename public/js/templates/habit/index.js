@@ -19,7 +19,7 @@ import {
   formatMonthLabel, formatQuarterLabel,
   DAY_ABBR, DAY_NAMES, MONTH_NAMES,
   getWeekStart, getCurrentMonday, getNextWeekStart,
-  dateToDayIndex, findWeekForDate,
+  dateToDayIndex, findWeekForDate, findClosestWeek,
   getQuarter, getQuarterMonths,
   dayCompletionRate, weekCompletionRate,
 } from './helpers.js';
@@ -113,7 +113,7 @@ const definition = {
 
     /* View state */
     const state = {
-      activeView: 'week',
+      activeView: 'day',
       currentDate: new Date(),
       weekIdx: isMultiWeek ? weeks.length - 1 : 0,
     };
@@ -368,8 +368,9 @@ const definition = {
     function renderDayContent() {
       let weekRows;
       if (isMultiWeek) {
-        /* Find the week for the target date */
-        const idx = findWeekForDate(weeks, state.currentDate);
+        /* Find the week for the target date — fall back to closest week */
+        let idx = findWeekForDate(weeks, state.currentDate);
+        if (idx < 0) idx = findClosestWeek(weeks, state.currentDate);
         if (idx >= 0) {
           weekRows = weeks[idx].rows;
           state.weekIdx = idx;
@@ -439,7 +440,10 @@ const definition = {
 
     function renderYearContent() {
       const year = state.currentDate.getFullYear();
-      renderYearView(viewContent, weeks, cols, year);
+      renderYearView(viewContent, weeks, cols, year, (date) => {
+        state.currentDate = date;
+        switchView('day');
+      });
     }
 
     /* ---- Event listeners ---- */
@@ -492,8 +496,15 @@ const definition = {
     if (isMultiWeek && weeks.length > 0) {
       const todayIdx = findWeekForDate(weeks, new Date());
       state.weekIdx = todayIdx >= 0 ? todayIdx : weeks.length - 1;
-      state.currentDate = new Date(weeks[state.weekIdx].date);
+      /* Keep state.currentDate = today when today is in data range,
+         so Day view defaults to today. Fall back to data range otherwise. */
+      if (todayIdx < 0) {
+        state.currentDate = new Date(weeks[state.weekIdx].date);
+      }
     }
+
+    /* Hide add-week button initially (day view is default) */
+    if (addWeekBtn) addWeekBtn.style.display = 'none';
 
     rebuildView();
   },
