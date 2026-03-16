@@ -370,9 +370,10 @@ test('getUniqueWeeks groups rows by week and sorts ascending', async ({ page }) 
     return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length }));
   });
   expect(result).toHaveLength(2);
-  expect(result[0].iso).toBe('2026-03-10');
+  // Dates are normalised to Monday: Mar 10 (Tue) → Mar 9 (Mon), Mar 17 (Tue) → Mar 16 (Mon)
+  expect(result[0].iso).toBe('2026-03-09');
   expect(result[0].rowCount).toBe(2);
-  expect(result[1].iso).toBe('2026-03-17');
+  expect(result[1].iso).toBe('2026-03-16');
   expect(result[1].rowCount).toBe(2);
 });
 
@@ -388,6 +389,48 @@ test('getUniqueWeeks skips rows with invalid dates', async ({ page }) => {
     return getUniqueWeeks(rows, 0).length;
   });
   expect(result).toBe(1);
+});
+
+test('getUniqueWeeks normalises non-Monday dates to Monday', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { getUniqueWeeks } = await import('/js/templates/habit/helpers.js');
+    // All three rows are in the same week (Mon Jan 26)
+    // but use Wed Jan 28, Thu Jan 29, Sun Feb 1
+    const rows = [
+      ['1/28/2026', 'Exercise', '\u2713'],   // Wednesday → Mon Jan 26
+      ['1/29/2026', 'Reading', '\u2713'],     // Thursday  → Mon Jan 26
+      ['2/1/2026',  'Stretch', '\u2713'],     // Sunday    → Mon Jan 26
+    ];
+    const weeks = getUniqueWeeks(rows, 0);
+    return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length }));
+  });
+  // All three rows should merge into one week (Mon Jan 26)
+  expect(result).toHaveLength(1);
+  expect(result[0].iso).toBe('2026-01-26');
+  expect(result[0].rowCount).toBe(3);
+});
+
+test('getUniqueWeeks normalises mixed format non-Monday dates', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { getUniqueWeeks } = await import('/js/templates/habit/helpers.js');
+    const rows = [
+      ['1/28/2026', 'A', '\u2713'],           // US format Wed → Mon Jan 26
+      ['2026-02-04', 'A', '\u2713'],           // ISO format Wed → Mon Feb 2
+      ['February 11, 2026', 'A', '\u2713'],    // Natural Wed → Mon Feb 9
+    ];
+    const weeks = getUniqueWeeks(rows, 0);
+    return weeks.map(w => ({ iso: w.iso, rowCount: w.rows.length, label: w.label }));
+  });
+  expect(result).toHaveLength(3);
+  expect(result[0].iso).toBe('2026-01-26');
+  expect(result[1].iso).toBe('2026-02-02');
+  expect(result[2].iso).toBe('2026-02-09');
+  // Labels should reference the normalised Monday date
+  expect(result[0].label).toContain('Jan 26');
+  expect(result[1].label).toContain('Feb 2');
+  expect(result[2].label).toContain('Feb 9');
 });
 
 /* ================================================================
@@ -677,4 +720,150 @@ test('WEEK_COL_PATTERN matches expected header strings', async ({ page }) => {
   expect(results.weekStart).toBe(true);
   expect(results.starting).toBe(true);
   expect(results.random).toBe(false);
+});
+
+/* ================================================================
+   Section 8: findClosestWeek
+   ================================================================ */
+
+test('findClosestWeek returns -1 for empty weeks array', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { findClosestWeek } = await import('/js/templates/habit/helpers.js');
+    return findClosestWeek([], new Date('2026-02-15'));
+  });
+  expect(result).toBe(-1);
+});
+
+test('findClosestWeek returns -1 for null/undefined weeks', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { findClosestWeek } = await import('/js/templates/habit/helpers.js');
+    return {
+      nullWeeks: findClosestWeek(null, new Date('2026-02-15')),
+      undefinedWeeks: findClosestWeek(undefined, new Date('2026-02-15')),
+    };
+  });
+  expect(results.nullWeeks).toBe(-1);
+  expect(results.undefinedWeeks).toBe(-1);
+});
+
+test('findClosestWeek finds exact matching week', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { findClosestWeek } = await import('/js/templates/habit/helpers.js');
+    const weeks = [
+      { date: new Date('2026-01-26'), iso: '2026-01-26', rows: [] },
+      { date: new Date('2026-02-02'), iso: '2026-02-02', rows: [] },
+      { date: new Date('2026-02-09'), iso: '2026-02-09', rows: [] },
+    ];
+    return findClosestWeek(weeks, new Date('2026-02-02'));
+  });
+  expect(result).toBe(1);
+});
+
+test('findClosestWeek finds nearest week when no exact match', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { findClosestWeek } = await import('/js/templates/habit/helpers.js');
+    const weeks = [
+      { date: new Date('2026-01-26'), iso: '2026-01-26', rows: [] },
+      { date: new Date('2026-02-02'), iso: '2026-02-02', rows: [] },
+      { date: new Date('2026-02-09'), iso: '2026-02-09', rows: [] },
+    ];
+    return {
+      beforeAll: findClosestWeek(weeks, new Date('2025-12-01')),
+      afterAll: findClosestWeek(weeks, new Date('2027-06-15')),
+      midWeek: findClosestWeek(weeks, new Date('2026-02-05')),
+    };
+  });
+  expect(results.beforeAll).toBe(0);
+  expect(results.afterAll).toBe(2);
+  expect(results.midWeek).toBe(1); // closest to Feb 2
+});
+
+test('findClosestWeek works with single-element array', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { findClosestWeek } = await import('/js/templates/habit/helpers.js');
+    return findClosestWeek(
+      [{ date: new Date('2026-03-09'), iso: '2026-03-09', rows: [] }],
+      new Date('2026-01-01')
+    );
+  });
+  expect(result).toBe(0);
+});
+
+/* ================================================================
+   Section 9: computeMonthHabitStreaks
+   ================================================================ */
+
+test('computeMonthHabitStreaks returns empty for month with no data', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { computeMonthHabitStreaks } = await import('/js/templates/habit/helpers.js');
+    const weeks = [
+      { date: new Date('2026-01-26'), iso: '2026-01-26', rows: [['Exercise', '', '✓', '', '', '', '', '', '']] },
+    ];
+    const cols = { text: 0, days: [2, 3, 4, 5, 6, 7, 8] };
+    return computeMonthHabitStreaks(weeks, cols, 2026, 5); // June — no data
+  });
+  expect(result).toEqual([]);
+});
+
+test('computeMonthHabitStreaks computes streaks for month with data', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { computeMonthHabitStreaks } = await import('/js/templates/habit/helpers.js');
+    const weeks = [
+      {
+        date: new Date('2026-02-02'), iso: '2026-02-02',
+        rows: [
+          ['Exercise', '2026-02-02', '✓', '✓', '✓', '✓', '✓', '✓', '✓'],
+          ['Meditate', '2026-02-02', '✓', '', '✓', '', '', '', ''],
+        ],
+      },
+      {
+        date: new Date('2026-02-09'), iso: '2026-02-09',
+        rows: [
+          ['Exercise', '2026-02-09', '✓', '✓', '✓', '✓', '✓', '✓', '✓'],
+          ['Meditate', '2026-02-09', '✓', '✓', '', '', '', '', ''],
+        ],
+      },
+    ];
+    const cols = { text: 0, days: [2, 3, 4, 5, 6, 7, 8] };
+    return computeMonthHabitStreaks(weeks, cols, 2026, 1); // February
+  });
+  expect(result).toHaveLength(2);
+  expect(result[0].name).toBe('Exercise');
+  expect(result[0].streak).toBe(14); // All done in both weeks
+  expect(result[0].allDone).toBe(true);
+  expect(result[1].name).toBe('Meditate');
+  expect(result[1].streak).toBe(0); // Last days not done
+  expect(result[1].allDone).toBe(false);
+});
+
+test('computeMonthHabitStreaks handles partial month overlap', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { computeMonthHabitStreaks } = await import('/js/templates/habit/helpers.js');
+    const weeks = [
+      {
+        date: new Date('2026-01-26'), iso: '2026-01-26',
+        rows: [['Read', '2026-01-26', '✓', '✓', '✓', '✓', '✓', '✓', '✓']],
+      },
+      {
+        date: new Date('2026-02-02'), iso: '2026-02-02',
+        rows: [['Read', '2026-02-02', '', '', '', '', '✓', '✓', '✓']],
+      },
+    ];
+    const cols = { text: 0, days: [2, 3, 4, 5, 6, 7, 8] };
+    // February: only week of Feb 2 fully in Feb, week of Jan 26 overlaps
+    return computeMonthHabitStreaks(weeks, cols, 2026, 1);
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].name).toBe('Read');
+  // Streak computed from right: last 3 days done in Feb 2 week, then hits empty → returns 3
+  expect(result[0].streak).toBe(3);
+  expect(result[0].allDone).toBe(false);
 });

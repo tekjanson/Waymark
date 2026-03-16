@@ -316,6 +316,8 @@ test('log: activity text is editable inline', async ({ page }) => {
 test('habit: habit name is editable inline', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-018');
+  await page.waitForSelector('.habit-view-switcher', { timeout: 5_000 });
+  await page.click('.habit-view-tab[data-view="week"]');
   await page.waitForSelector('.habit-grid-row', { timeout: 5_000 });
 
   // Skip the header row — get the first data row's name cell
