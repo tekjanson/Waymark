@@ -142,6 +142,8 @@ export function formatWeekISO(date) {
 
 /**
  * Group rows by their Week Of value. Attaches _sourceIndex to each row.
+ * Normalises each date to the Monday of its week so that view-level
+ * lookups (which always use getWeekStart → formatWeekISO) find matches.
  * @param {string[][]} rows — data rows (values.slice(1))
  * @param {number} weekOfCol — column index of Week Of
  * @returns {Array<{date: Date, iso: string, label: string, rows: string[][]}>}
@@ -152,8 +154,9 @@ export function getUniqueWeeks(rows, weekOfCol) {
     const raw = cell(row, weekOfCol);
     const d = parseWeekDate(raw);
     if (!d) return;
-    const iso = formatWeekISO(d);
-    if (!map.has(iso)) map.set(iso, { date: d, iso, label: formatWeekLabel(d), rows: [] });
+    const monday = getWeekStart(d);
+    const iso = formatWeekISO(monday);
+    if (!map.has(iso)) map.set(iso, { date: monday, iso, label: formatWeekLabel(monday), rows: [] });
     row._sourceIndex = idx;
     map.get(iso).rows.push(row);
   });
@@ -379,4 +382,75 @@ export function dayHabitStates(rows, textCol, dayColIdx) {
 export function findWeekForDate(weeks, date) {
   const targetISO = formatWeekISO(getWeekStart(date));
   return weeks.findIndex(w => w.iso === targetISO);
+}
+
+/**
+ * Find the closest week index to a given date.
+ * Unlike findWeekForDate (exact match only), this returns the week
+ * whose start date is nearest, making it a robust fallback.
+ * @param {Array<{date: Date}>} weeks
+ * @param {Date} date
+ * @returns {number} index, or -1 if weeks is empty
+ */
+export function findClosestWeek(weeks, date) {
+  if (!weeks || weeks.length === 0) return -1;
+  const target = date.getTime();
+  let bestIdx = 0;
+  let bestDist = Math.abs(weeks[0].date.getTime() - target);
+  for (let i = 1; i < weeks.length; i++) {
+    const dist = Math.abs(weeks[i].date.getTime() - target);
+    if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+/**
+ * Compute per-habit streaks for a specific month.
+ * @param {Array} weeks — all week objects {iso, rows, date}
+ * @param {Object} cols — column indices {text, days}
+ * @param {number} year
+ * @param {number} month — 0-based
+ * @returns {Array<{name: string, streak: number, allDone: boolean}>}
+ */
+export function computeMonthHabitStreaks(weeks, cols, year, month) {
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  const monthWeekISOs = getWeekStartsInRange(monthStart, monthEnd);
+
+  /* Find the latest week index that overlaps this month */
+  let lastWeekIdx = -1;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    if (monthWeekISOs.includes(weeks[i].iso)) { lastWeekIdx = i; break; }
+  }
+  if (lastWeekIdx < 0) return [];
+
+  /* Collect unique habit names */
+  const weekMap = new Map();
+  for (const w of weeks) weekMap.set(w.iso, w);
+  const habitNames = [];
+  const seen = new Set();
+  for (const iso of monthWeekISOs) {
+    const w = weekMap.get(iso);
+    if (!w) continue;
+    for (const row of w.rows) {
+      const name = cell(row, cols.text) || '';
+      if (name && !seen.has(name)) { seen.add(name); habitNames.push(name); }
+    }
+  }
+
+  return habitNames.map(name => {
+    const streak = computeMultiWeekStreak(name, weeks, cols.text, cols.days, lastWeekIdx);
+    let totalDays = 0, doneDays = 0;
+    for (const iso of monthWeekISOs) {
+      const w = weekMap.get(iso);
+      if (!w) continue;
+      const row = w.rows.find(r => cell(r, cols.text) === name);
+      if (!row) continue;
+      for (const dayCol of cols.days) {
+        totalDays++;
+        if (habitState(cell(row, dayCol)) === 'done') doneDays++;
+      }
+    }
+    return { name, streak, allDone: totalDays > 0 && doneDays === totalDays };
+  });
 }
