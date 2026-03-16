@@ -309,8 +309,9 @@ function _showSettings() {
   const modelSelect = el('select', { className: 'agent-settings-select' }, [
     el('option', { value: 'gemini-2.0-flash', selected: currentModel === 'gemini-2.0-flash' }, ['Gemini 2.0 Flash (fast)']),
     el('option', { value: 'gemini-2.0-flash-lite', selected: currentModel === 'gemini-2.0-flash-lite' }, ['Gemini 2.0 Flash Lite (fastest)']),
-    el('option', { value: 'gemini-2.5-pro-preview-05-06', selected: currentModel === 'gemini-2.5-pro-preview-05-06' }, ['Gemini 2.5 Pro (best)']),
     el('option', { value: 'gemini-2.5-flash-preview-05-20', selected: currentModel === 'gemini-2.5-flash-preview-05-20' }, ['Gemini 2.5 Flash (balanced)']),
+    el('option', { value: 'gemini-2.5-pro-preview-05-06', selected: currentModel === 'gemini-2.5-pro-preview-05-06' }, ['Gemini 2.5 Pro (best)']),
+    el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
   ]);
 
   const saveBtn = el('button', {
@@ -510,38 +511,45 @@ async function _callGemini(apiKey, userMessage) {
     },
   };
 
-  const res = await fetch(url, {
+  const fetchOpts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  };
+
+  const res = await fetch(url, fetchOpts);
 
   if (res.status === 429) {
-    // Rate limited — retry once after a short delay
-    await new Promise(r => setTimeout(r, 3000));
-    const retry = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (retry.status === 429) {
-      throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+    const errData = await res.json().catch(() => ({}));
+    const errMsg = errData?.error?.message || '';
+
+    // Quota exhaustion (limit: 0) — retrying won't help
+    if (/limit:\s*0/.test(errMsg) || /exceeded your current quota/i.test(errMsg)) {
+      throw new Error('API quota exhausted — check your billing at ai.google.dev or try a different model.');
     }
-    if (!retry.ok) {
-      const errData = await retry.json().catch(() => ({}));
-      throw new Error(errData?.error?.message || `API ${retry.status}`);
+
+    // Temporary rate limit — parse retry delay from response
+    const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
+    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 10;
+
+    // Only auto-retry if delay is reasonable (≤ 15s)
+    if (delay <= 15) {
+      await new Promise(r => setTimeout(r, delay * 1000));
+      const retry = await fetch(url, fetchOpts);
+      if (retry.ok) {
+        const retryData = await retry.json();
+        const retryCandidate = retryData.candidates?.[0];
+        if (!retryCandidate?.content?.parts?.length) throw new Error('No response from AI');
+        return retryCandidate.content.parts.map(p => p.text).join('');
+      }
     }
-    const retryData = await retry.json();
-    const retryCandidate = retryData.candidates?.[0];
-    if (!retryCandidate?.content?.parts?.length) {
-      throw new Error('No response from AI');
-    }
-    return retryCandidate.content.parts.map(p => p.text).join('');
+
+    throw new Error(`Rate limited — please wait ${Math.ceil(delay)} seconds and try again.`);
   }
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    const errMsg = errData?.error?.message || `API ${res.status}`;
+    const errMsg = errData?.error?.message || `API error ${res.status}`;
     throw new Error(errMsg);
   }
 
