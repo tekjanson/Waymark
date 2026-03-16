@@ -96,6 +96,39 @@ LOOP:
 
 > **⚠️ NEVER COMMIT TO `main`. This is a HARD REJECT rule — no exceptions.**
 
+### 1.0 Merge Collision Avoidance
+
+When working on multiple tasks, branches can collide if two modify overlapping files and one gets merged while the other is still in QA. Follow these rules to prevent merge conflicts:
+
+1. **Serial QA submission** — Do NOT start a second task while the first is in QA, unless the two tasks touch completely different files. When in doubt, wait for the first branch to be merged before starting the next.
+2. **Always branch from latest main** — Before creating any branch, sync to `origin/main` HEAD. Never branch from another feature branch.
+3. **Rebase on QA rejection** — When a branch is sent back from QA for fixes, rebase it against latest `origin/main` before making changes:
+   ```bash
+   git fetch origin
+   git rebase origin/main
+   # Resolve any conflicts, then continue work
+   ```
+4. **Pre-push conflict check** — Before pushing, verify the branch merges cleanly with `origin/main`:
+   ```bash
+   git fetch origin
+   git merge --no-commit --no-ff origin/main || { echo "CONFLICT — rebase needed"; git merge --abort; }
+   ```
+   If conflicts are detected, rebase first: `git rebase origin/main`, resolve conflicts, then push.
+5. **Worktree-safe main sync** — In a Git worktree, `git checkout main` fails because main is checked out elsewhere. Use this instead:
+   ```bash
+   git checkout -- . && git clean -fd
+   git fetch origin
+   git reset --hard origin/main
+   git checkout -b feature/{new-branch-name}
+   ```
+6. **Post-merge rebase** — If you learn that another branch was merged to main while your branch is in flight, proactively rebase:
+   ```bash
+   git fetch origin
+   git rebase origin/main
+   npm test  # Verify nothing broke
+   git push --force-with-lease
+   ```
+
 ### 1.1 Branch Before Any Code Change
 Before writing **any** code — even a one-line fix — you MUST sync to the **tip of `main`** and create a feature branch. This avoids merge conflicts and ensures every task starts from the latest codebase.
 
@@ -675,35 +708,36 @@ When adding new helper functions, add corresponding unit tests to the appropriat
 ### Step-by-step for every task:
 
 1. **Read the task** from the workboard (including all sub-row notes for context)
-2. **Sync to tip of main** — EVERY new task starts from the latest remote main. Run:
+2. **Sync to tip of main** — EVERY new task starts from the latest remote main. In a worktree, use the worktree-safe sync (§1.0 rule 5):
    ```bash
    git checkout -- . && git clean -fd
-   git checkout main
    git fetch origin
    git reset --hard origin/main
    ```
    This is non-negotiable. Skipping this causes merge conflicts and stale-code bugs.
-3. **Create feature branch** from the freshly synced main (§1.1 — MANDATORY, no exceptions):
+3. **Check for in-flight branches** — Before starting, verify no other branches are in QA. If a branch is pending QA, wait for it to be merged first (§1.0 rule 1) unless the new task touches completely different files.
+4. **Create feature branch** from the freshly synced main (§1.1 — MANDATORY, no exceptions):
    ```bash
    git checkout -b feature/{kebab-case-task-name}
    ```
-4. **Verify branch** — run `git branch --show-current` and confirm it is NOT `main`. If it is `main`, STOP and go back to step 3.
-5. **Claim the task** (update Stage to In Progress, Assignee to AI)
-6. **Plan the implementation** — break into sub-tasks using manage_todo_list
-7. **Read existing code** — understand the module you're modifying
-8. **Implement the feature** — follow all AI_LAWS rules
-9. **Write fixture data** if needed
-10. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
-10b. **Write unit tests** — for any new or modified pure functions in helper modules (§4.10)
-11. **Run `npm test`** — ALL tests must pass (not just yours) — both E2E and unit
-12. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
-13. **Commit** with descriptive message: `feat({scope}): {description}`
-14. **Push branch to remote** — `git push -u origin feature/{branch-name}`
-15. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
+5. **Verify branch** — run `git branch --show-current` and confirm it is NOT `main`. If it is `main`, STOP and go back to step 4.
+6. **Claim the task** (update Stage to In Progress, Assignee to AI)
+7. **Plan the implementation** — break into sub-tasks using manage_todo_list
+8. **Read existing code** — understand the module you're modifying
+9. **Implement the feature** — follow all AI_LAWS rules
+10. **Write fixture data** if needed
+11. **Write E2E tests** — minimum per §4.9 test count, covering all layers in §4.3
+11b. **Write unit tests** — for any new or modified pure functions in helper modules (§4.10)
+12. **Run `npm test`** — ALL tests must pass (not just yours) — both E2E and unit
+13. **Pre-push conflict check** (§1.0 rule 4) — verify the branch merges cleanly with `origin/main`
+14. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
+15. **Commit** with descriptive message: `feat({scope}): {description}`
+16. **Push branch to remote** — `git push -u origin feature/{branch-name}`
+17. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
     - **Completion note:** branch name, files changed, LOC, test count
     - **Testing note:** step-by-step QA verification instructions (see §2.3 for format)
-16. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
-17. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
+18. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
+19. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
 
 > The agent does NOT create PRs, merge, or move items to Done. That is the human's job after QA.
 
@@ -753,6 +787,17 @@ Before marking any task as QA, verify:
 - If a task is unclear → read the full description + all sub-row notes for context. If still unclear, implement the most reasonable interpretation and note your assumptions in the completion note.
 - If a task requires backend changes → mark as blocked in the workboard with a note explaining why (§1.1 violation). Pick next task.
 - If a task requires a framework/build tool → mark as blocked (§1.2 violation). Pick next task.
+- If a **QA-rejected branch has merge conflicts** with `origin/main` (because another branch was merged while yours was in QA):
+  1. Fetch latest: `git fetch origin`
+  2. Rebase: `git rebase origin/main`
+  3. Resolve conflicts manually (keep both changes where possible)
+  4. Re-run `npm test` to verify everything still works
+  5. Force-push: `git push --force-with-lease`
+  6. Add a note: "Rebased against latest main after merge of {other-branch}"
+- If **the human merged your branch and asks for a new branch** for follow-up fixes:
+  1. Sync to latest main: `git fetch origin && git reset --hard origin/main`
+  2. Create a new branch: `git checkout -b fix/{descriptive-name}`
+  3. Make the fixes on the new branch (your previous changes are already in main)
 
 ---
 
