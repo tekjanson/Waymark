@@ -821,30 +821,66 @@ async function _fetchGemini(url, body) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || '';
 
-    // Quota exhaustion (limit: 0) — retrying won't help
-    if (/limit:\s*0/.test(errMsg) || /exceeded your current quota/i.test(errMsg)) {
-      throw new Error('API quota exhausted — check your billing at ai.google.dev or try a different model.');
+    // Billing/hard quota — retrying won't help
+    if (/exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg)) {
+      throw new Error(
+        'Your Gemini API quota is exhausted. To fix this:\n' +
+        '• Wait until your quota resets (usually daily)\n' +
+        '• Or visit ai.google.dev to upgrade your plan\n' +
+        '• Or switch to a different model in Settings'
+      );
     }
 
-    // Temporary rate limit — parse retry delay from response
+    // Per-minute rate limit — wait and retry
     const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
-    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 10;
+    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 15;
 
-    // Only auto-retry if delay is reasonable (≤ 15s)
-    if (delay <= 15) {
-      await new Promise(r => setTimeout(r, delay * 1000));
-      const retry = await fetch(url, fetchOpts);
-      if (retry.ok) return retry.json();
+    _showRetryIndicator(Math.ceil(delay));
+    await new Promise(r => setTimeout(r, delay * 1000));
+    _removeRetryIndicator();
+
+    const retry = await fetch(url, fetchOpts);
+    if (retry.ok) return retry.json();
+
+    // Second attempt also failed
+    const retryData = await retry.json().catch(() => ({}));
+    const retryMsg = retryData?.error?.message || '';
+
+    if (retry.status === 429) {
+      throw new Error(
+        'Gemini API is rate-limiting requests. Try again in a minute, or switch to a different model in Settings.'
+      );
     }
-
-    throw new Error(`Rate limited — please wait ${Math.ceil(delay)} seconds and try again.`);
+    throw new Error(retryMsg || `API error ${retry.status}`);
   }
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;
+    if (res.status === 400 && /api.?key/i.test(errMsg)) {
+      throw new Error('Invalid API key. Check your key in Settings.');
+    }
+    if (res.status === 403) {
+      throw new Error('API key does not have permission. Check your key at ai.google.dev.');
+    }
     throw new Error(errMsg);
   }
 
   return res.json();
+}
+
+/** Show a "retrying" indicator in the chat body. */
+function _showRetryIndicator(seconds) {
+  if (!_chatBody) return;
+  const indicator = el('div', { className: 'agent-tool-indicator', id: 'agent-retry-indicator' }, [
+    el('span', { className: 'agent-tool-icon' }, ['⏳']),
+    el('span', {}, [`Rate limited — retrying in ${seconds}s...`]),
+  ]);
+  _chatBody.appendChild(indicator);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
+/** Remove the retry indicator. */
+function _removeRetryIndicator() {
+  document.getElementById('agent-retry-indicator')?.remove();
 }
