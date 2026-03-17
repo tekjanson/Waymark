@@ -133,3 +133,101 @@ test('opening notification panel marks all as read', async ({ page }) => {
   // Badge should now be hidden
   await expect(page.locator('.notif-badge')).toBeHidden();
 });
+
+/* ---------- Notification Settings ---------- */
+
+test('notification panel shows settings button', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await expect(page.locator('.notif-settings-btn')).toBeVisible();
+});
+
+test('clicking settings button opens notification settings modal', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.notif-settings-modal')).toBeVisible();
+  await expect(page.locator('.notif-settings-modal')).toContainText('Notification Settings');
+});
+
+test('notification settings shows toggle for each rule', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  const rules = page.locator('.notif-settings-rule');
+  await expect(rules).toHaveCount(4);
+});
+
+test('notification settings toggles are checked by default', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  const toggles = page.locator('.notif-settings-toggle');
+  const count = await toggles.count();
+  for (let i = 0; i < count; i++) {
+    await expect(toggles.nth(i)).toBeChecked();
+  }
+});
+
+test('notification settings shows Google Sheets email link', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.notif-settings-email')).toBeVisible();
+  await expect(page.locator('.notif-settings-link')).toContainText('Google Sheets email notifications');
+});
+
+test('saving notification settings persists to localStorage', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+
+  // Uncheck first toggle
+  const firstToggle = page.locator('.notif-settings-toggle').first();
+  await firstToggle.uncheck();
+  await page.click('.notif-settings-save');
+
+  // Modal should close
+  await expect(page.locator('#notif-settings-modal')).toHaveCount(0);
+
+  // Check localStorage
+  const settings = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notification_settings'))
+  );
+  expect(settings.kanbanOverdue).toBe(false);
+});
+
+test('disabling kanban overdue rule suppresses overdue notifications', async ({ page }) => {
+  await setupApp(page);
+
+  // Disable kanban overdue via localStorage
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_notification_settings', JSON.stringify({
+      kanbanOverdue: false, kanbanP0: true, budgetOverspend: true, checklistOverdue: true,
+    }));
+  });
+
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  // Open panel — should only have P0, not overdue
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  const items = page.locator('.notif-item');
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const text = await items.nth(i).textContent();
+    expect(text).not.toContain('overdue');
+  }
+});

@@ -1608,16 +1608,15 @@ test('kanban AI status shows dot indicator', async ({ page }) => {
   await expect(dot).toBeVisible();
 });
 
-test('kanban AI status shows relative timestamp', async ({ page }) => {
+test('kanban AI status shows relative timestamp with author', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-043');
   await page.waitForSelector('.kanban-ai-time', { timeout: 5000 });
 
   const timeText = page.locator('.kanban-ai-time');
   await expect(timeText).toBeVisible();
-  // The timestamp "2026-03-15 09:00" should render as a date since it's far in the past
-  const text = await timeText.textContent();
-  expect(text.length).toBeGreaterThan(0);
+  // Should show "Last: AI · <relative date>"
+  await expect(timeText).toContainText('Last: AI');
 });
 
 test('kanban does not show AI status for boards without AI activity', async ({ page }) => {

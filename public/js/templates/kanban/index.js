@@ -360,22 +360,34 @@ const definition = {
     /* ---- AI agent status indicator ---- */
     if (cols.assignee >= 0 && cols.due >= 0) {
       let latestAIDateStr = '';
+      let latestAIAuthor = '';
+      // Scan all sub-rows (notes + subtasks) for AI-authored entries
       for (const group of groups) {
-        for (const note of group.notes) {
-          const a = cell(note.row, cols.assignee);
+        for (const child of [...group.notes, ...group.subtasks]) {
+          const a = cell(child.row, cols.assignee);
           if (a && a.toLowerCase() === 'ai') {
-            const d = cell(note.row, cols.due);
-            if (d && d > latestAIDateStr) latestAIDateStr = d;
-          }
-        }
-        for (const st of group.subtasks) {
-          const a = cell(st.row, cols.assignee);
-          if (a && a.toLowerCase() === 'ai') {
-            const d = cell(st.row, cols.due);
-            if (d && d > latestAIDateStr) latestAIDateStr = d;
+            const d = cell(child.row, cols.due);
+            if (d && d > latestAIDateStr) {
+              latestAIDateStr = d;
+              latestAIAuthor = a;
+            }
           }
         }
       }
+      // Also check task rows assigned to AI
+      if (!latestAIDateStr) {
+        for (const group of groups) {
+          const a = cell(group.row, cols.assignee);
+          if (a && a.toLowerCase() === 'ai') {
+            const d = cell(group.row, cols.due);
+            if (d && d > latestAIDateStr) {
+              latestAIDateStr = d;
+              latestAIAuthor = a;
+            }
+          }
+        }
+      }
+
       if (latestAIDateStr) {
         const hasTime = /\d{2}:\d{2}/.test(latestAIDateStr);
         const aiDate = hasTime ? new Date(latestAIDateStr.replace(' ', 'T')) : new Date(latestAIDateStr + 'T00:00:00');
@@ -386,7 +398,9 @@ const definition = {
           }, [
             el('span', { className: 'kanban-ai-dot' }),
             el('span', {}, [isActive ? '🤖 AI Active' : '🤖 AI Offline']),
-            el('span', { className: 'kanban-ai-time' }, [formatRelativeDate(latestAIDateStr)]),
+            el('span', { className: 'kanban-ai-time' }, [
+              `Last: ${latestAIAuthor} · ${formatRelativeDate(latestAIDateStr)}`,
+            ]),
           ]));
         }
       }

@@ -291,3 +291,11 @@ export function getNotifications() {
 export function setNotifications(items) {
   set('notifications', items || []);
 }
+
+export function getNotificationSettings() {
+  return get('notification_settings') || {};
+}
+
+export function setNotificationSettings(settings) {
+  set('notification_settings', settings || {});
+}

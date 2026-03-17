@@ -12,6 +12,22 @@ import * as storage from './storage.js';
 
 const MAX_NOTIFICATIONS = 50;
 
+/** Default notification rule states — all enabled */
+const DEFAULT_RULES = {
+  kanbanOverdue: true,
+  kanbanP0: true,
+  budgetOverspend: true,
+  checklistOverdue: true,
+};
+
+/** Human-readable labels for notification rules */
+const RULE_LABELS = {
+  kanbanOverdue: { icon: '⏰', label: 'Kanban overdue tasks', desc: 'Alert when kanban tasks pass their due date' },
+  kanbanP0: { icon: '🔴', label: 'Kanban critical (P0) tasks', desc: 'Alert for active P0-priority tasks' },
+  budgetOverspend: { icon: '💸', label: 'Budget overspending', desc: 'Alert when expenses exceed income' },
+  checklistOverdue: { icon: '⏰', label: 'Checklist overdue items', desc: 'Alert when checklist items pass their due date' },
+};
+
 /* ---------- State ---------- */
 
 let _notifications = [];
@@ -57,13 +73,14 @@ export function init(topBarRight) {
  */
 export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
   const newAlerts = [];
+  const rules = { ...DEFAULT_RULES, ...storage.getNotificationSettings() };
 
   if (templateKey === 'kanban') {
-    _checkKanban(sheetId, sheetTitle, rows, cols, newAlerts);
+    _checkKanban(sheetId, sheetTitle, rows, cols, newAlerts, rules);
   } else if (templateKey === 'budget') {
-    _checkBudget(sheetId, sheetTitle, rows, cols, newAlerts);
+    if (rules.budgetOverspend) _checkBudget(sheetId, sheetTitle, rows, cols, newAlerts);
   } else if (templateKey === 'checklist') {
-    _checkChecklist(sheetId, sheetTitle, rows, cols, newAlerts);
+    if (rules.checklistOverdue) _checkChecklist(sheetId, sheetTitle, rows, cols, newAlerts);
   }
 
   if (newAlerts.length === 0) return;
@@ -93,7 +110,7 @@ export function clearAll() {
 /* ---------- Template-specific checks ---------- */
 
 /** @param {Array} alerts — push new alerts here */
-function _checkKanban(sheetId, title, rows, cols, alerts) {
+function _checkKanban(sheetId, title, rows, cols, alerts, rules) {
   const today = new Date().toISOString().slice(0, 10);
   let overdueCount = 0;
   let p0Count = 0;
@@ -118,7 +135,7 @@ function _checkKanban(sheetId, title, rows, cols, alerts) {
     }
   }
 
-  if (overdueCount > 0) {
+  if (overdueCount > 0 && rules.kanbanOverdue) {
     alerts.push({
       key: `kanban-overdue-${sheetId}-${today}`,
       type: 'warning',
@@ -130,7 +147,7 @@ function _checkKanban(sheetId, title, rows, cols, alerts) {
     });
   }
 
-  if (p0Count > 0) {
+  if (p0Count > 0 && rules.kanbanP0) {
     alerts.push({
       key: `kanban-p0-${sheetId}-${today}`,
       type: 'alert',
@@ -255,10 +272,17 @@ function _renderPanelContent() {
 
   const header = el('div', { className: 'notif-panel-header' }, [
     el('span', { className: 'notif-panel-title' }, ['Notifications']),
-    el('button', {
-      className: 'notif-clear-btn',
-      on: { click: clearAll },
-    }, ['Clear all']),
+    el('div', { className: 'notif-panel-actions' }, [
+      el('button', {
+        className: 'notif-settings-btn',
+        title: 'Notification settings',
+        on: { click: _showSettings },
+      }, ['⚙️']),
+      el('button', {
+        className: 'notif-clear-btn',
+        on: { click: clearAll },
+      }, ['Clear all']),
+    ]),
   ]);
   _panel.appendChild(header);
 
@@ -303,4 +327,90 @@ function _timeAgo(iso) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+/* ---------- Settings Modal ---------- */
+
+function _showSettings() {
+  const existing = document.getElementById('notif-settings-modal');
+  if (existing) existing.remove();
+
+  // Close the notification panel
+  if (_panel) _panel.classList.add('hidden');
+
+  const saved = { ...DEFAULT_RULES, ...storage.getNotificationSettings() };
+  const toggles = {};
+
+  const ruleList = el('div', { className: 'notif-settings-rules' });
+  for (const [key, meta] of Object.entries(RULE_LABELS)) {
+    const toggleAttrs = { type: 'checkbox', className: 'notif-settings-toggle' };
+    if (saved[key]) toggleAttrs.checked = 'checked';
+    const toggle = el('input', toggleAttrs);
+    toggles[key] = toggle;
+
+    ruleList.appendChild(el('label', { className: 'notif-settings-rule' }, [
+      toggle,
+      el('span', { className: 'notif-settings-rule-icon' }, [meta.icon]),
+      el('div', { className: 'notif-settings-rule-text' }, [
+        el('div', { className: 'notif-settings-rule-label' }, [meta.label]),
+        el('div', { className: 'notif-settings-rule-desc' }, [meta.desc]),
+      ]),
+    ]));
+  }
+
+  const saveBtn = el('button', {
+    className: 'notif-settings-save',
+    on: {
+      click: () => {
+        const settings = {};
+        for (const [key, toggle] of Object.entries(toggles)) {
+          settings[key] = toggle.checked;
+        }
+        storage.setNotificationSettings(settings);
+        overlay.remove();
+      },
+    },
+  }, ['Save']);
+
+  const closeBtn = el('button', {
+    className: 'btn-icon notif-settings-close',
+    on: { click: () => overlay.remove() },
+  }, ['✕']);
+
+  const modal = el('div', { className: 'modal notif-settings-modal' }, [
+    el('div', { className: 'modal-header' }, [
+      el('h3', {}, ['Notification Settings']),
+      closeBtn,
+    ]),
+    el('div', { className: 'modal-body' }, [
+      el('p', { className: 'notif-settings-intro' }, [
+        'Choose which alerts appear when you open a sheet.',
+      ]),
+      ruleList,
+      el('div', { className: 'notif-settings-email' }, [
+        el('p', {}, [
+          'For email notifications, set up notification rules directly in Google Sheets: ',
+          el('strong', {}, ['Tools → Notification rules']),
+          '.',
+        ]),
+        el('a', {
+          href: 'https://support.google.com/docs/answer/14099459',
+          target: '_blank',
+          rel: 'noopener',
+          className: 'notif-settings-link',
+        }, ['Learn about Google Sheets email notifications →']),
+      ]),
+    ]),
+    el('div', { className: 'modal-footer' }, [saveBtn]),
+  ]);
+
+  const overlay = el('div', {
+    id: 'notif-settings-modal',
+    className: 'modal-overlay',
+    on: {
+      click: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+  }, [modal]);
+
+  document.body.appendChild(overlay);
 }
