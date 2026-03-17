@@ -8,6 +8,7 @@ import { el, showToast } from './ui.js';
 import * as storage from './storage.js';
 import * as userData from './user-data.js';
 import { api } from './api-client.js';
+import { TEMPLATES } from './templates/index.js';
 
 /* ---------- Constants ---------- */
 
@@ -30,33 +31,16 @@ Guidelines:
 const MAX_CONTEXT_MESSAGES = 20;
 
 /**
- * Known template headers — maps template key to exact headers Waymark expects.
- * Code fills these in programmatically so the AI never provides wrong headers.
+ * Known template headers — derived from each template's `defaultHeaders`
+ * property, which is the single source of truth in the template definition.
+ * This is computed once at module load so agent.js never drifts out of sync.
+ * @type {Record<string, string[]>}
  */
-const KNOWN_HEADERS = {
-  checklist:  ['Item', 'Status', 'Priority', 'Due', 'Notes'],
-  budget:     ['Description', 'Amount', 'Category', 'Date', 'Notes'],
-  kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
-  tracker:    ['Goal', 'Progress', 'Target', 'Started', 'Notes'],
-  schedule:   ['Day', 'Time', 'Activity', 'Location'],
-  contacts:   ['Name', 'Phone', 'Email', 'Role'],
-  inventory:  ['Item', 'Quantity', 'Category', 'Location'],
-  log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
-  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
-  timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
-  crm:        ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
-  meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
-  travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
-  roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-  testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
-  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
-  poll:       ['Option', 'Votes', 'Percent', 'Notes'],
-  changelog:  ['Version', 'Date', 'Type', 'What Changed'],
-  social:     ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
-  flow:       ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
-  automation: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
-  grading:    ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'],
-};
+const KNOWN_HEADERS = Object.fromEntries(
+  Object.entries(TEMPLATES)
+    .filter(([, t]) => Array.isArray(t.defaultHeaders))
+    .map(([k, t]) => [k, t.defaultHeaders])
+);
 
 /** Column order per template — compact reference for tool description */
 const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)

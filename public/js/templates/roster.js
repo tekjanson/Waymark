@@ -14,6 +14,7 @@ const definition = {
   color: '#6366f1',
   priority: 18,
   itemNoun: 'Employee',
+  defaultHeaders: ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
 
   detect(lower) {
     return lower.some(h => /^(employee|staff|team.?member|worker|person|name)/.test(h))

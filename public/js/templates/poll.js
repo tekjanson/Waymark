@@ -13,6 +13,7 @@ const definition = {
   color: '#be185d',
   priority: 18,
   itemNoun: 'Option',
+  defaultHeaders: ['Option', 'Votes', 'Percent', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(vote|votes|response|responses|poll|ballot|tally)/.test(h))

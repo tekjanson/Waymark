@@ -37,6 +37,7 @@ const definition = {
   color: '#6366f1',
   priority: 20,
   itemNoun: 'Step',
+  defaultHeaders: ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
 
   detect(lower) {
     const hasFlow = lower.some(h => /^(flow|diagram|process|workflow|pipeline|flowchart)/.test(h));

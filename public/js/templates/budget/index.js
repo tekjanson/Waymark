@@ -371,6 +371,7 @@ const definition = {
   color: '#059669',
   priority: 20,
   itemNoun: 'Transaction',
+  defaultHeaders: ['Description', 'Amount', 'Category', 'Date', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(budget|income|expense|spent|balance)/.test(h))
