@@ -581,8 +581,8 @@ async function _callGemini(apiKey, userMessage) {
       parts: [{ text: SYSTEM_PROMPT }],
     },
     generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
+      temperature: 0.4,
+      topP: 0.9,
       maxOutputTokens: 8192,
     },
   };
@@ -678,8 +678,8 @@ async function _handleToolCall(apiKey, url, contents, modelContent, functionCall
       parts: [{ text: SYSTEM_PROMPT }],
     },
     generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
+      temperature: 0.4,
+      topP: 0.9,
       maxOutputTokens: 8192,
     },
   };
@@ -712,7 +712,69 @@ async function _executeTool(name, args) {
 }
 
 /**
+ * Known template headers for auto-correction.
+ * Maps template key to exact headers Waymark expects.
+ */
+const KNOWN_HEADERS = {
+  checklist:  ['Item', 'Status', 'Priority', 'Due', 'Notes'],
+  budget:     ['Description', 'Amount', 'Category', 'Date', 'Notes'],
+  kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
+  tracker:    ['Goal', 'Progress', 'Target', 'Started', 'Notes'],
+  schedule:   ['Day', 'Time', 'Activity', 'Location'],
+  contacts:   ['Name', 'Phone', 'Email', 'Role'],
+  inventory:  ['Item', 'Quantity', 'Category', 'Location'],
+  log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
+  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+  timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
+  crm:        ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
+  meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
+  travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
+  roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
+  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
+  poll:       ['Option', 'Votes', 'Percent', 'Notes'],
+  changelog:  ['Version', 'Date', 'Type', 'What Changed'],
+  social:     ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
+  flow:       ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
+  automation: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
+  grading:    ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'],
+};
+
+/**
+ * Match AI-provided headers to a known template, return corrected headers
+ * if a close match is found. This fixes common AI mistakes (wrong casing,
+ * slightly different column names, extra/missing columns).
+ * @param {string[]} aiHeaders — headers the AI provided
+ * @returns {string[]} — corrected headers if matched, otherwise original
+ */
+function _correctHeaders(aiHeaders) {
+  const lower = aiHeaders.map(h => h.toLowerCase().trim());
+  let bestKey = null;
+  let bestScore = 0;
+
+  for (const [key, known] of Object.entries(KNOWN_HEADERS)) {
+    const knownLower = known.map(h => h.toLowerCase());
+    let matches = 0;
+    for (const h of lower) {
+      if (knownLower.some(k => k === h || k.includes(h) || h.includes(k))) matches++;
+    }
+    const score = matches / Math.max(lower.length, knownLower.length);
+    if (score > bestScore) {
+      bestScore = score;
+      bestKey = key;
+    }
+  }
+
+  // If ≥50% match, use the known template headers
+  if (bestKey && bestScore >= 0.5) {
+    return KNOWN_HEADERS[bestKey];
+  }
+  return aiHeaders;
+}
+
+/**
  * Tool: create_sheet — creates a new Google Sheet with headers and data.
+ * Auto-corrects headers to match known Waymark templates for reliable rendering.
  * @param {{ title: string, rows: string[][] }} args
  * @returns {Promise<Object>}
  */
@@ -724,13 +786,23 @@ async function _toolCreateSheet({ title, rows }) {
   // Ensure all values are strings
   const cleanRows = rows.map(row => row.map(cell => String(cell ?? '')));
 
+  // Auto-correct headers to match known templates
+  cleanRows[0] = _correctHeaders(cleanRows[0]);
+
+  // Pad/trim data rows to match header count
+  const headerCount = cleanRows[0].length;
+  for (let i = 1; i < cleanRows.length; i++) {
+    while (cleanRows[i].length < headerCount) cleanRows[i].push('');
+    cleanRows[i] = cleanRows[i].slice(0, headerCount);
+  }
+
   const result = await api.sheets.createSpreadsheet(title, cleanRows);
 
   return {
     spreadsheetId: result.spreadsheetId,
     title,
-    rowCount: cleanRows.length - 1, // exclude header
-    headerCount: cleanRows[0]?.length || 0,
+    rowCount: cleanRows.length - 1,
+    headerCount,
   };
 }
 
@@ -778,30 +850,63 @@ async function _fetchGemini(url, body) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || '';
 
-    // Quota exhaustion (limit: 0) — retrying won't help
-    if (/limit:\s*0/.test(errMsg) || /exceeded your current quota/i.test(errMsg)) {
-      throw new Error('API quota exhausted — check your billing at ai.google.dev or try a different model.');
+    // Billing/hard quota — retrying won't help
+    if (/exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg)) {
+      throw new Error(
+        'Your Gemini API quota is exhausted. To fix this:\n' +
+        '• Wait until your quota resets (usually daily)\n' +
+        '• Or visit ai.google.dev to upgrade your plan\n' +
+        '• Or switch to a different model in Settings'
+      );
     }
 
-    // Temporary rate limit — parse retry delay from response
+    // Per-minute rate limit — wait and retry
     const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
-    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 10;
+    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 15;
 
-    // Only auto-retry if delay is reasonable (≤ 15s)
-    if (delay <= 15) {
-      await new Promise(r => setTimeout(r, delay * 1000));
-      const retry = await fetch(url, fetchOpts);
-      if (retry.ok) return retry.json();
+    _showRetryIndicator(Math.ceil(delay));
+    await new Promise(r => setTimeout(r, delay * 1000));
+    _removeRetryIndicator();
+
+    const retry = await fetch(url, fetchOpts);
+    if (retry.ok) return retry.json();
+
+    if (retry.status === 429) {
+      throw new Error(
+        'Gemini API is rate-limiting requests. Try again in a minute, or switch to a different model in Settings.'
+      );
     }
-
-    throw new Error(`Rate limited — please wait ${Math.ceil(delay)} seconds and try again.`);
+    const retryData = await retry.json().catch(() => ({}));
+    throw new Error(retryData?.error?.message || `API error ${retry.status}`);
   }
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;
+    if (res.status === 400 && /api.?key/i.test(errMsg)) {
+      throw new Error('Invalid API key. Check your key in Settings.');
+    }
+    if (res.status === 403) {
+      throw new Error('API key does not have permission. Check your key at ai.google.dev.');
+    }
     throw new Error(errMsg);
   }
 
   return res.json();
+}
+
+/** Show a "retrying" indicator in the chat body. */
+function _showRetryIndicator(seconds) {
+  if (!_chatBody) return;
+  const indicator = el('div', { className: 'agent-tool-indicator', id: 'agent-retry-indicator' }, [
+    el('span', { className: 'agent-tool-icon' }, ['⏳']),
+    el('span', {}, [`Rate limited — retrying in ${seconds}s...`]),
+  ]);
+  _chatBody.appendChild(indicator);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
+/** Remove the retry indicator. */
+function _removeRetryIndicator() {
+  document.getElementById('agent-retry-indicator')?.remove();
 }
