@@ -36,6 +36,7 @@ const definition = {
   color: '#0891b2',
   priority: 20,
   itemNoun: 'Activity',
+  defaultHeaders: ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
 
   detect(lower) {
     return lower.some(h => /^(flight|hotel|booking|itinerary|accommodation|departure|arrival|transport)/.test(h) || /^(activity|event|attraction)/.test(h))

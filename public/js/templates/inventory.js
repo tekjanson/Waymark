@@ -21,6 +21,7 @@ const definition = {
   color: '#f59e0b',
   priority: 15,
   itemNoun: 'Item',
+  defaultHeaders: ['Item', 'Quantity', 'Category', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(quantity|qty|count|stock|amount|price|cost|sku|upc|in.?stock)/.test(h))

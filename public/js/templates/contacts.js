@@ -10,6 +10,7 @@ const definition = {
   color: '#ec4899',
   priority: 15,
   itemNoun: 'Contact',
+  defaultHeaders: ['Name', 'Phone', 'Email', 'Role'],
 
   detect(lower) {
     return lower.some(h => /^(email|phone|mobile|cell|telephone)/.test(h))

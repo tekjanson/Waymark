@@ -27,6 +27,7 @@ const definition = {
   color: '#8b5cf6',
   priority: 20,
   itemNoun: 'Event',
+  defaultHeaders: ['Day', 'Time', 'Activity', 'Location'],
 
   detect(lower) {
     return lower.some(h => /^(time\b|start\s*time|end\s*time|slot|period|block)/.test(h));

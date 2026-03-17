@@ -28,6 +28,7 @@ const definition = {
   color: '#ea580c',
   priority: 24,
   itemNoun: 'Ingredient',
+  defaultHeaders: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'],
 
   /** Columns this template supports but that may be missing from older sheets */
   migrations: [

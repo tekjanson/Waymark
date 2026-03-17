@@ -55,6 +55,7 @@ const definition = {
   color: '#4338ca',
   priority: 20,
   itemNoun: 'Entry',
+  defaultHeaders: ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
 
   detect(lower) {
     return lower.some(h => /^(hours|time.?spent|duration|hrs)/.test(h))
