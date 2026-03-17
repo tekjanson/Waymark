@@ -2,7 +2,7 @@
 name: waymark-builder
 description: Persistent build agent that queries the Waymark Workboard Google Sheet for To Do items, picks them up automatically, implements features in branches following AI_LAWS, writes isolated E2E tests, and loops forever waiting for the next task.
 argument-hint: "'start' to begin the persistent watch loop, 'pick next' for a single task, or a specific task name/row number"
-tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo']
+tools: [vscode/extensions, vscode/askQuestions, vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vscode/newWorkspace, vscode/runCommand, vscode/vscodeAPI, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/readNotebookCellOutput, agent/runSubagent, google-sheets/sheets_sheet_add, google-sheets/sheets_sheet_delete, google-sheets/sheets_sheets_list, google-sheets/sheets_spreadsheet_create, google-sheets/sheets_spreadsheet_get, google-sheets/sheets_values_append, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_batch_update, google-sheets/sheets_values_clear, google-sheets/sheets_values_get, google-sheets/sheets_values_update, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web/fetch, web/githubRepo, todo]
 ---
 
 # Waymark Builder Agent
@@ -276,20 +276,27 @@ This script:
 ### 2.3 Completing a Task
 When implementation + tests pass:
 1. **Push the feature branch to remote:** `git push -u origin feature/{branch-name}`
-2. Update stage to QA:
+2. **Export test report to Google Drive:**
+   ```bash
+   node scripts/generate-test-report.js --upload
+   ```
+   This runs the full test suite, generates testcase-template fixtures, and uploads them to Google Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` in a subfolder named `{branch} — {date}`. Each spec file becomes a Google Sheet in testcase format.
+   The script uses OAuth user credentials (saved at `~/.config/gcloud/waymark-oauth-token.json`). If the token is missing, run `node scripts/get-oauth-token.js` once to authenticate.
+   The script writes the Drive folder URL to `generated/test-report/drive-url.txt`. Read this file to get the link for inclusion in QA notes.
+3. Update stage to QA:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
      node scripts/update-workboard.js stage {row} QA
    ```
-3. Insert a **completion note sub-row** (uses safe insert — never overwrites):
+4. Insert a **completion note sub-row** (uses safe insert — never overwrites):
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
      node scripts/update-workboard.js note {row} "Branch: feature/... | Files: ... | +N LOC | N tests"
    ```
-4. Insert a **testing notes sub-row** (also safe insert):
+5. Insert a **testing notes sub-row** (also safe insert) — **MUST include the Drive test report link**:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
-     node scripts/update-workboard.js note {row} "QA: 1) ... 2) ... E2E covers: ... Manual: ..."
+     node scripts/update-workboard.js note {row} "QA: 1) ... 2) ... E2E covers: ... Manual: ... Test report: {drive-folder-url}"
    ```
 
 The completion note must include:
@@ -303,6 +310,7 @@ The testing notes sub-row must include step-by-step instructions for QA:
 - How to manually verify the feature works (specific user actions to perform)
 - What the E2E tests cover vs. what needs manual verification
 - Any edge cases or known limitations
+- **The Google Drive test report folder URL** (from `generated/test-report/drive-url.txt`)
 
 **Example completion note:**
 ```
@@ -311,7 +319,7 @@ Branch: feature/kanban-collapsible-lanes | Files: kanban/index.js, kanban.css, k
 
 **Example testing notes:**
 ```
-QA: 1) Open any kanban sheet 2) Click lane header to collapse — cards should hide with animation 3) Refresh page — collapsed state should persist 4) Mobile: lanes stack vertically, collapse still works. E2E covers: collapse toggle, persistence, card count. Manual: verify animation smoothness, check dark mode.
+QA: 1) Open any kanban sheet 2) Click lane header to collapse — cards should hide with animation 3) Refresh page — collapsed state should persist 4) Mobile: lanes stack vertically, collapse still works. E2E covers: collapse toggle, persistence, card count. Manual: verify animation smoothness, check dark mode. Test report: https://drive.google.com/drive/folders/{folderId}
 ```
 
 > **IMPORTANT:** The agent NEVER moves a task to `Done`. The lifecycle is:
@@ -806,11 +814,12 @@ When adding new helper functions, add corresponding unit tests to the appropriat
 14. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
 15. **Commit** with descriptive message: `feat({scope}): {description}`
 16. **Push branch to remote** — `git push -u origin feature/{branch-name}`
-17. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
+17. **Export test report to Google Drive** — Run `node scripts/generate-test-report.js --upload` to create a Drive folder with test results as Google Sheets (see §2.3 step 2, §8.3). Read the folder URL from `generated/test-report/drive-url.txt`.
+18. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
     - **Completion note:** branch name, files changed, LOC, test count
-    - **Testing note:** step-by-step QA verification instructions (see §2.3 for format)
-18. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
-19. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
+    - **Testing note:** step-by-step QA verification instructions + Drive test report link (see §2.3 for format)
+19. **Report results** — tell the user what was built, test count, branch name, Drive test report link, and that it's ready for QA
+20. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
 
 > The agent does NOT create PRs, merge, or move items to Done. That is the human's job after QA.
 
@@ -840,6 +849,8 @@ Before marking any task as QA, verify:
 - [ ] `template-registry.json` updated if adding/modifying templates
 - [ ] Sheet data uses row-per-item format (§4.7)
 - [ ] No build step required
+- [ ] Test report exported to Google Drive via `generate-test-report.js --upload`
+- [ ] Drive test report link included in QA testing notes
 - [ ] `npm test` passes ALL tests (E2E + unit)
 - [ ] Unit tests written for any new/modified pure helper functions (§4.10)
 - [ ] Unit test files follow `tests/e2e/unit-{module}.spec.js` naming convention
@@ -928,7 +939,30 @@ GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-ac
   node scripts/check-workboard.js
 ```
 
-### 8.3 Writing Completion + Testing Notes
+### 8.3 Exporting Test Reports to Google Drive
+Before marking a task as QA, generate and upload the test report:
+
+```bash
+# Run all tests and upload results to Google Drive
+node scripts/generate-test-report.js --upload
+```
+
+This uses **OAuth user credentials** (not the service account — service accounts have zero file-storage quota on consumer Google accounts). The refresh token is saved at `~/.config/gcloud/waymark-oauth-token.json`.
+
+**One-time setup:** If the token file doesn't exist, run:
+```bash
+node scripts/get-oauth-token.js
+```
+This starts a local server and opens the browser for Google consent. The refresh token persists until revoked.
+
+The upload creates a subfolder in Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` named `{branch} — {date}` containing:
+- One Google Sheet per spec file in testcase template format (Test Case, Result, Expected, Actual, Priority, Notes)
+
+Every sheet in the folder uses testcase-template headers so the Waymark directory view renders the folder as a **Test Suite Overview** with aggregated pass/fail/blocked/skip counts and pass-rate color coding.
+
+The script outputs the Drive folder URL to `generated/test-report/drive-url.txt`. Include this link in the QA testing notes.
+
+### 8.4 Writing Completion + Testing Notes
 When marking a task as QA, use TWO `note` commands in sequence:
 
 ```bash
@@ -940,13 +974,14 @@ GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
   "Branch: feature/task-name | Files: file1.js, file2.css | +80 LOC | 4 new tests (87 total)"
 
 # Step 3: Insert QA testing note (safe insert — never overwrites)
+# MUST include the Drive test report link
 GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
-  "QA: 1) Open sheet-NNN 2) Click X to verify Y. E2E covers: ... Manual: ..."
+  "QA: 1) Open sheet-NNN 2) Click X to verify Y. E2E covers: ... Manual: ... Test report: https://drive.google.com/drive/folders/{folderId}"
 ```
 
 Each `note` command safely inserts a new row — they can be called multiple times without risk.
 
-### 8.4 Why Raw PUT is Dangerous (DO NOT USE)
+### 8.5 Why Raw PUT is Dangerous (DO NOT USE)
 The old pattern used `PUT` to write directly to calculated row numbers:
 ```
 PUT Sheet1!A267:I267 → [["", "", "", "", "AI", "", "2026-03-14", "", "note text"]]
@@ -976,7 +1011,9 @@ Before implementing, always read these files for current state:
 - `public/css/style.css` — CSS aggregator imports
 - `tests/e2e/unit-*.spec.js` — existing unit tests (pattern reference for new tests)
 - `scripts/update-workboard.js` — safe workboard writes (claim, stage, note with row insertion)
-- `scripts/check-workboard.js` — read-only workboard query (used in idle loop)
+- `scripts/check-workboard.js` — read-only workboard query (used in idle loop, includes rejection detection)
+- `scripts/generate-test-report.js` — test report generator with Google Drive upload (`--upload` flag, uses OAuth token)
+- `scripts/get-oauth-token.js` — one-time OAuth flow to save refresh token for Drive file creation
 
 ---
 

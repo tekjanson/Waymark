@@ -16,7 +16,8 @@
     "design-audit": "node scripts/design-audit.js",
     "design-review": "npm run screenshots && npm run design-audit",
     "build-info": "node scripts/build-info.js",
-    "test:report": "WAYMARK_LOCAL=true node scripts/generate-test-report.js"
+    "test:report": "WAYMARK_LOCAL=true node scripts/generate-test-report.js",
+    "test:report:upload": "WAYMARK_LOCAL=true node scripts/generate-test-report.js --upload"
   },
   "keywords": [
     "checklist",
