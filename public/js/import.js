@@ -161,6 +161,15 @@ const ROLE_LABELS = {
   'automation.target': 'Target (CSS selector, URL, or element)',
   'automation.value': 'Value / Input data',
   'automation.status': 'Status (pending, running, done, failed, skipped)',
+  // Knowledge Base
+  'knowledge.title': 'Article / Topic title',
+  'knowledge.category': 'Category / Section',
+  'knowledge.content': 'Content / Body text (one paragraph per row)',
+  'knowledge.tags': 'Tags / Keywords (comma-separated)',
+  'knowledge.author': 'Author / Contributor',
+  'knowledge.updated': 'Last Updated Date',
+  'knowledge.status': 'Status (Draft, Published, In Review, Archived)',
+  'knowledge.source': 'Source URL / Reference',
 };
 
 /**
@@ -244,6 +253,11 @@ const CANONICAL_HEADERS = {
   'automation.workflow': 'Workflow', 'automation.step': 'Step',
   'automation.action': 'Action', 'automation.target': 'Target',
   'automation.value': 'Value', 'automation.status': 'Status',
+  // Knowledge Base
+  'knowledge.title': 'Title', 'knowledge.category': 'Category',
+  'knowledge.content': 'Content', 'knowledge.tags': 'Tags',
+  'knowledge.author': 'Author', 'knowledge.updated': 'Updated',
+  'knowledge.status': 'Status', 'knowledge.source': 'Source',
 };
 
 /**

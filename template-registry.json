@@ -819,10 +819,57 @@
       "fixtureFiles": [
         "automation-workflow"
       ]
+    },
+    {
+      "key": "knowledge",
+      "name": "Knowledge Base",
+      "icon": "📚",
+      "color": "#6366f1",
+      "priority": 18,
+      "category": "Documentation",
+      "detectSignals": [
+        "knowledge",
+        "wiki",
+        "article",
+        "documentation",
+        "doc",
+        "faq",
+        "guide",
+        "kb",
+        "content",
+        "category",
+        "topic"
+      ],
+      "columnRoles": [
+        "title",
+        "category",
+        "content",
+        "tags",
+        "author",
+        "updated",
+        "status",
+        "source"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [
+        "Draft",
+        "In Review",
+        "Published",
+        "Archived"
+      ],
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-044"
+      ],
+      "fixtureFiles": [
+        "knowledge-devops"
+      ]
     }
   ],
-  "nextSheetId": "sheet-038",
-  "totalTemplates": 22,
+  "nextSheetId": "sheet-045",
+  "totalTemplates": 23,
   "categories": [
     "Productivity",
     "Engineering",
@@ -841,6 +888,7 @@
     "Health",
     "Travel",
     "Operations",
-    "Social"
+    "Social",
+    "Documentation"
   ]
 }

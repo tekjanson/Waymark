@@ -685,4 +685,30 @@ export const EXAMPLE_SHEETS = {
       ['', 'Verify order number', 'assert', '.order-number', '', 'Pending'],
     ],
   },
+
+  /* ---- Knowledge Base examples ---- */
+  'DevOps Knowledge Base': {
+    folder: 'Knowledge',
+    headers: ['Title', 'Category', 'Content', 'Tags', 'Author', 'Updated', 'Status', 'Source'],
+    rows: [
+      ['Deployment Checklist', 'DevOps', 'Run all unit tests before deploying', 'deployment, ci, testing', 'Alex', '2026-02-15', 'Published', ''],
+      ['', '', 'Build production bundle with npm run build', '', '', '', '', ''],
+      ['', '', 'Tag the release in Git with version number', '', '', '', '', ''],
+      ['', '', 'Deploy to staging first and verify', '', '', '', '', ''],
+      ['', '', 'Monitor error rates for 30 minutes after deploy', '', '', '', '', ''],
+      ['Git Branching Strategy', 'DevOps', 'Always branch from main for new features', 'git, branching, workflow', 'Sam', '2026-01-20', 'Published', ''],
+      ['', '', 'Use feature/ prefix for feature branches', '', '', '', '', ''],
+      ['', '', 'Use fix/ prefix for bug fix branches', '', '', '', '', ''],
+      ['', '', 'Never commit directly to main', '', '', '', '', ''],
+      ['CSS Architecture', 'Frontend', 'Use CSS custom properties for design tokens', 'css, design, tokens', 'Jordan', '2026-03-01', 'Published', ''],
+      ['', '', 'Keep selectors max 2 levels deep', '', '', '', '', ''],
+      ['', '', 'One CSS file per template or component', '', '', '', '', ''],
+      ['API Rate Limiting', 'Backend', 'All endpoints should enforce rate limits', 'api, security, performance', 'Alex', '2026-02-28', 'In Review', ''],
+      ['', '', 'Use token bucket algorithm for flexibility', '', '', '', '', ''],
+      ['', '', 'Return 429 status with Retry-After header', '', '', '', '', ''],
+      ['Onboarding Guide', 'Process', 'Set up dev environment using README instructions', 'onboarding, new-hire', 'Sam', '2026-01-10', 'Draft', ''],
+      ['', '', 'Complete required security training modules', '', '', '', '', ''],
+      ['', '', 'Schedule 1:1 with team lead in first week', '', '', '', '', ''],
+    ],
+  },
 };
