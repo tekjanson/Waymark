@@ -402,7 +402,23 @@ ul { list-style: none; }
   color: var(--color-text-muted);
 }
 
+.notif-settings-email-heading {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
 .notif-settings-email p { margin: 0 0 8px; }
+
+.notif-email-steps {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+}
+
+.notif-email-steps li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
 
 .notif-settings-link {
   color: var(--color-primary);

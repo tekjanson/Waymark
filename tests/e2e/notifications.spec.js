@@ -231,3 +231,119 @@ test('disabling kanban overdue rule suppresses overdue notifications', async ({ 
     expect(text).not.toContain('overdue');
   }
 });
+
+/* ---------- Notification Dedup & Auto-Resolve ---------- */
+
+test('stored notifications have no duplicate keys after loading kanban', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  const notifications = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notifications') || '[]')
+  );
+  expect(notifications.length).toBeGreaterThan(0);
+
+  // Verify no duplicate keys
+  const keys = notifications.map(n => n.key);
+  const uniqueKeys = new Set(keys);
+  expect(uniqueKeys.size).toBe(keys.length);
+});
+
+test('notification keys do not contain date suffixes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  const notifications = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notifications') || '[]')
+  );
+  expect(notifications.length).toBeGreaterThan(0);
+
+  // No notification key should end with a date pattern (YYYY-MM-DD)
+  for (const n of notifications) {
+    expect(n.key).not.toMatch(/\d{4}-\d{2}-\d{2}$/);
+  }
+});
+
+test('old date-suffixed notifications are migrated on init', async ({ page }) => {
+  await setupApp(page);
+
+  // Pre-populate with old-format notification
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_notifications', JSON.stringify([
+      { key: 'kanban-overdue-sheet-999-2026-01-15', message: 'old notif', read: false, timestamp: '2026-01-15T00:00:00Z', sheetId: 'sheet-999' },
+      { key: 'kanban-p0-sheet-999', message: 'new format notif', read: false, timestamp: '2026-03-15T00:00:00Z', sheetId: 'sheet-999' },
+    ]));
+  });
+
+  // Reload to trigger init migration
+  await page.reload();
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+
+  const notifications = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notifications') || '[]')
+  );
+
+  // Old date-suffixed notification should be removed
+  expect(notifications.length).toBe(1);
+  expect(notifications[0].key).toBe('kanban-p0-sheet-999');
+});
+
+test('notification message includes specific overdue count', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+
+  const messages = await page.locator('.notif-item-message').allTextContents();
+  const overdueMsg = messages.find(m => m.includes('overdue'));
+  expect(overdueMsg).toBeTruthy();
+  // Message should contain a count like "3 overdue tasks"
+  expect(overdueMsg).toMatch(/\d+ overdue task/);
+});
+
+/* ---------- Improved Email Section ---------- */
+
+test('email notification section shows step-by-step instructions', async ({ page }) => {
+  await setupApp(page);
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.notif-settings-email-heading')).toContainText('Email Notifications');
+  await expect(page.locator('.notif-email-steps')).toBeVisible();
+
+  const steps = page.locator('.notif-email-steps li');
+  expect(await steps.count()).toBe(3);
+  await expect(steps.nth(0)).toContainText('Google Sheets');
+  await expect(steps.nth(1)).toContainText('Notification rules');
+});
+
+test('auto-refresh does not re-trigger notification evaluation within throttle window', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  // Record notification state
+  const before = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notifications') || '[]')
+  );
+
+  // Simulate auto-refresh triggering sheet-rendered event
+  await page.evaluate(() => {
+    document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
+      detail: { sheetId: 'sheet-028', title: 'Test', templateKey: 'kanban', rows: [], cols: {} },
+    }));
+  });
+
+  // Notifications should be unchanged (throttle blocked re-evaluation)
+  const after = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_notifications') || '[]')
+  );
+  expect(after.length).toBe(before.length);
+  expect(after.map(n => n.key)).toEqual(before.map(n => n.key));
+});

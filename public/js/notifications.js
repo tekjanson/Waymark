@@ -11,6 +11,7 @@ import * as storage from './storage.js';
 /* ---------- Constants ---------- */
 
 const MAX_NOTIFICATIONS = 50;
+const EVAL_COOLDOWN = 2 * 60 * 1000; // 2 minutes — prevent spammy re-evaluation on auto-refresh
 
 /** Default notification rule states — all enabled */
 const DEFAULT_RULES = {
@@ -34,6 +35,7 @@ let _notifications = [];
 let _bellBtn = null;
 let _badge = null;
 let _panel = null;
+const _lastEval = new Map(); // sheetId → timestamp of last evaluation
 
 /* ---------- Public API ---------- */
 
@@ -44,6 +46,13 @@ let _panel = null;
  */
 export function init(topBarRight) {
   _notifications = storage.getNotifications();
+
+  // Migrate old date-suffixed keys (kanban-overdue-sheet-123-2026-03-17 → removed)
+  const dateKeySuffix = /\d{4}-\d{2}-\d{2}$/;
+  if (_notifications.some(n => dateKeySuffix.test(n.key))) {
+    _notifications = _notifications.filter(n => !dateKeySuffix.test(n.key));
+    storage.setNotifications(_notifications);
+  }
 
   _badge = el('span', { className: 'notif-badge hidden' }, ['0']);
   _bellBtn = el('button', {
@@ -72,6 +81,12 @@ export function init(topBarRight) {
  * @param {Object} cols — column mapping from template.columns()
  */
 export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
+  // Throttle: skip if this sheet was evaluated recently
+  const now = Date.now();
+  const lastTime = _lastEval.get(sheetId) || 0;
+  if (now - lastTime < EVAL_COOLDOWN) return;
+  _lastEval.set(sheetId, now);
+
   const newAlerts = [];
   const rules = { ...DEFAULT_RULES, ...storage.getNotificationSettings() };
 
@@ -83,16 +98,60 @@ export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
     if (rules.checklistOverdue) _checkChecklist(sheetId, sheetTitle, rows, cols, newAlerts);
   }
 
-  if (newAlerts.length === 0) return;
+  const scopeKeys = _getScopeKeys(templateKey, sheetId);
+  const newKeyMap = new Map(newAlerts.map(a => [a.key, a]));
+  let changed = false;
 
-  // Deduplicate: don't re-add alerts with the same key
-  const existingKeys = new Set(_notifications.map(n => n.key));
-  const fresh = newAlerts.filter(a => !existingKeys.has(a.key));
-  if (fresh.length === 0) return;
+  // Update existing or add new alerts
+  for (const alert of newAlerts) {
+    const idx = _notifications.findIndex(n => n.key === alert.key);
+    if (idx >= 0) {
+      // Key exists — update if content changed
+      if (_notifications[idx].message !== alert.message) {
+        _notifications[idx].message = alert.message;
+        _notifications[idx].timestamp = alert.timestamp;
+        _notifications[idx].read = false;
+        changed = true;
+      }
+    } else {
+      // New alert — prepend
+      _notifications.unshift(alert);
+      changed = true;
+    }
+  }
 
-  _notifications = [...fresh, ..._notifications].slice(0, MAX_NOTIFICATIONS);
-  storage.setNotifications(_notifications);
-  _updateBadge();
+  // Auto-resolve: remove stale notifications for this sheet+template scope
+  const before = _notifications.length;
+  _notifications = _notifications.filter(n => {
+    if (!scopeKeys.has(n.key)) return true; // keep if not in scope
+    return newKeyMap.has(n.key); // keep only if still active
+  });
+  if (_notifications.length !== before) changed = true;
+
+  // Trim to max
+  if (_notifications.length > MAX_NOTIFICATIONS) {
+    _notifications = _notifications.slice(0, MAX_NOTIFICATIONS);
+    changed = true;
+  }
+
+  if (changed) {
+    storage.setNotifications(_notifications);
+    _updateBadge();
+  }
+}
+
+/** Get all possible notification keys for a given template+sheet scope. */
+function _getScopeKeys(templateKey, sheetId) {
+  const keys = new Set();
+  if (templateKey === 'kanban') {
+    keys.add(`kanban-overdue-${sheetId}`);
+    keys.add(`kanban-p0-${sheetId}`);
+  } else if (templateKey === 'budget') {
+    keys.add(`budget-over-${sheetId}`);
+  } else if (templateKey === 'checklist') {
+    keys.add(`checklist-overdue-${sheetId}`);
+  }
+  return keys;
 }
 
 /**
@@ -137,7 +196,7 @@ function _checkKanban(sheetId, title, rows, cols, alerts, rules) {
 
   if (overdueCount > 0 && rules.kanbanOverdue) {
     alerts.push({
-      key: `kanban-overdue-${sheetId}-${today}`,
+      key: `kanban-overdue-${sheetId}`,
       type: 'warning',
       icon: '⏰',
       message: `${overdueCount} overdue task${overdueCount > 1 ? 's' : ''} in "${title}"`,
@@ -149,7 +208,7 @@ function _checkKanban(sheetId, title, rows, cols, alerts, rules) {
 
   if (p0Count > 0 && rules.kanbanP0) {
     alerts.push({
-      key: `kanban-p0-${sheetId}-${today}`,
+      key: `kanban-p0-${sheetId}`,
       type: 'alert',
       icon: '🔴',
       message: `${p0Count} critical (P0) task${p0Count > 1 ? 's' : ''} in "${title}"`,
@@ -175,9 +234,8 @@ function _checkBudget(sheetId, title, rows, cols, alerts) {
 
   if (totalExpense > 0 && totalIncome > 0 && totalExpense > totalIncome) {
     const over = (totalExpense - totalIncome).toFixed(2);
-    const today = new Date().toISOString().slice(0, 10);
     alerts.push({
-      key: `budget-over-${sheetId}-${today}`,
+      key: `budget-over-${sheetId}`,
       type: 'warning',
       icon: '💸',
       message: `Spending exceeds income by $${over} in "${title}"`,
@@ -203,7 +261,7 @@ function _checkChecklist(sheetId, title, rows, cols, alerts) {
 
   if (overdueCount > 0) {
     alerts.push({
-      key: `checklist-overdue-${sheetId}-${today}`,
+      key: `checklist-overdue-${sheetId}`,
       type: 'warning',
       icon: '⏰',
       message: `${overdueCount} overdue item${overdueCount > 1 ? 's' : ''} in "${title}"`,
@@ -388,17 +446,21 @@ function _showSettings() {
       ]),
       ruleList,
       el('div', { className: 'notif-settings-email' }, [
+        el('h4', { className: 'notif-settings-email-heading' }, ['📧 Email Notifications']),
         el('p', {}, [
-          'For email notifications, set up notification rules directly in Google Sheets: ',
-          el('strong', {}, ['Tools → Notification rules']),
-          '.',
+          'Waymark surfaces in-app alerts (above) when you view your sheets. For email notifications when collaborators make changes, use Google Sheets directly:',
+        ]),
+        el('ol', { className: 'notif-email-steps' }, [
+          el('li', {}, ['Open your sheet in Google Sheets']),
+          el('li', {}, ['Go to ', el('strong', {}, ['Tools → Notification rules'])]),
+          el('li', {}, ['Choose when to receive emails (any change, new form response, etc.)']),
         ]),
         el('a', {
           href: 'https://support.google.com/docs/answer/14099459',
           target: '_blank',
           rel: 'noopener',
           className: 'notif-settings-link',
-        }, ['Learn about Google Sheets email notifications →']),
+        }, ['Learn more about Google Sheets email notifications →']),
       ]),
     ]),
     el('div', { className: 'modal-footer' }, [saveBtn]),
