@@ -161,6 +161,17 @@ const ROLE_LABELS = {
   'automation.target': 'Target (CSS selector, URL, or element)',
   'automation.value': 'Value / Input data',
   'automation.status': 'Status (pending, running, done, failed, skipped)',
+  // Notification
+  'notification.title': 'Title / Alert headline',
+  'notification.message': 'Message / Alert body text',
+  'notification.type': 'Type (alert, warning, info, success)',
+  'notification.status': 'Status (Active, Read, Dismissed)',
+  'notification.icon': 'Icon / Emoji',
+  'notification.priority': 'Priority (high, medium, low)',
+  'notification.created': 'Created / Timestamp',
+  'notification.expires': 'Expires / Expiry date',
+  'notification.source': 'Source / Origin system',
+  'notification.sheet': 'Sheet / Related sheet ID',
 };
 
 /**

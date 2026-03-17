@@ -299,3 +299,15 @@ export function getNotificationSettings() {
 export function setNotificationSettings(settings) {
   set('notification_settings', settings || {});
 }
+
+export function getNotifSheetId() {
+  return localStorage.getItem('waymark_notif_sheet_id') || null;
+}
+
+export function setNotifSheetId(id) {
+  if (id) {
+    localStorage.setItem('waymark_notif_sheet_id', id);
+  } else {
+    localStorage.removeItem('waymark_notif_sheet_id');
+  }
+}

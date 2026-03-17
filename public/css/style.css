@@ -29,6 +29,7 @@
 @import url('./templates/flow.css');
 @import url('./templates/social.css');
 @import url('./templates/automation.css');
+@import url('./templates/notification.css');
 
 /* Agent view */
 @import url('./agent.css');
