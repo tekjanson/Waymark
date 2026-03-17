@@ -64,8 +64,16 @@ LOOP:
 
   3. IF todo array is non-empty:
      → Pick the first item (highest priority)
-     → **Sync to tip of main BEFORE branching** (§1.1 — fetch + reset --hard origin/main)
-     → Execute the full WORK cycle (§1-§6)
+     → **CHECK FOR QA REJECTION** (§0.3 — MANDATORY before any work):
+       - If item has `rejected: true` or has sub-row notes with "⟳ QA → To Do":
+         **This is a QA rejection. The human reviewed your work and sent it back.**
+         Read ALL sub-row notes. The human's notes contain specific feedback about
+         what's wrong. Follow the QA REJECTION PROTOCOL in §0.3.
+       - **NEVER re-mark a rejected task as QA without reading and addressing ALL feedback.**
+       - **NEVER assume a To Do item with existing AI notes is a "row drift" glitch.**
+         If it has AI notes + human feedback, it was rejected. Period.
+     → For new tasks (no prior AI notes): Sync to tip of main, create branch, execute full WORK cycle (§1-§6)
+     → For rejected tasks: Follow §0.3 (reuse branch, read feedback, fix issues)
      → After completing, go back to step 1.
 
   4. IF todo array is empty:
@@ -89,6 +97,68 @@ LOOP:
 | Check | ~2 seconds | ~30 | Run script, parse one JSON line |
 | Idle hour | 60 minutes | ~1,800 | 60 cycles × 30 tokens |
 | Active work | varies | normal | Writing code, running tests |
+
+---
+
+## 0.3 QA REJECTION PROTOCOL — ABSOLUTE RULE
+
+> **⚠️ When the human moves a task from QA back to To Do, that is a REJECTION.**
+> **The human is QA. The human is ALWAYS right. You NEVER push back or re-mark as QA without fixing the issues.**
+> **This is a HARD REJECT rule — violating it is as serious as committing to main.**
+
+### How to Detect a QA Rejection
+
+`check-workboard.js` flags rejected items with `rejected: true` in the JSON output. A task is considered rejected when:
+- It has sub-row notes from the AI (meaning you previously worked on it)
+- AND it has been moved back to "To Do" (indicated by "⟳ QA → To Do" markers)
+- AND/OR it has human feedback notes after the AI notes
+
+### What to Do When a Task is Rejected
+
+1. **READ ALL SUB-ROW NOTES** — The human's notes contain specific feedback about what's wrong. Read every single note, especially those by the human (non-AI author). Pay attention to:
+   - What specific changes the human wants
+   - What's broken or missing
+   - Whether they want to keep the same branch or need a new one
+   - Any links, examples, or references they provided
+
+2. **DO NOT re-mark as QA** — You cannot re-submit the same work. You must actually fix the issues the human identified.
+
+3. **DO NOT treat it as a new task** — This is a continuation. The human has context and expectations from the previous submission.
+
+4. **Reuse the existing branch** (unless the human explicitly says to create a new one, or the branch was already merged to main):
+   ```bash
+   git fetch origin
+   git checkout feature/{existing-branch-name}
+   git rebase origin/main
+   ```
+
+5. **If the branch was already merged to main** (human merged it but wants further changes):
+   ```bash
+   git fetch origin && git reset --hard origin/main
+   git checkout -b fix/{descriptive-name}
+   ```
+
+6. **Address EVERY point in the feedback** — Don't cherry-pick which feedback to address. All of it.
+
+7. **Acknowledge the feedback in your workboard note** — When re-submitting, reference what you fixed:
+   ```
+   "Addressed QA feedback: 1) expanded examples per request 2) fixed X 3) added Y"
+   ```
+
+### What NEVER to Do
+
+- **NEVER** assume "To Do" on a previously-completed task is a glitch, row drift, or accident
+- **NEVER** blindly re-mark a rejected task as QA without making changes
+- **NEVER** ignore human feedback notes
+- **NEVER** argue with or push back on QA decisions — the human is the authority
+- **NEVER** skip reading sub-row notes when picking up a To Do item
+
+### Detection in the Persistent Loop
+
+When `check-workboard.js` returns a To Do item, ALWAYS check:
+1. Does the item have `rejected: true`? → QA rejection, follow this protocol.
+2. Does the item have a `notes` array with AI-authored entries? → Previously worked on, likely a rejection.
+3. If neither → Fresh task, follow normal §1-§6 workflow.
 
 ---
 
@@ -707,7 +777,10 @@ When adding new helper functions, add corresponding unit tests to the appropriat
 
 ### Step-by-step for every task:
 
-1. **Read the task** from the workboard (including all sub-row notes for context)
+1. **Read the task AND ALL SUB-ROW NOTES** from the workboard. This is MANDATORY.
+   - If `check-workboard.js` returned `rejected: true` or notes with "⟳ QA → To Do": **STOP. This is a QA rejection. Follow §0.3 QA Rejection Protocol.**
+   - Read every human-authored note for specific feedback, corrections, and requirements.
+   - The human's notes override your previous assumptions — they are the authority.
 2. **Sync to tip of main** — EVERY new task starts from the latest remote main. In a worktree, use the worktree-safe sync (§1.0 rule 5):
    ```bash
    git checkout -- . && git clean -fd
@@ -787,6 +860,7 @@ Before marking any task as QA, verify:
 - If a task is unclear → read the full description + all sub-row notes for context. If still unclear, implement the most reasonable interpretation and note your assumptions in the completion note.
 - If a task requires backend changes → mark as blocked in the workboard with a note explaining why (§1.1 violation). Pick next task.
 - If a task requires a framework/build tool → mark as blocked (§1.2 violation). Pick next task.
+- If a **task appears as To Do but has existing AI notes** → This is a QA REJECTION, not a new task. Follow §0.3 QA Rejection Protocol. NEVER re-mark as QA without reading feedback and making fixes.
 - If a **QA-rejected branch has merge conflicts** with `origin/main` (because another branch was merged while yours was in QA):
   1. Fetch latest: `git fetch origin`
   2. Rebase: `git rebase origin/main`
