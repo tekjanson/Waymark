@@ -55,6 +55,7 @@ const definition = {
   color: '#6366f1',
   priority: 19,
   itemNoun: 'Post',
+  defaultHeaders: ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
 
   detect(lower) {
     return lower.some(h => /^(post|message|status|update|wall|feed|content)/.test(h))

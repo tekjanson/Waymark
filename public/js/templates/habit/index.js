@@ -52,6 +52,7 @@ const definition = {
   color: '#d97706',
   priority: 22,
   itemNoun: 'Habit',
+  defaultHeaders: ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
 
   migrations: [
     { role: 'weekOf', header: 'Week Of' },

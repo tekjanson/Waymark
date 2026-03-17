@@ -62,6 +62,7 @@ const definition = {
   color: '#b45309',
   priority: 23,
   itemNoun: 'Deal',
+  defaultHeaders: ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(company|lead|prospect|account|organization|org)/.test(h))

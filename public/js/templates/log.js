@@ -13,6 +13,7 @@ const definition = {
   color: '#0891b2',
   priority: 15,
   itemNoun: 'Entry',
+  defaultHeaders: ['Timestamp', 'Activity', 'Duration', 'Type'],
 
   detect(lower) {
     return lower.some(h => /^(timestamp|logged|entry.?date|log.?date|recorded|created.?at)/.test(h));

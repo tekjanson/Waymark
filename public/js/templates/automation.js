@@ -44,6 +44,7 @@ const definition = {
   color: '#7c3aed',
   priority: 21,
   itemNoun: 'Step',
+  defaultHeaders: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
 
   detect(lower) {
     const hasAction = lower.some(h => /^(action|command|operation|do)$/.test(h));

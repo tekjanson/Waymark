@@ -26,6 +26,7 @@ const definition = {
   color: '#374151',
   priority: 18,
   itemNoun: 'Entry',
+  defaultHeaders: ['Version', 'Date', 'Type', 'What Changed'],
 
   detect(lower) {
     return lower.some(h => /^(version|release|v\d|build)/.test(h))

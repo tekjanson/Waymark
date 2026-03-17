@@ -13,6 +13,7 @@ const definition = {
   color: '#65a30d',
   priority: 22,
   itemNoun: 'Meal',
+  defaultHeaders: ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
 
   detect(lower) {
     return lower.some(h => /^(meal|recipe|dish|food)/.test(h))

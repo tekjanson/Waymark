@@ -111,6 +111,7 @@ const definition = {
   color: '#7c3aed',
   priority: 25,
   itemNoun: 'Test Case',
+  defaultHeaders: ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(result|pass|fail|test.?status|outcome|verdict)/.test(h))

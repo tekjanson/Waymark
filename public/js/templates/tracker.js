@@ -27,6 +27,7 @@ const definition = {
   color: '#2563eb',
   priority: 20,
   itemNoun: 'Goal',
+  defaultHeaders: ['Goal', 'Progress', 'Target', 'Started', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(progress|percent|%|score|rating|level|grade|completion)/.test(h))
