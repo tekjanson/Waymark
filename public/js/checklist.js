@@ -570,6 +570,11 @@ function renderWithTemplate(values) {
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
 
+  // Notify the app that a sheet was rendered (for notification evaluation)
+  document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
+    detail: { sheetId: currentSheetId, title: currentDataTitle, templateKey: key, rows, cols },
+  }));
+
   // Show template help button and trigger first-time tutorial
   currentTemplateKey = key;
   if (templateHelpBtn) {
