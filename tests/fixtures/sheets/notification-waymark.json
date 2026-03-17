@@ -1,0 +1,16 @@
+{
+  "id": "sheet-046",
+  "title": "Waymark Notifications",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Title", "Message", "Type", "Status", "Icon", "Priority", "Created", "Expires", "Source", "Sheet"],
+    ["P0 Task Assigned", "Critical task 'Fix auth token expiry' has been assigned to you and is blocking the release.", "alert", "Active", "🔴", "High", "2026-03-17T10:30:00", "", "Kanban Board", "sheet-028"],
+    ["Budget Over Limit", "March expenses ($4,250) exceed monthly budget ($4,000) by $250. Review recent transactions.", "warning", "Active", "💸", "High", "2026-03-16T09:00:00", "", "Budget Tracker", "sheet-016"],
+    ["Overdue Tasks Detected", "3 tasks in Waymark Development board are past their due date. Immediate attention required.", "warning", "Active", "⏰", "High", "2026-03-17T08:00:00", "", "Kanban Monitor", "sheet-028"],
+    ["Deployment Successful", "Production deploy completed without errors. 3 new features are now live for all users.", "info", "Read", "✅", "Medium", "2026-03-17T12:00:00", "", "CI/CD Pipeline", ""],
+    ["Security Scan Complete", "Weekly dependency audit found 0 critical vulnerabilities. All packages are up to date.", "info", "Read", "🔒", "Low", "2026-03-15T08:00:00", "", "Security Bot", ""],
+    ["Team Meeting Reminder", "Sprint review meeting scheduled for 9 AM in Conference Room B. Bring your demo items.", "info", "Dismissed", "📅", "Medium", "2026-03-15T14:00:00", "2026-03-16", "Calendar", ""],
+    ["Sync Error Resolved", "Google Drive sync error from yesterday has been automatically resolved. No data was lost.", "info", "Dismissed", "🔄", "Low", "2026-03-14T11:00:00", "", "Sync Service", ""],
+    ["Recipe Import Complete", "12 recipes were successfully imported from the shared cookbook spreadsheet.", "info", "Dismissed", "🍽️", "Low", "2026-03-13T15:30:00", "", "Import System", ""]
+  ]
+}

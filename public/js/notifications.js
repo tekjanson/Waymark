@@ -7,6 +7,7 @@
 
 import { el } from './ui.js';
 import * as storage from './storage.js';
+import { api } from './api-client.js';
 
 /* ---------- Constants ---------- */
 
@@ -93,6 +94,11 @@ export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
   _notifications = [...fresh, ..._notifications].slice(0, MAX_NOTIFICATIONS);
   storage.setNotifications(_notifications);
   _updateBadge();
+
+  // Append new alerts to the configured notification sheet (fire-and-forget, real mode only)
+  if (!window.__WAYMARK_LOCAL) {
+    _appendAlertsToSheet(fresh);
+  }
 }
 
 /**
@@ -104,6 +110,34 @@ export function clearAll() {
   _updateBadge();
   if (_panel && !_panel.classList.contains('hidden')) {
     _renderPanelContent();
+  }
+}
+
+/**
+ * Append newly generated alerts to the user's configured notification sheet.
+ * Fire-and-forget — failures are silently ignored (don't block the UI).
+ * @param {Array} alerts
+ */
+async function _appendAlertsToSheet(alerts) {
+  const sheetId = storage.getNotifSheetId();
+  if (!sheetId || alerts.length === 0) return;
+  const now = new Date().toISOString();
+  const rows = alerts.map(a => [
+    a.title || '',
+    a.message || '',
+    a.type || 'info',
+    'Active',
+    a.icon || '🔔',
+    a.priority || 'medium',
+    now,
+    '',
+    a.source || '',
+    a.sheetId || '',
+  ]);
+  try {
+    await api.sheets.appendRows(sheetId, 'Sheet1', rows);
+  } catch {
+    // Silently ignore — don't interrupt the user's workflow
   }
 }
 
@@ -331,6 +365,34 @@ function _timeAgo(iso) {
 
 /* ---------- Settings Modal ---------- */
 
+function _buildSheetSection() {
+  const currentId = storage.getNotifSheetId();
+
+  const statusText = el('span', {
+    className: 'notif-sheet-status-text',
+  }, [currentId ? `Sheet ID: ${currentId}` : 'No notification sheet configured']);
+
+  const clearBtn = el('button', {
+    className: 'notif-sheet-clear',
+    on: {
+      click: () => {
+        storage.setNotifSheetId(null);
+        statusText.textContent = 'No notification sheet configured';
+        clearBtn.style.display = 'none';
+      },
+    },
+  }, ['Clear']);
+  if (!currentId) clearBtn.style.display = 'none';
+
+  return el('div', { className: 'notif-sheet-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Notification Sheet']),
+    el('div', { className: 'notif-sheet-desc' }, [
+      'Open a sheet with Notification layout and click "Use as Notification Sheet" to log alerts there automatically.',
+    ]),
+    el('div', { className: 'notif-sheet-status' }, [statusText, clearBtn]),
+  ]);
+}
+
 function _showSettings() {
   const existing = document.getElementById('notif-settings-modal');
   if (existing) existing.remove();
@@ -400,6 +462,7 @@ function _showSettings() {
           className: 'notif-settings-link',
         }, ['Learn about Google Sheets email notifications →']),
       ]),
+      _buildSheetSection(),
     ]),
     el('div', { className: 'modal-footer' }, [saveBtn]),
   ]);
