@@ -1,0 +1,217 @@
+{
+  "config": {
+    "configFile": "/test/playwright.config.js",
+    "rootDir": "/test/e2e",
+    "fullyParallel": true,
+    "workers": 4,
+    "projects": [{ "name": "", "testDir": "/test/e2e" }]
+  },
+  "suites": [
+    {
+      "title": "sample-passing.spec.js",
+      "file": "sample-passing.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "renders the homepage correctly",
+          "ok": true,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 0,
+              "status": "passed",
+              "duration": 1215,
+              "errors": [],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:00.000Z"
+            }],
+            "status": "expected"
+          }],
+          "id": "abc-001",
+          "file": "sample-passing.spec.js",
+          "line": 5,
+          "column": 1
+        },
+        {
+          "title": "navigates to detail page",
+          "ok": true,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 1,
+              "status": "passed",
+              "duration": 2340,
+              "errors": [],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:01.000Z"
+            }],
+            "status": "expected"
+          }],
+          "id": "abc-002",
+          "file": "sample-passing.spec.js",
+          "line": 15,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "sample-mixed.spec.js",
+      "file": "sample-mixed.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "login works with valid creds",
+          "ok": true,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 0,
+              "status": "passed",
+              "duration": 890,
+              "errors": [],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:00.000Z"
+            }],
+            "status": "expected"
+          }],
+          "id": "def-001",
+          "file": "sample-mixed.spec.js",
+          "line": 5,
+          "column": 1
+        },
+        {
+          "title": "shows error on invalid password",
+          "ok": false,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 1,
+              "status": "failed",
+              "duration": 3200,
+              "errors": [{ "message": "Error: expect(received).toBeVisible()\n\nExpected: visible\nReceived: hidden" }],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:02.000Z"
+            }],
+            "status": "unexpected"
+          }],
+          "id": "def-002",
+          "file": "sample-mixed.spec.js",
+          "line": 15,
+          "column": 1
+        },
+        {
+          "title": "SSO login flow",
+          "ok": true,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "skipped",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 2,
+              "status": "skipped",
+              "duration": 0,
+              "errors": [],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:03.000Z"
+            }],
+            "status": "expected"
+          }],
+          "id": "def-003",
+          "file": "sample-mixed.spec.js",
+          "line": 25,
+          "column": 1
+        },
+        {
+          "title": "session timeout handling",
+          "ok": false,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 3,
+              "status": "timedOut",
+              "duration": 30000,
+              "errors": [{ "message": "Test timeout of 30000ms exceeded." }],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:04.000Z"
+            }],
+            "status": "unexpected"
+          }],
+          "id": "def-004",
+          "file": "sample-mixed.spec.js",
+          "line": 35,
+          "column": 1
+        },
+        {
+          "title": "interrupted test case",
+          "ok": false,
+          "tags": [],
+          "tests": [{
+            "timeout": 30000,
+            "annotations": [],
+            "expectedStatus": "passed",
+            "projectId": "",
+            "projectName": "",
+            "results": [{
+              "workerIndex": 0,
+              "status": "interrupted",
+              "duration": 500,
+              "errors": [],
+              "retry": 0,
+              "startTime": "2026-03-15T10:00:05.000Z"
+            }],
+            "status": "unexpected"
+          }],
+          "id": "def-005",
+          "file": "sample-mixed.spec.js",
+          "line": 45,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "sample-empty.spec.js",
+      "file": "sample-empty.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": []
+    }
+  ],
+  "stats": {
+    "startTime": "2026-03-15T10:00:00.000Z",
+    "duration": 35000,
+    "expected": 3,
+    "unexpected": 3,
+    "flaky": 0,
+    "skipped": 1
+  }
+}

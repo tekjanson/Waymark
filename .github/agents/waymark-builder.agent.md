@@ -2,7 +2,7 @@
 name: waymark-builder
 description: Persistent build agent that queries the Waymark Workboard Google Sheet for To Do items, picks them up automatically, implements features in branches following AI_LAWS, writes isolated E2E tests, and loops forever waiting for the next task.
 argument-hint: "'start' to begin the persistent watch loop, 'pick next' for a single task, or a specific task name/row number"
-tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo']
+tools: [vscode/extensions, vscode/askQuestions, vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vscode/newWorkspace, vscode/runCommand, vscode/vscodeAPI, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/readNotebookCellOutput, agent/runSubagent, google-sheets/sheets_sheet_add, google-sheets/sheets_sheet_delete, google-sheets/sheets_sheets_list, google-sheets/sheets_spreadsheet_create, google-sheets/sheets_spreadsheet_get, google-sheets/sheets_values_append, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_batch_update, google-sheets/sheets_values_clear, google-sheets/sheets_values_get, google-sheets/sheets_values_update, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web/fetch, web/githubRepo, todo]
 ---
 
 # Waymark Builder Agent
@@ -64,8 +64,16 @@ LOOP:
 
   3. IF todo array is non-empty:
      → Pick the first item (highest priority)
-     → **Sync to tip of main BEFORE branching** (§1.1 — fetch + reset --hard origin/main)
-     → Execute the full WORK cycle (§1-§6)
+     → **CHECK FOR QA REJECTION** (§0.3 — MANDATORY before any work):
+       - If item has `rejected: true` or has sub-row notes with "⟳ QA → To Do":
+         **This is a QA rejection. The human reviewed your work and sent it back.**
+         Read ALL sub-row notes. The human's notes contain specific feedback about
+         what's wrong. Follow the QA REJECTION PROTOCOL in §0.3.
+       - **NEVER re-mark a rejected task as QA without reading and addressing ALL feedback.**
+       - **NEVER assume a To Do item with existing AI notes is a "row drift" glitch.**
+         If it has AI notes + human feedback, it was rejected. Period.
+     → For new tasks (no prior AI notes): Sync to tip of main, create branch, execute full WORK cycle (§1-§6)
+     → For rejected tasks: Follow §0.3 (reuse branch, read feedback, fix issues)
      → After completing, go back to step 1.
 
   4. IF todo array is empty:
@@ -89,6 +97,68 @@ LOOP:
 | Check | ~2 seconds | ~30 | Run script, parse one JSON line |
 | Idle hour | 60 minutes | ~1,800 | 60 cycles × 30 tokens |
 | Active work | varies | normal | Writing code, running tests |
+
+---
+
+## 0.3 QA REJECTION PROTOCOL — ABSOLUTE RULE
+
+> **⚠️ When the human moves a task from QA back to To Do, that is a REJECTION.**
+> **The human is QA. The human is ALWAYS right. You NEVER push back or re-mark as QA without fixing the issues.**
+> **This is a HARD REJECT rule — violating it is as serious as committing to main.**
+
+### How to Detect a QA Rejection
+
+`check-workboard.js` flags rejected items with `rejected: true` in the JSON output. A task is considered rejected when:
+- It has sub-row notes from the AI (meaning you previously worked on it)
+- AND it has been moved back to "To Do" (indicated by "⟳ QA → To Do" markers)
+- AND/OR it has human feedback notes after the AI notes
+
+### What to Do When a Task is Rejected
+
+1. **READ ALL SUB-ROW NOTES** — The human's notes contain specific feedback about what's wrong. Read every single note, especially those by the human (non-AI author). Pay attention to:
+   - What specific changes the human wants
+   - What's broken or missing
+   - Whether they want to keep the same branch or need a new one
+   - Any links, examples, or references they provided
+
+2. **DO NOT re-mark as QA** — You cannot re-submit the same work. You must actually fix the issues the human identified.
+
+3. **DO NOT treat it as a new task** — This is a continuation. The human has context and expectations from the previous submission.
+
+4. **Reuse the existing branch** (unless the human explicitly says to create a new one, or the branch was already merged to main):
+   ```bash
+   git fetch origin
+   git checkout feature/{existing-branch-name}
+   git rebase origin/main
+   ```
+
+5. **If the branch was already merged to main** (human merged it but wants further changes):
+   ```bash
+   git fetch origin && git reset --hard origin/main
+   git checkout -b fix/{descriptive-name}
+   ```
+
+6. **Address EVERY point in the feedback** — Don't cherry-pick which feedback to address. All of it.
+
+7. **Acknowledge the feedback in your workboard note** — When re-submitting, reference what you fixed:
+   ```
+   "Addressed QA feedback: 1) expanded examples per request 2) fixed X 3) added Y"
+   ```
+
+### What NEVER to Do
+
+- **NEVER** assume "To Do" on a previously-completed task is a glitch, row drift, or accident
+- **NEVER** blindly re-mark a rejected task as QA without making changes
+- **NEVER** ignore human feedback notes
+- **NEVER** argue with or push back on QA decisions — the human is the authority
+- **NEVER** skip reading sub-row notes when picking up a To Do item
+
+### Detection in the Persistent Loop
+
+When `check-workboard.js` returns a To Do item, ALWAYS check:
+1. Does the item have `rejected: true`? → QA rejection, follow this protocol.
+2. Does the item have a `notes` array with AI-authored entries? → Previously worked on, likely a rejection.
+3. If neither → Fresh task, follow normal §1-§6 workflow.
 
 ---
 
@@ -206,20 +276,27 @@ This script:
 ### 2.3 Completing a Task
 When implementation + tests pass:
 1. **Push the feature branch to remote:** `git push -u origin feature/{branch-name}`
-2. Update stage to QA:
+2. **Export test report to Google Drive:**
+   ```bash
+   node scripts/generate-test-report.js --upload
+   ```
+   This runs the full test suite, generates testcase-template fixtures, and uploads them to Google Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` in a subfolder named `{branch} — {date}`. Each spec file becomes a Google Sheet in testcase format.
+   The script uses OAuth user credentials (saved at `~/.config/gcloud/waymark-oauth-token.json`). If the token is missing, run `node scripts/get-oauth-token.js` once to authenticate.
+   The script writes the Drive folder URL to `generated/test-report/drive-url.txt`. Read this file to get the link for inclusion in QA notes.
+3. Update stage to QA:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
      node scripts/update-workboard.js stage {row} QA
    ```
-3. Insert a **completion note sub-row** (uses safe insert — never overwrites):
+4. Insert a **completion note sub-row** (uses safe insert — never overwrites):
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
      node scripts/update-workboard.js note {row} "Branch: feature/... | Files: ... | +N LOC | N tests"
    ```
-4. Insert a **testing notes sub-row** (also safe insert):
+5. Insert a **testing notes sub-row** (also safe insert) — **MUST include the Drive test report link**:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
-     node scripts/update-workboard.js note {row} "QA: 1) ... 2) ... E2E covers: ... Manual: ..."
+     node scripts/update-workboard.js note {row} "QA: 1) ... 2) ... E2E covers: ... Manual: ... Test report: {drive-folder-url}"
    ```
 
 The completion note must include:
@@ -233,6 +310,7 @@ The testing notes sub-row must include step-by-step instructions for QA:
 - How to manually verify the feature works (specific user actions to perform)
 - What the E2E tests cover vs. what needs manual verification
 - Any edge cases or known limitations
+- **The Google Drive test report folder URL** (from `generated/test-report/drive-url.txt`)
 
 **Example completion note:**
 ```
@@ -241,7 +319,7 @@ Branch: feature/kanban-collapsible-lanes | Files: kanban/index.js, kanban.css, k
 
 **Example testing notes:**
 ```
-QA: 1) Open any kanban sheet 2) Click lane header to collapse — cards should hide with animation 3) Refresh page — collapsed state should persist 4) Mobile: lanes stack vertically, collapse still works. E2E covers: collapse toggle, persistence, card count. Manual: verify animation smoothness, check dark mode.
+QA: 1) Open any kanban sheet 2) Click lane header to collapse — cards should hide with animation 3) Refresh page — collapsed state should persist 4) Mobile: lanes stack vertically, collapse still works. E2E covers: collapse toggle, persistence, card count. Manual: verify animation smoothness, check dark mode. Test report: https://drive.google.com/drive/folders/{folderId}
 ```
 
 > **IMPORTANT:** The agent NEVER moves a task to `Done`. The lifecycle is:
@@ -707,7 +785,10 @@ When adding new helper functions, add corresponding unit tests to the appropriat
 
 ### Step-by-step for every task:
 
-1. **Read the task** from the workboard (including all sub-row notes for context)
+1. **Read the task AND ALL SUB-ROW NOTES** from the workboard. This is MANDATORY.
+   - If `check-workboard.js` returned `rejected: true` or notes with "⟳ QA → To Do": **STOP. This is a QA rejection. Follow §0.3 QA Rejection Protocol.**
+   - Read every human-authored note for specific feedback, corrections, and requirements.
+   - The human's notes override your previous assumptions — they are the authority.
 2. **Sync to tip of main** — EVERY new task starts from the latest remote main. In a worktree, use the worktree-safe sync (§1.0 rule 5):
    ```bash
    git checkout -- . && git clean -fd
@@ -733,11 +814,12 @@ When adding new helper functions, add corresponding unit tests to the appropriat
 14. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
 15. **Commit** with descriptive message: `feat({scope}): {description}`
 16. **Push branch to remote** — `git push -u origin feature/{branch-name}`
-17. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
+17. **Export test report to Google Drive** — Run `node scripts/generate-test-report.js --upload` to create a Drive folder with test results as Google Sheets (see §2.3 step 2, §8.3). Read the folder URL from `generated/test-report/drive-url.txt`.
+18. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
     - **Completion note:** branch name, files changed, LOC, test count
-    - **Testing note:** step-by-step QA verification instructions (see §2.3 for format)
-18. **Report results** — tell the user what was built, test count, branch name, and that it's ready for QA
-19. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
+    - **Testing note:** step-by-step QA verification instructions + Drive test report link (see §2.3 for format)
+19. **Report results** — tell the user what was built, test count, branch name, Drive test report link, and that it's ready for QA
+20. **Return to loop** — If in persistent mode (Mode A), go back to §0.2 SLEEP→CHECK. If in single-task mode (Mode B), stop.
 
 > The agent does NOT create PRs, merge, or move items to Done. That is the human's job after QA.
 
@@ -767,6 +849,8 @@ Before marking any task as QA, verify:
 - [ ] `template-registry.json` updated if adding/modifying templates
 - [ ] Sheet data uses row-per-item format (§4.7)
 - [ ] No build step required
+- [ ] Test report exported to Google Drive via `generate-test-report.js --upload`
+- [ ] Drive test report link included in QA testing notes
 - [ ] `npm test` passes ALL tests (E2E + unit)
 - [ ] Unit tests written for any new/modified pure helper functions (§4.10)
 - [ ] Unit test files follow `tests/e2e/unit-{module}.spec.js` naming convention
@@ -787,6 +871,7 @@ Before marking any task as QA, verify:
 - If a task is unclear → read the full description + all sub-row notes for context. If still unclear, implement the most reasonable interpretation and note your assumptions in the completion note.
 - If a task requires backend changes → mark as blocked in the workboard with a note explaining why (§1.1 violation). Pick next task.
 - If a task requires a framework/build tool → mark as blocked (§1.2 violation). Pick next task.
+- If a **task appears as To Do but has existing AI notes** → This is a QA REJECTION, not a new task. Follow §0.3 QA Rejection Protocol. NEVER re-mark as QA without reading feedback and making fixes.
 - If a **QA-rejected branch has merge conflicts** with `origin/main` (because another branch was merged while yours was in QA):
   1. Fetch latest: `git fetch origin`
   2. Rebase: `git rebase origin/main`
@@ -854,7 +939,30 @@ GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-ac
   node scripts/check-workboard.js
 ```
 
-### 8.3 Writing Completion + Testing Notes
+### 8.3 Exporting Test Reports to Google Drive
+Before marking a task as QA, generate and upload the test report:
+
+```bash
+# Run all tests and upload results to Google Drive
+node scripts/generate-test-report.js --upload
+```
+
+This uses **OAuth user credentials** (not the service account — service accounts have zero file-storage quota on consumer Google accounts). The refresh token is saved at `~/.config/gcloud/waymark-oauth-token.json`.
+
+**One-time setup:** If the token file doesn't exist, run:
+```bash
+node scripts/get-oauth-token.js
+```
+This starts a local server and opens the browser for Google consent. The refresh token persists until revoked.
+
+The upload creates a subfolder in Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` named `{branch} — {date}` containing:
+- One Google Sheet per spec file in testcase template format (Test Case, Result, Expected, Actual, Priority, Notes)
+
+Every sheet in the folder uses testcase-template headers so the Waymark directory view renders the folder as a **Test Suite Overview** with aggregated pass/fail/blocked/skip counts and pass-rate color coding.
+
+The script outputs the Drive folder URL to `generated/test-report/drive-url.txt`. Include this link in the QA testing notes.
+
+### 8.4 Writing Completion + Testing Notes
 When marking a task as QA, use TWO `note` commands in sequence:
 
 ```bash
@@ -866,13 +974,14 @@ GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
   "Branch: feature/task-name | Files: file1.js, file2.css | +80 LOC | 4 new tests (87 total)"
 
 # Step 3: Insert QA testing note (safe insert — never overwrites)
+# MUST include the Drive test report link
 GOOGLE_APPLICATION_CREDENTIALS=... node scripts/update-workboard.js note {row} \
-  "QA: 1) Open sheet-NNN 2) Click X to verify Y. E2E covers: ... Manual: ..."
+  "QA: 1) Open sheet-NNN 2) Click X to verify Y. E2E covers: ... Manual: ... Test report: https://drive.google.com/drive/folders/{folderId}"
 ```
 
 Each `note` command safely inserts a new row — they can be called multiple times without risk.
 
-### 8.4 Why Raw PUT is Dangerous (DO NOT USE)
+### 8.5 Why Raw PUT is Dangerous (DO NOT USE)
 The old pattern used `PUT` to write directly to calculated row numbers:
 ```
 PUT Sheet1!A267:I267 → [["", "", "", "", "AI", "", "2026-03-14", "", "note text"]]
@@ -902,7 +1011,9 @@ Before implementing, always read these files for current state:
 - `public/css/style.css` — CSS aggregator imports
 - `tests/e2e/unit-*.spec.js` — existing unit tests (pattern reference for new tests)
 - `scripts/update-workboard.js` — safe workboard writes (claim, stage, note with row insertion)
-- `scripts/check-workboard.js` — read-only workboard query (used in idle loop)
+- `scripts/check-workboard.js` — read-only workboard query (used in idle loop, includes rejection detection)
+- `scripts/generate-test-report.js` — test report generator with Google Drive upload (`--upload` flag, uses OAuth token)
+- `scripts/get-oauth-token.js` — one-time OAuth flow to save refresh token for Drive file creation
 
 ---
 
