@@ -14,82 +14,83 @@ import { api } from './api-client.js';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
 
-const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views. You are NOT a coding assistant — you help people manage projects, budgets, recipes, schedules, and more.
+const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
-Your primary capability is creating new Google Sheets using the create_sheet tool. When a user asks you to create, build, set up, or organise anything, identify the best template format and use the tool.
+Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
 
-## Template Formats — EXACT Headers Required
+Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
 
-Each template is detected by its column headers. You MUST use the exact headers shown below for Waymark to render the sheet correctly.
-
-**Checklist ✓** — Task, Status, Priority, Due, Notes
-**Budget 💰** — Description, Category, Amount, Date, Notes
-**Kanban Board 📋** — Task, Description, Stage, Project, Assignee, Priority, Due, Label, Note
-  - Stage values: To Do, In Progress, QA, Done, Backlog, Archived
-  - Priority values: P0, P1, P2, P3
-**Progress Tracker 📊** — Item, Progress, Target, Notes
-**Schedule 📅** — Event, Time, Day, Location
-**Contacts 📇** — Name, Email, Phone, Role
-**Inventory 📦** — Item, Quantity, Category, Location
-**Activity Log 📝** — Activity, Timestamp, Type, Duration
-**Habit Tracker 🔄** — Habit, Week Of, Mon, Tue, Wed, Thu, Fri, Sat, Sun, Streak, Notes
-**Timesheet ⏱️** — Task, Hours, Date, Client, Billable
-**CRM 🤝** — Company, Contact, Stage, Value, Notes
-**Meal Planner 🍽️** — Meal, Day, Calories, Protein, Notes
-**Travel Itinerary ✈️** — Activity, Date, Location, Booking, Cost
-**Roster 👥** — Employee, Shift, Day, Role, Notes
-**Test Cases 🧪** — Test, Result, Expected, Actual, Priority, Notes
-  - Result values: Pass, Fail, Skip, Blocked
-**Recipe 📖** — Recipe, Servings, Prep Time, Cook Time, Category, Difficulty, Ingredient, Step
-  - Uses row-per-item: first row has recipe name, subsequent rows leave Recipe column blank for additional ingredients/steps
-**Gradebook 🎓** — Student, then assignment names as columns, Average, Grade
-**Poll 📊** — Option, Votes, Percent, Winner
-**Changelog 📋** — Version, Date, Type, Description
-  - Type values: Added, Changed, Fixed, Removed
-**Social Feed 💬** — Post, Author, Date, Category, Mood, Link, Comment
-**Flow Diagram 🔀** — Flow, Step, Type, Next, Condition, Notes
-  - Type values: start, process, decision, end
-**Automation 🤖** — Workflow, Step, Action, Target, Value, Status
-
-## Row-Per-Item Format
-When data has lists (ingredients, steps, sub-tasks), each item gets its own row. Group membership is shown by leaving the primary column blank on continuation rows. Example for recipes:
-| Recipe | Servings | Ingredient | Step |
-| Pasta  | 4        | 400g pasta | Boil water |
-|        |          | 1 can tomatoes | Add sauce |
-
-## Guidelines
-- Always populate sheets with realistic example data (at least 3–5 rows) so the user can see the format immediately.
-- All cell values must be strings — even numbers ("500"), booleans ("FALSE"), dates ("2026-03-15").
-- When the user describes their data, extract it and structure it into the correct template columns.
-- If unsure which template fits, ask the user, or default to Checklist for simple lists and Kanban for project management.
-- Be conversational and helpful. Explain what you created and how Waymark will render it.
-- You can answer general questions about Waymark, productivity, and data organisation.`;
+Guidelines:
+- Populate with realistic example data (3–5 rows minimum) so the user sees the format.
+- All cell values must be strings — numbers ("500"), dates ("2026-03-15").
+- If unsure which template fits, ask or default to checklist (lists) or kanban (projects).
+- Be conversational and helpful.`;
 
 /** Maximum number of messages to keep in context for API calls */
 const MAX_CONTEXT_MESSAGES = 20;
+
+/**
+ * Known template headers — maps template key to exact headers Waymark expects.
+ * Code fills these in programmatically so the AI never provides wrong headers.
+ */
+const KNOWN_HEADERS = {
+  checklist:  ['Item', 'Status', 'Priority', 'Due', 'Notes'],
+  budget:     ['Description', 'Amount', 'Category', 'Date', 'Notes'],
+  kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
+  tracker:    ['Goal', 'Progress', 'Target', 'Started', 'Notes'],
+  schedule:   ['Day', 'Time', 'Activity', 'Location'],
+  contacts:   ['Name', 'Phone', 'Email', 'Role'],
+  inventory:  ['Item', 'Quantity', 'Category', 'Location'],
+  log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
+  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
+  timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
+  crm:        ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
+  meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
+  travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
+  roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
+  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
+  poll:       ['Option', 'Votes', 'Percent', 'Notes'],
+  changelog:  ['Version', 'Date', 'Type', 'What Changed'],
+  social:     ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
+  flow:       ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
+  automation: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
+  grading:    ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'],
+};
+
+/** Column order per template — compact reference for tool description */
+const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
+  .map(([k, cols]) => `${k}: ${cols.join(', ')}`)
+  .join(' | ');
 
 /** Tool definitions for Gemini function calling */
 const TOOL_DECLARATIONS = [{
   functionDeclarations: [{
     name: 'create_sheet',
-    description: 'Create a new Google Sheet with headers and data rows. Use this when the user asks to create a spreadsheet, tracker, list, board, or any structured data.',
+    description: 'Create a new Google Sheet. Headers are auto-filled from the template. ' +
+      'Provide data rows matching the column order for the chosen template. ' +
+      'Column order per template — ' + TEMPLATE_COLUMNS,
     parameters: {
       type: 'OBJECT',
       properties: {
+        template: {
+          type: 'STRING',
+          description: 'Template key: checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading',
+        },
         title: {
           type: 'STRING',
           description: 'The title for the new spreadsheet (e.g. "My Budget Tracker", "Project Tasks")',
         },
-        rows: {
+        data: {
           type: 'ARRAY',
-          description: 'The spreadsheet data as a 2D array. First row is headers, subsequent rows are data. All values must be strings.',
+          description: 'Data rows (NO headers — auto-filled). Each row is an array of strings matching the template column order.',
           items: {
             type: 'ARRAY',
             items: { type: 'STRING' },
           },
         },
       },
-      required: ['title', 'rows'],
+      required: ['template', 'title', 'data'],
     },
   }],
 }];
@@ -711,98 +712,43 @@ async function _executeTool(name, args) {
   throw new Error(`Unknown tool: ${name}`);
 }
 
-/**
- * Known template headers for auto-correction.
- * Maps template key to exact headers Waymark expects.
- */
-const KNOWN_HEADERS = {
-  checklist:  ['Item', 'Status', 'Priority', 'Due', 'Notes'],
-  budget:     ['Description', 'Amount', 'Category', 'Date', 'Notes'],
-  kanban:     ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
-  tracker:    ['Goal', 'Progress', 'Target', 'Started', 'Notes'],
-  schedule:   ['Day', 'Time', 'Activity', 'Location'],
-  contacts:   ['Name', 'Phone', 'Email', 'Role'],
-  inventory:  ['Item', 'Quantity', 'Category', 'Location'],
-  log:        ['Timestamp', 'Activity', 'Duration', 'Type'],
-  habit:      ['Habit', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Streak'],
-  timesheet:  ['Project', 'Client', 'Hours', 'Rate', 'Billable', 'Date'],
-  crm:        ['Company', 'Contact', 'Deal Stage', 'Value', 'Notes'],
-  meal:       ['Day', 'Meal', 'Recipe', 'Calories', 'Protein'],
-  travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
-  roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-  testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
-  recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Ingredient', 'Step'],
-  poll:       ['Option', 'Votes', 'Percent', 'Notes'],
-  changelog:  ['Version', 'Date', 'Type', 'What Changed'],
-  social:     ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment'],
-  flow:       ['Flow', 'Step', 'Type', 'Next', 'Condition', 'Notes'],
-  automation: ['Workflow', 'Step', 'Action', 'Target', 'Value', 'Status'],
-  grading:    ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'],
-};
+/* ---------- Tool: create_sheet ---------- */
 
 /**
- * Match AI-provided headers to a known template, return corrected headers
- * if a close match is found. This fixes common AI mistakes (wrong casing,
- * slightly different column names, extra/missing columns).
- * @param {string[]} aiHeaders — headers the AI provided
- * @returns {string[]} — corrected headers if matched, otherwise original
- */
-function _correctHeaders(aiHeaders) {
-  const lower = aiHeaders.map(h => h.toLowerCase().trim());
-  let bestKey = null;
-  let bestScore = 0;
-
-  for (const [key, known] of Object.entries(KNOWN_HEADERS)) {
-    const knownLower = known.map(h => h.toLowerCase());
-    let matches = 0;
-    for (const h of lower) {
-      if (knownLower.some(k => k === h || k.includes(h) || h.includes(k))) matches++;
-    }
-    const score = matches / Math.max(lower.length, knownLower.length);
-    if (score > bestScore) {
-      bestScore = score;
-      bestKey = key;
-    }
-  }
-
-  // If ≥50% match, use the known template headers
-  if (bestKey && bestScore >= 0.5) {
-    return KNOWN_HEADERS[bestKey];
-  }
-  return aiHeaders;
-}
-
-/**
- * Tool: create_sheet — creates a new Google Sheet with headers and data.
- * Auto-corrects headers to match known Waymark templates for reliable rendering.
- * @param {{ title: string, rows: string[][] }} args
+ * Tool: create_sheet — creates a new Google Sheet.
+ * Template enum selects headers programmatically; AI only provides data rows.
+ * @param {{ template: string, title: string, data: string[][] }} args
  * @returns {Promise<Object>}
  */
-async function _toolCreateSheet({ title, rows }) {
-  if (!title || !rows || !rows.length) {
-    throw new Error('Missing title or rows');
+async function _toolCreateSheet({ template, title, data }) {
+  if (!title || !data || !data.length) {
+    throw new Error('Missing title or data');
   }
 
-  // Ensure all values are strings
-  const cleanRows = rows.map(row => row.map(cell => String(cell ?? '')));
-
-  // Auto-correct headers to match known templates
-  cleanRows[0] = _correctHeaders(cleanRows[0]);
-
-  // Pad/trim data rows to match header count
-  const headerCount = cleanRows[0].length;
-  for (let i = 1; i < cleanRows.length; i++) {
-    while (cleanRows[i].length < headerCount) cleanRows[i].push('');
-    cleanRows[i] = cleanRows[i].slice(0, headerCount);
+  // Look up headers from known templates
+  const headers = KNOWN_HEADERS[template];
+  if (!headers) {
+    throw new Error(`Unknown template "${template}". Use one of: ${Object.keys(KNOWN_HEADERS).join(', ')}`);
   }
 
-  const result = await api.sheets.createSpreadsheet(title, cleanRows);
+  // Build rows: headers + data
+  const headerCount = headers.length;
+  const cleanData = data.map(row => {
+    const clean = (Array.isArray(row) ? row : []).map(cell => String(cell ?? ''));
+    // Pad/trim to match header count
+    while (clean.length < headerCount) clean.push('');
+    return clean.slice(0, headerCount);
+  });
+
+  const allRows = [headers, ...cleanData];
+  const result = await api.sheets.createSpreadsheet(title, allRows);
 
   return {
     spreadsheetId: result.spreadsheetId,
     title,
-    rowCount: cleanRows.length - 1,
-    headerCount,
+    template,
+    rowCount: cleanData.length,
+    columns: headers,
   };
 }
 
@@ -814,7 +760,7 @@ async function _toolCreateSheet({ title, rows }) {
 function _showToolIndicator(toolName, args) {
   if (!_chatBody) return;
   const label = toolName === 'create_sheet'
-    ? `Creating sheet "${args.title || 'Untitled'}"...`
+    ? `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`
     : `Running ${toolName}...`;
   const indicator = el('div', { className: 'agent-tool-indicator' }, [
     el('span', { className: 'agent-tool-icon' }, ['🔧']),
