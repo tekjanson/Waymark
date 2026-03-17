@@ -43,7 +43,7 @@ const definition = {
   color: '#0284c7',
   priority: 23,
   itemNoun: 'Task',
-  defaultHeaders: ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note'],
+  defaultHeaders: ['Task', 'Description', 'Stage', 'Project', 'Assignee', 'Priority', 'Due', 'Label', 'Note', 'Reported By'],
 
   detect(lower) {
     return lower.some(h => /^(stage|column|lane|board|swim)/.test(h) || /backlog|in.?progress|to.?do|doing/.test(h))

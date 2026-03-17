@@ -10,7 +10,7 @@ const definition = {
   color: '#7c2d12',
   priority: 21,
   itemNoun: 'Student',
-  defaultHeaders: ['Student', 'Assignment 1', 'Assignment 2', 'Average', 'Grade'],
+  defaultHeaders: ['Student', 'Assignment 1', 'Assignment 2', 'Grade'],
 
   detect(lower) {
     return lower.some(h => /^(student|pupil|name)/.test(h))

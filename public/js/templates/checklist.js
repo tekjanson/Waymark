@@ -39,7 +39,7 @@ const definition = {
   color: '#16a34a',
   priority: 10,
   itemNoun: 'Item',
-  defaultHeaders: ['Item', 'Status', 'Priority', 'Due', 'Notes'],
+  defaultHeaders: ['Item', 'Status', 'Category', 'Due', 'Notes'],
 
   detect(lower) {
     return lower.some(h => /^(status|done|complete|check|\u2713|\u2714)/.test(h));
