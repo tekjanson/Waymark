@@ -13,7 +13,7 @@ import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
 } from '../shared.js';
-import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp } from './helpers.js';
+import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 
@@ -357,6 +357,56 @@ const definition = {
     controls.append(laneVisWrap);
 
     toolbar.append(controls);
+
+    /* ---- AI agent status indicator ---- */
+    if (cols.assignee >= 0 && cols.due >= 0) {
+      let latestAIDateStr = '';
+      let latestAIAuthor = '';
+      // Scan all sub-rows (notes + subtasks) for AI-authored entries
+      for (const group of groups) {
+        for (const child of [...group.notes, ...group.subtasks]) {
+          const a = cell(child.row, cols.assignee);
+          if (a && a.toLowerCase() === 'ai') {
+            const d = cell(child.row, cols.due);
+            if (d && d > latestAIDateStr) {
+              latestAIDateStr = d;
+              latestAIAuthor = a;
+            }
+          }
+        }
+      }
+      // Also check task rows assigned to AI
+      if (!latestAIDateStr) {
+        for (const group of groups) {
+          const a = cell(group.row, cols.assignee);
+          if (a && a.toLowerCase() === 'ai') {
+            const d = cell(group.row, cols.due);
+            if (d && d > latestAIDateStr) {
+              latestAIDateStr = d;
+              latestAIAuthor = a;
+            }
+          }
+        }
+      }
+
+      if (latestAIDateStr) {
+        const hasTime = /\d{2}:\d{2}/.test(latestAIDateStr);
+        const aiDate = hasTime ? new Date(latestAIDateStr.replace(' ', 'T')) : new Date(latestAIDateStr + 'T00:00:00');
+        if (!isNaN(aiDate.getTime())) {
+          const isActive = (Date.now() - aiDate.getTime()) < 15 * 60 * 1000;
+          toolbar.append(el('div', {
+            className: `kanban-ai-status ${isActive ? 'kanban-ai-active' : 'kanban-ai-offline'}`,
+          }, [
+            el('span', { className: 'kanban-ai-dot' }),
+            el('span', {}, [isActive ? '🤖 AI Active' : '🤖 AI Offline']),
+            el('span', { className: 'kanban-ai-time' }, [
+              `Last: ${latestAIAuthor} · ${formatRelativeDate(latestAIDateStr)}`,
+            ]),
+          ]));
+        }
+      }
+    }
+
     container.append(toolbar);
 
     /* ---- Board element ---- */

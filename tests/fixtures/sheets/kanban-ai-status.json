@@ -1,0 +1,15 @@
+{
+  "id": "sheet-043",
+  "title": "AI Workboard",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Task", "Description", "Stage", "Project", "Assignee", "Priority", "Due", "Label", "Note"],
+    ["Build Dashboard", "Create project dashboard", "Done", "Frontend", "AI", "P1", "2026-03-10", "feature", ""],
+    ["", "", "", "", "AI", "", "2026-03-10 14:30", "", "Completed: dashboard with charts and filters"],
+    ["", "", "", "", "AI", "", "2026-03-10 14:25", "", "⟳ In Progress → Done"],
+    ["Fix Login Bug", "OAuth redirect fails on Safari", "In Progress", "Backend", "AI", "P0", "2026-03-15", "bug", ""],
+    ["", "Investigate cookie settings", "Done", "", "AI", "", "2026-03-14", "", ""],
+    ["", "", "", "", "AI", "", "2026-03-15 09:00", "", "Found SameSite issue, working on fix"],
+    ["Add Dark Mode", "Theme toggle", "To Do", "Frontend", "Alice", "P2", "2026-03-20", "feature", ""]
+  ]
+}

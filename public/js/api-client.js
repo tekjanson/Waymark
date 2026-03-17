@@ -78,6 +78,7 @@ async function loadMockSheet(sheetId) {
     'sheet-038': 'habit-multiweek',
     'sheet-039': 'kanban-many-projects',
     'sheet-040': 'habit-nonmonday',
+    'sheet-043': 'kanban-ai-status',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

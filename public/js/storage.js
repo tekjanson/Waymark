@@ -281,3 +281,21 @@ export function clearAll() {
     .filter(k => k.startsWith(PREFIX))
     .forEach(k => localStorage.removeItem(k));
 }
+
+/* --- Notifications --- */
+
+export function getNotifications() {
+  return get('notifications') || [];
+}
+
+export function setNotifications(items) {
+  set('notifications', items || []);
+}
+
+export function getNotificationSettings() {
+  return get('notification_settings') || {};
+}
+
+export function setNotificationSettings(settings) {
+  set('notification_settings', settings || {});
+}
