@@ -446,3 +446,180 @@ test('Waymark knowledge base mobile layout has no overflow', async ({ page }) =>
   expect(overflows).toHaveLength(0);
 });
 
+/* ---------- Comments & Reactions (sheet-045) ---------- */
+
+test('expanded article shows reaction bar with emoji buttons', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-reaction-bar', { timeout: 3000 });
+
+  const reactionBar = firstCard.locator('.knowledge-reaction-bar');
+  await expect(reactionBar).toBeVisible();
+
+  const btns = reactionBar.locator('.knowledge-reaction-btn');
+  expect(await btns.count()).toBe(4);
+  await expect(reactionBar).toContainText('👍');
+  await expect(reactionBar).toContainText('❤️');
+  await expect(reactionBar).toContainText('💡');
+  await expect(reactionBar).toContainText('✅');
+});
+
+test('reaction buttons have pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-reaction-btn', { timeout: 3000 });
+
+  await expect(firstCard.locator('.knowledge-reaction-btn').first()).toHaveCSS('cursor', 'pointer');
+});
+
+test('expanded article shows comments section', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-search', { timeout: 5000 });
+
+  // Search for the article that has comment sub-rows in the fixture
+  await page.locator('.knowledge-search').fill('knowledge base template');
+  await page.waitForSelector('.knowledge-card', { timeout: 3000 });
+
+  const card = page.locator('.knowledge-card').first();
+  await card.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 3000 });
+
+  const commentsSection = card.locator('.knowledge-comments-section');
+  await expect(commentsSection).toBeVisible();
+});
+
+test('expanded article with comments shows comment author names', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-search', { timeout: 5000 });
+
+  await page.locator('.knowledge-search').fill('knowledge base template');
+  await page.waitForSelector('.knowledge-card', { timeout: 3000 });
+
+  const card = page.locator('.knowledge-card').first();
+  await card.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-comment', { timeout: 3000 });
+
+  const comments = card.locator('.knowledge-comment');
+  expect(await comments.count()).toBeGreaterThanOrEqual(2);
+
+  const authors = card.locator('.knowledge-comment-author');
+  const authorTexts = await authors.allTextContents();
+  expect(authorTexts.some(t => /Alex/i.test(t))).toBe(true);
+  expect(authorTexts.some(t => /Jordan/i.test(t))).toBe(true);
+});
+
+test('article with reaction shows active count on emoji button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-search', { timeout: 5000 });
+
+  await page.locator('.knowledge-search').fill('knowledge base template');
+  await page.waitForSelector('.knowledge-card', { timeout: 3000 });
+
+  const card = page.locator('.knowledge-card').first();
+  await card.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-reaction-btn', { timeout: 3000 });
+
+  // The fixture has 1 👍 reaction by Jamie — the active btn should show "👍 1"
+  const thumbsBtn = card.locator('.knowledge-reaction-btn.knowledge-reaction-active');
+  await expect(thumbsBtn).toBeVisible();
+  await expect(thumbsBtn).toContainText('👍');
+  await expect(thumbsBtn).toContainText('1');
+});
+
+test('expanded article shows add-line trigger', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-add-line-trigger', { timeout: 3000 });
+
+  const addLineTrigger = firstCard.locator('.knowledge-add-line-trigger');
+  await expect(addLineTrigger).toBeVisible();
+  await expect(addLineTrigger).toContainText('+ Add Line');
+  await expect(addLineTrigger).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking add-line trigger reveals the add-line form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-add-line-trigger', { timeout: 3000 });
+
+  const trigger = firstCard.locator('.knowledge-add-line-trigger');
+  const form = firstCard.locator('.knowledge-add-line-form');
+  await expect(form).toBeHidden();
+
+  await trigger.click();
+  await expect(form).toBeVisible();
+  await expect(form.locator('.knowledge-add-line-input')).toBeFocused();
+  await expect(form.locator('.knowledge-add-line-btn')).toBeVisible();
+});
+
+test('expanded article shows add-comment trigger', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-add-comment-trigger', { timeout: 3000 });
+
+  const trigger = firstCard.locator('.knowledge-add-comment-trigger');
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toContainText('+ Comment');
+  await expect(trigger).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking add-comment trigger reveals the comment form with name field', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-add-comment-trigger', { timeout: 3000 });
+
+  const trigger = firstCard.locator('.knowledge-add-comment-trigger');
+  const form = firstCard.locator('.knowledge-add-comment-form');
+  await expect(form).toBeHidden();
+
+  await trigger.click();
+  await expect(form).toBeVisible();
+  await expect(form.locator('.knowledge-add-comment-input')).toBeFocused();
+  await expect(form.locator('.knowledge-add-comment-name')).toBeVisible();
+  await expect(form.locator('.knowledge-add-comment-btn')).toContainText('Post');
+});
+
+test('collapse hides reaction bar and comments section', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-reaction-bar', { timeout: 3000 });
+
+  // Collapse the card
+  await firstCard.locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-card-snippet', { timeout: 3000 });
+
+  await expect(firstCard.locator('.knowledge-reaction-bar')).toBeHidden();
+  await expect(firstCard.locator('.knowledge-comments-section')).toBeHidden();
+});
+

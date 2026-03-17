@@ -8,12 +8,12 @@
 
 import {
   el, cell, emitEdit, registerTemplate, editableCell,
-  parseGroups, delegateEvent,
+  parseGroups, delegateEvent, getUserName,
 } from '../shared.js';
 import {
   classifyStatus, STATUS_COLORS, STATUS_LABELS,
   parseTags, collectTags, collectCategories,
-  buildSnippet, formatDate,
+  buildSnippet, formatDate, nowTimestamp, REACTION_EMOJIS,
 } from './helpers.js';
 
 /* ---------- Module state ---------- */
@@ -173,8 +173,26 @@ const definition = {
 
   /* ---------- Main render ---------- */
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     const groups = parseGroups(rows, cols.title);
+
+    /* Split each group's children into contentLines, comments, and reactions */
+    for (const group of groups) {
+      group.contentLines = [];
+      group.comments = [];
+      group.reactions = [];
+      for (const child of group.children) {
+        const authorVal = cols.author >= 0 ? (child.row[cols.author] || '').trim() : '';
+        const contentVal = cols.content >= 0 ? (child.row[cols.content] || '').trim() : '';
+        if (REACTION_EMOJIS.includes(contentVal) && authorVal) {
+          group.reactions.push({ emoji: contentVal, author: authorVal, idx: child.idx });
+        } else if (authorVal) {
+          group.comments.push({ text: contentVal, author: authorVal, idx: child.idx, row: child.row });
+        } else if (contentVal) {
+          group.contentLines.push(child);
+        }
+      }
+    }
 
     const allCategories = collectCategories(groups, cols.category);
     const allTags = collectTags(groups, cols.tags);
@@ -252,7 +270,7 @@ const definition = {
         const title = cell(g.row, cols.title).toLowerCase();
         const cat = cols.category >= 0 ? cell(g.row, cols.category).trim() : '';
         const tags = cols.tags >= 0 ? parseTags(cell(g.row, cols.tags)) : [];
-        const contentText = g.children
+        const contentText = (g.contentLines || g.children)
           .map(c => (cols.content >= 0 ? (c.row[cols.content] || '') : '').toLowerCase())
           .join(' ');
 
@@ -347,27 +365,145 @@ const definition = {
           card.append(meta);
 
           /* Snippet (shown when collapsed) */
-          if (!isExpanded && cols.content >= 0 && group.children.length > 0) {
-            const snippet = buildSnippet(group.children, cols.content);
+          const contentLines = group.contentLines || [];
+          if (!isExpanded && cols.content >= 0 && contentLines.length > 0) {
+            const snippet = buildSnippet(contentLines, cols.content);
             if (snippet) {
               card.append(el('div', { className: 'knowledge-card-snippet' }, [snippet]));
             }
           }
 
-          /* Expanded content */
-          if (isExpanded && cols.content >= 0 && group.children.length > 0) {
-            const contentSection = el('div', { className: 'knowledge-card-content' });
-            for (const child of group.children) {
-              const contentText = cell(child.row, cols.content);
-              if (contentText) {
-                const contentRowIdx = child.idx + 1;
-                contentSection.append(
-                  editableCell('p', { className: 'knowledge-content-line' },
-                    contentText, contentRowIdx, cols.content),
+          if (isExpanded) {
+            /* Expanded content lines */
+            if (cols.content >= 0 && contentLines.length > 0) {
+              const contentSection = el('div', { className: 'knowledge-card-content' });
+              for (const child of contentLines) {
+                const contentText = cell(child.row, cols.content);
+                if (contentText) {
+                  const contentRowIdx = child.idx + 1;
+                  contentSection.append(
+                    editableCell('p', { className: 'knowledge-content-line' },
+                      contentText, contentRowIdx, cols.content),
+                  );
+                }
+              }
+              card.append(contentSection);
+            }
+
+            /* Add line form */
+            if (cols.content >= 0 && typeof template._onInsertAfterRow === 'function') {
+              const addLineForm = el('div', { className: 'knowledge-add-line-form hidden' });
+              const lineInput = el('input', {
+                type: 'text',
+                className: 'knowledge-add-line-input',
+                placeholder: 'Add a new line…',
+              });
+              const lineSubmit = el('button', { className: 'knowledge-add-line-btn' }, ['Add']);
+              addLineForm.append(lineInput, lineSubmit);
+
+              const addLineTrigger = el('button', { className: 'knowledge-add-line-trigger' }, ['+ Add Line']);
+              addLineTrigger.addEventListener('click', () => {
+                addLineForm.classList.toggle('hidden');
+                if (!addLineForm.classList.contains('hidden')) lineInput.focus();
+              });
+
+              function submitLine() {
+                const text = lineInput.value.trim();
+                if (!text) return;
+                const allIdxs = [group.idx, ...group.children.map(c => c.idx)];
+                const lastIdx = Math.max(...allIdxs);
+                const newRow = new Array(template._totalColumns || 0).fill('');
+                newRow[cols.content] = text;
+                template._onInsertAfterRow(lastIdx + 1, [newRow]);
+              }
+              lineSubmit.addEventListener('click', submitLine);
+              lineInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitLine(); });
+
+              card.append(addLineTrigger, addLineForm);
+            }
+
+            /* Reactions bar */
+            const reactionsBar = el('div', { className: 'knowledge-reaction-bar' });
+            for (const emoji of REACTION_EMOJIS) {
+              const count = (group.reactions || []).filter(r => r.emoji === emoji).length;
+              const btn = el('button', {
+                className: `knowledge-reaction-btn${count > 0 ? ' knowledge-reaction-active' : ''}`,
+                dataset: { emoji },
+              }, [`${emoji}${count > 0 ? ` ${count}` : ''}`]);
+              btn.addEventListener('click', () => {
+                if (typeof template._onInsertAfterRow !== 'function') return;
+                const allIdxs = [group.idx, ...group.children.map(c => c.idx)];
+                const lastIdx = Math.max(...allIdxs);
+                const newRow = new Array(template._totalColumns || 0).fill('');
+                newRow[cols.content] = emoji;
+                if (cols.author >= 0) newRow[cols.author] = getUserName();
+                if (cols.updated >= 0) newRow[cols.updated] = nowTimestamp();
+                template._onInsertAfterRow(lastIdx + 1, [newRow]);
+              });
+              reactionsBar.append(btn);
+            }
+            card.append(reactionsBar);
+
+            /* Comments section */
+            const commentsSection = el('div', { className: 'knowledge-comments-section' });
+
+            if ((group.comments || []).length > 0) {
+              for (const comment of group.comments) {
+                const commentEl = el('div', { className: 'knowledge-comment' });
+                commentEl.append(
+                  el('div', { className: 'knowledge-comment-header' }, [
+                    el('span', { className: 'knowledge-comment-author' }, [comment.author]),
+                    el('span', { className: 'knowledge-comment-date' }, [
+                      cols.updated >= 0 ? formatDate(comment.row[cols.updated] || '') : '',
+                    ]),
+                  ]),
+                  el('div', { className: 'knowledge-comment-text' }, [comment.text]),
                 );
+                commentsSection.append(commentEl);
               }
             }
-            card.append(contentSection);
+
+            if (typeof template._onInsertAfterRow === 'function') {
+              const addCommentTrigger = el('button', { className: 'knowledge-add-comment-trigger' }, ['+ Comment']);
+              const addCommentForm = el('div', { className: 'knowledge-add-comment-form hidden' });
+              const commentInput = el('input', {
+                type: 'text',
+                className: 'knowledge-add-comment-input',
+                placeholder: 'Add a comment…',
+              });
+              const commentName = el('input', {
+                type: 'text',
+                className: 'knowledge-add-comment-name',
+                placeholder: 'Your name',
+                value: getUserName(),
+              });
+              const commentSubmit = el('button', { className: 'knowledge-add-comment-btn' }, ['Post']);
+              addCommentForm.append(commentInput, commentName, commentSubmit);
+
+              addCommentTrigger.addEventListener('click', () => {
+                addCommentForm.classList.toggle('hidden');
+                if (!addCommentForm.classList.contains('hidden')) commentInput.focus();
+              });
+
+              function submitComment() {
+                const text = commentInput.value.trim();
+                const name = commentName.value.trim();
+                if (!text) return;
+                const allIdxs = [group.idx, ...group.children.map(c => c.idx)];
+                const lastIdx = Math.max(...allIdxs);
+                const newRow = new Array(template._totalColumns || 0).fill('');
+                if (cols.content >= 0) newRow[cols.content] = text;
+                if (cols.author >= 0) newRow[cols.author] = name;
+                if (cols.updated >= 0) newRow[cols.updated] = nowTimestamp();
+                template._onInsertAfterRow(lastIdx + 1, [newRow]);
+              }
+              commentSubmit.addEventListener('click', submitComment);
+              commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitComment(); });
+
+              commentsSection.append(addCommentTrigger, addCommentForm);
+            }
+
+            card.append(commentsSection);
           }
 
           section.append(card);

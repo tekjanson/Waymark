@@ -111,3 +111,12 @@ export function formatDate(raw) {
   if (isNaN(d.getTime())) return raw;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+
+/** Returns current time as "YYYY-MM-DD HH:mm" */
+export function nowTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export const REACTION_EMOJIS = ['👍', '❤️', '💡', '✅'];

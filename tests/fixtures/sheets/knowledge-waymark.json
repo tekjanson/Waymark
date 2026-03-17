@@ -191,6 +191,9 @@
     ["", "", "Articles are grouped by Category column. Each article has a title, snippet preview (auto-generated from first content line), and status badge.", "", "", "", "", ""],
     ["", "", "Status cycling moves articles through Draft → In Review → Published → Archived. Each transition emits a cell-update record.", "", "", "", "", ""],
     ["", "", "The toolbar includes a live search box (filters by title and content), category pills, and a tag cloud for tag-based filtering.", "", "", "", "", ""],
+    ["", "", "Can articles support inline comments tied to a user?", "", "Alex", "2026-03-11", "", ""],
+    ["", "", "The expand/collapse is really helpful for dense reference material.", "", "Jordan", "2026-03-12", "", ""],
+    ["", "", "👍", "", "Jamie", "2026-03-10", "", ""],
 
     ["Test Cases Template", "Features", "The TestCases template displays a QA test suite with Pass/Fail/Blocked/Skip status cycling per test case row.", "testcases, template, qa", "Jamie", "2026-02-20", "Published", ""],
     ["", "", "A summary bar shows overall pass rate with a color-coded percentage (green >80%, yellow >60%, red ≤60%).", "", "", "", "", ""],

@@ -291,3 +291,52 @@ test('STATUS_LABELS has entries for all status keys', async ({ page }) => {
   });
   expect(result).toEqual(['archived', 'draft', 'published', 'review']);
 });
+
+/* ---------- nowTimestamp ---------- */
+
+test('nowTimestamp returns YYYY-MM-DD HH:mm format', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { nowTimestamp } = await import('/js/templates/knowledge/helpers.js');
+    return nowTimestamp();
+  });
+  expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+});
+
+test('nowTimestamp returns current date (within 5 seconds)', async ({ page }) => {
+  await setupApp(page);
+  const beforeMs = Date.now();
+  const result = await page.evaluate(async () => {
+    const { nowTimestamp } = await import('/js/templates/knowledge/helpers.js');
+    return nowTimestamp();
+  });
+  const afterMs = Date.now();
+  const parsed = new Date(result.replace(' ', 'T') + ':00').getTime();
+  // Allow up to 1 minute difference (timestamp precision is minutes)
+  expect(Math.abs(parsed - beforeMs)).toBeLessThan(60 * 1000 + 5000);
+  expect(parsed).toBeLessThanOrEqual(afterMs + 60 * 1000);
+});
+
+/* ---------- REACTION_EMOJIS ---------- */
+
+test('REACTION_EMOJIS contains exactly the 4 expected emojis', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { REACTION_EMOJIS } = await import('/js/templates/knowledge/helpers.js');
+    return REACTION_EMOJIS;
+  });
+  expect(result).toHaveLength(4);
+  expect(result).toContain('👍');
+  expect(result).toContain('❤️');
+  expect(result).toContain('💡');
+  expect(result).toContain('✅');
+});
+
+test('REACTION_EMOJIS is an array', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { REACTION_EMOJIS } = await import('/js/templates/knowledge/helpers.js');
+    return Array.isArray(REACTION_EMOJIS);
+  });
+  expect(result).toBe(true);
+});

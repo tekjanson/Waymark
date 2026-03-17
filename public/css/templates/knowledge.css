@@ -470,3 +470,149 @@
     gap: 4px;
   }
 }
+
+/* ---- Add-line form ---- */
+.knowledge-add-line-trigger {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.knowledge-add-line-trigger:hover {
+  color: var(--color-primary);
+  background: var(--color-surface-alt, rgba(0,0,0,0.04));
+}
+.knowledge-add-line-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 0 4px;
+}
+.knowledge-add-line-form.hidden { display: none; }
+.knowledge-add-line-input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.knowledge-add-line-btn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.knowledge-add-line-btn:hover { opacity: 0.88; }
+
+/* ---- Reaction bar ---- */
+.knowledge-reaction-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--color-border);
+}
+.knowledge-reaction-btn {
+  background: var(--color-surface-alt, rgba(0,0,0,0.04));
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+.knowledge-reaction-btn:hover {
+  background: var(--color-surface-hover, rgba(0,0,0,0.08));
+  border-color: var(--color-primary);
+}
+.knowledge-reaction-active {
+  background: var(--color-primary-soft, rgba(99,102,241,0.1));
+  border-color: var(--color-primary);
+}
+
+/* ---- Comments section ---- */
+.knowledge-comments-section {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+.knowledge-comment {
+  padding: 8px 10px;
+  background: var(--color-surface-alt, rgba(0,0,0,0.03));
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.knowledge-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.knowledge-comment-author {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--color-text);
+}
+.knowledge-comment-date {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+.knowledge-comment-text {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  line-height: 1.45;
+}
+.knowledge-add-comment-trigger {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 2px;
+  transition: color 0.15s, background 0.15s;
+}
+.knowledge-add-comment-trigger:hover {
+  color: var(--color-primary);
+  background: var(--color-surface-alt, rgba(0,0,0,0.04));
+}
+.knowledge-add-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.knowledge-add-comment-form.hidden { display: none; }
+.knowledge-add-comment-input,
+.knowledge-add-comment-name {
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.knowledge-add-comment-btn {
+  align-self: flex-end;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.knowledge-add-comment-btn:hover { opacity: 0.88; }
