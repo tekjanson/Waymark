@@ -80,6 +80,7 @@ async function loadMockSheet(sheetId) {
     'sheet-040': 'habit-nonmonday',
     'sheet-043': 'kanban-ai-status',
     'sheet-044': 'knowledge-devops',
+    'sheet-045': 'knowledge-waymark',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

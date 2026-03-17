@@ -1,0 +1,204 @@
+{
+  "id": "sheet-045",
+  "title": "Waymark Knowledge Base",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Title", "Category", "Content", "Tags", "Author", "Updated", "Status", "Source"],
+
+    ["Waymark Architecture Overview", "Architecture", "Waymark is a zero-framework, zero-build-step single-page application that uses Google Sheets as its database and Google Drive as its file system.", "architecture, overview, vanilla", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "All business logic runs entirely in the browser — the Express server only serves static files and brokers OAuth refresh tokens.", "", "", "", "", ""],
+    ["", "", "ES Modules are loaded directly in the browser via <script type=\"module\">. No bundler, no transpiler, no Webpack, no Vite.", "", "", "", "", ""],
+    ["", "", "Google Sheets data is accessed through a unified api-client.js gateway that supports both live Google APIs and a local mock mode for tests.", "", "", "", "", ""],
+    ["", "", "Hash-based routing (#/sheet/{id}) allows deep-linking to any sheet without server-side routing logic.", "", "", "", "", ""],
+
+    ["Frontend-Only Design Principle", "Architecture", "Waymark is built on a strict no-backend-logic principle: the server stores no state, has no database, and processes no business logic.", "architecture, design, principles", "Jamie", "2026-03-01", "Published", ""],
+    ["", "", "The httpOnly cookie holds only the Google OAuth refresh token. All user data lives in Google Drive via user-data.js or in localStorage via storage.js.", "", "", "", "", ""],
+    ["", "", "This design means Waymark can be self-hosted with a dead-simple server — just static file serving and OAuth brokering.", "", "", "", "", ""],
+    ["", "", "Every rendering decision, template detection, and data transformation happens client-side. The server is intentionally dumb.", "", "", "", "", ""],
+
+    ["Module Organization", "Architecture", "api-client.js is the sole gateway to all Google APIs. No template or UI module may import drive.js or sheets.js directly.", "architecture, modules, imports", "Jamie", "2026-02-28", "Published", ""],
+    ["", "", "templates/shared.js re-exports el() from ui.js for template use. Templates import exclusively from shared.js, never from ui.js or api-client.js.", "", "", "", "", ""],
+    ["", "", "Templates self-register via registerTemplate('key', definition) — this means index.js just side-effect-imports all template files.", "", "", "", "", ""],
+    ["", "", "The module dependency graph is intentionally shallow: templates → shared.js → ui.js, and templates → shared.js (only).", "", "", "", "", ""],
+    ["", "", "Circular imports are forbidden. All utils are one-way dependencies flowing from specialized to generic.", "", "", "", "", ""],
+
+    ["Server Architecture", "Architecture", "server/index.js serves the /public directory as static files and injects a window.__WAYMARK_LOCAL flag for local-only mode.", "architecture, server, express", "Jamie", "2026-01-15", "Published", ""],
+    ["", "", "server/auth.js implements four OAuth routes: /auth/login (redirect to Google), /auth/callback (code exchange), /auth/refresh (token refresh), /auth/logout.", "", "", "", "", ""],
+    ["", "", "server/config.js reads environment variables for GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PORT, and COOKIE_SECRET.", "", "", "", "", ""],
+    ["", "", "The server creates no database, stores no user data, and holds zero application state. It is safe to restart at any time without data loss.", "", "", "", "", ""],
+
+    ["Template System Overview", "Templates", "Waymark's template system detects the type of a Google Sheet from its column headers, then renders it with a purpose-built UI.", "templates, system, overview", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Every template is a self-registering module that exports a definition object with four properties: name, icon, color, priority, detect(), columns(), and render().", "", "", "", "", ""],
+    ["", "", "detectTemplate() in templates/index.js runs every registered template's detect() against the sheet's lowercased headers and picks the highest-priority match.", "", "", "", "", ""],
+    ["", "", "The Checklist template (priority 10) is the universal fallback — it always matches, so every sheet gets some form of rendered UI.", "", "", "", "", ""],
+    ["", "", "Template priority ranges: 10 (generic fallback), 15-20 (standard templates), 21-25 (highly specific templates like Recipe and TestCases).", "", "", "", "", ""],
+
+    ["Template Definition Shape", "Templates", "Every template exports a definition object with this exact shape: { name, icon, color, priority, detect(lower), columns(lower), render(container, rows, cols, template) }.", "templates, definition, shape", "Jamie", "2026-02-20", "Published", ""],
+    ["", "", "detect(lower) receives an array of lowercased, trimmed header strings and returns a boolean. It uses regex.test() — never plain string equality.", "", "", "", "", ""],
+    ["", "", "columns(lower) returns a cols object mapping role names to column indices using lower.findIndex(h => /pattern/.test(h)). Returns -1 for unmatched optional roles.", "", "", "", "", ""],
+    ["", "", "render(container, rows, cols, template) clears container with innerHTML = '' then builds all DOM via el() and editableCell() from shared.js.", "", "", "", "", ""],
+    ["", "", "rowIndex in emitEdit() is 1-based — it represents the offset from the header row in the original Google Sheet.", "", "", "", "", ""],
+
+    ["Folder Layout for Complex Templates", "Templates", "Templates exceeding ~300 lines use the folder layout: templates/{key}/ with an index.js barrel module.", "templates, folder, layout", "Jamie", "2026-02-15", "Published", ""],
+    ["", "", "Sub-modules within the folder: helpers.js (constants and pure functions), cards.js (card/item DOM builders), modal.js (modal and overlay UI).", "", "", "", "", ""],
+    ["", "", "Sub-modules import from ../shared.js and may import siblings within the same {key}/ folder. They never import from ../../ui.js or ../../api-client.js.", "", "", "", "", ""],
+    ["", "", "The barrel import in templates/index.js changes from import './{key}.js' to import './{key}/index.js'. The kanban/ folder is the reference implementation.", "", "", "", "", ""],
+
+    ["detect() and columns() Patterns", "Templates", "detect() checks for ANY of the expected headers using .some() with regex patterns. A template detects if ≥2 key headers are present.", "templates, detect, columns", "Jamie", "2026-02-10", "Published", ""],
+    ["", "", "columns() uses lower.findIndex() with regex for each role. Include exclusion guards (i !== cols.previousRole) to prevent double-mapping the same column.", "", "", "", "", ""],
+    ["", "", "Optional columns return -1 when missing. render() must check if (cols.role >= 0) before using an optional role.", "", "", "", "", ""],
+    ["", "", "The columns() return object uses human-readable role names: { title, category, content, tags, author, updated, status, source }.", "", "", "", "", ""],
+
+    ["Adding a New Template", "Templates", "Every new template requires ALL of these: template JS, template CSS, CSS import in style.css, JS import in templates/index.js.", "templates, new, checklist", "Jamie", "2026-03-05", "Published", ""],
+    ["", "", "Also required: fixture JSON in tests/fixtures/sheets/, fixture ID mapping in api-client.js, folder entry in tests/fixtures/folders.json.", "", "", "", "", ""],
+    ["", "", "Also required: E2E test file in tests/e2e/, registry entry in template-registry.json, example data in example-data.js, import roles in import.js.", "", "", "", "", ""],
+    ["", "", "Missing any artifact breaks either the app, the tests, or the example generation pipeline. The AI builder agent enforces this checklist on every new template.", "", "", "", "", ""],
+    ["", "", "Template CSS classes must follow .{key}-{element} naming. All colors must use var(--color-*) design tokens or template-specific accent colors for badges only.", "", "", "", "", ""],
+
+    ["Git Branching Strategy", "Development Workflow", "Every task starts by syncing to tip of main: git checkout main && git fetch origin && git reset --hard origin/main.", "git, branching, workflow", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Create a feature branch immediately: git checkout -b feature/{kebab-case-task-name}. Never write code while on main.", "", "", "", "", ""],
+    ["", "", "Run git branch --show-current before every commit. If output is main, STOP — this is a hard reject violation.", "", "", "", "", ""],
+    ["", "", "Branch naming: feature/{task-key} for features, fix/{description} for bug fixes. Lowercase kebab-case, max 50 chars.", "", "", "", "", ""],
+    ["", "", "Use git push --force-with-lease (never --force) when rebasing a QA-rejected branch against updated main.", "", "", "", "", ""],
+
+    ["AI Laws — Non-Negotiable Rules", "Development Workflow", "The five absolute rules: no backend business logic, vanilla stack (no frameworks/build tools), zero server state, all Google API access through api-client.js, templates only import from shared.js.", "ai-laws, rules, compliance", "Jamie", "2026-03-01", "Published", ""],
+    ["", "", "No CSS frameworks (Tailwind, Bootstrap), no JS frameworks (React, Vue, Svelte), no bundlers (Webpack, Vite), no TypeScript, no SCSS.", "", "", "", "", ""],
+    ["", "", "DOM construction exclusively via el(). Never use innerHTML with dynamic content (XSS risk). innerHTML = '' is only acceptable for clearing containers.", "", "", "", "", ""],
+    ["", "", "Use async/await throughout, never raw .then() chains. Use Promise.all() for parallel independent operations.", "", "", "", "", ""],
+    ["", "", "Module-scoped let variables for state. No classes, no global state objects. Singleton init with promise guards where needed.", "", "", "", "", ""],
+
+    ["Commit Message Convention", "Development Workflow", "Waymark uses Conventional Commits: feat(scope): description for new features, fix(scope): description for bug fixes.", "git, commits, conventions", "Jamie", "2026-01-20", "Published", ""],
+    ["", "", "Other types: test(scope): for test additions, refactor(scope): for refactors, chore(scope): for tooling/config changes.", "", "", "", "", ""],
+    ["", "", "Scope is the template key or module name (e.g., feat(kanban), fix(recipe), test(budget)).", "", "", "", "", ""],
+    ["", "", "Message body should describe WHAT changed and WHY, not HOW. Present tense imperative: 'add collapsible lanes' not 'added collapsible lanes'.", "", "", "", "", ""],
+
+    ["Human-Friendly Sheet Data Format", "Development Workflow", "All template data in Google Sheets must be easy for humans to read and edit directly — never pack multiple values into one cell with delimiters.", "data, sheets, format", "Jamie", "2026-02-25", "Published", ""],
+    ["", "", "If a field is a list (ingredients, steps, tasks), each item must have its own row. Group membership is determined by leaving the primary identifier column blank.", "", "", "", "", ""],
+    ["", "", "Use singular column headers for per-row items: 'Ingredient' not 'Ingredients', 'Step' not 'Instructions'.", "", "", "", "", ""],
+    ["", "", "Group metadata (name, category, etc.) goes on the first row only. Continuation rows leave those cells blank. A new group starts when the primary column is non-empty.", "", "", "", "", ""],
+
+    ["E2E Test Architecture", "Testing", "All E2E tests use Playwright with CSS selector strategy. No XPath, no text= selectors, no data-testid attributes.", "testing, e2e, playwright", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Flat test() calls only — no describe() blocks, no beforeAll/beforeEach/afterAll hooks. Each test must be fully isolated and self-contained.", "", "", "", "", ""],
+    ["", "", "Every test starts with: await setupApp(page) then navigates to a fixture sheet. No test depends on another test's state.", "", "", "", "", ""],
+    ["", "", "Use page.waitForSelector() with explicit timeout instead of page.waitForTimeout(). Flaky waits by time are not acceptable.", "", "", "", "", ""],
+    ["", "", "Run tests with: npm test (all), npm run test:e2e (E2E only), npm run test:unit (unit only), npx playwright test tests/e2e/{file}.spec.js (single file).", "", "", "", "", ""],
+
+    ["Unit Test Strategy", "Testing", "Unit tests verify pure functions in isolation using Playwright's page.evaluate() with dynamic import() — no build tools, no Node.js ESM shims.", "testing, unit, pure-functions", "Jamie", "2026-03-05", "Published", ""],
+    ["", "", "Unit test files are named tests/e2e/unit-{module-name}.spec.js. They use the same Playwright infrastructure as E2E tests.", "", "", "", "", ""],
+    ["", "", "Test state classifiers, parsers, formatters, date utilities, and data transformers. Do NOT unit test DOM builders, event handlers, or API functions.", "", "", "", "", ""],
+    ["", "", "For time-dependent functions, freeze Date.now() inside page.evaluate() to test exact urgency levels (overdue, soon, upcoming, later).", "", "", "", "", ""],
+
+    ["Test Fixture Format", "Testing", "Fixture files live in tests/fixtures/sheets/{key}-{descriptor}.json with shape: { id, title, sheetTitle, values }.", "testing, fixtures, format", "Jamie", "2026-02-20", "Published", ""],
+    ["", "", "The values array is a 2D array of strings. Row 0 is headers. All cell values must be strings (numbers and dates are still strings in fixtures).", "", "", "", "", ""],
+    ["", "", "Register every fixture in api-client.js: 'sheet-NNN': '{key}-{descriptor}'. Add to tests/fixtures/folders.json under the appropriate folder.", "", "", "", "", ""],
+    ["", "", "mock-server.js intercepts Google API requests and serves fixture data. setupApp() wires up the mock server before any navigation happens.", "", "", "", "", ""],
+
+    ["Visual Consistency Testing", "Testing", "Use page.locator().evaluate() to check computed CSS values. Verify design tokens are actually applied — not transparent or empty.", "testing, visual, css", "Jamie", "2026-03-01", "Published", ""],
+    ["", "", "Test cursor: pointer on all interactive elements (buttons, badges, toggles, clickable cards).", "", "", "", "", ""],
+    ["", "", "Test mobile viewport at 375px: await page.setViewportSize({ width: 375, height: 812 }). Verify no elements overflow the viewport.", "", "", "", "", ""],
+    ["", "", "Use toHaveCSS() for asserting specific CSS values like border-radius, display, font-weight to enforce layout and design rules.", "", "", "", "", ""],
+
+    ["Test Count Requirements", "Testing", "For new templates: minimum 8 E2E tests plus 5 unit tests covering detection, rendering, interaction, style, mobile, workflow, and data records.", "testing, counts, requirements", "Jamie", "2026-02-28", "Published", ""],
+    ["", "", "For template upgrades: minimum 4 E2E tests and 3 unit tests for changed helpers.", "", "", "", "", ""],
+    ["", "", "For bug fixes: minimum 2 E2E tests — one regression test and one verification of the fix.", "", "", "", "", ""],
+    ["", "", "These are minimums. The actual goal is comprehensive coverage of all 6 test layers: detection, rendering, interactions, visual consistency, data persistence, and edge cases.", "", "", "", "", ""],
+
+    ["Design Token Architecture", "CSS & Design", "All colors in Waymark come from CSS custom properties defined in base.css under :root. Never use hardcoded hex colors for shared design tokens.", "css, design-tokens, architecture", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Core token set: --color-primary (#2563eb), --color-bg (#f1f5f9), --color-surface (#ffffff), --color-text (#1e293b), --color-border (#e2e8f0).", "", "", "", "", ""],
+    ["", "", "Utility tokens: --color-success (#16a34a), --color-error (#dc2626), --radius (8px), --radius-sm (4px), --shadow, --transition (200ms ease).", "", "", "", "", ""],
+    ["", "", "Template CSS files MAY hardcode template-specific accent colors for status badges and unique visual elements. Background, border, and text colors must always use tokens.", "", "", "", "", ""],
+    ["", "", "Dark mode support: each token has a dark mode counterpart in @media (prefers-color-scheme: dark) overrides in base.css.", "", "", "", "", ""],
+
+    ["CSS Class Naming Conventions", "CSS & Design", "Flat, descriptive class names using pattern .{key}-{element}. Examples: .budget-summary, .kanban-lane, .recipe-card, .knowledge-toolbar.", "css, naming, conventions", "Jamie", "2026-02-10", "Published", ""],
+    ["", "", "No BEM (no __ or -- suffixes). No utility-first classes. State modifiers are chained directly: .checklist-row.completed, .kanban-lane-backlog.", "", "", "", "", ""],
+    ["", "", "ID selectors only for unique page-level elements: #sidebar, #content, #top-bar, #checklist-view. Class selectors everywhere else.", "", "", "", "", ""],
+    ["", "", "The only !important in the codebase is on .hidden { display: none !important; }. All other overrides use specificity.", "", "", "", "", ""],
+
+    ["Template CSS File Structure", "CSS & Design", "Each template has exactly one CSS file at css/templates/{key}.css. All classes are prefixed with .{key}-.", "css, templates, structure", "Jamie", "2026-02-05", "Published", ""],
+    ["", "", "style.css is a pure aggregator — only @import lines, no rules. Adding a template requires adding @import 'templates/{key}.css'; to style.css.", "", "", "", "", ""],
+    ["", "", "File structure: CSS custom properties scoped to #checklist-view first, then layout, then component styles, then responsive media queries at the bottom.", "", "", "", "", ""],
+    ["", "", "Max selector depth is 2 levels. Prefer .knowledge-card .knowledge-card-title over deep nesting like .knowledge-list .knowledge-section .knowledge-card .title.", "", "", "", "", ""],
+
+    ["Responsive Design Principles", "CSS & Design", "Two breakpoints: 768px for tablet (narrow grid, adjusted spacing) and 480px for phone (single column, stacked layout).", "css, responsive, mobile", "Jamie", "2026-01-25", "Published", ""],
+    ["", "", "Base layout uses CSS Grid and Flexbox. Never use fixed pixel widths for containers — use % or fr units that adapt to viewport.", "", "", "", "", ""],
+    ["", "", "Template-specific media queries go at the bottom of the template's CSS file, after all component styles.", "", "", "", "", ""],
+
+    ["Builder Agent Overview", "AI Agent", "The Waymark Builder is an autonomous AI agent that reads the Waymark Workboard Google Sheet for tasks, implements them in feature branches, and submits them for QA.", "ai-agent, builder, overview", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "The agent runs in a persistent loop: sleep 60 seconds → query workboard → pick highest-priority To Do item → implement → test → push → mark QA → repeat.", "", "", "", "", ""],
+    ["", "", "The agent uses check-workboard.js to query Google Sheets directly each cycle — no background watchers, no stale data from cached state.", "", "", "", "", ""],
+    ["", "", "During idle periods (no To Do items), the agent consumes ~30 tokens per 60-second cycle (just the workboard check). Active work consumes normal inference tokens.", "", "", "", "", ""],
+    ["", "", "The agent is invoked with @waymark-builder start in VS Code Copilot Chat. It reads AI_LAWS on boot, then enters the work loop.", "", "", "", "", ""],
+
+    ["Workboard Task Lifecycle", "AI Agent", "Task lifecycle: To Do → (agent claims) → In Progress → (agent implements) → QA → (human reviews, PRs, merges) → Done.", "ai-agent, workboard, lifecycle", "Jamie", "2026-03-08", "Published", ""],
+    ["", "", "The agent claims tasks using: node scripts/update-workboard.js claim {row}. This sets Stage to In Progress and Assignee to AI.", "", "", "", "", ""],
+    ["", "", "After implementation, the agent pushes the branch then marks it QA using: node scripts/update-workboard.js stage {row} QA.", "", "", "", "", ""],
+    ["", "", "The agent NEVER moves a task to Done. Only the human moves items to Done after reviewing, approving, and merging the PR.", "", "", "", "", ""],
+    ["", "", "Completion notes follow this format: Branch: feature/... | Files: ... | +N LOC | N new tests (total). QA notes include step-by-step manual testing instructions.", "", "", "", "", ""],
+
+    ["QA Rejection Protocol", "AI Agent", "When a human moves a task from QA back to To Do, that is a rejection. The agent treats it as a HARD REJECT — equal in severity to committing to main.", "ai-agent, qa, rejection", "Jamie", "2026-03-05", "Published", ""],
+    ["", "", "check-workboard.js flags rejected items with rejected: true in the JSON output when a task has AI notes AND has been moved back to To Do.", "", "", "", "", ""],
+    ["", "", "On rejection, the agent reads ALL sub-row notes (especially human-authored ones), addresses every point of feedback, then re-submits.", "", "", "", "", ""],
+    ["", "", "The agent reuses the existing branch (unless human says otherwise or it was already merged to main). It rebases against latest main before making changes.", "", "", "", "", ""],
+    ["", "", "The agent NEVER argues with QA decisions, NEVER ignores feedback, NEVER re-marks as QA without addressing the issues. The human is the final authority.", "", "", "", "", ""],
+
+    ["Workboard Script Commands", "AI Agent", "scripts/check-workboard.js — one-shot query that prints a single JSON line: { todo, inProgress, qa, done } and exits immediately.", "ai-agent, scripts, commands", "Jamie", "2026-02-25", "Published", ""],
+    ["", "", "scripts/update-workboard.js claim {row} — sets Stage to In Progress and Assignee to AI. Only touches columns C and E.", "", "", "", "", ""],
+    ["", "", "scripts/update-workboard.js stage {row} {stage} — updates Stage column only. Use 'QA' or 'In Progress' as stage values.", "", "", "", "", ""],
+    ["", "", "scripts/update-workboard.js note {row} 'text' — INSERTS a blank row first (via insertDimension API), then writes the note. Guaranteed safe, never overwrites existing data.", "", "", "", "", ""],
+
+    ["Test Report Export to Google Drive", "AI Agent", "Before marking any task QA, the agent runs: node scripts/generate-test-report.js --upload", "ai-agent, testing, drive", "Jamie", "2026-03-01", "Published", ""],
+    ["", "", "This runs the full test suite, converts results to testcase-template format, and uploads each spec file as a Google Sheet to Drive folder 1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q.", "", "", "", "", ""],
+    ["", "", "The test report uses OAuth user credentials (not the service account) because consumer Google accounts give service accounts zero Drive storage quota.", "", "", "", "", ""],
+    ["", "", "The Drive folder URL is written to generated/test-report/drive-url.txt. The agent must include this URL in the QA testing notes sub-row.", "", "", "", "", ""],
+
+    ["OAuth Authentication Flow", "Google Integration", "Waymark uses Google OAuth 2.0 with offline access (access_type=offline) to get a refresh token that persists across page loads.", "oauth, authentication, google", "Jamie", "2026-02-20", "Published", ""],
+    ["", "", "Flow: /auth/login redirects to Google consent → Google redirects to /auth/callback with code → server exchanges code for tokens and stores refresh_token in httpOnly cookie.", "", "", "", "", ""],
+    ["", "", "/auth/refresh reads the httpOnly cookie and calls Google token API to get a fresh access token. Access tokens expire in 1 hour.", "", "", "", "", ""],
+    ["", "", "auth.js (client) manages token caching and refresh timing. It calls /auth/refresh proactively before expiry to avoid failed API calls.", "", "", "", "", ""],
+
+    ["Google Sheets API Access", "Google Integration", "sheets.js wraps the Google Sheets REST v4 API. It takes a token as its first parameter — no internal auth state.", "google-sheets, api, architecture", "Jamie", "2026-02-15", "Published", ""],
+    ["", "", "api-client.js is the sole consumer of sheets.js. Templates never import sheets.js directly — they use api.sheets via api-client.js.", "", "", "", "", ""],
+    ["", "", "In local mock mode (window.__WAYMARK_LOCAL or ?local=true), api-client.js intercepts all Sheets API calls and serves data from tests/fixtures/sheets/.", "", "", "", "", ""],
+    ["", "", "The sheet data format: values[0] is always the header row. values[1..n] are data rows. Each cell is a string (empty cells are empty strings).", "", "", "", "", ""],
+
+    ["Google Drive API & Explorer", "Google Integration", "drive.js wraps the Google Drive REST v3 API for folder listing, file creation/update, and metadata queries.", "google-drive, api, explorer", "Jamie", "2026-02-10", "Published", ""],
+    ["", "", "explorer.js implements the sidebar drive tree view. It calls api.drive.listFolders() and renders a collapsible tree of folders and files.", "", "", "", "", ""],
+    ["", "", "user-data.js uses Drive to persist user preferences (pinned sheets, theme, recent history) in a Waymark.json file in the user's Drive root.", "", "", "", "", ""],
+    ["", "", "search.js queries Drive for files matching keyword queries. It searches file names and content metadata, not the cell-level sheet data.", "", "", "", "", ""],
+
+    ["Mock Mode for Testing", "Google Integration", "Local mock mode is activated when window.__WAYMARK_LOCAL is true or when the URL contains ?local=true.", "testing, mock, local", "Jamie", "2026-03-05", "Published", ""],
+    ["", "", "mock-server.js (Playwright) intercepts fetch() calls to googleapis.com and serves fixture JSON from tests/fixtures/. No real Google API calls made during tests.", "", "", "", "", ""],
+    ["", "", "api-client.js mapping object maps sheet IDs (sheet-001, sheet-002...) to fixture file names (checklist-grocery, kanban-project...).", "", "", "", "", ""],
+    ["", "", "tests/fixtures/folders.json provides the mock Drive directory tree. tests/fixtures/users.json provides mock user profiles for auth.", "", "", "", "", ""],
+
+    ["Kanban Board Template", "Features", "The Kanban template renders a multi-stage project board with columns for each status (Backlog, To Do, In Progress, QA, Done).", "kanban, template, features", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Cards show title, priority badge, due date badge, assignee, labels, and note count. Status cycling by clicking the badge.", "", "", "", "", ""],
+    ["", "", "Priority badges are color-coded: P0 (red), P1 (orange), P2 (blue), P3 (gray). Due date badges change color based on proximity: overdue (red), soon (orange), upcoming (green).", "", "", "", "", ""],
+    ["", "", "The kanban folder layout (templates/kanban/) is the reference implementation for complex templates: index.js, helpers.js, cards.js, modal.js.", "", "", "", "", ""],
+    ["", "", "Detail panel opens on card click. Includes inline-editable title, description, assignee, due date, and a full notes thread.", "", "", "", "", ""],
+
+    ["Recipe Book Template", "Features", "The Recipe template uses the row-per-item format: each ingredient and each step occupies its own row. Recipe metadata is on the first row only.", "recipe, template, features", "Jamie", "2026-03-05", "Published", ""],
+    ["", "", "A servings scaler lets users adjust the portion count and automatically rescales all ingredient quantities.", "", "", "", "", ""],
+    ["", "", "The recipe scraper (recipe-scraper.js) imports recipes from any URL by extracting structured data (JSON-LD, microdata) from the page.", "", "", "", "", ""],
+    ["", "", "Recipes are grouped by category. Each recipe card shows prep time, cook time, difficulty badge, and a thumbnail if an image URL is provided.", "", "", "", "", ""],
+
+    ["Budget & Finance Template", "Features", "The Budget template tracks income and expense rows with category, amount, date, and notes columns. Inline editing is supported on all cells.", "budget, template, features", "Jamie", "2026-02-28", "Published", ""],
+    ["", "", "A summary bar shows total income, total expenses, and net balance with color-coded indicators (green for positive, red for negative cash flow).", "", "", "", "", ""],
+    ["", "", "Category pills filter the transaction list. Budget upload supports CSV import of bank statement exports.", "", "", "", "", ""],
+    ["", "", "The budget-upload template handles CSV parsing in the browser — zero server-side processing, fully client-side file reading.", "", "", "", "", ""],
+
+    ["Knowledge Base Template", "Features", "The Knowledge Base template organizes articles by category with full-text search, tag-based filtering, and expand/collapse for long content.", "knowledge, template, features", "Jamie", "2026-03-10", "Published", ""],
+    ["", "", "Articles are grouped by Category column. Each article has a title, snippet preview (auto-generated from first content line), and status badge.", "", "", "", "", ""],
+    ["", "", "Status cycling moves articles through Draft → In Review → Published → Archived. Each transition emits a cell-update record.", "", "", "", "", ""],
+    ["", "", "The toolbar includes a live search box (filters by title and content), category pills, and a tag cloud for tag-based filtering.", "", "", "", "", ""],
+
+    ["Test Cases Template", "Features", "The TestCases template displays a QA test suite with Pass/Fail/Blocked/Skip status cycling per test case row.", "testcases, template, qa", "Jamie", "2026-02-20", "Published", ""],
+    ["", "", "A summary bar shows overall pass rate with a color-coded percentage (green >80%, yellow >60%, red ≤60%).", "", "", "", "", ""],
+    ["", "", "Test cases can be grouped in directory view when a sheet folder contains multiple TestCases sheets — a aggregate count appears.", "", "", "", "", ""],
+    ["", "", "This template is used by the AI builder agent to upload test results to the Waymark QA folder on Google Drive for human review.", "", "", "", "", ""],
+
+    ["Checklist Template", "Features", "The Checklist template is the universal fallback (priority 10). It detects any sheet and renders rows with done/todo toggle states.", "checklist, template, features", "Jamie", "2026-01-10", "Published", ""],
+    ["", "", "Status values that means 'done': ✓, yes, done, x, true, 1, complete", "", "", "", "", ""],
+    ["", "", "Completion percentage appears in the header. Rows can have inline-editable notes.", "", "", "", "", ""]
+  ]
+}

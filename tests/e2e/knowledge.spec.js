@@ -320,3 +320,129 @@ test('section headers show category title and article count', async ({ page }) =
   await expect(header.locator('.knowledge-section-title')).toBeVisible();
   await expect(header.locator('.knowledge-section-count')).toBeVisible();
 });
+
+/* ---------- Waymark Knowledge Base (sheet-045) — deep rich fixture ---------- */
+
+test('Waymark knowledge base is detected and renders as Knowledge Base', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-toolbar', { timeout: 5000 });
+  await expect(page.locator('#template-badge')).toContainText('Knowledge Base');
+});
+
+test('Waymark knowledge base renders 8 categories', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-cat-pill', { timeout: 5000 });
+
+  const pills = page.locator('.knowledge-cat-pill');
+  // All + 8 categories = 9 pills minimum
+  expect(await pills.count()).toBeGreaterThanOrEqual(9);
+  await expect(pills.first()).toContainText('All');
+});
+
+test('Waymark knowledge base renders many article cards', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  const cards = page.locator('.knowledge-card');
+  // The Waymark fixture has 35+ articles
+  expect(await cards.count()).toBeGreaterThanOrEqual(30);
+});
+
+test('Waymark knowledge base Architecture category contains correct articles', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-cat-pill', { timeout: 5000 });
+
+  const archPill = page.locator('.knowledge-cat-pill', { hasText: 'Architecture' });
+  await archPill.click();
+  await expect(archPill).toHaveClass(/active/);
+
+  const cards = page.locator('.knowledge-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(4);
+
+  // "Waymark Architecture Overview" article must be present
+  const titles = page.locator('.knowledge-card-title');
+  const titleTexts = await titles.allTextContents();
+  expect(titleTexts.some(t => /architecture overview/i.test(t))).toBe(true);
+});
+
+test('Waymark knowledge base AI Agent category contains correct articles', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-cat-pill', { timeout: 5000 });
+
+  const agentPill = page.locator('.knowledge-cat-pill', { hasText: 'AI Agent' });
+  await agentPill.click();
+  await expect(agentPill).toHaveClass(/active/);
+
+  const cards = page.locator('.knowledge-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(4);
+
+  const titles = page.locator('.knowledge-card-title');
+  const titleTexts = await titles.allTextContents();
+  expect(titleTexts.some(t => /builder agent|workboard|rejection/i.test(t))).toBe(true);
+});
+
+test('Waymark knowledge base search finds architecture articles', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-search', { timeout: 5000 });
+
+  await page.locator('.knowledge-search').fill('api-client');
+  await page.waitForSelector('.knowledge-card', { timeout: 3000 });
+
+  const cards = page.locator('.knowledge-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(1);
+});
+
+test('Waymark knowledge base expand reveals full article content with multiple lines', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-expand-btn', { timeout: 5000 });
+
+  const firstCard = page.locator('.knowledge-card').first();
+  await firstCard.locator('.knowledge-expand-btn').click();
+
+  await page.waitForSelector('.knowledge-card-content', { timeout: 3000 });
+  await expect(firstCard.locator('.knowledge-card-content')).toBeVisible();
+
+  const contentLines = firstCard.locator('.knowledge-content-line');
+  // Waymark articles have 4-5 content lines each
+  expect(await contentLines.count()).toBeGreaterThanOrEqual(4);
+});
+
+test('Waymark knowledge base all sections have article counts', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-section-header', { timeout: 5000 });
+
+  const headers = page.locator('.knowledge-section-header');
+  expect(await headers.count()).toBeGreaterThanOrEqual(8);
+
+  // Every section header shows a count badge
+  const counts = page.locator('.knowledge-section-count');
+  expect(await counts.count()).toBeGreaterThanOrEqual(8);
+});
+
+test('Waymark knowledge base mobile layout has no overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-045');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  const overflows = await page.evaluate(() => {
+    const problems = [];
+    document.querySelectorAll('.knowledge-list *').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 2) {
+        problems.push(el.className);
+      }
+    });
+    return problems;
+  });
+  expect(overflows).toHaveLength(0);
+});
+
