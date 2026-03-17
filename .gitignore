@@ -12,6 +12,9 @@ test-results/
 playwright-report/
 blob-report/
 
+# Test reports
+generated/test-report/
+
 # Design audit
 design-audit-screenshots/
 design-audit-report.md

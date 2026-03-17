@@ -71,10 +71,17 @@ const auth = new GoogleAuth({
     let qaCount = 0;
     let doneCount = 0;
 
+    // First pass: identify task rows and their indices
+    const taskIndices = [];
     for (let i = 1; i < rows.length; i++) {
+      const task = (rows[i][0] || '').trim();
+      if (task) taskIndices.push(i);
+    }
+
+    for (let t = 0; t < taskIndices.length; t++) {
+      const i = taskIndices[t];
       const r = rows[i];
       const task = (r[0] || '').trim();
-      if (!task) continue; // sub-row
 
       const stage    = (r[2] || '').trim();
       const project  = (r[3] || '').trim();
@@ -88,8 +95,30 @@ const auth = new GoogleAuth({
         priority, label, desc: desc.slice(0, 200),
       };
 
-      if (stage === 'To Do') todo.push(item);
-      else if (stage === 'In Progress') inProgress.push(item);
+      if (stage === 'To Do') {
+        // Collect sub-row notes for To Do items so the agent can detect
+        // QA rejections (human moved task back to To Do with feedback notes)
+        const nextTaskIdx = t + 1 < taskIndices.length ? taskIndices[t + 1] : rows.length;
+        const notes = [];
+        for (let j = i + 1; j < nextTaskIdx; j++) {
+          const note = (rows[j][8] || '').trim();
+          const noteAuthor = (rows[j][4] || '').trim();
+          if (note) notes.push({ row: j + 1, author: noteAuthor, text: note });
+        }
+        if (notes.length) item.notes = notes;
+
+        // Detect QA rejection: has notes from non-AI author AFTER an AI note
+        const hasAINotes = notes.some(n => n.author === 'AI');
+        const hasQARevert = notes.some(n => n.text.includes('⟳ QA → To Do'));
+        const hasHumanFeedback = notes.some(n =>
+          n.author !== 'AI' && !n.text.startsWith('⟳') && n.author
+        );
+        if (hasAINotes && (hasQARevert || hasHumanFeedback)) {
+          item.rejected = true;
+        }
+
+        todo.push(item);
+      } else if (stage === 'In Progress') inProgress.push(item);
       else if (stage === 'QA') qaCount++;
       else if (stage === 'Done') doneCount++;
     }
