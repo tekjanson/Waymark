@@ -686,7 +686,6 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
-<<<<<<< HEAD
   /* ---- Knowledge Base examples ---- */
   'Waymark Knowledge Base': {
     folder: 'Knowledge',

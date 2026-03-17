@@ -262,7 +262,7 @@ test('settings modal shows configured sheet ID when one is set', async ({ page }
   await page.waitForSelector('.notif-panel', { timeout: 3000 });
   await page.click('.notif-settings-btn');
   await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
-  await expect(page.locator('.notif-sheet-status-text')).toContainText('sheet-046');
+  await expect(page.locator('.notif-sheet-status-text')).toContainText('Connected to notification sheet');
 });
 
 test('clear button in settings modal removes the configured sheet ID', async ({ page }) => {
@@ -299,4 +299,80 @@ test('notification template renders without overflow at 375px width', async ({ p
     return problems;
   });
   expect(overflows).toHaveLength(0);
+});
+
+/* ---------- Layer 9: Auto-Creation & Bell Connection ---------- */
+
+test('panel shows "View Notification Sheet" link when sheet is configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => localStorage.setItem('waymark_notif_sheet_id', 'sheet-046'));
+  await page.reload();
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel', { timeout: 3000 });
+  await expect(page.locator('.notif-sheet-link')).toBeVisible();
+  await expect(page.locator('.notif-sheet-link')).toContainText('View Notification Sheet');
+});
+
+test('panel does NOT show sheet link when no sheet is configured', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel', { timeout: 3000 });
+  const linkCount = await page.locator('.notif-sheet-link').count();
+  expect(linkCount).toBe(0);
+});
+
+test('"Connected to Bell" badge shows when viewing the configured notification sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => localStorage.setItem('waymark_notif_sheet_id', 'sheet-046'));
+  await navigateToSheet(page, 'sheet-046');
+  await page.waitForSelector('.notification-view', { timeout: 5000 });
+  await expect(page.locator('.notification-connected-badge')).toBeVisible();
+  await expect(page.locator('.notification-connected-badge')).toContainText('Connected to Bell');
+});
+
+test('"Use as Notification Sheet" button shows instead of badge for non-configured sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => localStorage.setItem('waymark_notif_sheet_id', 'some-other-sheet'));
+  await navigateToSheet(page, 'sheet-046');
+  await page.waitForSelector('.notification-view', { timeout: 5000 });
+  await expect(page.locator('.notification-use-btn')).toBeVisible();
+  const badgeCount = await page.locator('.notification-connected-badge').count();
+  expect(badgeCount).toBe(0);
+});
+
+test('clicking "Use as Notification Sheet" replaces button with "Connected to Bell" badge', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-046');
+  await page.waitForSelector('.notification-use-btn', { timeout: 5000 });
+  await page.click('.notification-use-btn');
+  await page.waitForSelector('.notification-connected-badge', { timeout: 3000 });
+  await expect(page.locator('.notification-connected-badge')).toContainText('Connected to Bell');
+  const btnCount = await page.locator('.notification-use-btn').count();
+  expect(btnCount).toBe(0);
+});
+
+test('settings modal shows "Open Sheet" link when sheet is configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => localStorage.setItem('waymark_notif_sheet_id', 'sheet-046'));
+  await page.reload();
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.notif-sheet-view-link')).toBeVisible();
+  await expect(page.locator('.notif-sheet-view-link')).toContainText('Open Sheet');
+});
+
+test('settings modal does NOT show "Open Sheet" link when no sheet configured', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
+  const linkCount = await page.locator('.notif-sheet-view-link').count();
+  expect(linkCount).toBe(0);
 });

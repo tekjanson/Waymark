@@ -54,6 +54,16 @@
   opacity: 0.85;
 }
 
+.notification-connected-badge {
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-success);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.813rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* ---------- Filter pills ---------- */
 
 .notification-filter-bar {
@@ -342,6 +352,17 @@
 .notif-sheet-clear:hover {
   background: var(--color-hover);
   color: var(--color-text);
+}
+
+.notif-sheet-view-link {
+  font-size: 0.813rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.notif-sheet-view-link:hover {
+  text-decoration: underline;
 }
 
 /* ---------- Mobile ---------- */

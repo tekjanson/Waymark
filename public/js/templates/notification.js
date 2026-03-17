@@ -234,19 +234,28 @@ const definition = {
       counts.Active !== 1 ? 's' : '',
     ]);
 
-    const useAsSheetBtn = el('button', {
-      className: 'notification-use-btn',
-      title: 'Set this sheet as your Waymark notification log',
-      on: {
-        click: () => {
-          const sheetIdMatch = window.location.hash.match(/sheet\/([^/?#]+)/);
-          if (sheetIdMatch) {
-            localStorage.setItem('waymark_notif_sheet_id', sheetIdMatch[1]);
-            showToast('This sheet is now your notification log', 'success');
-          }
-        },
-      },
-    }, ['📌 Use as Notification Sheet']);
+    // Check if this sheet is already the configured notification sheet
+    const currentSheetId = window.location.hash.match(/sheet\/([^/?#]+)/)?.[1];
+    const configuredId = localStorage.getItem('waymark_notif_sheet_id');
+    const isConnected = currentSheetId && currentSheetId === configuredId;
+
+    const useAsSheetBtn = isConnected
+      ? el('span', { className: 'notification-connected-badge' }, ['✓ Connected to Bell'])
+      : el('button', {
+          className: 'notification-use-btn',
+          title: 'Set this sheet as your Waymark notification log',
+          on: {
+            click: () => {
+              if (currentSheetId) {
+                localStorage.setItem('waymark_notif_sheet_id', currentSheetId);
+                showToast('This sheet is now your notification log', 'success');
+                useAsSheetBtn.replaceWith(
+                  el('span', { className: 'notification-connected-badge' }, ['✓ Connected to Bell'])
+                );
+              }
+            },
+          },
+        }, ['📌 Use as Notification Sheet']);
 
     const summaryBar = el('div', { className: 'notification-summary' }, [
       summaryText,

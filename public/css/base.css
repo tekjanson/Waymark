@@ -423,6 +423,20 @@ ul { list-style: none; }
 
 .notif-list { padding: 4px 0; }
 
+.notif-sheet-link {
+  display: block;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notif-sheet-link:hover {
+  background: var(--color-bg);
+  text-decoration: underline;
+}
+
 .notif-item {
   display: flex;
   align-items: flex-start;

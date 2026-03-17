@@ -8,10 +8,16 @@
 import { el } from './ui.js';
 import * as storage from './storage.js';
 import { api } from './api-client.js';
+import * as userData from './user-data.js';
 
 /* ---------- Constants ---------- */
 
 const MAX_NOTIFICATIONS = 50;
+
+const NOTIF_SHEET_TITLE = 'Waymark Notifications';
+const NOTIF_SHEET_HEADERS = [
+  'Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet',
+];
 
 /** Default notification rule states — all enabled */
 const DEFAULT_RULES = {
@@ -111,6 +117,56 @@ export function clearAll() {
   if (_panel && !_panel.classList.contains('hidden')) {
     _renderPanelContent();
   }
+}
+
+/**
+ * Ensure a notification sheet exists in the Waymark directory.
+ * Creates one with the correct headers if missing, then stores
+ * the sheet ID in localStorage so the bell writes alerts to it.
+ *
+ * Called once during app boot (after userData.init()).
+ * In local/test mode this is a no-op — no real Drive access.
+ * @returns {Promise<string|null>} spreadsheet ID, or null if unavailable
+ */
+export async function ensureSheet() {
+  if (window.__WAYMARK_LOCAL) return null;
+
+  const existingId = storage.getNotifSheetId();
+  if (existingId) return existingId;
+
+  try {
+    const rootFolderId = await userData.getRootFolderId();
+    if (!rootFolderId) return null;
+
+    // Look for an existing notification sheet in the Waymark folder
+    const found = await api.drive.findFileInFolder(NOTIF_SHEET_TITLE, rootFolderId);
+    if (found) {
+      storage.setNotifSheetId(found.id);
+      return found.id;
+    }
+
+    // Create a new notification sheet with proper headers
+    const created = await api.sheets.createSpreadsheet(
+      NOTIF_SHEET_TITLE,
+      [NOTIF_SHEET_HEADERS],
+      rootFolderId,
+    );
+
+    const newId = created.spreadsheetId;
+    storage.setNotifSheetId(newId);
+    return newId;
+  } catch (err) {
+    console.warn('[notifications] Failed to ensure notification sheet:', err);
+    return null;
+  }
+}
+
+/**
+ * Get the current notification sheet ID (if configured).
+ * @returns {string|null}
+ */
+export function getSheetId() {
+  return storage.getNotifSheetId();
 }
 
 /**
@@ -320,6 +376,19 @@ function _renderPanelContent() {
   ]);
   _panel.appendChild(header);
 
+  // Show link to notification sheet if configured
+  const notifSheetId = storage.getNotifSheetId();
+  if (notifSheetId) {
+    const sheetLink = el('a', {
+      className: 'notif-sheet-link',
+      href: `#/sheet/${notifSheetId}`,
+      on: {
+        click: () => { _panel.classList.add('hidden'); },
+      },
+    }, ['📋 View Notification Sheet']);
+    _panel.appendChild(sheetLink);
+  }
+
   if (_notifications.length === 0) {
     _panel.appendChild(el('div', { className: 'notif-empty' }, [
       el('div', {}, ['No notifications yet']),
@@ -370,7 +439,20 @@ function _buildSheetSection() {
 
   const statusText = el('span', {
     className: 'notif-sheet-status-text',
-  }, [currentId ? `Sheet ID: ${currentId}` : 'No notification sheet configured']);
+  }, [currentId ? `Connected to notification sheet` : 'No notification sheet configured']);
+
+  const viewLink = currentId
+    ? el('a', {
+        className: 'notif-sheet-view-link',
+        href: `#/sheet/${currentId}`,
+        on: {
+          click: () => {
+            const overlay = document.getElementById('notif-settings-modal');
+            if (overlay) overlay.remove();
+          },
+        },
+      }, ['Open Sheet →'])
+    : null;
 
   const clearBtn = el('button', {
     className: 'notif-sheet-clear',
@@ -379,6 +461,7 @@ function _buildSheetSection() {
         storage.setNotifSheetId(null);
         statusText.textContent = 'No notification sheet configured';
         clearBtn.style.display = 'none';
+        if (viewLink) viewLink.style.display = 'none';
       },
     },
   }, ['Clear']);
@@ -387,9 +470,15 @@ function _buildSheetSection() {
   return el('div', { className: 'notif-sheet-section' }, [
     el('div', { className: 'notif-sheet-label' }, ['Notification Sheet']),
     el('div', { className: 'notif-sheet-desc' }, [
-      'Open a sheet with Notification layout and click "Use as Notification Sheet" to log alerts there automatically.',
+      currentId
+        ? 'Alerts are automatically logged to your notification sheet in the Waymark directory.'
+        : 'A notification sheet will be created automatically in your Waymark directory on next login.',
     ]),
-    el('div', { className: 'notif-sheet-status' }, [statusText, clearBtn]),
+    el('div', { className: 'notif-sheet-status' }, [
+      statusText,
+      ...(viewLink ? [viewLink] : []),
+      clearBtn,
+    ]),
   ]);
 }
 

@@ -307,6 +307,12 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
+  // Ensure the notification sheet exists in the Waymark directory.
+  // Fire-and-forget — don't block app boot if it fails.
+  notifications.ensureSheet().catch(err => {
+    console.warn('[notifications] Sheet setup failed:', err);
+  });
+
   // Expose Drive-save function so the server-injected version picker can
   // persist the pinned ref to Google Drive (cross-device persistence).
   window.__waymarkSavePinnedRef = (ref) => userData.setGithubRef(ref);
