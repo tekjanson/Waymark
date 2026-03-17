@@ -15,7 +15,8 @@
     "screenshots": "WAYMARK_LOCAL=true npx playwright test --config playwright.screenshots.config.js",
     "design-audit": "node scripts/design-audit.js",
     "design-review": "npm run screenshots && npm run design-audit",
-    "build-info": "node scripts/build-info.js"
+    "build-info": "node scripts/build-info.js",
+    "test:report": "WAYMARK_LOCAL=true node scripts/generate-test-report.js"
   },
   "keywords": [
     "checklist",
