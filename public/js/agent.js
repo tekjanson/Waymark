@@ -21,6 +21,8 @@ Use the create_sheet tool whenever a user asks to create, build, set up, or orga
 
 Use the read_sheet tool whenever a user asks to see, view, check, open, summarize, or analyze the contents of an existing sheet. You need the spreadsheet ID — ask the user if you don't have it.
 
+Use the update_sheet tool to modify existing sheets. Use operation "append_rows" to add new rows, or "update_cells" to change specific cells. Always read_sheet first to understand the current column structure before updating.
+
 Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
 
 Guidelines:
@@ -92,6 +94,45 @@ const TOOL_DECLARATIONS = [{
         },
       },
       required: ['spreadsheet_id'],
+    },
+  }, {
+    name: 'update_sheet',
+    description: 'Update an existing Google Sheet. Supports two operations: ' +
+      '"append_rows" adds new rows at the bottom, "update_cells" changes specific cells. ' +
+      'Use read_sheet first to see the current data and column order before updating.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        spreadsheet_id: {
+          type: 'STRING',
+          description: 'The Google Sheets spreadsheet ID to update',
+        },
+        operation: {
+          type: 'STRING',
+          description: 'Either "append_rows" to add rows at the end, or "update_cells" to change specific cells',
+        },
+        rows: {
+          type: 'ARRAY',
+          description: 'For append_rows: array of new rows to add (each row is an array of strings matching column order)',
+          items: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
+          },
+        },
+        updates: {
+          type: 'ARRAY',
+          description: 'For update_cells: array of cell updates. Each has row (1-based data row, excluding header), column (column name or 0-based index), and value.',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              row: { type: 'NUMBER', description: '1-based data row number (1 = first data row after header)' },
+              column: { type: 'STRING', description: 'Column name (matching header) or 0-based column index as string' },
+              value: { type: 'STRING', description: 'New cell value' },
+            },
+          },
+        },
+      },
+      required: ['spreadsheet_id', 'operation'],
     },
   }],
 }];
@@ -1034,6 +1075,12 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
       if (name === 'read_sheet') {
         return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
       }
+      if (name === 'update_sheet') {
+        if (result.operation === 'append_rows') {
+          return `✅ Added ${result.rowsAdded} row(s) to "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+        }
+        return `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      }
       return `✅ Tool ${name} completed successfully.`;
     }
     throw new Error('No response from AI after tool execution');
@@ -1054,6 +1101,9 @@ async function _executeTool(name, args) {
   }
   if (name === 'read_sheet') {
     return _toolReadSheet(args);
+  }
+  if (name === 'update_sheet') {
+    return _toolUpdateSheet(args);
   }
   throw new Error(`Unknown tool: ${name}`);
 }
@@ -1131,6 +1181,91 @@ async function _toolReadSheet({ spreadsheet_id }) {
   };
 }
 
+/* ---------- Tool: update_sheet ---------- */
+
+/**
+ * Tool: update_sheet — modifies an existing Google Sheet.
+ * Supports append_rows (add rows at end) and update_cells (change specific cells).
+ * @param {{ spreadsheet_id: string, operation: string, rows?: string[][], updates?: Array }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolUpdateSheet({ spreadsheet_id, operation, rows, updates }) {
+  if (!spreadsheet_id) {
+    throw new Error('Missing spreadsheet_id');
+  }
+  if (!operation) {
+    throw new Error('Missing operation — use "append_rows" or "update_cells"');
+  }
+
+  // Read the current sheet to get sheetTitle and headers
+  const sheet = await api.sheets.getSpreadsheet(spreadsheet_id);
+  const sheetTitle = sheet.sheetTitle || 'Sheet1';
+  const headers = sheet.values?.[0] || [];
+
+  if (operation === 'append_rows') {
+    if (!rows || !rows.length) {
+      throw new Error('append_rows requires a non-empty "rows" array');
+    }
+
+    const cleanRows = rows.map(row => {
+      const clean = (Array.isArray(row) ? row : []).map(cell => String(cell ?? ''));
+      while (clean.length < headers.length) clean.push('');
+      return clean.slice(0, headers.length);
+    });
+
+    await api.sheets.appendRows(spreadsheet_id, sheetTitle, cleanRows);
+
+    return {
+      spreadsheetId: spreadsheet_id,
+      title: sheet.title,
+      operation: 'append_rows',
+      rowsAdded: cleanRows.length,
+    };
+  }
+
+  if (operation === 'update_cells') {
+    if (!updates || !updates.length) {
+      throw new Error('update_cells requires a non-empty "updates" array');
+    }
+
+    let cellsUpdated = 0;
+    for (const u of updates) {
+      const dataRow = Number(u.row);
+      if (!Number.isFinite(dataRow) || dataRow < 1) {
+        throw new Error(`Invalid row number: ${u.row} — must be 1-based data row`);
+      }
+
+      // Resolve column: accept column name (header match) or numeric index
+      let colIdx;
+      const colNum = Number(u.column);
+      if (Number.isFinite(colNum)) {
+        colIdx = colNum;
+      } else {
+        colIdx = headers.findIndex(h =>
+          h.toLowerCase() === String(u.column).toLowerCase()
+        );
+        if (colIdx === -1) {
+          throw new Error(`Unknown column "${u.column}". Available: ${headers.join(', ')}`);
+        }
+      }
+
+      // row is 1-based data row → actual sheet row = dataRow (0-based = header) + dataRow
+      const sheetRow = dataRow; // 0-based: header = 0, first data = 1
+      await api.sheets.updateCell(spreadsheet_id, sheetTitle, sheetRow, colIdx, String(u.value ?? ''));
+      cellsUpdated++;
+    }
+
+    return {
+      spreadsheetId: spreadsheet_id,
+      title: sheet.title,
+      operation: 'update_cells',
+      cellsUpdated,
+    };
+  }
+
+  throw new Error(`Unknown operation "${operation}". Use "append_rows" or "update_cells".`);
+}
+
 /**
  * Show an inline indicator that a tool is executing.
  * @param {string} toolName
@@ -1143,6 +1278,8 @@ function _showToolIndicator(toolName, args) {
     label = `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`;
   } else if (toolName === 'read_sheet') {
     label = `Reading sheet...`;
+  } else if (toolName === 'update_sheet') {
+    label = `Updating sheet...`;
   } else {
     label = `Running ${toolName}...`;
   }

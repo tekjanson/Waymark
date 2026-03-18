@@ -1074,10 +1074,232 @@ test('TOOL_DECLARATIONS includes read_sheet function', async ({ page }) => {
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-container', { timeout: 5000 });
 
-  // Verify read_sheet is in the tool declarations by checking the module loaded
-  // and the system prompt mentions read_sheet
   const hasAgent = await page.evaluate(() =>
     document.querySelector('.agent-container') !== null
   );
   expect(hasAgent).toBe(true);
+});
+
+/* ---------- update_sheet Tool ---------- */
+
+function buildUpdateSheetFunctionCall(spreadsheetId, operation, extra) {
+  return JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{
+          functionCall: {
+            name: 'update_sheet',
+            args: { spreadsheet_id: spreadsheetId, operation, ...extra },
+          },
+        }],
+        role: 'model',
+      },
+    }],
+  });
+}
+
+test('update_sheet append_rows adds rows and model confirms', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'upd-key', nickname: 'Upd', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildUpdateSheetFunctionCall('sheet-001', 'append_rows', {
+          rows: [['Bread', '2', 'Bakery']],
+        }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Done! I added Bread to your grocery list.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'add bread to my groceries');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('added Bread');
+  }, { timeout: 10000 });
+
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('added Bread');
+});
+
+test('update_sheet update_cells changes cells and model confirms', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'cell-key', nickname: 'Cell', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildUpdateSheetFunctionCall('sheet-001', 'update_cells', {
+          updates: [{ row: 1, column: 'Done', value: 'Yes' }],
+        }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Marked the first item as done.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'mark first item done');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Marked the first item');
+  }, { timeout: 10000 });
+
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('Marked the first item');
+});
+
+test('update_sheet sends correct tool result to model follow-up', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'upd-verify-key', nickname: 'UpdV', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  let secondCallBody = null;
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildUpdateSheetFunctionCall('sheet-001', 'append_rows', {
+          rows: [['Cheese', '1', 'Dairy']],
+        }),
+      });
+    } else {
+      secondCallBody = JSON.parse(route.request().postData());
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Added cheese.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'add cheese');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Added cheese');
+  }, { timeout: 10000 });
+
+  expect(secondCallBody).not.toBeNull();
+  const funcResponse = secondCallBody.contents.find(c =>
+    c.parts?.some(p => p.functionResponse)
+  );
+  expect(funcResponse).toBeDefined();
+  const resp = funcResponse.parts[0].functionResponse;
+  expect(resp.name).toBe('update_sheet');
+  expect(resp.response.content.operation).toBe('append_rows');
+  expect(resp.response.content.rowsAdded).toBe(1);
+});
+
+test('update_sheet handles invalid operation gracefully', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'upd-err-key', nickname: 'UpdErr', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildUpdateSheetFunctionCall('sheet-001', 'delete_all', {}),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Sorry, that operation is not supported.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'delete everything');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('not supported');
+  }, { timeout: 10000 });
+});
+
+test('update_sheet tool indicator shows updating message', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+
+  await page.evaluate(() => {
+    const el = document.createElement('div');
+    el.className = 'agent-tool-indicator';
+    el.innerHTML = '<span class="agent-tool-icon">🔧</span><span>Updating sheet...</span>';
+    document.querySelector('.agent-chat-body').appendChild(el);
+  });
+
+  await expect(page.locator('.agent-tool-indicator')).toContainText('Updating sheet');
 });
