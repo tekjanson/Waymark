@@ -997,6 +997,12 @@ function _appendSheetPreviewCard(result) {
 
   const openBtn = el('a', {
     className: 'agent-card-open-btn',
+    /**
+     * Build a chat message node for either user or assistant content.
+     * @param {{ role: string, content: string }} msg
+     * @returns {HTMLElement}
+     */
+    function _buildMessage(msg) {
     href: `#/sheet/${spreadsheetId}`,
   }, ['Open sheet →']);
 
