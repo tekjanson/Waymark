@@ -10,6 +10,7 @@ import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
+import * as notifications from './notifications.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -20,8 +21,9 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn;
-let moreActionsBtn, overflowMenu;
+let moreActionsBtn, overflowMenu, notifRulesBtn;
 let currentTemplateKey = null;
+let currentHeaders = null;
 
 /* ---------- Public ---------- */
 
@@ -41,6 +43,7 @@ export function init() {
   templateHelpBtn   = document.getElementById('template-help-btn');
   moreActionsBtn    = document.getElementById('more-actions-btn');
   overflowMenu      = document.querySelector('.header-overflow-menu');
+  notifRulesBtn     = document.getElementById('notif-rules-btn');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -58,6 +61,14 @@ export function init() {
   if (templateHelpBtn) {
     templateHelpBtn.addEventListener('click', () => {
       if (currentTemplateKey) Tutorial.startTemplateTutorial(currentTemplateKey, true);
+    });
+  }
+
+  if (notifRulesBtn) {
+    notifRulesBtn.addEventListener('click', () => {
+      if (currentSheetId && currentHeaders) {
+        notifications.showRuleBuilder(currentSheetId, currentDataTitle, currentHeaders);
+      }
     });
   }
 
@@ -510,6 +521,7 @@ function renderWithTemplate(values) {
 
   // First row = header
   const headers = values[0];
+  currentHeaders = headers;
   const rows = values.slice(1);
 
   // Detect template type deterministically from headers
@@ -572,7 +584,7 @@ function renderWithTemplate(values) {
 
   // Notify the app that a sheet was rendered (for notification evaluation)
   document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
-    detail: { sheetId: currentSheetId, title: currentDataTitle, templateKey: key, rows, cols },
+    detail: { sheetId: currentSheetId, title: currentDataTitle, templateKey: key, rows, cols, headers },
   }));
 
   // Show template help button and trigger first-time tutorial

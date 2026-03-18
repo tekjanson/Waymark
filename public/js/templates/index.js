@@ -35,6 +35,7 @@ import './flow/index.js';
 import './social.js';
 import './automation.js';
 import './knowledge/index.js';
+import './notification.js';
 
 /* ---------- Detection ---------- */
 

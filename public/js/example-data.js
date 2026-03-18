@@ -791,4 +791,20 @@ export const EXAMPLE_SHEETS = {
       ['', '', 'A summary bar shows total income, total expenses, and net balance with color-coded indicators. Category pills filter the transaction list.', '', '', '', '', ''],
     ],
   },
+
+  /* ---- Notification examples ---- */
+  "Waymark Notifications": {
+    folder: 'Notifications',
+    headers: ['Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet'],
+    rows: [
+      ['Kanban P0 task overdue', 'Task "API integration" has been in Active status past its due date', 'alert', 'Active', '🔴', 'High', '2026-06-15T08:00:00Z', '', 'Kanban', 'sheet-028'],
+      ['Budget over limit', 'June expenses exceed income by $340', 'warning', 'Active', '💸', 'High', '2026-06-14T09:30:00Z', '', 'Budget', 'sheet-016'],
+      ['Checklist item overdue', '"Review test coverage" was due 2 days ago', 'warning', 'Active', '⏰', 'Medium', '2026-06-13T10:00:00Z', '', 'Checklist', ''],
+      ['Deployment complete', 'Production deploy v2.4.1 finished successfully', 'success', 'Read', '✅', 'Low', '2026-06-12T14:00:00Z', '', 'CI/CD', ''],
+      ['Security scan passed', 'Weekly vulnerability scan found no issues', 'success', 'Read', '🛡️', 'Low', '2026-06-10T07:00:00Z', '', 'Security', ''],
+      ['Team sync reminder', 'Daily standup starts in 10 minutes', 'info', 'Dismissed', '📅', 'Medium', '2026-06-15T09:50:00Z', '2026-06-15T10:00:00Z', 'Calendar', ''],
+      ['Sync error resolved', 'Google Sheets sync failure from yesterday has been resolved', 'info', 'Dismissed', '🔄', 'Low', '2026-06-14T11:00:00Z', '', 'Sync', ''],
+      ['Recipe import complete', '14 recipes imported from Mimi\'s Kitchen successfully', 'success', 'Dismissed', '🍳', 'Low', '2026-06-13T16:00:00Z', '', 'Import', ''],
+    ],
+  },
 };

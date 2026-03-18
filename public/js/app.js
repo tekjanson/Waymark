@@ -190,8 +190,8 @@ async function boot() {
 
   // Evaluate notifications when a sheet is rendered
   document.addEventListener('waymark:sheet-rendered', (e) => {
-    const { sheetId, title, templateKey, rows, cols } = e.detail;
-    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols);
+    const { sheetId, title, templateKey, rows, cols, headers } = e.detail;
+    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols, headers);
   });
 
   // Persist sidebar state from swipe/overlay events
@@ -306,6 +306,12 @@ async function showApp(user) {
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
+
+  // Ensure the notification sheet exists in the Waymark directory.
+  // Fire-and-forget — don't block app boot if it fails.
+  notifications.ensureSheet().catch(err => {
+    console.warn('[notifications] Sheet setup failed:', err);
+  });
 
   // Expose Drive-save function so the server-injected version picker can
   // persist the pinned ref to Google Drive (cross-device persistence).
