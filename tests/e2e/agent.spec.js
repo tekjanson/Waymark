@@ -2567,3 +2567,252 @@ test('slash palette does not appear for regular text messages', async ({ page })
     return !p || p.classList.contains('hidden');
   }, { timeout: 2000 });
 });
+
+/* ---- Better Markdown Renderer ---- */
+
+test('markdown renderer renders headings h1 h2 h3', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('# Big Title\n## Medium Title\n### Small Title'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-message-assistant', { timeout: 10000 });
+
+  await expect(page.locator('.agent-md-h1')).toContainText('Big Title');
+  await expect(page.locator('.agent-md-h2')).toContainText('Medium Title');
+  await expect(page.locator('.agent-md-h3')).toContainText('Small Title');
+});
+
+test('markdown renderer renders unordered list', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('- Apples\n- Bananas\n- Cherries'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-ul', { timeout: 10000 });
+
+  const items = await page.$$('.agent-md-ul li');
+  expect(items.length).toBe(3);
+  await expect(page.locator('.agent-md-ul li').first()).toContainText('Apples');
+});
+
+test('markdown renderer renders ordered list', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('1. First step\n2. Second step\n3. Third step'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-ol', { timeout: 10000 });
+
+  const items = await page.$$('.agent-md-ol li');
+  expect(items.length).toBe(3);
+  await expect(page.locator('.agent-md-ol li').last()).toContainText('Third step');
+});
+
+test('markdown renderer renders horizontal rule', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Above\n\n---\n\nBelow'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-hr', { timeout: 10000 });
+  await expect(page.locator('.agent-md-hr')).toBeVisible();
+});
+
+test('markdown renderer renders a table with header and rows', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('| Name | Value |\n|------|-------|\n| Alpha | 1 |\n| Beta | 2 |'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-table', { timeout: 10000 });
+
+  const ths = await page.$$('.agent-md-table th');
+  expect(ths.length).toBe(2);
+  const tds = await page.$$('.agent-md-table td');
+  expect(tds.length).toBe(4);
+});
+
+test('markdown renderer renders inline links as anchor tags', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Check [this sheet](#/sheet/abc123) for details.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-link', { timeout: 10000 });
+
+  const link = page.locator('.agent-md-link');
+  await expect(link).toContainText('this sheet');
+  const href = await link.getAttribute('href');
+  expect(href).toBe('#/sheet/abc123');
+});
+
+test('markdown renderer still renders bold and italic inline', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('This is **bold** and *italic* text.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-message-assistant', { timeout: 10000 });
+
+  await expect(page.locator('.agent-message-assistant strong')).toContainText('bold');
+  await expect(page.locator('.agent-message-assistant em')).toContainText('italic');
+});
+
+test('markdown table is scrollable and has rounded border', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'md-key', nickname: 'M', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('| A | B |\n|---|---|\n| x | y |'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-md-table-wrap', { timeout: 10000 });
+
+  const wrap = page.locator('.agent-md-table-wrap');
+  await expect(wrap).toHaveCSS('overflow-x', 'auto');
+  const radius = await wrap.evaluate(el => getComputedStyle(el).borderRadius);
+  expect(radius).not.toBe('0px');
+});

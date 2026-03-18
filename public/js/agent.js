@@ -1002,36 +1002,158 @@ function _buildMessage(msg) {
  * @param {HTMLElement} container
  * @param {string} text
  */
+/**
+ * Render markdown text into `container`.
+ * Handles: fenced code blocks, headings (h1-h3), horizontal rules,
+ * ordered lists, unordered lists, tables, and paragraphs.
+ * Inline formatting (bold, italic, inline code, links) is deferred to
+ * _renderInlineMarkdown for all text nodes.
+ * @param {HTMLElement} container
+ * @param {string} text
+ */
 function _renderMarkdown(container, text) {
+  // Split on fenced code blocks first so we never parse their content
   const parts = text.split(/(```[\s\S]*?```)/g);
 
   parts.forEach(part => {
     if (part.startsWith('```')) {
       const match = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
       if (match) {
-        const lang = match[1] || '';
-        const code = match[2].trim();
-        container.appendChild(_buildCodeBlock(code, lang));
+        container.appendChild(_buildCodeBlock(match[2].trim(), match[1] || ''));
       }
-    } else if (part.trim()) {
-      const lines = part.split('\n\n');
-      lines.forEach(line => {
-        if (!line.trim()) return;
+      return;
+    }
+
+    // Process line-by-line for block-level elements
+    const lines = part.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+      const raw = lines[i];
+      const line = raw.trimEnd();
+
+      // Skip blank lines
+      if (!line.trim()) { i++; continue; }
+
+      // Horizontal rule: ---, ***, ___
+      if (/^(\s*[-*_]){3,}\s*$/.test(line)) {
+        container.appendChild(el('hr', { className: 'agent-md-hr' }));
+        i++;
+        continue;
+      }
+
+      // Heading: # text
+      const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        const tagName = `h${level}`;
+        const heading = el(tagName, { className: `agent-md-h${level}` });
+        _renderInlineMarkdown(heading, headingMatch[2].trim());
+        container.appendChild(heading);
+        i++;
+        continue;
+      }
+
+      // Table: starts with |
+      if (/^\|.+\|/.test(line)) {
+        const tableLines = [];
+        while (i < lines.length && /^\|.+\|/.test(lines[i].trimEnd())) {
+          tableLines.push(lines[i].trimEnd());
+          i++;
+        }
+        container.appendChild(_buildMarkdownTable(tableLines));
+        continue;
+      }
+
+      // Unordered list item: -, *, + at start
+      if (/^[-*+]\s/.test(line)) {
+        const ul = el('ul', { className: 'agent-md-ul' });
+        while (i < lines.length && /^[-*+]\s/.test(lines[i].trimEnd())) {
+          const li = el('li', {});
+          _renderInlineMarkdown(li, lines[i].trimEnd().replace(/^[-*+]\s/, ''));
+          ul.appendChild(li);
+          i++;
+        }
+        container.appendChild(ul);
+        continue;
+      }
+
+      // Ordered list item: 1. text
+      if (/^\d+\.\s/.test(line)) {
+        const ol = el('ol', { className: 'agent-md-ol' });
+        while (i < lines.length && /^\d+\.\s/.test(lines[i].trimEnd())) {
+          const li = el('li', {});
+          _renderInlineMarkdown(li, lines[i].trimEnd().replace(/^\d+\.\s/, ''));
+          ol.appendChild(li);
+          i++;
+        }
+        container.appendChild(ol);
+        continue;
+      }
+
+      // Paragraph: collect consecutive non-special lines
+      const paraLines = [];
+      while (i < lines.length) {
+        const l = lines[i].trimEnd();
+        if (!l.trim()) { i++; break; }
+        if (/^(#{1,3})\s|^[-*+]\s|^\d+\.\s|^\|.+\||^(\s*[-*_]){3,}\s*$/.test(l)) break;
+        paraLines.push(l);
+        i++;
+      }
+      if (paraLines.length) {
         const p = el('p', {});
-        _renderInlineMarkdown(p, line.trim());
+        _renderInlineMarkdown(p, paraLines.join(' ').trim());
         container.appendChild(p);
-      });
+      }
     }
   });
 }
 
 /**
- * Handle inline markdown: bold, inline code, links.
+ * Build a <table> element from an array of markdown table lines.
+ * Handles the separator row (--- ) transparently.
+ * @param {string[]} lines
+ * @returns {HTMLElement}
+ */
+function _buildMarkdownTable(lines) {
+  const parseRow = (line) =>
+    line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+
+  const table = el('table', { className: 'agent-md-table' });
+  let headerDone = false;
+
+  lines.forEach(line => {
+    // Separator row (|---|---|) — skip
+    if (/^\|[\s\-|:]+\|$/.test(line)) return;
+
+    const cells = parseRow(line);
+    const row = el('tr', {});
+    const isHeader = !headerDone;
+    cells.forEach(cellText => {
+      const td = el(isHeader ? 'th' : 'td', {});
+      _renderInlineMarkdown(td, cellText);
+      row.appendChild(td);
+    });
+    if (isHeader) {
+      const thead = el('thead', {}, [row]);
+      table.appendChild(thead);
+      table.appendChild(el('tbody', {}));
+      headerDone = true;
+    } else {
+      table.querySelector('tbody').appendChild(row);
+    }
+  });
+
+  return el('div', { className: 'agent-md-table-wrap' }, [table]);
+}
+
+/**
+ * Handle inline markdown: bold, italic, inline code, and links.
  * @param {HTMLElement} parent
  * @param {string} text
  */
 function _renderInlineMarkdown(parent, text) {
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  // Pattern: inline code, bold, italic, or [label](url) links
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\(([^)]+)\))/g;
   let lastIndex = 0;
   let match;
 
@@ -1046,6 +1168,19 @@ function _renderInlineMarkdown(parent, text) {
       parent.appendChild(el('strong', {}, [token.slice(2, -2)]));
     } else if (token.startsWith('*')) {
       parent.appendChild(el('em', {}, [token.slice(1, -1)]));
+    } else if (token.startsWith('[')) {
+      // Link: [label](url)
+      const label = match[2];
+      const href = match[3];
+      // Only allow safe URLs (http/https/hash-links)
+      const safeSrc = /^(https?:\/\/|#)/.test(href) ? href : '#';
+      const a = el('a', {
+        className: 'agent-md-link',
+        href: safeSrc,
+        target: safeSrc.startsWith('#') ? '_self' : '_blank',
+        rel: 'noopener noreferrer',
+      }, [label]);
+      parent.appendChild(a);
     }
     lastIndex = pattern.lastIndex;
   }
