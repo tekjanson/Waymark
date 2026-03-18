@@ -85,6 +85,55 @@ let _messages = [];
 let _container = null;
 let _chatBody = null;
 let _isStreaming = false;
+let _lastKeyResetDate = null;
+
+/* ---------- Key Rotation ---------- */
+
+/**
+ * Pick the next key from the ring using least-recently-used strategy.
+ * Billed keys are preferred for expensive models.
+ * Returns { key, idx } or null if ring is empty.
+ * @returns {{ key: string, idx: number } | null}
+ */
+function _getNextKey() {
+  const keys = storage.getAgentKeys();
+  if (keys.length === 0) return null;
+
+  // Reset daily counters if new day
+  const today = new Date().toISOString().slice(0, 10);
+  if (_lastKeyResetDate !== today) {
+    storage.resetDailyKeyCounters();
+    _lastKeyResetDate = today;
+  }
+
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const isExpensiveModel = /pro/i.test(model);
+
+  // Filter out keys that errored in the last 60 seconds
+  const now = Date.now();
+  const available = keys.map((k, i) => ({ ...k, idx: i }))
+    .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
+
+  if (available.length === 0) {
+    // All keys recently errored — return the one with oldest error
+    const all = keys.map((k, i) => ({ ...k, idx: i }));
+    all.sort((a, b) => new Date(a.lastError || 0).getTime() - new Date(b.lastError || 0).getTime());
+    return { key: all[0].key, idx: all[0].idx };
+  }
+
+  // For expensive models, prefer billed keys
+  if (isExpensiveModel) {
+    const billed = available.filter(k => k.isBilled);
+    if (billed.length > 0) {
+      billed.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+      return { key: billed[0].key, idx: billed[0].idx };
+    }
+  }
+
+  // LRU: pick key with fewest requests today
+  available.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+  return { key: available[0].key, idx: available[0].idx };
+}
 
 /* ---------- Public API ---------- */
 
@@ -95,9 +144,13 @@ let _isStreaming = false;
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
-  // Sync API key from Drive if available and not already in localStorage
+  // Sync API keys from Drive if available and not already in localStorage
   const driveSettings = userData.getAgentSettings();
-  if (driveSettings?.apiKey && !storage.getAgentApiKey()) {
+  if (driveSettings?.keys?.length && storage.getAgentKeys().length === 0) {
+    storage.setAgentKeys(driveSettings.keys);
+    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+  } else if (driveSettings?.apiKey && storage.getAgentKeys().length === 0) {
+    // Legacy single-key Drive sync
     storage.setAgentApiKey(driveSettings.apiKey);
     storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
   }
@@ -119,7 +172,8 @@ export function hide() {
 /* ---------- UI Rendering ---------- */
 
 function _renderUI() {
-  const apiKey = storage.getAgentApiKey();
+  const keys = storage.getAgentKeys();
+  const hasKeys = keys.length > 0;
   const model = storage.getAgentModel() || DEFAULT_MODEL;
 
   const header = el('div', { className: 'agent-header' }, [
@@ -143,7 +197,7 @@ function _renderUI() {
 
   _chatBody = el('div', { className: 'agent-chat-body' });
 
-  if (!apiKey) {
+  if (!hasKeys) {
     _chatBody.appendChild(_buildWelcome());
   } else if (_messages.length === 0) {
     _chatBody.appendChild(_buildEmptyState());
@@ -151,7 +205,7 @@ function _renderUI() {
     _messages.forEach(msg => _chatBody.appendChild(_buildMessage(msg)));
   }
 
-  const inputRow = _buildInputRow(apiKey);
+  const inputRow = _buildInputRow(hasKeys);
 
   const wrapper = el('div', { className: 'agent-container' }, [
     header,
@@ -201,10 +255,10 @@ function _buildSuggestion(text) {
   }, [text]);
 }
 
-function _buildInputRow(apiKey) {
+function _buildInputRow(hasKeys) {
   const inputAttrs = {
     className: 'agent-input',
-    placeholder: apiKey ? 'Describe what you\'d like to create or organise...' : 'Configure API key in Settings first...',
+    placeholder: hasKeys ? 'Describe what you\'d like to create or organise...' : 'Configure API key in Settings first...',
     rows: 1,
     on: {
       keydown: (e) => {
@@ -219,7 +273,7 @@ function _buildInputRow(apiKey) {
       },
     },
   };
-  if (!apiKey) inputAttrs.disabled = 'disabled';
+  if (!hasKeys) inputAttrs.disabled = 'disabled';
 
   const input = el('textarea', inputAttrs);
 
@@ -228,7 +282,7 @@ function _buildInputRow(apiKey) {
     title: 'Send message',
     on: { click: () => _sendMessage(input.value) },
   };
-  if (!apiKey) sendAttrs.disabled = 'disabled';
+  if (!hasKeys) sendAttrs.disabled = 'disabled';
 
   const sendBtn = el('button', sendAttrs, ['➤']);
 
@@ -343,21 +397,102 @@ function _buildCodeBlock(code, lang) {
 
 /* ---------- Settings Modal ---------- */
 
+/** Mask an API key for display: show last 4 chars. */
+function _maskKey(key) {
+  if (!key || key.length < 8) return '····';
+  return '····' + key.slice(-4);
+}
+
 function _showSettings() {
   const existingModal = document.getElementById('agent-settings-modal');
   if (existingModal) existingModal.remove();
 
-  const currentKey = storage.getAgentApiKey() || '';
+  const keys = storage.getAgentKeys();
   const currentModel = storage.getAgentModel() || DEFAULT_MODEL;
   const driveSettings = userData.getAgentSettings();
   const cloudSyncEnabled = driveSettings !== null;
 
-  const keyInput = el('input', {
+  /* --- Key list --- */
+  const keyListContainer = el('div', { className: 'agent-keyring-list' });
+
+  function _renderKeyList() {
+    keyListContainer.innerHTML = '';
+    const currentKeys = storage.getAgentKeys();
+    if (currentKeys.length === 0) {
+      keyListContainer.appendChild(
+        el('p', { className: 'agent-keyring-empty' }, ['No API keys configured. Add one below.'])
+      );
+      return;
+    }
+    currentKeys.forEach((k, i) => {
+      const row = el('div', { className: 'agent-keyring-row' }, [
+        el('div', { className: 'agent-keyring-info' }, [
+          el('span', { className: 'agent-keyring-nickname' }, [k.nickname || `Key ${i + 1}`]),
+          el('span', { className: 'agent-keyring-masked' }, [_maskKey(k.key)]),
+          el('span', { className: 'agent-keyring-usage' }, [`${k.requestsToday || 0} today`]),
+          k.isBilled ? el('span', { className: 'agent-keyring-badge agent-keyring-billed' }, ['Billed']) : null,
+        ]),
+        el('button', {
+          className: 'agent-keyring-remove',
+          title: 'Remove this key',
+          on: {
+            click: () => {
+              const updated = storage.getAgentKeys().filter((_, j) => j !== i);
+              storage.setAgentKeys(updated);
+              _renderKeyList();
+            },
+          },
+        }, ['✕']),
+      ]);
+      keyListContainer.appendChild(row);
+    });
+  }
+  _renderKeyList();
+
+  /* --- Add key form --- */
+  const newKeyInput = el('input', {
     type: 'password',
     className: 'agent-settings-input',
-    placeholder: 'Enter your Gemini API key...',
-    value: currentKey,
+    placeholder: 'Paste a Gemini API key...',
   });
+
+  const newNicknameInput = el('input', {
+    type: 'text',
+    className: 'agent-settings-input agent-keyring-nickname-input',
+    placeholder: 'Nickname (optional, e.g. "Personal")',
+  });
+
+  const billedToggle = el('input', {
+    type: 'checkbox',
+    className: 'agent-settings-toggle',
+  });
+
+  const addKeyBtn = el('button', {
+    className: 'agent-keyring-add-btn',
+    on: {
+      click: () => {
+        const key = newKeyInput.value.trim();
+        if (!key) { showToast('Please enter an API key', 'error'); return; }
+        const current = storage.getAgentKeys();
+        if (current.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
+        current.push({
+          key,
+          nickname: newNicknameInput.value.trim() || `Key ${current.length + 1}`,
+          addedAt: new Date().toISOString(),
+          requestsToday: 0,
+          lastUsed: null,
+          lastError: null,
+          isBilled: billedToggle.checked,
+        });
+        storage.setAgentKeys(current);
+        newKeyInput.value = '';
+        newNicknameInput.value = '';
+        billedToggle.checked = false;
+        _renderKeyList();
+        showToast('Key added to ring', 'success');
+      },
+    },
+  }, ['+ Add Key']);
 
   const modelSelect = el('select', { className: 'agent-settings-select' }, [
     el('option', { value: 'gemini-2.0-flash', selected: currentModel === 'gemini-2.0-flash' }, ['Gemini 2.0 Flash (fast)']),
@@ -378,38 +513,36 @@ function _showSettings() {
     className: 'agent-settings-save',
     on: {
       click: async () => {
-        const key = keyInput.value.trim();
-        if (key) {
-          storage.setAgentApiKey(key);
-          storage.setAgentModel(modelSelect.value);
-          // Sync to Drive if cloud toggle is checked
-          if (cloudToggle.checked) {
-            await userData.saveAgentSettings({ apiKey: key, model: modelSelect.value });
-          } else {
-            await userData.saveAgentSettings(null);
-          }
-          showToast('Settings saved', 'success');
-          overlay.remove();
-          show(_container);
+        const current = storage.getAgentKeys();
+        storage.setAgentModel(modelSelect.value);
+        if (cloudToggle.checked) {
+          await userData.saveAgentSettings({
+            apiKey: current.length > 0 ? current[0].key : '',
+            model: modelSelect.value,
+            keys: current,
+          });
         } else {
-          showToast('Please enter an API key', 'error');
+          await userData.saveAgentSettings(null);
         }
-      },
-    },
-  }, ['Save']);
-
-  const removeBtn = el('button', {
-    className: 'agent-settings-remove',
-    on: {
-      click: async () => {
-        storage.setAgentApiKey('');
-        await userData.saveAgentSettings(null);
-        showToast('API key removed', 'info');
+        showToast('Settings saved', 'success');
         overlay.remove();
         show(_container);
       },
     },
-  }, ['Remove Key']);
+  }, ['Save']);
+
+  const removeAllBtn = el('button', {
+    className: 'agent-settings-remove',
+    on: {
+      click: async () => {
+        storage.setAgentKeys([]);
+        await userData.saveAgentSettings(null);
+        showToast('All API keys removed', 'info');
+        overlay.remove();
+        show(_container);
+      },
+    },
+  }, ['Remove All Keys']);
 
   const closeBtn = el('button', {
     className: 'btn-icon agent-settings-close',
@@ -422,28 +555,37 @@ function _showSettings() {
       closeBtn,
     ]),
     el('div', { className: 'modal-body' }, [
-      el('label', { className: 'agent-settings-label' }, ['Gemini API Key']),
-      keyInput,
+      el('label', { className: 'agent-settings-label' }, ['API Key Ring']),
       el('p', { className: 'agent-settings-hint' }, [
-        'Your key is stored locally in your browser. ',
+        'Add multiple free Gemini API keys to rotate between them automatically. ',
         el('a', {
           href: 'https://aistudio.google.com/apikey',
           target: '_blank',
           rel: 'noopener',
         }, ['Get a free key →']),
       ]),
+      keyListContainer,
+      el('div', { className: 'agent-keyring-add-form' }, [
+        newKeyInput,
+        newNicknameInput,
+        el('label', { className: 'agent-keyring-billed-label' }, [
+          billedToggle,
+          ' This key has billing enabled',
+        ]),
+        addKeyBtn,
+      ]),
       el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
       modelSelect,
       el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
         cloudToggle,
-        ' Sync API key across devices',
+        ' Sync keys across devices',
       ]),
       el('p', { className: 'agent-settings-hint' }, [
-        'When enabled, your API key and model are stored in your Google Drive so they work across all your devices.',
+        'When enabled, your key ring and model are stored in your Google Drive so they work across all your devices.',
       ]),
     ]),
     el('div', { className: 'modal-footer' }, [
-      currentKey ? removeBtn : el('span'),
+      keys.length > 0 ? removeAllBtn : el('span'),
       saveBtn,
     ]),
   ]);
@@ -457,7 +599,7 @@ function _showSettings() {
   }, [modal]);
 
   document.body.appendChild(overlay);
-  keyInput.focus();
+  newKeyInput.focus();
 }
 
 /* ---------- Conversation Logic ---------- */
@@ -471,17 +613,17 @@ function _clearConversation() {
   _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
-    const apiKey = storage.getAgentApiKey();
-    _chatBody.appendChild(apiKey ? _buildEmptyState() : _buildWelcome());
+    const hasKeys = storage.getAgentKeys().length > 0;
+    _chatBody.appendChild(hasKeys ? _buildEmptyState() : _buildWelcome());
   }
 }
 
 async function _sendMessage(text) {
   if (!text || !text.trim() || _isStreaming) return;
 
-  const apiKey = storage.getAgentApiKey();
-  if (!apiKey) {
-    showToast('Configure your API key in Settings first', 'error');
+  const keyEntry = _getNextKey();
+  if (!keyEntry) {
+    showToast('Configure your API keys in Settings first', 'error');
     return;
   }
 
@@ -521,10 +663,10 @@ async function _sendMessage(text) {
   _chatBody.appendChild(typing);
   _chatBody.scrollTop = _chatBody.scrollHeight;
 
-  // Call Gemini API
+  // Call Gemini API with key rotation
   _isStreaming = true;
   try {
-    const response = await _callGemini(apiKey, userText);
+    const response = await _callGemini(keyEntry.key, keyEntry.idx, userText);
     typing.remove();
 
     _messages.push({ role: 'assistant', content: response });
@@ -547,12 +689,13 @@ async function _sendMessage(text) {
 /* ---------- Gemini API ---------- */
 
 /**
- * Call the Gemini API with conversation history.
+ * Call the Gemini API with conversation history and key rotation.
  * @param {string} apiKey
+ * @param {number} keyIdx — index into the key ring
  * @param {string} userMessage
  * @returns {Promise<string>}
  */
-async function _callGemini(apiKey, userMessage) {
+async function _callGemini(apiKey, keyIdx, userMessage) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
 
@@ -572,7 +715,8 @@ async function _callGemini(apiKey, userMessage) {
     },
   };
 
-  const data = await _fetchGemini(url, body);
+  const data = await _fetchGemini(url, body, keyIdx);
+  storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
   if (!candidate?.content?.parts?.length) {
@@ -582,7 +726,7 @@ async function _callGemini(apiKey, userMessage) {
   // Check for function call in response
   const functionCall = candidate.content.parts.find(p => p.functionCall);
   if (functionCall) {
-    return _handleToolCall(apiKey, url, contents, candidate.content, functionCall.functionCall);
+    return _handleToolCall(apiKey, keyIdx, url, contents, candidate.content, functionCall.functionCall);
   }
 
   return candidate.content.parts.map(p => p.text || '').join('');
@@ -626,7 +770,7 @@ function _buildContents(userMessage) {
  * @param {{ name: string, args: Object }} functionCall
  * @returns {Promise<string>}
  */
-async function _handleToolCall(apiKey, url, contents, modelContent, functionCall) {
+async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, functionCall) {
   const { name, args } = functionCall;
 
   // Show tool execution indicator
@@ -669,7 +813,8 @@ async function _handleToolCall(apiKey, url, contents, modelContent, functionCall
     },
   };
 
-  const data = await _fetchGemini(url, followUp);
+  const data = await _fetchGemini(url, followUp, keyIdx);
+  storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
   if (!candidate?.content?.parts?.length) {
@@ -767,7 +912,7 @@ function _removeToolIndicator() {
  * @param {Object} body
  * @returns {Promise<Object>}
  */
-async function _fetchGemini(url, body) {
+async function _fetchGemini(url, body, keyIdx) {
   const fetchOpts = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -780,6 +925,9 @@ async function _fetchGemini(url, body) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || '';
 
+    // Mark this key as errored
+    storage.recordKeyError(keyIdx);
+
     // Billing/hard quota — retrying won't help
     if (/exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg)) {
       throw new Error(
@@ -790,7 +938,30 @@ async function _fetchGemini(url, body) {
       );
     }
 
-    // Per-minute rate limit — wait and retry
+    // Per-minute rate limit — try the next key in the ring before waiting
+    const keys = storage.getAgentKeys();
+    if (keys.length > 1) {
+      const next = _getNextKey();
+      if (next && next.idx !== keyIdx) {
+        _showRetryIndicator(0, true); // indicate key rotation
+        const model = storage.getAgentModel() || 'gemini-2.0-flash';
+        const rotatedUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(next.key)}`;
+        const retryRes = await fetch(rotatedUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        _removeRetryIndicator();
+        if (retryRes.ok) {
+          storage.recordKeyUsage(next.idx);
+          return retryRes.json();
+        }
+        // Rotated key also failed — fall through to wait-and-retry
+        storage.recordKeyError(next.idx);
+      }
+    }
+
+    // Single key or all keys exhausted — wait and retry original
     const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
     const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 15;
 
@@ -814,9 +985,11 @@ async function _fetchGemini(url, body) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;
     if (res.status === 400 && /api.?key/i.test(errMsg)) {
+      storage.recordKeyError(keyIdx);
       throw new Error('Invalid API key. Check your key in Settings.');
     }
     if (res.status === 403) {
+      storage.recordKeyError(keyIdx);
       throw new Error('API key does not have permission. Check your key at ai.google.dev.');
     }
     throw new Error(errMsg);
@@ -826,11 +999,14 @@ async function _fetchGemini(url, body) {
 }
 
 /** Show a "retrying" indicator in the chat body. */
-function _showRetryIndicator(seconds) {
+function _showRetryIndicator(seconds, rotating) {
   if (!_chatBody) return;
+  const msg = rotating
+    ? 'Rate limited — switching to next key…'
+    : `Rate limited — retrying in ${seconds}s...`;
   const indicator = el('div', { className: 'agent-tool-indicator', id: 'agent-retry-indicator' }, [
     el('span', { className: 'agent-tool-icon' }, ['⏳']),
-    el('span', {}, [`Rate limited — retrying in ${seconds}s...`]),
+    el('span', {}, [msg]),
   ]);
   _chatBody.appendChild(indicator);
   _chatBody.scrollTop = _chatBody.scrollHeight;

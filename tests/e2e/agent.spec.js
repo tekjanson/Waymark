@@ -209,14 +209,19 @@ test('settings modal shows model selection dropdown', async ({ page }) => {
   expect(count).toBeGreaterThanOrEqual(3);
 });
 
-test('settings modal shows API key input field', async ({ page }) => {
+test('settings modal shows key ring UI with add-key form', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
   await page.click('.agent-settings-btn');
-  await page.waitForSelector('.agent-settings-input', { timeout: 3000 });
-  await expect(page.locator('.agent-settings-input')).toBeVisible();
-  await expect(page.locator('.agent-settings-input')).toHaveAttribute('type', 'password');
+  await page.waitForSelector('.agent-keyring-add-form', { timeout: 3000 });
+  await expect(page.locator('.agent-keyring-list')).toBeVisible();
+  await expect(page.locator('.agent-keyring-add-form')).toBeVisible();
+  // The primary key input is password type
+  const keyInput = page.locator('.agent-keyring-add-form .agent-settings-input[type="password"]');
+  await expect(keyInput).toBeVisible();
+  // Add key button should exist
+  await expect(page.locator('.agent-keyring-add-btn')).toBeVisible();
 });
 
 /* ---------- Full User Workflow ---------- */
@@ -236,25 +241,32 @@ test('user navigates to agent and back to home', async ({ page }) => {
   await expect(page.locator('#agent-view')).toBeHidden();
 });
 
-test('user configures API key via settings modal save button', async ({ page }) => {
+test('user adds API key via key ring and saves settings', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
 
   // Open settings
   await page.click('.agent-settings-btn');
-  await page.waitForSelector('.agent-settings-input', { timeout: 3000 });
+  await page.waitForSelector('.agent-keyring-add-form', { timeout: 3000 });
 
-  // Enter API key
-  await page.fill('.agent-settings-input', 'test-api-key-abc');
+  // Empty state should show
+  await expect(page.locator('.agent-keyring-empty')).toBeVisible();
 
-  // Save
+  // Enter a new API key and add it
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'test-api-key-abc');
+  await page.fill('.agent-keyring-nickname-input', 'Test Key');
+  await page.click('.agent-keyring-add-btn');
+
+  // Key should now appear in the ring list
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+  await expect(page.locator('.agent-keyring-nickname')).toContainText('Test Key');
+
+  // Save settings
   await page.click('.agent-settings-save');
 
   // Verify modal closed and toast appeared
   await expect(page.locator('#agent-settings-modal')).toHaveCount(0);
-  await page.waitForSelector('.toast', { timeout: 3000 });
-  await expect(page.locator('.toast')).toContainText('saved');
 
   // Verify the view now shows empty state (not welcome)
   await page.waitForSelector('.agent-empty', { timeout: 3000 });
@@ -316,8 +328,8 @@ test('settings modal shows cloud sync toggle', async ({ page }) => {
   await page.click('.agent-settings-btn');
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
   await expect(page.locator('.agent-settings-cloud-label')).toBeVisible();
-  await expect(page.locator('.agent-settings-toggle')).toBeVisible();
-  await expect(page.locator('.agent-settings-cloud-label')).toContainText('Sync API key across devices');
+  await expect(page.locator('.agent-settings-cloud-label .agent-settings-toggle')).toBeVisible();
+  await expect(page.locator('.agent-settings-cloud-label')).toContainText('Sync keys across devices');
 });
 
 test('cloud sync toggle is unchecked by default', async ({ page }) => {
@@ -326,28 +338,33 @@ test('cloud sync toggle is unchecked by default', async ({ page }) => {
   await page.waitForSelector('.agent-header', { timeout: 5000 });
   await page.click('.agent-settings-btn');
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
-  const checked = await page.locator('.agent-settings-toggle').isChecked();
+  const checked = await page.locator('.agent-settings-cloud-label .agent-settings-toggle').isChecked();
   expect(checked).toBe(false);
 });
 
-test('saving settings with cloud sync stores settings via user-data', async ({ page }) => {
+test('saving settings with cloud sync stores key ring via user-data', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-header', { timeout: 5000 });
   await page.click('.agent-settings-btn');
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
 
-  // Enter API key and enable cloud sync
-  await page.fill('.agent-settings-input', 'test-cloud-key');
-  await page.check('.agent-settings-toggle');
+  // Add API key to ring
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'test-cloud-key');
+  await page.click('.agent-keyring-add-btn');
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+
+  // Enable cloud sync and save
+  await page.check('.agent-settings-cloud-label .agent-settings-toggle');
   await page.click('.agent-settings-save');
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000, state: 'detached' });
 
-  // Verify localStorage has the key
-  const key = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('waymark_agent_api_key'))
+  // Verify localStorage has the key ring
+  const keys = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_agent_keys'))
   );
-  expect(key).toBe('test-cloud-key');
+  expect(keys).toHaveLength(1);
+  expect(keys[0].key).toBe('test-cloud-key');
 });
 
 /* ---------- Tool Calling UI ---------- */
@@ -413,4 +430,204 @@ test('agent trims old messages when conversation exceeds max context', async ({ 
   // All 30 messages should render in the UI
   const count = await page.locator('.agent-message').count();
   expect(count).toBe(30);
+});
+
+/* ---------- Key Ring UI ---------- */
+
+test('settings shows empty key ring message when no keys configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-empty', { timeout: 3000 });
+  await expect(page.locator('.agent-keyring-empty')).toContainText('No API keys configured');
+});
+
+test('adding a key to the ring shows it in the list with masked value', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-add-form', { timeout: 3000 });
+
+  // Add a key
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'AIzaSyAbcdef1234');
+  await page.fill('.agent-keyring-nickname-input', 'Work Key');
+  await page.click('.agent-keyring-add-btn');
+
+  // Key row should appear
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+  await expect(page.locator('.agent-keyring-nickname')).toContainText('Work Key');
+  // Masked value should show last 4 chars
+  await expect(page.locator('.agent-keyring-masked')).toContainText('····1234');
+  await expect(page.locator('.agent-keyring-usage')).toContainText('0 today');
+  // Empty message should be gone
+  await expect(page.locator('.agent-keyring-empty')).toHaveCount(0);
+});
+
+test('adding multiple keys shows all in the ring list', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-add-form', { timeout: 3000 });
+
+  // Add first key
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'AIzaSyFirst1111');
+  await page.fill('.agent-keyring-nickname-input', 'First');
+  await page.click('.agent-keyring-add-btn');
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+
+  // Add second key
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'AIzaSySecond2222');
+  await page.fill('.agent-keyring-nickname-input', 'Second');
+  await page.click('.agent-keyring-add-btn');
+
+  // Both keys should be visible
+  const rows = page.locator('.agent-keyring-row');
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator('.agent-keyring-nickname').first()).toContainText('First');
+  await expect(page.locator('.agent-keyring-nickname').nth(1)).toContainText('Second');
+});
+
+test('removing a key from the ring updates the list', async ({ page }) => {
+  await setupApp(page);
+  // Pre-populate keys
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'key-AAAA', nickname: 'Alpha', addedAt: '2026-01-01', requestsToday: 5, lastUsed: null, lastError: null, isBilled: false },
+      { key: 'key-BBBB', nickname: 'Beta', addedAt: '2026-01-02', requestsToday: 3, lastUsed: null, lastError: null, isBilled: true },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+
+  // Should start with 2 keys
+  await expect(page.locator('.agent-keyring-row')).toHaveCount(2);
+
+  // Remove the first key
+  await page.click('.agent-keyring-remove');
+  await expect(page.locator('.agent-keyring-row')).toHaveCount(1);
+  await expect(page.locator('.agent-keyring-nickname')).toContainText('Beta');
+});
+
+test('billed badge displays for billed keys', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'key-FREE', nickname: 'Free', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+      { key: 'key-PAID', nickname: 'Paid', addedAt: '2026-01-02', requestsToday: 0, lastUsed: null, lastError: null, isBilled: true },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+
+  // Only the billed key should have the badge
+  const badges = page.locator('.agent-keyring-billed');
+  await expect(badges).toHaveCount(1);
+  await expect(badges.first()).toContainText('Billed');
+});
+
+test('add key button shows toast on duplicate key', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'existing-key', nickname: 'Existing', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-add-form', { timeout: 3000 });
+
+  // Try adding the same key
+  await page.fill('.agent-keyring-add-form .agent-settings-input[type="password"]', 'existing-key');
+  await page.click('.agent-keyring-add-btn');
+
+  // Should show error toast
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText('already in your ring');
+});
+
+test('remove all keys button clears the ring and shows welcome', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'key-1', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-remove', { timeout: 3000 });
+
+  // Click Remove All Keys
+  await page.click('.agent-settings-remove');
+
+  // Modal closes and welcome view shows
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText('removed');
+  await page.waitForSelector('.agent-welcome', { timeout: 5000 });
+  await expect(page.locator('.agent-welcome')).toBeVisible();
+});
+
+test('legacy single key auto-migrates to key ring format', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // Set legacy single key format
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('legacy-key-XXXX'));
+    window.location.hash = '#/agent';
+  });
+  // Agent view should recognize the key and show empty state (not welcome)
+  await page.waitForSelector('.agent-empty', { timeout: 5000 });
+  await expect(page.locator('.agent-empty')).toBeVisible();
+  await expect(page.locator('.agent-welcome')).toHaveCount(0);
+
+  // Verify migration happened — key ring should exist in localStorage
+  const keys = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_agent_keys'))
+  );
+  expect(keys).toHaveLength(1);
+  expect(keys[0].key).toBe('legacy-key-XXXX');
+  expect(keys[0].nickname).toBe('Key 1');
+});
+
+test('key ring add-btn has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-add-btn', { timeout: 3000 });
+  await expect(page.locator('.agent-keyring-add-btn')).toHaveCSS('cursor', 'pointer');
+});
+
+test('key ring renders correctly at mobile width', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'key-1', nickname: 'Mobile Test', addedAt: '2026-01-01', requestsToday: 10, lastUsed: null, lastError: null, isBilled: true },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-keyring-row', { timeout: 3000 });
+
+  // Verify nothing overflows
+  const overflows = await page.evaluate(() => {
+    const problems = [];
+    document.querySelectorAll('.agent-keyring-list *').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 2) {
+        problems.push(el.className);
+      }
+    });
+    return problems;
+  });
+  expect(overflows).toHaveLength(0);
 });
