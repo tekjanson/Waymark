@@ -85,6 +85,7 @@ let _messages = [];
 let _container = null;
 let _chatBody = null;
 let _isStreaming = false;
+let _abortController = null;
 let _lastKeyResetDate = null;
 
 /* ---------- Key Rotation ---------- */
@@ -649,40 +650,117 @@ async function _sendMessage(text) {
   // Scroll to bottom
   _chatBody.scrollTop = _chatBody.scrollHeight;
 
-  // Show typing indicator
-  const typing = el('div', { className: 'agent-message agent-message-assistant agent-typing' }, [
-    el('div', { className: 'agent-message-avatar' }, ['🤖']),
-    el('div', { className: 'agent-message-content' }, [
-      el('div', { className: 'agent-typing-dots' }, [
-        el('span', {}, ['·']),
-        el('span', {}, ['·']),
-        el('span', {}, ['·']),
-      ]),
-    ]),
+  // Create live assistant message bubble for streaming
+  const liveWrapper = el('div', {
+    className: 'agent-message agent-message-assistant',
+  });
+  const liveAvatar = el('div', { className: 'agent-message-avatar' }, ['🤖']);
+  const liveContent = el('div', { className: 'agent-message-content' });
+  // Start with typing dots until first chunk arrives
+  const typingDots = el('div', { className: 'agent-typing-dots' }, [
+    el('span', {}, ['·']), el('span', {}, ['·']), el('span', {}, ['·']),
   ]);
-  _chatBody.appendChild(typing);
+  liveContent.appendChild(typingDots);
+  liveWrapper.appendChild(liveAvatar);
+  liveWrapper.appendChild(liveContent);
+  _chatBody.appendChild(liveWrapper);
   _chatBody.scrollTop = _chatBody.scrollHeight;
 
-  // Call Gemini API with key rotation
+  // Switch send button to stop button
+  const sendBtn = _container.querySelector('.agent-send-btn');
+  let originalSendText = '';
+  if (sendBtn) {
+    originalSendText = sendBtn.textContent;
+    sendBtn.textContent = '⏹';
+    sendBtn.title = 'Stop generating';
+    sendBtn.className = 'agent-send-btn agent-stop-btn';
+  }
+
+  // Set up abort controller
+  _abortController = new AbortController();
+  const signal = _abortController.signal;
+
+  // Handle stop button click
+  const stopHandler = () => {
+    if (_abortController) _abortController.abort();
+  };
+  if (sendBtn) {
+    sendBtn.removeAttribute('disabled');
+    sendBtn.onclick = stopHandler;
+  }
+
   _isStreaming = true;
+  let accumulated = '';
+  let dotsRemoved = false;
+  let renderPending = false;
+
+  /** Debounced re-render of markdown content */
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => {
+      renderPending = false;
+      liveContent.innerHTML = '';
+      _renderMarkdown(liveContent, accumulated);
+      _chatBody.scrollTop = _chatBody.scrollHeight;
+    });
+  }
+
   try {
-    const response = await _callGemini(keyEntry.key, keyEntry.idx, userText);
-    typing.remove();
+    const response = await _streamCallGemini(
+      keyEntry.key,
+      keyEntry.idx,
+      userText,
+      (chunk) => {
+        // Remove typing dots on first chunk
+        if (!dotsRemoved) {
+          typingDots.remove();
+          dotsRemoved = true;
+        }
+        accumulated += chunk;
+        scheduleRender();
+      },
+      signal,
+    );
+
+    // Final render with complete text
+    liveContent.innerHTML = '';
+    _renderMarkdown(liveContent, response);
 
     _messages.push({ role: 'assistant', content: response });
-    const msgEl = _buildMessage({ role: 'assistant', content: response });
-    _chatBody.appendChild(msgEl);
     _chatBody.scrollTop = _chatBody.scrollHeight;
     _persistConversation();
   } catch (err) {
-    typing.remove();
-    showToast('AI error: ' + err.message, 'error');
-
-    const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
-    _messages.push(errorMsg);
-    _chatBody.appendChild(_buildMessage(errorMsg));
+    // If aborted and we have partial text, keep it
+    if (err.name === 'AbortError' && accumulated) {
+      liveContent.innerHTML = '';
+      _renderMarkdown(liveContent, accumulated);
+      _messages.push({ role: 'assistant', content: accumulated });
+      _persistConversation();
+    } else if (err.name !== 'AbortError') {
+      liveWrapper.remove();
+      showToast('AI error: ' + err.message, 'error');
+      const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
+      _messages.push(errorMsg);
+      _chatBody.appendChild(_buildMessage(errorMsg));
+    } else {
+      // Aborted with no content — remove the empty bubble
+      liveWrapper.remove();
+    }
   } finally {
     _isStreaming = false;
+    _abortController = null;
+
+    // Restore send button
+    if (sendBtn) {
+      sendBtn.textContent = originalSendText || '➤';
+      sendBtn.title = 'Send message';
+      sendBtn.className = 'agent-send-btn';
+      sendBtn.onclick = () => {
+        const inp = _container.querySelector('.agent-input');
+        if (inp) _sendMessage(inp.value);
+      };
+    }
   }
 }
 
@@ -730,6 +808,119 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
   }
 
   return candidate.content.parts.map(p => p.text || '').join('');
+}
+
+/**
+ * Stream the Gemini API response, calling onChunk for each text fragment.
+ * Returns the full accumulated text if successful.
+ * If a function call is detected, stops streaming and delegates to _handleToolCall.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {string} userMessage
+ * @param {function(string): void} onChunk — called with each text fragment
+ * @param {AbortSignal} signal — abort signal to cancel streaming
+ * @returns {Promise<string>}
+ */
+async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const streamUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+
+  const contents = _buildContents(userMessage);
+
+  const body = {
+    contents,
+    tools: TOOL_DECLARATIONS,
+    systemInstruction: {
+      parts: [{ text: SYSTEM_PROMPT }],
+    },
+    generationConfig: {
+      temperature: 0.4,
+      topP: 0.9,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  let res;
+  try {
+    res = await fetch(streamUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    // Streaming failed (likely proxy blocking SSE) — fall back to buffered
+    return _callGemini(apiKey, keyIdx, userMessage);
+  }
+
+  // Non-200 — fall back to buffered endpoint for proper error handling
+  if (!res.ok) {
+    return _callGemini(apiKey, keyIdx, userMessage);
+  }
+
+  storage.recordKeyUsage(keyIdx);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
+
+        let parsed;
+        try { parsed = JSON.parse(jsonStr); } catch { continue; }
+
+        const candidate = parsed.candidates?.[0];
+        if (!candidate?.content?.parts) continue;
+
+        // Check for function call
+        const fc = candidate.content.parts.find(p => p.functionCall);
+        if (fc) {
+          // Abort the stream reader and delegate to tool handler
+          reader.cancel();
+          const bufferedUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          return _handleToolCall(apiKey, keyIdx, bufferedUrl, contents, candidate.content, fc.functionCall);
+        }
+
+        // Extract text chunks
+        for (const part of candidate.content.parts) {
+          if (part.text) {
+            accumulated += part.text;
+            onChunk(part.text);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // User clicked stop — return whatever we have
+      return accumulated;
+    }
+    // Stream read error — if we have partial text, return it; otherwise throw
+    if (accumulated) return accumulated;
+    throw err;
+  }
+
+  if (!accumulated) {
+    throw new Error('No response from AI');
+  }
+
+  return accumulated;
 }
 
 /**

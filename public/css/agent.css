@@ -395,6 +395,14 @@
   cursor: not-allowed;
 }
 
+.agent-stop-btn {
+  background: var(--color-error);
+}
+
+.agent-stop-btn:hover {
+  background: var(--color-error-dark, #b91c1c);
+}
+
 /* ---------- Settings Modal ---------- */
 
 .agent-settings-modal {

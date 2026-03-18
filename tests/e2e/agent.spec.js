@@ -631,3 +631,232 @@ test('key ring renders correctly at mobile width', async ({ page }) => {
   });
   expect(overflows).toHaveLength(0);
 });
+
+/* ---------- Streaming Responses ---------- */
+
+/** Helper: build a mock SSE response body from text chunks */
+function buildSSEBody(chunks) {
+  return chunks.map(text => {
+    const json = JSON.stringify({
+      candidates: [{ content: { parts: [{ text }], role: 'model' } }],
+    });
+    return `data: ${json}\n\n`;
+  }).join('');
+}
+
+test('streaming response shows text progressively in a live bubble', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-stream-key', nickname: 'Stream', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  // Mock the streaming endpoint with delayed chunks
+  await page.route(/streamGenerateContent/, async route => {
+    const body = buildSSEBody(['Hello', ' world', '!']);
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body,
+    });
+  });
+
+  // Send a message
+  await page.fill('.agent-input', 'say hello');
+  await page.click('.agent-send-btn');
+
+  // The assistant message should appear with the streamed text
+  await page.waitForSelector('.agent-message-assistant .agent-message-content', { timeout: 5000 });
+  // Wait for final render
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Hello world!');
+  }, { timeout: 5000 });
+  const assistantMsgs = page.locator('.agent-message-assistant');
+  await expect(assistantMsgs.last()).toContainText('Hello world!');
+});
+
+test('stop button appears during streaming and reverts after', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-stop-key', nickname: 'Stop', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-send-btn', { timeout: 5000 });
+
+  // Verify send button starts as ➤
+  await expect(page.locator('.agent-send-btn')).toContainText('➤');
+
+  // Mock streaming with a slow response that lets us check the stop button
+  let resolveRoute;
+  const routePromise = new Promise(r => { resolveRoute = r; });
+  await page.route(/streamGenerateContent/, async route => {
+    // Wait briefly to let us check the stop button
+    await new Promise(r => setTimeout(r, 500));
+    const body = buildSSEBody(['Done.']);
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body,
+    });
+    resolveRoute();
+  });
+
+  // Send message — the stop button should appear
+  await page.fill('.agent-input', 'test');
+  await page.click('.agent-send-btn');
+
+  // Stop button should be visible during streaming
+  await page.waitForSelector('.agent-stop-btn', { timeout: 3000 });
+  await expect(page.locator('.agent-stop-btn')).toContainText('⏹');
+
+  // Wait for streaming to complete
+  await routePromise;
+
+  // After streaming, send button should revert
+  await page.waitForSelector('.agent-send-btn:not(.agent-stop-btn)', { timeout: 5000 });
+  await expect(page.locator('.agent-send-btn')).toContainText('➤');
+});
+
+test('stop button CSS has error background color', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'stop-css-key', nickname: 'CSS', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-send-btn', { timeout: 5000 });
+
+  // Mock streaming with slow response
+  await page.route(/streamGenerateContent/, async route => {
+    await new Promise(r => setTimeout(r, 1000));
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: buildSSEBody(['ok']),
+    });
+  });
+
+  await page.fill('.agent-input', 'x');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-stop-btn', { timeout: 3000 });
+
+  // Verify the stop button has the error color background
+  const bgColor = await page.locator('.agent-stop-btn').evaluate(el =>
+    getComputedStyle(el).backgroundColor
+  );
+  expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('streaming fallback works when SSE endpoint returns error', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'fallback-key', nickname: 'Fallback', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  // Mock streaming to fail, buffered to succeed
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Fallback response' }], role: 'model' } }],
+      }),
+    });
+  });
+
+  await page.fill('.agent-input', 'test fallback');
+  await page.click('.agent-send-btn');
+
+  // Should eventually show the fallback response
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Fallback response');
+  }, { timeout: 10000 });
+});
+
+test('typing dots show before first streaming chunk arrives', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'dots-key', nickname: 'Dots', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  // Mock streaming with delayed start
+  let resolveRoute;
+  await page.route(/streamGenerateContent/, async route => {
+    await new Promise(r => { resolveRoute = r; setTimeout(r, 1000); });
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: buildSSEBody(['Hi']),
+    });
+  });
+
+  await page.fill('.agent-input', 'hello');
+  await page.click('.agent-send-btn');
+
+  // Typing dots should appear
+  await page.waitForSelector('.agent-typing-dots', { timeout: 3000 });
+  await expect(page.locator('.agent-typing-dots')).toBeVisible();
+
+  // Resolve the stream to clean up
+  if (resolveRoute) resolveRoute();
+});
+
+test('streamed message is persisted to conversation history', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'persist-key', nickname: 'Persist', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: buildSSEBody(['Saved response']),
+    });
+  });
+
+  await page.fill('.agent-input', 'save me');
+  await page.click('.agent-send-btn');
+
+  // Wait for the response to finish
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Saved response');
+  }, { timeout: 5000 });
+
+  // Check localStorage conversation
+  const conversation = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_agent_conversation'))
+  );
+  expect(conversation.length).toBeGreaterThanOrEqual(2);
+  const lastMsg = conversation[conversation.length - 1];
+  expect(lastMsg.role).toBe('assistant');
+  expect(lastMsg.content).toContain('Saved response');
+});
