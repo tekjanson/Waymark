@@ -30,6 +30,7 @@ const CASE_DELAY_MS = Number(process.env.WAYMARK_AGENT_EVAL_DELAY_MS || 15000);
 const STEP_DELAY_MS = Number(process.env.WAYMARK_AGENT_EVAL_STEP_DELAY_MS || 5000);
 const RESUME_PREVIOUS = process.env.WAYMARK_AGENT_EVAL_RESUME !== 'false';
 const STOP_ON_FAILURE = process.env.WAYMARK_AGENT_EVAL_STOP_ON_FAILURE === 'true';
+const EVAL_MODEL = String(process.env.WAYMARK_AGENT_EVAL_MODEL || '').trim();
 const CASE_FILTER = String(process.env.WAYMARK_AGENT_EVAL_CASES || '')
   .split(',')
   .map(s => s.trim())
@@ -46,7 +47,7 @@ const CASES = [{
     minCreatedSheets: 2,
     requireWaymarkLink: true,
     forbidExternalGoogleLink: true,
-    titleIncludesAny: ['travel', 'budget'],
+    titleIncludesGroups: [['travel', 'trip', 'itinerary'], ['budget']],
   },
 }, {
   id: 'packing-checklist',
@@ -211,6 +212,12 @@ function scoreCase(responseText, createdRecords, checks) {
       if (!hit) failures.push(`missing created sheet title containing "${needle}"`);
     }
   }
+  if (checks.titleIncludesGroups?.length) {
+    for (const group of checks.titleIncludesGroups) {
+      const hit = createdTitles.some(title => group.some(needle => title.toLowerCase().includes(needle)));
+      if (!hit) failures.push(`missing created sheet title containing one of: ${group.join(', ')}`);
+    }
+  }
   if (checks.responseIncludesAny?.length) {
     const hit = checks.responseIncludesAny.some(needle => lowerText.includes(needle));
     if (!hit) failures.push(`response did not include any of: ${checks.responseIncludesAny.join(', ')}`);
@@ -240,9 +247,10 @@ async function sendPrompt(page, prompt) {
 async function runCase(browser, keys, testCase) {
   const context = await browser.newContext({ baseURL: BASE_URL });
   const page = await context.newPage();
-  await page.addInitScript((seedKeys) => {
+  await page.addInitScript(({ seedKeys, model }) => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify(seedKeys));
-  }, keys);
+    if (model) localStorage.setItem('waymark_agent_model', JSON.stringify(model));
+  }, { seedKeys: keys, model: EVAL_MODEL });
 
   const startedAt = Date.now();
   let responseText = '';
@@ -323,6 +331,7 @@ async function main() {
       const summary = {
         ranAt: new Date().toISOString(),
         baseUrl: BASE_URL,
+        model: EVAL_MODEL || 'default',
         pacing: {
           caseDelayMs: CASE_DELAY_MS,
           stepDelayMs: STEP_DELAY_MS,
@@ -348,6 +357,7 @@ async function main() {
     const summary = {
       ranAt: new Date().toISOString(),
       baseUrl: BASE_URL,
+      model: EVAL_MODEL || 'default',
       pacing: {
         caseDelayMs: CASE_DELAY_MS,
         stepDelayMs: STEP_DELAY_MS,

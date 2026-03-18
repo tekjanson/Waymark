@@ -13,7 +13,31 @@ import { TEMPLATES } from './templates/index.js';
 /* ---------- Constants ---------- */
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-flash-latest';
+
+/**
+ * Build a Gemini API URL for the given model/action pair.
+ * @param {string} model
+ * @param {string} action
+ * @param {string} [query]
+ * @returns {string}
+ */
+function _geminiUrl(model, action, query = '') {
+  const suffix = query ? `?${query}` : '';
+  return `${GEMINI_API_BASE}/${encodeURIComponent(model)}:${action}${suffix}`;
+}
+
+/**
+ * Build headers for Gemini API requests using the documented auth pattern.
+ * @param {string} apiKey
+ * @returns {Object}
+ */
+function _geminiHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    'X-goog-api-key': apiKey,
+  };
+}
 
 const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
@@ -117,7 +141,8 @@ function _buildPlannerBrief(userText) {
   }
 
   const budgetMatch = text.match(/(?:under|within|around|about|for)\s+\$?([\d,]+(?:\.\d+)?)/i)
-    || text.match(/\$([\d,]+(?:\.\d+)?)/);
+    || text.match(/\$([\d,]+(?:\.\d+)?)/)
+    || text.match(/\b([\d,]+(?:\.\d+)?)\s+budget\b/i);
   if (budgetMatch?.[1]) {
     parts.push(`Budget constraint: ${budgetMatch[1].replace(/,/g, '')}.`);
   }
@@ -172,6 +197,20 @@ function _estimateRequestTokens(body) {
 }
 
 /**
+ * Estimate the raw conversation size before trimming so obviously oversized
+ * chats fail locally instead of spending a planner/model call first.
+ * @param {string} userMessage
+ * @returns {number}
+ */
+function _estimateRawConversationTokens(userMessage) {
+  const rawHistory = _messages
+    .slice(-MAX_CONTEXT_MESSAGES)
+    .map(msg => String(msg.content ?? ''))
+    .join(' ');
+  return _estimateTokens(`${_getSystemPrompt()} ${rawHistory} ${String(userMessage ?? '')}`);
+}
+
+/**
  * Throw before making a model call if the request is too large for the local budget.
  * @param {Object} body
  * @param {string} phase
@@ -187,6 +226,20 @@ function _assertRequestWithinBudget(body, phase) {
 }
 
 /**
+ * Refuse obviously oversized requests before any network activity.
+ * @param {string} userMessage
+ */
+function _assertConversationWithinBudget(userMessage) {
+  const estimatedTokens = _estimateRawConversationTokens(userMessage);
+  if (estimatedTokens > MAX_ESTIMATED_REQUEST_TOKENS) {
+    throw new Error(
+      `This conversation would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_ESTIMATED_REQUEST_TOKENS}. ` +
+      'Clear older chat messages or simplify the request before trying again.'
+    );
+  }
+}
+
+/**
  * Ask the model for a tiny execution brief when the request is complex enough
  * to benefit from one extra round-trip.
  * @param {string} apiKey
@@ -196,7 +249,7 @@ function _assertRequestWithinBudget(body, phase) {
  */
 async function _fetchPlannerMicroBrief(apiKey, keyIdx, userText) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = _geminiUrl(model, 'generateContent');
   const compactUserText = _compactContextText(userText, MAX_USER_MESSAGE_CHARS);
   const plannerBody = {
     contents: [{
@@ -238,6 +291,33 @@ function _buildPlannedUserMessage(userText) {
 }
 
 /**
+ * Extract recent sheet links mentioned in the conversation so follow-up prompts
+ * like "that checklist" can be grounded to a concrete spreadsheet ID.
+ * @returns {Array<{title: string, id: string}>}
+ */
+function _getRecentConversationSheets() {
+  const sheetPattern = /\[([^\]]+)\]\(#\/sheet\/([^)]+)\)/g;
+  const seen = new Set();
+  const recent = [];
+
+  for (let i = _messages.length - 1; i >= 0; i--) {
+    const text = String(_messages[i]?.content || '');
+    let match;
+    while ((match = sheetPattern.exec(text)) !== null) {
+      const title = match[1].trim();
+      const id = match[2].trim();
+      const key = `${title}::${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recent.push({ title, id });
+      if (recent.length >= 5) return recent;
+    }
+  }
+
+  return recent;
+}
+
+/**
  * Refresh the context block: current date, user name, and their sheets.
  * Called once per user message to keep context fresh without duplicate API calls.
  */
@@ -267,6 +347,15 @@ async function _refreshContext() {
     }
   } catch {
     // Non-critical — continue without sheet list
+  }
+
+  const recentSheets = _getRecentConversationSheets();
+  if (recentSheets.length) {
+    const recentList = recentSheets
+      .map(sheet => `"${sheet.title}" (id: ${sheet.id})`)
+      .join(', ');
+    parts.push(`Recent sheet references from this conversation: ${recentList}.`);
+    parts.push('If the user says "that sheet", "that checklist", "it", or asks to add/change items in something you just created, resolve that to the most relevant recent sheet ID and prefer update_sheet over creating a duplicate.');
   }
 
   _cachedContext = parts.join(' ');
@@ -816,11 +905,11 @@ function _showSettings() {
   }, ['+ Add Key']);
 
   const modelSelect = el('select', { className: 'agent-settings-select' }, [
+    el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
     el('option', { value: 'gemini-2.0-flash', selected: currentModel === 'gemini-2.0-flash' }, ['Gemini 2.0 Flash (fast)']),
     el('option', { value: 'gemini-2.0-flash-lite', selected: currentModel === 'gemini-2.0-flash-lite' }, ['Gemini 2.0 Flash Lite (fastest)']),
     el('option', { value: 'gemini-2.5-flash-preview-05-20', selected: currentModel === 'gemini-2.5-flash-preview-05-20' }, ['Gemini 2.5 Flash (balanced)']),
     el('option', { value: 'gemini-2.5-pro-preview-05-06', selected: currentModel === 'gemini-2.5-pro-preview-05-06' }, ['Gemini 2.5 Pro (best)']),
-    el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
   ]);
 
   const toggleAttrs = {
@@ -938,7 +1027,8 @@ function _persistConversation() {
  */
 async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const baseUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const baseUrl = _geminiUrl(model, 'generateContent');
+  _assertConversationWithinBudget(userMessage);
   let plannedUserText = _buildPlannedUserMessage(userMessage);
 
   if (_shouldUsePlannerRound(userMessage)) {
@@ -1192,13 +1282,13 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
     ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
     : userMessage;
   const { model, contents, body } = request;
-  const streamUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+  const streamUrl = _geminiUrl(model, 'streamGenerateContent', 'alt=sse');
 
   let res;
   try {
     res = await fetch(streamUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _geminiHeaders(apiKey),
       body: JSON.stringify(body),
       signal,
     });
@@ -1247,7 +1337,7 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
         if (fc) {
           // Abort the stream reader and delegate to tool handler
           reader.cancel();
-          const bufferedUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const bufferedUrl = _geminiUrl(model, 'generateContent');
           return _handleToolCall(apiKey, keyIdx, bufferedUrl, contents, candidate.content, fc.functionCall);
         }
 
@@ -1325,9 +1415,14 @@ function _buildContents(userMessage) {
  * @param {Array} contents
  * @param {Object} modelContent — the model's response content with the function call
  * @param {{ name: string, args: Object }} functionCall
+ * @param {number} [chainDepth]
  * @returns {Promise<string>}
  */
-async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, functionCall) {
+async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, functionCall, chainDepth = 0) {
+  if (chainDepth >= 5) {
+    throw new Error('AI requested too many chained tool calls in one turn. Try again with a smaller request.');
+  }
+
   const { name, args } = functionCall;
 
   // Show tool execution indicator
@@ -1373,6 +1468,19 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
   const data = await _fetchGemini(url, followUp, keyIdx);
   storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
+
+  const nextFunctionCall = candidate?.content?.parts?.find(p => p.functionCall);
+  if (nextFunctionCall) {
+    return _handleToolCall(
+      apiKey,
+      keyIdx,
+      url,
+      followUp.contents,
+      candidate.content,
+      nextFunctionCall.functionCall,
+      chainDepth + 1
+    );
+  }
 
   if (!candidate?.content?.parts?.length) {
     // Tool succeeded but model gave no text — construct a response
@@ -1648,9 +1756,10 @@ function _removeToolIndicator() {
  * @returns {Promise<Object>}
  */
 async function _fetchGemini(url, body, keyIdx) {
+  const currentKey = storage.getAgentKeys()[keyIdx]?.key || '';
   const fetchOpts = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _geminiHeaders(currentKey),
     body: JSON.stringify(body),
   };
 
@@ -1659,31 +1768,22 @@ async function _fetchGemini(url, body, keyIdx) {
   if (res.status === 429) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || '';
+    const hardQuotaExceeded = /exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg);
 
     // Mark this key as errored
     storage.recordKeyError(keyIdx);
 
-    // Billing/hard quota — retrying won't help
-    if (/exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg)) {
-      throw new Error(
-        'Your Gemini API quota is exhausted. To fix this:\n' +
-        '• Wait until your quota resets (usually daily)\n' +
-        '• Or visit ai.google.dev to upgrade your plan\n' +
-        '• Or switch to a different model in Settings'
-      );
-    }
-
-    // Per-minute rate limit — try the next key in the ring before waiting
+    // Try the next key in the ring before surfacing quota/rate-limit errors.
     const keys = storage.getAgentKeys();
     if (keys.length > 1) {
       const next = _getNextKey();
       if (next && next.idx !== keyIdx) {
         _showRetryIndicator(0, true); // indicate key rotation
-        const model = storage.getAgentModel() || 'gemini-2.0-flash';
-        const rotatedUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(next.key)}`;
+        const model = storage.getAgentModel() || DEFAULT_MODEL;
+        const rotatedUrl = _geminiUrl(model, 'generateContent');
         const retryRes = await fetch(rotatedUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: _geminiHeaders(next.key),
           body: JSON.stringify(body),
         });
         _removeRetryIndicator();
@@ -1691,9 +1791,19 @@ async function _fetchGemini(url, body, keyIdx) {
           storage.recordKeyUsage(next.idx);
           return retryRes.json();
         }
-        // Rotated key also failed — fall through to wait-and-retry
+        // Rotated key also failed — mark it and fall through.
         storage.recordKeyError(next.idx);
       }
+    }
+
+    // Billing/hard quota — retrying the same key won't help once rotation fails.
+    if (hardQuotaExceeded) {
+      throw new Error(
+        'Your Gemini API quota is exhausted. To fix this:\n' +
+        '• Wait until your quota resets (usually daily)\n' +
+        '• Or visit ai.google.dev to upgrade your plan\n' +
+        '• Or switch to a different model in Settings'
+      );
     }
 
     // Single key or all keys exhausted — wait and retry original

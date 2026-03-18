@@ -533,9 +533,19 @@ test('planner brief decomposes multi-domain requests into compact execution hint
   });
   await page.waitForSelector('.agent-input', { timeout: 5000 });
 
+  let generateCallCount = 0;
   let capturedBody = null;
   await page.route(/generateContent/, async route => {
     if (route.request().url().includes('stream')) return route.continue();
+    generateCallCount++;
+    if (generateCallCount === 1) {
+      await route.fulfill({
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: { message: 'planner unavailable' } }),
+      });
+      return;
+    }
     capturedBody = JSON.parse(route.request().postData());
     await route.fulfill({
       status: 200,
@@ -556,6 +566,7 @@ test('planner brief decomposes multi-domain requests into compact execution hint
   }, { timeout: 10000 });
 
   expect(capturedBody).not.toBeNull();
+  expect(generateCallCount).toBe(2);
   const finalPrompt = capturedBody.contents[capturedBody.contents.length - 1].parts[0].text;
   expect(finalPrompt).toContain('Planner brief:');
   expect(finalPrompt).toContain('Detected domains: travel, budget.');
@@ -656,6 +667,58 @@ test('agent short-circuits locally when the request exceeds the token budget', a
 
   expect(networkCalls).toBe(0);
   await expect(page.locator('.agent-message-assistant').last()).toContainText('above the local budget');
+});
+
+test('quota-exhausted key rotates to the next configured key before failing', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'quota-key', nickname: 'Spent', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+      { key: 'fresh-key', nickname: 'Fresh', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  const usedKeys = [];
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    const headers = route.request().headers();
+    const requestKey = headers['x-goog-api-key'];
+    usedKeys.push(requestKey);
+    if (requestKey === 'quota-key') {
+      await route.fulfill({
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: {
+            message: 'You exceeded your current quota, please check your plan and billing details.',
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Rotated key succeeded.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Create a small trip plan');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1 && msgs[msgs.length - 1].textContent.includes('Rotated key succeeded');
+  }, { timeout: 10000 });
+
+  expect(usedKeys).toContain('quota-key');
+  expect(usedKeys).toContain('fresh-key');
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('Rotated key succeeded');
 });
 
 /* ---------- Key Ring UI ---------- */
@@ -1121,6 +1184,81 @@ function buildTextResponse(text) {
     }],
   });
 }
+
+function buildCreateSheetFunctionCall(template, title, data) {
+  return JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{
+          functionCall: {
+            name: 'create_sheet',
+            args: { template, title, data },
+          },
+        }],
+        role: 'model',
+      },
+    }],
+  });
+}
+
+test('agent follows chained create_sheet tool calls before final response', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'chain-key', nickname: 'Chain', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('travel', 'Family Travel Plan', [
+          ['Day 1', 'Wrentham', 'Drive to Pennsylvania'],
+          ['Day 2', 'Ohio', 'Continue west'],
+        ]),
+      });
+      return;
+    }
+    if (callCount === 2) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('budget', 'Family Travel Budget', [
+          ['Fuel', '1200', 'Gas for the route'],
+          ['Hotel', '2200', 'Family stays'],
+        ]),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Created both sheets: [Travel](#/sheet/travel-123) and [Budget](#/sheet/budget-456).'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Plan a vacation and budget it for me.');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Created both sheets');
+  }, { timeout: 10000 });
+
+  expect(callCount).toBe(3);
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('Created both sheets');
+});
 
 test('read_sheet tool reads sheet data and returns summary to model', async ({ page }) => {
   await setupApp(page);
@@ -1648,6 +1786,51 @@ test('system prompt includes user sheets from Drive', async ({ page }) => {
   expect(systemText).toMatch(/id: sheet-\d+/);
 });
 
+test('system prompt includes recent conversation sheet references for follow-up edits', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'recent-sheet-key', nickname: 'Recent', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      { role: 'user', content: 'Create a grocery checklist for this week.' },
+      { role: 'assistant', content: 'Created it here: [Weekly Grocery List - Family of 4](#/sheet/created-sheet-123).' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Updated the checklist.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Add apples and yogurt to that checklist.');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Updated the checklist');
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction.parts[0].text;
+  expect(systemText).toContain('Recent sheet references from this conversation');
+  expect(systemText).toContain('Weekly Grocery List - Family of 4');
+  expect(systemText).toContain('created-sheet-123');
+  expect(systemText).toContain('prefer update_sheet over creating a duplicate');
+});
+
 test('system prompt always includes base instructions alongside context', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
@@ -1913,7 +2096,12 @@ test('search_sheets shows tool indicator while searching', async ({ page }) => {
 
 test('search_sheets declaration is present in tool declarations', async ({ page }) => {
   await setupApp(page);
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'decl-key', nickname: 'D', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
   await page.waitForSelector('.agent-input', { timeout: 5000 });
 
   let capturedBody = null;
@@ -1930,11 +2118,6 @@ test('search_sheets declaration is present in tool declarations', async ({ page 
     await route.fulfill({ status: 500, body: '{}' });
   });
 
-  await page.evaluate(() => {
-    localStorage.setItem('waymark_agent_keys', JSON.stringify([
-      { key: 'decl-key', nickname: 'D', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
-    ]));
-  });
   await page.fill('.agent-input', 'hi');
   await page.click('.agent-send-btn');
 
