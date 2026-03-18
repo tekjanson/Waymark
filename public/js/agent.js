@@ -32,6 +32,8 @@ Guidelines:
 - All cell values must be strings — numbers ("500"), dates ("2026-03-15").
 - If unsure which template fits, ask or default to checklist (lists) or kanban (projects).
 - When the user refers to "my sheet" or a sheet by name, use read_sheet with the spreadsheet ID.
+- ALWAYS link to sheets using Waymark URLs: [Title](#/sheet/{spreadsheetId}). NEVER link to docs.google.com — keep users in Waymark.
+- When a request spans multiple domains (e.g. "plan a vacation on a budget"), create MULTIPLE sheets — one per template that fits (e.g. a travel sheet AND a budget sheet). Call create_sheet multiple times.
 - Be conversational and helpful.`;
 
 /** Cached context string — refreshed once per _sendMessage call. */
@@ -46,6 +48,193 @@ function _getSystemPrompt() {
   return _cachedContext
     ? BASE_SYSTEM_PROMPT + '\n\n' + _cachedContext
     : BASE_SYSTEM_PROMPT;
+}
+
+/**
+ * Collapse whitespace and cap text length so old chat history does not consume
+ * the entire model budget.
+ * @param {string} text
+ * @param {number} maxChars
+ * @returns {string}
+ */
+function _compactContextText(text, maxChars) {
+  const compact = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!compact) return '';
+  if (compact.length <= maxChars) return compact;
+  const tail = Math.max(80, Math.floor(maxChars * 0.25));
+  const head = Math.max(0, maxChars - tail - 3);
+  return compact.slice(0, head).trimEnd() + '...' + compact.slice(-tail).trimStart();
+}
+
+const PLANNER_TEMPLATE_HINTS = [{
+  template: 'travel',
+  patterns: [/\btrip\b/i, /\btravel\b/i, /\bvacation\b/i, /\bitinerary\b/i, /\broad\s*trip\b/i, /\bflight\b/i, /\bhotel\b/i],
+}, {
+  template: 'budget',
+  patterns: [/\bbudget\b/i, /\bcost\b/i, /\bexpense\b/i, /\bspend\b/i, /\bfinance\b/i, /\$\s*\d/i],
+}, {
+  template: 'checklist',
+  patterns: [/\bpacking\b/i, /\bchecklist\b/i, /\bto\s*do\b/i, /\bbring\b/i],
+}, {
+  template: 'schedule',
+  patterns: [/\bschedule\b/i, /\btimeline\b/i, /\bcalendar\b/i],
+}, {
+  template: 'contacts',
+  patterns: [/\bcontact\b/i, /\bphone\b/i, /\baddress\b/i],
+}];
+
+/**
+ * Infer likely template domains from a raw user request.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function _inferTemplateHints(text) {
+  const hints = [];
+  for (const rule of PLANNER_TEMPLATE_HINTS) {
+    if (rule.patterns.some(pattern => pattern.test(text))) {
+      hints.push(rule.template);
+    }
+  }
+  return hints;
+}
+
+/**
+ * Create a compact planning brief so the model sees the request as smaller,
+ * structured work packets instead of one large blob.
+ * @param {string} userText
+ * @returns {string}
+ */
+function _buildPlannerBrief(userText) {
+  const text = String(userText ?? '').trim();
+  if (!text) return '';
+
+  const lower = text.toLowerCase();
+  const hints = _inferTemplateHints(text);
+  const parts = [`Primary request: ${_compactContextText(text, 240)}`];
+
+  if (hints.length) {
+    parts.push(`Detected domains: ${hints.join(', ')}.`);
+  }
+
+  const budgetMatch = text.match(/(?:under|within|around|about|for)\s+\$?([\d,]+(?:\.\d+)?)/i)
+    || text.match(/\$([\d,]+(?:\.\d+)?)/);
+  if (budgetMatch?.[1]) {
+    parts.push(`Budget constraint: ${budgetMatch[1].replace(/,/g, '')}.`);
+  }
+
+  if (/\bfrom\b.+\bto\b/i.test(text)) {
+    parts.push('The request includes a route or start/end locations.');
+  }
+
+  if (hints.length > 1) {
+    parts.push(`Execution plan: create separate sheets for ${hints.join(', ')} instead of merging everything into one sheet.`);
+  } else if (/\bcreate\b|\bplan\b|\borganize\b|\bbuild\b/i.test(lower)) {
+    parts.push('Execution plan: prefer tool use and structured sheets over prose-only answers.');
+  }
+
+  if (/\bmy\s+sheet\b|\bfind\b|\bopen\b|\bsearch\b/i.test(lower)) {
+    parts.push('Use search_sheets first if the sheet ID is unknown.');
+  }
+
+  return parts.join(' ');
+}
+
+/**
+ * Determine whether a prompt is complex enough to justify one cheap planning call.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+function _shouldUsePlannerRound(userText) {
+  const text = String(userText ?? '').trim();
+  if (!text) return false;
+  const hints = _inferTemplateHints(text);
+  return hints.length > 1
+    || text.length > 220
+    || (/\bfrom\b.+\bto\b/i.test(text) && /\$\s*\d|\bbudget\b/i.test(text));
+}
+
+/**
+ * Rough token estimate using 4 chars/token. Good enough for early refusal.
+ * @param {string} text
+ * @returns {number}
+ */
+function _estimateTokens(text) {
+  return Math.ceil(String(text ?? '').length / 4);
+}
+
+/**
+ * Estimate the token cost of a full request body.
+ * @param {Object} body
+ * @returns {number}
+ */
+function _estimateRequestTokens(body) {
+  return _estimateTokens(JSON.stringify(body));
+}
+
+/**
+ * Throw before making a model call if the request is too large for the local budget.
+ * @param {Object} body
+ * @param {string} phase
+ */
+function _assertRequestWithinBudget(body, phase) {
+  const estimatedTokens = _estimateRequestTokens(body);
+  if (estimatedTokens > MAX_ESTIMATED_REQUEST_TOKENS) {
+    throw new Error(
+      `${phase} would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_ESTIMATED_REQUEST_TOKENS}. ` +
+      'Clear older chat messages or simplify the request before trying again.'
+    );
+  }
+}
+
+/**
+ * Ask the model for a tiny execution brief when the request is complex enough
+ * to benefit from one extra round-trip.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {string} userText
+ * @returns {Promise<string>}
+ */
+async function _fetchPlannerMicroBrief(apiKey, keyIdx, userText) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const compactUserText = _compactContextText(userText, MAX_USER_MESSAGE_CHARS);
+  const plannerBody = {
+    contents: [{
+      role: 'user',
+      parts: [{
+        text: 'Compress this request into one tiny execution brief. Mention likely templates, key constraints, and whether multiple sheets are needed. Plain text only. 80 words max. Request: ' + compactUserText,
+      }],
+    }],
+    systemInstruction: {
+      parts: [{ text: 'You are a planning compressor for Waymark. Output one short plain-text execution brief only. No markdown. No intro. No bullets unless essential.' }],
+    },
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 120,
+    },
+  };
+
+  _assertRequestWithinBudget(plannerBody, 'Planner round');
+  const data = await _fetchGemini(url, plannerBody, keyIdx);
+  storage.recordKeyUsage(keyIdx);
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join(' ').trim();
+  return _compactContextText(text, MAX_PLANNED_BRIEF_CHARS);
+}
+
+/**
+ * Build the final user message sent to the model.
+ * @param {string} userText
+ * @returns {string}
+ */
+function _buildPlannedUserMessage(userText) {
+  const compactUserText = _compactContextText(userText, MAX_USER_MESSAGE_CHARS);
+  const plannerBrief = _buildPlannerBrief(compactUserText);
+  if (!plannerBrief) return compactUserText;
+  return _compactContextText(
+    `Planner brief: ${plannerBrief} User request: ${compactUserText}`,
+    MAX_PLANNED_USER_MESSAGE_CHARS
+  );
 }
 
 /**
@@ -69,11 +258,12 @@ async function _refreshContext() {
   try {
     const sheets = await api.drive.getAllSheets();
     if (sheets.length) {
-      const sheetList = sheets.slice(0, 50).map(s =>
+      const sheetList = sheets.slice(0, MAX_CONTEXT_SHEETS).map(s =>
         s.folder ? `"${s.name}" (id: ${s.id}, folder: ${s.folder})` : `"${s.name}" (id: ${s.id})`
       ).join(', ');
-      parts.push(`The user has ${sheets.length} sheet(s): ${sheetList}.`);
-      parts.push('When the user mentions a sheet by name, match it to the list above and use the ID with read_sheet or update_sheet.');
+      parts.push(`The user has ${sheets.length} sheet(s) in Drive.`);
+      parts.push(`A few relevant sheet examples: ${sheetList}.`);
+      parts.push('If the user mentions a sheet that is not listed here, use search_sheets to find it by name before using read_sheet or update_sheet.');
     }
   } catch {
     // Non-critical — continue without sheet list
@@ -83,7 +273,14 @@ async function _refreshContext() {
 }
 
 /** Maximum number of messages to keep in context for API calls */
-const MAX_CONTEXT_MESSAGES = 20;
+const MAX_CONTEXT_MESSAGES = 8;
+const MAX_CONTEXT_CHARS = 3600;
+const MAX_USER_MESSAGE_CHARS = 900;
+const MAX_PLANNED_USER_MESSAGE_CHARS = 1200;
+const MAX_PLANNED_BRIEF_CHARS = 240;
+const MAX_ASSISTANT_MESSAGE_CHARS = 500;
+const MAX_CONTEXT_SHEETS = 12;
+const MAX_ESTIMATED_REQUEST_TOKENS = 3400;
 
 /**
  * Known template headers — derived from each template's `defaultHeaders`
@@ -161,6 +358,7 @@ const TOOL_DECLARATIONS = [{
       required: ['query'],
     },
   }, {
+    name: 'update_sheet',
     description: 'Update an existing Google Sheet. Supports two operations: ' +
       '"append_rows" adds new rows at the bottom, "update_cells" changes specific cells. ' +
       'Use read_sheet first to see the current data and column order before updating.',
@@ -731,6 +929,50 @@ function _persistConversation() {
   storage.setAgentConversation(_messages);
 }
 
+/**
+ * Build a model request once so we can short-circuit before any network call.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {string} userMessage
+ * @returns {Promise<{model:string, url:string, contents:Array, body:Object}>}
+ */
+async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const baseUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  let plannedUserText = _buildPlannedUserMessage(userMessage);
+
+  if (_shouldUsePlannerRound(userMessage)) {
+    try {
+      const microBrief = await _fetchPlannerMicroBrief(apiKey, keyIdx, userMessage);
+      if (microBrief) {
+        plannedUserText = _compactContextText(
+          `Planner brief: ${microBrief} User request: ${_compactContextText(userMessage, MAX_USER_MESSAGE_CHARS)}`,
+          MAX_PLANNED_USER_MESSAGE_CHARS
+        );
+      }
+    } catch {
+      // Deterministic planner brief already exists, so continue without failing the main request.
+    }
+  }
+
+  const contents = _buildContents(plannedUserText);
+  const body = {
+    contents,
+    tools: TOOL_DECLARATIONS,
+    systemInstruction: {
+      parts: [{ text: _getSystemPrompt() }],
+    },
+    generationConfig: {
+      temperature: 0.4,
+      topP: 0.9,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  _assertRequestWithinBudget(body, 'This request');
+  return { model, url: baseUrl, contents, body };
+}
+
 function _clearConversation() {
   _messages = [];
   _persistConversation();
@@ -764,6 +1006,19 @@ async function _sendMessage(text) {
   // Add user message
   _messages.push({ role: 'user', content: userText });
   _chatBody.appendChild(_buildMessage({ role: 'user', content: userText }));
+
+  let preparedRequest;
+  try {
+    preparedRequest = await _prepareModelRequest(keyEntry.key, keyEntry.idx, userText);
+  } catch (err) {
+    const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
+    _messages.push(errorMsg);
+    _chatBody.appendChild(_buildMessage(errorMsg));
+    _chatBody.scrollTop = _chatBody.scrollHeight;
+    _persistConversation();
+    showToast('AI error: ' + err.message, 'error');
+    return;
+  }
 
   // Clear input
   const input = _container.querySelector('.agent-input');
@@ -835,7 +1090,7 @@ async function _sendMessage(text) {
     const response = await _streamCallGemini(
       keyEntry.key,
       keyEntry.idx,
-      userText,
+      preparedRequest,
       (chunk) => {
         // Remove typing dots on first chunk
         if (!dotsRemoved) {
@@ -899,31 +1154,17 @@ async function _sendMessage(text) {
  * @returns {Promise<string>}
  */
 async function _callGemini(apiKey, keyIdx, userMessage) {
-  const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
-
-  // Build conversation contents with context trimming
-  const contents = _buildContents(userMessage);
-
-  const body = {
-    contents,
-    tools: TOOL_DECLARATIONS,
-    systemInstruction: {
-      parts: [{ text: _getSystemPrompt() }],
-    },
-    generationConfig: {
-      temperature: 0.4,
-      topP: 0.9,
-      maxOutputTokens: 8192,
-    },
-  };
+  const request = typeof userMessage === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
+    : userMessage;
+  const { url, contents, body } = request;
 
   const data = await _fetchGemini(url, body, keyIdx);
   storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
   if (!candidate?.content?.parts?.length) {
-    throw new Error('No response from AI');
+    throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
   }
 
   // Check for function call in response
@@ -947,23 +1188,11 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
  * @returns {Promise<string>}
  */
 async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
-  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const request = typeof userMessage === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
+    : userMessage;
+  const { model, contents, body } = request;
   const streamUrl = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
-
-  const contents = _buildContents(userMessage);
-
-  const body = {
-    contents,
-    tools: TOOL_DECLARATIONS,
-    systemInstruction: {
-      parts: [{ text: _getSystemPrompt() }],
-    },
-    generationConfig: {
-      temperature: 0.4,
-      topP: 0.9,
-      maxOutputTokens: 8192,
-    },
-  };
 
   let res;
   try {
@@ -976,12 +1205,12 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
   } catch (err) {
     if (err.name === 'AbortError') throw err;
     // Streaming failed (likely proxy blocking SSE) — fall back to buffered
-    return _callGemini(apiKey, keyIdx, userMessage);
+    return _callGemini(apiKey, keyIdx, request);
   }
 
   // Non-200 — fall back to buffered endpoint for proper error handling
   if (!res.ok) {
-    return _callGemini(apiKey, keyIdx, userMessage);
+    return _callGemini(apiKey, keyIdx, request);
   }
 
   storage.recordKeyUsage(keyIdx);
@@ -1042,7 +1271,7 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
   }
 
   if (!accumulated) {
-    throw new Error('No response from AI');
+    throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
   }
 
   return accumulated;
@@ -1055,22 +1284,34 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
  */
 function _buildContents(userMessage) {
   const contents = [];
-  // Take recent messages, skipping the last (it's the just-added user msg)
+  const finalUserText = _compactContextText(userMessage, MAX_PLANNED_USER_MESSAGE_CHARS);
+  let remainingChars = Math.max(0, MAX_CONTEXT_CHARS - finalUserText.length);
   const history = _messages.slice(0, -1);
-  const trimmed = history.length > MAX_CONTEXT_MESSAGES
-    ? history.slice(-MAX_CONTEXT_MESSAGES)
-    : history;
+  const selected = [];
 
-  for (const msg of trimmed) {
-    contents.push({
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (selected.length >= MAX_CONTEXT_MESSAGES) break;
+    if (remainingChars <= 0) break;
+
+    const msg = history[i];
+    const maxChars = Math.min(
+      remainingChars,
+      msg.role === 'user' ? MAX_USER_MESSAGE_CHARS : MAX_ASSISTANT_MESSAGE_CHARS
+    );
+    const text = _compactContextText(msg.content, maxChars);
+    if (!text) continue;
+
+    selected.unshift({
       role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
+      parts: [{ text }],
     });
+    remainingChars -= text.length;
   }
 
+  contents.push(...selected);
   contents.push({
     role: 'user',
-    parts: [{ text: userMessage }],
+    parts: [{ text: finalUserText }],
   });
 
   return contents;
@@ -1155,7 +1396,7 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
       }
       return `✅ Tool ${name} completed successfully.`;
     }
-    throw new Error('No response from AI after tool execution');
+    throw new Error('No response from AI after tool execution. Try again, or clear older chat messages to reduce context size.');
   }
 
   return candidate.content.parts.map(p => p.text || '').join('');
