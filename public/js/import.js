@@ -170,6 +170,17 @@ const ROLE_LABELS = {
   'knowledge.updated': 'Last Updated Date',
   'knowledge.status': 'Status (Draft, Published, In Review, Archived)',
   'knowledge.source': 'Source URL / Reference',
+  // Notification
+  'notification.title': 'Title / Alert headline',
+  'notification.message': 'Message / Alert body text',
+  'notification.type': 'Type (alert, warning, info, success)',
+  'notification.status': 'Status (Active, Read, Dismissed)',
+  'notification.icon': 'Icon / Emoji',
+  'notification.priority': 'Priority (high, medium, low)',
+  'notification.created': 'Created / Timestamp',
+  'notification.expires': 'Expires / Expiry date',
+  'notification.source': 'Source / Origin system',
+  'notification.sheet': 'Sheet / Related sheet ID',
 };
 
 /**
