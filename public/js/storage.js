@@ -311,3 +311,22 @@ export function setNotifSheetId(id) {
     localStorage.removeItem('waymark_notif_sheet_id');
   }
 }
+
+export function getNotificationRules(sheetId) {
+  const all = get('notification_rules') || {};
+  return all[sheetId] || [];
+}
+
+export function setNotificationRules(sheetId, rules) {
+  const all = get('notification_rules') || {};
+  if (rules && rules.length > 0) {
+    all[sheetId] = rules;
+  } else {
+    delete all[sheetId];
+  }
+  set('notification_rules', all);
+}
+
+export function getAllNotificationRules() {
+  return get('notification_rules') || {};
+}

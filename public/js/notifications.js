@@ -77,8 +77,9 @@ export function init(topBarRight) {
  * @param {string} templateKey — detected template key (e.g. 'kanban', 'budget')
  * @param {string[][]} rows — data rows (header excluded)
  * @param {Object} cols — column mapping from template.columns()
+ * @param {string[]} [headers] — raw header strings from the sheet
  */
-export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
+export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols, headers) {
   const newAlerts = [];
   const rules = { ...DEFAULT_RULES, ...storage.getNotificationSettings() };
 
@@ -88,6 +89,11 @@ export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols) {
     if (rules.budgetOverspend) _checkBudget(sheetId, sheetTitle, rows, cols, newAlerts);
   } else if (templateKey === 'checklist') {
     if (rules.checklistOverdue) _checkChecklist(sheetId, sheetTitle, rows, cols, newAlerts);
+  }
+
+  // Evaluate user-defined custom rules for this sheet
+  if (headers) {
+    _checkCustomRules(sheetId, sheetTitle, rows, headers, newAlerts);
   }
 
   if (newAlerts.length === 0) return;
@@ -482,6 +488,22 @@ function _buildSheetSection() {
   ]);
 }
 
+function _buildCustomRulesSection() {
+  const allRules = storage.getAllNotificationRules();
+  const sheetCount = Object.keys(allRules).length;
+  const totalRules = Object.values(allRules).reduce((sum, arr) => sum + arr.length, 0);
+
+  return el('div', { className: 'notif-custom-rules-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Custom Notification Rules']),
+    el('div', { className: 'notif-sheet-desc' }, [
+      totalRules > 0
+        ? `${totalRules} rule${totalRules > 1 ? 's' : ''} configured across ${sheetCount} sheet${sheetCount > 1 ? 's' : ''}. `
+        : 'No custom rules configured yet. ',
+      'Open any sheet and use the overflow menu (⋮) → "Notification rules" to configure per-sheet conditional alerts.',
+    ]),
+  ]);
+}
+
 function _showSettings() {
   const existing = document.getElementById('notif-settings-modal');
   if (existing) existing.remove();
@@ -551,6 +573,7 @@ function _showSettings() {
           className: 'notif-settings-link',
         }, ['Learn about Google Sheets email notifications →']),
       ]),
+      _buildCustomRulesSection(),
       _buildSheetSection(),
     ]),
     el('div', { className: 'modal-footer' }, [saveBtn]),
@@ -562,6 +585,249 @@ function _showSettings() {
     on: {
       click: (e) => { if (e.target === overlay) overlay.remove(); },
     },
+  }, [modal]);
+
+  document.body.appendChild(overlay);
+}
+
+/* ---------- Custom Rule Operators ---------- */
+
+const OPERATORS = {
+  equals:        { label: 'equals',           fn: (cell, val) => cell.toLowerCase() === val.toLowerCase() },
+  not_equals:    { label: 'does not equal',   fn: (cell, val) => cell.toLowerCase() !== val.toLowerCase() },
+  contains:      { label: 'contains',         fn: (cell, val) => cell.toLowerCase().includes(val.toLowerCase()) },
+  not_contains:  { label: 'does not contain', fn: (cell, val) => !cell.toLowerCase().includes(val.toLowerCase()) },
+  greater_than:  { label: 'greater than',     fn: (cell, val) => parseFloat(cell) > parseFloat(val) },
+  less_than:     { label: 'less than',        fn: (cell, val) => parseFloat(cell) < parseFloat(val) },
+  before_today:  { label: 'is before today',  fn: (cell) => { const d = cell.slice(0, 10); return d && d < new Date().toISOString().slice(0, 10); } },
+  after_today:   { label: 'is after today',   fn: (cell) => { const d = cell.slice(0, 10); return d && d > new Date().toISOString().slice(0, 10); } },
+  is_empty:      { label: 'is empty',         fn: (cell) => !cell.trim() },
+  is_not_empty:  { label: 'is not empty',     fn: (cell) => !!cell.trim() },
+};
+
+/** Operators that don't need a value input */
+const NO_VALUE_OPS = new Set(['before_today', 'after_today', 'is_empty', 'is_not_empty']);
+
+/* ---------- Custom Rule Evaluation ---------- */
+
+function _checkCustomRules(sheetId, sheetTitle, rows, headers, alerts) {
+  const rules = storage.getNotificationRules(sheetId);
+  if (!rules || rules.length === 0) return;
+
+  const lowerHeaders = headers.map(h => (h || '').toLowerCase().trim());
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    const colIdx = lowerHeaders.indexOf(rule.column.toLowerCase().trim());
+    if (colIdx < 0) continue;
+
+    const op = OPERATORS[rule.operator];
+    if (!op) continue;
+
+    let matchCount = 0;
+    for (const row of rows) {
+      const cell = (row[colIdx] || '').toString();
+      if (op.fn(cell, rule.value || '')) matchCount++;
+    }
+
+    if (matchCount > 0) {
+      const msg = (rule.message || `${matchCount} row(s) match "${rule.column} ${op.label}${NO_VALUE_OPS.has(rule.operator) ? '' : ' ' + rule.value}"`)
+        .replace('{count}', String(matchCount))
+        .replace('{sheet}', sheetTitle);
+
+      alerts.push({
+        key: `custom-${sheetId}-${rule.id}-${today}`,
+        type: rule.notifType || 'info',
+        icon: rule.notifType === 'alert' ? '🔴' : rule.notifType === 'warning' ? '⚠️' : rule.notifType === 'success' ? '✅' : '🔔',
+        title: rule.name || 'Custom Rule',
+        message: msg,
+        source: 'Custom Rule',
+        sheetId,
+        timestamp: new Date().toISOString(),
+        read: false,
+        priority: rule.notifType === 'alert' ? 'high' : 'medium',
+      });
+    }
+  }
+}
+
+/* ---------- Rule Builder Modal ---------- */
+
+/**
+ * Show the notification rule builder for a specific sheet.
+ * @param {string} sheetId
+ * @param {string} sheetTitle
+ * @param {string[]} headers — raw header strings from the sheet
+ */
+export function showRuleBuilder(sheetId, sheetTitle, headers) {
+  const existing = document.getElementById('notif-rule-builder-modal');
+  if (existing) existing.remove();
+
+  let rules = storage.getNotificationRules(sheetId).map(r => ({ ...r }));
+
+  function _save() {
+    // Filter out completely empty rules
+    const valid = rules.filter(r => r.column && r.operator);
+    storage.setNotificationRules(sheetId, valid);
+    overlay.remove();
+
+    import('./ui.js').then(ui => ui.showToast(
+      valid.length ? `${valid.length} notification rule${valid.length > 1 ? 's' : ''} saved` : 'All rules cleared',
+      'success',
+    ));
+  }
+
+  function _buildRuleRow(rule, index) {
+    const needsValue = !NO_VALUE_OPS.has(rule.operator);
+
+    // Column select
+    const colSelect = el('select', { className: 'notif-rule-col' }, [
+      el('option', { value: '' }, ['— Column —']),
+      ...headers.filter(h => h && h.trim()).map(h =>
+        el('option', { value: h, ...(h === rule.column ? { selected: 'selected' } : {}) }, [h])
+      ),
+    ]);
+    colSelect.addEventListener('change', () => { rule.column = colSelect.value; });
+
+    // Operator select
+    const opSelect = el('select', { className: 'notif-rule-op' }, [
+      el('option', { value: '' }, ['— Condition —']),
+      ...Object.entries(OPERATORS).map(([key, meta]) =>
+        el('option', { value: key, ...(key === rule.operator ? { selected: 'selected' } : {}) }, [meta.label])
+      ),
+    ]);
+
+    // Value input
+    const valInput = el('input', {
+      type: 'text',
+      className: 'notif-rule-val',
+      placeholder: 'Value…',
+      value: rule.value || '',
+    });
+    if (!needsValue) valInput.style.display = 'none';
+    valInput.addEventListener('input', () => { rule.value = valInput.value; });
+
+    opSelect.addEventListener('change', () => {
+      rule.operator = opSelect.value;
+      valInput.style.display = NO_VALUE_OPS.has(opSelect.value) ? 'none' : '';
+    });
+
+    // Notification type select
+    const typeSelect = el('select', { className: 'notif-rule-type' }, [
+      el('option', { value: 'info', ...(rule.notifType === 'info' || !rule.notifType ? { selected: 'selected' } : {}) }, ['ℹ️ Info']),
+      el('option', { value: 'warning', ...(rule.notifType === 'warning' ? { selected: 'selected' } : {}) }, ['⚠️ Warning']),
+      el('option', { value: 'alert', ...(rule.notifType === 'alert' ? { selected: 'selected' } : {}) }, ['🔴 Alert']),
+      el('option', { value: 'success', ...(rule.notifType === 'success' ? { selected: 'selected' } : {}) }, ['✅ Success']),
+    ]);
+    typeSelect.addEventListener('change', () => { rule.notifType = typeSelect.value; });
+
+    // Message input
+    const msgInput = el('input', {
+      type: 'text',
+      className: 'notif-rule-msg',
+      placeholder: 'Notification message… ({count} = matches, {sheet} = title)',
+      value: rule.message || '',
+    });
+    msgInput.addEventListener('input', () => { rule.message = msgInput.value; });
+
+    // Enabled toggle
+    const enabledCb = el('input', {
+      type: 'checkbox',
+      className: 'notif-rule-enabled',
+      ...(rule.enabled !== false ? { checked: 'checked' } : {}),
+    });
+    enabledCb.addEventListener('change', () => { rule.enabled = enabledCb.checked; });
+
+    // Delete button
+    const deleteBtn = el('button', {
+      className: 'notif-rule-delete',
+      title: 'Remove rule',
+      on: {
+        click: () => {
+          rules.splice(index, 1);
+          _renderRules();
+        },
+      },
+    }, ['✕']);
+
+    return el('div', { className: 'notif-rule-row' }, [
+      el('div', { className: 'notif-rule-condition' }, [
+        enabledCb,
+        el('span', { className: 'notif-rule-if' }, ['IF']),
+        colSelect,
+        opSelect,
+        valInput,
+      ]),
+      el('div', { className: 'notif-rule-action' }, [
+        el('span', { className: 'notif-rule-then' }, ['THEN']),
+        typeSelect,
+        msgInput,
+        deleteBtn,
+      ]),
+    ]);
+  }
+
+  const rulesContainer = el('div', { className: 'notif-rules-list' });
+
+  function _renderRules() {
+    rulesContainer.innerHTML = '';
+    if (rules.length === 0) {
+      rulesContainer.appendChild(el('div', { className: 'notif-rules-empty' }, [
+        'No rules configured. Add a rule to get notified when conditions are met in this sheet.',
+      ]));
+    }
+    rules.forEach((rule, i) => rulesContainer.appendChild(_buildRuleRow(rule, i)));
+  }
+
+  _renderRules();
+
+  const addBtn = el('button', {
+    className: 'notif-rule-add',
+    on: {
+      click: () => {
+        rules.push({
+          id: Date.now().toString(36),
+          column: '',
+          operator: '',
+          value: '',
+          notifType: 'info',
+          message: '',
+          enabled: true,
+        });
+        _renderRules();
+      },
+    },
+  }, ['+ Add Rule']);
+
+  const saveBtn = el('button', { className: 'notif-settings-save', on: { click: _save } }, ['Save Rules']);
+  const closeBtn = el('button', { className: 'btn-icon notif-settings-close', on: { click: () => overlay.remove() } }, ['✕']);
+
+  // Count of active rules
+  const activeCount = rules.filter(r => r.enabled !== false && r.column && r.operator).length;
+  const subtitle = el('p', { className: 'notif-rule-subtitle' }, [
+    `Configure conditional notifications for `,
+    el('strong', {}, [sheetTitle || 'this sheet']),
+    '. Rules evaluate each time you open the sheet and write matching alerts to your notification sheet.',
+  ]);
+
+  const modal = el('div', { className: 'modal notif-rule-builder' }, [
+    el('div', { className: 'modal-header' }, [
+      el('h3', {}, ['🔔 Notification Rules']),
+      closeBtn,
+    ]),
+    el('div', { className: 'modal-body' }, [
+      subtitle,
+      rulesContainer,
+      addBtn,
+    ]),
+    el('div', { className: 'modal-footer' }, [saveBtn]),
+  ]);
+
+  const overlay = el('div', {
+    id: 'notif-rule-builder-modal',
+    className: 'modal-overlay',
+    on: { click: (e) => { if (e.target === overlay) overlay.remove(); } },
   }, [modal]);
 
   document.body.appendChild(overlay);

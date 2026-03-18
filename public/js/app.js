@@ -190,8 +190,8 @@ async function boot() {
 
   // Evaluate notifications when a sheet is rendered
   document.addEventListener('waymark:sheet-rendered', (e) => {
-    const { sheetId, title, templateKey, rows, cols } = e.detail;
-    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols);
+    const { sheetId, title, templateKey, rows, cols, headers } = e.detail;
+    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols, headers);
   });
 
   // Persist sidebar state from swipe/overlay events
