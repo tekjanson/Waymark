@@ -12,6 +12,8 @@
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
        node scripts/update-workboard.js <command> [args...]
 
+   Set WAYMARK_WORKBOARD_ID to override the default board.
+
    Commands:
      claim <row>
        Set stage to "In Progress" and assignee to "AI" on a task row.
@@ -38,7 +40,7 @@
      node scripts/update-workboard.js note 263 "Branch: feature/foo | Files: a.js | +50 LOC"
    ============================================================ */
 
-const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
 const SHEET_ID       = 1342465339;  // numeric Sheet1 gid for batchUpdate
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 

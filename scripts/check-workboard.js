@@ -11,6 +11,7 @@
 
    Usage:
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/check-workboard.js
+     WAYMARK_WORKBOARD_ID=<spreadsheet-id> to override the default board
 
    Output (stdout, single line JSON):
      {"todo":[],"inProgress":[],"qa":0,"done":73}
@@ -20,7 +21,7 @@
      1 = error (message on stderr)
    ============================================================ */
 
-const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
 const RANGE          = 'Sheet1!A1:I500';
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
