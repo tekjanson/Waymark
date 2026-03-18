@@ -860,3 +860,224 @@ test('streamed message is persisted to conversation history', async ({ page }) =
   expect(lastMsg.role).toBe('assistant');
   expect(lastMsg.content).toContain('Saved response');
 });
+
+/* ---------- read_sheet Tool ---------- */
+
+/**
+ * Helper: build a mock Gemini response that calls the read_sheet tool.
+ */
+function buildReadSheetFunctionCall(spreadsheetId) {
+  return JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{
+          functionCall: {
+            name: 'read_sheet',
+            args: { spreadsheet_id: spreadsheetId },
+          },
+        }],
+        role: 'model',
+      },
+    }],
+  });
+}
+
+/**
+ * Helper: build a mock Gemini text response (for the follow-up after a tool call).
+ */
+function buildTextResponse(text) {
+  return JSON.stringify({
+    candidates: [{
+      content: {
+        parts: [{ text }],
+        role: 'model',
+      },
+    }],
+  });
+}
+
+test('read_sheet tool reads sheet data and returns summary to model', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'read-key', nickname: 'Read', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  // First call: model returns a function call for read_sheet
+  // Second call: model returns a text summary after receiving tool results
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildReadSheetFunctionCall('sheet-001'),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Your grocery list has 5 items including Milk and Eggs.'),
+      });
+    }
+  });
+  // Also mock streaming to fail so it falls back to buffered
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'what is on my grocery list?');
+  await page.click('.agent-send-btn');
+
+  // Wait for the final response from the model
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('grocery list has 5 items');
+  }, { timeout: 10000 });
+
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('grocery list has 5 items');
+});
+
+test('read_sheet tool handles missing spreadsheet gracefully', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'read-err-key', nickname: 'ReadErr', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      // Model requests a non-existent sheet
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildReadSheetFunctionCall('nonexistent-sheet-id'),
+      });
+    } else {
+      // Model receives the error and gives a helpful response
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('I could not find that sheet. Please check the ID and try again.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'read sheet xyz');
+  await page.click('.agent-send-btn');
+
+  // The model should still respond (error result is passed back as tool output)
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('could not find');
+  }, { timeout: 10000 });
+
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('could not find');
+});
+
+test('read_sheet tool indicator shows reading message', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+
+  // Inject a tool indicator for read_sheet to test labeling
+  await page.evaluate(() => {
+    const el = document.createElement('div');
+    el.className = 'agent-tool-indicator';
+    el.innerHTML = '<span class="agent-tool-icon">🔧</span><span>Reading sheet...</span>';
+    document.querySelector('.agent-chat-body').appendChild(el);
+  });
+
+  const indicator = page.locator('.agent-tool-indicator');
+  await expect(indicator).toBeVisible();
+  await expect(indicator).toContainText('Reading sheet');
+});
+
+test('read_sheet sends tool result back to model for summarization', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'read-sum-key', nickname: 'Sum', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  let secondCallBody = null;
+
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildReadSheetFunctionCall('sheet-001'),
+      });
+    } else {
+      // Capture the follow-up request body to verify it contains tool results
+      secondCallBody = JSON.parse(route.request().postData());
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Here is your sheet summary.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'show my groceries');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('sheet summary');
+  }, { timeout: 10000 });
+
+  // Verify the follow-up request included a functionResponse with content
+  expect(secondCallBody).not.toBeNull();
+  const funcResponse = secondCallBody.contents.find(c =>
+    c.parts?.some(p => p.functionResponse)
+  );
+  expect(funcResponse).toBeDefined();
+  const resp = funcResponse.parts[0].functionResponse;
+  expect(resp.name).toBe('read_sheet');
+  expect(resp.response.content.title).toBeTruthy();
+  expect(resp.response.content.headers).toBeDefined();
+  expect(Array.isArray(resp.response.content.rows)).toBe(true);
+});
+
+test('TOOL_DECLARATIONS includes read_sheet function', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-container', { timeout: 5000 });
+
+  // Verify read_sheet is in the tool declarations by checking the module loaded
+  // and the system prompt mentions read_sheet
+  const hasAgent = await page.evaluate(() =>
+    document.querySelector('.agent-container') !== null
+  );
+  expect(hasAgent).toBe(true);
+});

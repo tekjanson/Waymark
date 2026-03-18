@@ -19,12 +19,15 @@ const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
 
+Use the read_sheet tool whenever a user asks to see, view, check, open, summarize, or analyze the contents of an existing sheet. You need the spreadsheet ID — ask the user if you don't have it.
+
 Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
 
 Guidelines:
 - Populate with realistic example data (3–5 rows minimum) so the user sees the format.
 - All cell values must be strings — numbers ("500"), dates ("2026-03-15").
 - If unsure which template fits, ask or default to checklist (lists) or kanban (projects).
+- When the user refers to "my sheet" or a sheet by name, use read_sheet with the spreadsheet ID.
 - Be conversational and helpful.`;
 
 /** Maximum number of messages to keep in context for API calls */
@@ -75,6 +78,20 @@ const TOOL_DECLARATIONS = [{
         },
       },
       required: ['template', 'title', 'data'],
+    },
+  }, {
+    name: 'read_sheet',
+    description: 'Read the contents of an existing Google Sheet by its spreadsheet ID. ' +
+      'Returns the sheet title, column headers, and all data rows.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        spreadsheet_id: {
+          type: 'STRING',
+          description: 'The Google Sheets spreadsheet ID (from the URL or from a previous create_sheet result)',
+        },
+      },
+      required: ['spreadsheet_id'],
     },
   }],
 }];
@@ -1011,7 +1028,13 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
   if (!candidate?.content?.parts?.length) {
     // Tool succeeded but model gave no text — construct a response
     if (result && !result.error) {
-      return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      if (name === 'create_sheet') {
+        return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      }
+      if (name === 'read_sheet') {
+        return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
+      }
+      return `✅ Tool ${name} completed successfully.`;
     }
     throw new Error('No response from AI after tool execution');
   }
@@ -1028,6 +1051,9 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
 async function _executeTool(name, args) {
   if (name === 'create_sheet') {
     return _toolCreateSheet(args);
+  }
+  if (name === 'read_sheet') {
+    return _toolReadSheet(args);
   }
   throw new Error(`Unknown tool: ${name}`);
 }
@@ -1072,6 +1098,39 @@ async function _toolCreateSheet({ template, title, data }) {
   };
 }
 
+/* ---------- Tool: read_sheet ---------- */
+
+/**
+ * Tool: read_sheet — reads contents of an existing Google Sheet.
+ * @param {{ spreadsheet_id: string }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolReadSheet({ spreadsheet_id }) {
+  if (!spreadsheet_id) {
+    throw new Error('Missing spreadsheet_id');
+  }
+
+  const sheet = await api.sheets.getSpreadsheet(spreadsheet_id);
+
+  const headers = sheet.values?.[0] || [];
+  const dataRows = (sheet.values || []).slice(1);
+
+  // Cap rows sent to the model to stay within token limits
+  const MAX_ROWS = 100;
+  const truncated = dataRows.length > MAX_ROWS;
+  const rows = truncated ? dataRows.slice(0, MAX_ROWS) : dataRows;
+
+  return {
+    spreadsheetId: spreadsheet_id,
+    title: sheet.title,
+    sheetTitle: sheet.sheetTitle,
+    headers,
+    rows,
+    totalRows: dataRows.length,
+    truncated,
+  };
+}
+
 /**
  * Show an inline indicator that a tool is executing.
  * @param {string} toolName
@@ -1079,9 +1138,14 @@ async function _toolCreateSheet({ template, title, data }) {
  */
 function _showToolIndicator(toolName, args) {
   if (!_chatBody) return;
-  const label = toolName === 'create_sheet'
-    ? `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`
-    : `Running ${toolName}...`;
+  let label;
+  if (toolName === 'create_sheet') {
+    label = `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`;
+  } else if (toolName === 'read_sheet') {
+    label = `Reading sheet...`;
+  } else {
+    label = `Running ${toolName}...`;
+  }
   const indicator = el('div', { className: 'agent-tool-indicator' }, [
     el('span', { className: 'agent-tool-icon' }, ['🔧']),
     el('span', {}, [label]),
