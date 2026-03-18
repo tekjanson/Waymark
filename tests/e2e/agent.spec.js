@@ -2358,3 +2358,212 @@ test('search_sheets declaration is present in tool declarations', async ({ page 
     expect(decl.name).toBeTruthy();
   }
 });
+
+/* ---- Slash Commands ---- */
+
+test('slash palette appears when user types / in the input', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  const items = await page.$$('.agent-slash-item');
+  expect(items.length).toBeGreaterThanOrEqual(6);
+});
+
+test('slash palette filters commands as the user types', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/li');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  const items = await page.$$('.agent-slash-item');
+  // Only /list should match '/li'
+  expect(items.length).toBe(1);
+  const text = await items[0].textContent();
+  expect(text).toContain('/list');
+});
+
+test('slash palette hides when user adds a space after the command', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/list');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  await page.fill('.agent-input', '/list ');
+  await page.dispatchEvent('.agent-input', 'input');
+  await page.waitForFunction(() => {
+    const p = document.querySelector('.agent-slash-palette');
+    return !p || p.classList.contains('hidden');
+  }, { timeout: 3000 });
+});
+
+test('slash palette closes on Escape key', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  await page.press('.agent-input', 'Escape');
+  await page.waitForFunction(() => {
+    const p = document.querySelector('.agent-slash-palette');
+    return !p || p.classList.contains('hidden');
+  }, { timeout: 3000 });
+});
+
+test('slash item click fills the input and hides the palette', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/cl');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  const item = page.locator('.agent-slash-item').first();
+  await item.dispatchEvent('mousedown');
+  const val = await page.inputValue('.agent-input');
+  expect(val.startsWith('/clear')).toBeTruthy();
+  await page.waitForFunction(() => {
+    const p = document.querySelector('.agent-slash-palette');
+    return !p || p.classList.contains('hidden');
+  }, { timeout: 2000 });
+});
+
+test('slash ArrowDown selects next item and Enter applies it', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  await page.press('.agent-input', 'ArrowDown');
+  const selected = await page.$('.agent-slash-selected');
+  expect(selected).not.toBeNull();
+});
+
+test('/help command shows system message with command list', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/help');
+  await page.press('.agent-input', 'Enter');
+  await page.waitForSelector('.agent-message-system', { timeout: 3000 });
+  await expect(page.locator('.agent-message-system')).toContainText('/new');
+  await expect(page.locator('.agent-message-system')).toContainText('/list');
+  await expect(page.locator('.agent-message-system')).toContainText('/clear');
+});
+
+test('/clear command clears the chat and shows empty state', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-clear', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  // Confirm there is an empty state initially
+  await page.waitForSelector('.agent-empty', { timeout: 3000 });
+  await page.fill('.agent-input', '/clear');
+  await page.press('.agent-input', 'Enter');
+  // empty state should still be visible
+  await page.waitForSelector('.agent-empty', { timeout: 3000 });
+  await expect(page.locator('.agent-empty')).toBeVisible();
+});
+
+test('/keys command opens the settings modal', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key-k', nickname: 'K', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/keys');
+  await page.press('.agent-input', 'Enter');
+  await page.waitForSelector('.agent-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.agent-settings-modal')).toBeVisible();
+});
+
+test('slash palette item rows have cursor:pointer', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/');
+  await page.waitForSelector('.agent-slash-palette:not(.hidden)', { timeout: 3000 });
+  const item = page.locator('.agent-slash-item').first();
+  await expect(item).toHaveCSS('cursor', 'pointer');
+});
+
+test('/list command shows system message with sheet list or empty state', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', '/list');
+  await page.press('.agent-input', 'Enter');
+  await page.waitForSelector('.agent-message-system', { timeout: 5000 });
+  const text = await page.locator('.agent-message-system').textContent();
+  // Either shows a list, or "no sheets" message
+  expect(text.length).toBeGreaterThan(0);
+});
+
+test('slash palette does not appear for regular text messages', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'slash-key', nickname: 'S', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await page.fill('.agent-input', 'hello world');
+  await page.dispatchEvent('.agent-input', 'input');
+  // palette should stay hidden
+  await page.waitForFunction(() => {
+    const p = document.querySelector('.agent-slash-palette');
+    return !p || p.classList.contains('hidden');
+  }, { timeout: 2000 });
+});

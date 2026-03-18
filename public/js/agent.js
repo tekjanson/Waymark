@@ -736,21 +736,209 @@ function _buildSuggestion(text) {
   }, [text]);
 }
 
+/* ---------- Slash Commands ---------- */
+
+/**
+ * Execute a slash command. Injected as a system message so no API call is
+ * needed. Returns the chat feedback text or null if command is unknown.
+ * @param {string} name  - e.g. 'new', 'list', 'open', 'clear', 'keys', 'help'
+ * @param {string[]} args
+ * @returns {Promise<string | null>}
+ */
+async function _runSlashCommand(name, args) {
+  if (name === 'clear') {
+    _clearConversation();
+    return null;
+  }
+
+  if (name === 'keys') {
+    _showSettings();
+    return null;
+  }
+
+  if (name === 'help') {
+    return [
+      '**Slash commands** — instant actions, no API call needed:',
+      '/new [template] [title] — Create a blank sheet (template optional)',
+      '/list — List all your Google Drive sheets',
+      '/open [name] — Navigate to the first sheet matching the name',
+      '/clear — Clear this conversation',
+      '/keys — Open Settings to manage your API keys',
+      '/help — Show this help',
+    ].join('\n');
+  }
+
+  if (name === 'list') {
+    try {
+      const sheets = await api.drive.getAllSheets();
+      if (!sheets.length) return 'You have no sheets in Drive yet.';
+      const lines = sheets.slice(0, 30).map(s =>
+        `[${s.name}](#/sheet/${s.id})`
+      );
+      return `**Your sheets** (${sheets.length} total):\n${lines.join('\n')}`;
+    } catch {
+      return '⚠️ Could not load sheets. Check your connection and try again.';
+    }
+  }
+
+  if (name === 'open') {
+    const query = args.join(' ').toLowerCase().trim();
+    if (!query) return '⚠️ Usage: /open [sheet name]';
+    try {
+      const sheets = await api.drive.getAllSheets();
+      const match = sheets.find(s => s.name.toLowerCase().includes(query));
+      if (!match) return `⚠️ No sheet found matching "${args.join(' ')}".`;
+      // Navigate to the matched sheet
+      window.location.hash = `#/sheet/${match.id}`;
+      return null;
+    } catch {
+      return '⚠️ Could not search sheets. Check your connection and try again.';
+    }
+  }
+
+  if (name === 'new') {
+    const template = args[0] || 'checklist';
+    const title = args.slice(1).join(' ') || `New ${template}`;
+    try {
+      // Pass a single blank placeholder row so _toolCreateSheet validation passes
+      const result = await _toolCreateSheet({ template, title, data: [['']] });
+      return `✅ Created **${result.title}**\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+    } catch (err) {
+      return `⚠️ Could not create sheet: ${err.message}`;
+    }
+  }
+
+  return null;
+}
+
+/** All registered slash commands with labels for the palette. */
+const SLASH_COMMANDS = [
+  { name: 'new', syntax: '/new [template] [title]', label: 'Create a blank sheet' },
+  { name: 'list', syntax: '/list', label: 'List all your Drive sheets' },
+  { name: 'open', syntax: '/open [name]', label: 'Navigate to a sheet by name' },
+  { name: 'clear', syntax: '/clear', label: 'Clear this conversation' },
+  { name: 'keys', syntax: '/keys', label: 'Open Settings to manage API keys' },
+  { name: 'help', syntax: '/help', label: 'Show all slash commands' },
+];
+
+/**
+ * Show a system message in the chat (no avatar, distinct styling).
+ * @param {string} text
+ */
+function _appendSystemMessage(text) {
+  const wrapper = el('div', { className: 'agent-message agent-message-system' });
+  const content = el('div', { className: 'agent-message-content' });
+  _renderMarkdown(content, text);
+  wrapper.appendChild(content);
+  _chatBody.appendChild(wrapper);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
 function _buildInputRow(hasKeys) {
+  let paletteVisible = false;
+  let selectedIdx = -1;
+  const palette = el('div', { className: 'agent-slash-palette hidden' });
+
+  function _hidePalette() {
+    palette.classList.add('hidden');
+    paletteVisible = false;
+    selectedIdx = -1;
+  }
+
+  function _updatePalette(query) {
+    const lowerQuery = query.slice(1).toLowerCase();
+    const matches = SLASH_COMMANDS.filter(cmd =>
+      cmd.name.startsWith(lowerQuery) || cmd.syntax.includes(lowerQuery)
+    );
+    palette.innerHTML = '';
+    if (!matches.length) {
+      _hidePalette();
+      return;
+    }
+    matches.forEach((cmd, i) => {
+      const item = el('div', {
+        className: 'agent-slash-item',
+        on: {
+          mousedown: (e) => {
+            e.preventDefault();
+            input.value = cmd.syntax + ' ';
+            input.focus();
+            _hidePalette();
+          },
+        },
+      }, [
+        el('span', { className: 'agent-slash-name' }, [cmd.syntax]),
+        el('span', { className: 'agent-slash-label' }, [cmd.label]),
+      ]);
+      if (i === selectedIdx) item.classList.add('agent-slash-selected');
+      palette.appendChild(item);
+    });
+    palette.classList.remove('hidden');
+    paletteVisible = true;
+    selectedIdx = -1;
+  }
+
+  function _selectInPalette(delta) {
+    const items = palette.querySelectorAll('.agent-slash-item');
+    if (!items.length) return;
+    selectedIdx = Math.max(0, Math.min(items.length - 1, selectedIdx + delta));
+    items.forEach((item, i) => {
+      item.classList.toggle('agent-slash-selected', i === selectedIdx);
+    });
+  }
+
+  function _applyPaletteSelection() {
+    const items = palette.querySelectorAll('.agent-slash-item');
+    if (selectedIdx < 0 || selectedIdx >= items.length) return false;
+    items[selectedIdx].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    return true;
+  }
+
   const inputAttrs = {
     className: 'agent-input',
-    placeholder: hasKeys ? 'Describe what you\'d like to create or organise...' : 'Configure API key in Settings first...',
+    placeholder: hasKeys ? 'Type / for commands or describe what you\'d like to create…' : 'Configure API key in Settings first...',
     rows: 1,
     on: {
-      keydown: (e) => {
+      keydown: async (e) => {
+        if (paletteVisible) {
+          if (e.key === 'ArrowDown') { e.preventDefault(); _selectInPalette(1); return; }
+          if (e.key === 'ArrowUp') { e.preventDefault(); _selectInPalette(-1); return; }
+          if (e.key === 'Escape') { e.preventDefault(); _hidePalette(); return; }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            if (_applyPaletteSelection()) { e.preventDefault(); return; }
+          }
+          if (e.key === 'Tab') { e.preventDefault(); _selectInPalette(1); return; }
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
-          _sendMessage(input.value);
+          const val = input.value.trim();
+          if (!val) return;
+          if (val.startsWith('/')) {
+            const [rawCmd, ...args] = val.slice(1).split(/\s+/);
+            const cmdName = rawCmd.toLowerCase();
+            input.value = '';
+            input.style.height = 'auto';
+            _hidePalette();
+            const feedback = await _runSlashCommand(cmdName, args);
+            if (feedback) _appendSystemMessage(feedback);
+          } else {
+            _sendMessage(val);
+          }
         }
       },
       input: () => {
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+        const val = input.value;
+        if (val.startsWith('/') && val.length > 0 && !val.includes(' ')) {
+          _updatePalette(val);
+        } else {
+          _hidePalette();
+        }
+      },
+      blur: () => {
+        // Delay so mousedown on palette item fires first
+        setTimeout(_hidePalette, 150);
       },
     },
   };
@@ -761,13 +949,30 @@ function _buildInputRow(hasKeys) {
   const sendAttrs = {
     className: 'agent-send-btn',
     title: 'Send message',
-    on: { click: () => _sendMessage(input.value) },
+    on: {
+      click: async () => {
+        const val = input.value.trim();
+        if (!val) return;
+        if (val.startsWith('/')) {
+          const [rawCmd, ...args] = val.slice(1).split(/\s+/);
+          const cmdName = rawCmd.toLowerCase();
+          input.value = '';
+          input.style.height = 'auto';
+          _hidePalette();
+          const feedback = await _runSlashCommand(cmdName, args);
+          if (feedback) _appendSystemMessage(feedback);
+        } else {
+          _sendMessage(val);
+        }
+      },
+    },
   };
   if (!hasKeys) sendAttrs.disabled = 'disabled';
 
   const sendBtn = el('button', sendAttrs, ['➤']);
 
-  return el('div', { className: 'agent-input-row' }, [input, sendBtn]);
+  const row = el('div', { className: 'agent-input-row' }, [palette, input, sendBtn]);
+  return row;
 }
 
 /* ---------- Message Rendering ---------- */
