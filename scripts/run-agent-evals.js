@@ -136,14 +136,17 @@ async function ensureServer() {
   return child;
 }
 
-async function waitForAgentResponse(page) {
-  await page.waitForFunction(() => {
+async function waitForAgentResponse(page, previousState) {
+  await page.waitForFunction((prev) => {
     const btn = document.querySelector('.agent-send-btn');
     const hasToolIndicator = !!document.querySelector('.agent-tool-indicator');
     const msgs = document.querySelectorAll('.agent-message-assistant');
     const last = msgs[msgs.length - 1];
-    return btn && btn.textContent !== '⏹' && !hasToolIndicator && last && last.textContent.trim().length > 0;
-  }, { timeout: RESPONSE_TIMEOUT_MS });
+    const lastText = last ? last.textContent.trim() : '';
+    const hasNewAssistantResponse = msgs.length > prev.count
+      || (msgs.length === prev.count && lastText && lastText !== prev.lastText);
+    return btn && btn.textContent !== '⏹' && !hasToolIndicator && hasNewAssistantResponse && lastText.length > 0;
+  }, previousState, { timeout: RESPONSE_TIMEOUT_MS });
 }
 
 function sleep(ms) {
@@ -238,9 +241,17 @@ function writeSummary(summary) {
 }
 
 async function sendPrompt(page, prompt) {
+  const previousState = await page.evaluate(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return {
+      count: msgs.length,
+      lastText: last ? last.textContent.trim() : '',
+    };
+  });
   await page.fill('.agent-input', prompt);
   await page.click('.agent-send-btn');
-  await waitForAgentResponse(page);
+  await waitForAgentResponse(page, previousState);
   return getLastAssistantText(page);
 }
 

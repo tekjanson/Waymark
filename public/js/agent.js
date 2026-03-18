@@ -49,6 +49,8 @@ Use the search_sheets tool to find sheets in the user's Drive by name. Use it wh
 
 Use the update_sheet tool to modify existing sheets. Use operation "append_rows" to add new rows, or "update_cells" to change specific cells. Always read_sheet first to understand the current column structure before updating.
 
+When a user asks to add, change, edit, append, remove, or update items in a sheet that was just created or recently referenced in the conversation, treat that as a follow-up edit request. Reuse the existing sheet via read_sheet and update_sheet. Do NOT create a duplicate sheet. Do NOT simply repeat your previous answer.
+
 Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
 
 Guidelines:
@@ -283,9 +285,14 @@ async function _fetchPlannerMicroBrief(apiKey, keyIdx, userText) {
 function _buildPlannedUserMessage(userText) {
   const compactUserText = _compactContextText(userText, MAX_USER_MESSAGE_CHARS);
   const plannerBrief = _buildPlannerBrief(compactUserText);
-  if (!plannerBrief) return compactUserText;
+  const recentSheetHint = _buildRecentSheetHint(compactUserText);
+  if (!plannerBrief && !recentSheetHint) return compactUserText;
   return _compactContextText(
-    `Planner brief: ${plannerBrief} User request: ${compactUserText}`,
+    [
+      plannerBrief ? `Planner brief: ${plannerBrief}` : '',
+      recentSheetHint,
+      `User request: ${compactUserText}`,
+    ].filter(Boolean).join(' '),
     MAX_PLANNED_USER_MESSAGE_CHARS
   );
 }
@@ -315,6 +322,27 @@ function _getRecentConversationSheets() {
   }
 
   return recent;
+}
+
+/**
+ * Build a compact hint for follow-up prompts that likely refer to a recently
+ * created or mentioned sheet.
+ * @param {string} userText
+ * @returns {string}
+ */
+function _buildRecentSheetHint(userText) {
+  const text = String(userText ?? '').trim();
+  if (!text) return '';
+
+  const looksLikeFollowUp = /\b(that|this|it|those|them)\b/i.test(text)
+    || /\b(add|update|change|edit|append|modify|remove)\b/i.test(text);
+  if (!looksLikeFollowUp) return '';
+
+  const recentSheets = _getRecentConversationSheets();
+  if (!recentSheets.length) return '';
+
+  const target = recentSheets[0];
+  return `Recent target hint: the most likely sheet is "${target.title}" (id: ${target.id}). This is a follow-up edit request, so use read_sheet and update_sheet for that existing sheet instead of creating a duplicate. Do not repeat the previous answer.`;
 }
 
 /**
@@ -1053,7 +1081,7 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
       parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
-      temperature: 0.4,
+      temperature: 0.2,
       topP: 0.9,
       maxOutputTokens: 8192,
     },
@@ -1335,10 +1363,10 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
         // Check for function call
         const fc = candidate.content.parts.find(p => p.functionCall);
         if (fc) {
-          // Abort the stream reader and delegate to tool handler
+          // Abort the stream reader and re-run via the buffered endpoint so we
+          // execute a complete function call rather than a partial streamed one.
           reader.cancel();
-          const bufferedUrl = _geminiUrl(model, 'generateContent');
-          return _handleToolCall(apiKey, keyIdx, bufferedUrl, contents, candidate.content, fc.functionCall);
+          return _callGemini(apiKey, keyIdx, request);
         }
 
         // Extract text chunks
@@ -1459,7 +1487,7 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
       parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
-      temperature: 0.4,
+      temperature: 0.2,
       topP: 0.9,
       maxOutputTokens: 8192,
     },
@@ -1482,8 +1510,9 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
     );
   }
 
-  if (!candidate?.content?.parts?.length) {
-    // Tool succeeded but model gave no text — construct a response
+  const finalText = candidate?.content?.parts?.map(p => p.text || '').join('').trim() || '';
+  if (!candidate?.content?.parts?.length || !finalText) {
+    // Tool succeeded but model gave no usable text — construct a response.
     if (result && !result.error) {
       if (name === 'create_sheet') {
         return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
@@ -1507,7 +1536,7 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
     throw new Error('No response from AI after tool execution. Try again, or clear older chat messages to reduce context size.');
   }
 
-  return candidate.content.parts.map(p => p.text || '').join('');
+  return finalText;
 }
 
 /**

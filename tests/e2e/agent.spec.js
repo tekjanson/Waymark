@@ -1080,6 +1080,67 @@ test('streaming fallback works when SSE endpoint returns error', async ({ page }
   }, { timeout: 10000 });
 });
 
+test('streamed tool calls fall back to buffered handling for complete execution', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'stream-tool-key', nickname: 'StreamTool', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let generateCallCount = 0;
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: [
+        'data: ' + JSON.stringify({
+          candidates: [{
+            content: {
+              role: 'model',
+              parts: [{ functionCall: { name: 'create_sheet', args: { template: 'check' } } }],
+            },
+          }],
+        }),
+        '',
+      ].join('\n'),
+    });
+  });
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    generateCallCount++;
+    if (generateCallCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('checklist', 'Streaming Tool Checklist', [
+          ['Pack bags', 'No', 'Friday'],
+          ['Charge phone', 'No', 'Thursday'],
+        ]),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Buffered tool handling worked.'),
+    });
+  });
+
+  await page.fill('.agent-input', 'Make me a checklist via tool call.');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Buffered tool handling worked');
+  }, { timeout: 10000 });
+
+  expect(generateCallCount).toBe(2);
+});
+
 test('typing dots show before first streaming chunk arrives', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
@@ -1258,6 +1319,62 @@ test('agent follows chained create_sheet tool calls before final response', asyn
 
   expect(callCount).toBe(3);
   await expect(page.locator('.agent-message-assistant').last()).toContainText('Created both sheets');
+});
+
+test('blank post-tool response falls back to a Waymark success message', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'blank-tool-key', nickname: 'BlankTool', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('checklist', 'Weekend Packing Checklist', [
+          ['Pack bags', 'No', 'Friday'],
+          ['Buy snacks', 'No', 'Thursday'],
+        ]),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{}],
+            role: 'model',
+          },
+        }],
+      }),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Make me a packing checklist.');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Created sheet');
+  }, { timeout: 10000 });
+
+  expect(callCount).toBe(2);
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('Open in Waymark');
+  await expect(page.locator('.agent-message-assistant').last()).toContainText('Weekend Packing Checklist');
 });
 
 test('read_sheet tool reads sheet data and returns summary to model', async ({ page }) => {
@@ -1829,6 +1946,51 @@ test('system prompt includes recent conversation sheet references for follow-up 
   expect(systemText).toContain('Weekly Grocery List - Family of 4');
   expect(systemText).toContain('created-sheet-123');
   expect(systemText).toContain('prefer update_sheet over creating a duplicate');
+});
+
+test('planned user message includes recent-sheet target hint for follow-up edits', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'planned-hint-key', nickname: 'PlannedHint', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      { role: 'user', content: 'Create a grocery checklist for this week.' },
+      { role: 'assistant', content: 'Created it here: [Weekly Grocery List - Family of 4](#/sheet/created-sheet-123).' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Updated the checklist.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Add apples and yogurt to that checklist.');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Updated the checklist');
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const finalPrompt = capturedBody.contents[capturedBody.contents.length - 1].parts[0].text;
+  expect(finalPrompt).toContain('Recent target hint:');
+  expect(finalPrompt).toContain('Weekly Grocery List - Family of 4');
+  expect(finalPrompt).toContain('created-sheet-123');
+  expect(finalPrompt).toContain('use read_sheet and update_sheet');
 });
 
 test('system prompt always includes base instructions alongside context', async ({ page }) => {
