@@ -21,6 +21,8 @@ Use the create_sheet tool whenever a user asks to create, build, set up, or orga
 
 Use the read_sheet tool whenever a user asks to see, view, check, open, summarize, or analyze the contents of an existing sheet. You need the spreadsheet ID — ask the user if you don't have it.
 
+Use the search_sheets tool to find sheets in the user's Drive by name. Use it when the user mentions a sheet you don't recognize from context, or asks "what sheets do I have?" for a more comprehensive list.
+
 Use the update_sheet tool to modify existing sheets. Use operation "append_rows" to add new rows, or "update_cells" to change specific cells. Always read_sheet first to understand the current column structure before updating.
 
 Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
@@ -144,7 +146,21 @@ const TOOL_DECLARATIONS = [{
       required: ['spreadsheet_id'],
     },
   }, {
-    name: 'update_sheet',
+    name: 'search_sheets',
+    description: 'Search the user\'s Google Drive for spreadsheets by name. ' +
+      'Returns matching sheets with their IDs, names, and folder locations. ' +
+      'Use this when the user refers to a sheet you don\'t have the ID for.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: {
+          type: 'STRING',
+          description: 'Search term to match against sheet names (case-insensitive substring match)',
+        },
+      },
+      required: ['query'],
+    },
+  }, {
     description: 'Update an existing Google Sheet. Supports two operations: ' +
       '"append_rows" adds new rows at the bottom, "update_cells" changes specific cells. ' +
       'Use read_sheet first to see the current data and column order before updating.',
@@ -1126,6 +1142,11 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
       if (name === 'read_sheet') {
         return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
       }
+      if (name === 'search_sheets') {
+        return result.results.length
+          ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".`
+          : `🔍 No sheets found matching "${result.query}".`;
+      }
       if (name === 'update_sheet') {
         if (result.operation === 'append_rows') {
           return `✅ Added ${result.rowsAdded} row(s) to "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
@@ -1152,6 +1173,9 @@ async function _executeTool(name, args) {
   }
   if (name === 'read_sheet') {
     return _toolReadSheet(args);
+  }
+  if (name === 'search_sheets') {
+    return _toolSearchSheets(args);
   }
   if (name === 'update_sheet') {
     return _toolUpdateSheet(args);
@@ -1233,6 +1257,31 @@ async function _toolReadSheet({ spreadsheet_id }) {
 }
 
 /* ---------- Tool: update_sheet ---------- */
+
+/**
+ * Tool: search_sheets — search user's Drive for spreadsheets by name.
+ * @param {{ query: string }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolSearchSheets({ query }) {
+  if (!query) {
+    throw new Error('Missing search query');
+  }
+
+  const allSheets = await api.drive.getAllSheets();
+  const lowerQuery = query.toLowerCase();
+  const matches = allSheets.filter(s => s.name.toLowerCase().includes(lowerQuery));
+
+  return {
+    query,
+    results: matches.slice(0, 20).map(s => ({
+      id: s.id,
+      name: s.name,
+      folder: s.folder || '',
+    })),
+    totalMatches: matches.length,
+  };
+}
 
 /**
  * Tool: update_sheet — modifies an existing Google Sheet.
@@ -1329,6 +1378,8 @@ function _showToolIndicator(toolName, args) {
     label = `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`;
   } else if (toolName === 'read_sheet') {
     label = `Reading sheet...`;
+  } else if (toolName === 'search_sheets') {
+    label = `Searching for sheets...`;
   } else if (toolName === 'update_sheet') {
     label = `Updating sheet...`;
   } else {
