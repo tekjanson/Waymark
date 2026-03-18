@@ -476,11 +476,72 @@ test('agent caps request history by message count and character budget', async (
   }, { timeout: 10000 });
 
   expect(capturedBody).not.toBeNull();
-  expect(capturedBody.contents.length).toBeLessThanOrEqual(9);
-  const historyChars = capturedBody.contents
-    .slice(0, -1)
+  expect(capturedBody.contents.length).toBeLessThanOrEqual(10);
+  expect(capturedBody.contents[0].parts[0].text).toContain('Earlier in this conversation:');
+  expect(capturedBody.generationConfig.maxOutputTokens).toBe(4096);
+  const recentHistory = capturedBody.contents.slice(1, -1);
+  expect(recentHistory.length).toBeLessThanOrEqual(8);
+  const historyChars = recentHistory
     .reduce((sum, item) => sum + (item.parts?.[0]?.text?.length || 0), 0);
   expect(historyChars).toBeLessThanOrEqual(3600);
+});
+
+test('older assistant turns are summarized ahead of the recent context window', async ({ page }) => {
+  await setupApp(page);
+
+  const messages = [
+    { role: 'user', content: 'OLD USER REQUEST alpha alpha alpha' },
+    { role: 'assistant', content: 'OLD ASSISTANT SUMMARY apples oranges bananas' },
+    { role: 'user', content: 'OLD USER REQUEST beta beta beta' },
+    { role: 'assistant', content: 'OLD ASSISTANT SUMMARY carrots celery squash' },
+    { role: 'user', content: 'Recent user 1' },
+    { role: 'assistant', content: 'Recent assistant 1' },
+    { role: 'user', content: 'Recent user 2' },
+    { role: 'assistant', content: 'Recent assistant 2' },
+    { role: 'user', content: 'Recent user 3' },
+    { role: 'assistant', content: 'Recent assistant 3' },
+    { role: 'user', content: 'Recent user 4' },
+    { role: 'assistant', content: 'Recent assistant 4' },
+  ];
+
+  await page.evaluate((msgs) => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'summary-key', nickname: 'Summary', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify(msgs));
+    window.location.hash = '#/agent';
+  }, messages);
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Summary context works.'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'use the recent context');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1 && msgs[msgs.length - 1].textContent.includes('Summary context works');
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const summaryText = capturedBody.contents[0].parts[0].text;
+  expect(capturedBody.contents[0].role).toBe('model');
+  expect(summaryText).toContain('Earlier in this conversation:');
+  expect(summaryText).toContain('OLD ASSISTANT SUMMARY apples oranges bananas');
+  expect(summaryText).toContain('OLD ASSISTANT SUMMARY carrots celery squash');
+  expect(summaryText).not.toContain('OLD USER REQUEST');
 });
 
 test('system prompt keeps sheet context compact and points to search_sheets', async ({ page }) => {

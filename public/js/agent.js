@@ -206,7 +206,7 @@ function _estimateRequestTokens(body) {
  */
 function _estimateRawConversationTokens(userMessage) {
   const rawHistory = _messages
-    .slice(-MAX_CONTEXT_MESSAGES)
+    .slice(0, -1)
     .map(msg => String(msg.content ?? ''))
     .join(' ');
   return _estimateTokens(`${_getSystemPrompt()} ${rawHistory} ${String(userMessage ?? '')}`);
@@ -233,12 +233,51 @@ function _assertRequestWithinBudget(body, phase) {
  */
 function _assertConversationWithinBudget(userMessage) {
   const estimatedTokens = _estimateRawConversationTokens(userMessage);
-  if (estimatedTokens > MAX_ESTIMATED_REQUEST_TOKENS) {
+  if (estimatedTokens > MAX_RAW_CONVERSATION_TOKENS) {
     throw new Error(
-      `This conversation would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_ESTIMATED_REQUEST_TOKENS}. ` +
+      `This conversation would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_RAW_CONVERSATION_TOKENS}. ` +
       'Clear older chat messages or simplify the request before trying again.'
     );
   }
+}
+
+/**
+ * Summarise older assistant replies into one cheap context message so we keep
+ * the gist of long conversations without resending every turn.
+ * @param {Array<{role:string, content:string}>} history
+ * @param {number} recentMessageLimit
+ * @returns {string}
+ */
+function _buildConversationSummary(history, recentMessageLimit) {
+  const olderHistory = history.slice(0, Math.max(0, history.length - recentMessageLimit));
+  const olderAssistantText = olderHistory
+    .filter(msg => msg.role === 'assistant')
+    .map(msg => _compactContextText(msg.content, MAX_ASSISTANT_MESSAGE_CHARS))
+    .filter(Boolean)
+    .join(' ');
+
+  if (!olderAssistantText) return '';
+  return `Earlier in this conversation: ${_compactContextText(olderAssistantText, MAX_CONTEXT_SUMMARY_CHARS)}`;
+}
+
+/**
+ * Build a Gemini request body from prepared contents.
+ * @param {Array} contents
+ * @returns {Object}
+ */
+function _buildRequestBody(contents) {
+  return {
+    contents,
+    tools: TOOL_DECLARATIONS,
+    systemInstruction: {
+      parts: [{ text: _getSystemPrompt() }],
+    },
+    generationConfig: {
+      temperature: 0.2,
+      topP: 0.9,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+    },
+  };
 }
 
 /**
@@ -392,12 +431,16 @@ async function _refreshContext() {
 /** Maximum number of messages to keep in context for API calls */
 const MAX_CONTEXT_MESSAGES = 8;
 const MAX_CONTEXT_CHARS = 3600;
+const MAX_CONTEXT_SUMMARY_CHARS = 500;
+const MAX_AGGRESSIVE_CONTEXT_MESSAGES = 4;
 const MAX_USER_MESSAGE_CHARS = 900;
 const MAX_PLANNED_USER_MESSAGE_CHARS = 1200;
 const MAX_PLANNED_BRIEF_CHARS = 240;
 const MAX_ASSISTANT_MESSAGE_CHARS = 500;
 const MAX_CONTEXT_SHEETS = 12;
+const MAX_OUTPUT_TOKENS = 4096;
 const MAX_ESTIMATED_REQUEST_TOKENS = 3400;
+const MAX_RAW_CONVERSATION_TOKENS = 30000;
 
 /**
  * Known template headers — derived from each template's `defaultHeaders`
@@ -1059,6 +1102,18 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
   _assertConversationWithinBudget(userMessage);
   let plannedUserText = _buildPlannedUserMessage(userMessage);
 
+  const buildBudgetedRequest = (text) => {
+    let contents = _buildContents(text, MAX_CONTEXT_MESSAGES);
+    let body = _buildRequestBody(contents);
+
+    if (_estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+      contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES);
+      body = _buildRequestBody(contents);
+    }
+
+    return { contents, body };
+  };
+
   if (_shouldUsePlannerRound(userMessage)) {
     try {
       const microBrief = await _fetchPlannerMicroBrief(apiKey, keyIdx, userMessage);
@@ -1073,19 +1128,7 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
     }
   }
 
-  const contents = _buildContents(plannedUserText);
-  const body = {
-    contents,
-    tools: TOOL_DECLARATIONS,
-    systemInstruction: {
-      parts: [{ text: _getSystemPrompt() }],
-    },
-    generationConfig: {
-      temperature: 0.2,
-      topP: 0.9,
-      maxOutputTokens: 8192,
-    },
-  };
+  const { contents, body } = buildBudgetedRequest(plannedUserText);
 
   _assertRequestWithinBudget(body, 'This request');
   return { model, url: baseUrl, contents, body };
@@ -1396,22 +1439,33 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
 }
 
 /**
- * Build contents array with context management — trim old messages.
+ * Build contents array with context management — summarise older messages and
+ * keep only the most recent conversational turns at full fidelity.
  * @param {string} userMessage
+ * @param {number} [recentMessageLimit]
  * @returns {Array}
  */
-function _buildContents(userMessage) {
+function _buildContents(userMessage, recentMessageLimit = MAX_CONTEXT_MESSAGES) {
   const contents = [];
   const finalUserText = _compactContextText(userMessage, MAX_PLANNED_USER_MESSAGE_CHARS);
-  let remainingChars = Math.max(0, MAX_CONTEXT_CHARS - finalUserText.length);
   const history = _messages.slice(0, -1);
+  const recentHistory = recentMessageLimit > 0 ? history.slice(-recentMessageLimit) : [];
+  const summaryText = _buildConversationSummary(history, recentMessageLimit);
+  let remainingChars = Math.max(0, MAX_CONTEXT_CHARS - finalUserText.length - summaryText.length);
   const selected = [];
 
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (selected.length >= MAX_CONTEXT_MESSAGES) break;
+  if (summaryText) {
+    contents.push({
+      role: 'model',
+      parts: [{ text: summaryText }],
+    });
+  }
+
+  for (let i = recentHistory.length - 1; i >= 0; i--) {
+    if (selected.length >= recentMessageLimit) break;
     if (remainingChars <= 0) break;
 
-    const msg = history[i];
+    const msg = recentHistory[i];
     const maxChars = Math.min(
       remainingChars,
       msg.role === 'user' ? MAX_USER_MESSAGE_CHARS : MAX_ASSISTANT_MESSAGE_CHARS
@@ -1489,7 +1543,7 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
     generationConfig: {
       temperature: 0.2,
       topP: 0.9,
-      maxOutputTokens: 8192,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   };
 
