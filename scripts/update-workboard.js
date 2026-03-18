@@ -41,7 +41,7 @@
    ============================================================ */
 
 const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
-const SHEET_ID       = 1342465339;  // numeric Sheet1 gid for batchUpdate
+let _sheetGid = null; // fetched at runtime
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Auth ---------- */
@@ -94,8 +94,21 @@ async function writeRange(token, range, values) {
   return res.json();
 }
 
+/** Get the numeric sheet ID (gid) for Sheet1, cached after first call */
+async function getSheetGid(token) {
+  if (_sheetGid !== null) return _sheetGid;
+  const url = `${SHEETS_BASE}/${SPREADSHEET_ID}?fields=sheets.properties`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets metadata ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const sheet1 = data.sheets.find(s => s.properties.index === 0);
+  _sheetGid = sheet1 ? sheet1.properties.sheetId : 0;
+  return _sheetGid;
+}
+
 /** Insert a blank row at a given 1-based position using batchUpdate */
 async function insertRow(token, afterRow) {
+  const sheetId = await getSheetGid(token);
   const url = `${SHEETS_BASE}/${SPREADSHEET_ID}:batchUpdate`;
   const res = await fetch(url, {
     method: 'POST',
@@ -104,7 +117,7 @@ async function insertRow(token, afterRow) {
       requests: [{
         insertDimension: {
           range: {
-            sheetId: SHEET_ID,
+            sheetId,
             dimension: 'ROWS',
             startIndex: afterRow,      // 0-based: inserting after row N means startIndex = N
             endIndex: afterRow + 1,
