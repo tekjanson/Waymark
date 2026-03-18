@@ -802,7 +802,8 @@ async function _runSlashCommand(name, args) {
     try {
       // Pass a single blank placeholder row so _toolCreateSheet validation passes
       const result = await _toolCreateSheet({ template, title, data: [['']] });
-      return `✅ Created **${result.title}**\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      _appendSheetPreviewCard(result);
+      return null;
     } catch (err) {
       return `⚠️ Could not create sheet: ${err.message}`;
     }
@@ -977,7 +978,38 @@ function _buildInputRow(hasKeys) {
 
 /* ---------- Message Rendering ---------- */
 
-function _buildMessage(msg) {
+/**
+ * Append an inline sheet preview card to the chat body.
+ * @param {{ spreadsheetId: string, title: string, template: string, rowCount: number }} result
+ */
+function _appendSheetPreviewCard(result) {
+  const { spreadsheetId, title, template, rowCount } = result;
+
+  const badge = el('span', { className: 'agent-card-badge' }, [template || 'sheet']);
+
+  const cardTitle = el('div', { className: 'agent-card-title' }, [title]);
+  const cardMeta = el('div', { className: 'agent-card-meta' }, [
+    badge,
+    el('span', { className: 'agent-card-rows' }, [
+      rowCount != null ? `${rowCount} row${rowCount !== 1 ? 's' : ''}` : 'empty',
+    ]),
+  ]);
+
+  const openBtn = el('a', {
+    className: 'agent-card-open-btn',
+    href: `#/sheet/${spreadsheetId}`,
+  }, ['Open sheet →']);
+
+  const card = el('div', { className: 'agent-sheet-card' }, [
+    el('div', { className: 'agent-card-body' }, [cardTitle, cardMeta]),
+    openBtn,
+  ]);
+
+  _chatBody.appendChild(card);
+  _chatBody.scrollTop = _chatBody.scrollHeight;
+}
+
+
   const isUser = msg.role === 'user';
   const wrapper = el('div', {
     className: 'agent-message ' + (isUser ? 'agent-message-user' : 'agent-message-assistant'),
@@ -1860,6 +1892,11 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
 
   // Remove tool indicator
   _removeToolIndicator();
+
+  // Show an inline preview card immediately after sheet creation
+  if (name === 'create_sheet' && result && !result.error) {
+    _appendSheetPreviewCard(result);
+  }
 
   // Send tool result back to model for final response
   const followUp = {

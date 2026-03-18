@@ -2816,3 +2816,211 @@ test('markdown table is scrollable and has rounded border', async ({ page }) => 
   const radius = await wrap.evaluate(el => getComputedStyle(el).borderRadius);
   expect(radius).not.toBe('0px');
 });
+
+/* ---- Sheet Preview Cards ---- */
+
+test('sheet preview card appears after create_sheet tool call', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'card-key', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('checklist', 'My Shopping List', [
+          ['Milk'],
+          ['Eggs'],
+        ]),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Done! I created your shopping list.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Create a shopping list');
+  await page.click('.agent-send-btn');
+
+  await page.waitForSelector('.agent-sheet-card', { timeout: 15000 });
+  await expect(page.locator('.agent-sheet-card')).toBeVisible();
+  await expect(page.locator('.agent-card-title')).toContainText('My Shopping List');
+});
+
+test('sheet preview card shows template badge', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'card-key', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('budget', 'Family Budget', [
+          ['Rent', '1200', 'Fixed'],
+        ]),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Your budget sheet is ready.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Create a family budget');
+  await page.click('.agent-send-btn');
+
+  await page.waitForSelector('.agent-card-badge', { timeout: 15000 });
+  await expect(page.locator('.agent-card-badge')).toContainText('budget');
+});
+
+test('sheet preview card open button links to the correct sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'card-key', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('travel', 'Summer Road Trip', [
+          ['Day 1', 'Boston', 'Start'],
+        ]),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Your travel plan is ready!'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Plan a road trip');
+  await page.click('.agent-send-btn');
+
+  await page.waitForSelector('.agent-card-open-btn', { timeout: 15000 });
+  const href = await page.locator('.agent-card-open-btn').getAttribute('href');
+  expect(href).toMatch(/^#\/sheet\//);
+});
+
+test('sheet preview card has correct open button styling', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'card-key', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('checklist', 'Test Sheet', [['Item 1']]),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('Done.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'Make a list');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-card-open-btn', { timeout: 15000 });
+
+  const btn = page.locator('.agent-card-open-btn');
+  await expect(btn).toBeVisible();
+  await expect(btn).toHaveCSS('cursor', 'auto'); // <a> element cursor
+});
+
+test('sheet model response text still appears after preview card', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'card-key', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let callCount = 0;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    callCount++;
+    if (callCount === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildCreateSheetFunctionCall('checklist', 'Task List', [['Task A']]),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: buildTextResponse('I created a task list for you.'),
+      });
+    }
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'I need a task list');
+  await page.click('.agent-send-btn');
+
+  await page.waitForSelector('.agent-message-assistant', { timeout: 15000 });
+  await expect(page.locator('.agent-message-assistant')).toContainText('I created a task list');
+});
