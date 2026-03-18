@@ -1303,3 +1303,162 @@ test('update_sheet tool indicator shows updating message', async ({ page }) => {
 
   await expect(page.locator('.agent-tool-indicator')).toContainText('Updating sheet');
 });
+
+/* ---------- Context-Aware System Prompt ---------- */
+
+test('system prompt includes current date in API requests', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-date-key', nickname: 'Ctx', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Hello!'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'hi');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1;
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  // Should contain today's date context
+  expect(systemText).toContain('Today is');
+});
+
+test('system prompt includes user name in API requests', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-user-key', nickname: 'Usr', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Hi there!'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'hello');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1;
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  // In mock mode, user is "Test User"
+  expect(systemText).toContain('Test User');
+});
+
+test('system prompt includes user sheets from Drive', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-sheets-key', nickname: 'Sht', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('Found your sheets!'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'what sheets do I have?');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1;
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  // In mock mode, there are sheets from fixture data
+  expect(systemText).toContain('sheet(s)');
+  // Should contain at least one sheet name from fixtures
+  expect(systemText).toMatch(/id: sheet-\d+/);
+});
+
+test('system prompt always includes base instructions alongside context', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-base-key', nickname: 'Base', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+
+  let capturedBody = null;
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: buildTextResponse('All good!'),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'hello');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    return msgs.length >= 1;
+  }, { timeout: 10000 });
+
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  // Base prompt always present
+  expect(systemText).toContain('Waymark AI assistant');
+  expect(systemText).toContain('Available templates:');
+  // Dynamic context also present
+  expect(systemText).toContain('Today is');
+});

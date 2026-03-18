@@ -15,7 +15,7 @@ import { TEMPLATES } from './templates/index.js';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
 
-const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
+const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
 
@@ -31,6 +31,54 @@ Guidelines:
 - If unsure which template fits, ask or default to checklist (lists) or kanban (projects).
 - When the user refers to "my sheet" or a sheet by name, use read_sheet with the spreadsheet ID.
 - Be conversational and helpful.`;
+
+/** Cached context string — refreshed once per _sendMessage call. */
+let _cachedContext = '';
+
+/**
+ * Build a dynamic system prompt with fresh context.
+ * Context is fetched once at the start of _sendMessage and cached.
+ * @returns {string}
+ */
+function _getSystemPrompt() {
+  return _cachedContext
+    ? BASE_SYSTEM_PROMPT + '\n\n' + _cachedContext
+    : BASE_SYSTEM_PROMPT;
+}
+
+/**
+ * Refresh the context block: current date, user name, and their sheets.
+ * Called once per user message to keep context fresh without duplicate API calls.
+ */
+async function _refreshContext() {
+  const parts = [];
+
+  // Current date
+  const now = new Date();
+  parts.push(`Today is ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
+
+  // User identity
+  const user = api.auth.getUser();
+  if (user?.name) {
+    parts.push(`The user's name is ${user.name}.`);
+  }
+
+  // User's sheets — fetched from Drive
+  try {
+    const sheets = await api.drive.getAllSheets();
+    if (sheets.length) {
+      const sheetList = sheets.slice(0, 50).map(s =>
+        s.folder ? `"${s.name}" (id: ${s.id}, folder: ${s.folder})` : `"${s.name}" (id: ${s.id})`
+      ).join(', ');
+      parts.push(`The user has ${sheets.length} sheet(s): ${sheetList}.`);
+      parts.push('When the user mentions a sheet by name, match it to the list above and use the ID with read_sheet or update_sheet.');
+    }
+  } catch {
+    // Non-critical — continue without sheet list
+  }
+
+  _cachedContext = parts.join(' ');
+}
 
 /** Maximum number of messages to keep in context for API calls */
 const MAX_CONTEXT_MESSAGES = 20;
@@ -686,6 +734,9 @@ async function _sendMessage(text) {
     return;
   }
 
+  // Refresh context (date, user, sheets) once per message
+  await _refreshContext();
+
   const userText = text.trim();
 
   // Clear empty state / suggestions
@@ -842,7 +893,7 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
     contents,
     tools: TOOL_DECLARATIONS,
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
       temperature: 0.4,
@@ -889,7 +940,7 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
     contents,
     tools: TOOL_DECLARATIONS,
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
       temperature: 0.4,
@@ -1053,7 +1104,7 @@ async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, func
     ],
     tools: TOOL_DECLARATIONS,
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
       temperature: 0.4,
