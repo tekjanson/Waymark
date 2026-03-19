@@ -31,6 +31,7 @@
 @import url('./templates/automation.css');
 @import url('./templates/knowledge.css');
 @import url('./templates/notification.css');
+@import url('./templates/iot.css');
 
 /* Agent view */
 @import url('./agent.css');

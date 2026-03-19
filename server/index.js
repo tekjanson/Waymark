@@ -325,8 +325,20 @@ function buildSettingsRefInjector(currentRef) {
       tags.innerHTML = '';
       var refs = d.cachedRefs || ['main'];
       if (refs.indexOf('main') === -1) refs.unshift('main');
-      refs.forEach(function(r) {
-        if (r.charAt(0) === '.') return;
+
+      function normaliseRef(r) {
+        if (!r || typeof r !== 'string') return r;
+        if (r.indexOf('/') !== -1) return r;
+        var m = r.match(/^(feature|fix|bugfix|hotfix|chore|docs|refactor|test|perf|ci|build|release)_(.+)$/i);
+        if (m) return m[1] + '/' + m[2];
+        return r;
+      }
+
+      var seen = {};
+      refs.forEach(function(rawRef) {
+        var r = normaliseRef(rawRef);
+        if (!r || r.charAt(0) === '.' || seen[r]) return;
+        seen[r] = true;
         var btn = document.createElement('button');
         btn.textContent = r;
         btn.className = 'btn btn-secondary btn-sm';

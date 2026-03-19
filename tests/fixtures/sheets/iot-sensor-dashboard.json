@@ -1,0 +1,14 @@
+{
+  "id": "sheet-047",
+  "title": "IoT Sensor Dashboard",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Sensor", "Reading", "Unit", "Timestamp", "Min", "Max", "Alert"],
+    ["Boiler Room Temp", "22.4", "C", "2026-03-18T10:20:00", "18", "26", "Normal"],
+    ["Warehouse Humidity", "68", "%", "2026-03-18T10:20:00", "30", "60", "Alert"],
+    ["Pump Voltage", "11.8", "V", "2026-03-18T10:19:45", "11.5", "12.5", "Normal"],
+    ["Lab CO2", "1200", "ppm", "2026-03-18T10:18:10", "400", "1000", "Watch"],
+    ["West Gate Contact", "", "", "2026-03-18T10:01:00", "", "", "Offline"],
+    ["Line Pressure", "101.3", "kPa", "2026-03-18T10:19:20", "95", "105", "Normal"]
+  ]
+}

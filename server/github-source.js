@@ -27,6 +27,10 @@ const { execSync, exec } = require('child_process');
 const REPO_DIR = path.join(__dirname, '.git-repo');
 const CHECKOUT_DIR = path.join(__dirname, '.git-checkout');
 
+function toSafeRef(ref) {
+  return ref.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 /* ---------- Ref validation ---------- */
 
 /**
@@ -206,15 +210,19 @@ function resolveRef(ref) {
  */
 function extractPublicDir(ref) {
   const commitSha = resolveRef(ref);
-  const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const safeRef = toSafeRef(ref);
   const outDir = path.join(CHECKOUT_DIR, safeRef);
 
   // If already extracted for this exact commit, skip
   const shaMarker = path.join(outDir, '.git-sha');
+  const refMarker = path.join(outDir, '.waymark-ref');
   if (fs.existsSync(shaMarker)) {
     try {
       const cached = fs.readFileSync(shaMarker, 'utf-8').trim();
       if (cached === commitSha) {
+        if (!fs.existsSync(refMarker)) {
+          fs.writeFileSync(refMarker, ref);
+        }
         return outDir;
       }
     } catch { /* re-extract */ }
@@ -250,6 +258,7 @@ function extractPublicDir(ref) {
 
   // Write SHA marker so we know this extraction is current
   fs.writeFileSync(shaMarker, commitSha);
+  fs.writeFileSync(refMarker, ref);
   console.log(`[github-source] Extracted public/ for ${ref} (${commitSha.slice(0, 8)}) -> ${outDir}`);
   return outDir;
 }
@@ -352,7 +361,7 @@ function createGitHubSource(opts) {
     // Force-purge the existing checkout for this ref so extractPublicDir
     // does a full re-extract instead of short-circuiting on a stale SHA
     // marker.  Guarantees the user gets the latest code after a push.
-    const safeRef = newRef.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeRef = toSafeRef(newRef);
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
 
@@ -382,7 +391,7 @@ function createGitHubSource(opts) {
 
   /** Purge extracted files for the current ref. */
   function purgeCache() {
-    const safeRef = ref.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeRef = toSafeRef(ref);
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
     publicDir = null;
@@ -392,7 +401,49 @@ function createGitHubSource(opts) {
   /** List all extracted refs. */
   function listCachedRefs() {
     try {
-      return fs.readdirSync(CHECKOUT_DIR).filter(d => !d.startsWith('.'));
+      const dirs = fs.readdirSync(CHECKOUT_DIR).filter(d => !d.startsWith('.'));
+
+      // Build best-effort reverse mapping for older caches without .waymark-ref marker.
+      const fallbackMap = new Map();
+      try {
+        const branches = git('for-each-ref --format="%(refname:strip=3)" refs/remotes/origin')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+        const tags = git('for-each-ref --format="%(refname:strip=2)" refs/tags')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+        for (const candidate of [...branches, ...tags]) {
+          fallbackMap.set(toSafeRef(candidate), candidate);
+        }
+      } catch {
+        /* best-effort */
+      }
+
+      function restoreLikelyRef(dirName) {
+        if (!dirName || dirName.includes('/')) return dirName;
+        // Common branch prefixes often use one slash segment, e.g. feature/foo.
+        const prefixed = dirName.replace(
+          /^(feature|fix|bugfix|hotfix|chore|docs|refactor|test|perf|ci|build|release)_(.+)$/i,
+          '$1/$2',
+        );
+        if (prefixed !== dirName) return prefixed;
+        return dirName;
+      }
+
+      const refs = [];
+      for (const dir of dirs) {
+        const marker = path.join(CHECKOUT_DIR, dir, '.waymark-ref');
+        if (fs.existsSync(marker)) {
+          const original = fs.readFileSync(marker, 'utf-8').trim();
+          refs.push(original || dir);
+          continue;
+        }
+        refs.push(fallbackMap.get(dir) || restoreLikelyRef(dir));
+      }
+
+      return Array.from(new Set(refs));
     } catch {
       return [];
     }

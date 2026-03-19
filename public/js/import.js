@@ -181,6 +181,14 @@ const ROLE_LABELS = {
   'notification.expires': 'Expires / Expiry date',
   'notification.source': 'Source / Origin system',
   'notification.sheet': 'Sheet / Related sheet ID',
+  // IoT Sensor Dashboard
+  'iot.sensor': 'Sensor / Device name',
+  'iot.reading': 'Current sensor reading',
+  'iot.unit': 'Unit of measure (C, %, V, etc.)',
+  'iot.timestamp': 'Timestamp / Last update time',
+  'iot.min': 'Minimum threshold',
+  'iot.max': 'Maximum threshold',
+  'iot.alert': 'Alert state (Normal, Watch, Alert, Offline)',
 };
 
 /**
@@ -269,6 +277,10 @@ const CANONICAL_HEADERS = {
   'knowledge.content': 'Content', 'knowledge.tags': 'Tags',
   'knowledge.author': 'Author', 'knowledge.updated': 'Updated',
   'knowledge.status': 'Status', 'knowledge.source': 'Source',
+  // IoT Sensor Dashboard
+  'iot.sensor': 'Sensor', 'iot.reading': 'Reading',
+  'iot.unit': 'Unit', 'iot.timestamp': 'Timestamp',
+  'iot.min': 'Min', 'iot.max': 'Max', 'iot.alert': 'Alert',
 };
 
 /**
