@@ -1,0 +1,14 @@
+{
+  "id": "sheet-048",
+  "title": "Boiler Room Temp",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Sensor", "Timestamp", "Reading", "Unit", "Min", "Max", "Alert"],
+    ["Boiler Room Temp", "2026-03-19T06:00:00", "21.2", "C", "18", "26", "Normal"],
+    ["Boiler Room Temp", "2026-03-19T06:10:00", "22.4", "C", "18", "26", "Normal"],
+    ["Boiler Room Temp", "2026-03-19T06:20:00", "23.1", "C", "18", "26", "Normal"],
+    ["Boiler Room Temp", "2026-03-19T06:30:00", "24.7", "C", "18", "26", "Watch"],
+    ["Boiler Room Temp", "2026-03-19T06:40:00", "25.8", "C", "18", "26", "Watch"],
+    ["Boiler Room Temp", "2026-03-19T06:50:00", "26.9", "C", "18", "26", "Alert"]
+  ]
+}
