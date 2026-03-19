@@ -421,6 +421,17 @@ function createGitHubSource(opts) {
         /* best-effort */
       }
 
+      function restoreLikelyRef(dirName) {
+        if (!dirName || dirName.includes('/')) return dirName;
+        // Common branch prefixes often use one slash segment, e.g. feature/foo.
+        const prefixed = dirName.replace(
+          /^(feature|fix|bugfix|hotfix|chore|docs|refactor|test|perf|ci|build|release)_(.+)$/i,
+          '$1/$2',
+        );
+        if (prefixed !== dirName) return prefixed;
+        return dirName;
+      }
+
       const refs = [];
       for (const dir of dirs) {
         const marker = path.join(CHECKOUT_DIR, dir, '.waymark-ref');
@@ -429,7 +440,7 @@ function createGitHubSource(opts) {
           refs.push(original || dir);
           continue;
         }
-        refs.push(fallbackMap.get(dir) || dir);
+        refs.push(fallbackMap.get(dir) || restoreLikelyRef(dir));
       }
 
       return Array.from(new Set(refs));
