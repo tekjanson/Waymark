@@ -11,7 +11,10 @@
 
    Usage:
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/check-workboard.js
-     WAYMARK_WORKBOARD_ID=<spreadsheet-id> to override the default board
+     WAYMARK_WORKBOARD_ID=<spreadsheet-id> (direct override)
+     WAYMARK_WORKBOARD_URL=https://docs.google.com/spreadsheets/d/... (direct override)
+     WAYMARK_PROJECT=<project-key> (from generated/workboard-config.json)
+     WAYMARK_WORKBOARD_CONFIG=/path/to/workboard-config.json (optional config path)
 
    Output (stdout, single line JSON):
      {"todo":[],"inProgress":[],"qa":0,"done":73}
@@ -21,8 +24,16 @@
      1 = error (message on stderr)
    ============================================================ */
 
-const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
-const RANGE          = 'Sheet1!A1:I500';
+const { resolveWorkboardConfig } = require('./workboard-config');
+
+const DEFAULT_SPREADSHEET_ID = '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
+const DEFAULT_RANGE          = 'Sheet1!A1:I500';
+const WORKBOARD = resolveWorkboardConfig({
+  defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
+  defaultRange: DEFAULT_RANGE,
+});
+const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
+const RANGE = WORKBOARD.range;
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Auth ---------- */

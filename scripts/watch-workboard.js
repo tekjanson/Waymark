@@ -17,6 +17,12 @@
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js --agent --backoff
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/watch-workboard.js --interval 30
 
+   Workboard target selection (highest priority first):
+     WAYMARK_WORKBOARD_URL=https://docs.google.com/spreadsheets/d/...
+     WAYMARK_WORKBOARD_ID=<spreadsheet-id>
+     WAYMARK_PROJECT=<project-key> from generated/workboard-config.json
+     WAYMARK_WORKBOARD_CONFIG=/path/to/workboard-config.json
+
    Flags:
      --agent       Output JSON markers for agent consumption (@@WATCHER:)
      --backoff     Exponential backoff: double poll interval on each idle cycle,
@@ -25,8 +31,16 @@
 
    ============================================================ */
 
-const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
-const RANGE          = 'Sheet1!A1:I500';
+const { resolveWorkboardConfig } = require('./workboard-config');
+
+const DEFAULT_SPREADSHEET_ID = '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
+const DEFAULT_RANGE          = 'Sheet1!A1:I500';
+const WORKBOARD = resolveWorkboardConfig({
+  defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
+  defaultRange: DEFAULT_RANGE,
+});
+const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
+const RANGE = WORKBOARD.range;
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Parse args ---------- */

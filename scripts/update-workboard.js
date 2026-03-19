@@ -12,7 +12,11 @@
      GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
        node scripts/update-workboard.js <command> [args...]
 
-   Set WAYMARK_WORKBOARD_ID to override the default board.
+   Workboard target selection (highest priority first):
+     WAYMARK_WORKBOARD_URL=https://docs.google.com/spreadsheets/d/...
+     WAYMARK_WORKBOARD_ID=<spreadsheet-id>
+     WAYMARK_PROJECT=<project-key> from generated/workboard-config.json
+     WAYMARK_WORKBOARD_CONFIG=/path/to/workboard-config.json
 
    Commands:
      claim <row>
@@ -40,7 +44,15 @@
      node scripts/update-workboard.js note 263 "Branch: feature/foo | Files: a.js | +50 LOC"
    ============================================================ */
 
-const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
+const { resolveWorkboardConfig } = require('./workboard-config');
+
+const DEFAULT_SPREADSHEET_ID = '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
+const DEFAULT_RANGE = 'Sheet1!A1:I500';
+const WORKBOARD = resolveWorkboardConfig({
+  defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
+  defaultRange: DEFAULT_RANGE,
+});
+const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
 let _sheetGid = null; // fetched at runtime
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
