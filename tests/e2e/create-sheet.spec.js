@@ -52,14 +52,33 @@ test('create sheet modal closes when clicking the backdrop', async ({ page }) =>
 
 /* ────────────────── Template grid ────────────────── */
 
-test('create sheet modal shows all 19 template cards', async ({ page }) => {
+test('create sheet modal shows a card for every template with default headers', async ({ page }) => {
   await setupApp(page);
 
   await page.locator('#menu-create-btn').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
+  const expected = await page.evaluate(async () => {
+    const { TEMPLATES } = await import('/js/templates/index.js');
+    return Object.values(TEMPLATES).filter(t => Array.isArray(t.defaultHeaders) && t.defaultHeaders.length > 0).length;
+  });
+
   const cards = page.locator('.create-sheet-card');
-  await expect(cards).toHaveCount(19);
+  await expect(cards).toHaveCount(expected);
+});
+
+test('iot template card is visible and can be selected', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  const iotCard = page.locator('.create-sheet-card', {
+    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Dashboard' }),
+  });
+  await expect(iotCard).toBeVisible();
+  await iotCard.click();
+  await expect(iotCard).toHaveClass(/selected/);
 });
 
 test('each template card shows name and headers', async ({ page }) => {
@@ -180,6 +199,26 @@ test('creating a sheet records the correct data in WAYMARK_RECORDS', async ({ pa
   expect(createRecord.rows).toBeTruthy();
   expect(createRecord.rows[0]).toContain('Description');
   expect(createRecord.rows[0]).toContain('Amount');
+});
+
+test('creating an IoT sheet writes IoT headers', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+
+  const iotCard = page.locator('.create-sheet-card', {
+    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Dashboard' }),
+  });
+  await iotCard.click();
+  await page.locator('#create-sheet-name').fill('My IoT Sheet');
+
+  await page.locator('#create-sheet-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeHidden({ timeout: 5000 });
+
+  const records = await getCreatedRecords(page);
+  const createRecord = records.find(r => r.title === 'My IoT Sheet');
+  expect(createRecord).toBeTruthy();
+  expect(createRecord.rows?.[0]).toEqual(['Sensor', 'Reading', 'Unit', 'Timestamp', 'Min', 'Max', 'Alert']);
 });
 
 test('creating a sheet shows a success toast', async ({ page }) => {

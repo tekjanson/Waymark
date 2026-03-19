@@ -112,8 +112,8 @@ const createSheetGrid       = document.getElementById('create-sheet-templates');
 const createSheetStatus     = document.getElementById('create-sheet-status');
 const createSheetProgress   = document.getElementById('create-sheet-progress');
 
-/* ---------- Template headers for new sheet creation ---------- */
-const TEMPLATE_HEADERS = {
+/* ---------- Legacy template headers fallback ---------- */
+const LEGACY_TEMPLATE_HEADERS = {
   checklist:  ['Item', 'Status', 'Quantity', 'Notes'],
   tracker:    ['Goal', 'Progress', 'Target', 'Notes'],
   schedule:   ['Day', 'Time', 'Activity', 'Location'],
@@ -134,6 +134,20 @@ const TEMPLATE_HEADERS = {
   recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
   testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
 };
+
+/**
+ * Resolve headers used when creating a new sheet for a template.
+ * Prefer the template's own defaultHeaders to keep create-sheet in sync
+ * as new templates are added, with a legacy fallback map for older defs.
+ * @param {string} key
+ * @param {object} tpl
+ * @returns {string[]}
+ */
+function getTemplateHeaders(key, tpl) {
+  const defaults = tpl && Array.isArray(tpl.defaultHeaders) ? tpl.defaultHeaders : null;
+  if (defaults && defaults.length > 0) return defaults;
+  return LEGACY_TEMPLATE_HEADERS[key] || [];
+}
 
 /* ---------- Navigation history ---------- */
 
@@ -1348,11 +1362,11 @@ function renderCreateSheetGrid() {
 
   // Sort templates alphabetically by name
   const entries = Object.entries(TEMPLATES)
-    .filter(([key]) => TEMPLATE_HEADERS[key])
+    .filter(([key, tpl]) => getTemplateHeaders(key, tpl).length > 0)
     .sort((a, b) => a[1].name.localeCompare(b[1].name));
 
   for (const [key, tpl] of entries) {
-    const headers = TEMPLATE_HEADERS[key];
+    const headers = getTemplateHeaders(key, tpl);
     const card = el('div', {
       className: 'create-sheet-card',
       on: {
@@ -1391,8 +1405,12 @@ async function handleCreateSheet() {
   if (!selectedTemplateKey || !createSheetNameInput.value.trim()) return;
 
   const title = createSheetNameInput.value.trim();
-  const headers = TEMPLATE_HEADERS[selectedTemplateKey];
-  if (!headers) return;
+  const tpl = TEMPLATES[selectedTemplateKey];
+  const headers = getTemplateHeaders(selectedTemplateKey, tpl);
+  if (!headers.length) {
+    showToast(`Template "${tpl?.name || selectedTemplateKey}" is missing default headers`, 'error');
+    return;
+  }
 
   createSheetCreateBtn.disabled = true;
   createSheetCreateBtn.textContent = 'Creating…';
