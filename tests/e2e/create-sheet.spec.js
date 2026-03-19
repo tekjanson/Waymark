@@ -74,7 +74,7 @@ test('iot template card is visible and can be selected', async ({ page }) => {
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 
   const iotCard = page.locator('.create-sheet-card', {
-    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Dashboard' }),
+    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Log' }),
   });
   await expect(iotCard).toBeVisible();
   await iotCard.click();
@@ -207,7 +207,7 @@ test('creating an IoT sheet writes IoT headers', async ({ page }) => {
   await page.locator('#menu-create-btn').click();
 
   const iotCard = page.locator('.create-sheet-card', {
-    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Dashboard' }),
+    has: page.locator('.create-sheet-card-name', { hasText: 'IoT Sensor Log' }),
   });
   await iotCard.click();
   await page.locator('#create-sheet-name').fill('My IoT Sheet');
@@ -218,7 +218,7 @@ test('creating an IoT sheet writes IoT headers', async ({ page }) => {
   const records = await getCreatedRecords(page);
   const createRecord = records.find(r => r.title === 'My IoT Sheet');
   expect(createRecord).toBeTruthy();
-  expect(createRecord.rows?.[0]).toEqual(['Sensor', 'Reading', 'Unit', 'Timestamp', 'Min', 'Max', 'Alert']);
+  expect(createRecord.rows?.[0]).toEqual(['Sensor', 'Timestamp', 'Reading', 'Unit', 'Min', 'Max', 'Alert']);
 });
 
 test('creating a sheet shows a success toast', async ({ page }) => {

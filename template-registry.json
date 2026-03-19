@@ -912,7 +912,7 @@
     },
     {
       "key": "iot",
-      "name": "IoT Sensor Dashboard",
+      "name": "IoT Sensor Log",
       "icon": "📡",
       "color": "#0f766e",
       "priority": 24,
@@ -930,9 +930,9 @@
       ],
       "columnRoles": [
         "sensor",
+        "timestamp",
         "reading",
         "unit",
-        "timestamp",
         "min",
         "max",
         "alert"
@@ -945,17 +945,19 @@
         "Alert",
         "Offline"
       ],
-      "hasDirectoryView": false,
-      "exampleCount": 1,
+      "hasDirectoryView": true,
+      "exampleCount": 2,
       "fixtureIds": [
-        "sheet-047"
+        "sheet-047",
+        "sheet-048"
       ],
       "fixtureFiles": [
-        "iot-sensor-dashboard"
+        "iot-sensor-dashboard",
+        "iot-sensor-log"
       ]
     }
   ],
-  "nextSheetId": "sheet-048",
+  "nextSheetId": "sheet-049",
   "totalTemplates": 25,
   "categories": [
     "Productivity",
