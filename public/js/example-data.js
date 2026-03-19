@@ -807,4 +807,18 @@ export const EXAMPLE_SHEETS = {
       ['Recipe import complete', '14 recipes imported from Mimi\'s Kitchen successfully', 'success', 'Dismissed', '🍳', 'Low', '2026-06-13T16:00:00Z', '', 'Import', ''],
     ],
   },
+
+  /* ---- IoT examples ---- */
+  'IoT Sensor Dashboard': {
+    folder: 'Monitoring',
+    headers: ['Sensor', 'Reading', 'Unit', 'Timestamp', 'Min', 'Max', 'Alert'],
+    rows: [
+      ['Boiler Room Temp', '22.4', 'C', '2026-06-15T10:20:00Z', '18', '26', 'Normal'],
+      ['Warehouse Humidity', '68', '%', '2026-06-15T10:20:00Z', '30', '60', 'Alert'],
+      ['Pump Voltage', '11.8', 'V', '2026-06-15T10:19:45Z', '11.5', '12.5', 'Normal'],
+      ['Lab CO2', '1200', 'ppm', '2026-06-15T10:18:10Z', '400', '1000', 'Watch'],
+      ['West Gate Contact', '', '', '2026-06-15T10:01:00Z', '', '', 'Offline'],
+      ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
+    ],
+  },
 };

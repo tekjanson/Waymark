@@ -551,6 +551,46 @@ test('kanban description textarea cancels on Escape', async ({ page }) => {
   await expect(descField).toContainText(originalText || '');
 });
 
+test('kanban note opens textarea editor for multiline editing', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+
+  const noteField = card.locator('.kanban-note-text').first();
+  await noteField.click();
+  await expect(card.locator('.kanban-note-text .editable-cell-textarea').first()).toBeVisible();
+});
+
+test('kanban add note form supports multiline and submit with Ctrl+Enter', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await card.locator('.kanban-add-inline-trigger', { hasText: '+ Note' }).click();
+
+  const noteInput = card.locator('.kanban-add-note-input');
+  await expect(noteInput).toBeVisible();
+  await noteInput.fill('First line\nSecond line');
+  await noteInput.press('Control+Enter');
+
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'sheet-replace');
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const hasNote = records.some(r => {
+    if (r.type !== 'sheet-replace' || !Array.isArray(r.rows)) return false;
+    return r.rows.some(row => row.includes('First line\nSecond line'));
+  });
+  expect(hasNote).toBe(true);
+});
+
 /* ---------- Add-row combo dropdown ---------- */
 
 test('kanban add-row project field shows combo dropdown with existing projects', async ({ page }) => {

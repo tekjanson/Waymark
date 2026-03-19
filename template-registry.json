@@ -909,10 +909,56 @@
       "fixtureFiles": [
         "notification-waymark"
       ]
+    },
+    {
+      "key": "iot",
+      "name": "IoT Sensor Log",
+      "icon": "📡",
+      "color": "#0f766e",
+      "priority": 24,
+      "category": "Monitoring",
+      "detectSignals": [
+        "sensor",
+        "device",
+        "probe",
+        "reading",
+        "measurement",
+        "min",
+        "max",
+        "threshold",
+        "alert"
+      ],
+      "columnRoles": [
+        "sensor",
+        "timestamp",
+        "reading",
+        "unit",
+        "min",
+        "max",
+        "alert"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Normal",
+        "Watch",
+        "Alert",
+        "Offline"
+      ],
+      "hasDirectoryView": true,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-047",
+        "sheet-048"
+      ],
+      "fixtureFiles": [
+        "iot-sensor-dashboard",
+        "iot-sensor-log"
+      ]
     }
   ],
-  "nextSheetId": "sheet-047",
-  "totalTemplates": 24,
+  "nextSheetId": "sheet-049",
+  "totalTemplates": 25,
   "categories": [
     "Productivity",
     "Engineering",
@@ -932,6 +978,7 @@
     "Travel",
     "Operations",
     "Social",
-    "Documentation"
+    "Documentation",
+    "Monitoring"
   ]
 }

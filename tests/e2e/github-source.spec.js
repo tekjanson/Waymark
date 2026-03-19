@@ -121,6 +121,21 @@ test('quick switch populates cached refs from server', async ({ page }) => {
   await expect(tags).toHaveCount(3);
 });
 
+test('quick switch preserves slash in branch labels', async ({ page }) => {
+  await setupApp(page, { githubSource: true });
+  await mockSourceAPI(page, { ref: 'main', cachedRefs: ['main', 'feature/new-ui'] });
+  await openSettings(page);
+
+  await page.waitForFunction(
+    () => document.querySelectorAll('.settings-ref-tag').length >= 2,
+    { timeout: 5_000 },
+  );
+
+  const branchTag = page.locator('.settings-ref-tag[data-ref="feature/new-ui"]');
+  await expect(branchTag).toBeVisible();
+  await expect(branchTag).toContainText('feature/new-ui');
+});
+
 test('active quick switch tag matches saved ref', async ({ page }) => {
   await setupApp(page, { githubSource: true, githubRef: 'develop' });
   await mockSourceAPI(page, { ref: 'develop', cachedRefs: ['main', 'develop'] });
