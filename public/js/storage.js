@@ -198,13 +198,96 @@ export function setSortOrder(order) {
 
 /* --- Agent --- */
 
+/**
+ * Get the legacy single API key (backward compat).
+ * Migrates to key ring format on first access if needed.
+ * @returns {string}
+ */
 export function getAgentApiKey() {
-  return get('agent_api_key') || '';
+  const keys = getAgentKeys();
+  return keys.length > 0 ? keys[0].key : '';
 }
 
+/**
+ * Set a single API key (backward compat).
+ * Migrates the value into the key ring array.
+ * @param {string} key
+ */
 export function setAgentApiKey(key) {
-  if (key) set('agent_api_key', key);
-  else remove('agent_api_key');
+  if (key) {
+    const keys = getAgentKeys();
+    if (keys.length === 0) {
+      setAgentKeys([{ key, nickname: 'Key 1', addedAt: new Date().toISOString(), requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }]);
+    } else {
+      keys[0].key = key;
+      setAgentKeys(keys);
+    }
+  } else {
+    setAgentKeys([]);
+  }
+}
+
+/**
+ * Get all agent API keys (key ring).
+ * Handles migration from legacy single-key format.
+ * @returns {Array<{key: string, nickname: string, addedAt: string, requestsToday: number, lastUsed: string|null, lastError: string|null, isBilled: boolean}>}
+ */
+export function getAgentKeys() {
+  const keys = get('agent_keys');
+  if (Array.isArray(keys)) return keys;
+  // Migrate legacy single key
+  const legacy = get('agent_api_key');
+  if (legacy) {
+    const migrated = [{ key: legacy, nickname: 'Key 1', addedAt: new Date().toISOString(), requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }];
+    set('agent_keys', migrated);
+    remove('agent_api_key');
+    return migrated;
+  }
+  return [];
+}
+
+/**
+ * Save the full key ring array.
+ * @param {Array} keys
+ */
+export function setAgentKeys(keys) {
+  if (Array.isArray(keys) && keys.length > 0) set('agent_keys', keys);
+  else { remove('agent_keys'); remove('agent_api_key'); }
+}
+
+/**
+ * Record a successful request for a key (by index).
+ * @param {number} idx
+ */
+export function recordKeyUsage(idx) {
+  const keys = getAgentKeys();
+  if (keys[idx]) {
+    keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
+    keys[idx].lastUsed = new Date().toISOString();
+    keys[idx].lastError = null;
+    setAgentKeys(keys);
+  }
+}
+
+/**
+ * Record a rate-limit error for a key (by index).
+ * @param {number} idx
+ */
+export function recordKeyError(idx) {
+  const keys = getAgentKeys();
+  if (keys[idx]) {
+    keys[idx].lastError = new Date().toISOString();
+    setAgentKeys(keys);
+  }
+}
+
+/**
+ * Reset daily request counters (call daily or on new day detection).
+ */
+export function resetDailyKeyCounters() {
+  const keys = getAgentKeys();
+  keys.forEach(k => { k.requestsToday = 0; });
+  setAgentKeys(keys);
 }
 
 export function getAgentModel() {
@@ -222,6 +305,22 @@ export function getAgentConversation() {
 
 export function setAgentConversation(messages) {
   set('agent_conversation', messages || []);
+}
+
+/**
+ * Get the last-used key index for round-robin rotation.
+ * @returns {number}
+ */
+export function getAgentKeyIndex() {
+  return get('agent_key_index') || 0;
+}
+
+/**
+ * Set the current key index.
+ * @param {number} idx
+ */
+export function setAgentKeyIndex(idx) {
+  set('agent_key_index', idx);
 }
 
 /* --- Import Folder --- */
