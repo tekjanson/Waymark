@@ -31,6 +31,18 @@ One-shot mode: read workboard → create mega branch (if not already on one) →
 
 ## 0.1 BOOT SEQUENCE — Run These Steps First (Both Modes)
 
+### Workboard Target Selection (Project-Aware)
+
+The builder scripts resolve the workboard target dynamically (no single hardcoded board):
+
+1. `WAYMARK_WORKBOARD_URL` (Google Sheets URL)
+2. `WAYMARK_WORKBOARD_ID` (raw spreadsheet ID)
+3. `WAYMARK_PROJECT` alias from `generated/workboard-config.json`
+4. Fallback default board
+
+To switch projects, set `WAYMARK_PROJECT` before running the agent, or change
+`activeProject` in `generated/workboard-config.json`.
+
 1. **Read AI_LAWS** — Load and internalize every rule from `.github/instructions/AI_laws.instructions.md`. These are non-negotiable. Any violation is a hard reject.
 2. **Sync to tip of main and create the mega branch:**
    ```bash
