@@ -19,7 +19,7 @@
      "projects": {
        "waymark": {
          "spreadsheetId": "...",
-         "range": "Sheet1!A1:I500"
+         "range": "Sheet1!A:I"
        },
        "client-a": {
          "spreadsheetId": "...",
