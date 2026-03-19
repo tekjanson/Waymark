@@ -1,5 +1,6 @@
 /* ============================================================
    iot/index.js — IoT Sensor Dashboard template
+   Browser-only live ingestion (WebSocket or HTTP polling)
    ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from '../shared.js';
@@ -12,6 +13,31 @@ import {
   formatTimestamp,
   averageReading,
 } from './helpers.js';
+
+const LOG_LIMIT = 500;
+
+function currentSheetId() {
+  const m = (window.location.hash || '').match(/sheet\/([^/?#]+)/);
+  return m ? m[1] : 'unknown';
+}
+
+function loadLogBuffer() {
+  try {
+    const raw = localStorage.getItem(`waymark_iot_log_${currentSheetId()}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLogBuffer(entries) {
+  try {
+    localStorage.setItem(`waymark_iot_log_${currentSheetId()}`, JSON.stringify(entries.slice(-LOG_LIMIT)));
+  } catch {
+    /* best-effort */
+  }
+}
 
 const definition = {
   name: 'IoT Sensor Dashboard',
@@ -92,10 +118,17 @@ const definition = {
       .filter(Boolean);
 
     let filter = 'all';
+    let streamMode = 'ws';
+    let ws = null;
+    let pollTimer = null;
+    let connected = false;
+    let logEntries = loadLogBuffer();
 
     const summaryCards = el('div', { className: 'iot-summary-cards' });
     const toolbar = el('div', { className: 'iot-toolbar' });
     const grid = el('div', { className: 'iot-grid' });
+    const streamPanel = el('section', { className: 'iot-stream-panel' });
+    const streamLog = el('div', { className: 'iot-stream-log' });
 
     const allBtn = el('button', {
       className: 'iot-filter-btn active',
@@ -123,14 +156,81 @@ const definition = {
 
     toolbar.append(allBtn, alertsBtn);
 
-    function cycleState(sensor) {
-      const current = ALERT_STATES.indexOf(sensor.state);
-      const next = ALERT_STATES[(current + 1) % ALERT_STATES.length];
-      sensor.state = next;
-      sensor.rawAlert = next;
-      if (cols.alert >= 0) emitEdit(sensor.rowIndex, cols.alert, next);
-      renderSummary();
-      renderGrid();
+    const endpointInput = el('input', {
+      className: 'iot-stream-input',
+      type: 'text',
+      value: 'ws://localhost:8080',
+      placeholder: 'ws://host:port or /api/iot/live',
+    });
+
+    const modeSelect = el('select', { className: 'iot-stream-select' }, [
+      el('option', { value: 'ws', selected: true }, ['WebSocket stream']),
+      el('option', { value: 'poll' }, ['HTTP JSON polling']),
+    ]);
+
+    const intervalInput = el('input', {
+      className: 'iot-stream-input iot-stream-interval',
+      type: 'number',
+      value: '2',
+      min: '1',
+      max: '120',
+      step: '1',
+      title: 'Poll interval (seconds)',
+    });
+
+    const writeThroughCheck = el('input', { type: 'checkbox', checked: 'checked' });
+
+    const connectBtn = el('button', {
+      className: 'iot-stream-connect',
+      on: {
+        click: () => {
+          if (connected) disconnectStream();
+          else connectStream();
+        },
+      },
+    }, ['Connect']);
+
+    const exportBtn = el('button', {
+      className: 'iot-stream-secondary',
+      on: {
+        click: () => {
+          if (!logEntries.length) return;
+          const header = 'timestamp,sensor,reading,unit,state';
+          const rowsCsv = logEntries.map(e => [e.timestamp, e.sensor, e.reading, e.unit, e.state].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','));
+          const csv = [header, ...rowsCsv].join('\n');
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `iot-log-${currentSheetId()}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        },
+      },
+    }, ['Export CSV']);
+
+    const clearLogBtn = el('button', {
+      className: 'iot-stream-secondary',
+      on: {
+        click: () => {
+          logEntries = [];
+          saveLogBuffer(logEntries);
+          renderLog();
+        },
+      },
+    }, ['Clear Log']);
+
+    const streamStatus = el('span', { className: 'iot-stream-status iot-stream-disconnected' }, ['Disconnected']);
+
+    modeSelect.addEventListener('change', () => {
+      streamMode = modeSelect.value;
+      intervalInput.classList.toggle('hidden', streamMode !== 'poll');
+    });
+
+    function setStreamStatus(text, tone) {
+      streamStatus.textContent = text;
+      streamStatus.className = `iot-stream-status iot-stream-${tone}`;
+      connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
     }
 
     function renderSummary() {
@@ -159,6 +259,184 @@ const definition = {
       );
 
       alertsBtn.textContent = `Needs Attention (${attention})`;
+    }
+
+    function renderLog() {
+      streamLog.innerHTML = '';
+      const recent = logEntries.slice(-20).reverse();
+      if (!recent.length) {
+        streamLog.append(el('div', { className: 'iot-log-empty' }, ['No stream samples yet.']));
+        return;
+      }
+      for (const entry of recent) {
+        streamLog.append(el('div', { className: 'iot-log-row' }, [
+          el('span', { className: 'iot-log-time' }, [formatTimestamp(entry.timestamp)]),
+          el('span', { className: 'iot-log-sensor' }, [entry.sensor]),
+          el('span', { className: 'iot-log-reading' }, [formatReading(parseNumber(entry.reading), entry.unit)]),
+          el('span', { className: `iot-log-state iot-log-state-${entry.state.toLowerCase()}` }, [entry.state]),
+        ]));
+      }
+    }
+
+    function upsertSensorReading(payload, sourceTag) {
+      if (!payload || typeof payload !== 'object') return;
+      const sensorName = String(payload.sensor || payload.device || payload.name || '').trim();
+      if (!sensorName) return;
+
+      const target = sensors.find(s => s.sensor === sensorName);
+      if (!target) {
+        setStreamStatus(`Ignored unknown sensor: ${sensorName}`, 'warn');
+        return;
+      }
+
+      if (payload.reading !== undefined && cols.reading >= 0) {
+        const nextReading = String(payload.reading);
+        target.row[cols.reading] = nextReading;
+        target.reading = parseNumber(nextReading);
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.reading, nextReading);
+      }
+      if (payload.unit !== undefined && cols.unit >= 0) {
+        const nextUnit = String(payload.unit || '');
+        target.row[cols.unit] = nextUnit;
+        target.unit = nextUnit;
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.unit, nextUnit);
+      }
+      if (payload.timestamp !== undefined && cols.timestamp >= 0) {
+        const nextTs = String(payload.timestamp || '');
+        target.row[cols.timestamp] = nextTs;
+        target.timestamp = nextTs;
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.timestamp, nextTs);
+      } else if (cols.timestamp >= 0) {
+        const nowIso = new Date().toISOString();
+        target.row[cols.timestamp] = nowIso;
+        target.timestamp = nowIso;
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.timestamp, nowIso);
+      }
+      if (payload.min !== undefined && cols.min >= 0) {
+        const nextMin = String(payload.min);
+        target.row[cols.min] = nextMin;
+        target.min = parseNumber(nextMin);
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.min, nextMin);
+      }
+      if (payload.max !== undefined && cols.max >= 0) {
+        const nextMax = String(payload.max);
+        target.row[cols.max] = nextMax;
+        target.max = parseNumber(nextMax);
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.max, nextMax);
+      }
+      if (payload.alert !== undefined && cols.alert >= 0) {
+        const nextAlert = String(payload.alert || '');
+        target.row[cols.alert] = nextAlert;
+        target.rawAlert = nextAlert;
+        if (writeThroughCheck.checked) emitEdit(target.rowIndex, cols.alert, nextAlert);
+      }
+
+      target.state = resolveState(target.reading, target.min, target.max, target.rawAlert);
+      const logEntry = {
+        timestamp: target.timestamp || new Date().toISOString(),
+        sensor: target.sensor,
+        reading: target.reading,
+        unit: target.unit,
+        state: target.state,
+      };
+      logEntries.push(logEntry);
+      if (logEntries.length > LOG_LIMIT) logEntries = logEntries.slice(-LOG_LIMIT);
+      saveLogBuffer(logEntries);
+
+      setStreamStatus(`Live update from ${sourceTag}: ${target.sensor}`, 'ok');
+      renderSummary();
+      renderGrid();
+      renderLog();
+    }
+
+    function ingestPayload(data, sourceTag) {
+      if (!data) return;
+      if (Array.isArray(data)) {
+        data.forEach(item => upsertSensorReading(item, sourceTag));
+        return;
+      }
+      if (Array.isArray(data.readings)) {
+        data.readings.forEach(item => upsertSensorReading(item, sourceTag));
+        return;
+      }
+      upsertSensorReading(data, sourceTag);
+    }
+
+    async function pollOnce() {
+      const endpoint = (endpointInput.value || '').trim();
+      if (!endpoint) return;
+      try {
+        const response = await fetch(endpoint, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        ingestPayload(payload, 'poll');
+      } catch (err) {
+        setStreamStatus(`Poll error: ${err.message}`, 'error');
+      }
+    }
+
+    function disconnectStream() {
+      connected = false;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      setStreamStatus('Disconnected', 'disconnected');
+    }
+
+    function connectStream() {
+      const endpoint = (endpointInput.value || '').trim();
+      if (!endpoint) {
+        setStreamStatus('Provide an endpoint URL first', 'warn');
+        return;
+      }
+
+      disconnectStream();
+      connected = true;
+      setStreamStatus('Connecting…', 'warn');
+
+      if (streamMode === 'poll') {
+        const seconds = Math.max(1, Math.min(120, Number(intervalInput.value || '2')));
+        pollOnce();
+        pollTimer = setInterval(pollOnce, seconds * 1000);
+        setStreamStatus(`Polling every ${seconds}s`, 'ok');
+        return;
+      }
+
+      try {
+        ws = new WebSocket(endpoint);
+        ws.addEventListener('open', () => setStreamStatus('WebSocket connected', 'ok'));
+        ws.addEventListener('message', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            ingestPayload(payload, 'ws');
+          } catch {
+            setStreamStatus('Received non-JSON WS payload', 'error');
+          }
+        });
+        ws.addEventListener('error', () => setStreamStatus('WebSocket error', 'error'));
+        ws.addEventListener('close', () => {
+          connected = false;
+          setStreamStatus('WebSocket disconnected', 'disconnected');
+        });
+      } catch (err) {
+        connected = false;
+        setStreamStatus(`Connect failed: ${err.message}`, 'error');
+      }
+    }
+
+    function cycleState(sensor) {
+      const current = ALERT_STATES.indexOf(sensor.state);
+      const next = ALERT_STATES[(current + 1) % ALERT_STATES.length];
+      sensor.state = next;
+      sensor.rawAlert = next;
+      if (cols.alert >= 0) emitEdit(sensor.rowIndex, cols.alert, next);
+      renderSummary();
+      renderGrid();
     }
 
     function renderGrid() {
@@ -204,28 +482,6 @@ const definition = {
           readingCell.textContent = formatReading(sensor.reading, sensor.unit);
         }
 
-        const minCell = cols.min >= 0
-          ? editableCell('span', { className: 'iot-range-cell' }, cell(sensor.row, cols.min), sensor.rowIndex, cols.min, {
-              onCommit: (newValue) => {
-                sensor.row[cols.min] = newValue;
-                sensor.min = parseNumber(newValue);
-                renderSummary();
-                renderGrid();
-              },
-            })
-          : el('span', { className: 'iot-range-cell' }, ['—']);
-
-        const maxCell = cols.max >= 0
-          ? editableCell('span', { className: 'iot-range-cell' }, cell(sensor.row, cols.max), sensor.rowIndex, cols.max, {
-              onCommit: (newValue) => {
-                sensor.row[cols.max] = newValue;
-                sensor.max = parseNumber(newValue);
-                renderSummary();
-                renderGrid();
-              },
-            })
-          : el('span', { className: 'iot-range-cell' }, ['—']);
-
         const stateBtn = el('button', {
           className: `iot-state-btn iot-state-${tone}`,
           title: 'Click to cycle state',
@@ -240,9 +496,9 @@ const definition = {
           el('div', { className: 'iot-reading-row' }, [readingCell]),
           el('div', { className: 'iot-meta-row' }, [
             el('span', { className: 'iot-meta-label' }, ['Range']),
-            minCell,
+            el('span', { className: 'iot-range-cell' }, [sensor.min === null ? '—' : String(sensor.min)]),
             el('span', { className: 'iot-range-sep' }, ['to']),
-            maxCell,
+            el('span', { className: 'iot-range-cell' }, [sensor.max === null ? '—' : String(sensor.max)]),
           ]),
           el('div', { className: 'iot-meta-row' }, [
             el('span', { className: 'iot-meta-label' }, ['Updated']),
@@ -252,10 +508,39 @@ const definition = {
       }
     }
 
-    const view = el('div', { className: 'iot-view' }, [summaryCards, toolbar, grid]);
+    streamPanel.append(
+      el('div', { className: 'iot-stream-head' }, [
+        el('h3', { className: 'iot-stream-title' }, ['Live Device Stream']),
+        streamStatus,
+      ]),
+      el('p', { className: 'iot-stream-hint' }, [
+        'Send JSON via WebSocket or a polling endpoint. Supported payloads: { sensor, reading, unit, timestamp, min, max, alert } or { readings: [...] }.',
+      ]),
+      el('div', { className: 'iot-stream-controls' }, [
+        modeSelect,
+        endpointInput,
+        intervalInput,
+        connectBtn,
+      ]),
+      el('div', { className: 'iot-stream-options' }, [
+        el('label', { className: 'iot-stream-toggle' }, [
+          writeThroughCheck,
+          el('span', {}, ['Write-through to sheet']),
+        ]),
+        exportBtn,
+        clearLogBtn,
+      ]),
+      el('div', { className: 'iot-stream-log-wrap' }, [
+        el('div', { className: 'iot-stream-log-title' }, ['Recent Samples']),
+        streamLog,
+      ]),
+    );
+
+    const view = el('div', { className: 'iot-view' }, [summaryCards, streamPanel, toolbar, grid]);
     container.append(view);
     renderSummary();
     renderGrid();
+    renderLog();
   },
 };
 

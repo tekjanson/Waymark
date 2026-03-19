@@ -374,7 +374,7 @@ export function buildCardDetail(group, ctx) {
           el('span', { className: 'kanban-note-author' }, [noteBy || 'Anonymous']),
           noteDate ? el('span', { className: 'kanban-note-date', title: noteDate }, [formatNoteDate(noteDate)]) : null,
         ]),
-        editableCell('div', { className: 'kanban-note-text' }, noteText, nRowIdx, cols.note),
+        textareaCell('div', { className: 'kanban-note-text' }, noteText, nRowIdx, cols.note),
       ]));
     }
     noteSection.append(noteList);
@@ -383,8 +383,8 @@ export function buildCardDetail(group, ctx) {
     if (cols.note >= 0 && typeof template._onInsertAfterRow === 'function') {
       const addTrigger = el('button', { className: 'kanban-add-inline-trigger' }, ['+ Note']);
       const addForm = el('div', { className: 'kanban-add-note-form hidden' });
-      const noteInput = el('input', {
-        type: 'text', className: 'kanban-add-inline-input', placeholder: 'Add a note…',
+      const noteInput = el('textarea', {
+        className: 'kanban-add-inline-input kanban-add-note-input', placeholder: 'Add a note…', rows: '3',
       });
       const nameInput = el('input', {
         type: 'text', className: 'kanban-add-inline-input kanban-add-note-name',
@@ -409,7 +409,7 @@ export function buildCardDetail(group, ctx) {
       }
 
       noteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); submitNote(); }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitNote(); }
         if (e.key === 'Escape') { addForm.classList.add('hidden'); addTrigger.classList.remove('hidden'); }
       });
       nameInput.addEventListener('keydown', (e) => {

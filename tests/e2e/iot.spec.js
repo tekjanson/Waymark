@@ -68,6 +68,45 @@ test('interactive controls use pointer cursor styling', async ({ page }) => {
   await expect(page.locator('.iot-filter-btn').first()).toHaveCSS('cursor', 'pointer');
 });
 
+test('live stream panel renders device connection controls', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-047');
+  await page.waitForSelector('.iot-stream-panel', { timeout: 5000 });
+
+  await expect(page.locator('.iot-stream-title')).toContainText('Live Device Stream');
+  await expect(page.locator('.iot-stream-select')).toBeVisible();
+  await expect(page.locator('.iot-stream-input').first()).toBeVisible();
+  await expect(page.locator('.iot-stream-connect')).toContainText('Connect');
+});
+
+test('HTTP polling stream payload updates matching sensor reading', async ({ page }) => {
+  await page.route('**/iot-test-stream', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        sensor: 'Boiler Room Temp',
+        reading: 24.1,
+        unit: 'C',
+        timestamp: '2026-03-19T18:10:00Z',
+        alert: 'Watch',
+      }),
+    });
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-047');
+  await page.waitForSelector('.iot-stream-panel', { timeout: 5000 });
+
+  await page.locator('.iot-stream-select').selectOption('poll');
+  await page.locator('.iot-stream-input').first().fill('/iot-test-stream');
+  await page.locator('.iot-stream-interval').fill('1');
+  await page.locator('.iot-stream-connect').click();
+
+  await expect(page.locator('.iot-card').first().locator('.iot-reading-value')).toContainText('24.1 C');
+  await expect(page.locator('.iot-stream-status')).toContainText(/Polling every|Live update/);
+});
+
 test('iot dashboard has no horizontal overflow at mobile width', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await setupApp(page);
