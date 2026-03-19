@@ -77,6 +77,27 @@ test('live stream panel renders device connection controls', async ({ page }) =>
   await expect(page.locator('.iot-stream-select')).toBeVisible();
   await expect(page.locator('.iot-stream-input').first()).toBeVisible();
   await expect(page.locator('.iot-stream-connect')).toContainText('Connect');
+  await expect(page.locator('.iot-stream-select')).toContainText('MQTT over WebSocket');
+  await expect(page.locator('.iot-stream-select')).toContainText('Serial (Web Serial API)');
+});
+
+test('selecting MQTT mode shows topic input and hides poll interval', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-047');
+  await page.waitForSelector('.iot-stream-panel', { timeout: 5000 });
+
+  await page.locator('.iot-stream-select').selectOption('mqtt');
+  await expect(page.locator('.iot-stream-topic')).toBeVisible();
+  await expect(page.locator('.iot-stream-interval')).toHaveClass(/hidden/);
+});
+
+test('selecting serial mode shows baud input', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-047');
+  await page.waitForSelector('.iot-stream-panel', { timeout: 5000 });
+
+  await page.locator('.iot-stream-select').selectOption('serial');
+  await expect(page.locator('.iot-stream-baud')).toBeVisible();
 });
 
 test('HTTP polling stream payload updates matching sensor reading', async ({ page }) => {

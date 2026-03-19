@@ -1,7 +1,7 @@
 /* ============================================================
-   iot/index.js — IoT Sensor Dashboard template
-   Browser-only live ingestion (WebSocket or HTTP polling)
-   ============================================================ */
+  iot/index.js — IoT Sensor Dashboard template
+  Browser-only live ingestion (WebSocket, polling, MQTT, serial)
+  ============================================================ */
 
 import { el, cell, editableCell, emitEdit, registerTemplate } from '../shared.js';
 import {
@@ -15,6 +15,80 @@ import {
 } from './helpers.js';
 
 const LOG_LIMIT = 500;
+
+function concatBytes(parts) {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function encodeMqttString(value) {
+  const bytes = new TextEncoder().encode(value || '');
+  const len = bytes.length;
+  return concatBytes([
+    new Uint8Array([(len >> 8) & 0xff, len & 0xff]),
+    bytes,
+  ]);
+}
+
+function encodeMqttRemainingLength(len) {
+  const out = [];
+  let x = len;
+  do {
+    let encoded = x % 128;
+    x = Math.floor(x / 128);
+    if (x > 0) encoded |= 128;
+    out.push(encoded);
+  } while (x > 0);
+  return new Uint8Array(out);
+}
+
+function buildMqttConnectPacket(clientId) {
+  const variableHeader = concatBytes([
+    encodeMqttString('MQTT'),
+    new Uint8Array([0x04, 0x02, 0x00, 0x1e]),
+  ]);
+  const payload = encodeMqttString(clientId || 'waymark-iot-client');
+  const remaining = encodeMqttRemainingLength(variableHeader.length + payload.length);
+  return concatBytes([new Uint8Array([0x10]), remaining, variableHeader, payload]);
+}
+
+function buildMqttSubscribePacket(topic, packetId) {
+  const variableHeader = new Uint8Array([(packetId >> 8) & 0xff, packetId & 0xff]);
+  const payload = concatBytes([encodeMqttString(topic), new Uint8Array([0x00])]);
+  const remaining = encodeMqttRemainingLength(variableHeader.length + payload.length);
+  return concatBytes([new Uint8Array([0x82]), remaining, variableHeader, payload]);
+}
+
+function decodeMqttPublishPayload(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (!bytes.length || ((bytes[0] >> 4) !== 3)) return null;
+
+  let multiplier = 1;
+  let value = 0;
+  let idx = 1;
+  let encoded;
+  do {
+    if (idx >= bytes.length) return null;
+    encoded = bytes[idx++];
+    value += (encoded & 127) * multiplier;
+    multiplier *= 128;
+  } while ((encoded & 128) !== 0);
+
+  if (idx + 2 > bytes.length) return null;
+  const topicLen = (bytes[idx] << 8) + bytes[idx + 1];
+  idx += 2 + topicLen;
+  const qos = (bytes[0] >> 1) & 0x03;
+  if (qos > 0) idx += 2;
+  if (idx > bytes.length) return null;
+
+  return new TextDecoder().decode(bytes.slice(idx));
+}
 
 function currentSheetId() {
   const m = (window.location.hash || '').match(/sheet\/([^/?#]+)/);
@@ -121,6 +195,11 @@ const definition = {
     let streamMode = 'ws';
     let ws = null;
     let pollTimer = null;
+    let mqttPingTimer = null;
+    let mqttPacketId = 1;
+    let serialPort = null;
+    let serialReader = null;
+    let serialKeepReading = false;
     let connected = false;
     let logEntries = loadLogBuffer();
 
@@ -163,9 +242,27 @@ const definition = {
       placeholder: 'ws://host:port or /api/iot/live',
     });
 
+    const topicInput = el('input', {
+      className: 'iot-stream-input iot-stream-topic hidden',
+      type: 'text',
+      value: 'waymark/sensors',
+      placeholder: 'MQTT topic (e.g., site/line-1/sensors)',
+    });
+
+    const baudInput = el('input', {
+      className: 'iot-stream-input iot-stream-baud hidden',
+      type: 'number',
+      value: '115200',
+      min: '300',
+      step: '1',
+      title: 'Serial baud rate',
+    });
+
     const modeSelect = el('select', { className: 'iot-stream-select' }, [
       el('option', { value: 'ws', selected: true }, ['WebSocket stream']),
       el('option', { value: 'poll' }, ['HTTP JSON polling']),
+      el('option', { value: 'mqtt' }, ['MQTT over WebSocket']),
+      el('option', { value: 'serial' }, ['Serial (Web Serial API)']),
     ]);
 
     const intervalInput = el('input', {
@@ -222,9 +319,32 @@ const definition = {
 
     const streamStatus = el('span', { className: 'iot-stream-status iot-stream-disconnected' }, ['Disconnected']);
 
+    function updateModeUi() {
+      const showPoll = streamMode === 'poll';
+      const showMqtt = streamMode === 'mqtt';
+      const showSerial = streamMode === 'serial';
+
+      intervalInput.classList.toggle('hidden', !showPoll);
+      topicInput.classList.toggle('hidden', !showMqtt);
+      baudInput.classList.toggle('hidden', !showSerial);
+
+      if (showMqtt) {
+        endpointInput.placeholder = 'ws://broker:9001/mqtt';
+        if (!endpointInput.value || endpointInput.value === 'ws://localhost:8080') {
+          endpointInput.value = 'ws://localhost:9001/mqtt';
+        }
+      } else if (showSerial) {
+        endpointInput.placeholder = 'Serial port picker opens on Connect';
+      } else if (showPoll) {
+        endpointInput.placeholder = '/api/iot/live';
+      } else {
+        endpointInput.placeholder = 'ws://host:port';
+      }
+    }
+
     modeSelect.addEventListener('change', () => {
       streamMode = modeSelect.value;
-      intervalInput.classList.toggle('hidden', streamMode !== 'poll');
+      updateModeUi();
     });
 
     function setStreamStatus(text, tone) {
@@ -381,9 +501,23 @@ const definition = {
         clearInterval(pollTimer);
         pollTimer = null;
       }
+      if (mqttPingTimer) {
+        clearInterval(mqttPingTimer);
+        mqttPingTimer = null;
+      }
       if (ws) {
         ws.close();
         ws = null;
+      }
+      if (serialReader) {
+        serialKeepReading = false;
+        try { serialReader.cancel(); } catch { /* noop */ }
+        try { serialReader.releaseLock(); } catch { /* noop */ }
+        serialReader = null;
+      }
+      if (serialPort) {
+        try { serialPort.close(); } catch { /* noop */ }
+        serialPort = null;
       }
       setStreamStatus('Disconnected', 'disconnected');
     }
@@ -404,6 +538,126 @@ const definition = {
         pollOnce();
         pollTimer = setInterval(pollOnce, seconds * 1000);
         setStreamStatus(`Polling every ${seconds}s`, 'ok');
+        return;
+      }
+
+      if (streamMode === 'serial') {
+        if (!('serial' in navigator) || !navigator.serial || typeof navigator.serial.requestPort !== 'function') {
+          connected = false;
+          setStreamStatus('Web Serial not supported in this browser', 'warn');
+          return;
+        }
+        const baudRate = Math.max(300, Number(baudInput.value || '115200'));
+        navigator.serial.requestPort()
+          .then(async (port) => {
+            serialPort = port;
+            await serialPort.open({ baudRate });
+            serialReader = serialPort.readable.getReader();
+            serialKeepReading = true;
+            setStreamStatus(`Serial connected @ ${baudRate} baud`, 'ok');
+
+            let buffer = '';
+            const decoder = new TextDecoder();
+            while (serialKeepReading) {
+              const { value, done } = await serialReader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              let splitIdx = buffer.indexOf('\n');
+              while (splitIdx >= 0) {
+                const line = buffer.slice(0, splitIdx).trim();
+                buffer = buffer.slice(splitIdx + 1);
+                if (line) {
+                  try {
+                    const payload = JSON.parse(line);
+                    ingestPayload(payload, 'serial');
+                  } catch {
+                    setStreamStatus('Serial line is not valid JSON', 'warn');
+                  }
+                }
+                splitIdx = buffer.indexOf('\n');
+              }
+            }
+          })
+          .catch((err) => {
+            connected = false;
+            setStreamStatus(`Serial error: ${err.message}`, 'error');
+          });
+        return;
+      }
+
+      if (streamMode === 'mqtt') {
+        const topic = (topicInput.value || '').trim();
+        if (!topic) {
+          connected = false;
+          setStreamStatus('Provide an MQTT topic', 'warn');
+          return;
+        }
+
+        const clientId = `waymark-${Math.random().toString(16).slice(2, 10)}`;
+        try {
+          ws = new WebSocket(endpoint, ['mqtt']);
+        } catch {
+          ws = new WebSocket(endpoint);
+        }
+        ws.binaryType = 'arraybuffer';
+
+        ws.addEventListener('open', () => {
+          ws.send(buildMqttConnectPacket(clientId));
+          setStreamStatus('MQTT transport connected', 'warn');
+        });
+
+        ws.addEventListener('message', async (event) => {
+          let bytes;
+          if (event.data instanceof ArrayBuffer) {
+            bytes = new Uint8Array(event.data);
+          } else if (event.data instanceof Blob) {
+            bytes = new Uint8Array(await event.data.arrayBuffer());
+          } else if (typeof event.data === 'string') {
+            try {
+              ingestPayload(JSON.parse(event.data), 'mqtt');
+            } catch {
+              setStreamStatus('MQTT bridge sent non-JSON string payload', 'warn');
+            }
+            return;
+          } else {
+            return;
+          }
+
+          const type = bytes[0] >> 4;
+          if (type === 2) {
+            const packetId = mqttPacketId;
+            mqttPacketId = mqttPacketId >= 65535 ? 1 : mqttPacketId + 1;
+            ws.send(buildMqttSubscribePacket(topic, packetId));
+            if (mqttPingTimer) clearInterval(mqttPingTimer);
+            mqttPingTimer = setInterval(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(new Uint8Array([0xc0, 0x00]));
+              }
+            }, 25000);
+            setStreamStatus(`MQTT subscribed: ${topic}`, 'ok');
+            return;
+          }
+
+          if (type === 3) {
+            const payloadText = decodeMqttPublishPayload(bytes);
+            if (!payloadText) return;
+            try {
+              ingestPayload(JSON.parse(payloadText), 'mqtt');
+            } catch {
+              setStreamStatus('MQTT payload must be JSON', 'warn');
+            }
+          }
+        });
+
+        ws.addEventListener('error', () => setStreamStatus('MQTT socket error', 'error'));
+        ws.addEventListener('close', () => {
+          connected = false;
+          if (mqttPingTimer) {
+            clearInterval(mqttPingTimer);
+            mqttPingTimer = null;
+          }
+          setStreamStatus('MQTT disconnected', 'disconnected');
+        });
         return;
       }
 
@@ -514,11 +768,13 @@ const definition = {
         streamStatus,
       ]),
       el('p', { className: 'iot-stream-hint' }, [
-        'Send JSON via WebSocket or a polling endpoint. Supported payloads: { sensor, reading, unit, timestamp, min, max, alert } or { readings: [...] }.',
+        'Supports WebSocket JSON, HTTP polling JSON, MQTT-over-WebSocket topic JSON, and line-delimited JSON over serial. Payloads: { sensor, reading, unit, timestamp, min, max, alert } or { readings: [...] }.',
       ]),
       el('div', { className: 'iot-stream-controls' }, [
         modeSelect,
         endpointInput,
+        topicInput,
+        baudInput,
         intervalInput,
         connectBtn,
       ]),
@@ -538,6 +794,7 @@ const definition = {
 
     const view = el('div', { className: 'iot-view' }, [summaryCards, streamPanel, toolbar, grid]);
     container.append(view);
+    updateModeUi();
     renderSummary();
     renderGrid();
     renderLog();
