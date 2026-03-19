@@ -31,6 +31,19 @@ Traditional one-shot mode: read workboard → select task → implement → done
 
 ## 0.1 BOOT SEQUENCE — Run These Steps First (Both Modes)
 
+### Workboard Target Selection (Project-Aware)
+
+The builder no longer depends on a single hardcoded workboard sheet. `check-workboard.js`,
+`update-workboard.js`, and `watch-workboard.js` resolve the target board in this order:
+
+1. `WAYMARK_WORKBOARD_URL` (Google Sheets URL)
+2. `WAYMARK_WORKBOARD_ID` (raw spreadsheet ID)
+3. `WAYMARK_PROJECT` alias from `generated/workboard-config.json`
+4. Fallback default board
+
+To swap projects, set `WAYMARK_PROJECT` before running the builder, or change
+`activeProject` in `generated/workboard-config.json`.
+
 1. **Read AI_LAWS** — Load and internalize every rule from `.github/instructions/AI_laws.instructions.md`. These are non-negotiable. Any violation is a hard reject.
 2. **Query the workboard** — Run the one-shot check script to get LIVE data:
    ```bash
@@ -280,7 +293,7 @@ When implementation + tests pass:
    ```bash
    node scripts/generate-test-report.js --upload
    ```
-   This runs the full test suite, generates testcase-template fixtures, and uploads them to Google Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` in a subfolder named `{branch} — {date}`. Each spec file becomes a Google Sheet in testcase format.
+   This runs the full test suite, generates testcase-template fixtures, and uploads them to Google Drive folder `1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4` in a subfolder named `{branch} — {date}`. Each spec file becomes a Google Sheet in testcase format.
    The script uses OAuth user credentials (saved at `~/.config/gcloud/waymark-oauth-token.json`). If the token is missing, run `node scripts/get-oauth-token.js` once to authenticate.
    The script writes the Drive folder URL to `generated/test-report/drive-url.txt`. Read this file to get the link for inclusion in QA notes.
 3. Update stage to QA:
@@ -955,7 +968,7 @@ node scripts/get-oauth-token.js
 ```
 This starts a local server and opens the browser for Google consent. The refresh token persists until revoked.
 
-The upload creates a subfolder in Drive folder `1Qh_keU8NHqevMJBAX7sAZkp2pr07s9-q` named `{branch} — {date}` containing:
+The upload creates a subfolder in Drive folder `1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4` named `{branch} — {date}` containing:
 - One Google Sheet per spec file in testcase template format (Test Case, Result, Expected, Actual, Priority, Notes)
 
 Every sheet in the folder uses testcase-template headers so the Waymark directory view renders the folder as a **Test Suite Overview** with aggregated pass/fail/blocked/skip counts and pass-rate color coding.

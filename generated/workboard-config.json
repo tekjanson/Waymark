@@ -1,0 +1,9 @@
+{
+  "activeProject": "waymark",
+  "projects": {
+    "waymark": {
+      "spreadsheetId": "1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI",
+      "range": "Sheet1!A1:I500"
+    }
+  }
+}
