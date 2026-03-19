@@ -27,7 +27,7 @@
 const { resolveWorkboardConfig } = require('./workboard-config');
 
 const DEFAULT_SPREADSHEET_ID = '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
-const DEFAULT_RANGE          = 'Sheet1!A1:I500';
+const DEFAULT_RANGE          = 'Sheet1!A:I';
 const WORKBOARD = resolveWorkboardConfig({
   defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
   defaultRange: DEFAULT_RANGE,
