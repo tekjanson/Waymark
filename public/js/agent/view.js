@@ -6,6 +6,7 @@
 import { el } from '../ui.js';
 import { renderMarkdown } from './markdown.js';
 import { SLASH_COMMANDS } from './slash-commands.js';
+import * as storage from '../storage.js';
 
 /* ---------- UI Rendering ---------- */
 
@@ -61,14 +62,21 @@ export function renderAgentUI(args) {
     onRunSlashCommand,
   });
 
+  const contextBar = buildContextBar({
+    hasKeys,
+    onAttach: args.onAttachFile,
+    onRemove: args.onRemoveFile,
+  });
+
   const wrapper = el('div', { className: 'agent-container' }, [
     header,
     chatBody,
+    contextBar,
     inputRow,
   ]);
 
   container.appendChild(wrapper);
-  return { chatBody };
+  return { chatBody, contextBar };
 }
 
 /**
@@ -329,4 +337,156 @@ function buildSuggestion(text, onSendMessage) {
     className: 'agent-suggestion',
     on: { click: () => onSendMessage(text) },
   }, [text]);
+}
+
+/* ---------- Context Bar ---------- */
+
+/**
+ * Build the context bar that shows pinned files below the chat body.
+ * @param {Object} args
+ * @returns {HTMLElement}
+ */
+function buildContextBar(args) {
+  const { hasKeys, onAttach, onRemove } = args;
+  const bar = el('div', { className: 'agent-context-bar' });
+
+  function refresh() {
+    bar.innerHTML = '';
+    const files = storage.getAgentContextFiles();
+    if (files.length) {
+      const chips = el('div', { className: 'agent-context-chips' });
+      files.forEach(file => {
+        const chip = el('div', { className: 'agent-context-chip' }, [
+          el('span', { className: 'agent-context-chip-icon' }, ['📄']),
+          el('span', { className: 'agent-context-chip-name', title: file.name }, [
+            file.name.length > 28 ? file.name.slice(0, 26) + '…' : file.name,
+          ]),
+          el('button', {
+            className: 'agent-context-chip-remove',
+            title: 'Remove from context',
+            on: {
+              click: () => {
+                if (onRemove) onRemove(file.id);
+                refresh();
+              },
+            },
+          }, ['×']),
+        ]);
+        chips.appendChild(chip);
+      });
+      bar.appendChild(chips);
+    }
+    if (hasKeys) {
+      bar.appendChild(
+        el('button', {
+          className: 'agent-context-attach-btn',
+          title: 'Add file to AI context',
+          on: { click: () => { if (onAttach) onAttach(); } },
+        }, ['📎 Add file'])
+      );
+    }
+  }
+
+  refresh();
+  bar._refresh = refresh;
+  return bar;
+}
+
+/**
+ * Refresh the context bar (call after adding/removing files).
+ * @param {HTMLElement} contextBar
+ */
+export function refreshContextBar(contextBar) {
+  if (contextBar?._refresh) contextBar._refresh();
+}
+
+/**
+ * Build the file picker overlay for selecting Drive sheets.
+ * @param {Array<{id: string, name: string, folder?: string}>} sheets
+ * @param {Function} onSelect — called with {id, name}
+ * @returns {HTMLElement}
+ */
+export function buildFilePicker(sheets, onSelect) {
+  let filterText = '';
+
+  const listContainer = el('div', { className: 'agent-picker-list' });
+  const overlay = el('div', { className: 'agent-picker-overlay' });
+
+  function renderList() {
+    listContainer.innerHTML = '';
+    const lower = filterText.toLowerCase();
+    const filtered = lower
+      ? sheets.filter(s => s.name.toLowerCase().includes(lower))
+      : sheets;
+    const pinned = storage.getAgentContextFiles();
+    const pinnedIds = new Set(pinned.map(f => f.id));
+
+    if (!filtered.length) {
+      listContainer.appendChild(
+        el('div', { className: 'agent-picker-empty' }, ['No matching sheets'])
+      );
+      return;
+    }
+    filtered.slice(0, 50).forEach(sheet => {
+      const alreadyPinned = pinnedIds.has(sheet.id);
+      const item = el('div', {
+        className: 'agent-picker-item' + (alreadyPinned ? ' agent-picker-item-pinned' : ''),
+        on: {
+          click: () => {
+            if (!alreadyPinned) {
+              onSelect({ id: sheet.id, name: sheet.name });
+              close();
+            }
+          },
+        },
+      }, [
+        el('span', { className: 'agent-picker-item-icon' }, ['📊']),
+        el('span', { className: 'agent-picker-item-name' }, [sheet.name]),
+        sheet.folder
+          ? el('span', { className: 'agent-picker-item-folder' }, [sheet.folder])
+          : null,
+        alreadyPinned
+          ? el('span', { className: 'agent-picker-item-badge' }, ['added'])
+          : null,
+      ].filter(Boolean));
+      listContainer.appendChild(item);
+    });
+  }
+
+  const searchInput = el('input', {
+    className: 'agent-picker-search',
+    placeholder: 'Search your sheets…',
+    type: 'text',
+    on: {
+      input: (e) => {
+        filterText = e.target.value;
+        renderList();
+      },
+    },
+  });
+
+  function close() {
+    overlay.remove();
+  }
+
+  const panel = el('div', { className: 'agent-picker-panel' }, [
+    el('div', { className: 'agent-picker-header' }, [
+      el('span', { className: 'agent-picker-title' }, ['Add file to context']),
+      el('button', {
+        className: 'agent-picker-close',
+        on: { click: close },
+      }, ['×']),
+    ]),
+    searchInput,
+    listContainer,
+  ]);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.appendChild(panel);
+
+  renderList();
+  requestAnimationFrame(() => searchInput.focus());
+  return overlay;
 }

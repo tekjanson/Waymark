@@ -323,6 +323,17 @@ export function setAgentKeyIndex(idx) {
   set('agent_key_index', idx);
 }
 
+/* --- Agent Context Files --- */
+
+export function getAgentContextFiles() {
+  return get('agent_context_files') || [];
+}
+
+export function setAgentContextFiles(files) {
+  if (Array.isArray(files) && files.length > 0) set('agent_context_files', files);
+  else remove('agent_context_files');
+}
+
 /* --- Import Folder --- */
 
 export function getImportFolderId() {
