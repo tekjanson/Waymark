@@ -65,8 +65,11 @@ app.use((_req, res, next) => {
 // In WAYMARK_LOCAL mode: skip the clone, serve from local public/ only.
 
 let githubSource;
-if (config.WAYMARK_LOCAL) {
-  // Stub — tests serve from the local public/ directory
+if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
+  // Stub — serve from local public/ directory (mock mode or local dev override)
+  if (config.GITHUB_SOURCE_LOCAL && !config.WAYMARK_LOCAL) {
+    console.log('🔧  GITHUB_SOURCE_LOCAL=true — serving frontend from local public/ (auth still live)');
+  }
   githubSource = {
     middleware: (_req, _res, next) => next(),
     setRef() {},

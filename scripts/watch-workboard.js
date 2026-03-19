@@ -25,7 +25,7 @@
 
    ============================================================ */
 
-const SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+const SPREADSHEET_ID = process.env.WAYMARK_WORKBOARD_ID || '1OSOsGds0IAW_UP4iMvLdWbwffrRacbVmYn9FrtF1tbI';
 const RANGE          = 'Sheet1!A1:I500';
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 

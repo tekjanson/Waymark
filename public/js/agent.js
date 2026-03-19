@@ -8,76 +8,218 @@ import { el, showToast } from './ui.js';
 import * as storage from './storage.js';
 import * as userData from './user-data.js';
 import { api } from './api-client.js';
-import { TEMPLATES } from './templates/index.js';
+import {
+  BASE_SYSTEM_PROMPT,
+  DEFAULT_MODEL,
+  MAX_AGGRESSIVE_CONTEXT_MESSAGES,
+  MAX_ASSISTANT_MESSAGE_CHARS,
+  MAX_CONTEXT_CHARS,
+  MAX_CONTEXT_MESSAGES,
+  MAX_CONTEXT_SHEETS,
+  MAX_ESTIMATED_REQUEST_TOKENS,
+  MAX_OUTPUT_TOKENS,
+  MAX_PLANNED_BRIEF_CHARS,
+  MAX_PLANNED_USER_MESSAGE_CHARS,
+  MAX_RAW_CONVERSATION_TOKENS,
+  MAX_USER_MESSAGE_CHARS,
+  TOOL_DECLARATIONS,
+  buildConversationSummary,
+  buildPlannerBrief,
+  buildRecentSheetHint,
+  buildRequestBody,
+  compactContextText,
+  estimateRawConversationTokens,
+  estimateRequestTokens,
+  geminiHeaders,
+  geminiUrl,
+  getRecentConversationSheets,
+  shouldUsePlannerRound,
+} from './agent/config.js';
+import { renderMarkdown } from './agent/markdown.js';
+import { showSettingsModal } from './agent/settings.js';
+import { runSlashCommand } from './agent/slash-commands.js';
+import {
+  appendSheetPreviewCard,
+  buildEmptyState,
+  buildMessage,
+  buildWelcome,
+  renderAgentUI,
+} from './agent/view.js';
+import {
+  executeTool,
+  removeRetryIndicator,
+  removeToolIndicator,
+  showRetryIndicator,
+  showToolIndicator,
+  toolCreateSheet,
+} from './agent/tools.js';
 
-/* ---------- Constants ---------- */
-
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.0-flash';
-
-const SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
-
-Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
-
-Available templates: checklist (task lists), budget (finances), kanban (project boards), tracker (progress tracking), schedule (timetables), contacts (address books), inventory (stock management), log (activity logs), habit (habit tracking), timesheet (time tracking), crm (sales pipelines), meal (meal plans), travel (trip itineraries), roster (shift schedules), testcases (QA testing), recipe (cookbooks), poll (surveys), changelog (release notes), social (social feeds), flow (flow diagrams), automation (workflow automation), grading (gradebooks).
-
-Guidelines:
-- Populate with realistic example data (3–5 rows minimum) so the user sees the format.
-- All cell values must be strings — numbers ("500"), dates ("2026-03-15").
-- If unsure which template fits, ask or default to checklist (lists) or kanban (projects).
-- Be conversational and helpful.`;
-
-/** Maximum number of messages to keep in context for API calls */
-const MAX_CONTEXT_MESSAGES = 20;
+/** Cached context string — refreshed once per _sendMessage call. */
+let _cachedContext = '';
 
 /**
- * Known template headers — derived from each template's `defaultHeaders`
- * property, which is the single source of truth in the template definition.
- * This is computed once at module load so agent.js never drifts out of sync.
- * @type {Record<string, string[]>}
+ * Build a dynamic system prompt with fresh context.
+ * Context is fetched once at the start of _sendMessage and cached.
+ * @returns {string}
  */
-const KNOWN_HEADERS = Object.fromEntries(
-  Object.entries(TEMPLATES)
-    .filter(([, t]) => Array.isArray(t.defaultHeaders))
-    .map(([k, t]) => [k, t.defaultHeaders])
-);
+function _getSystemPrompt() {
+  return _cachedContext
+    ? BASE_SYSTEM_PROMPT + '\n\n' + _cachedContext
+    : BASE_SYSTEM_PROMPT;
+}
 
-/** Column order per template — compact reference for tool description */
-const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
-  .map(([k, cols]) => `${k}: ${cols.join(', ')}`)
-  .join(' | ');
+function _geminiUrl(model, action, query = '') {
+  return geminiUrl(model, action, query);
+}
 
-/** Tool definitions for Gemini function calling */
-const TOOL_DECLARATIONS = [{
-  functionDeclarations: [{
-    name: 'create_sheet',
-    description: 'Create a new Google Sheet. Headers are auto-filled from the template. ' +
-      'Provide data rows matching the column order for the chosen template. ' +
-      'Column order per template — ' + TEMPLATE_COLUMNS,
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        template: {
-          type: 'STRING',
-          description: 'Template key: checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading',
-        },
-        title: {
-          type: 'STRING',
-          description: 'The title for the new spreadsheet (e.g. "My Budget Tracker", "Project Tasks")',
-        },
-        data: {
-          type: 'ARRAY',
-          description: 'Data rows (NO headers — auto-filled). Each row is an array of strings matching the template column order.',
-          items: {
-            type: 'ARRAY',
-            items: { type: 'STRING' },
-          },
-        },
-      },
-      required: ['template', 'title', 'data'],
+function _geminiHeaders(apiKey) {
+  return geminiHeaders(apiKey);
+}
+
+function _buildRequestBody(contents) {
+  return buildRequestBody(contents, _getSystemPrompt());
+}
+
+function _compactContextText(text, maxChars) {
+  return compactContextText(text, maxChars);
+}
+
+function _buildConversationSummary(history, recentMessageLimit) {
+  return buildConversationSummary(history, recentMessageLimit);
+}
+
+function _shouldUsePlannerRound(userText) {
+  return shouldUsePlannerRound(userText);
+}
+
+/**
+ * Throw before making a model call if the request is too large for the local budget.
+ * @param {Object} body
+ * @param {string} phase
+ */
+function _assertRequestWithinBudget(body, phase) {
+  const estimatedTokens = estimateRequestTokens(body);
+  if (estimatedTokens > MAX_ESTIMATED_REQUEST_TOKENS) {
+    throw new Error(
+      `${phase} would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_ESTIMATED_REQUEST_TOKENS}. ` +
+      'Clear older chat messages or simplify the request before trying again.'
+    );
+  }
+}
+
+/**
+ * Refuse obviously oversized requests before any network activity.
+ * @param {string} userMessage
+ */
+function _assertConversationWithinBudget(userMessage) {
+  const estimatedTokens = estimateRawConversationTokens(_messages, userMessage, _getSystemPrompt());
+  if (estimatedTokens > MAX_RAW_CONVERSATION_TOKENS) {
+    throw new Error(
+      `This conversation would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_RAW_CONVERSATION_TOKENS}. ` +
+      'Clear older chat messages or simplify the request before trying again.'
+    );
+  }
+}
+
+/**
+ * Ask the model for a tiny execution brief when the request is complex enough
+ * to benefit from one extra round-trip.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {string} userText
+ * @returns {Promise<string>}
+ */
+async function _fetchPlannerMicroBrief(apiKey, keyIdx, userText) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const url = geminiUrl(model, 'generateContent');
+  const compactUserText = compactContextText(userText, MAX_USER_MESSAGE_CHARS);
+  const plannerBody = {
+    contents: [{
+      role: 'user',
+      parts: [{
+        text: 'Compress this request into one tiny execution brief. Mention likely templates, key constraints, and whether multiple sheets are needed. Plain text only. 80 words max. Request: ' + compactUserText,
+      }],
+    }],
+    systemInstruction: {
+      parts: [{ text: 'You are a planning compressor for Waymark. Output one short plain-text execution brief only. No markdown. No intro. No bullets unless essential.' }],
     },
-  }],
-}];
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.8,
+      maxOutputTokens: 120,
+    },
+  };
+
+  _assertRequestWithinBudget(plannerBody, 'Planner round');
+  const data = await _fetchGemini(url, plannerBody, keyIdx);
+  storage.recordKeyUsage(keyIdx);
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join(' ').trim();
+  return compactContextText(text, MAX_PLANNED_BRIEF_CHARS);
+}
+
+/**
+ * Build the final user message sent to the model.
+ * @param {string} userText
+ * @returns {string}
+ */
+function _buildPlannedUserMessage(userText) {
+  const compactUserText = compactContextText(userText, MAX_USER_MESSAGE_CHARS);
+  const plannerBrief = buildPlannerBrief(compactUserText);
+  const recentSheetHint = buildRecentSheetHint(compactUserText, _messages);
+  if (!plannerBrief && !recentSheetHint) return compactUserText;
+  return compactContextText(
+    [
+      plannerBrief ? `Planner brief: ${plannerBrief}` : '',
+      recentSheetHint,
+      `User request: ${compactUserText}`,
+    ].filter(Boolean).join(' '),
+    MAX_PLANNED_USER_MESSAGE_CHARS
+  );
+}
+
+/**
+ * Refresh the context block: current date, user name, and their sheets.
+ * Called once per user message to keep context fresh without duplicate API calls.
+ */
+async function _refreshContext() {
+  const parts = [];
+
+  // Current date
+  const now = new Date();
+  parts.push(`Today is ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
+
+  // User identity
+  const user = api.auth.getUser();
+  if (user?.name) {
+    parts.push(`The user's name is ${user.name}.`);
+  }
+
+  // User's sheets — fetched from Drive
+  try {
+    const sheets = await api.drive.getAllSheets();
+    if (sheets.length) {
+      const sheetList = sheets.slice(0, MAX_CONTEXT_SHEETS).map(s =>
+        s.folder ? `"${s.name}" (id: ${s.id}, folder: ${s.folder})` : `"${s.name}" (id: ${s.id})`
+      ).join(', ');
+      parts.push(`The user has ${sheets.length} sheet(s) in Drive.`);
+      parts.push(`A few relevant sheet examples: ${sheetList}.`);
+      parts.push('If the user mentions a sheet that is not listed here, use search_sheets to find it by name before using read_sheet or update_sheet.');
+    }
+  } catch {
+    // Non-critical — continue without sheet list
+  }
+
+  const recentSheets = getRecentConversationSheets(_messages);
+  if (recentSheets.length) {
+    const recentList = recentSheets
+      .map(sheet => `"${sheet.title}" (id: ${sheet.id})`)
+      .join(', ');
+    parts.push(`Recent sheet references from this conversation: ${recentList}.`);
+    parts.push('If the user says "that sheet", "that checklist", "it", or asks to add/change items in something you just created, resolve that to the most relevant recent sheet ID and prefer update_sheet over creating a duplicate.');
+  }
+
+  _cachedContext = parts.join(' ');
+}
 
 /* ---------- State ---------- */
 
@@ -85,6 +227,56 @@ let _messages = [];
 let _container = null;
 let _chatBody = null;
 let _isStreaming = false;
+let _abortController = null;
+let _lastKeyResetDate = null;
+
+/* ---------- Key Rotation ---------- */
+
+/**
+ * Pick the next key from the ring using least-recently-used strategy.
+ * Billed keys are preferred for expensive models.
+ * Returns { key, idx } or null if ring is empty.
+ * @returns {{ key: string, idx: number } | null}
+ */
+function _getNextKey() {
+  const keys = storage.getAgentKeys();
+  if (keys.length === 0) return null;
+
+  // Reset daily counters if new day
+  const today = new Date().toISOString().slice(0, 10);
+  if (_lastKeyResetDate !== today) {
+    storage.resetDailyKeyCounters();
+    _lastKeyResetDate = today;
+  }
+
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const isExpensiveModel = /pro/i.test(model);
+
+  // Filter out keys that errored in the last 60 seconds
+  const now = Date.now();
+  const available = keys.map((k, i) => ({ ...k, idx: i }))
+    .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
+
+  if (available.length === 0) {
+    // All keys recently errored — return the one with oldest error
+    const all = keys.map((k, i) => ({ ...k, idx: i }));
+    all.sort((a, b) => new Date(a.lastError || 0).getTime() - new Date(b.lastError || 0).getTime());
+    return { key: all[0].key, idx: all[0].idx };
+  }
+
+  // For expensive models, prefer billed keys
+  if (isExpensiveModel) {
+    const billed = available.filter(k => k.isBilled);
+    if (billed.length > 0) {
+      billed.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+      return { key: billed[0].key, idx: billed[0].idx };
+    }
+  }
+
+  // LRU: pick key with fewest requests today
+  available.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+  return { key: available[0].key, idx: available[0].idx };
+}
 
 /* ---------- Public API ---------- */
 
@@ -95,9 +287,13 @@ let _isStreaming = false;
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
-  // Sync API key from Drive if available and not already in localStorage
+  // Sync API keys from Drive if available and not already in localStorage
   const driveSettings = userData.getAgentSettings();
-  if (driveSettings?.apiKey && !storage.getAgentApiKey()) {
+  if (driveSettings?.keys?.length && storage.getAgentKeys().length === 0) {
+    storage.setAgentKeys(driveSettings.keys);
+    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+  } else if (driveSettings?.apiKey && storage.getAgentKeys().length === 0) {
+    // Legacy single-key Drive sync
     storage.setAgentApiKey(driveSettings.apiKey);
     storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
   }
@@ -119,142 +315,63 @@ export function hide() {
 /* ---------- UI Rendering ---------- */
 
 function _renderUI() {
-  const apiKey = storage.getAgentApiKey();
-  const model = storage.getAgentModel() || DEFAULT_MODEL;
-
-  const header = el('div', { className: 'agent-header' }, [
-    el('div', { className: 'agent-header-left' }, [
-      el('span', { className: 'agent-header-icon' }, ['🤖']),
-      el('h2', { className: 'agent-header-title' }, ['Waymark AI']),
-    ]),
-    el('div', { className: 'agent-header-actions' }, [
-      el('button', {
-        className: 'agent-settings-btn',
-        title: 'Configure API key',
-        on: { click: _showSettings },
-      }, ['⚙️ Settings']),
-      el('button', {
-        className: 'agent-clear-btn',
-        title: 'Clear conversation',
-        on: { click: _clearConversation },
-      }, ['🗑️ Clear']),
-    ]),
-  ]);
-
-  _chatBody = el('div', { className: 'agent-chat-body' });
-
-  if (!apiKey) {
-    _chatBody.appendChild(_buildWelcome());
-  } else if (_messages.length === 0) {
-    _chatBody.appendChild(_buildEmptyState());
-  } else {
-    _messages.forEach(msg => _chatBody.appendChild(_buildMessage(msg)));
-  }
-
-  const inputRow = _buildInputRow(apiKey);
-
-  const wrapper = el('div', { className: 'agent-container' }, [
-    header,
-    _chatBody,
-    inputRow,
-  ]);
-
-  _container.appendChild(wrapper);
+  const hasKeys = storage.getAgentKeys().length > 0;
+  const rendered = renderAgentUI({
+    container: _container,
+    messages: _messages,
+    hasKeys,
+    onShowSettings: _showSettings,
+    onClearConversation: _clearConversation,
+    onSendMessage: _sendMessage,
+    onRunSlashCommand: _runSlashCommand,
+  });
+  _chatBody = rendered.chatBody;
 }
 
 function _buildWelcome() {
-  return el('div', { className: 'agent-welcome' }, [
-    el('div', { className: 'agent-welcome-icon' }, ['🤖']),
-    el('h3', {}, ['Welcome to Waymark AI']),
-    el('p', {}, ['I can help you create and organise Google Sheets — budgets, project boards, meal plans, and more. Set up your API key to get started.']),
-    el('p', { className: 'agent-welcome-hint' }, [
-      'Get a free API key at ',
-      el('a', {
-        href: 'https://aistudio.google.com/apikey',
-        target: '_blank',
-        rel: 'noopener',
-      }, ['aistudio.google.com/apikey']),
-    ]),
-    el('button', {
-      className: 'agent-welcome-btn',
-      on: { click: _showSettings },
-    }, ['⚙️ Configure API Key']),
-  ]);
+  return buildWelcome(_showSettings);
 }
 
 function _buildEmptyState() {
-  return el('div', { className: 'agent-empty' }, [
-    el('p', { className: 'agent-empty-text' }, ['I can help you create and organise Google Sheets that Waymark renders as rich views. What would you like to build?']),
-    el('div', { className: 'agent-suggestions' }, [
-      _buildSuggestion('Create a project board to track my tasks'),
-      _buildSuggestion('Build a weekly meal planner'),
-      _buildSuggestion('Set up a budget tracker for this month'),
-      _buildSuggestion('Make a recipe sheet for my favourite dishes'),
-    ]),
-  ]);
+  return buildEmptyState(_sendMessage);
 }
 
-function _buildSuggestion(text) {
-  return el('button', {
-    className: 'agent-suggestion',
-    on: { click: () => _sendMessage(text) },
-  }, [text]);
-}
+/* ---------- Slash Commands ---------- */
 
-function _buildInputRow(apiKey) {
-  const inputAttrs = {
-    className: 'agent-input',
-    placeholder: apiKey ? 'Describe what you\'d like to create or organise...' : 'Configure API key in Settings first...',
-    rows: 1,
-    on: {
-      keydown: (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          _sendMessage(input.value);
-        }
-      },
-      input: () => {
-        input.style.height = 'auto';
-        input.style.height = Math.min(input.scrollHeight, 150) + 'px';
-      },
-    },
-  };
-  if (!apiKey) inputAttrs.disabled = 'disabled';
-
-  const input = el('textarea', inputAttrs);
-
-  const sendAttrs = {
-    className: 'agent-send-btn',
-    title: 'Send message',
-    on: { click: () => _sendMessage(input.value) },
-  };
-  if (!apiKey) sendAttrs.disabled = 'disabled';
-
-  const sendBtn = el('button', sendAttrs, ['➤']);
-
-  return el('div', { className: 'agent-input-row' }, [input, sendBtn]);
+/**
+ * Execute a slash command. Injected as a system message so no API call is
+ * needed. Returns the chat feedback text or null if command is unknown.
+ * @param {string} name  - e.g. 'new', 'list', 'open', 'clear', 'keys', 'help'
+ * @param {string[]} args
+ * @returns {Promise<string | null>}
+ */
+async function _runSlashCommand(name, args) {
+  return runSlashCommand(name, args, {
+    clearConversation: _clearConversation,
+    showSettings: _showSettings,
+    listSheets: () => api.drive.getAllSheets(),
+    createBlankSheet: ({ template, title }) => _toolCreateSheet({ template, title, data: [['']] }),
+    appendSheetPreviewCard: _appendSheetPreviewCard,
+  });
 }
 
 /* ---------- Message Rendering ---------- */
 
+/**
+ * Append an inline sheet preview card to the chat body.
+ * @param {{ spreadsheetId: string, title: string, template: string, rowCount: number }} result
+ */
+function _appendSheetPreviewCard(result) {
+  appendSheetPreviewCard(_chatBody, result);
+}
+
+/**
+ * Build a chat message node for either user or assistant content.
+ * @param {{ role: string, content: string }} msg
+ * @returns {HTMLElement}
+ */
 function _buildMessage(msg) {
-  const isUser = msg.role === 'user';
-  const wrapper = el('div', {
-    className: 'agent-message ' + (isUser ? 'agent-message-user' : 'agent-message-assistant'),
-  });
-
-  const avatar = el('div', { className: 'agent-message-avatar' }, [isUser ? '👤' : '🤖']);
-  const content = el('div', { className: 'agent-message-content' });
-
-  if (isUser) {
-    content.appendChild(el('p', {}, [msg.content]));
-  } else {
-    _renderMarkdown(content, msg.content);
-  }
-
-  wrapper.appendChild(avatar);
-  wrapper.appendChild(content);
-  return wrapper;
+  return buildMessage(msg);
 }
 
 /**
@@ -263,201 +380,13 @@ function _buildMessage(msg) {
  * @param {string} text
  */
 function _renderMarkdown(container, text) {
-  const parts = text.split(/(```[\s\S]*?```)/g);
-
-  parts.forEach(part => {
-    if (part.startsWith('```')) {
-      const match = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
-      if (match) {
-        const lang = match[1] || '';
-        const code = match[2].trim();
-        container.appendChild(_buildCodeBlock(code, lang));
-      }
-    } else if (part.trim()) {
-      const lines = part.split('\n\n');
-      lines.forEach(line => {
-        if (!line.trim()) return;
-        const p = el('p', {});
-        _renderInlineMarkdown(p, line.trim());
-        container.appendChild(p);
-      });
-    }
-  });
-}
-
-/**
- * Handle inline markdown: bold, inline code, links.
- * @param {HTMLElement} parent
- * @param {string} text
- */
-function _renderInlineMarkdown(parent, text) {
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parent.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-    }
-    const token = match[0];
-    if (token.startsWith('`')) {
-      parent.appendChild(el('code', { className: 'agent-inline-code' }, [token.slice(1, -1)]));
-    } else if (token.startsWith('**')) {
-      parent.appendChild(el('strong', {}, [token.slice(2, -2)]));
-    } else if (token.startsWith('*')) {
-      parent.appendChild(el('em', {}, [token.slice(1, -1)]));
-    }
-    lastIndex = pattern.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    parent.appendChild(document.createTextNode(text.slice(lastIndex)));
-  }
-}
-
-function _buildCodeBlock(code, lang) {
-  const copyBtn = el('button', {
-    className: 'agent-code-copy',
-    title: 'Copy to clipboard',
-    on: {
-      click: () => {
-        navigator.clipboard.writeText(code).then(() => {
-          copyBtn.textContent = '✓ Copied';
-          setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000);
-        });
-      },
-    },
-  }, ['📋 Copy']);
-
-  const header = el('div', { className: 'agent-code-header' }, [
-    el('span', { className: 'agent-code-lang' }, [lang || 'code']),
-    copyBtn,
-  ]);
-
-  const pre = el('pre', { className: 'agent-code-pre' }, [
-    el('code', { className: 'agent-code' }, [code]),
-  ]);
-
-  return el('div', { className: 'agent-code-block' }, [header, pre]);
+  renderMarkdown(container, text);
 }
 
 /* ---------- Settings Modal ---------- */
 
 function _showSettings() {
-  const existingModal = document.getElementById('agent-settings-modal');
-  if (existingModal) existingModal.remove();
-
-  const currentKey = storage.getAgentApiKey() || '';
-  const currentModel = storage.getAgentModel() || DEFAULT_MODEL;
-  const driveSettings = userData.getAgentSettings();
-  const cloudSyncEnabled = driveSettings !== null;
-
-  const keyInput = el('input', {
-    type: 'password',
-    className: 'agent-settings-input',
-    placeholder: 'Enter your Gemini API key...',
-    value: currentKey,
-  });
-
-  const modelSelect = el('select', { className: 'agent-settings-select' }, [
-    el('option', { value: 'gemini-2.0-flash', selected: currentModel === 'gemini-2.0-flash' }, ['Gemini 2.0 Flash (fast)']),
-    el('option', { value: 'gemini-2.0-flash-lite', selected: currentModel === 'gemini-2.0-flash-lite' }, ['Gemini 2.0 Flash Lite (fastest)']),
-    el('option', { value: 'gemini-2.5-flash-preview-05-20', selected: currentModel === 'gemini-2.5-flash-preview-05-20' }, ['Gemini 2.5 Flash (balanced)']),
-    el('option', { value: 'gemini-2.5-pro-preview-05-06', selected: currentModel === 'gemini-2.5-pro-preview-05-06' }, ['Gemini 2.5 Pro (best)']),
-    el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
-  ]);
-
-  const toggleAttrs = {
-    type: 'checkbox',
-    className: 'agent-settings-toggle',
-  };
-  if (cloudSyncEnabled) toggleAttrs.checked = 'checked';
-  const cloudToggle = el('input', toggleAttrs);
-
-  const saveBtn = el('button', {
-    className: 'agent-settings-save',
-    on: {
-      click: async () => {
-        const key = keyInput.value.trim();
-        if (key) {
-          storage.setAgentApiKey(key);
-          storage.setAgentModel(modelSelect.value);
-          // Sync to Drive if cloud toggle is checked
-          if (cloudToggle.checked) {
-            await userData.saveAgentSettings({ apiKey: key, model: modelSelect.value });
-          } else {
-            await userData.saveAgentSettings(null);
-          }
-          showToast('Settings saved', 'success');
-          overlay.remove();
-          show(_container);
-        } else {
-          showToast('Please enter an API key', 'error');
-        }
-      },
-    },
-  }, ['Save']);
-
-  const removeBtn = el('button', {
-    className: 'agent-settings-remove',
-    on: {
-      click: async () => {
-        storage.setAgentApiKey('');
-        await userData.saveAgentSettings(null);
-        showToast('API key removed', 'info');
-        overlay.remove();
-        show(_container);
-      },
-    },
-  }, ['Remove Key']);
-
-  const closeBtn = el('button', {
-    className: 'btn-icon agent-settings-close',
-    on: { click: () => overlay.remove() },
-  }, ['✕']);
-
-  const modal = el('div', { className: 'modal agent-settings-modal' }, [
-    el('div', { className: 'modal-header' }, [
-      el('h3', {}, ['Agent Settings']),
-      closeBtn,
-    ]),
-    el('div', { className: 'modal-body' }, [
-      el('label', { className: 'agent-settings-label' }, ['Gemini API Key']),
-      keyInput,
-      el('p', { className: 'agent-settings-hint' }, [
-        'Your key is stored locally in your browser. ',
-        el('a', {
-          href: 'https://aistudio.google.com/apikey',
-          target: '_blank',
-          rel: 'noopener',
-        }, ['Get a free key →']),
-      ]),
-      el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
-      modelSelect,
-      el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
-        cloudToggle,
-        ' Sync API key across devices',
-      ]),
-      el('p', { className: 'agent-settings-hint' }, [
-        'When enabled, your API key and model are stored in your Google Drive so they work across all your devices.',
-      ]),
-    ]),
-    el('div', { className: 'modal-footer' }, [
-      currentKey ? removeBtn : el('span'),
-      saveBtn,
-    ]),
-  ]);
-
-  const overlay = el('div', {
-    id: 'agent-settings-modal',
-    className: 'modal-overlay',
-    on: {
-      click: (e) => { if (e.target === overlay) overlay.remove(); },
-    },
-  }, [modal]);
-
-  document.body.appendChild(overlay);
-  keyInput.focus();
+  showSettingsModal(() => show(_container));
 }
 
 /* ---------- Conversation Logic ---------- */
@@ -466,24 +395,72 @@ function _persistConversation() {
   storage.setAgentConversation(_messages);
 }
 
+/**
+ * Build a model request once so we can short-circuit before any network call.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {string} userMessage
+ * @returns {Promise<{model:string, url:string, contents:Array, body:Object}>}
+ */
+async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const baseUrl = _geminiUrl(model, 'generateContent');
+  _assertConversationWithinBudget(userMessage);
+  let plannedUserText = _buildPlannedUserMessage(userMessage);
+
+  const buildBudgetedRequest = (text) => {
+    let contents = _buildContents(text, MAX_CONTEXT_MESSAGES);
+    let body = _buildRequestBody(contents);
+
+    if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+      contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES);
+      body = _buildRequestBody(contents);
+    }
+
+    return { contents, body };
+  };
+
+  if (_shouldUsePlannerRound(userMessage)) {
+    try {
+      const microBrief = await _fetchPlannerMicroBrief(apiKey, keyIdx, userMessage);
+      if (microBrief) {
+        plannedUserText = _compactContextText(
+          `Planner brief: ${microBrief} User request: ${_compactContextText(userMessage, MAX_USER_MESSAGE_CHARS)}`,
+          MAX_PLANNED_USER_MESSAGE_CHARS
+        );
+      }
+    } catch {
+      // Deterministic planner brief already exists, so continue without failing the main request.
+    }
+  }
+
+  const { contents, body } = buildBudgetedRequest(plannedUserText);
+
+  _assertRequestWithinBudget(body, 'This request');
+  return { model, url: baseUrl, contents, body };
+}
+
 function _clearConversation() {
   _messages = [];
   _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
-    const apiKey = storage.getAgentApiKey();
-    _chatBody.appendChild(apiKey ? _buildEmptyState() : _buildWelcome());
+    const hasKeys = storage.getAgentKeys().length > 0;
+    _chatBody.appendChild(hasKeys ? _buildEmptyState() : _buildWelcome());
   }
 }
 
 async function _sendMessage(text) {
   if (!text || !text.trim() || _isStreaming) return;
 
-  const apiKey = storage.getAgentApiKey();
-  if (!apiKey) {
-    showToast('Configure your API key in Settings first', 'error');
+  const keyEntry = _getNextKey();
+  if (!keyEntry) {
+    showToast('Configure your API keys in Settings first', 'error');
     return;
   }
+
+  // Refresh context (date, user, sheets) once per message
+  await _refreshContext();
 
   const userText = text.trim();
 
@@ -497,6 +474,19 @@ async function _sendMessage(text) {
   _messages.push({ role: 'user', content: userText });
   _chatBody.appendChild(_buildMessage({ role: 'user', content: userText }));
 
+  let preparedRequest;
+  try {
+    preparedRequest = await _prepareModelRequest(keyEntry.key, keyEntry.idx, userText);
+  } catch (err) {
+    const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
+    _messages.push(errorMsg);
+    _chatBody.appendChild(_buildMessage(errorMsg));
+    _chatBody.scrollTop = _chatBody.scrollHeight;
+    _persistConversation();
+    showToast('AI error: ' + err.message, 'error');
+    return;
+  }
+
   // Clear input
   const input = _container.querySelector('.agent-input');
   if (input) {
@@ -507,110 +497,299 @@ async function _sendMessage(text) {
   // Scroll to bottom
   _chatBody.scrollTop = _chatBody.scrollHeight;
 
-  // Show typing indicator
-  const typing = el('div', { className: 'agent-message agent-message-assistant agent-typing' }, [
-    el('div', { className: 'agent-message-avatar' }, ['🤖']),
-    el('div', { className: 'agent-message-content' }, [
-      el('div', { className: 'agent-typing-dots' }, [
-        el('span', {}, ['·']),
-        el('span', {}, ['·']),
-        el('span', {}, ['·']),
-      ]),
-    ]),
+  // Create live assistant message bubble for streaming
+  const liveWrapper = el('div', {
+    className: 'agent-message agent-message-assistant',
+  });
+  const liveAvatar = el('div', { className: 'agent-message-avatar' }, ['🤖']);
+  const liveContent = el('div', { className: 'agent-message-content' });
+  // Start with typing dots until first chunk arrives
+  const typingDots = el('div', { className: 'agent-typing-dots' }, [
+    el('span', {}, ['·']), el('span', {}, ['·']), el('span', {}, ['·']),
   ]);
-  _chatBody.appendChild(typing);
+  liveContent.appendChild(typingDots);
+  liveWrapper.appendChild(liveAvatar);
+  liveWrapper.appendChild(liveContent);
+  _chatBody.appendChild(liveWrapper);
   _chatBody.scrollTop = _chatBody.scrollHeight;
 
-  // Call Gemini API
+  // Switch send button to stop button
+  const sendBtn = _container.querySelector('.agent-send-btn');
+  let originalSendText = '';
+  if (sendBtn) {
+    originalSendText = sendBtn.textContent;
+    sendBtn.textContent = '⏹';
+    sendBtn.title = 'Stop generating';
+    sendBtn.className = 'agent-send-btn agent-stop-btn';
+  }
+
+  // Set up abort controller
+  _abortController = new AbortController();
+  const signal = _abortController.signal;
+
+  // Handle stop button click
+  const stopHandler = () => {
+    if (_abortController) _abortController.abort();
+  };
+  if (sendBtn) {
+    sendBtn.removeAttribute('disabled');
+    sendBtn.onclick = stopHandler;
+  }
+
   _isStreaming = true;
+  let accumulated = '';
+  let dotsRemoved = false;
+  let renderPending = false;
+
+  /** Debounced re-render of markdown content */
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => {
+      renderPending = false;
+      liveContent.innerHTML = '';
+      _renderMarkdown(liveContent, accumulated);
+      _chatBody.scrollTop = _chatBody.scrollHeight;
+    });
+  }
+
   try {
-    const response = await _callGemini(apiKey, userText);
-    typing.remove();
+    const response = await _streamCallGemini(
+      keyEntry.key,
+      keyEntry.idx,
+      preparedRequest,
+      (chunk) => {
+        // Remove typing dots on first chunk
+        if (!dotsRemoved) {
+          typingDots.remove();
+          dotsRemoved = true;
+        }
+        accumulated += chunk;
+        scheduleRender();
+      },
+      signal,
+    );
+
+    // Final render with complete text
+    liveContent.innerHTML = '';
+    _renderMarkdown(liveContent, response);
 
     _messages.push({ role: 'assistant', content: response });
-    const msgEl = _buildMessage({ role: 'assistant', content: response });
-    _chatBody.appendChild(msgEl);
     _chatBody.scrollTop = _chatBody.scrollHeight;
     _persistConversation();
   } catch (err) {
-    typing.remove();
-    showToast('AI error: ' + err.message, 'error');
-
-    const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
-    _messages.push(errorMsg);
-    _chatBody.appendChild(_buildMessage(errorMsg));
+    // If aborted and we have partial text, keep it
+    if (err.name === 'AbortError' && accumulated) {
+      liveContent.innerHTML = '';
+      _renderMarkdown(liveContent, accumulated);
+      _messages.push({ role: 'assistant', content: accumulated });
+      _persistConversation();
+    } else if (err.name !== 'AbortError') {
+      liveWrapper.remove();
+      showToast('AI error: ' + err.message, 'error');
+      const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
+      _messages.push(errorMsg);
+      _chatBody.appendChild(_buildMessage(errorMsg));
+    } else {
+      // Aborted with no content — remove the empty bubble
+      liveWrapper.remove();
+    }
   } finally {
     _isStreaming = false;
+    _abortController = null;
+
+    // Restore send button
+    if (sendBtn) {
+      sendBtn.textContent = originalSendText || '➤';
+      sendBtn.title = 'Send message';
+      sendBtn.className = 'agent-send-btn';
+      sendBtn.onclick = () => {
+        const inp = _container.querySelector('.agent-input');
+        if (inp) _sendMessage(inp.value);
+      };
+    }
   }
 }
 
 /* ---------- Gemini API ---------- */
 
 /**
- * Call the Gemini API with conversation history.
+ * Call the Gemini API with conversation history and key rotation.
  * @param {string} apiKey
+ * @param {number} keyIdx — index into the key ring
  * @param {string} userMessage
  * @returns {Promise<string>}
  */
-async function _callGemini(apiKey, userMessage) {
-  const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+async function _callGemini(apiKey, keyIdx, userMessage) {
+  const request = typeof userMessage === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
+    : userMessage;
+  const { url, contents, body } = request;
 
-  // Build conversation contents with context trimming
-  const contents = _buildContents(userMessage);
-
-  const body = {
-    contents,
-    tools: TOOL_DECLARATIONS,
-    systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
-    },
-    generationConfig: {
-      temperature: 0.4,
-      topP: 0.9,
-      maxOutputTokens: 8192,
-    },
-  };
-
-  const data = await _fetchGemini(url, body);
+  const data = await _fetchGemini(url, body, keyIdx);
+  storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
   if (!candidate?.content?.parts?.length) {
-    throw new Error('No response from AI');
+    throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
   }
 
   // Check for function call in response
   const functionCall = candidate.content.parts.find(p => p.functionCall);
   if (functionCall) {
-    return _handleToolCall(apiKey, url, contents, candidate.content, functionCall.functionCall);
+    return _handleToolCall(apiKey, keyIdx, url, contents, candidate.content, functionCall.functionCall);
   }
 
   return candidate.content.parts.map(p => p.text || '').join('');
 }
 
 /**
- * Build contents array with context management — trim old messages.
+ * Stream the Gemini API response, calling onChunk for each text fragment.
+ * Returns the full accumulated text if successful.
+ * If a function call is detected, stops streaming and delegates to _handleToolCall.
+ * @param {string} apiKey
+ * @param {number} keyIdx
  * @param {string} userMessage
+ * @param {function(string): void} onChunk — called with each text fragment
+ * @param {AbortSignal} signal — abort signal to cancel streaming
+ * @returns {Promise<string>}
+ */
+async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
+  const request = typeof userMessage === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
+    : userMessage;
+  const { model, contents, body } = request;
+  const streamUrl = _geminiUrl(model, 'streamGenerateContent', 'alt=sse');
+
+  let res;
+  try {
+    res = await fetch(streamUrl, {
+      method: 'POST',
+      headers: _geminiHeaders(apiKey),
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    // Streaming failed (likely proxy blocking SSE) — fall back to buffered
+    return _callGemini(apiKey, keyIdx, request);
+  }
+
+  // Non-200 — fall back to buffered endpoint for proper error handling
+  if (!res.ok) {
+    return _callGemini(apiKey, keyIdx, request);
+  }
+
+  storage.recordKeyUsage(keyIdx);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
+
+        let parsed;
+        try { parsed = JSON.parse(jsonStr); } catch { continue; }
+
+        const candidate = parsed.candidates?.[0];
+        if (!candidate?.content?.parts) continue;
+
+        // Check for function call
+        const fc = candidate.content.parts.find(p => p.functionCall);
+        if (fc) {
+          // Abort the stream reader and re-run via the buffered endpoint so we
+          // execute a complete function call rather than a partial streamed one.
+          reader.cancel();
+          return _callGemini(apiKey, keyIdx, request);
+        }
+
+        // Extract text chunks
+        for (const part of candidate.content.parts) {
+          if (part.text) {
+            accumulated += part.text;
+            onChunk(part.text);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      // User clicked stop — return whatever we have
+      return accumulated;
+    }
+    // Stream read error — if we have partial text, return it; otherwise throw
+    if (accumulated) return accumulated;
+    throw err;
+  }
+
+  if (!accumulated) {
+    throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
+  }
+
+  return accumulated;
+}
+
+/**
+ * Build contents array with context management — summarise older messages and
+ * keep only the most recent conversational turns at full fidelity.
+ * @param {string} userMessage
+ * @param {number} [recentMessageLimit]
  * @returns {Array}
  */
-function _buildContents(userMessage) {
+function _buildContents(userMessage, recentMessageLimit = MAX_CONTEXT_MESSAGES) {
   const contents = [];
-  // Take recent messages, skipping the last (it's the just-added user msg)
+  const finalUserText = _compactContextText(userMessage, MAX_PLANNED_USER_MESSAGE_CHARS);
   const history = _messages.slice(0, -1);
-  const trimmed = history.length > MAX_CONTEXT_MESSAGES
-    ? history.slice(-MAX_CONTEXT_MESSAGES)
-    : history;
+  const recentHistory = recentMessageLimit > 0 ? history.slice(-recentMessageLimit) : [];
+  const summaryText = _buildConversationSummary(history, recentMessageLimit);
+  let remainingChars = Math.max(0, MAX_CONTEXT_CHARS - finalUserText.length - summaryText.length);
+  const selected = [];
 
-  for (const msg of trimmed) {
+  if (summaryText) {
     contents.push({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
+      role: 'model',
+      parts: [{ text: summaryText }],
     });
   }
 
+  for (let i = recentHistory.length - 1; i >= 0; i--) {
+    if (selected.length >= recentMessageLimit) break;
+    if (remainingChars <= 0) break;
+
+    const msg = recentHistory[i];
+    const maxChars = Math.min(
+      remainingChars,
+      msg.role === 'user' ? MAX_USER_MESSAGE_CHARS : MAX_ASSISTANT_MESSAGE_CHARS
+    );
+    const text = _compactContextText(msg.content, maxChars);
+    if (!text) continue;
+
+    selected.unshift({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text }],
+    });
+    remainingChars -= text.length;
+  }
+
+  contents.push(...selected);
   contents.push({
     role: 'user',
-    parts: [{ text: userMessage }],
+    parts: [{ text: finalUserText }],
   });
 
   return contents;
@@ -624,9 +803,14 @@ function _buildContents(userMessage) {
  * @param {Array} contents
  * @param {Object} modelContent — the model's response content with the function call
  * @param {{ name: string, args: Object }} functionCall
+ * @param {number} [chainDepth]
  * @returns {Promise<string>}
  */
-async function _handleToolCall(apiKey, url, contents, modelContent, functionCall) {
+async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, functionCall, chainDepth = 0) {
+  if (chainDepth >= 5) {
+    throw new Error('AI requested too many chained tool calls in one turn. Try again with a smaller request.');
+  }
+
   const { name, args } = functionCall;
 
   // Show tool execution indicator
@@ -642,6 +826,11 @@ async function _handleToolCall(apiKey, url, contents, modelContent, functionCall
 
   // Remove tool indicator
   _removeToolIndicator();
+
+  // Show an inline preview card immediately after sheet creation
+  if (name === 'create_sheet' && result && !result.error) {
+    _appendSheetPreviewCard(result);
+  }
 
   // Send tool result back to model for final response
   const followUp = {
@@ -660,27 +849,59 @@ async function _handleToolCall(apiKey, url, contents, modelContent, functionCall
     ],
     tools: TOOL_DECLARATIONS,
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: _getSystemPrompt() }],
     },
     generationConfig: {
-      temperature: 0.4,
+      temperature: 0.2,
       topP: 0.9,
-      maxOutputTokens: 8192,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   };
 
-  const data = await _fetchGemini(url, followUp);
+  const data = await _fetchGemini(url, followUp, keyIdx);
+  storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
-  if (!candidate?.content?.parts?.length) {
-    // Tool succeeded but model gave no text — construct a response
-    if (result && !result.error) {
-      return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
-    }
-    throw new Error('No response from AI after tool execution');
+  const nextFunctionCall = candidate?.content?.parts?.find(p => p.functionCall);
+  if (nextFunctionCall) {
+    return _handleToolCall(
+      apiKey,
+      keyIdx,
+      url,
+      followUp.contents,
+      candidate.content,
+      nextFunctionCall.functionCall,
+      chainDepth + 1
+    );
   }
 
-  return candidate.content.parts.map(p => p.text || '').join('');
+  const finalText = candidate?.content?.parts?.map(p => p.text || '').join('').trim() || '';
+  if (!candidate?.content?.parts?.length || !finalText) {
+    // Tool succeeded but model gave no usable text — construct a response.
+    if (result && !result.error) {
+      if (name === 'create_sheet') {
+        return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      }
+      if (name === 'read_sheet') {
+        return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
+      }
+      if (name === 'search_sheets') {
+        return result.results.length
+          ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".`
+          : `🔍 No sheets found matching "${result.query}".`;
+      }
+      if (name === 'update_sheet') {
+        if (result.operation === 'append_rows') {
+          return `✅ Added ${result.rowsAdded} row(s) to "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+        }
+        return `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      }
+      return `✅ Tool ${name} completed successfully.`;
+    }
+    throw new Error('No response from AI after tool execution. Try again, or clear older chat messages to reduce context size.');
+  }
+
+  return finalText;
 }
 
 /**
@@ -690,10 +911,7 @@ async function _handleToolCall(apiKey, url, contents, modelContent, functionCall
  * @returns {Promise<Object>}
  */
 async function _executeTool(name, args) {
-  if (name === 'create_sheet') {
-    return _toolCreateSheet(args);
-  }
-  throw new Error(`Unknown tool: ${name}`);
+  return executeTool(name, args);
 }
 
 /* ---------- Tool: create_sheet ---------- */
@@ -705,35 +923,39 @@ async function _executeTool(name, args) {
  * @returns {Promise<Object>}
  */
 async function _toolCreateSheet({ template, title, data }) {
-  if (!title || !data || !data.length) {
-    throw new Error('Missing title or data');
-  }
+  return toolCreateSheet({ template, title, data });
+}
 
-  // Look up headers from known templates
-  const headers = KNOWN_HEADERS[template];
-  if (!headers) {
-    throw new Error(`Unknown template "${template}". Use one of: ${Object.keys(KNOWN_HEADERS).join(', ')}`);
-  }
+/* ---------- Tool: read_sheet ---------- */
 
-  // Build rows: headers + data
-  const headerCount = headers.length;
-  const cleanData = data.map(row => {
-    const clean = (Array.isArray(row) ? row : []).map(cell => String(cell ?? ''));
-    // Pad/trim to match header count
-    while (clean.length < headerCount) clean.push('');
-    return clean.slice(0, headerCount);
-  });
+/**
+ * Tool: read_sheet — reads contents of an existing Google Sheet.
+ * @param {{ spreadsheet_id: string }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolReadSheet({ spreadsheet_id }) {
+  return executeTool('read_sheet', { spreadsheet_id });
+}
 
-  const allRows = [headers, ...cleanData];
-  const result = await api.sheets.createSpreadsheet(title, allRows);
+/* ---------- Tool: update_sheet ---------- */
 
-  return {
-    spreadsheetId: result.spreadsheetId,
-    title,
-    template,
-    rowCount: cleanData.length,
-    columns: headers,
-  };
+/**
+ * Tool: search_sheets — search user's Drive for spreadsheets by name.
+ * @param {{ query: string }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolSearchSheets({ query }) {
+  return executeTool('search_sheets', { query });
+}
+
+/**
+ * Tool: update_sheet — modifies an existing Google Sheet.
+ * Supports append_rows (add rows at end) and update_cells (change specific cells).
+ * @param {{ spreadsheet_id: string, operation: string, rows?: string[][], updates?: Array }} args
+ * @returns {Promise<Object>}
+ */
+async function _toolUpdateSheet({ spreadsheet_id, operation, rows, updates }) {
+  return executeTool('update_sheet', { spreadsheet_id, operation, rows, updates });
 }
 
 /**
@@ -742,23 +964,12 @@ async function _toolCreateSheet({ template, title, data }) {
  * @param {Object} args
  */
 function _showToolIndicator(toolName, args) {
-  if (!_chatBody) return;
-  const label = toolName === 'create_sheet'
-    ? `Creating ${args.template || ''} sheet "${args.title || 'Untitled'}"...`
-    : `Running ${toolName}...`;
-  const indicator = el('div', { className: 'agent-tool-indicator' }, [
-    el('span', { className: 'agent-tool-icon' }, ['🔧']),
-    el('span', {}, [label]),
-  ]);
-  _chatBody.appendChild(indicator);
-  _chatBody.scrollTop = _chatBody.scrollHeight;
+  showToolIndicator(_chatBody, toolName, args);
 }
 
 /** Remove tool execution indicator from chat. */
 function _removeToolIndicator() {
-  if (!_chatBody) return;
-  const ind = _chatBody.querySelector('.agent-tool-indicator');
-  if (ind) ind.remove();
+  removeToolIndicator(_chatBody);
 }
 
 /**
@@ -767,10 +978,11 @@ function _removeToolIndicator() {
  * @param {Object} body
  * @returns {Promise<Object>}
  */
-async function _fetchGemini(url, body) {
+async function _fetchGemini(url, body, keyIdx) {
+  const currentKey = storage.getAgentKeys()[keyIdx]?.key || '';
   const fetchOpts = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _geminiHeaders(currentKey),
     body: JSON.stringify(body),
   };
 
@@ -779,9 +991,36 @@ async function _fetchGemini(url, body) {
   if (res.status === 429) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || '';
+    const hardQuotaExceeded = /exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg);
 
-    // Billing/hard quota — retrying won't help
-    if (/exceeded your current quota/i.test(errMsg) && !/per minute/i.test(errMsg)) {
+    // Mark this key as errored
+    storage.recordKeyError(keyIdx);
+
+    // Try the next key in the ring before surfacing quota/rate-limit errors.
+    const keys = storage.getAgentKeys();
+    if (keys.length > 1) {
+      const next = _getNextKey();
+      if (next && next.idx !== keyIdx) {
+        _showRetryIndicator(0, true); // indicate key rotation
+        const model = storage.getAgentModel() || DEFAULT_MODEL;
+        const rotatedUrl = _geminiUrl(model, 'generateContent');
+        const retryRes = await fetch(rotatedUrl, {
+          method: 'POST',
+          headers: _geminiHeaders(next.key),
+          body: JSON.stringify(body),
+        });
+        _removeRetryIndicator();
+        if (retryRes.ok) {
+          storage.recordKeyUsage(next.idx);
+          return retryRes.json();
+        }
+        // Rotated key also failed — mark it and fall through.
+        storage.recordKeyError(next.idx);
+      }
+    }
+
+    // Billing/hard quota — retrying the same key won't help once rotation fails.
+    if (hardQuotaExceeded) {
       throw new Error(
         'Your Gemini API quota is exhausted. To fix this:\n' +
         '• Wait until your quota resets (usually daily)\n' +
@@ -790,7 +1029,7 @@ async function _fetchGemini(url, body) {
       );
     }
 
-    // Per-minute rate limit — wait and retry
+    // Single key or all keys exhausted — wait and retry original
     const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
     const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 15;
 
@@ -814,9 +1053,11 @@ async function _fetchGemini(url, body) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;
     if (res.status === 400 && /api.?key/i.test(errMsg)) {
+      storage.recordKeyError(keyIdx);
       throw new Error('Invalid API key. Check your key in Settings.');
     }
     if (res.status === 403) {
+      storage.recordKeyError(keyIdx);
       throw new Error('API key does not have permission. Check your key at ai.google.dev.');
     }
     throw new Error(errMsg);
@@ -826,17 +1067,11 @@ async function _fetchGemini(url, body) {
 }
 
 /** Show a "retrying" indicator in the chat body. */
-function _showRetryIndicator(seconds) {
-  if (!_chatBody) return;
-  const indicator = el('div', { className: 'agent-tool-indicator', id: 'agent-retry-indicator' }, [
-    el('span', { className: 'agent-tool-icon' }, ['⏳']),
-    el('span', {}, [`Rate limited — retrying in ${seconds}s...`]),
-  ]);
-  _chatBody.appendChild(indicator);
-  _chatBody.scrollTop = _chatBody.scrollHeight;
+function _showRetryIndicator(seconds, rotating) {
+  showRetryIndicator(_chatBody, seconds, rotating);
 }
 
 /** Remove the retry indicator. */
 function _removeRetryIndicator() {
-  document.getElementById('agent-retry-indicator')?.remove();
+  removeRetryIndicator();
 }

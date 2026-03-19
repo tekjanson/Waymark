@@ -73,7 +73,7 @@ function defaultUserData() {
 
     /* ── AI Agent ── */
     agentConversations: [],     // { id, title, messages[], createdAt, updatedAt }[] (max 10)
-    agentSettings: null,        // { apiKey, model } — null = opt-out (use localStorage only)
+    agentSettings: null,        // { apiKey, model, keys? } — null = opt-out (use localStorage only)
 
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
@@ -594,7 +594,7 @@ export async function deleteAgentConversation(conversationId) {
 
 /**
  * Get agent settings from Drive. Returns null if not synced to Drive.
- * @returns {{ apiKey: string, model: string } | null}
+ * @returns {{ apiKey: string, model: string, keys?: Array } | null}
  */
 export function getAgentSettings() {
   return _userData?.agentSettings || null;
@@ -602,7 +602,8 @@ export function getAgentSettings() {
 
 /**
  * Save agent settings to Drive. Pass null to opt out of Drive sync.
- * @param {{ apiKey: string, model: string } | null} settings
+ * Supports both legacy single-key and multi-key ring formats.
+ * @param {{ apiKey: string, model: string, keys?: Array } | null} settings
  */
 export async function saveAgentSettings(settings) {
   await save({ agentSettings: settings });

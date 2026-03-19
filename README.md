@@ -97,9 +97,24 @@ docker-compose up
 npm test                  # headless
 npm run test:headed       # watch it run
 npm run test:debug        # step through with Playwright Inspector
+npm run test:agent:live   # real Gemini evals (requires local env keys)
 ```
 
 Tests use the mock/local mode — no Google account required.
+
+For real-agent evals, set `WAYMARK_AGENT_EVAL_KEYS` in your local `.env` as a comma-separated or newline-separated list of Gemini API keys, then run `npm run test:agent:live`. The runner keeps the local mock Drive/Sheets app, but sends real model requests so it can score response quality, Waymark link usage, tool side effects, and multi-sheet behavior. If the default model hits quota limits, set `WAYMARK_AGENT_EVAL_MODEL` to a lighter option such as `gemini-2.0-flash-lite` for that eval run.
+
+Useful live-eval controls:
+
+```bash
+WAYMARK_AGENT_EVAL_DELAY_MS=20000        # cooldown between cases
+WAYMARK_AGENT_EVAL_STEP_DELAY_MS=8000    # cooldown between turns in one scenario
+WAYMARK_AGENT_EVAL_MODEL=gemini-2.0-flash-lite
+WAYMARK_AGENT_EVAL_CASES=vacation-budget-roadtrip,create-then-update-checklist
+WAYMARK_AGENT_EVAL_MAX_CASES=2
+WAYMARK_AGENT_EVAL_RESUME=true
+WAYMARK_AGENT_EVAL_STOP_ON_FAILURE=true
+```
 
 ---
 
