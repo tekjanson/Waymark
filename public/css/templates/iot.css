@@ -1,0 +1,187 @@
+/* ============================================================
+   iot.css — IoT Sensor Dashboard template styles
+   ============================================================ */
+
+.iot-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: var(--space-md);
+}
+
+.iot-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-sm);
+}
+
+.iot-summary-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.iot-summary-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.iot-summary-value {
+  margin-top: 4px;
+  font-size: 1.35rem;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.iot-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.iot-filter-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.iot-filter-btn.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.iot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-sm);
+}
+
+.iot-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.iot-tone-alert {
+  border-color: color-mix(in srgb, var(--color-error) 35%, var(--color-border));
+}
+
+.iot-tone-offline {
+  border-color: color-mix(in srgb, var(--color-text-muted) 40%, var(--color-border));
+}
+
+.iot-tone-high,
+.iot-tone-low,
+.iot-tone-watch {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+}
+
+.iot-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.iot-sensor-name {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+.iot-state-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.iot-state-normal {
+  background: color-mix(in srgb, var(--color-success) 18%, #fff);
+  color: var(--color-success);
+}
+
+.iot-state-watch,
+.iot-state-low,
+.iot-state-high {
+  background: color-mix(in srgb, var(--color-warning) 22%, #fff);
+  color: var(--color-warning);
+}
+
+.iot-state-alert {
+  background: color-mix(in srgb, var(--color-error) 18%, #fff);
+  color: var(--color-error);
+}
+
+.iot-state-offline {
+  background: color-mix(in srgb, var(--color-text-muted) 25%, #fff);
+  color: var(--color-text-muted);
+}
+
+.iot-reading-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.iot-reading-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.iot-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.iot-meta-label {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.iot-range-cell {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.iot-timestamp {
+  color: var(--color-text);
+}
+
+.iot-empty {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .iot-view {
+    padding: var(--space-sm);
+  }
+
+  .iot-grid {
+    grid-template-columns: 1fr;
+  }
+}

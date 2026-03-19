@@ -909,10 +909,54 @@
       "fixtureFiles": [
         "notification-waymark"
       ]
+    },
+    {
+      "key": "iot",
+      "name": "IoT Sensor Dashboard",
+      "icon": "📡",
+      "color": "#0f766e",
+      "priority": 24,
+      "category": "Monitoring",
+      "detectSignals": [
+        "sensor",
+        "device",
+        "probe",
+        "reading",
+        "measurement",
+        "min",
+        "max",
+        "threshold",
+        "alert"
+      ],
+      "columnRoles": [
+        "sensor",
+        "reading",
+        "unit",
+        "timestamp",
+        "min",
+        "max",
+        "alert"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Normal",
+        "Watch",
+        "Alert",
+        "Offline"
+      ],
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-047"
+      ],
+      "fixtureFiles": [
+        "iot-sensor-dashboard"
+      ]
     }
   ],
-  "nextSheetId": "sheet-047",
-  "totalTemplates": 24,
+  "nextSheetId": "sheet-048",
+  "totalTemplates": 25,
   "categories": [
     "Productivity",
     "Engineering",
@@ -932,6 +976,7 @@
     "Travel",
     "Operations",
     "Social",
-    "Documentation"
+    "Documentation",
+    "Monitoring"
   ]
 }
