@@ -2983,7 +2983,7 @@ test('sheet preview card has correct open button styling', async ({ page }) => {
 
   const btn = page.locator('.agent-card-open-btn');
   await expect(btn).toBeVisible();
-  await expect(btn).toHaveCSS('cursor', 'auto'); // <a> element cursor
+  await expect(btn).toHaveCSS('cursor', 'pointer');
 });
 
 test('sheet model response text still appears after preview card', async ({ page }) => {
