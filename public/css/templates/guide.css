@@ -1,0 +1,344 @@
+/* Guide Template */
+
+.guide-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 6px);
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.guide-card-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, rgba(21, 128, 61, 0.12), rgba(20, 184, 166, 0.08));
+  border-bottom: 1px solid var(--color-border);
+}
+
+.guide-card-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-card-kicker,
+.guide-stage-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.guide-card-title {
+  font-size: 1.35rem;
+  line-height: 1.1;
+  color: var(--color-text);
+}
+
+.guide-card-subtitle,
+.guide-progress-text,
+.guide-counter,
+.guide-thumb-excerpt {
+  color: var(--color-text-secondary);
+}
+
+.guide-progress {
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--tint-gray-bg);
+  overflow: hidden;
+}
+
+.guide-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-success), #14b8a6);
+  transition: width 200ms ease;
+}
+
+.guide-card-body {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.guide-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guide-thumb {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-align: left;
+  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.guide-thumb:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+
+.guide-thumb.active {
+  border-color: var(--color-success);
+  background: rgba(21, 128, 61, 0.08);
+}
+
+.guide-thumb-index {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-weight: 700;
+}
+
+.guide-thumb-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-thumb-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.guide-thumb-excerpt {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.guide-thumb-status,
+.guide-status,
+.guide-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.guide-stage {
+  min-width: 0;
+}
+
+.guide-stage-frame {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    radial-gradient(circle at top right, rgba(20, 184, 166, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.95));
+}
+
+.guide-stage-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-slide-title {
+  font-size: clamp(1.4rem, 2vw, 2rem);
+  line-height: 1.08;
+  color: var(--color-text);
+}
+
+.guide-slide-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-meta-chip {
+  justify-content: flex-start;
+  border-radius: 12px;
+  background: var(--tint-gray-bg);
+  color: var(--tint-gray-text);
+  max-width: 100%;
+}
+
+.guide-objective {
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-text);
+}
+
+.guide-visual-cue {
+  background: var(--tint-purple-bg);
+  color: var(--tint-purple-text);
+}
+
+.guide-duration {
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+.guide-instruction {
+  min-height: 220px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+
+.guide-nav {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-nav-btn {
+  min-width: 108px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.guide-nav-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.guide-status {
+  border: none;
+  user-select: none;
+}
+
+.guide-status:hover {
+  filter: brightness(0.97);
+}
+
+.guide-status-draft {
+  background: var(--tint-gray-bg);
+  color: var(--tint-gray-text);
+}
+
+.guide-status-progress {
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-text);
+}
+
+.guide-status-ready {
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+.guide-status-done {
+  background: var(--tint-green-bg);
+  color: var(--tint-green-text);
+}
+
+.guide-empty {
+  padding: 24px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 860px) {
+  .guide-card-header,
+  .guide-card-body,
+  .guide-nav,
+  .guide-stage-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .guide-card-body {
+    display: flex;
+  }
+
+  .guide-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .guide-thumb {
+    min-width: 240px;
+  }
+
+  .guide-progress {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .guide-card-header,
+  .guide-card-body,
+  .guide-stage-frame {
+    padding: 14px;
+  }
+
+  .guide-thumb {
+    min-width: 0;
+  }
+
+  .guide-rail {
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .guide-instruction {
+    min-height: 180px;
+    padding: 14px;
+  }
+}
+
+[data-theme="dark"] .guide-card-header {
+  background: linear-gradient(135deg, rgba(21, 128, 61, 0.2), rgba(20, 184, 166, 0.12));
+}
+
+[data-theme="dark"] .guide-thumb.active {
+  background: rgba(21, 128, 61, 0.18);
+}
+
+[data-theme="dark"] .guide-stage-frame {
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(30, 41, 59, 0.96));
+}

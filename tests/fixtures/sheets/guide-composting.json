@@ -1,0 +1,14 @@
+{
+  "id": "sheet-049",
+  "title": "Kitchen Compost Guide",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Guide", "Slide", "Objective", "Instruction", "Visual", "Duration", "Status"],
+    ["Kitchen Compost Setup", "Start with the right bin", "Create a frictionless compost drop zone", "Choose a small lidded container and keep it where prep scraps already happen so composting becomes the default path.", "Countertop bin photo", "2 min", "Done"],
+    ["Kitchen Compost Setup", "Know what goes in", "Reduce sorting mistakes", "Add fruit peels, coffee grounds, tea leaves, eggshells, and vegetable scraps. Keep the list visible near the station.", "Green ingredient checklist", "1 min", "Ready"],
+    ["Kitchen Compost Setup", "Avoid contamination", "Protect the final compost stream", "Keep meat, dairy, oily leftovers, and look-alike plastic bags out of the compost bin so the pickup stays clean.", "Red do-not-add list", "1 min", "Draft"],
+    ["Weekly Bin Reset", "Carry to the curb cart", "Empty the bin before moisture builds up", "Transfer the countertop scraps to the outdoor compost cart on the same day each week so the station never becomes a cleanup chore.", "Arrow path to outdoor cart", "3 min", "In Progress"],
+    ["Weekly Bin Reset", "Rinse and dry", "Reset the station for the next cycle", "Quickly rinse the small bin, let it dry, and drop in a fresh liner or newspaper layer before returning it to the counter.", "Sink rinse illustration", "2 min", "Ready"],
+    ["Weekly Bin Reset", "Post the reminder card", "Make the process self-serve for housemates", "Tape a short card above the station that shows what is compostable and when the curb cart gets emptied.", "Printable reminder card", "1 min", "Done"]
+  ]
+}
