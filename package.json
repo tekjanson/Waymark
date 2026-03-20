@@ -1,7 +1,7 @@
 {
   "name": "waymark",
   "version": "1.0.0",
-  "description": "Turn Google Sheets into interactive checklists — read-only, zero server state",
+  "description": "Turn Google Sheets into interactive tools — two-way sync, zero server state",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
