@@ -49,8 +49,9 @@ app.use((_req, res, next) => {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://apis.google.com",
         "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com",
+        "frame-src https://docs.google.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
       ].join('; ')
@@ -126,6 +127,11 @@ function serveIndex(_req, res) {
   }
   if (!config.WAYMARK_LOCAL) {
     injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(githubSource.getRef())};`);
+  }
+  // Extract GCP project number from client ID (prefix before first dash)
+  const gcpProject = (config.GOOGLE_CLIENT_ID || '').split('-')[0];
+  if (gcpProject) {
+    injections.push(`window.__WAYMARK_GCP_PROJECT=${safeJsString(gcpProject)};`);
   }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);

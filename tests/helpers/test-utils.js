@@ -47,6 +47,8 @@ async function setupApp(page, opts = {}) {
   const {
     waitForExplorer = false,
     pinnedFolders   = [],
+    recentSheets    = [],
+    pinnedSheets    = [],
     autoRefresh,
     sidebarOpen,
     tutorialCompleted = true,
@@ -63,6 +65,8 @@ async function setupApp(page, opts = {}) {
   /* 2. LocalStorage — use addInitScript so values exist before app JS runs */
   const lsEntries = {};
   if (pinnedFolders.length) lsEntries.pinned_folders = pinnedFolders;
+  if (recentSheets.length) lsEntries.recent_sheets = recentSheets;
+  if (pinnedSheets.length) lsEntries.pinned_sheets = pinnedSheets;
   if (autoRefresh !== undefined) lsEntries.auto_refresh = autoRefresh;
   if (sidebarOpen !== undefined) lsEntries.sidebar_open = sidebarOpen;
   lsEntries.tutorial_completed = tutorialCompleted;
@@ -104,7 +108,7 @@ async function setupApp(page, opts = {}) {
   if (waitForExplorer) {
     await page.evaluate(() => { window.location.hash = '#/explorer'; });
     await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
-    await page.waitForSelector('.folder-item', { timeout: 10_000 });
+    await page.waitForSelector('.explorer-picker-btn', { timeout: 10_000 });
   }
 
   /* 5. Clear init-time records — user-data.js creates .waymark-data.json
@@ -165,7 +169,7 @@ async function getCompletedCount(page) {
 async function waitForExplorer(page) {
   await page.evaluate(() => { window.location.hash = '#/explorer'; });
   await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
-  await page.waitForSelector('.folder-item', { timeout: 10_000 });
+  await page.waitForSelector('.explorer-picker-btn', { timeout: 10_000 });
 }
 
 async function getExplorerFolderNames(page) {

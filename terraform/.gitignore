@@ -1,0 +1,9 @@
+# Terraform state (contains secrets — never commit)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Variable overrides (may contain secrets)
+terraform.tfvars
+*.auto.tfvars

@@ -37,6 +37,11 @@ server/.git-repo/
 server/.git-checkout/
 server/.github-cache
 
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
 # IDE
 .vscode/
 .idea/

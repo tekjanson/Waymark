@@ -574,6 +574,31 @@ ul { list-style: none; }
   background: var(--color-shared-light); color: var(--color-shared);
   font-weight: 500;
 }
+.badge-pinned {
+  font-size: 0.75rem; margin-left: auto; flex-shrink: 0;
+}
+
+/* Explorer Picker section */
+.explorer-picker-section {
+  padding: 16px; text-align: center;
+}
+.explorer-picker-hint {
+  font-size: 0.85rem; color: var(--color-text-muted);
+  margin: 0 0 12px 0;
+}
+.explorer-picker-btn {
+  font-size: 0.95rem; padding: 10px 20px; width: 100%;
+}
+.explorer-btn-row {
+  display: flex; gap: 8px;
+}
+.explorer-btn-row .explorer-picker-btn { flex: 1; }
+.explorer-pin-folder-btn {
+  font-size: 0.85rem; padding: 10px 14px; white-space: nowrap;
+}
+.import-picker-btn {
+  font-size: 0.95rem; padding: 10px 20px; width: 100%; margin-top: 12px;
+}
 
 /* ---------- Main Content ---------- */
 #content {

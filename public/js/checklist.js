@@ -325,119 +325,22 @@ function openDuplicateModal() {
   modal.querySelector('.modal-footer .btn-secondary').addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-  // Folder browser with breadcrumb navigation
-  const dupBreadcrumbs = [{ id: 'root', name: 'My Drive' }];
-
-  async function renderDupLevel(folderId) {
-    folderBrowser.innerHTML = '';
-    folderBrowser.classList.remove('hidden');
-
-    /* --- Breadcrumb trail --- */
-    const crumbBar = el('div', { className: 'duplicate-folder-breadcrumbs' });
-    for (let i = 0; i < dupBreadcrumbs.length; i++) {
-      const bc = dupBreadcrumbs[i];
-      if (i > 0) crumbBar.append(el('span', { className: 'duplicate-breadcrumb-sep' }, ['›']));
-      const crumb = el('button', {
-        className: 'duplicate-breadcrumb-btn',
-        type: 'button',
-      }, [bc.name]);
-      crumb.addEventListener('click', () => {
-        dupBreadcrumbs.splice(i + 1);
-        renderDupLevel(bc.id);
-      });
-      crumbBar.append(crumb);
-    }
-    folderBrowser.append(crumbBar);
-
-    /* --- Select-current button (not for root) --- */
-    if (folderId !== 'root') {
-      const currentCrumb = dupBreadcrumbs[dupBreadcrumbs.length - 1];
-      const selectCurrentBtn = el('button', {
-        className: 'duplicate-select-current-btn',
-        type: 'button',
-      }, [`✓ Select "${currentCrumb.name}"`]);
-      selectCurrentBtn.addEventListener('click', () => {
-        selectedFolderId = currentCrumb.id;
-        selectedFolderName = currentCrumb.name;
-        folderDisplay.textContent = currentCrumb.name;
-        folderBrowser.classList.add('hidden');
-      });
-      folderBrowser.append(selectCurrentBtn);
-    }
-
-    /* --- Loading indicator --- */
-    const loading = el('div', { className: 'duplicate-folder-item' }, ['Loading folders…']);
-    folderBrowser.append(loading);
-
+  chooseFolderBtn.addEventListener('click', async () => {
     try {
-      let folders;
-      if (folderId === 'root') {
-        const result = await api.drive.listRootFolders();
-        folders = (result.files || []).filter(f =>
-          f.mimeType === 'application/vnd.google-apps.folder'
-        );
-      } else {
-        const result = await api.drive.listChildren(folderId);
-        folders = (result.files || []).filter(f =>
-          f.mimeType === 'application/vnd.google-apps.folder'
-        );
+      chooseFolderBtn.disabled = true;
+      chooseFolderBtn.textContent = 'Opening…';
+      const folder = await api.picker.pickFolder();
+      chooseFolderBtn.disabled = false;
+      chooseFolderBtn.textContent = '📁 Choose Folder';
+      if (folder) {
+        selectedFolderId = folder.id;
+        selectedFolderName = folder.name;
+        folderDisplay.textContent = folder.name;
       }
-
-      loading.remove();
-
-      if (!folders.length) {
-        folderBrowser.append(
-          el('div', { className: 'duplicate-folder-item duplicate-folder-empty' }, ['No sub-folders'])
-        );
-        return;
-      }
-
-      for (const folder of folders) {
-        const item = el('div', { className: 'duplicate-folder-item' }, [
-          el('span', { className: 'duplicate-folder-icon' }, ['📁']),
-          el('span', { className: 'duplicate-folder-name-text' }, [folder.name]),
-          el('button', {
-            className: 'duplicate-folder-select-btn',
-            type: 'button',
-            title: `Select "${folder.name}"`,
-          }, ['Select']),
-        ]);
-
-        // Click folder name/icon to navigate into it
-        item.querySelector('.duplicate-folder-name-text').addEventListener('click', () => {
-          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
-          renderDupLevel(folder.id);
-        });
-        item.querySelector('.duplicate-folder-icon').addEventListener('click', () => {
-          dupBreadcrumbs.push({ id: folder.id, name: folder.name });
-          renderDupLevel(folder.id);
-        });
-
-        // Click "Select" button to choose this folder
-        item.querySelector('.duplicate-folder-select-btn').addEventListener('click', () => {
-          selectedFolderId = folder.id;
-          selectedFolderName = folder.name;
-          folderDisplay.textContent = folder.name;
-          folderBrowser.classList.add('hidden');
-        });
-
-        folderBrowser.append(item);
-      }
-    } catch {
-      loading.remove();
-      folderBrowser.append(
-        el('div', { className: 'duplicate-folder-item' }, ['Failed to load folders'])
-      );
+    } catch (err) {
+      chooseFolderBtn.disabled = false;
+      chooseFolderBtn.textContent = '📁 Choose Folder';
     }
-  }
-
-  chooseFolderBtn.addEventListener('click', () => {
-    if (!folderBrowser.classList.contains('hidden')) {
-      folderBrowser.classList.add('hidden');
-      return;
-    }
-    dupBreadcrumbs.length = 1; // Reset to root
-    renderDupLevel('root');
   });
 
   // Create button
@@ -748,86 +651,35 @@ function buildLinkButton(cf, feature, sheetId, bar) {
  * sheets match the provider template. Efficient — no full data load.
  */
 async function openCrossFeaturePicker(cf, feature, sheetId, bar, triggerBtn) {
-  document.querySelector('.cross-picker')?.remove();
-
-  const overlay = el('div', { className: 'cross-picker' }, [
-    el('div', { className: 'cross-picker-panel' }, [
-      el('div', { className: 'cross-picker-header' }, [
-        el('h3', {}, [`Link ${cf.label}`]),
-        el('button', { className: 'cross-picker-close', type: 'button' }, ['✕']),
-      ]),
-      el('input', {
-        className: 'cross-picker-search',
-        type: 'text',
-        placeholder: 'Search sheets…',
-      }),
-      el('div', { className: 'cross-picker-list cross-loading' }, ['Loading sheets…']),
-    ]),
-  ]);
-
-  // Close handlers
-  overlay.querySelector('.cross-picker-close').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-  document.body.append(overlay);
-
   try {
-    const { files } = await api.drive.listSpreadsheets();
-    const listEl = overlay.querySelector('.cross-picker-list');
-    listEl.className = 'cross-picker-list';
-    listEl.textContent = '';
+    const files = await api.picker.pickSpreadsheets({ includeSharedDrives: true });
+    if (!files || files.length === 0) return; // user cancelled
 
-    // Filter to sheets matching the provider template type using summary (efficient)
-    const compatible = [];
-    for (const file of files) {
-      if (file.id === sheetId) continue; // skip self
-      try {
-        const summary = await api.sheets.getSpreadsheetSummary(file.id);
-        const detected = detectTemplate(summary.values[0] || []);
-        if (detected.key === feature.provider) {
-          compatible.push({ id: file.id, name: file.name });
-        }
-      } catch { /* skip sheets that fail to load */ }
-    }
-
-    if (compatible.length === 0) {
-      listEl.append(el('div', { className: 'cross-picker-empty' }, [
-        `No compatible ${feature.name} sheets found.`,
-      ]));
+    const picked = files[0];
+    if (picked.id === sheetId) {
+      showToast('Cannot link a sheet to itself', 'error');
       return;
     }
 
-    const renderList = (filter) => {
-      listEl.textContent = '';
-      const filtered = filter
-        ? compatible.filter(s => s.name.toLowerCase().includes(filter.toLowerCase()))
-        : compatible;
-      for (const sheet of filtered) {
-        const item = el('div', { className: 'cross-picker-item' }, [
-          el('span', { className: 'cross-picker-item-icon' }, ['📄']),
-          el('span', { className: 'cross-picker-item-name' }, [sheet.name]),
-        ]);
-        item.addEventListener('click', () => {
-          const links = getCrossLinks(sheetId);
-          links.push({ featureId: cf.featureId, linkedSheetId: sheet.id, linkedSheetName: sheet.name });
-          setCrossLinks(sheetId, links);
-          overlay.remove();
-          showToast(`Linked ${sheet.name}`, 'success');
-          loadSheet(currentSheetId);
-        });
-        listEl.append(item);
+    // Verify template compatibility
+    try {
+      const summary = await api.sheets.getSpreadsheetSummary(picked.id);
+      const detected = detectTemplate(summary.values[0] || []);
+      if (detected.key !== feature.provider) {
+        showToast(`"${picked.name}" is not a compatible ${feature.name} sheet`, 'error');
+        return;
       }
-      if (filtered.length === 0) {
-        listEl.append(el('div', { className: 'cross-picker-empty' }, ['No matching sheets']));
-      }
-    };
+    } catch {
+      showToast(`Could not verify "${picked.name}" — linking anyway`, 'info');
+    }
 
-    renderList('');
-    overlay.querySelector('.cross-picker-search').addEventListener('input', (e) => renderList(e.target.value));
-  } catch {
-    const listEl = overlay.querySelector('.cross-picker-list');
-    listEl.className = 'cross-picker-list cross-error';
-    listEl.textContent = 'Failed to load sheets';
+    const links = getCrossLinks(sheetId);
+    links.push({ featureId: cf.featureId, linkedSheetId: picked.id, linkedSheetName: picked.name });
+    setCrossLinks(sheetId, links);
+    showToast(`Linked ${picked.name}`, 'success');
+    loadSheet(currentSheetId);
+  } catch (err) {
+    showToast(`Failed to pick sheet: ${err.message}`, 'error');
   }
 }
 

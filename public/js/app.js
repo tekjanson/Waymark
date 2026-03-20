@@ -359,6 +359,7 @@ async function showApp(user) {
   }
 
   // Load explorer & collect known sheets before routing
+  await explorer.autoPinWaymarkFolder();
   await explorer.load();
   await collectKnownSheets();
 
@@ -1535,14 +1536,50 @@ async function openImportModal() {
   importBackBtn.classList.add('hidden');
   importProgress.classList.add('hidden');
 
-  // Load sheets
-  importSheetList.innerHTML = '<p class="text-muted import-loading">Loading your files…</p>';
-  try {
-    importSheets = await importer.listImportableSheets();
-    renderImportSheets(importSheets);
-  } catch (err) {
-    importSheetList.innerHTML = `<p class="text-muted">Failed to load files: ${err.message}</p>`;
-  }
+  // Show Picker button instead of full file list
+  importSheetList.innerHTML = '';
+  const pickerBtn = el('button', {
+    className: 'btn btn-google import-picker-btn',
+    on: {
+      async click() {
+        try {
+          pickerBtn.disabled = true;
+          pickerBtn.textContent = 'Opening Picker…';
+          const files = await api.picker.pickFilesForImport();
+          pickerBtn.disabled = false;
+          pickerBtn.textContent = '📂 Pick from Google Drive';
+          if (!files || files.length === 0) return;
+
+          // Use first selected file
+          selectedImportSheet = files[0];
+          importNextBtn.disabled = false;
+
+          // Show selected file in the list area
+          importSheetList.innerHTML = '';
+          importSheetList.append(pickerBtn);
+          const selectedEl = el('div', { className: 'import-sheet-item selected' }, [
+            el('span', { className: 'import-sheet-item-icon' }, [
+              files[0].mimeType === 'application/vnd.google-apps.document' ? '📄' : '📊',
+            ]),
+            el('div', { className: 'import-sheet-item-info' }, [
+              el('div', { className: 'import-sheet-item-name' }, [files[0].name]),
+              el('div', { className: 'import-sheet-item-meta' }, ['Selected via Google Picker']),
+            ]),
+          ]);
+          importSheetList.append(selectedEl);
+        } catch (err) {
+          pickerBtn.disabled = false;
+          pickerBtn.textContent = '📂 Pick from Google Drive';
+          showToast(`Picker error: ${err.message}`, 'error');
+        }
+      },
+    },
+  }, ['📂 Pick from Google Drive']);
+
+  importSheetList.append(
+    el('p', { className: 'text-muted' }, ['Select a spreadsheet or document to import.']),
+    pickerBtn,
+  );
 }
 
 /**
@@ -2222,116 +2259,17 @@ async function fetchSourceInfo() {
 }
 
 async function loadFolderBrowser() {
-  const breadcrumbs = [{ id: 'root', name: 'My Drive' }];
-
-  async function renderLevel(folderId) {
-    settingsFolderBrowser.innerHTML = '';
-    settingsFolderBrowser.classList.remove('hidden');
-
-    /* --- Breadcrumb trail --- */
-    const crumbBar = el('div', { className: 'settings-folder-breadcrumbs' });
-    for (let i = 0; i < breadcrumbs.length; i++) {
-      const bc = breadcrumbs[i];
-      if (i > 0) crumbBar.append(el('span', { className: 'settings-breadcrumb-sep' }, ['›']));
-      const crumb = el('button', {
-        className: 'settings-breadcrumb-btn',
-        type: 'button',
-        dataset: { idx: String(i) },
-      }, [bc.name]);
-      crumb.addEventListener('click', () => {
-        breadcrumbs.splice(i + 1);
-        renderLevel(bc.id);
-      });
-      crumbBar.append(crumb);
+  try {
+    const folder = await api.picker.pickFolder();
+    if (folder) {
+      await userData.setImportFolder(folder.id, folder.name);
+      settingsImportFolder.textContent = folder.name;
+      settingsResetFolder.classList.remove('hidden');
+      showToast(`Import folder set to "${folder.name}"`, 'success');
     }
-    settingsFolderBrowser.append(crumbBar);
-
-    /* --- Select-current button (not for root) --- */
-    if (folderId !== 'root') {
-      const currentCrumb = breadcrumbs[breadcrumbs.length - 1];
-      const selectCurrentBtn = el('button', {
-        className: 'settings-select-current-btn',
-        type: 'button',
-      }, [`✓ Select "${currentCrumb.name}"`]);
-      selectCurrentBtn.addEventListener('click', async () => {
-        await userData.setImportFolder(currentCrumb.id, currentCrumb.name);
-        settingsImportFolder.textContent = currentCrumb.name;
-        settingsResetFolder.classList.remove('hidden');
-        settingsFolderBrowser.classList.add('hidden');
-        showToast(`Import folder set to "${currentCrumb.name}"`, 'success');
-      });
-      settingsFolderBrowser.append(selectCurrentBtn);
-    }
-
-    /* --- Loading indicator --- */
-    const loading = el('div', { className: 'settings-folder-item' }, ['Loading folders…']);
-    settingsFolderBrowser.append(loading);
-
-    try {
-      let folders;
-      if (folderId === 'root') {
-        const result = await api.drive.listRootFolders();
-        folders = (result.files || []).filter(f =>
-          f.mimeType === 'application/vnd.google-apps.folder'
-        );
-      } else {
-        const result = await api.drive.listChildren(folderId);
-        folders = (result.files || []).filter(f =>
-          f.mimeType === 'application/vnd.google-apps.folder'
-        );
-      }
-
-      loading.remove();
-
-      if (!folders.length) {
-        settingsFolderBrowser.append(
-          el('div', { className: 'settings-folder-item settings-folder-empty' }, ['No sub-folders'])
-        );
-        return;
-      }
-
-      for (const folder of folders) {
-        const item = el('div', { className: 'settings-folder-item' }, [
-          el('span', { className: 'settings-folder-icon' }, ['📁']),
-          el('span', { className: 'settings-folder-name' }, [folder.name]),
-          el('button', {
-            className: 'settings-folder-select-btn',
-            type: 'button',
-            title: `Select "${folder.name}"`,
-          }, ['Select']),
-        ]);
-
-        // Click folder name to navigate into it
-        item.querySelector('.settings-folder-name').addEventListener('click', () => {
-          breadcrumbs.push({ id: folder.id, name: folder.name });
-          renderLevel(folder.id);
-        });
-        item.querySelector('.settings-folder-icon').addEventListener('click', () => {
-          breadcrumbs.push({ id: folder.id, name: folder.name });
-          renderLevel(folder.id);
-        });
-
-        // Click "Select" button to choose this folder
-        item.querySelector('.settings-folder-select-btn').addEventListener('click', async () => {
-          await userData.setImportFolder(folder.id, folder.name);
-          settingsImportFolder.textContent = folder.name;
-          settingsResetFolder.classList.remove('hidden');
-          settingsFolderBrowser.classList.add('hidden');
-          showToast(`Import folder set to "${folder.name}"`, 'success');
-        });
-
-        settingsFolderBrowser.append(item);
-      }
-    } catch {
-      loading.remove();
-      settingsFolderBrowser.append(
-        el('div', { className: 'settings-folder-item' }, ['Failed to load folders'])
-      );
-    }
+  } catch (err) {
+    showToast(`Failed to pick folder: ${err.message}`, 'error');
   }
-
-  breadcrumbs.length = 1; // Reset to root
-  renderLevel('root');
 }
 
 function initSettingsModal() {
@@ -2410,17 +2348,21 @@ async function collectKnownSheets() {
     }
   });
 
-  // In local mode, also walk the fixture folder tree to find all sheets
-  // (since not all folders may be expanded in the explorer)
-  try {
-    const allSheets = await api.drive.getAllSheets();
-    for (const s of allSheets) {
-      if (!seen.has(s.id)) {
-        seen.add(s.id);
-        sheets.push(s);
-      }
+  // Add recent and pinned sheets to search context
+  const recents = userData.getRecentSheets();
+  for (const s of recents) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      sheets.push({ id: s.id, name: s.name, folder: '' });
     }
-  } catch { /* ignore — this is a best-effort enrichment */ }
+  }
+  const pinned = userData.getPinnedSheets();
+  for (const s of pinned) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      sheets.push({ id: s.id, name: s.name, folder: '' });
+    }
+  }
 
   search.registerSheets(sheets);
 }
