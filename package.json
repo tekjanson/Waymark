@@ -8,6 +8,8 @@
     "dev": "WAYMARK_LOCAL=true node server/index.js",
     "generate": "node scripts/generate-examples.js",
     "test": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js",
+    "test:changed": "WAYMARK_LOCAL=true node scripts/run-fast-tests.js",
+    "test:changed:list": "WAYMARK_LOCAL=true node scripts/run-fast-tests.js --list",
     "test:unit": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --grep unit-",
     "test:e2e": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --ignore-pattern unit-*",
     "test:headed": "WAYMARK_LOCAL=true npx playwright test --config tests/playwright.config.js --headed",
