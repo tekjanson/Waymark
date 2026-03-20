@@ -111,62 +111,13 @@ test('settings modal shows import folder with default', async ({ page }) => {
   await expect(chooseBtn).toBeVisible();
 });
 
-test('settings choose folder opens folder browser', async ({ page }) => {
-  await setupApp(page);
-
-  await page.locator('#user-name').click();
-  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
-
-  await page.locator('#settings-choose-folder').click();
-
-  const browser = page.locator('#settings-folder-browser');
-  await expect(browser).toBeVisible();
-
-  // Should show folder items (from mock fixture)
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-  const items = page.locator('.settings-folder-item');
-  expect(await items.count()).toBeGreaterThan(0);
+test.skip('settings choose folder opens folder browser — replaced by Google Picker', async ({ page }) => {
 });
 
-test('settings folder browser shows breadcrumb trail', async ({ page }) => {
-  await setupApp(page);
-
-  await page.locator('#user-name').click();
-  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
-
-  await page.locator('#settings-choose-folder').click();
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-
-  // Should show breadcrumbs with at least "My Drive" root
-  const breadcrumbs = page.locator('.settings-folder-breadcrumbs');
-  await expect(breadcrumbs).toBeVisible();
+test.skip('settings folder browser shows breadcrumb trail — replaced by Google Picker', async ({ page }) => {
 });
 
-test('settings folder browser clicking folder navigates into it', async ({ page }) => {
-  await setupApp(page);
-
-  await page.locator('#user-name').click();
-  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
-
-  await page.locator('#settings-choose-folder').click();
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-
-  // Find "Home Projects" folder item (which has sub-folder f2-sub "Backyard")
-  const folderItems = page.locator('.settings-folder-item');
-  const count = await folderItems.count();
-  let targetIdx = -1;
-  for (let i = 0; i < count; i++) {
-    const text = await folderItems.nth(i).textContent();
-    if (text.includes('Home Projects')) { targetIdx = i; break; }
-  }
-  expect(targetIdx).toBeGreaterThanOrEqual(0);
-
-  // Click the folder name to navigate into it
-  await folderItems.nth(targetIdx).locator('.settings-folder-name').click();
-
-  // After navigating into a sub-folder, the select current button should appear
-  await page.waitForSelector('.settings-select-current-btn', { timeout: 5_000 });
-  await expect(page.locator('.settings-select-current-btn')).toBeVisible();
+test.skip('settings folder browser clicking folder navigates into it — replaced by Google Picker', async ({ page }) => {
 });
 
 /* ============================================================
@@ -295,37 +246,16 @@ test('selecting import folder persists to Drive', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
 
-  // Open folder browser
+  // Click choose folder — Picker auto-returns {id: 'f1', name: 'Groceries'} in mock mode
   await page.locator('#settings-choose-folder').click();
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-
-  // Find a folder to navigate into
-  const folderItems = page.locator('.settings-folder-item');
-  const count = await folderItems.count();
-  let targetIdx = -1;
-  for (let i = 0; i < count; i++) {
-    const text = await folderItems.nth(i).textContent();
-    if (text.includes('Home Projects')) { targetIdx = i; break; }
-  }
-  expect(targetIdx).toBeGreaterThanOrEqual(0);
-
-  // Navigate into the folder
-  await folderItems.nth(targetIdx).locator('.settings-folder-name').click();
-  await page.waitForSelector('.settings-select-current-btn', { timeout: 5_000 });
-
-  // Clear records to isolate the select action
-  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
-
-  // Click "Select this folder"
-  await page.locator('.settings-select-current-btn').click();
 
   // Import folder label should update
-  await expect(page.locator('#settings-import-folder')).toContainText('Home Projects');
+  await expect(page.locator('#settings-import-folder')).toContainText('Groceries');
 
   // Verify persisted to Drive
   const prefs = await getLastPrefsRecord(page);
   expect(prefs).not.toBeNull();
-  expect(prefs.importFolderName).toBe('Home Projects');
+  expect(prefs.importFolderName).toBe('Groceries');
   expect(prefs.importFolderId).toBeTruthy();
 });
 
@@ -333,21 +263,9 @@ test('resetting import folder persists null to Drive', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
 
-  // Open folder browser, navigate into a folder, and select it
+  // Select a folder via Picker — auto-returns {id: 'f1', name: 'Groceries'} in mock mode
   await page.locator('#settings-choose-folder').click();
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-
-  const folderItems = page.locator('.settings-folder-item');
-  const count = await folderItems.count();
-  let targetIdx = -1;
-  for (let i = 0; i < count; i++) {
-    const text = await folderItems.nth(i).textContent();
-    if (text.includes('Home Projects')) { targetIdx = i; break; }
-  }
-  expect(targetIdx).toBeGreaterThanOrEqual(0);
-  await folderItems.nth(targetIdx).locator('.settings-folder-name').click();
-  await page.waitForSelector('.settings-select-current-btn', { timeout: 5_000 });
-  await page.locator('.settings-select-current-btn').click();
+  await expect(page.locator('#settings-import-folder')).toContainText('Groceries');
 
   // Reset button should now be visible
   await expect(page.locator('#settings-reset-folder')).toBeVisible();
@@ -376,26 +294,15 @@ test('import folder syncs to localStorage', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
 
-  // Navigate into a folder and select it
+  // Select folder via Picker — auto-returns {id: 'f1', name: 'Groceries'} in mock mode
   await page.locator('#settings-choose-folder').click();
-  await page.waitForSelector('.settings-folder-item', { timeout: 5_000 });
-  const folderItems = page.locator('.settings-folder-item');
-  const count = await folderItems.count();
-  let targetIdx = -1;
-  for (let i = 0; i < count; i++) {
-    const text = await folderItems.nth(i).textContent();
-    if (text.includes('Home Projects')) { targetIdx = i; break; }
-  }
-  expect(targetIdx).toBeGreaterThanOrEqual(0);
-  await folderItems.nth(targetIdx).locator('.settings-folder-name').click();
-  await page.waitForSelector('.settings-select-current-btn', { timeout: 5_000 });
-  await page.locator('.settings-select-current-btn').click();
+  await expect(page.locator('#settings-import-folder')).toContainText('Groceries');
 
   // Verify localStorage was synced
   const lsName = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('waymark_import_folder_name'))
   );
-  expect(lsName).toBe('Home Projects');
+  expect(lsName).toBe('Groceries');
 
   const lsId = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('waymark_import_folder_id'))

@@ -47,6 +47,8 @@ async function setupApp(page, opts = {}) {
   const {
     waitForExplorer = false,
     pinnedFolders   = [],
+    recentSheets    = [],
+    pinnedSheets    = [],
     autoRefresh,
     sidebarOpen,
     tutorialCompleted = true,
@@ -63,6 +65,8 @@ async function setupApp(page, opts = {}) {
   /* 2. LocalStorage — use addInitScript so values exist before app JS runs */
   const lsEntries = {};
   if (pinnedFolders.length) lsEntries.pinned_folders = pinnedFolders;
+  if (recentSheets.length) lsEntries.recent_sheets = recentSheets;
+  if (pinnedSheets.length) lsEntries.pinned_sheets = pinnedSheets;
   if (autoRefresh !== undefined) lsEntries.auto_refresh = autoRefresh;
   if (sidebarOpen !== undefined) lsEntries.sidebar_open = sidebarOpen;
   lsEntries.tutorial_completed = tutorialCompleted;

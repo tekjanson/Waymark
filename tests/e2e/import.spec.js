@@ -8,6 +8,18 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToHome } = require('../helpers/test-utils');
 
+/**
+ * Helper: open import modal and pick a file via the Picker button.
+ * In mock mode, api.picker.pickFilesForImport() auto-returns the first
+ * fixture file, so clicking the Picker button immediately selects it.
+ */
+async function openImportAndPickFile(page) {
+  await page.locator('#menu-import-btn').click();
+  await page.waitForSelector('.import-picker-btn', { timeout: 5_000 });
+  await page.locator('.import-picker-btn').click();
+  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
+}
+
 /* ────────────────── Import button & modal visibility ────────────────── */
 
 test('Import button is visible on the home screen', async ({ page }) => {
@@ -55,13 +67,10 @@ test('import modal closes when clicking the backdrop', async ({ page }) => {
 
 /* ────────────────── Step 1: Sheet list ────────────────── */
 
-test('import modal shows sheet list after loading', async ({ page }) => {
+test('import modal shows selected sheet after Picker selection', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-
-  // Wait for mock sheet list to appear
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
+  await openImportAndPickFile(page);
   const items = page.locator('.import-sheet-item');
   const count = await items.count();
   expect(count).toBeGreaterThan(0);
@@ -71,47 +80,28 @@ test('Next button is disabled until a sheet is selected', async ({ page }) => {
   await setupApp(page);
 
   await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
+  await page.waitForSelector('.import-picker-btn', { timeout: 5_000 });
 
+  // Before picking a file, Next should be disabled
   await expect(page.locator('#import-next-btn')).toBeDisabled();
 });
 
-test('selecting a sheet enables the Next button', async ({ page }) => {
+test('selecting a sheet via Picker enables the Next button', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await expect(page.locator('.import-sheet-item').first()).toHaveClass(/selected/);
   await expect(page.locator('#import-next-btn')).toBeEnabled();
 });
 
-test('search field filters the sheet list', async ({ page }) => {
-  await setupApp(page);
-
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-
-  const totalBefore = await page.locator('.import-sheet-item').count();
-
-  // Type a search query that likely matches some but not all
-  await page.locator('#import-search-input').fill('zzz-nonexistent-query');
-  // Give a moment for filter to apply
-  await page.waitForTimeout(200);
-
-  const totalAfter = await page.locator('.import-sheet-item').count();
-  expect(totalAfter).toBeLessThanOrEqual(totalBefore);
-});
+test.skip('search field filters the sheet list — removed (Picker handles search)', async () => {});
 
 /* ────────────────── Step 2: Configure template & column mapping ────────── */
 
 test('clicking Next after sheet selection shows configure step', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   // Should show step 2 with template picker and column map editor
@@ -123,9 +113,7 @@ test('clicking Next after sheet selection shows configure step', async ({ page }
 test('preview table shows headers from selected sheet', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
@@ -137,9 +125,7 @@ test('preview table shows headers from selected sheet', async ({ page }) => {
 test('template picker has auto-detected template selected', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
@@ -157,9 +143,7 @@ test('template picker has auto-detected template selected', async ({ page }) => 
 test('column mapping editor shows mapping rows with dropdowns', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
@@ -178,9 +162,7 @@ test('column mapping editor shows mapping rows with dropdowns', async ({ page })
 test('Back button returns to sheet selection from configure step', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
@@ -193,9 +175,7 @@ test('Back button returns to sheet selection from configure step', async ({ page
 test('Review button shows review step with template result', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
 
@@ -212,9 +192,7 @@ test('Review button shows review step with template result', async ({ page }) =>
 test('confidence badge shows in configure step', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
 
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
@@ -227,9 +205,7 @@ test('confidence badge shows in configure step', async ({ page }) => {
 test('review step shows column mapping', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
 
@@ -245,9 +221,7 @@ test('review step shows column mapping', async ({ page }) => {
 test('review step shows confidence badge', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
 
@@ -263,9 +237,7 @@ test('review step shows confidence badge', async ({ page }) => {
 test('Import button creates a mock record', async ({ page }) => {
   await setupApp(page);
 
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
   await expect(page.locator('#import-step-analyze')).toBeVisible({ timeout: 10_000 });
 
@@ -293,9 +265,7 @@ test('re-opening import modal resets to step 1', async ({ page }) => {
   await setupApp(page);
 
   // Open, go to step 2, close
-  await page.locator('#menu-import-btn').click();
-  await page.waitForSelector('.import-sheet-item', { timeout: 10_000 });
-  await page.locator('.import-sheet-item').first().click();
+  await openImportAndPickFile(page);
   await page.locator('#import-next-btn').click();
   await expect(page.locator('#import-step-analyze')).toBeVisible();
   await page.locator('#import-cancel-btn').click();
