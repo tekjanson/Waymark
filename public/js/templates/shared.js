@@ -122,6 +122,50 @@ export function registerTemplate(key, definition) {
   TEMPLATES[key] = definition;
 }
 
+/* ---------- Cross-Feature Registry ---------- */
+
+/**
+ * Cross-features let templates share specialised capabilities.
+ *
+ * **Provider** — any template can register a reusable data extractor + widget
+ *   by calling registerCrossFeature() in its module.
+ *
+ * **Consumer** — any template can declare `crossFeatures: [{ featureId, label, icon }]`
+ *   in its definition to accept linked provider data.
+ *
+ * checklist.js bridges the two at render-time: it reads the consumer's
+ * declarations, looks up the linked provider sheet in localStorage,
+ * fetches data, extracts it, and renders the provider's widget.
+ *
+ * @type {Record<string, {provider:string, name:string, icon:string,
+ *        extractData:Function, buildWidget:Function}>}
+ */
+const CROSS_FEATURES = {};
+
+/**
+ * Register a cross-feature provided by a template.
+ * @param {string} id — unique feature key (e.g. 'sensor-reading')
+ * @param {Object} def
+ * @param {string} def.provider — template key that provides this feature
+ * @param {string} def.name — human-readable display name
+ * @param {string} def.icon — emoji icon
+ * @param {function} def.extractData — (rows, cols) → data array
+ * @param {function} def.buildWidget — (container, data) → void (renders into container)
+ */
+export function registerCrossFeature(id, def) {
+  CROSS_FEATURES[id] = def;
+}
+
+/** Look up a single cross-feature by ID. */
+export function getCrossFeature(id) {
+  return CROSS_FEATURES[id] || null;
+}
+
+/** Return a shallow copy of the entire cross-feature registry. */
+export function getCrossFeatures() {
+  return { ...CROSS_FEATURES };
+}
+
 /**
  * Check a template's migrations array against its detected cols.
  * Returns an array of {header, role, description} for columns the
