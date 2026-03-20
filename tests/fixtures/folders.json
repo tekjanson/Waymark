@@ -220,6 +220,11 @@
               "id": "sheet-048",
               "name": "Boiler Room Temp",
               "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-iot-blank",
+              "name": "My IoT Dashboard",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
             }
           ]
         },

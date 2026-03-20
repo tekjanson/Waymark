@@ -1,0 +1,8 @@
+{
+  "id": "sheet-iot-blank",
+  "title": "My IoT Dashboard",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Sensor", "Timestamp", "Reading", "Unit", "Min", "Max", "Alert"]
+  ]
+}
