@@ -91,16 +91,26 @@ docker-compose up
 
 ## Testing
 
-98 end-to-end tests covering every template, auth flow, Drive exploration, search, sharing, and record tracking.
+1175 Playwright tests covering templates, shared rendering paths, auth flow, Drive exploration, search, sharing, storage, and helper modules.
 
 ```bash
 npm test                  # headless
+npm run test:changed      # run only impacted specs for your local changes
+npm run test:changed:list # preview which specs the fast runner would select
 npm run test:headed       # watch it run
 npm run test:debug        # step through with Playwright Inspector
 npm run test:agent:live   # real Gemini evals (requires local env keys)
 ```
 
 Tests use the mock/local mode — no Google account required.
+
+For day-to-day iteration, `npm run test:changed` inspects your changed files and runs the smallest safe set of specs it can infer. Template-specific edits usually collapse to one template spec plus a matching helper-unit spec. Broad renderer or shared-infrastructure changes intentionally fall back to the full suite.
+
+Before marking work as QA, still run the full gate:
+
+```bash
+npm test
+```
 
 For real-agent evals, set `WAYMARK_AGENT_EVAL_KEYS` in your local `.env` as a comma-separated or newline-separated list of Gemini API keys, then run `npm run test:agent:live`. The runner keeps the local mock Drive/Sheets app, but sends real model requests so it can score response quality, Waymark link usage, tool side effects, and multi-sheet behavior. If the default model hits quota limits, set `WAYMARK_AGENT_EVAL_MODEL` to a lighter option such as `gemini-2.0-flash-lite` for that eval run.
 
