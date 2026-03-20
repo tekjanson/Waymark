@@ -34,6 +34,7 @@ import './recipe/index.js';
 import './flow/index.js';
 import './social.js';
 import './automation.js';
+import './guide/index.js';
 import './knowledge/index.js';
 import './notification.js';
 import './iot/index.js';

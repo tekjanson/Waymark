@@ -161,6 +161,14 @@ const ROLE_LABELS = {
   'automation.target': 'Target (CSS selector, URL, or element)',
   'automation.value': 'Value / Input data',
   'automation.status': 'Status (pending, running, done, failed, skipped)',
+  // Instruction Guide
+  'guide.guide': 'Guide / Task name',
+  'guide.slide': 'Slide / Step headline',
+  'guide.objective': 'Objective / Intended outcome',
+  'guide.instruction': 'Instruction / Speaker notes',
+  'guide.visual': 'Visual cue / Asset to show',
+  'guide.duration': 'Duration / Estimated time',
+  'guide.status': 'Status (Draft, In Progress, Ready, Done)',
   // Knowledge Base
   'knowledge.title': 'Article / Topic title',
   'knowledge.category': 'Category / Section',
@@ -272,6 +280,11 @@ const CANONICAL_HEADERS = {
   'automation.workflow': 'Workflow', 'automation.step': 'Step',
   'automation.action': 'Action', 'automation.target': 'Target',
   'automation.value': 'Value', 'automation.status': 'Status',
+  // Instruction Guide
+  'guide.guide': 'Guide', 'guide.slide': 'Slide',
+  'guide.objective': 'Objective', 'guide.instruction': 'Instruction',
+  'guide.visual': 'Visual', 'guide.duration': 'Duration',
+  'guide.status': 'Status',
   // Knowledge Base
   'knowledge.title': 'Title', 'knowledge.category': 'Category',
   'knowledge.content': 'Content', 'knowledge.tags': 'Tags',

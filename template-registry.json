@@ -821,6 +821,47 @@
       ]
     },
     {
+      "key": "guide",
+      "name": "Instruction Guide",
+      "icon": "🪴",
+      "color": "#15803d",
+      "priority": 22,
+      "category": "Documentation",
+      "detectSignals": [
+        "guide",
+        "slide",
+        "objective",
+        "instruction",
+        "visual",
+        "duration"
+      ],
+      "columnRoles": [
+        "guide",
+        "slide",
+        "objective",
+        "instruction",
+        "visual",
+        "duration",
+        "status"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Draft",
+        "In Progress",
+        "Ready",
+        "Done"
+      ],
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-049"
+      ],
+      "fixtureFiles": [
+        "guide-composting"
+      ]
+    },
+    {
       "key": "knowledge",
       "name": "Knowledge Base",
       "icon": "📚",
@@ -957,8 +998,8 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-049",
-  "totalTemplates": 25,
+  "nextSheetId": "sheet-050",
+  "totalTemplates": 26,
   "categories": [
     "Productivity",
     "Engineering",
