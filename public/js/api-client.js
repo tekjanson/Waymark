@@ -16,11 +16,12 @@ const isLocal = window.__WAYMARK_LOCAL === true;
 const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Dynamic imports for production ---------- */
-let driveApi, sheetsApi;
+let driveApi, sheetsApi, pickerApi;
 if (!isLocal) {
-  [driveApi, sheetsApi] = await Promise.all([
+  [driveApi, sheetsApi, pickerApi] = await Promise.all([
     import('./drive.js'),
     import('./sheets.js'),
+    import('./picker.js'),
   ]);
 }
 
@@ -507,6 +508,71 @@ export const api = {
       }
       const token = await clientAuth.getToken();
       return driveApi.updateTextFile(token, fileId, content);
+    },
+  },
+
+  /* ---- Picker ---- */
+  picker: {
+    /**
+     * Open Google Picker to select spreadsheets.
+     * In local mode, returns a mock selection from fixtures.
+     * @param {Object} [opts]  { multiSelect, includeDocs, includeSharedDrives }
+     * @returns {Promise<Object[]|null>}
+     */
+    async pickSpreadsheets(opts = {}) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const sheets = [];
+        const collect = (items) => {
+          for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.spreadsheet') sheets.push(item);
+            if (item.children) collect(item.children);
+          }
+        };
+        collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+        // Simulate picking the first sheet
+        return sheets.length ? [{ id: sheets[0].id, name: sheets[0].name, mimeType: sheets[0].mimeType }] : null;
+      }
+      const token = await clientAuth.getToken();
+      return pickerApi.pickSpreadsheets(token, opts);
+    },
+
+    /**
+     * Open Google Picker to select a folder.
+     * @returns {Promise<Object|null>}  { id, name } or null
+     */
+    async pickFolder() {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const first = fix.folders.myDrive.find(f => f.mimeType === 'application/vnd.google-apps.folder');
+        return first ? { id: first.id, name: first.name } : null;
+      }
+      const token = await clientAuth.getToken();
+      return pickerApi.pickFolder(token);
+    },
+
+    /**
+     * Open Google Picker for import (spreadsheets + docs).
+     * @returns {Promise<Object[]|null>}
+     */
+    async pickFilesForImport() {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        const files = [];
+        const collect = (items) => {
+          for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.spreadsheet' ||
+                item.mimeType === 'application/vnd.google-apps.document') {
+              files.push(item);
+            }
+            if (item.children) collect(item.children);
+          }
+        };
+        collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+        return files.length ? [{ id: files[0].id, name: files[0].name, mimeType: files[0].mimeType }] : null;
+      }
+      const token = await clientAuth.getToken();
+      return pickerApi.pickFilesForImport(token);
     },
   },
 

@@ -103,7 +103,14 @@ export async function toolSearchSheets({ query }) {
     throw new Error('Missing search query');
   }
 
-  const allSheets = await api.drive.getAllSheets();
+  // Search across recent + pinned sheets (no broad Drive access with drive.file scope)
+  const { getRecentSheets, getPinnedSheets } = await import('../user-data.js');
+  const seen = new Set();
+  const allSheets = [];
+  for (const s of [...getPinnedSheets(), ...getRecentSheets()]) {
+    if (!seen.has(s.id)) { seen.add(s.id); allSheets.push(s); }
+  }
+
   const lowerQuery = query.toLowerCase();
   const matches = allSheets.filter(sheet => sheet.name.toLowerCase().includes(lowerQuery));
 
@@ -112,7 +119,7 @@ export async function toolSearchSheets({ query }) {
     results: matches.slice(0, 20).map(sheet => ({
       id: sheet.id,
       name: sheet.name,
-      folder: sheet.folder || '',
+      folder: '',
     })),
     totalMatches: matches.length,
   };

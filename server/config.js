@@ -25,8 +25,6 @@ const config = {
     'openid',
     'email',
     'profile',
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/drive.file',
   ],
 

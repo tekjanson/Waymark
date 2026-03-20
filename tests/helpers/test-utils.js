@@ -104,7 +104,7 @@ async function setupApp(page, opts = {}) {
   if (waitForExplorer) {
     await page.evaluate(() => { window.location.hash = '#/explorer'; });
     await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
-    await page.waitForSelector('.folder-item', { timeout: 10_000 });
+    await page.waitForSelector('.explorer-picker-btn', { timeout: 10_000 });
   }
 
   /* 5. Clear init-time records — user-data.js creates .waymark-data.json
@@ -165,7 +165,7 @@ async function getCompletedCount(page) {
 async function waitForExplorer(page) {
   await page.evaluate(() => { window.location.hash = '#/explorer'; });
   await page.waitForSelector('#explorer-view:not(.hidden)', { timeout: 10_000 });
-  await page.waitForSelector('.folder-item', { timeout: 10_000 });
+  await page.waitForSelector('.explorer-picker-btn', { timeout: 10_000 });
 }
 
 async function getExplorerFolderNames(page) {
