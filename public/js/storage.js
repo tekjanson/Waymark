@@ -440,3 +440,30 @@ export function setNotificationRules(sheetId, rules) {
 export function getAllNotificationRules() {
   return get('notification_rules') || {};
 }
+
+/* ---------- Cross-Feature Links ---------- */
+
+/**
+ * Get cross-feature links for a sheet.
+ * @param {string} sheetId
+ * @returns {Array<{featureId: string, linkedSheetId: string, linkedSheetName: string}>}
+ */
+export function getCrossLinks(sheetId) {
+  const all = get('cross_links') || {};
+  return all[sheetId] || [];
+}
+
+/**
+ * Set cross-feature links for a sheet.
+ * @param {string} sheetId
+ * @param {Array<{featureId: string, linkedSheetId: string, linkedSheetName: string}>} links
+ */
+export function setCrossLinks(sheetId, links) {
+  const all = get('cross_links') || {};
+  if (links && links.length > 0) {
+    all[sheetId] = links;
+  } else {
+    delete all[sheetId];
+  }
+  set('cross_links', all);
+}

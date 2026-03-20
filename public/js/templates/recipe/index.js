@@ -30,6 +30,11 @@ const definition = {
   itemNoun: 'Ingredient',
   defaultHeaders: ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'],
 
+  /** Cross-template features this template can integrate with */
+  crossFeatures: [
+    { featureId: 'sensor-reading', label: 'Link IoT Scale', icon: '⚖️' },
+  ],
+
   /** Columns this template supports but that may be missing from older sheets */
   migrations: [
     { role: 'status',  header: 'Status',  description: 'Chef approval status (Untested/Approved/Needs Work)' },

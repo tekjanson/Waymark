@@ -33,5 +33,8 @@
 @import url('./templates/notification.css');
 @import url('./templates/iot.css');
 
+/* Cross-template feature integration */
+@import url('./templates/cross-features.css');
+
 /* Agent view */
 @import url('./agent.css');

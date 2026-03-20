@@ -8,9 +8,10 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
-import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations } from './templates/shared.js';
+import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
+import { getCrossLinks, setCrossLinks } from './storage.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -587,6 +588,11 @@ function renderWithTemplate(values) {
     detail: { sheetId: currentSheetId, title: currentDataTitle, templateKey: key, rows, cols, headers },
   }));
 
+  // Cross-template feature integration bar (generic — works for all templates)
+  if (template.crossFeatures && template.crossFeatures.length > 0 && currentSheetId) {
+    buildCrossFeatureBar(itemsEl, template, currentSheetId);
+  }
+
   // Show template help button and trigger first-time tutorial
   currentTemplateKey = key;
   if (templateHelpBtn) {
@@ -639,6 +645,189 @@ function renderWithTemplate(values) {
   if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe') {
     const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
     itemsEl.append(addForm);
+  }
+}
+
+/* ---------- Cross-Feature Bar (generic) ---------- */
+
+/**
+ * Build the cross-feature integration bar for any consumer template.
+ * Iterates over the template's crossFeatures declarations, checks
+ * localStorage for existing links, and renders link buttons or
+ * data widgets accordingly.
+ */
+async function buildCrossFeatureBar(container, template, sheetId) {
+  const links = getCrossLinks(sheetId);
+  const bar = el('div', { className: 'cross-bar' });
+
+  for (const cf of template.crossFeatures) {
+    const feature = getCrossFeature(cf.featureId);
+    if (!feature) continue;
+
+    const link = links.find(l => l.featureId === cf.featureId);
+
+    if (link) {
+      // Linked — show widget with provider data
+      const widget = el('div', { className: 'cross-widget' }, [
+        el('div', { className: 'cross-widget-header' }, [
+          el('span', { className: 'cross-widget-icon' }, [feature.icon]),
+          el('span', { className: 'cross-widget-title' }, [link.linkedSheetName || feature.name]),
+          el('button', {
+            className: 'cross-unlink-btn',
+            type: 'button',
+            title: 'Unlink',
+          }, ['✕']),
+        ]),
+        el('div', { className: 'cross-widget-body cross-loading' }, ['Loading…']),
+      ]);
+      bar.append(widget);
+
+      // Unlink handler
+      widget.querySelector('.cross-unlink-btn').addEventListener('click', () => {
+        const updated = getCrossLinks(sheetId).filter(l => l.featureId !== cf.featureId);
+        setCrossLinks(sheetId, updated);
+        widget.remove();
+        bar.append(buildLinkButton(cf, feature, sheetId, bar));
+        if (!bar.querySelector('.cross-widget') && !bar.querySelector('.cross-link-btn')) {
+          bar.remove();
+        }
+      });
+
+      // Fetch and render provider data
+      loadCrossWidget(widget, feature, link.linkedSheetId);
+    } else {
+      bar.append(buildLinkButton(cf, feature, sheetId, bar));
+    }
+  }
+
+  container.prepend(bar);
+}
+
+/**
+ * Fetch provider sheet data, extract it through the feature's extractor,
+ * and render using the feature's buildWidget.
+ */
+async function loadCrossWidget(widget, feature, linkedSheetId) {
+  const body = widget.querySelector('.cross-widget-body');
+  try {
+    const data = await api.sheets.getSpreadsheet(linkedSheetId);
+    const headers = data.values[0] || [];
+    const providerDet = detectTemplate(headers);
+    const lower = headers.map(h => (h || '').toLowerCase().trim());
+    const providerCols = providerDet.template.columns(lower);
+    const extracted = feature.extractData(data.values.slice(1), providerCols);
+    body.className = 'cross-widget-body';
+    body.textContent = '';
+    if (extracted.length > 0) {
+      feature.buildWidget(body, extracted);
+    } else {
+      body.textContent = 'No data available';
+    }
+  } catch {
+    body.className = 'cross-widget-body cross-error';
+    body.textContent = 'Failed to load linked data';
+  }
+}
+
+/** Build the dashed "Link" button for an unlinked cross-feature. */
+function buildLinkButton(cf, feature, sheetId, bar) {
+  const btn = el('button', {
+    className: 'cross-link-btn',
+    type: 'button',
+  }, [
+    el('span', { className: 'cross-link-icon' }, [cf.icon || feature.icon]),
+    el('span', {}, [cf.label]),
+  ]);
+  btn.addEventListener('click', () => openCrossFeaturePicker(cf, feature, sheetId, bar, btn));
+  return btn;
+}
+
+/**
+ * Open a picker overlay listing compatible sheets for linking.
+ * Uses getSpreadsheetSummary (header-only fetch) to detect which
+ * sheets match the provider template. Efficient — no full data load.
+ */
+async function openCrossFeaturePicker(cf, feature, sheetId, bar, triggerBtn) {
+  document.querySelector('.cross-picker')?.remove();
+
+  const overlay = el('div', { className: 'cross-picker' }, [
+    el('div', { className: 'cross-picker-panel' }, [
+      el('div', { className: 'cross-picker-header' }, [
+        el('h3', {}, [`Link ${cf.label}`]),
+        el('button', { className: 'cross-picker-close', type: 'button' }, ['✕']),
+      ]),
+      el('input', {
+        className: 'cross-picker-search',
+        type: 'text',
+        placeholder: 'Search sheets…',
+      }),
+      el('div', { className: 'cross-picker-list cross-loading' }, ['Loading sheets…']),
+    ]),
+  ]);
+
+  // Close handlers
+  overlay.querySelector('.cross-picker-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  document.body.append(overlay);
+
+  try {
+    const { files } = await api.drive.listSpreadsheets();
+    const listEl = overlay.querySelector('.cross-picker-list');
+    listEl.className = 'cross-picker-list';
+    listEl.textContent = '';
+
+    // Filter to sheets matching the provider template type using summary (efficient)
+    const compatible = [];
+    for (const file of files) {
+      if (file.id === sheetId) continue; // skip self
+      try {
+        const summary = await api.sheets.getSpreadsheetSummary(file.id);
+        const detected = detectTemplate(summary.values[0] || []);
+        if (detected.key === feature.provider) {
+          compatible.push({ id: file.id, name: file.name });
+        }
+      } catch { /* skip sheets that fail to load */ }
+    }
+
+    if (compatible.length === 0) {
+      listEl.append(el('div', { className: 'cross-picker-empty' }, [
+        `No compatible ${feature.name} sheets found.`,
+      ]));
+      return;
+    }
+
+    const renderList = (filter) => {
+      listEl.textContent = '';
+      const filtered = filter
+        ? compatible.filter(s => s.name.toLowerCase().includes(filter.toLowerCase()))
+        : compatible;
+      for (const sheet of filtered) {
+        const item = el('div', { className: 'cross-picker-item' }, [
+          el('span', { className: 'cross-picker-item-icon' }, ['📄']),
+          el('span', { className: 'cross-picker-item-name' }, [sheet.name]),
+        ]);
+        item.addEventListener('click', () => {
+          const links = getCrossLinks(sheetId);
+          links.push({ featureId: cf.featureId, linkedSheetId: sheet.id, linkedSheetName: sheet.name });
+          setCrossLinks(sheetId, links);
+          overlay.remove();
+          showToast(`Linked ${sheet.name}`, 'success');
+          loadSheet(currentSheetId);
+        });
+        listEl.append(item);
+      }
+      if (filtered.length === 0) {
+        listEl.append(el('div', { className: 'cross-picker-empty' }, ['No matching sheets']));
+      }
+    };
+
+    renderList('');
+    overlay.querySelector('.cross-picker-search').addEventListener('input', (e) => renderList(e.target.value));
+  } catch {
+    const listEl = overlay.querySelector('.cross-picker-list');
+    listEl.className = 'cross-picker-list cross-error';
+    listEl.textContent = 'Failed to load sheets';
   }
 }
 

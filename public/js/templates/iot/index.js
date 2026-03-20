@@ -9,7 +9,7 @@
    Live ingestion: WebSocket · HTTP polling · MQTT-over-WS · Web Serial
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent } from '../shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, registerCrossFeature, delegateEvent } from '../shared.js';
 import {
   ALERT_STATES,
   parseNumber,
@@ -904,3 +904,61 @@ const definition = {
 };
 
 registerTemplate('iot', definition);
+
+/* ---------- Cross-Feature: sensor-reading ----------
+   Allows any consumer template to embed live sensor data widgets.
+   The consumer just declares { featureId: 'sensor-reading' } and
+   the generic orchestration in checklist.js handles the rest.
+   -------------------------------------------------- */
+
+registerCrossFeature('sensor-reading', {
+  provider: 'iot',
+  name: 'Live Sensor',
+  icon: '📡',
+
+  /**
+   * Extract the latest reading per sensor from an IoT sheet.
+   * @param {string[][]} rows — sheet data (excluding header row)
+   * @param {Object} cols — column index map from iot.columns()
+   * @returns {Array<{name:string, reading:number|null, unit:string, timestamp:string, state:string}>}
+   */
+  extractData(rows, cols) {
+    const latest = new Map();
+    for (const row of rows) {
+      const name = cell(row, cols.sensor).trim();
+      if (!name) continue;
+      const reading = parseNumber(cell(row, cols.reading));
+      const unit = cell(row, cols.unit);
+      const ts = cell(row, cols.timestamp);
+      const min = parseNumber(cell(row, cols.min));
+      const max = parseNumber(cell(row, cols.max));
+      const state = resolveState(reading, min, max, cell(row, cols.alert));
+      const existing = latest.get(name);
+      if (!existing || (ts && (!existing.timestamp || ts > existing.timestamp))) {
+        latest.set(name, { name, reading, unit, timestamp: ts, min, max, state });
+      }
+    }
+    return Array.from(latest.values());
+  },
+
+  /**
+   * Build compact sensor-reading chip(s) inside a container.
+   * @param {HTMLElement} container
+   * @param {Array} data — result of extractData()
+   */
+  buildWidget(container, data) {
+    for (const s of data) {
+      const tone = s.state === 'Alert' ? 'alert'
+        : s.state === 'Offline' ? 'offline'
+        : s.state === 'Watch' ? 'watch' : 'normal';
+      container.append(el('div', { className: `cross-sensor-chip cross-sensor-${tone}` }, [
+        el('span', { className: 'cross-sensor-icon' }, ['📡']),
+        el('span', { className: 'cross-sensor-name' }, [s.name]),
+        el('span', { className: 'cross-sensor-value' }, [formatReading(s.reading, s.unit)]),
+        s.timestamp
+          ? el('span', { className: 'cross-sensor-time' }, [formatTimestamp(s.timestamp)])
+          : null,
+      ]));
+    }
+  },
+});
