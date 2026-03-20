@@ -359,6 +359,7 @@ async function showApp(user) {
   }
 
   // Load explorer & collect known sheets before routing
+  await explorer.autoPinWaymarkFolder();
   await explorer.load();
   await collectKnownSheets();
 

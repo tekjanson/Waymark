@@ -9,10 +9,15 @@
    Requires:
      - gapi loaded (via <script src="https://apis.google.com/js/api.js">)
      - An OAuth access token (from auth.js)
-     - The GCP project number (for setAppId)
+     - GCP project number injected as window.__WAYMARK_GCP_PROJECT
    ============================================================ */
 
 let _pickerLoaded = false;
+
+/** GCP project number — required for Shared-with-me to populate. */
+function getAppId() {
+  return window.__WAYMARK_GCP_PROJECT || '';
+}
 
 /**
  * Ensure the Picker library is loaded from gapi.
@@ -32,8 +37,14 @@ function ensurePickerLoaded() {
   });
 }
 
+/** Standard result mapper for Picker docs. */
+function mapDocs(docs) {
+  return docs.map(d => ({ id: d.id, name: d.name, mimeType: d.mimeType }));
+}
+
 /**
- * Open a Google Picker to select spreadsheets.
+ * Open a Google Picker to browse Drive (spreadsheets + folders).
+ * Users can select a spreadsheet to open OR a folder to navigate into.
  * @param {string} token   OAuth access token
  * @param {Object} [opts]
  * @param {boolean} [opts.multiSelect=false]  allow multiple file selection
@@ -47,23 +58,20 @@ export async function pickSpreadsheets(token, opts = {}) {
   return new Promise((resolve) => {
     const sheetsView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
       .setIncludeFolders(true)
-      .setSelectFolderEnabled(false);
+      .setSelectFolderEnabled(true);
 
     const builder = new google.picker.PickerBuilder()
       .addView(sheetsView)
       .setOAuthToken(token)
+      .setAppId(getAppId())
       .setCallback((data) => {
         if (data.action === google.picker.Action.PICKED) {
-          resolve(data.docs.map(d => ({
-            id: d.id,
-            name: d.name,
-            mimeType: d.mimeType,
-          })));
+          resolve(mapDocs(data.docs));
         } else if (data.action === google.picker.Action.CANCEL) {
           resolve(null);
         }
       })
-      .setTitle('Select a spreadsheet');
+      .setTitle('Open from Google Drive');
 
     if (opts.multiSelect) {
       builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);
@@ -77,16 +85,18 @@ export async function pickSpreadsheets(token, opts = {}) {
     if (opts.includeDocs) {
       const docsView = new google.picker.DocsView(google.picker.ViewId.DOCUMENTS)
         .setIncludeFolders(true)
-        .setSelectFolderEnabled(false);
+        .setSelectFolderEnabled(true);
       builder.addView(docsView);
     }
 
-    // Add "Shared with me" view
+    // "Shared with me" view — needs setAppId to populate
     const sharedView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
-      .setOwnedByMe(false);
+      .setOwnedByMe(false)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true);
     builder.addView(sharedView);
 
-    // Add recent view
+    // Recent view
     builder.addView(google.picker.ViewId.RECENTLY_PICKED);
 
     builder.build().setVisible(true);
@@ -107,9 +117,18 @@ export async function pickFolder(token) {
       .setSelectFolderEnabled(true)
       .setMimeTypes('application/vnd.google-apps.folder');
 
+    // Shared folders view
+    const sharedFolderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setOwnedByMe(false)
+      .setMimeTypes('application/vnd.google-apps.folder');
+
     const builder = new google.picker.PickerBuilder()
       .addView(folderView)
+      .addView(sharedFolderView)
       .setOAuthToken(token)
+      .setAppId(getAppId())
       .setCallback((data) => {
         if (data.action === google.picker.Action.PICKED) {
           const folder = data.docs[0];
@@ -150,14 +169,11 @@ export async function pickFilesForImport(token) {
       .addView(sharedView)
       .addView(google.picker.ViewId.RECENTLY_PICKED)
       .setOAuthToken(token)
+      .setAppId(getAppId())
       .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
       .setCallback((data) => {
         if (data.action === google.picker.Action.PICKED) {
-          resolve(data.docs.map(d => ({
-            id: d.id,
-            name: d.name,
-            mimeType: d.mimeType,
-          })));
+          resolve(mapDocs(data.docs));
         } else if (data.action === google.picker.Action.CANCEL) {
           resolve(null);
         }

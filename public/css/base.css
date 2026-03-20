@@ -589,6 +589,13 @@ ul { list-style: none; }
 .explorer-picker-btn {
   font-size: 0.95rem; padding: 10px 20px; width: 100%;
 }
+.explorer-btn-row {
+  display: flex; gap: 8px;
+}
+.explorer-btn-row .explorer-picker-btn { flex: 1; }
+.explorer-pin-folder-btn {
+  font-size: 0.85rem; padding: 10px 14px; white-space: nowrap;
+}
 .import-picker-btn {
   font-size: 0.95rem; padding: 10px 20px; width: 100%; margin-top: 12px;
 }

@@ -14,7 +14,7 @@ test('displays Open from Google Drive button', async ({ page }) => {
 
   const pickerBtn = page.locator('.explorer-picker-btn');
   await expect(pickerBtn).toBeVisible();
-  await expect(pickerBtn).toContainText('Open from Google Drive');
+  await expect(pickerBtn).toContainText('Open from Drive');
 });
 
 test('displays picker hint text', async ({ page }) => {
@@ -22,14 +22,22 @@ test('displays picker hint text', async ({ page }) => {
 
   const hint = page.locator('.explorer-picker-hint');
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText('Select a spreadsheet');
+  await expect(hint).toContainText('Browse your Google Drive');
 });
 
-test('shows empty state when no recent or pinned sheets', async ({ page }) => {
+test('auto-pins Waymark folder on first load', async ({ page }) => {
   await setupApp(page, { waitForExplorer: true });
 
-  const emptyState = page.locator('#explorer-view .empty-state', { hasText: 'No recent sheets yet' });
-  await expect(emptyState).toBeVisible();
+  const waymarkFolder = page.locator('.folder-item', { hasText: 'Waymark' });
+  await expect(waymarkFolder).toBeVisible();
+});
+
+test('displays Pin a Folder button', async ({ page }) => {
+  await setupApp(page, { waitForExplorer: true });
+
+  const pinBtn = page.locator('.explorer-pin-folder-btn');
+  await expect(pinBtn).toBeVisible();
+  await expect(pinBtn).toContainText('Pin a Folder');
 });
 
 test('sidebar toggle works', async ({ page }) => {
