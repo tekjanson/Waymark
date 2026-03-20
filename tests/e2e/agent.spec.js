@@ -545,7 +545,12 @@ test('older assistant turns are summarized ahead of the recent context window', 
 });
 
 test('system prompt keeps sheet context compact and points to search_sheets', async ({ page }) => {
-  await setupApp(page);
+  await setupApp(page, { recentSheets: [
+    { id: 'sheet-001', name: 'Grocery List', openedAt: '2026-01-01T00:00:00Z' },
+    { id: 'sheet-002', name: 'Home Repairs', openedAt: '2026-01-01T00:01:00Z' },
+    { id: 'sheet-003', name: 'Weekly Chores', openedAt: '2026-01-01T00:02:00Z' },
+    { id: 'sheet-004', name: 'Monthly Budget', openedAt: '2026-01-01T00:03:00Z' },
+  ] });
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
       { key: 'ctx-sheets-compact-key', nickname: 'Ctx2', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
@@ -1925,7 +1930,12 @@ test('system prompt includes user name in API requests', async ({ page }) => {
 });
 
 test('system prompt includes user sheets from Drive', async ({ page }) => {
-  await setupApp(page);
+  await setupApp(page, { recentSheets: [
+    { id: 'sheet-001', name: 'Grocery List', openedAt: '2026-01-01T00:00:00Z' },
+    { id: 'sheet-002', name: 'Home Repairs', openedAt: '2026-01-01T00:01:00Z' },
+    { id: 'sheet-003', name: 'Weekly Chores', openedAt: '2026-01-01T00:02:00Z' },
+    { id: 'sheet-004', name: 'Monthly Budget', openedAt: '2026-01-01T00:03:00Z' },
+  ] });
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
       { key: 'ctx-sheets-key', nickname: 'Sht', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
@@ -2114,7 +2124,12 @@ function buildSearchSheetsFunctionCall(query) {
 }
 
 test('search_sheets tool finds matching sheets and returns results to model', async ({ page }) => {
-  await setupApp(page);
+  await setupApp(page, { recentSheets: [
+    { id: 'sheet-001', name: 'Grocery List', openedAt: '2026-01-01T00:00:00Z' },
+    { id: 'sheet-002', name: 'Home Repairs', openedAt: '2026-01-01T00:01:00Z' },
+    { id: 'sheet-003', name: 'Weekly Chores', openedAt: '2026-01-01T00:02:00Z' },
+    { id: 'sheet-004', name: 'Monthly Budget', openedAt: '2026-01-01T00:03:00Z' },
+  ] });
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
       { key: 'search-key', nickname: 'Search', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
@@ -2218,7 +2233,12 @@ test('search_sheets with no matches returns empty results', async ({ page }) => 
 });
 
 test('search_sheets returns sheet IDs and folder info', async ({ page }) => {
-  await setupApp(page);
+  await setupApp(page, { recentSheets: [
+    { id: 'sheet-001', name: 'Grocery List', openedAt: '2026-01-01T00:00:00Z' },
+    { id: 'sheet-002', name: 'Home Repairs', openedAt: '2026-01-01T00:01:00Z' },
+    { id: 'sheet-003', name: 'Weekly Chores', openedAt: '2026-01-01T00:02:00Z' },
+    { id: 'sheet-004', name: 'Monthly Budget', openedAt: '2026-01-01T00:03:00Z' },
+  ] });
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
       { key: 'search-detail-key', nickname: 'SD', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
@@ -3060,7 +3080,7 @@ test('attach button has pointer cursor', async ({ page }) => {
   await expect(page.locator('.agent-context-attach-btn')).toHaveCSS('cursor', 'pointer');
 });
 
-test('clicking attach button opens file picker overlay', async ({ page }) => {
+test.skip('clicking attach button opens file picker overlay — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -3077,7 +3097,7 @@ test('clicking attach button opens file picker overlay', async ({ page }) => {
   await expect(page.locator('.agent-picker-search')).toBeVisible();
 });
 
-test('file picker shows sheets from Drive mock and allows selection', async ({ page }) => {
+test.skip('file picker shows sheets from Drive mock and allows selection — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -3105,7 +3125,7 @@ test('file picker shows sheets from Drive mock and allows selection', async ({ p
   await expect(page.locator('.agent-context-chip-name')).toContainText(firstName);
 });
 
-test('file picker search filters sheets by name', async ({ page }) => {
+test.skip('file picker search filters sheets by name — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -3126,7 +3146,7 @@ test('file picker search filters sheets by name', async ({ page }) => {
   expect(countAfter).toBe(countBefore);
 });
 
-test('file picker closes when clicking overlay background', async ({ page }) => {
+test.skip('file picker closes when clicking overlay background — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -3143,7 +3163,7 @@ test('file picker closes when clicking overlay background', async ({ page }) => 
   await expect(page.locator('.agent-picker-overlay')).toHaveCount(0);
 });
 
-test('file picker closes when clicking X button', async ({ page }) => {
+test.skip('file picker closes when clicking X button — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -3205,7 +3225,7 @@ test('context files persist across agent view re-renders', async ({ page }) => {
   await expect(page.locator('.agent-context-chip')).toHaveCount(2);
 });
 
-test('already-pinned files show "added" badge in picker and are not re-added', async ({ page }) => {
+test.skip('already-pinned files show added badge in picker — replaced by Google Picker', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([

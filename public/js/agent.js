@@ -197,14 +197,20 @@ async function _refreshContext() {
     parts.push(`The user's name is ${user.name}.`);
   }
 
-  // User's sheets — fetched from Drive
+  // User's sheets — from recent + pinned (no broad Drive access)
   try {
-    const sheets = await api.drive.getAllSheets();
+    const recentSheetsList = userData.getRecentSheets();
+    const pinnedSheetsList = userData.getPinnedSheets();
+    const seen = new Set();
+    const sheets = [];
+    for (const s of [...pinnedSheetsList, ...recentSheetsList]) {
+      if (!seen.has(s.id)) { seen.add(s.id); sheets.push(s); }
+    }
     if (sheets.length) {
       const sheetList = sheets.slice(0, MAX_CONTEXT_SHEETS).map(s =>
-        s.folder ? `"${s.name}" (id: ${s.id}, folder: ${s.folder})` : `"${s.name}" (id: ${s.id})`
+        `"${s.name}" (id: ${s.id})`
       ).join(', ');
-      parts.push(`The user has ${sheets.length} sheet(s) in Drive.`);
+      parts.push(`The user has ${sheets.length} known sheet(s).`);
       parts.push(`A few relevant sheet examples: ${sheetList}.`);
       parts.push('If the user mentions a sheet that is not listed here, use search_sheets to find it by name before using read_sheet or update_sheet.');
     }
@@ -379,7 +385,14 @@ async function _runSlashCommand(name, args) {
   return runSlashCommand(name, args, {
     clearConversation: _clearConversation,
     showSettings: _showSettings,
-    listSheets: () => api.drive.getAllSheets(),
+    listSheets: () => {
+      const seen = new Set();
+      const sheets = [];
+      for (const s of [...userData.getPinnedSheets(), ...userData.getRecentSheets()]) {
+        if (!seen.has(s.id)) { seen.add(s.id); sheets.push(s); }
+      }
+      return sheets;
+    },
     createBlankSheet: ({ template, title }) => _toolCreateSheet({ template, title, data: [['']] }),
     appendSheetPreviewCard: _appendSheetPreviewCard,
   });
@@ -426,17 +439,16 @@ function _showSettings() {
  */
 async function _openFilePicker() {
   try {
-    const sheets = await api.drive.getAllSheets();
-    const picker = buildFilePicker(sheets, (file) => {
-      const current = storage.getAgentContextFiles();
-      if (current.some(f => f.id === file.id)) return;
-      current.push({ id: file.id, name: file.name });
-      storage.setAgentContextFiles(current);
-      refreshContextBar(_contextBar);
-    });
-    _container.appendChild(picker);
+    const files = await api.picker.pickSpreadsheets({ includeSharedDrives: true });
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const current = storage.getAgentContextFiles();
+    if (current.some(f => f.id === file.id)) return;
+    current.push({ id: file.id, name: file.name });
+    storage.setAgentContextFiles(current);
+    refreshContextBar(_contextBar);
   } catch {
-    showToast('Could not load your sheets', 'error');
+    showToast('Could not open file picker', 'error');
   }
 }
 

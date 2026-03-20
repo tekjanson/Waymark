@@ -189,28 +189,10 @@ test('duplicate modal has choose folder button', async ({ page }) => {
   await expect(page.locator('.duplicate-folder-name')).toContainText('Default');
 });
 
-test('duplicate folder browser shows breadcrumbs and folders', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
-  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
-
-  await openOverflowMenu(page);
-  await page.locator('#duplicate-sheet-btn').click();
-  await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
-
-  // Open folder browser
-  await page.locator('.duplicate-choose-folder').click();
-  await page.waitForSelector('.duplicate-folder-breadcrumbs', { timeout: 5_000 });
-
-  // Should show My Drive breadcrumb
-  await expect(page.locator('.duplicate-breadcrumb-btn').first()).toContainText('My Drive');
-
-  // Should show folder items with select buttons
-  const items = page.locator('.duplicate-folder-item');
-  expect(await items.count()).toBeGreaterThan(0);
+test.skip('duplicate folder browser shows breadcrumbs and folders — replaced by Google Picker', async ({ page }) => {
 });
 
-test('duplicate folder browser select button picks folder', async ({ page }) => {
+test('duplicate choose-folder button picks folder via Picker', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
@@ -219,15 +201,11 @@ test('duplicate folder browser select button picks folder', async ({ page }) => 
   await page.locator('#duplicate-sheet-btn').click();
   await page.waitForSelector('#duplicate-modal', { timeout: 5_000 });
 
-  // Open folder browser and select first folder
+  // Click choose folder — Picker auto-returns in mock mode
   await page.locator('.duplicate-choose-folder').click();
-  await page.waitForSelector('.duplicate-folder-select-btn', { timeout: 5_000 });
 
-  const firstSelectBtn = page.locator('.duplicate-folder-select-btn').first();
-  await firstSelectBtn.click();
-
-  // Browser should close and folder name should update
-  await expect(page.locator('.duplicate-folder-browser')).toHaveClass(/hidden/);
+  // Folder name should update from default
+  await expect(page.locator('.duplicate-folder-name')).not.toContainText('Default');
 });
 
 test('lock button shows toast feedback on toggle', async ({ page }) => {

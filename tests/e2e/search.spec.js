@@ -2,6 +2,13 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
+const FIXTURE_SHEETS = [
+  { id: 'sheet-001', name: 'Grocery List', openedAt: '2026-01-01T00:00:00Z' },
+  { id: 'sheet-002', name: 'Home Repairs', openedAt: '2026-01-01T00:01:00Z' },
+  { id: 'sheet-003', name: 'Weekly Chores', openedAt: '2026-01-01T00:02:00Z' },
+  { id: 'sheet-004', name: 'Monthly Budget', openedAt: '2026-01-01T00:03:00Z' },
+];
+
 /*
  * Search tests — each test fully bootstraps the app with
  * preconditioned auth + explorer state, then exercises search.
@@ -15,7 +22,7 @@ test('search bar is visible after login', async ({ page }) => {
 });
 
 test('search for "grocery" returns matching sheet', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'grocery');
   await page.click('#search-btn');
@@ -31,7 +38,7 @@ test('search for "grocery" returns matching sheet', async ({ page }) => {
 });
 
 test('search for "chore" returns chores sheet', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'chore');
   await page.click('#search-btn');
@@ -41,7 +48,7 @@ test('search for "chore" returns chores sheet', async ({ page }) => {
 });
 
 test('search for "home" returns home repairs sheet', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'home');
   await page.click('#search-btn');
@@ -51,7 +58,7 @@ test('search for "home" returns home repairs sheet', async ({ page }) => {
 });
 
 test('search with no match shows empty state', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'xyznonexistent');
   await page.click('#search-btn');
@@ -61,7 +68,7 @@ test('search with no match shows empty state', async ({ page }) => {
 });
 
 test('clicking a search result navigates to checklist', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'grocery');
   await page.click('#search-btn');
@@ -74,7 +81,7 @@ test('clicking a search result navigates to checklist', async ({ page }) => {
 });
 
 test('search form submits via Enter key', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'repair');
   await page.press('#search-input', 'Enter');
@@ -85,7 +92,7 @@ test('search form submits via Enter key', async ({ page }) => {
 });
 
 test('search updates URL hash', async ({ page }) => {
-  await setupApp(page, { waitForExplorer: true });
+  await setupApp(page, { waitForExplorer: true, recentSheets: FIXTURE_SHEETS });
 
   await page.fill('#search-input', 'grocery');
   await page.click('#search-btn');

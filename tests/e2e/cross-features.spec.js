@@ -50,84 +50,31 @@ test('checklist sheet does not show cross-feature bar', async ({ page }) => {
 });
 
 /* ═══ Picker overlay ═══ */
+/* Cross-feature linking now uses the Google Picker API (external iframe).
+   Picker interactions can't be tested in headless Playwright, so the old
+   overlay tests are skipped. The link button + widget tests still cover
+   the full pre/post-link lifecycle. */
 
-test('clicking link button opens cross-feature picker overlay', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker', { timeout: 5000 });
-  await expect(page.locator('.cross-picker')).toBeVisible();
-  await expect(page.locator('.cross-picker-panel')).toBeVisible();
-  await expect(page.locator('.cross-picker-header h3')).toContainText('Link');
-});
-
-test('picker overlay has search input', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker-search', { timeout: 5000 });
-  const search = page.locator('.cross-picker-search');
-  await expect(search).toBeVisible();
-  await expect(search).toHaveAttribute('placeholder', /search/i);
-});
-
-test('picker closes via close button', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker', { timeout: 5000 });
-  await page.click('.cross-picker-close');
-  await expect(page.locator('.cross-picker')).toHaveCount(0);
-});
-
-test('picker closes via overlay click', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker', { timeout: 5000 });
-  await page.click('.cross-picker', { position: { x: 5, y: 5 } });
-  await expect(page.locator('.cross-picker')).toHaveCount(0);
-});
-
-test('picker lists compatible IoT sheets', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker-item', { timeout: 10000 });
-  const count = await page.locator('.cross-picker-item').count();
-  expect(count).toBeGreaterThan(0);
-});
-
-test('picker search filters sheet list', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker-item', { timeout: 10000 });
-  const countBefore = await page.locator('.cross-picker-item').count();
-  await page.fill('.cross-picker-search', 'zzznomatchxyz');
-  const countAfter = await page.locator('.cross-picker-item').count();
-  expect(countAfter).toBeLessThan(countBefore);
-});
+test.skip('clicking link button opens Google Picker (external iframe)', async () => {});
+test.skip('picker search — now handled by Google Picker UI', async () => {});
+test.skip('picker close — now handled by Google Picker UI', async () => {});
+test.skip('picker overlay click close — now handled by Google Picker UI', async () => {});
+test.skip('picker lists compatible sheets — now handled by Google Picker UI', async () => {});
+test.skip('picker search filters — now handled by Google Picker UI', async () => {});
 
 /* ═══ Linking workflow: select sheet → widget appears ═══ */
+/* The picker selection step uses Google Picker (can't drive in headless),
+   so we seed the link via localStorage instead of clicking through. */
 
-test('selecting a sheet in picker creates link and shows widget', async ({ page }) => {
+test('linking a sheet shows widget and hides link button', async ({ page }) => {
   await setupApp(page);
+  await page.evaluate(() => {
+    const links = { 'sheet-027': [{ featureId: 'sensor-reading', linkedSheetId: 'sheet-048', linkedSheetName: 'Boiler Room Temp' }] };
+    localStorage.setItem('waymark_cross_links', JSON.stringify(links));
+  });
   await navigateToSheet(page, 'sheet-027');
-  await page.waitForSelector('.cross-link-btn', { timeout: 5000 });
-  await page.click('.cross-link-btn');
-  await page.waitForSelector('.cross-picker-item', { timeout: 10000 });
-  await page.click('.cross-picker-item');
-  // Picker closes and page reloads with widget
   await page.waitForSelector('.cross-widget', { timeout: 5000 });
   await expect(page.locator('.cross-widget')).toBeVisible();
-  // Link button should be gone (replaced by widget)
   await expect(page.locator('.cross-link-btn')).toHaveCount(0);
 });
 

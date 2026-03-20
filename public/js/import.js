@@ -609,7 +609,17 @@ function remapData(origHeaders, origRows, analysis) {
 /* ---------- Browse & fetch files for import ---------- */
 
 /**
+ * Open the Google Picker to let the user select importable files.
+ * Replaces the old listImportableSheets() which needed drive.readonly.
+ * @returns {Promise<Object[]|null>}  array of { id, name, mimeType } or null if cancelled
+ */
+export async function pickImportFiles() {
+  return api.picker.pickFilesForImport();
+}
+
+/**
  * List available files (spreadsheets + documents) the user can import.
+ * @deprecated Use pickImportFiles() instead — this requires drive.readonly scope.
  * @returns {Promise<Object[]>}
  */
 export async function listImportableSheets() {

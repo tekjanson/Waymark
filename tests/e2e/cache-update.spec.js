@@ -29,7 +29,7 @@ test('JS files are served with no-cache revalidation header', async ({ page }) =
   const jsResponses = [];
   page.on('response', (resp) => {
     const url = resp.url();
-    if (url.endsWith('.js') && !url.includes('__fixtures') && !url.includes('playwright')) {
+    if (url.endsWith('.js') && !url.includes('__fixtures') && !url.includes('playwright') && !url.includes('apis.google.com')) {
       jsResponses.push({
         url,
         cacheControl: resp.headers()['cache-control'],
