@@ -3024,3 +3024,289 @@ test('sheet model response text still appears after preview card', async ({ page
   await page.waitForSelector('.agent-message-assistant', { timeout: 15000 });
   await expect(page.locator('.agent-message-assistant')).toContainText('I created a task list');
 });
+
+/* ---------- Context Files — UI & Interaction ---------- */
+
+test('context bar renders with attach button when API keys are configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-bar', { timeout: 5000 });
+  await expect(page.locator('.agent-context-bar')).toBeVisible();
+  await expect(page.locator('.agent-context-attach-btn')).toBeVisible();
+  await expect(page.locator('.agent-context-attach-btn')).toContainText('Add file');
+});
+
+test('context bar does not show attach button when no API keys configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-context-bar', { timeout: 5000 });
+  await expect(page.locator('.agent-context-attach-btn')).toHaveCount(0);
+});
+
+test('attach button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await expect(page.locator('.agent-context-attach-btn')).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking attach button opens file picker overlay', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-overlay', { timeout: 5000 });
+  await expect(page.locator('.agent-picker-overlay')).toBeVisible();
+  await expect(page.locator('.agent-picker-panel')).toBeVisible();
+  await expect(page.locator('.agent-picker-title')).toContainText('Add file to context');
+  await expect(page.locator('.agent-picker-search')).toBeVisible();
+});
+
+test('file picker shows sheets from Drive mock and allows selection', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-item', { timeout: 5000 });
+
+  const items = page.locator('.agent-picker-item');
+  const count = await items.count();
+  expect(count).toBeGreaterThan(0);
+
+  // Click the first item to add it
+  const firstName = await items.first().locator('.agent-picker-item-name').textContent();
+  await items.first().click();
+
+  // Picker should close
+  await expect(page.locator('.agent-picker-overlay')).toHaveCount(0);
+
+  // Chip should appear in context bar
+  await expect(page.locator('.agent-context-chip')).toHaveCount(1);
+  await expect(page.locator('.agent-context-chip-name')).toContainText(firstName);
+});
+
+test('file picker search filters sheets by name', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-item', { timeout: 5000 });
+
+  const countBefore = await page.locator('.agent-picker-item').count();
+  await page.fill('.agent-picker-search', 'zzzznonexistent');
+  await expect(page.locator('.agent-picker-empty')).toBeVisible();
+
+  await page.fill('.agent-picker-search', '');
+  const countAfter = await page.locator('.agent-picker-item').count();
+  expect(countAfter).toBe(countBefore);
+});
+
+test('file picker closes when clicking overlay background', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-overlay', { timeout: 5000 });
+
+  // Click the overlay itself (not the panel)
+  await page.click('.agent-picker-overlay', { position: { x: 5, y: 5 } });
+  await expect(page.locator('.agent-picker-overlay')).toHaveCount(0);
+});
+
+test('file picker closes when clicking X button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-close', { timeout: 5000 });
+  await page.click('.agent-picker-close');
+  await expect(page.locator('.agent-picker-overlay')).toHaveCount(0);
+});
+
+test('context chip remove button removes the file and updates the bar', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_context_files', JSON.stringify([
+      { id: 'sheet-budget-1', name: 'Test Budget Sheet' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-chip', { timeout: 5000 });
+  await expect(page.locator('.agent-context-chip')).toHaveCount(1);
+
+  await page.click('.agent-context-chip-remove');
+  await expect(page.locator('.agent-context-chip')).toHaveCount(0);
+
+  // Verify localStorage was updated
+  const files = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_agent_context_files'))
+  );
+  expect(files).toBeNull();
+});
+
+test('context files persist across agent view re-renders', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_context_files', JSON.stringify([
+      { id: 'sheet-budget-1', name: 'My Budget' },
+      { id: 'sheet-kanban-1', name: 'Project Board' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-chip', { timeout: 5000 });
+  await expect(page.locator('.agent-context-chip')).toHaveCount(2);
+
+  // Navigate away and back
+  await page.evaluate(() => { window.location.hash = '#/'; });
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5000 });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-context-chip', { timeout: 5000 });
+  await expect(page.locator('.agent-context-chip')).toHaveCount(2);
+});
+
+test('already-pinned files show "added" badge in picker and are not re-added', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-attach-btn', { timeout: 5000 });
+
+  // Add a file first
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-item', { timeout: 5000 });
+  await page.locator('.agent-picker-item').first().click();
+  await expect(page.locator('.agent-context-chip')).toHaveCount(1);
+
+  // Open picker again — the same file should show "added" badge
+  await page.click('.agent-context-attach-btn');
+  await page.waitForSelector('.agent-picker-item', { timeout: 5000 });
+  const badges = page.locator('.agent-picker-item-badge');
+  await expect(badges.first()).toContainText('added');
+});
+
+test('context chip remove button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_context_files', JSON.stringify([
+      { id: 'sheet-budget-1', name: 'Test Sheet' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-chip-remove', { timeout: 5000 });
+  await expect(page.locator('.agent-context-chip-remove')).toHaveCSS('cursor', 'pointer');
+});
+
+test('context bar renders correctly at mobile width', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_context_files', JSON.stringify([
+      { id: 'sheet-budget-1', name: 'A Very Long Sheet Name That Should Truncate' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-context-bar', { timeout: 5000 });
+  await expect(page.locator('.agent-context-bar')).toBeVisible();
+
+  // Verify nothing overflows
+  const overflows = await page.evaluate(() => {
+    const problems = [];
+    document.querySelectorAll('.agent-context-bar *').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > window.innerWidth + 2) problems.push(el.className);
+    });
+    return problems;
+  });
+  expect(overflows).toHaveLength(0);
+});
+
+test('pinned context files are included in the system prompt context', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ctx-test-key', nickname: 'K1', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    localStorage.setItem('waymark_agent_context_files', JSON.stringify([
+      { id: 'sheet-budget-1', name: 'My Budget' },
+    ]));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input:not([disabled])', { timeout: 5000 });
+
+  // Intercept Gemini API call to inspect the system prompt
+  let capturedBody = null;
+  await page.route(/generativelanguage.*generateContent/, async route => {
+    capturedBody = JSON.parse(route.request().postData());
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Budget looks good!' }] } }],
+      }),
+    });
+  });
+  await page.route(/streamGenerateContent/, async route => {
+    await route.fulfill({ status: 500, body: '{}' });
+  });
+
+  await page.fill('.agent-input', 'What is in my budget?');
+  await page.click('.agent-send-btn');
+  await page.waitForSelector('.agent-message-assistant', { timeout: 15000 });
+
+  // Verify the system prompt mentions pinned files
+  expect(capturedBody).not.toBeNull();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  expect(systemText).toContain('pinned');
+  expect(systemText).toContain('sheet-budget-1');
+  expect(systemText).toContain('My Budget');
+});

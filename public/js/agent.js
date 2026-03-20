@@ -14,6 +14,7 @@ import {
   MAX_AGGRESSIVE_CONTEXT_MESSAGES,
   MAX_ASSISTANT_MESSAGE_CHARS,
   MAX_CONTEXT_CHARS,
+  MAX_CONTEXT_FILE_CHARS,
   MAX_CONTEXT_MESSAGES,
   MAX_CONTEXT_SHEETS,
   MAX_ESTIMATED_REQUEST_TOKENS,
@@ -41,8 +42,10 @@ import { runSlashCommand } from './agent/slash-commands.js';
 import {
   appendSheetPreviewCard,
   buildEmptyState,
+  buildFilePicker,
   buildMessage,
   buildWelcome,
+  refreshContextBar,
   renderAgentUI,
 } from './agent/view.js';
 import {
@@ -218,6 +221,29 @@ async function _refreshContext() {
     parts.push('If the user says "that sheet", "that checklist", "it", or asks to add/change items in something you just created, resolve that to the most relevant recent sheet ID and prefer update_sheet over creating a duplicate.');
   }
 
+  // Context files — user-pinned sheets to include in every request
+  const contextFiles = storage.getAgentContextFiles();
+  if (contextFiles.length) {
+    const fileSummaries = [];
+    for (const file of contextFiles.slice(0, 5)) {
+      try {
+        const sheet = await api.sheets.getSpreadsheet(file.id);
+        const headers = sheet.values?.[0] || [];
+        const dataRows = (sheet.values || []).slice(1);
+        const preview = dataRows.slice(0, 5).map(row =>
+          row.map(cell => String(cell ?? '').slice(0, 60)).join(' | ')
+        ).join(' ; ');
+        const summary = `"${file.name}" (id: ${file.id}, ${dataRows.length} rows, columns: ${headers.join(', ')}): ${compactContextText(preview, MAX_CONTEXT_FILE_CHARS)}`;
+        fileSummaries.push(summary);
+      } catch {
+        fileSummaries.push(`"${file.name}" (id: ${file.id}) — could not load`);
+      }
+    }
+    parts.push(`The user has pinned ${contextFiles.length} file(s) to this conversation's context.`);
+    parts.push(`Pinned files: ${fileSummaries.join(' | ')}`);
+    parts.push('When the user references these files, use their IDs directly without calling search_sheets. Use read_sheet for full data or update_sheet to modify them.');
+  }
+
   _cachedContext = parts.join(' ');
 }
 
@@ -226,6 +252,7 @@ async function _refreshContext() {
 let _messages = [];
 let _container = null;
 let _chatBody = null;
+let _contextBar = null;
 let _isStreaming = false;
 let _abortController = null;
 let _lastKeyResetDate = null;
@@ -324,8 +351,11 @@ function _renderUI() {
     onClearConversation: _clearConversation,
     onSendMessage: _sendMessage,
     onRunSlashCommand: _runSlashCommand,
+    onAttachFile: _openFilePicker,
+    onRemoveFile: _removeContextFile,
   });
   _chatBody = rendered.chatBody;
+  _contextBar = rendered.contextBar;
 }
 
 function _buildWelcome() {
@@ -387,6 +417,37 @@ function _renderMarkdown(container, text) {
 
 function _showSettings() {
   showSettingsModal(() => show(_container));
+}
+
+/* ---------- Context Files ---------- */
+
+/**
+ * Open the file picker overlay to select a Drive sheet to add to context.
+ */
+async function _openFilePicker() {
+  try {
+    const sheets = await api.drive.getAllSheets();
+    const picker = buildFilePicker(sheets, (file) => {
+      const current = storage.getAgentContextFiles();
+      if (current.some(f => f.id === file.id)) return;
+      current.push({ id: file.id, name: file.name });
+      storage.setAgentContextFiles(current);
+      refreshContextBar(_contextBar);
+    });
+    _container.appendChild(picker);
+  } catch {
+    showToast('Could not load your sheets', 'error');
+  }
+}
+
+/**
+ * Remove a file from the context files list.
+ * @param {string} fileId
+ */
+function _removeContextFile(fileId) {
+  const current = storage.getAgentContextFiles();
+  storage.setAgentContextFiles(current.filter(f => f.id !== fileId));
+  refreshContextBar(_contextBar);
 }
 
 /* ---------- Conversation Logic ---------- */
