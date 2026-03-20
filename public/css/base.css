@@ -1941,13 +1941,6 @@ ul { list-style: none; }
 }
 [data-theme="dark"] .home-greeting-sub { color: #c4a882; }
 
-/* OAuth notice */
-[data-theme="dark"] .oauth-notice {
-  background: rgba(251, 191, 36, 0.1) !important;
-  border-color: rgba(251, 191, 36, 0.3) !important;
-  color: #fcd34d !important;
-}
-
 /* Loading overlay */
 [data-theme="dark"] #loading-overlay {
   background: rgba(15, 23, 42, 0.85);
