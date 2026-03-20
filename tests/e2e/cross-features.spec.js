@@ -408,3 +408,51 @@ test('consumer template crossFeatures declaration is accessible', async ({ page 
   // IoT is a provider, not a consumer — no crossFeatures
   expect(result.iotCross).toBeUndefined();
 });
+
+test('drive listSpreadsheets paginates across multiple result pages', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+
+    globalThis.fetch = async (url, options) => {
+      const href = String(url);
+      calls.push(href);
+      const parsed = new URL(href);
+      const pageToken = parsed.searchParams.get('pageToken');
+
+      const body = !pageToken
+        ? {
+            nextPageToken: 'page-2',
+            files: [
+              { id: 'sheet-page-1', name: 'First Page Sheet', mimeType: 'application/vnd.google-apps.spreadsheet' },
+            ],
+          }
+        : {
+            files: [
+              { id: 'sheet-page-2', name: 'Second Page Sheet', mimeType: 'application/vnd.google-apps.spreadsheet' },
+            ],
+          };
+
+      return {
+        ok: true,
+        json: async () => body,
+      };
+    };
+
+    try {
+      const drive = await import('/js/drive.js');
+      const res = await drive.listSpreadsheets('mock-token');
+      return {
+        calls,
+        ids: res.files.map(file => file.id),
+      };
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  expect(result.calls).toHaveLength(2);
+  expect(result.calls[1]).toContain('pageToken=page-2');
+  expect(result.ids).toEqual(['sheet-page-1', 'sheet-page-2']);
+});

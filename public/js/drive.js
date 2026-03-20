@@ -10,7 +10,7 @@ const BASE = 'https://www.googleapis.com/drive/v3';
  */
 async function list(token, params = {}) {
   const qs = new URLSearchParams({
-    fields: 'files(id,name,mimeType,owners,shared,modifiedTime,parents)',
+    fields: 'nextPageToken,files(id,name,mimeType,owners,shared,modifiedTime,parents)',
     pageSize: '100',
     ...params,
   });
@@ -19,6 +19,24 @@ async function list(token, params = {}) {
   });
   if (!res.ok) throw new Error(`Drive API ${res.status}`);
   return res.json();
+}
+
+async function listAll(token, params = {}) {
+  const files = [];
+  let nextPageToken = '';
+  let lastBody = { files: [] };
+
+  do {
+    const body = await list(token, {
+      ...params,
+      ...(nextPageToken ? { pageToken: nextPageToken } : {}),
+    });
+    lastBody = body;
+    files.push(...(body.files || []));
+    nextPageToken = body.nextPageToken || '';
+  } while (nextPageToken);
+
+  return { ...lastBody, files };
 }
 
 /**
@@ -98,7 +116,7 @@ export async function listSpreadsheets(token, query) {
   const q = query
     ? `${query} and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
     : "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
-  return list(token, { q, pageSize: '200', orderBy: 'modifiedTime desc' });
+  return listAll(token, { q, pageSize: '200', orderBy: 'modifiedTime desc' });
 }
 
 /**
@@ -107,7 +125,7 @@ export async function listSpreadsheets(token, query) {
  * @returns {Promise<Object>}
  */
 export async function listImportableFiles(token) {
-  return list(token, {
+  return listAll(token, {
     q: "trashed=false and (mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.document')",
     pageSize: '200',
     orderBy: 'modifiedTime desc',
