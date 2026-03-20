@@ -417,3 +417,47 @@ test('fleet dashboard uses grid layout', async ({ page }) => {
   await expect(page.locator('.iot-dir-grid')).toHaveCSS('display', /grid/);
 });
 
+/* ─── Blank IoT sheet (sheet-iot-blank): headers only, no data rows ─── */
+
+test('blank IoT sheet renders without errors (no crash on null latest)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-iot-blank');
+  await page.waitForSelector('#template-badge:not(.hidden)', { timeout: 5000 });
+  await expect(page.locator('#template-badge')).toContainText('IoT Sensor Log');
+});
+
+test('blank IoT sheet shows hero with "No data" badge', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-iot-blank');
+  await page.waitForSelector('.iot-hero', { timeout: 5000 });
+
+  await expect(page.locator('.iot-hero-badge')).toContainText('No data');
+  await expect(page.locator('.iot-hero-reading')).toContainText('—');
+});
+
+test('blank IoT sheet shows empty history message', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-iot-blank');
+  await page.waitForSelector('.iot-history-empty', { timeout: 5000 });
+
+  await expect(page.locator('.iot-history-empty')).toContainText('No readings yet');
+});
+
+test('blank IoT sheet does not show threshold bar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-iot-blank');
+  await page.waitForSelector('.iot-hero', { timeout: 5000 });
+
+  await expect(page.locator('.iot-thresh-wrap')).toHaveCount(0);
+});
+
+test('blank IoT sheet shows add row form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-iot-blank');
+  await page.waitForSelector('.iot-hero', { timeout: 5000 });
+
+  // The add-row button or form should be accessible
+  const addBtn = page.locator('.add-row-trigger');
+  await expect(addBtn).toBeVisible();
+});
+

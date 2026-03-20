@@ -434,7 +434,7 @@ function renderSingleSensor(container, rows, cols) {
 
   function refreshHeroMeta(r) {
     heroMeta.innerHTML = '';
-    if (r?.min !== null && r?.max !== null) {
+    if (r && r.min !== null && r.max !== null) {
       heroMeta.append(el('span', { className: 'iot-hero-range' }, [
         `Range ${r.min}\u2013${r.max}${r.unit ? ' ' + r.unit : ''}`,
       ]));

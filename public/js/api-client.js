@@ -84,6 +84,7 @@ async function loadMockSheet(sheetId) {
     'sheet-046': 'notification-waymark',
     'sheet-047': 'iot-sensor-dashboard',
     'sheet-048': 'iot-sensor-log',
+    'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;
