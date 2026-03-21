@@ -204,6 +204,13 @@ const ROLE_LABELS = {
   'okr.target': 'Target / Success criteria',
   'okr.owner': 'Owner / DRI (Directly Responsible Individual)',
   'okr.quarter': 'Quarter (e.g. Q1 2026)',
+  // Gantt Timeline
+  'gantt.text': 'Task / Activity name',
+  'gantt.start': 'Start Date (YYYY-MM-DD)',
+  'gantt.end': 'End Date / Deadline (YYYY-MM-DD)',
+  'gantt.progress': 'Progress (0%–100%)',
+  'gantt.dependencies': 'Dependencies (comma-separated task names)',
+  'gantt.assignee': 'Assignee / Owner',
 };
 
 /**
@@ -305,6 +312,10 @@ const CANONICAL_HEADERS = {
   'okr.objective': 'Objective', 'okr.keyResult': 'Key Result',
   'okr.progress': 'Progress', 'okr.target': 'Target',
   'okr.owner': 'Owner', 'okr.quarter': 'Quarter',
+  // Gantt Timeline
+  'gantt.text': 'Task', 'gantt.start': 'Start Date',
+  'gantt.end': 'End Date', 'gantt.progress': 'Progress',
+  'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
 };
 
 /**
