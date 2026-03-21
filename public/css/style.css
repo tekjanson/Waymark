@@ -39,3 +39,6 @@
 
 /* Agent view */
 @import url('./agent.css');
+
+/* AI overlay for template views */
+@import url('./template-ai.css');
