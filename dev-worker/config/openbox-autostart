@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Openbox autostart — runs when the Openbox window manager starts.
+# Kept minimal: the agent-watchdog supervisor process handles VS Code launching.
+
+# Set a dark solid desktop background (avoids the default white/grey)
+xsetroot -solid "#1e1e2e" &

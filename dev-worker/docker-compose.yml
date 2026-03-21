@@ -1,0 +1,103 @@
+# Waymark Dev Worker — standalone Debian GUI container with VS Code + Copilot
+# Usage:
+#   docker compose -f dev-worker/docker-compose.yml up -d
+#   AGENT_COMMAND="@waymark-builder-sub-board start" docker compose -f dev-worker/docker-compose.yml up -d
+#   VNC_PASSWORD=mysecret AGENT_COMMAND="@waymark-builder pick next" docker compose ...
+#
+# Access the desktop at: http://localhost:6080/vnc.html (noVNC browser UI)
+# Raw VNC client: localhost:5901
+
+services:
+  waymark-dev-worker:
+    build:
+      context: .
+    image: waymark-dev-worker:latest
+    container_name: waymark-dev-worker
+
+    ports:
+      - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
+      - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
+
+    environment:
+      # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
+      # so only processes on this machine can connect. Safe for local dev use.
+
+      # ── The agent command injected into Copilot Chat on every start/restart ──
+      # Override this to change which agent runs, or use a .env file.
+      # Examples:
+      #   @waymark-builder start               (persistent loop, pushes branches)
+      #   @waymark-builder-sub-board start     (local-only, never pushes)
+      #   @waymark-builder pick next           (single task then stops)
+      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
+
+      # Language model for the agent (as it appears in VS Code's model picker)
+      - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}
+
+      # Virtual display — must match the TigerVNC display number
+      - DISPLAY=:1
+
+      # Google service-account key path (inside container)
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json
+
+      # Git identity for commits made inside the container
+      - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
+      - GIT_NAME=${GIT_NAME:-Waymark Agent}
+
+      # ── GitHub auth via host browser ───────────────────────────────────────
+      # Setting BROWSER to empty prevents VS Code from trying to open a browser
+      # inside the container. Instead it shows a "Copy Link" notification with
+      # the GitHub device-auth URL — paste it into your host browser to auth.
+      # VS Code is also launched with --password-store=basic (see start-vscode.sh)
+      # so tokens are written to a file in globalStorage/ (not gnome-keyring).
+      - BROWSER=
+
+    devices:
+      # Required for ydotoold kernel-level input daemon
+      - /dev/uinput
+
+    # VS Code needs extra shared memory for its Electron renderer processes
+    shm_size: 2g
+
+    # Restart on crash; stop manually with `docker compose down`
+    restart: unless-stopped
+
+    volumes:
+      # ── Workspace ──────────────────────────────────────────────────────────
+      # The codebase the agent reads, edits, and commits to
+      - /home/tekjanson/Documents/Code/Waymark:/workspace
+
+      # ── VS Code user config ────────────────────────────────────────────────
+      # Mounted read-only as a seed source; entrypoint.sh copies it into the
+      # container so VS Code can write freely (auth tokens, extension state, etc.)
+      - /home/tekjanson/.config/Code/User:/host-vscode-user:ro
+
+      # ── VS Code extensions cache ───────────────────────────────────────────
+      # Mounted read-write: avoids re-downloading on each container restart.
+      # Safe because VS Code extension installs are idempotent.
+      - /home/tekjanson/.vscode/extensions:/root/.vscode/extensions
+
+      # ── Google service-account key ─────────────────────────────────────────
+      # Needed by check-workboard.js, update-workboard.js, etc.
+      - /home/tekjanson/.config/gcloud/waymark-service-account-key.json:/credentials/gsa-key.json:ro
+
+      # ── SSH keys ───────────────────────────────────────────────────────────
+      # Needed for git push / pull over SSH
+      - /home/tekjanson/.ssh:/root/.ssh:ro
+
+      # ── GitHub Copilot auth token storage ─────────────────────────────────
+      # Named volume: persists OAuth tokens across container rebuilds.
+      # VS Code writes here when --password-store=basic is set.
+      # First-run auth flow:
+      #   1. Open http://localhost:6080/vnc.html
+      #   2. VS Code shows a "Sign in to GitHub" notification
+      #   3. Click the notification or use the Copilot icon → copy the URL
+      #   4. Open that URL in your HOST browser and complete OAuth
+      #   5. Token saved here — no re-auth needed until token expires
+      # To force re-auth: docker volume rm waymark-vscode-auth
+      - waymark-vscode-auth:/root/.config/Code/User/globalStorage
+
+volumes:
+  # Persists GitHub Copilot OAuth tokens across container rebuilds.
+  # Survives `docker compose down` and `up --build`.
+  # Only cleared by: docker volume rm waymark-vscode-auth
+  waymark-vscode-auth:
