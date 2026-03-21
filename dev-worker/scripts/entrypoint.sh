@@ -46,8 +46,9 @@ cp /config/openbox-autostart /root/.config/openbox/autostart
 chmod +x /root/.config/openbox/autostart
 
 # ── 3b. VS Code keybindings (dynamic — embeds AGENT_COMMAND) ─────────────────
-# Three keybindings:
-#   Ctrl+Shift+F10 → /autoApprove  (sets permission dropdown to "All", silent)
+# Keybindings:
+#   Ctrl+Shift+F9  → acceptTool   (clears stuck "Allow" confirmations)
+#   Ctrl+Shift+F10 → /autoApprove (sets permission dropdown to "Bypass", silent)
 #   Ctrl+Shift+F12 → agent chat + auto-submit AGENT_COMMAND
 #   Ctrl+Shift+F11 → agent chat + partial query (for debugging)
 # Regenerated every boot so the AGENT_COMMAND env var is always current.
@@ -57,6 +58,10 @@ python3 -c "
 import json, os
 cmd = os.environ.get('AGENT_COMMAND', '@waymark-builder start')
 kb = [
+    {
+        'key': 'ctrl+shift+f9',
+        'command': 'workbench.action.chat.acceptTool'
+    },
     {
         'key': 'ctrl+shift+f10',
         'command': 'workbench.action.chat.open',

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # agent-watchdog.sh — Keeps the Copilot agent alive with rate-limit-aware cooldown.
 #
-# Strategy:
-#   1. On first boot: launch VS Code (if not running), then inject AGENT_COMMAND.
-#   2. Every POLL_INTERVAL: check that VS Code is running AND heartbeat is fresh.
-#      - VS Code gone → relaunch it, then re-inject (with cooldown).
-#      - Heartbeat stale (>STALE_THRESHOLD) → session ended (likely rate-limited)
-#        → wait COOLDOWN_SECONDS before re-injecting to avoid re-triggering limits.
-#   3. Cooldown: after any re-inject, enforce a minimum wait before the next one.
-#      Each consecutive re-inject without a healthy run doubles the cooldown (capped).
+# Three-tier health model:
+#   HEALTHY  (heartbeat < STUCK_THRESHOLD)  → agent working, do nothing
+#   STUCK    (STUCK_THRESHOLD..STALE_THRESHOLD) → likely hung on confirmation dialog
+#            → fire acceptTool keybinding + Enter to clear it (throttled)
+#   DEAD     (heartbeat > STALE_THRESHOLD)  → agent gone (likely rate-limited)
+#            → wait cooldown then full re-inject
+#
+# Cooldown: after any re-inject, enforce a minimum wait before the next one.
+# Each consecutive re-inject without a healthy run doubles the cooldown (capped).
 #
 # The heartbeat file is maintained by heartbeat-watcher.sh, which monitors VS
 # Code's extension host logs for write activity.
@@ -19,14 +20,17 @@ HEARTBEAT_FILE="/tmp/agent-heartbeat"
 INJECT_STATUS="/tmp/inject-status"
 LAST_INJECT_FILE="/tmp/watchdog-last-inject"
 CONSECUTIVE_FILE="/tmp/watchdog-consecutive-reinjects"
+LAST_UNSTICK_FILE="/tmp/watchdog-last-unstick"
 export DISPLAY=":1"
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 POLL_INTERVAL=30          # seconds between health checks
-STALE_THRESHOLD=300       # 5 min — if no log activity, agent is dead
+STUCK_THRESHOLD=120       # 2 min — agent may be stuck on a confirmation dialog
+STALE_THRESHOLD=1800      # 30 min — if no log activity, agent is dead
 COOLDOWN_SECONDS=1800     # 30 min — base wait after detecting agent death
 MAX_COOLDOWN=7200         # 2 hour cap on exponential backoff
 BOOT_GRACE=120            # 2 min — don't check heartbeat right after injection
+UNSTICK_COOLDOWN=60       # 1 min — minimum between unstick attempts
 
 log() { echo "[watchdog $(date +%T)] $*"; }
 
@@ -106,6 +110,33 @@ inject() {
     touch "$HEARTBEAT_FILE"
 }
 
+# Try to clear a stuck confirmation dialog (acceptTool + Enter)
+unstick() {
+    local age="$1"
+    local since_last_unstick now
+
+    # Throttle: don't unstick more often than UNSTICK_COOLDOWN
+    now=$(date +%s)
+    if [[ -f "$LAST_UNSTICK_FILE" ]]; then
+        local last_unstick
+        last_unstick=$(cat "$LAST_UNSTICK_FILE")
+        since_last_unstick=$(( now - last_unstick ))
+        if (( since_last_unstick < UNSTICK_COOLDOWN )); then
+            log "STUCK (${age}s) — unstick throttled (${since_last_unstick}s/${UNSTICK_COOLDOWN}s since last attempt)"
+            return 0
+        fi
+    fi
+
+    log "STUCK (${age}s) — firing acceptTool keybinding to clear pending confirmation"
+    echo "$now" > "$LAST_UNSTICK_FILE"
+
+    # Fire Ctrl+Shift+F9 (workbench.action.chat.acceptTool) to accept any pending tool confirmation
+    timeout 5 xdotool key --clearmodifiers ctrl+shift+F9 2>/dev/null || true
+    sleep 1
+    # Follow up with Enter in case the dialog needs an extra confirmation
+    timeout 5 xdotool key --clearmodifiers Return 2>/dev/null || true
+}
+
 ensure_vscode_running() {
     if ! pgrep -x "code" >/dev/null 2>&1; then
         log "VS Code not running — launching..."
@@ -143,17 +174,21 @@ while true; do
         continue
     fi
 
-    # --- Check 3: Is the agent session still active? ---
+    # --- Check 3: Three-tier health model ---
     if [[ -f "$HEARTBEAT_FILE" ]]; then
         NOW=$(date +%s)
         LAST=$(stat -c %Y "$HEARTBEAT_FILE")
         AGE=$(( NOW - LAST ))
 
-        if [[ $AGE -gt $STALE_THRESHOLD ]]; then
+        if (( AGE > STALE_THRESHOLD )); then
+            # DEAD: agent gone, likely rate-limited — full re-inject with cooldown
             log "Heartbeat stale (${AGE}s old, threshold ${STALE_THRESHOLD}s) — agent stopped (likely rate-limited)"
             inject "stale-heartbeat"
+        elif (( AGE > STUCK_THRESHOLD )); then
+            # STUCK: agent may be hung on a confirmation dialog — try to clear it
+            unstick "$AGE"
         else
-            # Agent is healthy — reset consecutive counter
+            # HEALTHY: agent is working — reset consecutive counter
             if (( $(get_consecutive) > 0 )); then
                 log "Agent healthy (heartbeat ${AGE}s ago) — resetting consecutive reinject counter"
                 set_consecutive 0
