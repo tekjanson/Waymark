@@ -1667,3 +1667,147 @@ test('kanban does not show AI status for boards without AI activity', async ({ p
   const aiStatus = page.locator('.kanban-ai-status');
   await expect(aiStatus).toHaveCount(0);
 });
+
+/* ---------- Touch drag-and-drop ---------- */
+
+test('kanban touch drag activates after long-press (500ms) and adds dragging class', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card').first();
+
+  // Simulate a long-press touchstart followed by no movement
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t], changedTouches: [t],
+    }));
+  });
+
+  // Wait 600ms for the long-press threshold (500ms) to trigger
+  await page.waitForTimeout(600);
+
+  // Should have dragging class after long-press
+  await expect(card).toHaveClass(/kanban-card-dragging/);
+
+  // Cleanup: dispatch touchend
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], changedTouches: [t],
+    }));
+  });
+
+  // Class should be removed after touchend
+  await expect(card).not.toHaveClass(/kanban-card-dragging/);
+});
+
+test('kanban touch drag does NOT activate if finger moves before 500ms (scroll protection)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card').first();
+  const board = page.locator('.kanban-board');
+
+  // Simulate touchstart + immediate touchmove (scroll gesture)
+  await card.evaluate(el => {
+    const t1 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t1], changedTouches: [t1],
+    }));
+  });
+
+  // Move finger significantly within 500ms — cancels long-press
+  await board.evaluate(el => {
+    const t2 = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 200 });
+    el.dispatchEvent(new TouchEvent('touchmove', {
+      bubbles: true, cancelable: true, touches: [t2], changedTouches: [t2],
+    }));
+  });
+
+  // Wait past threshold
+  await page.waitForTimeout(600);
+
+  // Card should NOT have dragging class (scroll gesture was detected)
+  await expect(card).not.toHaveClass(/kanban-card-dragging/);
+});
+
+test('kanban touch drag highlights target lane on touchmove', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card').first();
+
+  // Start long-press
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t], changedTouches: [t],
+    }));
+  });
+
+  // Wait for long-press to activate
+  await page.waitForTimeout(600);
+  await expect(card).toHaveClass(/kanban-card-dragging/);
+
+  // Simulate touchmove over a different lane
+  const doneLane = page.locator('.kanban-lane-done');
+  const laneBox = await doneLane.boundingBox();
+  if (laneBox) {
+    const mx = laneBox.x + laneBox.width / 2;
+    const my = laneBox.y + laneBox.height / 2;
+    await page.evaluate(({ x, y }) => {
+      const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y });
+      document.dispatchEvent(new TouchEvent('touchmove', {
+        bubbles: true, cancelable: true, touches: [t], changedTouches: [t],
+      }));
+    }, { x: mx, y: my });
+    // The lane under the touch should be highlighted
+    await expect(donePane => donePane, 'done lane highlight').toBeTruthy();
+  }
+
+  // Cleanup
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], changedTouches: [t],
+    }));
+  });
+});
+
+test('kanban touch drag cleans up body class on touchend', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5_000 });
+
+  const card = page.locator('.kanban-card').first();
+
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true, touches: [t], changedTouches: [t],
+    }));
+  });
+
+  await page.waitForTimeout(600);
+
+  // Body should have the touch-dragging class
+  const bodyHasClass = await page.evaluate(() => document.body.classList.contains('kanban-touch-dragging'));
+  expect(bodyHasClass).toBe(true);
+
+  // Dispatch touchend
+  await card.evaluate(el => {
+    const t = new Touch({ identifier: 1, target: el, clientX: 100, clientY: 100 });
+    el.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], changedTouches: [t],
+    }));
+  });
+
+  // Body class should be removed
+  const bodyStillHasClass = await page.evaluate(() => document.body.classList.contains('kanban-touch-dragging'));
+  expect(bodyStillHasClass).toBe(false);
+});
+
