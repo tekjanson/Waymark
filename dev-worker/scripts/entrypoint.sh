@@ -42,13 +42,38 @@ mkdir -p /root/.config/openbox
 cp /config/openbox-autostart /root/.config/openbox/autostart
 chmod +x /root/.config/openbox/autostart
 
-# ── 3b. VS Code keybindings ──────────────────────────────────────────────────
-# Install deterministic hotkeys for xdotool to drive Copilot Chat:
-#   Ctrl+Shift+F12  →  Open agent-mode chat (workbench.action.chat.open {"mode":"agent"})
-# These are installed every boot so they always win over any host-seeded bindings.
+# ── 3b. VS Code keybindings (dynamic — embeds AGENT_COMMAND) ─────────────────
+# Three keybindings:
+#   Ctrl+Shift+F10 → /autoApprove  (sets permission dropdown to "All", silent)
+#   Ctrl+Shift+F12 → agent chat + auto-submit AGENT_COMMAND
+#   Ctrl+Shift+F11 → agent chat + partial query (for debugging)
+# Regenerated every boot so the AGENT_COMMAND env var is always current.
+AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 mkdir -p /root/.config/Code/User
-cp /config/keybindings.json /root/.config/Code/User/keybindings.json
-log "VS Code keybindings installed (Ctrl+Shift+F12 → agent chat)"
+python3 -c "
+import json, os
+cmd = os.environ.get('AGENT_COMMAND', '@waymark-builder start')
+kb = [
+    {
+        'key': 'ctrl+shift+f10',
+        'command': 'workbench.action.chat.open',
+        'args': {'mode': 'agent', 'query': '/autoApprove', 'isPartialQuery': False}
+    },
+    {
+        'key': 'ctrl+shift+f12',
+        'command': 'workbench.action.chat.open',
+        'args': {'mode': 'agent', 'query': cmd, 'isPartialQuery': False}
+    },
+    {
+        'key': 'ctrl+shift+f11',
+        'command': 'workbench.action.chat.open',
+        'args': {'mode': 'agent', 'query': cmd, 'isPartialQuery': True}
+    }
+]
+with open('/root/.config/Code/User/keybindings.json', 'w') as f:
+    json.dump(kb, f, indent=4)
+"
+log "VS Code keybindings installed (F10→autoApprove, F12→agent submit: ${AGENT_COMMAND})"
 
 # ── 4. Git identity ───────────────────────────────────────────────────────────
 GIT_EMAIL="${GIT_EMAIL:-waymark-agent@container.local}"
@@ -75,6 +100,22 @@ export BROWSER=""
 EOF
 chmod 644 /etc/agent-env.sh
 log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}"
+
+# ── 5b. Symlink Google credential for MCP server + agent terminal commands ────
+# Two paths reference the service-account key:
+#   1. .vscode/mcp.json uses ${userHome}/.config/gcloud/waymark-service-account-key.json
+#      → resolves to /root/.config/gcloud/... inside the container
+#   2. Agent instructions hardcode /home/tekjanson/.config/gcloud/waymark-service-account-key.json
+#      (the host path, used in terminal commands like `GOOGLE_APPLICATION_CREDENTIALS=... node ...`)
+# The actual credential is mounted at /credentials/gsa-key.json.
+# Create symlinks so BOTH paths resolve inside the container.
+if [[ -f /credentials/gsa-key.json ]]; then
+    mkdir -p /root/.config/gcloud
+    ln -sf /credentials/gsa-key.json /root/.config/gcloud/waymark-service-account-key.json
+    mkdir -p /home/tekjanson/.config/gcloud
+    ln -sf /credentials/gsa-key.json /home/tekjanson/.config/gcloud/waymark-service-account-key.json
+    log "Google SA credential symlinked → /root/.config/gcloud/ + /home/tekjanson/.config/gcloud/"
+fi
 
 # ── 6. SSH key permissions ────────────────────────────────────────────────────
 # The host ~/.ssh is mounted read-only. Copy to a writable directory so SSH
@@ -131,6 +172,7 @@ INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
+    ('chat.tools.global.autoApprove.optIn', 'true'),
     ('chat.lastChatMode', 'agent');
 SQL
 elif command -v sqlite3 >/dev/null 2>&1; then
@@ -144,6 +186,7 @@ INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
+    ('chat.tools.global.autoApprove.optIn', 'true'),
     ('chat.lastChatMode', 'agent');
 SQL
 else
