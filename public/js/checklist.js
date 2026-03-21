@@ -6,6 +6,7 @@
 
 import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
+import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations, getCrossFeature } from './templates/shared.js';
@@ -22,7 +23,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn;
-let moreActionsBtn, overflowMenu, notifRulesBtn;
+let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
 
@@ -45,6 +46,7 @@ export function init() {
   moreActionsBtn    = document.getElementById('more-actions-btn');
   overflowMenu      = document.querySelector('.header-overflow-menu');
   notifRulesBtn     = document.getElementById('notif-rules-btn');
+  templateAiBtn     = document.getElementById('template-ai-btn');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -70,6 +72,20 @@ export function init() {
       if (currentSheetId && currentHeaders) {
         notifications.showRuleBuilder(currentSheetId, currentDataTitle, currentHeaders);
       }
+    });
+  }
+
+  if (templateAiBtn) {
+    templateAiBtn.addEventListener('click', () => {
+      if (!currentSheetId || !currentValues) return;
+      showTemplateAI({
+        id: currentSheetId,
+        title: currentDataTitle || '',
+        sheetTitle: currentSheetTitle || 'Sheet1',
+        values: currentValues,
+        templateKey: currentTemplateKey || 'checklist',
+        onRefresh: () => loadSheet(currentSheetId),
+      });
     });
   }
 
