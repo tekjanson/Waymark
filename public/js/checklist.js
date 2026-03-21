@@ -77,15 +77,19 @@ export function init() {
 
   if (templateAiBtn) {
     templateAiBtn.addEventListener('click', () => {
-      if (!currentSheetId || !currentValues) return;
-      showTemplateAI({
-        id: currentSheetId,
-        title: currentDataTitle || '',
-        sheetTitle: currentSheetTitle || 'Sheet1',
-        values: currentValues,
-        templateKey: currentTemplateKey || 'checklist',
-        onRefresh: () => loadSheet(currentSheetId),
-      });
+      if (!currentSheetId) return;
+      try {
+        showTemplateAI({
+          id: currentSheetId,
+          title: currentDataTitle || '',
+          sheetTitle: currentSheetTitle || 'Sheet1',
+          values: currentValues || [],
+          templateKey: currentTemplateKey || 'checklist',
+          onRefresh: () => loadSheet(currentSheetId),
+        });
+      } catch (err) {
+        showToast('Could not open AI panel', 'error');
+      }
     });
   }
 

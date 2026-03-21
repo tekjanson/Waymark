@@ -244,3 +244,27 @@ test('panel can be opened and closed multiple times', async ({ page }) => {
   await page.waitForSelector('.template-ai-panel', { state: 'detached', timeout: 2000 });
   await expect(page.locator('.template-ai-panel')).toHaveCount(0);
 });
+
+/* ---------- Mobile / race-condition fixes ---------- */
+
+test('Ask AI button has min-height of 44px for mobile tap target', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-050');
+  await page.waitForSelector('#template-ai-btn', { timeout: 5000 });
+  const height = await page.evaluate(() => {
+    const btn = document.getElementById('template-ai-btn');
+    return btn ? btn.getBoundingClientRect().height : 0;
+  });
+  expect(height).toBeGreaterThanOrEqual(44);
+});
+
+test('Ask AI button opens panel even if clicked before sheet data finishes loading', async ({ page }) => {
+  await setupApp(page);
+  // Navigate but click BEFORE waiting for the checklist view content
+  await page.evaluate((id) => { window.location.hash = `#/sheet/${id}`; }, 'sheet-050');
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 5000 });
+  // Immediately click the button (data may or may not be loaded)
+  await page.click('#template-ai-btn');
+  await page.waitForSelector('.template-ai-panel', { timeout: 3000 });
+  await expect(page.locator('.template-ai-panel')).toBeVisible();
+});

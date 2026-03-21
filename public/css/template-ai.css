@@ -369,6 +369,7 @@
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
+  min-height: 44px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -376,6 +377,8 @@
   font-size: 0.78rem;
   cursor: pointer;
   white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 

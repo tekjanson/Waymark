@@ -93,7 +93,13 @@ export function show(ctx) {
   _context = ctx;
   // Close existing panel if open
   if (_panel) _close();
-  _render();
+  try {
+    _render();
+  } catch (err) {
+    showToast('Could not open AI panel', 'error');
+    _panel = null;
+    _backdrop = null;
+  }
 }
 
 /**
