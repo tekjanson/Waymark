@@ -42,6 +42,14 @@ mkdir -p /root/.config/openbox
 cp /config/openbox-autostart /root/.config/openbox/autostart
 chmod +x /root/.config/openbox/autostart
 
+# ── 3b. VS Code keybindings ──────────────────────────────────────────────────
+# Install deterministic hotkeys for xdotool to drive Copilot Chat:
+#   Ctrl+Shift+F12  →  Open agent-mode chat (workbench.action.chat.open {"mode":"agent"})
+# These are installed every boot so they always win over any host-seeded bindings.
+mkdir -p /root/.config/Code/User
+cp /config/keybindings.json /root/.config/Code/User/keybindings.json
+log "VS Code keybindings installed (Ctrl+Shift+F12 → agent chat)"
+
 # ── 4. Git identity ───────────────────────────────────────────────────────────
 GIT_EMAIL="${GIT_EMAIL:-waymark-agent@container.local}"
 GIT_NAME="${GIT_NAME:-Waymark Agent}"

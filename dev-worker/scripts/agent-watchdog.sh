@@ -15,6 +15,7 @@
 source /etc/agent-env.sh 2>/dev/null || true
 
 HEARTBEAT_FILE="/tmp/agent-heartbeat"
+INJECT_STATUS="/tmp/inject-status"
 STALE_THRESHOLD=600   # 10 minutes — if no log activity, consider session dead
 export DISPLAY=":1"
 
@@ -23,6 +24,16 @@ log() { echo "[watchdog $(date +%T)] $*"; }
 inject() {
     log "Injecting agent command: ${AGENT_COMMAND}"
     /scripts/inject-agent.sh || log "WARNING: inject-agent.sh exited with error — will retry next cycle"
+    # Report inject result
+    if [[ -f "$INJECT_STATUS" ]]; then
+        local status msg
+        status=$(grep "^status=" "$INJECT_STATUS" 2>/dev/null | cut -d= -f2)
+        msg=$(grep "^message=" "$INJECT_STATUS" 2>/dev/null | cut -d= -f2-)
+        log "Inject result: ${status} — ${msg}"
+        if [[ "$status" == "failed" ]]; then
+            log "Screenshots available: docker cp waymark-dev-worker:/tmp/inject-screenshots/ ./"
+        fi
+    fi
     # Reset heartbeat so we don't immediately re-fire after injection
     touch "$HEARTBEAT_FILE"
 }

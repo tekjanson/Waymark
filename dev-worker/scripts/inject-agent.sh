@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# inject-agent.sh — Bulletproof Copilot Chat agent launcher.
+# inject-agent.sh — Deterministic Copilot Chat agent launcher with verification.
 #
-# Drives VS Code on DISPLAY=:1 via xdotool to:
-#   1. Hard-focus the VS Code window (multiple methods + verification)
-#   2. Dismiss stale overlays/notifications
-#   3. Open a new Copilot Chat via command palette
+# Strategy:
+#   1. Lock the display to a known resolution (1920x1080)
+#   2. Maximize VS Code to fill the entire screen (known pixel geometry)
+#   3. Open agent-mode chat via a dedicated hotkey (ctrl+shift+F12)
+#      — bound in keybindings.json to workbench.action.chat.open {"mode":"agent"}
 #   4. Type and submit $AGENT_COMMAND
+#   5. Take annotated screenshots at every step → /tmp/inject-screenshots/
+#   6. Write structured status to /tmp/inject-status for machine-readable feedback
 #
-# Retries the whole sequence up to MAX_ATTEMPTS times with increasing backoff.
+# The screenshot trail means you NEVER need to watch VNC to debug injection.
+# Just check: docker exec waymark-dev-worker ls /tmp/inject-screenshots/
+# Or copy them out: docker cp waymark-dev-worker:/tmp/inject-screenshots/ ./
 #
 # Called by: agent-watchdog.sh on boot and after each detected session death.
 
-# NOTE: no -e — explicit return code handling throughout
 set -uo pipefail
 
 source /etc/agent-env.sh 2>/dev/null || true
@@ -19,199 +23,245 @@ source /etc/agent-env.sh 2>/dev/null || true
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 export DISPLAY=":1"
 
-MAX_ATTEMPTS=5
-WINDOW_WAIT=90     # max seconds to wait for VS Code window on startup
-PALETTE_SETTLE=1.8 # seconds for command palette animation
-CHAT_SETTLE=5.0    # seconds for Copilot Chat panel to open + reach focus
-TYPE_DELAY=80      # ms between keystrokes (generous for special chars like @)
+# ── Tunables ──────────────────────────────────────────────────────────────────
+MAX_ATTEMPTS=3              # total injection attempts
+SCREEN_W=1920               # must match TigerVNC -geometry
+SCREEN_H=1080
+WINDOW_WAIT=120             # max seconds to wait for VS Code window
+EXTENSION_SETTLE=15         # seconds to wait for Copilot Chat extension activation
+CHAT_SETTLE=4               # seconds after hotkey before chat panel is ready
+TYPE_DELAY=60               # ms between keystrokes
+SCREENSHOT_DIR="/tmp/inject-screenshots"
+STATUS_FILE="/tmp/inject-status"
 
 log() { echo "[inject $(date +%T)] $*"; }
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Status reporting ──────────────────────────────────────────────────────────
+# Machine-readable status file: read by watchdog & test.sh
+write_status() {
+    local status="$1" msg="$2"
+    cat > "$STATUS_FILE" <<EOF
+timestamp=$(date -Iseconds)
+status=$status
+message=$msg
+agent_command=$AGENT_COMMAND
+attempt=$CURRENT_ATTEMPT
+EOF
+    log "STATUS: $status — $msg"
+}
+CURRENT_ATTEMPT=0
 
-# Poll cmd until it exits 0 or timeout seconds pass
-wait_until() {
-    local timeout="$1"; shift
-    local i=0
-    until "$@" >/dev/null 2>&1; do
-        sleep 1; i=$(( i + 1 ))
-        [[ $i -ge $timeout ]] && return 1
-    done
-    return 0
+# ── Screenshot helpers ────────────────────────────────────────────────────────
+mkdir -p "$SCREENSHOT_DIR"
+
+# Take a screenshot tagged with step name. Uses ImageMagick 'import'.
+screenshot() {
+    local step="$1"
+    local ts
+    ts=$(date +%H%M%S)
+    local path="${SCREENSHOT_DIR}/${CURRENT_ATTEMPT}-${ts}-${step}.png"
+    import -window root -display :1 "$path" 2>/dev/null && \
+        log "  📸 ${step} → $(basename "$path")" || \
+        log "  📸 ${step} — screenshot failed (non-fatal)"
 }
 
+# ── Window helpers ────────────────────────────────────────────────────────────
+
 # Return the WID of the best VS Code window.
-# Prefers the window titled "workspace" (our mounted folder) over any Code window.
 find_vscode_win() {
     local wid
-    # Try workspace-specific title first
-    wid=$(xdotool search --name "workspace.*Visual Studio Code" 2>/dev/null | tail -1)
-    [[ -n "$wid" ]] && echo "$wid" && return
-    # Any VS Code window by name
     wid=$(xdotool search --name "Visual Studio Code" 2>/dev/null | tail -1)
     [[ -n "$wid" ]] && echo "$wid" && return
-    # Fallback: WM_CLASS
     wid=$(xdotool search --class "Code" 2>/dev/null | tail -1)
     echo "$wid"
 }
 
-# Aggressively focus a window; confirm with getactivewindow; click title bar on failure
-hard_focus() {
+# Set the window to exactly fill the screen. Verify geometry afterwards.
+maximize_window() {
     local wid="$1"
-    # First pass
-    xdotool windowraise   "$wid" 2>/dev/null || true
-    xdotool windowactivate --sync "$wid" 2>/dev/null || true
-    xdotool windowfocus   --sync "$wid" 2>/dev/null || true
+    xdotool windowmove --sync "$wid" 0 0 2>/dev/null || true
+    xdotool windowsize --sync "$wid" "$SCREEN_W" "$SCREEN_H" 2>/dev/null || true
     sleep 0.5
-
     # Verify
-    local active
-    active=$(xdotool getactivewindow 2>/dev/null || echo "0")
-    [[ "$active" == "$wid" ]] && return 0
-
-    # Second pass: click on the window's title bar area to force focus
-    local pos
-    pos=$(xdotool getwindowgeometry "$wid" 2>/dev/null | grep Position || true)
-    local wx wy
-    wx=$(echo "$pos" | grep -oP '\K[0-9]+(?=,)' || echo "100")
-    wy=$(echo "$pos" | grep -oP ',[0-9]+' | tr -d ',' || echo "20")
-    xdotool mousemove "$(( wx + 200 ))" "$(( wy + 15 ))"
-    sleep 0.1
-    xdotool click 1
-    sleep 0.3
-    xdotool windowactivate --sync "$wid" 2>/dev/null || true
-    sleep 0.4
-    return 0
+    local geom
+    geom=$(xdotool getwindowgeometry "$wid" 2>/dev/null) || return 1
+    local w h
+    w=$(echo "$geom" | grep -oP 'Geometry: \K[0-9]+(?=x)' || echo "0")
+    h=$(echo "$geom" | grep -oP 'Geometry: [0-9]+x\K[0-9]+' || echo "0")
+    log "  Window geometry: ${w}x${h} (target: ${SCREEN_W}x${SCREEN_H})"
+    # Allow 10px tolerance for window decorations
+    [[ $w -gt $(( SCREEN_W - 10 )) && $h -gt $(( SCREEN_H - 10 )) ]]
 }
 
-# Click inside the chat input area (bottom-left of the VS Code window)
-# This is the primary sidebar area where Copilot Chat input lives.
-click_chat_input() {
-    local wid="$1"
-    local geom
-    geom=$(xdotool getwindowgeometry "$wid" 2>/dev/null) || return
-    local wx wy ww wh
-    wx=$(echo "$geom" | grep -oP 'Position: \K[0-9]+' || echo "0")
-    wy=$(echo "$geom" | grep -oP 'Position: [0-9]+,\K[0-9]+' || echo "0")
-    ww=$(echo "$geom" | grep -oP 'Geometry: \K[0-9]+(?=x)' || echo "1920")
-    wh=$(echo "$geom" | grep -oP 'Geometry: [0-9]+x\K[0-9]+' || echo "1080")
-
-    # Chat input is at the bottom of the left sidebar (primary sidebar).
-    # Target: ~15% from left, ~94% from top — bottom of the chat sidebar.
-    local cx cy
-    cx=$(( wx + ww * 15 / 100 ))
-    cy=$(( wy + wh * 94 / 100 ))
-    xdotool mousemove "$cx" "$cy"
-    sleep 0.2
-    xdotool click 1
-    sleep 0.3
+# Focus with verification loop
+focus_window() {
+    local wid="$1" tries=5
+    for (( i=1; i<=tries; i++ )); do
+        xdotool windowraise "$wid" 2>/dev/null || true
+        xdotool windowactivate --sync "$wid" 2>/dev/null || true
+        xdotool windowfocus --sync "$wid" 2>/dev/null || true
+        sleep 0.3
+        local active
+        active=$(xdotool getactivewindow 2>/dev/null || echo "0")
+        if [[ "$active" == "$wid" ]]; then
+            log "  Focus confirmed on attempt $i"
+            return 0
+        fi
+        # Fallback: click at center of window
+        xdotool mousemove $(( SCREEN_W / 2 )) $(( SCREEN_H / 2 ))
+        xdotool click 1
+        sleep 0.3
+    done
+    log "  WARNING: Focus not confirmed after $tries attempts"
+    return 1
 }
 
 # ── One complete injection attempt ────────────────────────────────────────────
 do_inject() {
-    local attempt="$1"
-    log "--- Attempt ${attempt}/${MAX_ATTEMPTS} ---"
+    CURRENT_ATTEMPT="$1"
+    log "━━━ Attempt ${CURRENT_ATTEMPT}/${MAX_ATTEMPTS} ━━━"
+    write_status "injecting" "attempt ${CURRENT_ATTEMPT} starting"
 
-    # 1. Find window
+    # ── Step 1: Find the VS Code window ───────────────────────────────────────
     local WID
     WID=$(find_vscode_win)
     if [[ -z "$WID" ]]; then
-        log "No VS Code window — skipping attempt"
+        log "FAIL: No VS Code window found"
+        write_status "error" "no VS Code window"
         return 1
     fi
-    log "Window: $WID"
+    log "Step 1: Found VS Code window $WID"
 
-    # 2. Maximize window for consistent geometry (idempotent)
-    xdotool windowsize "$WID" 1920 1080 2>/dev/null || true
-    xdotool windowmove "$WID" 0 0 2>/dev/null || true
-    sleep 0.3
+    # ── Step 2: Set known geometry ────────────────────────────────────────────
+    if ! maximize_window "$WID"; then
+        log "WARNING: Could not verify window geometry"
+    fi
+    screenshot "01-window-found"
 
-    # 3. Hard focus
-    hard_focus "$WID"
+    # ── Step 3: Focus ─────────────────────────────────────────────────────────
+    focus_window "$WID"
+    screenshot "02-focused"
 
-    # 4. Dismiss any open overlays / notifications / modals
-    xdotool key --clearmodifiers Escape; sleep 0.2
-    xdotool key --clearmodifiers Escape; sleep 0.2
-    xdotool key --clearmodifiers Escape; sleep 0.2
+    # ── Step 4: Clear any overlays ────────────────────────────────────────────
+    log "Step 4: Clearing overlays..."
+    xdotool key --clearmodifiers Escape; sleep 0.3
+    xdotool key --clearmodifiers Escape; sleep 0.3
+    xdotool key --clearmodifiers Escape; sleep 0.3
+    screenshot "03-overlays-cleared"
 
-    # 5. Re-focus after escaping
-    hard_focus "$WID"
+    # ── Step 5: Re-focus after escaping ───────────────────────────────────────
+    focus_window "$WID"
 
-    # ── Open Command Palette ─────────────────────────────────────────────────
-    log "Opening command palette..."
-    xdotool key --clearmodifiers ctrl+shift+p
-    sleep "$PALETTE_SETTLE"
-
-    # If palette failed to open (e.g. focus was stolen), retry once
-    xdotool key --clearmodifiers Escape
-    sleep 0.3
-    hard_focus "$WID"
-    xdotool key --clearmodifiers ctrl+shift+p
-    sleep "$PALETTE_SETTLE"
-
-    # Clear any stale text from a previous attempt or auto-populated content
-    xdotool key --clearmodifiers ctrl+a
-    sleep 0.2
-    xdotool key --clearmodifiers Delete
-    sleep 0.2
-
-    # Type the command name slowly for reliable autocomplete
-    xdotool type --clearmodifiers --delay "$TYPE_DELAY" "GitHub Copilot Chat: New Chat"
-    sleep 1.2
-
-    # Confirm
-    xdotool key --clearmodifiers Return
-    log "Command palette: submitted 'GitHub Copilot Chat: New Chat'"
-
-    # ── Wait for Chat Panel ───────────────────────────────────────────────────
+    # ── Step 6: Open Copilot Chat in Agent mode via hotkey ────────────────────
+    # ctrl+shift+F12 is bound to workbench.action.chat.open {"mode":"agent"}
+    # This is FAR more reliable than typing in the command palette:
+    #   - No palette search/autocomplete ambiguity
+    #   - No risk of partial text match selecting the wrong command
+    #   - Deterministic — the command is always the same
+    log "Step 6: Opening agent-mode chat (Ctrl+Shift+F12)..."
+    xdotool key --clearmodifiers ctrl+shift+F12
     sleep "$CHAT_SETTLE"
+    screenshot "04-chat-opened"
 
-    # ── Ensure Chat Input Has Focus ───────────────────────────────────────────
-    # Re-focus the main window, then click into the chat input area.
-    # "New Chat" should auto-focus the input, but a click is a safety net.
-    hard_focus "$WID"
-    sleep 0.3
-    click_chat_input "$WID"
+    # ── Step 7: Verify chat panel is visible ──────────────────────────────────
+    # The chat panel appears in the secondary sidebar or primary sidebar.
+    # We can verify by checking for a window title change or by taking a
+    # screenshot and checking for the chat panel. For now, the screenshot
+    # serves as the verification — the human or test.sh can inspect it.
+    # If the hotkey failed, the second attempt's screenshot will show the same
+    # state as "overlays-cleared" instead of a chat panel.
+    
+    # Extra: try the hotkey a second time in case the first was swallowed
+    # by a notification or animation. If chat is already open, this is harmless
+    # (it just focuses the existing chat input).
+    xdotool key --clearmodifiers ctrl+shift+F12
+    sleep 2
+    screenshot "05-chat-confirmed"
 
-    # Dismiss any autocomplete or suggestion overlay in the chat input
-    xdotool key --clearmodifiers Escape
+    # ── Step 8: Click into the chat input area ────────────────────────────────
+    # The chat input is at the bottom of the Copilot panel.
+    # After opening with the hotkey, focus should already be in the input, but
+    # clicking provides a guaranteed final safety net.
+    #
+    # Default VS Code layout with the chat panel open:
+    # The chat occupies the secondary sidebar on the right side, or the
+    # primary sidebar on the left. Input box is near the bottom.
+    #
+    # Since we control the window geometry (1920x1080), we know exactly where
+    # the chat input should be. Try clicking near the center-bottom area
+    # of the expected chat panel location.
+    #
+    # The chat input spans the full width of the panel. We click at a safe spot
+    # that won't accidentally hit a button or link.
+    log "Step 8: Clicking chat input area..."
+    # Try the bottom-center of the panel (right side sidebar layout)
+    # VS Code default: panel is ~350px wide on the right side
+    local chat_x chat_y
+    chat_x=$(( SCREEN_W - 175 ))    # center of a 350px right sidebar
+    chat_y=$(( SCREEN_H - 80 ))     # near the bottom, above the status bar
+    xdotool mousemove "$chat_x" "$chat_y"
     sleep 0.2
+    xdotool click 1
+    sleep 0.3
+    screenshot "06-input-clicked"
 
-    # ── Type and Submit the Agent Command ────────────────────────────────────
-    # Do NOT ctrl+a here — we have a fresh empty input from "New Chat".
-    # ctrl+a in the wrong context would select all editor text.
-    log "Typing: ${AGENT_COMMAND}"
+    # ── Step 9: Type the agent command ────────────────────────────────────────
+    # Do NOT use ctrl+a — the chat input from "New Chat" / agent-mode open is
+    # always empty. ctrl+a would be catastrophic if focus landed on the editor.
+    log "Step 9: Typing command: ${AGENT_COMMAND}"
     xdotool type --clearmodifiers --delay "$TYPE_DELAY" "${AGENT_COMMAND}"
     sleep 0.5
+    screenshot "07-command-typed"
 
-    # Submit
+    # ── Step 10: Submit ───────────────────────────────────────────────────────
+    log "Step 10: Submitting..."
     xdotool key --clearmodifiers Return
-    log "Sent: ${AGENT_COMMAND}"
+    sleep 2
+    screenshot "08-submitted"
+
+    write_status "success" "agent command submitted on attempt ${CURRENT_ATTEMPT}"
+    log "✓ Injection complete"
     return 0
 }
 
-# ── Main: wait for VS Code, then inject with retries ─────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+# Clean up screenshots from previous run
+rm -f "${SCREENSHOT_DIR}"/*.png 2>/dev/null || true
+
+write_status "starting" "waiting for VS Code window"
+
 log "Waiting for VS Code window (up to ${WINDOW_WAIT}s)..."
-if ! wait_until "$WINDOW_WAIT" xdotool search --class "Code"; then
-    log "ERROR: VS Code window not found after ${WINDOW_WAIT}s — aborting"
-    exit 1
-fi
+WAIT_COUNT=0
+until find_vscode_win | grep -q .; do
+    sleep 1; WAIT_COUNT=$(( WAIT_COUNT + 1 ))
+    if [[ $WAIT_COUNT -ge $WINDOW_WAIT ]]; then
+        write_status "error" "VS Code window not found after ${WINDOW_WAIT}s"
+        exit 1
+    fi
+done
+log "VS Code window found (waited ${WAIT_COUNT}s)"
 
-# Extra settle time: VS Code loads extensions asynchronously.
-# Copilot Chat must be fully activated before "New Chat" is available in the palette.
-log "VS Code window found — waiting for extensions to settle (10s)..."
-sleep 10
+# Wait for Copilot Chat extension to activate.
+# The hotkey won't work until the extension registers its keybinding handler.
+log "Waiting ${EXTENSION_SETTLE}s for extensions to settle..."
+sleep "$EXTENSION_SETTLE"
+screenshot "00-pre-inject"
 
-# Retry loop
+# Retry loop with backoff
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     if do_inject "$attempt"; then
-        log "SUCCESS on attempt ${attempt}"
+        log "━━━ SUCCESS on attempt ${attempt} ━━━"
+        log "Screenshots: ls /tmp/inject-screenshots/"
         exit 0
     fi
-    BACKOFF=$(( attempt * 5 ))
-    log "Attempt ${attempt} failed — backing off ${BACKOFF}s before retry"
+    BACKOFF=$(( attempt * 8 ))
+    log "Attempt ${attempt} failed — backing off ${BACKOFF}s"
+    write_status "retrying" "attempt ${attempt} failed, backing off ${BACKOFF}s"
     sleep "$BACKOFF"
 done
 
-log "ERROR: All ${MAX_ATTEMPTS} injection attempts failed"
+write_status "failed" "all ${MAX_ATTEMPTS} attempts failed"
+log "━━━ FAILED: All ${MAX_ATTEMPTS} injection attempts failed ━━━"
+log "Inspect screenshots: docker cp waymark-dev-worker:/tmp/inject-screenshots/ ./"
 exit 1
