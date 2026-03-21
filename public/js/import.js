@@ -197,6 +197,13 @@ const ROLE_LABELS = {
   'iot.min': 'Minimum threshold',
   'iot.max': 'Maximum threshold',
   'iot.alert': 'Alert state (Normal, Watch, Alert, Offline)',
+  // OKR / Goals
+  'okr.objective': 'Objective / Goal name',
+  'okr.keyResult': 'Key Result / Measurable outcome',
+  'okr.progress': 'Progress (0%–100%)',
+  'okr.target': 'Target / Success criteria',
+  'okr.owner': 'Owner / DRI (Directly Responsible Individual)',
+  'okr.quarter': 'Quarter (e.g. Q1 2026)',
 };
 
 /**
@@ -294,6 +301,10 @@ const CANONICAL_HEADERS = {
   'iot.sensor': 'Sensor', 'iot.reading': 'Reading',
   'iot.unit': 'Unit', 'iot.timestamp': 'Timestamp',
   'iot.min': 'Min', 'iot.max': 'Max', 'iot.alert': 'Alert',
+  // OKR / Goals
+  'okr.objective': 'Objective', 'okr.keyResult': 'Key Result',
+  'okr.progress': 'Progress', 'okr.target': 'Target',
+  'okr.owner': 'Owner', 'okr.quarter': 'Quarter',
 };
 
 /**

@@ -38,6 +38,7 @@ import './guide/index.js';
 import './knowledge/index.js';
 import './notification.js';
 import './iot/index.js';
+import './okr/index.js';
 
 /* ---------- Detection ---------- */
 

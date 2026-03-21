@@ -9,7 +9,10 @@ log() { echo "[entrypoint $(date +%T)] $*"; }
 # The VNC port is bound to 127.0.0.1 only in docker-compose.yml, so no
 # password is needed. TigerVNC is started with -SecurityTypes None.
 mkdir -p /root/.vnc
-log "VNC ready (no password — localhost-only)"
+# Clean stale X lock files from previous container runs — if these exist,
+# Xtigervnc refuses to start with "Server is already active for display :1"
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+log "VNC ready (no password — localhost-only, stale locks cleaned)"
 
 # ── 2. Seed VS Code user config from the host mount ──────────────────────────
 # The host's ~/.config/Code/User is mounted read-only at /host-vscode-user.
@@ -43,8 +46,9 @@ cp /config/openbox-autostart /root/.config/openbox/autostart
 chmod +x /root/.config/openbox/autostart
 
 # ── 3b. VS Code keybindings (dynamic — embeds AGENT_COMMAND) ─────────────────
-# Three keybindings:
-#   Ctrl+Shift+F10 → /autoApprove  (sets permission dropdown to "All", silent)
+# Keybindings:
+#   Ctrl+Shift+F9  → acceptTool   (clears stuck "Allow" confirmations)
+#   Ctrl+Shift+F10 → /autoApprove (sets permission dropdown to "Bypass", silent)
 #   Ctrl+Shift+F12 → agent chat + auto-submit AGENT_COMMAND
 #   Ctrl+Shift+F11 → agent chat + partial query (for debugging)
 # Regenerated every boot so the AGENT_COMMAND env var is always current.
@@ -54,6 +58,10 @@ python3 -c "
 import json, os
 cmd = os.environ.get('AGENT_COMMAND', '@waymark-builder start')
 kb = [
+    {
+        'key': 'ctrl+shift+f9',
+        'command': 'workbench.action.chat.acceptTool'
+    },
     {
         'key': 'ctrl+shift+f10',
         'command': 'workbench.action.chat.open',

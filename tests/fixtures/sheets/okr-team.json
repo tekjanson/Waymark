@@ -1,0 +1,13 @@
+{
+  "id": "sheet-054",
+  "title": "Engineering Team OKRs",
+  "sheetTitle": "Team Goals",
+  "values": [
+    ["Objective", "Key Result", "Progress", "Target", "Owner", "Quarter"],
+    ["Improve System Reliability", "Achieve 99.9% uptime", "95%", "99.9%", "Dev Team", "Q1 2026"],
+    ["Improve System Reliability", "Reduce mean time to recovery to < 30 min", "80%", "< 30 min", "DevOps", "Q1 2026"],
+    ["Improve System Reliability", "Zero data loss incidents", "100%", "0 incidents", "Backend", "Q1 2026"],
+    ["Accelerate Delivery Speed", "Deploy to production daily", "70%", "Daily", "Dev Team", "Q1 2026"],
+    ["Accelerate Delivery Speed", "Test coverage above 80%", "65%", "80%", "QA", "Q1 2026"]
+  ]
+}
