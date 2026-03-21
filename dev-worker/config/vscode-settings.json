@@ -1,9 +1,16 @@
 {
     "github.copilot.chat.claudeAgent.enabled": true,
     "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true,
-    "github.copilot.chat.askAgent.model": "claude-sonnet-4-6",
-    "github.copilot.chat.exploreAgent.model": "claude-sonnet-4-6",
-    "github.copilot.chat.implementAgent.model": "claude-sonnet-4-6",
+    "github.copilot.chat.askAgent.model": "Claude Sonnet 4.6 (copilot)",
+    "github.copilot.chat.exploreAgent.model": "Claude Sonnet 4.6 (copilot)",
+    "github.copilot.chat.implementAgent.model": "Claude Sonnet 4.6 (copilot)",
+    "github.copilot.chat.searchSubagent.model": "Claude Sonnet 4.6 (copilot)",
     "chat.agent.maxRequests": 25000,
-    "chat.editing.confirmEditRequestRemoval": false
+    "chat.editing.confirmEditRequestRemoval": false,
+    "chat.defaultMode": "agent",
+    "chat.tools.global.autoApprove": true,
+    "chat.tools.edits.autoApprove": true,
+    "chat.tools.terminal.enableAutoApprove": true,
+    "chat.exploreAgent.defaultModel": "copilot/claude-sonnet-4.6",
+    "chat.planAgent.defaultModel": "copilot/claude-sonnet-4.6"
 }

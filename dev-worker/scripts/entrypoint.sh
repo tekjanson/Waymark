@@ -93,8 +93,10 @@ fi
 # ── 7. Write agent VS Code settings ──────────────────────────────────────────
 # Merge /config/vscode-settings.json into the live settings.json.
 # This always wins over the host seed so agent-critical settings are guaranteed:
-#   - claudeAgent.enabled + allowDangerouslySkipPermissions (bypass all approvals)
-#   - askAgent/exploreAgent/implementAgent model = claude-sonnet-4-6
+#   - chat.tools.global.autoApprove + edits/terminal auto-approve (bypass all approvals)
+#   - claudeAgent.enabled + allowDangerouslySkipPermissions (claude agent bypass)
+#   - askAgent/exploreAgent/implementAgent/planAgent model = claude-sonnet-4.6
+#   - chat.defaultMode = agent (always start in agent mode)
 SETTINGS_FILE="/root/.config/Code/User/settings.json"
 AGENT_SETTINGS="/config/vscode-settings.json"
 python3 - <<'PYEOF'
@@ -114,9 +116,41 @@ with open(settings_path, 'w') as f:
     json.dump(settings, f, indent=4)
 print(f"[entrypoint] VS Code agent settings applied to {settings_path}")
 PYEOF
-log "VS Code agent settings applied (claudeAgent, model=claude-sonnet-4-6)"
+log "VS Code agent settings applied"
 
-# ── 8. Ensure log directory exists ───────────────────────────────────────────
+# ── 8. Seed state.vscdb with model selection + auto-approve state ────────────
+# The main agent model and permission level are stored in VS Code's SQLite
+# state database, NOT in settings.json. We pre-seed these so the agent starts
+# with the correct model and auto-approve is active from the first session.
+STATE_DB="/root/.config/Code/User/globalStorage/state.vscdb"
+AGENT_MODEL="${AGENT_MODEL:-copilot/claude-sonnet-4.6}"
+if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$STATE_DB" ]]; then
+    log "Seeding state.vscdb: model=${AGENT_MODEL}, auto-approve=on"
+    sqlite3 "$STATE_DB" <<SQL
+INSERT OR REPLACE INTO ItemTable (key, value) VALUES
+    ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
+    ('chat.currentLanguageModel.panel.isDefault', 'false'),
+    ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
+    ('chat.lastChatMode', 'agent');
+SQL
+elif command -v sqlite3 >/dev/null 2>&1; then
+    # state.vscdb doesn't exist yet; VS Code will create it on first launch.
+    # Create the database and table so the settings are ready.
+    log "Creating state.vscdb with model=${AGENT_MODEL}, auto-approve=on"
+    mkdir -p "$(dirname "$STATE_DB")"
+    sqlite3 "$STATE_DB" <<SQL
+CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value TEXT);
+INSERT OR REPLACE INTO ItemTable (key, value) VALUES
+    ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
+    ('chat.currentLanguageModel.panel.isDefault', 'false'),
+    ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
+    ('chat.lastChatMode', 'agent');
+SQL
+else
+    log "WARN: sqlite3 not available — cannot seed model/auto-approve into state.vscdb"
+fi
+
+# ── 9. Ensure log directory exists ───────────────────────────────────────────
 mkdir -p /var/log/supervisor /tmp
 
 log "Initialization complete — starting supervisord"

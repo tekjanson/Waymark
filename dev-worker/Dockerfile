@@ -5,7 +5,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core utilities
     ca-certificates curl wget gnupg git openssh-client procps \
-    imagemagick dbus-x11 netcat-openbsd \
+    imagemagick dbus-x11 netcat-openbsd sqlite3 \
     # X11 + UI automation
     x11-utils xauth xdotool ydotool \
     # TigerVNC (virtual X11 display with built-in VNC server)

@@ -30,6 +30,9 @@ services:
       #   @waymark-builder pick next           (single task then stops)
       - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
 
+      # Language model for the agent (as it appears in VS Code's model picker)
+      - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}
+
       # Virtual display — must match the TigerVNC display number
       - DISPLAY=:1
 
