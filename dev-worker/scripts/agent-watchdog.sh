@@ -42,7 +42,8 @@ until xdpyinfo -display :1 >/dev/null 2>&1; do sleep 2; done
 log "X display ready"
 
 ensure_vscode_running || true
-sleep 5   # give VS Code a moment to fully initialize
+# NOTE: inject-agent.sh itself waits 10s for extensions to settle before
+# sending any keystrokes, so no extra sleep is needed here on boot.
 inject
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -51,8 +52,8 @@ while true; do
 
     # --- Check 1: Is VS Code running? ---
     if ensure_vscode_running; then
-        # VS Code was just relaunched; give it time to start
-        sleep 10
+        # VS Code was just relaunched; inject-agent.sh will wait for the
+        # window to appear and for extensions to settle before sending keys.
         inject
         continue
     fi
