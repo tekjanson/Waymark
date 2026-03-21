@@ -1,0 +1,17 @@
+// VS Code keybindings for the dev-worker container.
+// Installed by entrypoint.sh into /root/.config/Code/User/keybindings.json
+//
+// These bindings give xdotool deterministic hotkeys for Copilot Chat operations.
+// No need to type in the command palette — one keystroke opens agent-mode chat.
+[
+    {
+        "key": "ctrl+shift+F12",
+        "command": "workbench.action.chat.open",
+        "args": { "mode": "agent" }
+    },
+    {
+        "key": "ctrl+shift+F11",
+        "command": "workbench.action.chat.open",
+        "args": { "mode": "agent", "query": "", "isPartialQuery": true }
+    }
+]
