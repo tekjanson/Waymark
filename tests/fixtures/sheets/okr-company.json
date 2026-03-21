@@ -1,0 +1,19 @@
+{
+  "id": "sheet-053",
+  "title": "Company OKRs — Q1 2026",
+  "sheetTitle": "Q1 Objectives",
+  "values": [
+    ["Objective", "Key Result", "Progress", "Target", "Owner", "Quarter"],
+    ["Grow Revenue by 30%", "Hit $10M ARR", "90%", "$10M", "Alice", "Q1 2026"],
+    ["Grow Revenue by 30%", "Close 20 enterprise deals", "80%", "20 deals", "Bob", "Q1 2026"],
+    ["Grow Revenue by 30%", "Launch in 3 new markets", "55%", "3 markets", "Carol", "Q1 2026"],
+    ["Improve Product Quality", "Reduce bug count by 50%", "70%", "50% fewer bugs", "Dave", "Q1 2026"],
+    ["Improve Product Quality", "Achieve NPS > 50", "50%", "NPS 50", "Alice", "Q1 2026"],
+    ["Improve Product Quality", "Reduce P0 incident response time to < 1hr", "65%", "< 1 hour", "Bob", "Q1 2026"],
+    ["Build a World-Class Team", "Hire 5 senior engineers", "60%", "5 hires", "Carol", "Q1 2026"],
+    ["Build a World-Class Team", "Achieve team NPS > 70", "75%", "NPS 70", "Dave", "Q1 2026"],
+    ["Build a World-Class Team", "Complete leadership training for 100% of managers", "40%", "100%", "Alice", "Q1 2026"],
+    ["Accelerate Product Delivery", "Ship 3 major features per sprint", "85%", "3 features", "Bob", "Q2 2026"],
+    ["Accelerate Product Delivery", "Reduce deployment time by 40%", "35%", "40% faster", "Carol", "Q2 2026"]
+  ]
+}

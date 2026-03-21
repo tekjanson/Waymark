@@ -235,6 +235,16 @@
               "id": "sheet-iot-blank",
               "name": "My IoT Dashboard",
               "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-053",
+              "name": "Company OKRs \u2014 Q1 2026",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-054",
+              "name": "Engineering Team OKRs",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
             }
           ]
         },

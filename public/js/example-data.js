@@ -822,6 +822,21 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- OKR / Goals examples ---- */
+  'Company OKRs Q1 2026': {
+    folder: 'Strategy',
+    headers: ['Objective', 'Key Result', 'Progress', 'Target', 'Owner', 'Quarter'],
+    rows: [
+      ['Grow Revenue by 30%',       'Hit $10M ARR',                        '90%',  '$10M',        'Alice', 'Q1 2026'],
+      ['Grow Revenue by 30%',       'Close 20 enterprise deals',           '80%',  '20 deals',    'Bob',   'Q1 2026'],
+      ['Grow Revenue by 30%',       'Launch in 3 new markets',             '55%',  '3 markets',   'Carol', 'Q1 2026'],
+      ['Improve Product Quality',   'Reduce bug count by 50%',             '70%',  '50% fewer',   'Dave',  'Q1 2026'],
+      ['Improve Product Quality',   'Achieve NPS > 50',                    '50%',  'NPS 50',      'Alice', 'Q1 2026'],
+      ['Build a World-Class Team',  'Hire 5 senior engineers',             '60%',  '5 hires',     'Carol', 'Q1 2026'],
+      ['Build a World-Class Team',  'Complete leadership training',        '40%',  '100%',        'Alice', 'Q1 2026'],
+    ],
+  },
+
   /* ---- IoT examples ---- */
   'IoT Sensor Dashboard': {
     folder: 'Monitoring',

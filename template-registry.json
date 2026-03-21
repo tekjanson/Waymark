@@ -996,10 +996,48 @@
         "iot-sensor-dashboard",
         "iot-sensor-log"
       ]
+    },
+    {
+      "key": "okr",
+      "name": "OKR / Goals",
+      "icon": "\uD83C\uDFAF",
+      "color": "#7c3aed",
+      "priority": 22,
+      "category": "Goals",
+      "detectSignals": [
+        "objective",
+        "key result",
+        "okr",
+        "goal",
+        "progress",
+        "target",
+        "owner",
+        "quarter"
+      ],
+      "columnRoles": [
+        "objective",
+        "keyResult",
+        "progress",
+        "target",
+        "owner",
+        "quarter"
+      ],
+      "interactive": true,
+      "interactionType": "progress-edit",
+      "hasDirectoryView": true,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-053",
+        "sheet-054"
+      ],
+      "fixtureFiles": [
+        "okr-company",
+        "okr-team"
+      ]
     }
   ],
-  "nextSheetId": "sheet-050",
-  "totalTemplates": 26,
+  "nextSheetId": "sheet-055",
+  "totalTemplates": 27,
   "categories": [
     "Productivity",
     "Engineering",

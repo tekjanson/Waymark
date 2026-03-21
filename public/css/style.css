@@ -33,6 +33,7 @@
 @import url('./templates/knowledge.css');
 @import url('./templates/notification.css');
 @import url('./templates/iot.css');
+@import url('./templates/okr.css');
 
 /* Cross-template feature integration */
 @import url('./templates/cross-features.css');
