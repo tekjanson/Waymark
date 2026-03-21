@@ -640,6 +640,17 @@ button.kanban-pri-dot {
   border-color: var(--color-primary);
 }
 
+/* Prevent page scroll and text selection during active touch drag */
+body.kanban-touch-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Touch-drag affordance: slightly longer press feedback */
+.kanban-card {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ---------- Combo cell / Textarea ---------- */
 
 .combo-cell-input {

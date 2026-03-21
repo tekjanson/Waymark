@@ -35,6 +35,79 @@ let _laneRendered = {};
 let _dragCard = null;     // DOM element being dragged
 let _dragRowIdx = null;   // 1-based row index of dragged card
 
+/* ---------- Touch drag-and-drop state ---------- */
+
+let _touchCard = null;           // DOM element being touch-dragged
+let _touchRowIdx = null;         // 1-based row index
+let _touchLongPressTimer = null; // long-press detection timer
+let _touchStartX = 0;
+let _touchStartY = 0;
+let _touchDragActive = false;    // true once long-press threshold met
+/** Context set at drag-start (closes over current render's scope) */
+let _touchDropCols = null;
+let _touchDropFn   = null;       // insertStageNote fn from current render
+let _touchLaneKeys = null;       // allLaneKeys from current render
+let _touchTemplate = null;       // template from current render
+
+/** Move handler — tracks finger position and highlights target lane. */
+function _handleTouchMove(e) {
+  if (!_touchDragActive || !_touchCard) return;
+  e.preventDefault(); // suppress scroll during active drag
+  const t = e.touches[0];
+  // Temporarily hide card so elementFromPoint sees through it
+  _touchCard.style.visibility = 'hidden';
+  const target = document.elementFromPoint(t.clientX, t.clientY);
+  _touchCard.style.visibility = '';
+  document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
+  const lane = target && target.closest('.kanban-lane');
+  if (lane) lane.classList.add('kanban-lane-dragover');
+}
+
+/** End handler — drops card into highlighted lane. */
+function _handleTouchEnd(e) {
+  clearTimeout(_touchLongPressTimer);
+  document.removeEventListener('touchmove', _handleTouchMove);
+  document.removeEventListener('touchend', _handleTouchEnd);
+  document.body.classList.remove('kanban-touch-dragging');
+  document.querySelectorAll('.kanban-lane-dragover').forEach(l => l.classList.remove('kanban-lane-dragover'));
+
+  if (_touchCard && _touchDragActive && _touchRowIdx != null && _touchDropCols && _touchDropCols.stage >= 0) {
+    const t = e.changedTouches[0];
+    _touchCard.style.visibility = 'hidden';
+    const target = document.elementFromPoint(t.clientX, t.clientY);
+    _touchCard.style.visibility = '';
+    const lane = target && target.closest('.kanban-lane');
+    if (lane && _touchLaneKeys && _touchTemplate) {
+      let laneKey = null;
+      for (const key of _touchLaneKeys) {
+        if (lane.classList.contains(`kanban-lane-${key}`)) { laneKey = key; break; }
+      }
+      if (laneKey) {
+        const stageValue = LANE_LABELS[laneKey] || laneKey;
+        const prevBadge = _touchCard.querySelector('.kanban-stage-btn');
+        const prevStage = prevBadge ? prevBadge.textContent.trim() : '';
+        if (prevStage !== stageValue) {
+          const noteInserted = _touchDropFn ? _touchDropFn(_touchRowIdx, prevStage, stageValue) : false;
+          if (!noteInserted) emitEdit(_touchRowIdx, _touchDropCols.stage, stageValue);
+          if (prevBadge) {
+            prevBadge.textContent = stageValue;
+            prevBadge.className = `kanban-stage-btn kanban-stage-${_touchTemplate.stageClass(stageValue)}`;
+          }
+        }
+      }
+    }
+  }
+
+  if (_touchCard) _touchCard.classList.remove('kanban-card-dragging');
+  _touchCard = null;
+  _touchRowIdx = null;
+  _touchDragActive = false;
+  _touchDropCols = null;
+  _touchDropFn = null;
+  _touchLaneKeys = null;
+  _touchTemplate = null;
+}
+
 /* ---------- Template Definition ---------- */
 
 const definition = {
@@ -699,6 +772,54 @@ const definition = {
     for (const laneKey of allLaneKeys) {
       buildLaneSkeleton(laneKey);
     }
+
+    /* ---- Touch drag-and-drop (mobile) ---- */
+
+    // Long-press on a card starts touch drag (500ms threshold to distinguish from scroll)
+    boardEl.addEventListener('touchstart', (e) => {
+      const card = e.target.closest('.kanban-card');
+      if (!card) return;
+      clearTimeout(_touchLongPressTimer);
+      _touchStartX = e.touches[0].clientX;
+      _touchStartY = e.touches[0].clientY;
+      _touchCard = card;
+      _touchRowIdx = Number(card.dataset.rowIdx);
+      _touchDragActive = false;
+      _touchLongPressTimer = setTimeout(() => {
+        _touchDragActive = true;
+        _touchDropCols = cols;
+        _touchDropFn = insertStageNote;
+        _touchLaneKeys = allLaneKeys;
+        _touchTemplate = template;
+        card.classList.add('kanban-card-dragging');
+        document.body.classList.add('kanban-touch-dragging');
+        if (navigator.vibrate) navigator.vibrate(40); // haptic feedback
+        document.addEventListener('touchmove', _handleTouchMove, { passive: false });
+        document.addEventListener('touchend', _handleTouchEnd);
+      }, 500);
+    }, { passive: true });
+
+    // Cancel long-press if the finger moves significantly (user is scrolling)
+    boardEl.addEventListener('touchmove', (e) => {
+      if (!_touchDragActive && _touchCard) {
+        const dx = e.touches[0].clientX - _touchStartX;
+        const dy = e.touches[0].clientY - _touchStartY;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          clearTimeout(_touchLongPressTimer);
+          _touchCard = null;
+          _touchRowIdx = null;
+        }
+      }
+    }, { passive: true });
+
+    // Cancel long-press if finger lifts before threshold
+    boardEl.addEventListener('touchend', () => {
+      if (!_touchDragActive) {
+        clearTimeout(_touchLongPressTimer);
+        _touchCard = null;
+        _touchRowIdx = null;
+      }
+    }, { passive: true });
 
     /**
      * Update the board: toggle lane visibility, populate cards, update counts.
