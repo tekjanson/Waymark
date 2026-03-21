@@ -9,7 +9,10 @@ log() { echo "[entrypoint $(date +%T)] $*"; }
 # The VNC port is bound to 127.0.0.1 only in docker-compose.yml, so no
 # password is needed. TigerVNC is started with -SecurityTypes None.
 mkdir -p /root/.vnc
-log "VNC ready (no password — localhost-only)"
+# Clean stale X lock files from previous container runs — if these exist,
+# Xtigervnc refuses to start with "Server is already active for display :1"
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+log "VNC ready (no password — localhost-only, stale locks cleaned)"
 
 # ── 2. Seed VS Code user config from the host mount ──────────────────────────
 # The host's ~/.config/Code/User is mounted read-only at /host-vscode-user.
