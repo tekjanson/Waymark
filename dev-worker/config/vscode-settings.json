@@ -1,0 +1,9 @@
+{
+    "github.copilot.chat.claudeAgent.enabled": true,
+    "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true,
+    "github.copilot.chat.askAgent.model": "claude-sonnet-4-6",
+    "github.copilot.chat.exploreAgent.model": "claude-sonnet-4-6",
+    "github.copilot.chat.implementAgent.model": "claude-sonnet-4-6",
+    "chat.agent.maxRequests": 25000,
+    "chat.editing.confirmEditRequestRemoval": false
+}

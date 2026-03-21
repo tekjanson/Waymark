@@ -82,7 +82,33 @@ if [[ -d /root/.ssh ]]; then
     log "SSH keys copied to /root/.ssh-rw with correct permissions"
 fi
 
-# ── 7. Ensure log directory exists ───────────────────────────────────────────
+# ── 7. Write agent VS Code settings ──────────────────────────────────────────
+# Merge /config/vscode-settings.json into the live settings.json.
+# This always wins over the host seed so agent-critical settings are guaranteed:
+#   - claudeAgent.enabled + allowDangerouslySkipPermissions (bypass all approvals)
+#   - askAgent/exploreAgent/implementAgent model = claude-sonnet-4-6
+SETTINGS_FILE="/root/.config/Code/User/settings.json"
+AGENT_SETTINGS="/config/vscode-settings.json"
+python3 - <<'PYEOF'
+import json, os
+settings_path = os.environ.get('SETTINGS_FILE', '/root/.config/Code/User/settings.json')
+agent_path    = '/config/vscode-settings.json'
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except Exception:
+    settings = {}
+with open(agent_path) as f:
+    agent = json.load(f)
+settings.update(agent)
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+with open(settings_path, 'w') as f:
+    json.dump(settings, f, indent=4)
+print(f"[entrypoint] VS Code agent settings applied to {settings_path}")
+PYEOF
+log "VS Code agent settings applied (claudeAgent, model=claude-sonnet-4-6)"
+
+# ── 8. Ensure log directory exists ───────────────────────────────────────────
 mkdir -p /var/log/supervisor /tmp
 
 log "Initialization complete — starting supervisord"
