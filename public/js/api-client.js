@@ -86,6 +86,7 @@ async function loadMockSheet(sheetId) {
     'sheet-049': 'guide-composting',
     'sheet-047': 'iot-sensor-dashboard',
     'sheet-048': 'iot-sensor-log',
+    'sheet-050': 'checklist-ai-demo',
     'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];

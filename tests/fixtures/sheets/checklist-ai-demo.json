@@ -1,0 +1,12 @@
+{
+  "id": "sheet-050",
+  "title": "My Task List",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Task", "Status", "Priority", "Notes"],
+    ["Buy groceries", "Pending", "High", ""],
+    ["Walk the dog", "Done", "Medium", "Completed this morning"],
+    ["Read a book", "Pending", "Low", ""],
+    ["Call dentist", "Pending", "High", "Overdue"]
+  ]
+}
