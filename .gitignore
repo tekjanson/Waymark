@@ -6,6 +6,7 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+.watchdog.pid
 
 # Playwright
 test-results/
