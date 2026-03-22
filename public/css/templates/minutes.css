@@ -1,0 +1,234 @@
+/* Meeting Minutes Template */
+
+.minutes-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+/* --- Meeting group section --- */
+.minutes-meeting {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* --- Meeting header --- */
+.minutes-meeting-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.minutes-meeting-header:hover {
+  background: var(--color-border);
+}
+
+.minutes-chevron {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.minutes-meeting.minutes-collapsed .minutes-chevron {
+  transform: rotate(-90deg);
+}
+
+.minutes-meeting-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 120px;
+}
+
+.minutes-meeting-date {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.minutes-attendees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.minutes-attendee-chip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.minutes-item-count {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* --- Collapsed state --- */
+.minutes-meeting.minutes-collapsed .minutes-body {
+  display: none;
+}
+
+/* --- Body (agenda items) --- */
+.minutes-body {
+  padding: 0;
+}
+
+/* --- Individual agenda item --- */
+.minutes-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: start;
+}
+
+.minutes-item:last-child {
+  border-bottom: none;
+}
+
+.minutes-item:hover {
+  background: var(--color-bg);
+}
+
+/* --- Agenda column --- */
+.minutes-agenda-label,
+.minutes-decision-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.minutes-agenda-label {
+  color: var(--color-text-muted);
+}
+
+.minutes-agenda-text {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+/* --- Decision column --- */
+.minutes-decision {
+  background: var(--color-success-light);
+  border-left: 3px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.minutes-decision-label {
+  color: var(--color-success);
+}
+
+.minutes-decision-text {
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+/* --- Action row (spans full width) --- */
+.minutes-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+}
+
+.minutes-action-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.minutes-action-text {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 100px;
+}
+
+.minutes-owner-badge {
+  font-size: 0.75rem;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 10px;
+  padding: 1px 8px;
+  flex-shrink: 0;
+}
+
+.minutes-due-badge {
+  font-size: 0.75rem;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 1px 8px;
+  flex-shrink: 0;
+}
+
+/* --- Empty state --- */
+.minutes-empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* --- Responsive: stack columns on small screens --- */
+@media (max-width: 600px) {
+  .minutes-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Dark theme overrides --- */
+[data-theme="dark"] .minutes-attendee-chip {
+  background: rgba(96, 165, 250, 0.18);
+  color: var(--color-primary);
+}
+
+[data-theme="dark"] .minutes-owner-badge {
+  background: rgba(96, 165, 250, 0.18);
+  color: var(--color-primary);
+}
+
+[data-theme="dark"] .minutes-due-badge {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fcd34d;
+}
+
+[data-theme="dark"] .minutes-decision {
+  background: rgba(74, 222, 128, 0.1);
+  border-left-color: var(--color-success);
+}

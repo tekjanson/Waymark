@@ -853,6 +853,21 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Meeting Minutes examples ---- */
+  'Q1 Team Meeting Minutes': {
+    folder: 'Work',
+    headers: ['Meeting', 'Date', 'Attendees', 'Agenda', 'Decision', 'Action Item', 'Owner', 'Due'],
+    rows: [
+      ['Q1 Planning',   '2026-01-15', 'Alice, Bob, Charlie', 'Budget review',      'Approved $50k for Q1',    'Finalize budget doc',        'Alice',   '2026-01-20'],
+      ['Q1 Planning',   '2026-01-15', '',                    'Q1 Roadmap',         'Ship 3 key features',     'Create feature specs',       'Bob',     '2026-01-22'],
+      ['Q1 Planning',   '2026-01-15', '',                    'Headcount',          'Hire 2 engineers',        'Write job descriptions',     'HR',      '2026-02-01'],
+      ['Team Standup',  '2026-01-20', 'Alice, Bob',          'Sprint status',      'On track for cutoff',     'Update Jira boards',         'Charlie', '2026-01-21'],
+      ['Team Standup',  '2026-01-20', '',                    'Bug triage',         'P0 needs hotfix',         'File hotfix PR',             'Dave',    '2026-01-21'],
+      ['Design Review', '2026-01-22', 'Alice, Eve',          'Homepage redesign',  'Approved with feedback',  'Revise mockups',             'Eve',     '2026-01-25'],
+      ['Design Review', '2026-01-22', '',                    'Mobile navigation',  'Needs more iteration',    'A/B test two nav variants',  'Eve',     '2026-01-28'],
+    ],
+  },
+
   /* ---- IoT examples ---- */
   'IoT Sensor Dashboard': {
     folder: 'Monitoring',

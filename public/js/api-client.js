@@ -91,6 +91,7 @@ async function loadMockSheet(sheetId) {
     'sheet-054': 'okr-team',
     'sheet-055': 'gantt-campaign',
     'sheet-056': 'gantt-sprint',
+    'sheet-057': 'minutes-team',
     'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];

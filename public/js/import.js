@@ -211,6 +211,15 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  // Meeting Minutes
+  'minutes.meeting': 'Meeting / Session name',
+  'minutes.date': 'Date (YYYY-MM-DD)',
+  'minutes.attendees': 'Attendees (comma-separated names)',
+  'minutes.agenda': 'Agenda item / Topic',
+  'minutes.decision': 'Decision / Outcome',
+  'minutes.actionItem': 'Action item / Follow-up task',
+  'minutes.owner': 'Owner / Responsible person',
+  'minutes.due': 'Due date (YYYY-MM-DD)',
 };
 
 /**
@@ -316,6 +325,11 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Meeting Minutes
+  'minutes.meeting': 'Meeting', 'minutes.date': 'Date',
+  'minutes.attendees': 'Attendees', 'minutes.agenda': 'Agenda',
+  'minutes.decision': 'Decision', 'minutes.actionItem': 'Action Item',
+  'minutes.owner': 'Owner', 'minutes.due': 'Due',
 };
 
 /**

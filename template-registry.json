@@ -1075,10 +1075,48 @@
         "gantt-campaign",
         "gantt-sprint"
       ]
+    },
+    {
+      "key": "minutes",
+      "name": "Meeting Minutes",
+      "icon": "📝",
+      "color": "#0ea5e9",
+      "priority": 19,
+      "category": "Work",
+      "detectSignals": [
+        "meeting",
+        "session",
+        "minutes",
+        "agenda",
+        "topic",
+        "discussion",
+        "decision",
+        "action item"
+      ],
+      "columnRoles": [
+        "meeting",
+        "date",
+        "attendees",
+        "agenda",
+        "decision",
+        "actionItem",
+        "owner",
+        "due"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-057"
+      ],
+      "fixtureFiles": [
+        "minutes-team"
+      ]
     }
   ],
-  "nextSheetId": "sheet-057",
-  "totalTemplates": 27,
+  "nextSheetId": "sheet-058",
+  "totalTemplates": 28,
   "categories": [
     "Productivity",
     "Engineering",
