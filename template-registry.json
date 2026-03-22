@@ -1034,9 +1034,50 @@
         "okr-company",
         "okr-team"
       ]
+    },
+    {
+      "key": "gantt",
+      "name": "Gantt Timeline",
+      "icon": "📅",
+      "color": "#059669",
+      "priority": 23,
+      "category": "Project Management",
+      "detectSignals": [
+        "task",
+        "start",
+        "start date",
+        "end",
+        "end date",
+        "finish",
+        "deadline",
+        "progress",
+        "milestone",
+        "dependencies",
+        "assignee"
+      ],
+      "columnRoles": [
+        "text",
+        "start",
+        "end",
+        "progress",
+        "dependencies",
+        "assignee"
+      ],
+      "interactive": true,
+      "interactionType": "drag-to-reschedule",
+      "hasDirectoryView": true,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-055",
+        "sheet-056"
+      ],
+      "fixtureFiles": [
+        "gantt-campaign",
+        "gantt-sprint"
+      ]
     }
   ],
-  "nextSheetId": "sheet-055",
+  "nextSheetId": "sheet-057",
   "totalTemplates": 27,
   "categories": [
     "Productivity",
