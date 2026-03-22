@@ -193,6 +193,7 @@ restarts your container. To stay alive, write a heartbeat **every 5 minutes** du
 GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
   node scripts/update-workboard.js heartbeat $AGENT_NAME --status idle
 ```
+The `--container` flag defaults to `$CONTAINER_NAME` (or `waymark-dev-worker`). Only override if running a non-standard container name.
 
 **Status values:** `idle` (waiting for work), `working` (implementing a task), `booting` (initial startup)
 
