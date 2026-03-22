@@ -15,6 +15,7 @@
    Flags:
      --stale-minutes <n>  Threshold in minutes (default: 30)
      --agent <name>       Check only this agent (default: all agents)
+     --container <name>   Check only agents for this container (default: all)
 
    Output (stdout, single line JSON):
      {
@@ -52,8 +53,9 @@ function extractFlag(args, flag, defaultValue) {
   return args[idx + 1] || defaultValue;
 }
 
-const STALE_MINUTES = parseInt(extractFlag(rawArgs, '--stale-minutes', '30'), 10);
-const AGENT_FILTER  = extractFlag(rawArgs, '--agent', null);
+const STALE_MINUTES    = parseInt(extractFlag(rawArgs, '--stale-minutes', '30'), 10);
+const AGENT_FILTER     = extractFlag(rawArgs, '--agent', null);
+const CONTAINER_FILTER = extractFlag(rawArgs, '--container', null);
 
 /* ---------- Auth ---------- */
 
@@ -119,6 +121,7 @@ const auth = new GoogleAuth({
 
       if (!name) continue;
       if (AGENT_FILTER && name !== AGENT_FILTER) continue;
+      if (CONTAINER_FILTER && container !== CONTAINER_FILTER) continue;
 
       const ts = new Date(timestamp).getTime();
       const ageMs = isNaN(ts) ? Infinity : now - ts;
