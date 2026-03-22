@@ -27,6 +27,10 @@ let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
 
+const MAX_UNDO = 50;
+let undoStack = [];
+let redoStack = [];
+
 /* ---------- Public ---------- */
 
 export function init() {
@@ -166,10 +170,45 @@ export function init() {
   // Wire interactive editing — templates emit edits via this callback
   onEdit(async (rowIndex, colIndex, newValue) => {
     if (!currentSheetId || !currentSheetTitle) return;
+    const oldValue = currentValues?.[rowIndex]?.[colIndex] ?? '';
     try {
       await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, newValue);
+      redoStack = [];
+      undoStack.push({ sheetId: currentSheetId, sheetTitle: currentSheetTitle, rowIndex, colIndex, oldValue, newValue });
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
     } catch (err) {
       showToast(`Failed to save: ${err.message}`, 'error');
+    }
+  });
+
+  // Undo / Redo keyboard shortcuts (Ctrl+Z / Ctrl+Shift+Z)
+  document.addEventListener('keydown', async (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key !== 'z') return;
+    if (e.target.matches('input, textarea, [contenteditable]')) return;
+    e.preventDefault();
+    if (e.shiftKey) {
+      const op = redoStack.pop();
+      if (!op || op.sheetId !== currentSheetId) { if (op) redoStack.push(op); return; }
+      try {
+        await api.sheets.updateCell(op.sheetId, op.sheetTitle, op.rowIndex, op.colIndex, op.newValue);
+        undoStack.push(op);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        showToast('Redone', 'success');
+      } catch (err) {
+        redoStack.push(op);
+        showToast(`Failed to redo: ${err.message}`, 'error');
+      }
+    } else {
+      const op = undoStack.pop();
+      if (!op || op.sheetId !== currentSheetId) { if (op) undoStack.push(op); return; }
+      try {
+        await api.sheets.updateCell(op.sheetId, op.sheetTitle, op.rowIndex, op.colIndex, op.oldValue);
+        redoStack.push(op);
+        showToast('Undone', 'success');
+      } catch (err) {
+        undoStack.push(op);
+        showToast(`Failed to undo: ${err.message}`, 'error');
+      }
     }
   });
 
@@ -205,6 +244,7 @@ function applyLockState(locked) {
  * @param {string} [sheetName]  optional display name
  */
 export async function show(sheetId, sheetName) {
+  if (sheetId !== currentSheetId) { undoStack = []; redoStack = []; }
   currentSheetId = sheetId;
   titleEl.textContent = sheetName || 'Loading…';
   itemsEl.innerHTML = '';
