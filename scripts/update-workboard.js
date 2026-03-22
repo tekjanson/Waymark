@@ -41,10 +41,11 @@
        writes to it. This guarantees no existing data is overwritten.
        The note gets: column E=agent name, column G=today's date, column I=text.
 
-     heartbeat <agent-name> [--status STATUS]
+     heartbeat <agent-name> [--status STATUS] [--container NAME]
        Write a heartbeat row to the Heartbeat sheet tab. The external
        host-side watchdog reads this tab to detect stale agents.
        STATUS is one of: idle, working, booting (default: idle).
+       NAME is the docker container name (default: CONTAINER_NAME env or waymark-dev-worker).
        Creates the Heartbeat sheet tab automatically if it doesn't exist.
        Upserts (updates existing row or appends new) — never grows unbounded.
 
@@ -58,6 +59,7 @@
      node scripts/update-workboard.js stage 263 QA
      node scripts/update-workboard.js note 263 "Branch: feature/foo" --agent alpha
      node scripts/update-workboard.js heartbeat alpha --status working
+     node scripts/update-workboard.js heartbeat alpha --status working --container waymark-dev-worker
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
@@ -295,7 +297,7 @@ async function cmdNote(afterRow, text, agentName) {
  * If a row for this agent already exists, overwrites it.
  * Otherwise appends a new row. Never grows unbounded.
  */
-async function cmdHeartbeat(agentName, status) {
+async function cmdHeartbeat(agentName, status, containerName) {
   const token = await getToken();
   await getOrCreateHeartbeatSheet(token);
 
@@ -310,7 +312,7 @@ async function cmdHeartbeat(agentName, status) {
   }
 
   const now = new Date().toISOString();
-  const container = `waymark-agent-${agentName}`;
+  const container = containerName;
   const values = [[agentName, now, status, container]];
 
   if (targetRow > 0) {
@@ -371,14 +373,16 @@ const [command, ...args] = argsNoAgent;
         break;
       }
       case 'heartbeat': {
-        // heartbeat <agent-name> [--status STATUS]
+        // heartbeat <agent-name> [--status STATUS] [--container NAME]
         const hbAgent = args[0] || AGENT_NAME;
         if (!hbAgent) {
-          console.error('Usage: heartbeat <agent-name> [--status idle|working|booting]');
+          console.error('Usage: heartbeat <agent-name> [--status idle|working|booting] [--container NAME]');
           process.exit(1);
         }
-        const { value: hbStatus } = extractFlagValue(args.slice(1), '--status', 'idle');
-        await cmdHeartbeat(hbAgent, hbStatus);
+        const { value: hbStatus, rest: hbRest1 } = extractFlagValue(args.slice(1), '--status', 'idle');
+        const { value: hbContainer } = extractFlagValue(hbRest1, '--container',
+          process.env.CONTAINER_NAME || 'waymark-dev-worker');
+        await cmdHeartbeat(hbAgent, hbStatus, hbContainer);
         break;
       }
       default:
