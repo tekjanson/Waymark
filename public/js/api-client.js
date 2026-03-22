@@ -341,6 +341,47 @@ export const api = {
       return driveApi.findFile(token, name, parentId);
     },
 
+    /**
+     * Find ALL files with a given name inside a folder.
+     * Returns an array (empty when none found). Handles duplicate-file
+     * scenarios such as multiple .waymark-index files in one folder.
+     */
+    async findAllFiles(name, parentId) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        // Scope search to direct children of the specified parent folder
+        const findFolder = (items, targetId) => {
+          for (const item of items) {
+            if (item.id === targetId) return item;
+            if (item.children) {
+              const found = findFolder(item.children, targetId);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        const parent = findFolder(fix.folders.myDrive, parentId);
+        if (!parent?.children) return [];
+        return parent.children.filter(c => c.name === name);
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.findAllFiles(token, name, parentId);
+    },
+
+    /**
+     * Permanently delete a Drive file (used to remove duplicate index files).
+     */
+    async deleteFile(fileId) {
+      if (isLocal) {
+        // In mock mode just record the deletion; no actual file removal needed
+        window.__WAYMARK_RECORDS = window.__WAYMARK_RECORDS || [];
+        window.__WAYMARK_RECORDS.push({ type: 'file-delete', fileId, deletedAt: new Date().toISOString() });
+        return;
+      }
+      const token = await clientAuth.getToken();
+      return driveApi.deleteFile(token, fileId);
+    },
+
     async createJsonFile(name, content, parents) {
       if (isLocal) {
         const record = {

@@ -765,22 +765,35 @@ function patchFolderIndex(folderId, sheet) {
         storage.setFolderIndex(folderId, local);
       }
 
-      // Find existing index file in Drive
-      const indexFile = await api.drive.findFile(INDEX_FILE, folderId);
-      if (indexFile) {
-        // Read → patch → write
-        const idx = await api.drive.readJsonFile(indexFile.id);
-        if (idx && idx.sheets) {
-          const { key, template } = detectTemplate(sheet.headers);
-          idx.sheets[sheet.id] = {
-            name: sheet.name,
-            headers: sheet.headers,
-            firstRow: sheet.firstRow,
-            modified: new Date().toISOString(),
-            templateKey: key,
-            icon: template.icon || '📊',
-          };
-          await api.drive.updateJsonFile(indexFile.id, idx);
+      // Find ALL existing index files in Drive to handle conflict scenario
+      const indexFiles = await api.drive.findAllFiles(INDEX_FILE, folderId);
+      if (indexFiles.length > 0) {
+        // Merge all indices, then write to the primary file and delete duplicates
+        const reads = await Promise.allSettled(
+          indexFiles.map(f => api.drive.readJsonFile(f.id).then(d => ({ file: f, data: d })))
+        );
+        const merged = { v: 1, sheets: {} };
+        for (const r of reads) {
+          if (r.status === 'fulfilled' && r.value.data?.sheets) {
+            Object.assign(merged.sheets, r.value.data.sheets);
+          }
+        }
+        // Apply the latest sheet data on top
+        const { key, template } = detectTemplate(sheet.headers);
+        merged.sheets[sheet.id] = {
+          name: sheet.name,
+          headers: sheet.headers,
+          firstRow: sheet.firstRow,
+          modified: new Date().toISOString(),
+          templateKey: key,
+          icon: template.icon || '📊',
+        };
+        await api.drive.updateJsonFile(indexFiles[0].id, merged);
+        // Delete duplicate index files
+        if (indexFiles.length > 1) {
+          for (const f of indexFiles.slice(1)) {
+            try { await api.drive.deleteFile(f.id); } catch { /* best-effort */ }
+          }
         }
       }
       // If no index file exists yet we skip — the next full folder load
@@ -930,15 +943,36 @@ async function showFolderContents(folderId, folderName) {
 
       // --- Phase 1: Look up and read the folder index ---
       // The index is application/json so listChildren (which filters to
-      // folders/sheets/docs) won't return it — use findFile instead.
+      // folders/sheets/docs) won't return it — use findAllFiles to handle
+      // the multi-session conflict case where multiple .waymark-index files
+      // were created independently and need to be merged into one.
       let folderIndex = null;   // { v: 1, sheets: { [id]: { name, headers, firstRow, modified } } }
       let indexFileId = null;
 
       try {
-        const indexFile = await api.drive.findFile(INDEX_FILE, folderId);
-        if (indexFile) {
-          indexFileId = indexFile.id;
-          folderIndex = await api.drive.readJsonFile(indexFileId);
+        const indexFiles = await api.drive.findAllFiles(INDEX_FILE, folderId);
+        if (indexFiles.length > 0) {
+          // Read all index files and merge — last-writer-wins per sheet ID.
+          // Sort by ID (creation order) so older entries are overwritten by newer.
+          const reads = await Promise.allSettled(
+            indexFiles.map(f => api.drive.readJsonFile(f.id).then(d => ({ file: f, data: d })))
+          );
+          folderIndex = { v: 1, sheets: {} };
+          for (const r of reads) {
+            if (r.status === 'fulfilled' && r.value.data?.sheets) {
+              Object.assign(folderIndex.sheets, r.value.data.sheets);
+            }
+          }
+          // Primary file for future updates; schedule deletion of any duplicates
+          indexFileId = indexFiles[0].id;
+          if (indexFiles.length > 1) {
+            const duplicateIds = indexFiles.slice(1).map(f => f.id);
+            (async () => {
+              for (const id of duplicateIds) {
+                try { await api.drive.deleteFile(id); } catch { /* best-effort */ }
+              }
+            })();
+          }
         }
       } catch {
         folderIndex = null;  // corrupt or unreadable — rebuild from scratch

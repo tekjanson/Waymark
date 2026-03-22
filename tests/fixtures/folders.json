@@ -19,6 +19,52 @@
       ]
     },
     {
+      "id": "f-index-conflict",
+      "name": "Recipe Collection",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-001",
+          "name": "Grocery List",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-002",
+          "name": "Home Repairs",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "idx-conflict-1",
+          "name": ".waymark-index",
+          "mimeType": "application/json"
+        },
+        {
+          "id": "idx-conflict-2",
+          "name": ".waymark-index",
+          "mimeType": "application/json"
+        }
+      ]
+    },
+    {
+      "id": "f-index-single",
+      "name": "Single Index Folder",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-003",
+          "name": "Task List",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "idx-single-1",
+          "name": ".waymark-index",
+          "mimeType": "application/json"
+        }
+      ]
+    },
+    {
       "id": "f2",
       "name": "Home Projects",
       "mimeType": "application/vnd.google-apps.folder",

@@ -176,6 +176,28 @@ export async function findFile(token, name, parentId) {
 }
 
 /**
+ * Find ALL files with a given name inside a folder.
+ * Returns an empty array when none found (never returns null).
+ */
+export async function findAllFiles(token, name, parentId) {
+  const q = `'${parentId}' in parents and name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
+  const result = await list(token, { q });
+  return result.files || [];
+}
+
+/**
+ * Permanently delete a file from Drive.
+ */
+export async function deleteFile(token, fileId) {
+  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  // 204 No Content is the normal success response for DELETE
+  if (!res.ok && res.status !== 204) throw new Error(`Drive deleteFile ${res.status}`);
+}
+
+/**
  * Create a file with JSON content (multipart upload).
  * Used for storing app data (settings, pins, etc.) in Drive.
  * @param {string} token
