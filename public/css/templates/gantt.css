@@ -1,0 +1,220 @@
+/* ============================================================
+   gantt.css — Gantt / Timeline Template Styles
+   ============================================================ */
+
+/* ---------- Wrapper layout ---------- */
+
+.gantt-wrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 200px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* ---------- Label column ---------- */
+
+.gantt-label-col {
+  flex: 0 0 220px;
+  min-width: 220px;
+  max-width: 220px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+}
+
+.gantt-label-header {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.gantt-task-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 2px;
+  overflow: hidden;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.gantt-task-label:hover {
+  background: var(--color-hover);
+}
+
+.gantt-critical-label .gantt-task-name {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.gantt-task-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-task-assignee {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Chart scroll area ---------- */
+
+.gantt-chart-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---------- SVG chart ---------- */
+
+.gantt-chart-svg {
+  display: block;
+  cursor: default;
+}
+
+/* Header background */
+.gantt-header-bg {
+  fill: var(--color-surface-alt);
+}
+
+/* Axis labels and ticks */
+.gantt-month-label {
+  font-size: 11px;
+  fill: var(--color-text-secondary);
+  font-family: inherit;
+}
+
+.gantt-axis-tick {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+/* Grid lines */
+.gantt-grid-line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+/* Alternating row background */
+.gantt-row-alt {
+  fill: var(--color-surface-alt);
+  fill-opacity: 0.5;
+}
+
+/* ---------- Today marker ---------- */
+
+.gantt-today-line {
+  stroke: var(--color-error);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
+.gantt-today-label {
+  font-size: 10px;
+  fill: var(--color-error);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* ---------- Dependency arrows ---------- */
+
+.gantt-dep-arrow {
+  fill: none;
+  stroke: var(--color-text-secondary);
+  stroke-width: 1.5;
+}
+
+.gantt-arrow-fill {
+  fill: var(--color-text-secondary);
+}
+
+/* ---------- Task bars ---------- */
+
+.gantt-bar {
+  cursor: grab;
+  transition: fill-opacity 0.15s;
+}
+
+.gantt-bar:hover {
+  fill-opacity: 0.4 !important;
+}
+
+.gantt-bar-progress {
+  pointer-events: none;
+  rx: 4;
+}
+
+.gantt-bar-complete {
+  fill-opacity: 0.35 !important;
+}
+
+.gantt-bar-critical-outline {
+  stroke: var(--color-error);
+  stroke-width: 2;
+}
+
+.gantt-bar-label {
+  font-size: 11px;
+  fill: var(--color-text);
+  font-family: inherit;
+  pointer-events: none;
+}
+
+/* ---------- Drag handle ---------- */
+
+.gantt-drag-handle {
+  cursor: grab;
+}
+
+.gantt-drag-handle:active,
+body.gantt-dragging .gantt-drag-handle {
+  cursor: grabbing;
+}
+
+/* ---------- Empty state ---------- */
+
+.gantt-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  gap: 12px;
+}
+
+.gantt-empty-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.gantt-empty p {
+  font-size: 14px;
+  max-width: 360px;
+  margin: 0;
+}

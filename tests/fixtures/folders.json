@@ -245,6 +245,16 @@
               "id": "sheet-054",
               "name": "Engineering Team OKRs",
               "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-055",
+              "name": "Q2 2026 Marketing Campaign",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-056",
+              "name": "Sprint 14 — Waymark Features",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
             }
           ]
         },

@@ -1,0 +1,14 @@
+{
+  "id": "sheet-056",
+  "title": "Sprint 14 — Waymark Features",
+  "sheetTitle": "Sprint Board",
+  "values": [
+    ["Task", "Start Date", "End Date", "Progress", "Dependencies", "Assignee"],
+    ["Design review", "2026-06-02", "2026-06-03", "100%", "", "Alice"],
+    ["Implement template", "2026-06-03", "2026-06-08", "70%", "Design review", "Bob"],
+    ["Write tests", "2026-06-06", "2026-06-09", "50%", "Implement template", "Carol"],
+    ["Code review", "2026-06-09", "2026-06-10", "0%", "Write tests", "Alice"],
+    ["QA verification", "2026-06-10", "2026-06-11", "0%", "Code review", "Dave"],
+    ["Deploy", "2026-06-11", "2026-06-12", "0%", "QA verification", "Bob"]
+  ]
+}

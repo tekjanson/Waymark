@@ -34,6 +34,7 @@
 @import url('./templates/notification.css');
 @import url('./templates/iot.css');
 @import url('./templates/okr.css');
+@import url('./templates/gantt.css');
 
 /* Cross-template feature integration */
 @import url('./templates/cross-features.css');

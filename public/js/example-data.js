@@ -837,6 +837,22 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Gantt Timeline examples ---- */
+  'Q2 Marketing Campaign': {
+    folder: 'Projects',
+    headers: ['Task', 'Start Date', 'End Date', 'Progress', 'Dependencies', 'Assignee'],
+    rows: [
+      ['Content Strategy',  '2026-04-01', '2026-04-15', '100%', '',                              'Alice'],
+      ['Design Assets',     '2026-04-10', '2026-05-01', '80%',  'Content Strategy',              'Bob'],
+      ['Landing Page Dev',  '2026-04-20', '2026-05-10', '60%',  'Design Assets',                 'Carol'],
+      ['Email Campaign',    '2026-05-01', '2026-05-15', '40%',  'Content Strategy',              'Alice'],
+      ['Social Media Posts','2026-05-05', '2026-05-30', '20%',  'Design Assets',                 'Dave'],
+      ['A/B Testing',       '2026-05-10', '2026-05-25', '0%',   'Landing Page Dev',              'Carol'],
+      ['Analytics Setup',   '2026-04-15', '2026-04-30', '100%', '',                              'Dave'],
+      ['Launch Review',     '2026-05-25', '2026-06-05', '0%',   'A/B Testing, Email Campaign',   'Alice'],
+    ],
+  },
+
   /* ---- IoT examples ---- */
   'IoT Sensor Dashboard': {
     folder: 'Monitoring',
