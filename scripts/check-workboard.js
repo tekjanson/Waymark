@@ -16,6 +16,13 @@
      WAYMARK_PROJECT=<project-key> (from generated/workboard-config.json)
      WAYMARK_WORKBOARD_CONFIG=/path/to/workboard-config.json (optional config path)
 
+   Flags:
+     --agent <name>   Filter tasks for this named agent. When set:
+                      - To Do shows: unassigned tasks OR tasks assigned to this agent
+                      - In Progress shows: only tasks assigned to this agent
+                      - QA rejection detects notes from this agent (not just 'AI')
+                      Without --agent, all tasks are shown (backward compatible).
+
    Output (stdout, single line JSON):
      {"todo":[],"inProgress":[],"qa":0,"done":73}
 
@@ -35,6 +42,15 @@ const WORKBOARD = resolveWorkboardConfig({
 const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
 const RANGE = WORKBOARD.range;
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+/* ---------- CLI flags ---------- */
+
+const rawArgs = process.argv.slice(2);
+let AGENT_NAME = null; // null = show everything (backward compat)
+const agentIdx = rawArgs.indexOf('--agent');
+if (agentIdx !== -1 && rawArgs[agentIdx + 1]) {
+  AGENT_NAME = rawArgs[agentIdx + 1];
+}
 
 /* ---------- Auth ---------- */
 
@@ -108,6 +124,9 @@ const auth = new GoogleAuth({
       };
 
       if (stage === 'To Do') {
+        // When filtering by agent, only show unassigned or own tasks
+        if (AGENT_NAME && assignee && assignee !== AGENT_NAME) continue;
+
         // Collect sub-row notes for To Do items so the agent can detect
         // QA rejections (human moved task back to To Do with feedback notes)
         const nextTaskIdx = t + 1 < taskIndices.length ? taskIndices[t + 1] : rows.length;
@@ -119,18 +138,24 @@ const auth = new GoogleAuth({
         }
         if (notes.length) item.notes = notes;
 
-        // Detect QA rejection: has notes from non-AI author AFTER an AI note
-        const hasAINotes = notes.some(n => n.author === 'AI');
+        // Detect QA rejection: has notes from this agent (or 'AI') AFTER
+        // a human note or QA revert marker
+        const agentNames = AGENT_NAME ? [AGENT_NAME, 'AI'] : ['AI'];
+        const hasAgentNotes = notes.some(n => agentNames.includes(n.author));
         const hasQARevert = notes.some(n => n.text.includes('⟳ QA → To Do'));
         const hasHumanFeedback = notes.some(n =>
-          n.author !== 'AI' && !n.text.startsWith('⟳') && n.author
+          !agentNames.includes(n.author) && !n.text.startsWith('⟳') && n.author
         );
-        if (hasAINotes && (hasQARevert || hasHumanFeedback)) {
+        if (hasAgentNotes && (hasQARevert || hasHumanFeedback)) {
           item.rejected = true;
         }
 
         todo.push(item);
-      } else if (stage === 'In Progress') inProgress.push(item);
+      } else if (stage === 'In Progress') {
+        // When filtering by agent, only show own in-progress tasks
+        if (AGENT_NAME && assignee !== AGENT_NAME) continue;
+        inProgress.push(item);
+      }
       else if (stage === 'QA') qaCount++;
       else if (stage === 'Done') doneCount++;
     }

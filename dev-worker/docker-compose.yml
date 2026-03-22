@@ -2,6 +2,7 @@
 # Usage:
 #   docker compose -f dev-worker/docker-compose.yml up -d
 #   AGENT_COMMAND="@waymark-builder-sub-board start" docker compose -f dev-worker/docker-compose.yml up -d
+#   AGENT_NAME=alpha docker compose -f dev-worker/docker-compose.yml up -d
 #   VNC_PASSWORD=mysecret AGENT_COMMAND="@waymark-builder pick next" docker compose ...
 #
 # Access the desktop at: http://localhost:6080/vnc.html (noVNC browser UI)
@@ -29,6 +30,12 @@ services:
       #   @waymark-builder-sub-board start     (local-only, never pushes)
       #   @waymark-builder pick next           (single task then stops)
       - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
+
+      # ── Named agent identity for multi-agent setups ────────────────────────
+      # When set, the agent uses this name for task claiming, heartbeats, and notes.
+      # Each container MUST have a unique AGENT_NAME when running multiple agents.
+      # Leave unset for single-agent use (defaults to "AI" in workboard scripts).
+      - AGENT_NAME=${AGENT_NAME:-}
 
       # Language model for the agent (as it appears in VS Code's model picker)
       - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}

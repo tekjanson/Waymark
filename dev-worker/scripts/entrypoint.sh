@@ -48,9 +48,9 @@ chmod +x /root/.config/openbox/autostart
 # ── 3b. VS Code keybindings (dynamic — embeds AGENT_COMMAND) ─────────────────
 # Keybindings:
 #   Ctrl+Shift+F9  → acceptTool   (clears stuck "Allow" confirmations)
-#   Ctrl+Shift+F10 → /autoApprove (sets permission dropdown to "Bypass", silent)
-#   Ctrl+Shift+F12 → agent chat + auto-submit AGENT_COMMAND
-#   Ctrl+Shift+F11 → agent chat + partial query (for debugging)
+#   Ctrl+Shift+F10 → /autoApprove (legacy fallback — autopilot mode handles this now)
+#   Ctrl+Shift+F12 → autopilot chat + auto-submit AGENT_COMMAND
+#   Ctrl+Shift+F11 → autopilot chat + partial query (for debugging)
 # Regenerated every boot so the AGENT_COMMAND env var is always current.
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 mkdir -p /root/.config/Code/User
@@ -65,23 +65,23 @@ kb = [
     {
         'key': 'ctrl+shift+f10',
         'command': 'workbench.action.chat.open',
-        'args': {'mode': 'agent', 'query': '/autoApprove', 'isPartialQuery': False}
+        'args': {'mode': 'autopilot', 'query': '/autoApprove', 'isPartialQuery': False}
     },
     {
         'key': 'ctrl+shift+f12',
         'command': 'workbench.action.chat.open',
-        'args': {'mode': 'agent', 'query': cmd, 'isPartialQuery': False}
+        'args': {'mode': 'autopilot', 'query': cmd, 'isPartialQuery': False}
     },
     {
         'key': 'ctrl+shift+f11',
         'command': 'workbench.action.chat.open',
-        'args': {'mode': 'agent', 'query': cmd, 'isPartialQuery': True}
+        'args': {'mode': 'autopilot', 'query': cmd, 'isPartialQuery': True}
     }
 ]
 with open('/root/.config/Code/User/keybindings.json', 'w') as f:
     json.dump(kb, f, indent=4)
 "
-log "VS Code keybindings installed (F10→autoApprove, F12→agent submit: ${AGENT_COMMAND})"
+log "VS Code keybindings installed (F10→autoApprove, F12→autopilot submit: ${AGENT_COMMAND})"
 
 # ── 4. Git identity ───────────────────────────────────────────────────────────
 GIT_EMAIL="${GIT_EMAIL:-waymark-agent@container.local}"
@@ -95,9 +95,11 @@ log "Git identity: ${GIT_NAME} <${GIT_EMAIL}>"
 # supervisord doesn't forward the container's environment to child processes,
 # so we write the dynamic vars to a file that all scripts source at runtime.
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
+AGENT_NAME="${AGENT_NAME:-}"
 cat > /etc/agent-env.sh <<EOF
 # Written by entrypoint.sh — sourced by watchdog and inject scripts
 export AGENT_COMMAND="${AGENT_COMMAND}"
+export AGENT_NAME="${AGENT_NAME}"
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/credentials/gsa-key.json}"
 export DISPLAY=":1"
 export HOME="/root"
@@ -107,7 +109,7 @@ export HOME="/root"
 export BROWSER=""
 EOF
 chmod 644 /etc/agent-env.sh
-log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}"
+log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}, AGENT_NAME=${AGENT_NAME:-<unset>}"
 
 # ── 5b. Symlink Google credential for MCP server + agent terminal commands ────
 # Two paths reference the service-account key:
@@ -142,10 +144,10 @@ fi
 # ── 7. Write agent VS Code settings ──────────────────────────────────────────
 # Merge /config/vscode-settings.json into the live settings.json.
 # This always wins over the host seed so agent-critical settings are guaranteed:
-#   - chat.tools.global.autoApprove + edits/terminal auto-approve (bypass all approvals)
+#   - chat.defaultMode = autopilot (highest permission level, auto-approves all tools)
+#   - chat.tools.global.autoApprove + edits/terminal auto-approve (legacy fallback)
 #   - claudeAgent.enabled + allowDangerouslySkipPermissions (claude agent bypass)
 #   - askAgent/exploreAgent/implementAgent/planAgent model = claude-sonnet-4.6
-#   - chat.defaultMode = agent (always start in agent mode)
 SETTINGS_FILE="/root/.config/Code/User/settings.json"
 AGENT_SETTINGS="/config/vscode-settings.json"
 python3 - <<'PYEOF'
@@ -167,26 +169,26 @@ print(f"[entrypoint] VS Code agent settings applied to {settings_path}")
 PYEOF
 log "VS Code agent settings applied"
 
-# ── 8. Seed state.vscdb with model selection + auto-approve state ────────────
+# ── 8. Seed state.vscdb with model selection + autopilot mode ──────────────
 # The main agent model and permission level are stored in VS Code's SQLite
 # state database, NOT in settings.json. We pre-seed these so the agent starts
-# with the correct model and auto-approve is active from the first session.
+# with the correct model and autopilot mode is active from the first session.
 STATE_DB="/root/.config/Code/User/globalStorage/state.vscdb"
 AGENT_MODEL="${AGENT_MODEL:-copilot/claude-sonnet-4.6}"
 if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$STATE_DB" ]]; then
-    log "Seeding state.vscdb: model=${AGENT_MODEL}, auto-approve=on"
+    log "Seeding state.vscdb: model=${AGENT_MODEL}, mode=autopilot"
     sqlite3 "$STATE_DB" <<SQL
 INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
     ('chat.tools.global.autoApprove.optIn', 'true'),
-    ('chat.lastChatMode', 'agent');
+    ('chat.lastChatMode', 'autopilot');
 SQL
 elif command -v sqlite3 >/dev/null 2>&1; then
     # state.vscdb doesn't exist yet; VS Code will create it on first launch.
     # Create the database and table so the settings are ready.
-    log "Creating state.vscdb with model=${AGENT_MODEL}, auto-approve=on"
+    log "Creating state.vscdb with model=${AGENT_MODEL}, mode=autopilot"
     mkdir -p "$(dirname "$STATE_DB")"
     sqlite3 "$STATE_DB" <<SQL
 CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value TEXT);
@@ -195,10 +197,10 @@ INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
     ('chat.tools.global.autoApprove.optIn', 'true'),
-    ('chat.lastChatMode', 'agent');
+    ('chat.lastChatMode', 'autopilot');
 SQL
 else
-    log "WARN: sqlite3 not available — cannot seed model/auto-approve into state.vscdb"
+    log "WARN: sqlite3 not available — cannot seed model/autopilot into state.vscdb"
 fi
 
 # ── 9. Ensure log directory exists ───────────────────────────────────────────

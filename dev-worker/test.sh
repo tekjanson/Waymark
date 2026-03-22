@@ -221,42 +221,32 @@ fi
 if should_run "watchdog"; then
 header "5. Agent Watchdog"
 
-    # 5a. Watchdog process is running
-    if exec_q "pgrep -f agent-watchdog.sh >/dev/null"; then
-        pass "agent-watchdog.sh process is running"
+    # 5a. Watchdog boot script has completed (oneshot — runs at container start, then exits)
+    # Check for completion message in docker logs since agent-watchdog is now oneshot
+    BOOT_DONE=$(exec_q "grep -c 'Boot complete' /proc/1/fd/1 2>/dev/null || \
+        supervisorctl status agent-watchdog 2>/dev/null | grep -c 'EXITED'" || echo "0")
+    BOOT_DONE="${BOOT_DONE%%$'\n'*}"
+    if exec_q "supervisorctl status agent-watchdog 2>/dev/null | grep -qE 'RUNNING|EXITED'"; then
+        pass "agent-watchdog.sh has run (oneshot boot script)"
     else
-        fail "agent-watchdog.sh is NOT running"
+        fail "agent-watchdog.sh has NOT run"
     fi
 
-    # 5b. Heartbeat watcher is running
-    if exec_q "pgrep -f heartbeat-watcher.sh >/dev/null"; then
-        pass "heartbeat-watcher.sh process is running"
+    # 5b. Heartbeat file exists (backward compat — agent-watchdog still touches it)
+    if exec_q "test -f /tmp/agent-heartbeat"; then
+        BEAT_AGE=$(exec_q "stat -c %Y /tmp/agent-heartbeat 2>/dev/null | xargs -I{} sh -c 'echo \$(( \$(date +%s) - {} ))'" || echo "99999")
+        pass "Local heartbeat file exists (${BEAT_AGE}s ago)"
     else
-        fail "heartbeat-watcher.sh is NOT running"
+        skip "No local heartbeat file yet (agent may still be booting)"
     fi
 
-    # 5c. Heartbeat file exists and is recent
-    BEAT_AGE=$(exec_q "stat -c %Y /tmp/agent-heartbeat 2>/dev/null | xargs -I{} sh -c 'echo \$(( \$(date +%s) - {} ))'" || echo "99999")
-    if [[ "$BEAT_AGE" -lt 120 ]]; then
-        pass "Heartbeat file is fresh (${BEAT_AGE}s ago)"
-    elif [[ "$BEAT_AGE" -lt 99999 ]]; then
-        fail "Heartbeat file is stale (${BEAT_AGE}s ago — threshold is 120s)"
+    # 5c. AGENT_NAME is set (required for multi-agent heartbeats)
+    AGENT_NAME_VAL=$(exec_q "grep AGENT_NAME /etc/agent-env.sh 2>/dev/null | cut -d'\"' -f2" || echo "")
+    if [[ -n "$AGENT_NAME_VAL" ]]; then
+        pass "AGENT_NAME is set: ${AGENT_NAME_VAL}"
     else
-        fail "Heartbeat file does not exist (/tmp/agent-heartbeat)"
+        skip "AGENT_NAME not set — single-agent mode (no workboard heartbeats)"
     fi
-
-    # 5d. Watchdog has injected at least once (check log)
-    INJECT_COUNT=$(exec_q "grep -c 'Done — sent' /var/log/supervisor/agent-watchdog.log 2>/dev/null | tr -d '[:space:]'" || echo "0")
-    INJECT_COUNT="${INJECT_COUNT%%$'\n'*}"   # take only first line (grep -c can emit two lines)
-    if [[ "${INJECT_COUNT:-0}" -gt 0 ]]; then
-        pass "Agent inject ran ${INJECT_COUNT} time(s) — agent command was delivered"
-    else
-        fail "Agent inject has not run yet (no 'Done — sent' in watchdog log)"
-    fi
-
-    # 5e. Show last watchdog message
-    LAST=$(exec_q "tail -1 /var/log/supervisor/agent-watchdog.log 2>/dev/null" || echo "(no log)")
-    echo "      Last watchdog entry: ${LAST}"
 fi
 
 # ── 6. Workspace ──────────────────────────────────────────────────────────────

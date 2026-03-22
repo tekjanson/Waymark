@@ -79,8 +79,9 @@ LOOP:
 
   2. Run check-workboard.js to get LIVE data from Google Sheets:
      → GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
-         node scripts/check-workboard.js
+         node scripts/check-workboard.js --agent $AGENT_NAME
      → Parse the single-line JSON output.
+     → If $AGENT_NAME is set, only tasks assigned to you (or unassigned) are returned.
 
   3. IF todo array is non-empty:
      → Pick the first item (highest priority)
@@ -175,6 +176,35 @@ When `check-workboard.js` returns a To Do item, ALWAYS check:
 
 ---
 
+## 0.5 HEARTBEAT — Keeping the External Watchdog Happy
+
+The container is monitored by an **external host-side watchdog** (`host-watchdog.sh`) that reads
+the "Heartbeat" sheet tab. If your agent name hasn't checked in within 30 minutes, the watchdog
+restarts your container. To stay alive, write a heartbeat **every 5 minutes** during active work.
+
+**When to write heartbeats:**
+- At the START of each loop iteration (step 1, alongside the sleep)
+- Before starting a long-running operation (test suite, large git operation)
+- The `status` field tells the watchdog what you're doing
+
+**Command:**
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+  node scripts/update-workboard.js heartbeat $AGENT_NAME --status idle
+```
+
+**Status values:** `idle` (waiting for work), `working` (implementing a task), `booting` (initial startup)
+
+**Integration with the loop:** Add the heartbeat call to step 1 of the persistent loop:
+```
+  1. Write heartbeat (status=idle if no task, status=working if mid-task)
+  1b. Run `sleep 60` in the terminal
+```
+
+If `$AGENT_NAME` is not set (empty), skip the heartbeat — single-agent mode doesn't need it.
+
+---
+
 ## 1. BRANCH STRATEGY — ABSOLUTE RULES
 
 > **⚠️ NEVER COMMIT TO `main`. This is a HARD REJECT rule — no exceptions.**
@@ -248,15 +278,16 @@ If you discover commits on `main` that shouldn't be there:
 When you start working on a task:
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
-  node scripts/update-workboard.js claim {row}
+  node scripts/update-workboard.js claim {row} --agent $AGENT_NAME
 ```
-This safely sets column C to "In Progress" and column E to "AI" without touching other columns (preserves project in column D).
+This safely sets column C to "In Progress" and column E to your agent name without touching other columns (preserves project in column D).
+With `--agent`, a verify-after-claim check detects race conditions — if another agent claimed the same row, it reverts and returns `{"conflict": true}`.
 
 ### 2.2 Progress Notes
 As you complete significant milestones, **insert note sub-rows** below the task:
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
-  node scripts/update-workboard.js note {row} "note text here"
+  node scripts/update-workboard.js note {row} "note text here" --agent $AGENT_NAME
 ```
 This script:
 1. Finds the last sub-row belonging to the task (scans for next non-empty column A)

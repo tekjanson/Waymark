@@ -272,3 +272,45 @@ services:
 5. **Extensions volume** — Mount host `~/.vscode/extensions` (fast, no download) vs let
    container build its own extension volume? Host mount is faster but may cause permission
    issues if VS Code versions differ.
+
+---
+
+## V2: Decentralized Watchdog & Multi-Agent Support
+
+### What Changed
+
+The internal three-tier health model (HEALTHY/STUCK/DEAD) in `agent-watchdog.sh` has been
+replaced by an **external host-side watchdog** that reads the Waymark Workboard for heartbeats.
+
+| Before (v1) | After (v2) |
+|---|---|
+| `heartbeat-watcher.sh` watches VS Code log mtime | Agent writes heartbeat to Heartbeat sheet tab |
+| `agent-watchdog.sh` runs forever inside container | `agent-watchdog.sh` runs once (boot only) |
+| Health monitoring inside container | `host-watchdog.sh` monitors from host, restarts stale containers |
+| Single agent ("AI") hardcoded | Named agents via `AGENT_NAME` env var |
+| No race protection on task claiming | Verify-after-claim (write→wait→re-read) |
+| Auto-approve / bypass mode | Autopilot mode (new highest permission level) |
+
+### New Files
+
+- `scripts/check-heartbeat.js` — Reads Heartbeat sheet tab, reports per-agent age
+- `dev-worker/scripts/host-watchdog.sh` — Host-side cron/loop that restarts stale containers
+
+### Removed Files
+
+- `dev-worker/scripts/heartbeat-watcher.sh` — Replaced by workboard-based heartbeats
+
+### Multi-Agent Architecture
+
+Each container gets a unique `AGENT_NAME` (e.g., `alpha`, `beta`). The agent uses this name
+for claiming tasks, writing notes, and heartbeat check-ins. When `--agent` is passed to
+`check-workboard.js`, it filters: To Do shows unassigned + own tasks; In Progress shows own only.
+
+**Scaling:** `AGENT_NAME=alpha docker compose ... up -d` — run N containers with unique names.
+At 100 agents × 12 heartbeats/hour = 1,200 API calls/hour (well within Google Sheets' 18,000/hr quota).
+
+### Heartbeat Sheet Tab
+
+A separate "Heartbeat" sheet tab (not on Sheet1) stores per-agent check-ins:
+| A: Agent | B: Timestamp | C: Status | D: Container |
+Safe because kanban template detection only reads column headers, never scans tab names.
