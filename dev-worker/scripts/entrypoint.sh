@@ -100,6 +100,7 @@ cat > /etc/agent-env.sh <<EOF
 # Written by entrypoint.sh — sourced by watchdog and inject scripts
 export AGENT_COMMAND="${AGENT_COMMAND}"
 export AGENT_NAME="${AGENT_NAME}"
+export CONTAINER_NAME="${CONTAINER_NAME:-waymark-dev-worker}"
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/credentials/gsa-key.json}"
 export DISPLAY=":1"
 export HOME="/root"
@@ -109,7 +110,7 @@ export HOME="/root"
 export BROWSER=""
 EOF
 chmod 644 /etc/agent-env.sh
-log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}, AGENT_NAME=${AGENT_NAME:-<unset>}"
+log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}, AGENT_NAME=${AGENT_NAME:-<unset>}, CONTAINER_NAME=${CONTAINER_NAME:-waymark-dev-worker}"
 
 # ── 5b. Symlink Google credential for MCP server + agent terminal commands ────
 # Two paths reference the service-account key:

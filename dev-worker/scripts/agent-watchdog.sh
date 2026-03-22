@@ -18,6 +18,7 @@ source /etc/agent-env.sh 2>/dev/null || true
 
 # Default agent name so heartbeats always fire, even without AGENT_NAME= on make start
 AGENT_NAME="${AGENT_NAME:-default}"
+CONTAINER_NAME="${CONTAINER_NAME:-waymark-dev-worker}"
 
 HEARTBEAT_FILE="/tmp/agent-heartbeat"
 INJECT_STATUS="/tmp/inject-status"
@@ -69,8 +70,8 @@ inject "boot"
 # ── Write initial heartbeat to workboard ──────────────────────────────────────
 # The agent's persistent loop handles ongoing heartbeats (see §0.5 HEARTBEAT
 # in waymark-builder.agent.md). This is just the "I'm alive" signal at boot.
-log "Writing initial heartbeat for agent: $AGENT_NAME"
-cd /workspace && node scripts/update-workboard.js heartbeat "$AGENT_NAME" --status booting 2>&1 || \
+log "Writing initial heartbeat for agent: $AGENT_NAME (container: $CONTAINER_NAME)"
+cd /workspace && node scripts/update-workboard.js heartbeat "$AGENT_NAME" --status booting --container "$CONTAINER_NAME" 2>&1 || \
     log "WARNING: Initial heartbeat write failed (non-fatal)"
 
 log "Boot complete — monitoring is handled externally by host-watchdog.sh"
