@@ -373,7 +373,7 @@ const [command, ...args] = argsNoAgent;
       case 'heartbeat': {
         // heartbeat <agent-name> [--status STATUS]
         const hbAgent = args[0] || AGENT_NAME;
-        if (!hbAgent || hbAgent === 'AI') {
+        if (!hbAgent) {
           console.error('Usage: heartbeat <agent-name> [--status idle|working|booting]');
           process.exit(1);
         }
