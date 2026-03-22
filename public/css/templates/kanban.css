@@ -858,6 +858,13 @@ body.kanban-touch-dragging {
   .kanban-modal-header { padding: 16px 16px 12px; }
   .kanban-modal-body { padding: 16px; }
   .kanban-modal-body .kanban-detail-meta { grid-template-columns: 1fr 1fr; }
+
+  /* Touch targets for kanban interactive elements */
+  .kanban-card-expand { min-width: 32px; min-height: 32px; padding: 4px 6px; }
+  .kanban-lane-collapse { min-width: 32px; min-height: 32px; padding: 4px; }
+  .kanban-stage-btn { padding: 5px 10px; min-height: 32px; }
+  .kanban-stage-dropdown-item { padding: 10px 12px; }
+  button.kanban-pri-dot { width: 28px; height: 28px; border-radius: var(--radius-sm); }
 }
 
 @media (max-width: 480px) {

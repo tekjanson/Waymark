@@ -56,6 +56,13 @@
   background: #fee2e2; color: #dc2626; font-weight: 700;
 }
 
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .roster-row { min-height: 48px; }
+  .roster-toggle { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+  .roster-nav-btn { padding: 8px 16px; min-height: 44px; }
+}
+
 /* --- Dark Theme --- */
 [data-theme="dark"] .roster-shift-morning { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
 [data-theme="dark"] .roster-shift-afternoon { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
