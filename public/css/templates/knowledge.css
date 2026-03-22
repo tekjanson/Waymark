@@ -420,32 +420,20 @@
 
 /* ---------- Dark mode ---------- */
 
-@media (prefers-color-scheme: dark) {
-  .knowledge-tag {
-    background: #312e81;
-    color: #c7d2fe;
-  }
-
-  .knowledge-status-published {
-    background: #14532d;
-    color: #86efac;
-  }
-
-  .knowledge-status-draft {
-    background: #78350f;
-    color: #fde68a;
-  }
-
-  .knowledge-status-review {
-    background: #1e3a5f;
-    color: #93c5fd;
-  }
-
-  .knowledge-status-archived {
-    background: #334155;
-    color: #94a3b8;
-  }
-}
+[data-theme="dark"] .knowledge-tag { background: rgba(99, 102, 241, 0.18); color: #a5b4fc; }
+[data-theme="dark"] .knowledge-status-published { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .knowledge-status-draft { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .knowledge-status-review { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .knowledge-status-archived { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .knowledge-cat-pill:hover { border-color: #818cf8; color: #818cf8; }
+[data-theme="dark"] .knowledge-cat-pill.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+[data-theme="dark"] .knowledge-tag-pill:hover { border-color: #818cf8; }
+[data-theme="dark"] .knowledge-tag-pill.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+[data-theme="dark"] .knowledge-search:focus { border-color: #818cf8; }
+[data-theme="dark"] .knowledge-section-header { border-bottom-color: #6366f1; }
+[data-theme="dark"] .knowledge-meta-source { color: #818cf8; }
+[data-theme="dark"] .knowledge-dir-cat-dot { background: #818cf8; }
+[data-theme="dark"] .knowledge-dir-card:hover { border-color: #818cf8; }
 
 /* ---------- Responsive ---------- */
 

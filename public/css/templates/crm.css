@@ -324,6 +324,8 @@
 [data-theme="dark"] .crm-timeline-date { color: #64748b; }
 [data-theme="dark"] .crm-timeline-note { color: var(--color-text); }
 [data-theme="dark"] .crm-timeline-modal { background: var(--color-surface); color: var(--color-text); }
-[data-theme="dark"] .crm-timeline-header { background: var(--color-bg); }
+[data-theme="dark"] .crm-timeline-header { background: var(--color-bg); border-color: var(--color-border); }
 [data-theme="dark"] .crm-timeline-title { color: var(--color-text); }
-[data-theme="dark"] .crm-timeline-close:hover { background: #334155; }
+[data-theme="dark"] .crm-timeline-close:hover { background: #334155; color: #94a3b8; }
+[data-theme="dark"] .crm-timeline-meta { border-bottom-color: var(--color-border); }
+[data-theme="dark"] .crm-timeline-entry { border-left-color: var(--color-border); }

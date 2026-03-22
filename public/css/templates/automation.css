@@ -158,3 +158,5 @@
 [data-theme="dark"] .automation-status-pending { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
 [data-theme="dark"] .automation-status-skipped { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
 [data-theme="dark"] .automation-progress-bar { background: #334155; }
+[data-theme="dark"] .automation-target { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+[data-theme="dark"] .automation-value { color: #a5b4fc; }

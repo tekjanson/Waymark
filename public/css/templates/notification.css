@@ -306,6 +306,9 @@
   color: var(--color-success);
 }
 
+[data-theme="dark"] .notification-pri-high { background: var(--tint-red-bg); }
+[data-theme="dark"] .notification-pri-low { background: var(--tint-green-bg); }
+
 /* ---------- Notification settings section ---------- */
 
 .notif-sheet-section {

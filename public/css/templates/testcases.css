@@ -178,21 +178,14 @@
 }
 
 /* --- Dark Theme --- */
-[data-theme="dark"] .tc-summary-pass,
-[data-theme="dark"] .tc-status-pass { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
-[data-theme="dark"] .tc-summary-fail,
-[data-theme="dark"] .tc-status-fail { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
-[data-theme="dark"] .tc-summary-blocked,
-[data-theme="dark"] .tc-status-blocked { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
-[data-theme="dark"] .tc-summary-skip,
-[data-theme="dark"] .tc-status-skip { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
-[data-theme="dark"] .tc-summary-untested,
-[data-theme="dark"] .tc-status-untested { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
-[data-theme="dark"] .tc-pass { border-left-color: #22c55e; }
-[data-theme="dark"] .tc-fail { border-left-color: #ef4444; background: rgba(248, 113, 113, 0.08); }
-[data-theme="dark"] .tc-blocked { border-left-color: #f59e0b; background: rgba(251, 191, 36, 0.08); }
-[data-theme="dark"] .tc-skip { border-left-color: #94a3b8; }
-[data-theme="dark"] .tc-untested { border-left-color: #a78bfa; }
+/* Fix: summary items use .tc-summary-item.tc-{status}, buttons use .tc-status-btn.tc-{status} */
+[data-theme="dark"] .tc-pass { background: rgba(74, 222, 128, 0.16); color: #4ade80; border-left-color: #22c55e; }
+[data-theme="dark"] .tc-fail { background: rgba(248, 113, 113, 0.16); color: #fca5a5; border-left-color: #ef4444; }
+[data-theme="dark"] .tc-blocked { background: rgba(251, 191, 36, 0.14); color: #fcd34d; border-left-color: #f59e0b; }
+[data-theme="dark"] .tc-skip { background: rgba(148, 163, 184, 0.1); color: #94a3b8; border-left-color: #94a3b8; }
+[data-theme="dark"] .tc-untested { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; border-left-color: #a78bfa; }
+[data-theme="dark"] .tc-row.tc-row-fail { background: rgba(248, 113, 113, 0.08); }
+[data-theme="dark"] .tc-row.tc-row-blocked { background: rgba(251, 191, 36, 0.08); }
 [data-theme="dark"] .tc-priority-high { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
 [data-theme="dark"] .tc-priority-medium { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
 [data-theme="dark"] .tc-priority-low { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
