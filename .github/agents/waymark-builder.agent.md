@@ -222,12 +222,16 @@ When working on multiple tasks, branches can collide if two modify overlapping f
    git rebase origin/main
    # Resolve any conflicts, then continue work
    ```
-4. **Pre-push conflict check** — Before pushing, verify the branch merges cleanly with `origin/main`:
+4. **Pre-push rebase onto main (MANDATORY)** — Before pushing, you MUST rebase your branch onto the tip of `origin/main` and verify it merges cleanly. This is not optional — a branch that can't merge cleanly will never be pushed:
    ```bash
    git fetch origin
-   git merge --no-commit --no-ff origin/main || { echo "CONFLICT — rebase needed"; git merge --abort; }
+   git rebase origin/main
+   # If rebase conflicts: resolve every conflict, `git add .`, `git rebase --continue`
+   # After rebase succeeds, verify with a trial merge:
+   git merge --no-commit --no-ff origin/main && git merge --abort
+   # If the trial merge fails, the rebase didn't fully resolve — fix and retry
    ```
-   If conflicts are detected, rebase first: `git rebase origin/main`, resolve conflicts, then push.
+   After rebasing, **re-run `npm test`** to confirm nothing broke from the rebase. Only push when tests pass on the rebased branch.
 5. **Worktree-safe main sync** — In a Git worktree, `git checkout main` fails because main is checked out elsewhere. Use this instead:
    ```bash
    git checkout -- . && git clean -fd
@@ -935,10 +939,17 @@ Treat the task as AI-facing if it changes any of these:
 11b. **Write unit tests** — for any new or modified pure functions in helper modules (§4.10)
 12. **Run `npm test`** — ALL tests must pass (not just yours) — both E2E and unit
 12b. **If AI-facing, run the LLM eval improvement loop (§5.1)** — filtered, paced, real-key evals first; widen only after the targeted scenario passes
-13. **Pre-push conflict check** (§1.0 rule 4) — verify the branch merges cleanly with `origin/main`
-14. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
-15. **Commit** with descriptive message: `feat({scope}): {description}`
-16. **Push branch to remote** — `git push -u origin feature/{branch-name}`
+13. **Pre-commit branch guard** — run `[[ "$(git branch --show-current)" != "main" ]] || { echo "FATAL: on main!"; exit 1; }` before committing
+14. **Commit** with descriptive message: `feat({scope}): {description}`
+15. **Rebase onto main and re-test (MANDATORY — §1.0 rule 4)** — Every branch must be PR-ready before pushing:
+    ```bash
+    git fetch origin
+    git rebase origin/main
+    # Resolve any conflicts: fix files, git add ., git rebase --continue
+    npm test   # Re-run full suite — rebase can break things
+    ```
+    If tests fail after rebase, fix the failures and amend the commit before pushing. **Never push a branch that doesn't merge cleanly with main or has failing tests.**
+16. **Push branch to remote** — `git push -u origin feature/{branch-name}` (or `--force-with-lease` if rebased after a previous push)
 17. **Export test report to Google Drive** — Run `node scripts/generate-test-report.js --upload` to create a Drive folder with test results as Google Sheets (see §2.3 step 2, §8.3). Read the folder URL from `generated/test-report/drive-url.txt`.
 18. **Update workboard** — mark stage as `QA`, add TWO note sub-rows:
     - **Completion note:** branch name, files changed, LOC, test count
