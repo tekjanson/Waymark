@@ -18,11 +18,18 @@
      WAYMARK_PROJECT=<project-key> from generated/workboard-config.json
      WAYMARK_WORKBOARD_CONFIG=/path/to/workboard-config.json
 
+   Global flags (apply to any command):
+     --agent <name>   Use this agent name instead of 'AI' for the assignee
+                      column on claim and note operations. Enables multi-agent
+                      task partitioning. Defaults to 'AI' for backward compat.
+
    Commands:
      claim <row>
-       Set stage to "In Progress" and assignee to "AI" on a task row.
+       Set stage to "In Progress" and assignee to agent name on a task row.
        Only updates columns C (stage) and E (assignee). Preserves all
        other columns including project (D).
+       With --agent: performs verify-after-claim (read-write-read) to detect
+       race conditions when multiple agents claim the same task.
 
      stage <row> <stage>
        Update only the stage column (C) on a task row.
@@ -32,7 +39,14 @@
        Insert a note sub-row BELOW the given row number. Uses the
        Sheets insertDimension API to create a blank row first, then
        writes to it. This guarantees no existing data is overwritten.
-       The note gets: column E="AI", column G=today's date, column I=text.
+       The note gets: column E=agent name, column G=today's date, column I=text.
+
+     heartbeat <agent-name> [--status STATUS]
+       Write a heartbeat row to the Heartbeat sheet tab. The external
+       host-side watchdog reads this tab to detect stale agents.
+       STATUS is one of: idle, working, booting (default: idle).
+       Creates the Heartbeat sheet tab automatically if it doesn't exist.
+       Upserts (updates existing row or appends new) — never grows unbounded.
 
    Exit codes:
      0 = success
@@ -40,8 +54,10 @@
 
    Examples:
      node scripts/update-workboard.js claim 263
+     node scripts/update-workboard.js claim 263 --agent alpha
      node scripts/update-workboard.js stage 263 QA
-     node scripts/update-workboard.js note 263 "Branch: feature/foo | Files: a.js | +50 LOC"
+     node scripts/update-workboard.js note 263 "Branch: feature/foo" --agent alpha
+     node scripts/update-workboard.js heartbeat alpha --status working
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
@@ -53,7 +69,8 @@ const WORKBOARD = resolveWorkboardConfig({
   defaultRange: DEFAULT_RANGE,
 });
 const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
-let _sheetGid = null; // fetched at runtime
+let _sheetGid = null; // fetched at runtime — Sheet1
+let _heartbeatGid = null; // fetched/created at runtime — Heartbeat tab
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Auth ---------- */
@@ -118,6 +135,35 @@ async function getSheetGid(token) {
   return _sheetGid;
 }
 
+/** Get or create the Heartbeat sheet tab, returning its sheet ID (gid). */
+async function getOrCreateHeartbeatSheet(token) {
+  if (_heartbeatGid !== null) return _heartbeatGid;
+  const url = `${SHEETS_BASE}/${SPREADSHEET_ID}?fields=sheets.properties`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets metadata ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const hb = data.sheets.find(s => s.properties.title === 'Heartbeat');
+  if (hb) {
+    _heartbeatGid = hb.properties.sheetId;
+    return _heartbeatGid;
+  }
+  // Create the Heartbeat tab
+  const createUrl = `${SHEETS_BASE}/${SPREADSHEET_ID}:batchUpdate`;
+  const createRes = await fetch(createUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: [{ addSheet: { properties: { title: 'Heartbeat' } } }],
+    }),
+  });
+  if (!createRes.ok) throw new Error(`Sheets addSheet ${createRes.status}: ${await createRes.text()}`);
+  const createData = await createRes.json();
+  _heartbeatGid = createData.replies[0].addSheet.properties.sheetId;
+  // Write header row
+  await writeRange(token, 'Heartbeat!A1:D1', [['Agent', 'Timestamp', 'Status', 'Container']]);
+  return _heartbeatGid;
+}
+
 /** Insert a blank row at a given 1-based position using batchUpdate */
 async function insertRow(token, afterRow) {
   const sheetId = await getSheetGid(token);
@@ -146,10 +192,12 @@ async function insertRow(token, afterRow) {
 /* ---------- Commands ---------- */
 
 /**
- * Claim a task: set stage="In Progress", assignee="AI".
+ * Claim a task: set stage="In Progress", assignee=agentName.
  * Only writes to columns C and E. Preserves column D (project).
+ * When agentName is not 'AI', performs verify-after-claim to detect
+ * race conditions in multi-agent setups.
  */
-async function cmdClaim(row) {
+async function cmdClaim(row, agentName) {
   const token = await getToken();
 
   // Read current row to verify it's a task row (column A non-empty)
@@ -166,9 +214,25 @@ async function cmdClaim(row) {
 
   // Write only stage (C) and assignee (E) — skip project (D)
   await writeRange(token, `Sheet1!C${row}`, [['In Progress']]);
-  await writeRange(token, `Sheet1!E${row}`, [['AI']]);
+  await writeRange(token, `Sheet1!E${row}`, [[agentName]]);
 
-  console.log(JSON.stringify({ ok: true, action: 'claim', row, stage: 'In Progress', assignee: 'AI' }));
+  // Verify-after-claim: re-read to detect race conditions.
+  // If another agent wrote between our read and write, the assignee
+  // won't match. We revert and report the conflict.
+  if (agentName !== 'AI') {
+    await new Promise(r => setTimeout(r, 3000));
+    const verify = await readRange(token, `Sheet1!E${row}`);
+    const actualAssignee = (verify[0]?.[0] || '').trim();
+    if (actualAssignee !== agentName) {
+      // Another agent won the race — revert our claim
+      await writeRange(token, `Sheet1!C${row}`, [['To Do']]);
+      await writeRange(token, `Sheet1!E${row}`, [['']]);
+      console.log(JSON.stringify({ ok: false, action: 'claim', row, conflict: true, winner: actualAssignee }));
+      process.exit(0);
+    }
+  }
+
+  console.log(JSON.stringify({ ok: true, action: 'claim', row, stage: 'In Progress', assignee: agentName }));
 }
 
 /**
@@ -193,7 +257,7 @@ async function cmdStage(row, stage) {
  * Uses insertDimension to create a blank row first, then writes to it.
  * This NEVER overwrites existing data.
  */
-async function cmdNote(afterRow, text) {
+async function cmdNote(afterRow, text, agentName) {
   const token = await getToken();
   const now = new Date();
   const today = now.toISOString().slice(0, 10)
@@ -220,28 +284,81 @@ async function cmdNote(afterRow, text) {
   // Step 2: Write to the newly inserted blank row
   // After insertion, the new row is at newRowNum
   await writeRange(token, `Sheet1!A${newRowNum}:I${newRowNum}`, [
-    ['', '', '', '', 'AI', '', today, '', text],
+    ['', '', '', '', agentName, '', today, '', text],
   ]);
 
   console.log(JSON.stringify({ ok: true, action: 'note', taskRow: afterRow, insertedAt: newRowNum, text: text.slice(0, 80) + '...' }));
 }
 
+/**
+ * Write (upsert) a heartbeat row to the Heartbeat sheet tab.
+ * If a row for this agent already exists, overwrites it.
+ * Otherwise appends a new row. Never grows unbounded.
+ */
+async function cmdHeartbeat(agentName, status) {
+  const token = await getToken();
+  await getOrCreateHeartbeatSheet(token);
+
+  // Read all heartbeat rows to find existing entry for this agent
+  const rows = await readRange(token, 'Heartbeat!A:D');
+  let targetRow = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if ((rows[i][0] || '').trim() === agentName) {
+      targetRow = i + 1; // 1-based
+      break;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const container = `waymark-agent-${agentName}`;
+  const values = [[agentName, now, status, container]];
+
+  if (targetRow > 0) {
+    // Upsert: overwrite existing row
+    await writeRange(token, `Heartbeat!A${targetRow}:D${targetRow}`, values);
+  } else {
+    // Append: write to the next empty row
+    const nextRow = rows.length + 1;
+    await writeRange(token, `Heartbeat!A${nextRow}:D${nextRow}`, values);
+  }
+
+  console.log(JSON.stringify({ ok: true, action: 'heartbeat', agent: agentName, status, timestamp: now }));
+}
+
 /* ---------- CLI ---------- */
 
-const [,, command, ...args] = process.argv;
+const rawArgs = process.argv.slice(2);
+
+// Extract --agent <name> flag from anywhere in args
+function extractFlag(args, flag) {
+  const idx = args.indexOf(flag);
+  if (idx === -1) return { value: null, rest: args };
+  const value = args[idx + 1] || null;
+  const rest = [...args.slice(0, idx), ...args.slice(idx + 2)];
+  return { value, rest };
+}
+
+function extractFlagValue(args, flag, defaultValue) {
+  const { value, rest } = extractFlag(args, flag);
+  return { value: value || defaultValue, rest };
+}
+
+const { value: AGENT_NAME, rest: argsNoAgent } = extractFlagValue(rawArgs, '--agent', 'AI');
+const [command, ...args] = argsNoAgent;
 
 (async () => {
   try {
     switch (command) {
       case 'claim': {
         const row = parseInt(args[0], 10);
-        if (!row || row < 2) { console.error('Usage: claim <row>'); process.exit(1); }
-        await cmdClaim(row);
+        if (!row || row < 2) { console.error('Usage: claim <row> [--agent <name>]'); process.exit(1); }
+        await cmdClaim(row, AGENT_NAME);
         break;
       }
       case 'stage': {
         const row = parseInt(args[0], 10);
-        const stage = args.slice(1).join(' ');
+        const { rest: stageArgs } = extractFlag(args.slice(1), '--status');
+        const stage = stageArgs.join(' ');
         if (!row || row < 2 || !stage) { console.error('Usage: stage <row> <stage>'); process.exit(1); }
         await cmdStage(row, stage);
         break;
@@ -249,13 +366,24 @@ const [,, command, ...args] = process.argv;
       case 'note': {
         const row = parseInt(args[0], 10);
         const text = args.slice(1).join(' ');
-        if (!row || row < 2 || !text) { console.error('Usage: note <afterRow> <text>'); process.exit(1); }
-        await cmdNote(row, text);
+        if (!row || row < 2 || !text) { console.error('Usage: note <afterRow> <text> [--agent <name>]'); process.exit(1); }
+        await cmdNote(row, text, AGENT_NAME);
+        break;
+      }
+      case 'heartbeat': {
+        // heartbeat <agent-name> [--status STATUS]
+        const hbAgent = args[0] || AGENT_NAME;
+        if (!hbAgent || hbAgent === 'AI') {
+          console.error('Usage: heartbeat <agent-name> [--status idle|working|booting]');
+          process.exit(1);
+        }
+        const { value: hbStatus } = extractFlagValue(args.slice(1), '--status', 'idle');
+        await cmdHeartbeat(hbAgent, hbStatus);
         break;
       }
       default:
-        console.error('Unknown command. Available: claim, stage, note');
-        console.error('Usage: node scripts/update-workboard.js <command> [args...]');
+        console.error('Unknown command. Available: claim, stage, note, heartbeat');
+        console.error('Usage: node scripts/update-workboard.js <command> [args...] [--agent <name>]');
         process.exit(1);
     }
   } catch (err) {

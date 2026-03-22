@@ -7,7 +7,7 @@
     "github.copilot.chat.searchSubagent.model": "Claude Sonnet 4.6 (copilot)",
     "chat.agent.maxRequests": 25000,
     "chat.editing.confirmEditRequestRemoval": false,
-    "chat.defaultMode": "agent",
+    "chat.defaultMode": "autopilot",
     "chat.tools.global.autoApprove": true,
     "chat.tools.edits.autoApprove": true,
     "chat.tools.terminal.enableAutoApprove": true,
