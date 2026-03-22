@@ -1901,25 +1901,6 @@ ul { list-style: none; }
     padding: 20px 16px; font-size: 0.85rem;
     border-radius: 10px;
   }
-
-  /* Touch optimization: 44px minimum tap targets (WCAG 2.5.5) */
-  .btn-icon,
-  .btn-header-icon { width: 44px; height: 44px; }
-  .btn-pin,
-  .btn-lock { width: 44px; height: 44px; }
-  .btn-template-help { width: 44px; height: 44px; }
-  .btn-text { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
-
-  /* Prevent iOS viewport zoom on input focus (font-size < 16px triggers it) */
-  #search-input,
-  .add-row-field-input,
-  .add-row-field-select,
-  .add-row-field-textarea,
-  .editable-cell-input,
-  .create-sheet-input,
-  .share-link-input,
-  .duplicate-name-input,
-  .settings-ref-input { font-size: 16px; }
 }
 
 @media (max-width: 480px) {

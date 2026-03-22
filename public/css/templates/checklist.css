@@ -67,12 +67,6 @@
 .checklist-group { margin-bottom: 8px; }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 768px) {
-  .checklist-checkbox { width: 40px; height: 40px; }
-  .checklist-row { min-height: 56px; }
-  .checklist-bulk-btn { min-height: 44px; padding: 8px 10px; }
-}
-
 @media (max-width: 480px) {
   .checklist-actions { flex-wrap: wrap; gap: 6px; }
   .checklist-item-notes { display: none; }
