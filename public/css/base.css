@@ -2058,7 +2058,7 @@ ul { list-style: none; }
   background: var(--color-primary); color: #fff; border-color: var(--color-primary);
 }
 
-/* Print stylesheet — skip dark mode for printing */
+/* Print stylesheet — skip dark mode and hide UI chrome for printing */
 @media print {
   :root { color-scheme: light; }
   [data-theme="dark"] {
@@ -2069,4 +2069,36 @@ ul { list-style: none; }
     --color-text-muted: #666;
     --color-border: #ccc;
   }
+
+  /* Hide all application chrome — only print the sheet content */
+  #top-bar,
+  #sidebar,
+  #sidebar-overlay,
+  #home-view,
+  #folder-view,
+  #search-view,
+  #explorer,
+  .checklist-header,
+  .checklist-bulk-actions,
+  .checklist-filter-bar,
+  .checklist-action-bar,
+  .add-row-trigger,
+  .add-row-form,
+  .add-row-inline,
+  .editable-cell-input,
+  .context-menu,
+  .toast-container,
+  .toast,
+  .modal-overlay,
+  .tutorial-overlay { display: none !important; }
+
+  /* Remove layout constraints — content fills A4 page */
+  body { margin: 0; background: #fff !important; }
+  #main-layout { display: block !important; overflow: visible !important; }
+  #content { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; height: auto !important; overflow: visible !important; }
+  #checklist-view { padding: 0 !important; height: auto !important; overflow: visible !important; }
+  #checklist-items { overflow: visible !important; height: auto !important; }
+
+  /* Page setup */
+  @page { margin: 15mm; size: A4; }
 }

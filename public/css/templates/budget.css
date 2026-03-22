@@ -311,3 +311,17 @@
   .budget-upload-mapping-cell { min-width: 60px; font-size: 0.72rem; padding: 4px 4px; }
   .budget-upload-col-select { font-size: 0.72rem; padding: 2px 4px; }
 }
+
+/* ---------- Print Layout ---------- */
+@media print {
+  .budget-summary { flex-wrap: wrap; gap: 4mm; margin-bottom: 6mm; }
+  .budget-summary-item { break-inside: avoid; box-shadow: none; border: 0.5pt solid #ccc; }
+  .budget-section { break-inside: avoid; margin-bottom: 6mm; }
+  .budget-section-header { background: #f5f5f5 !important; }
+  .budget-row { border-bottom: 0.3pt solid #ddd; padding: 3px 0; }
+  .budget-row-amount { font-size: 0.85rem; }
+  .budget-category-header, .budget-add-btn, .budget-upload-btn,
+  .budget-upload-modal, .budget-category-btn, .budget-sort { display: none !important; }
+  .budget-chart-container { break-before: page; }
+}
+}
