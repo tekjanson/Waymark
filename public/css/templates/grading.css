@@ -126,6 +126,7 @@
   border-color: rgba(251, 191, 36, 0.25);
 }
 [data-theme="dark"] .grading-dir-title { color: #d4a574; }
+[data-theme="dark"] .grading-dir-card:hover { border-color: #d4a574; }
 [data-theme="dark"] .grading-dir-totals {
   background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.06));
   border-color: rgba(251, 191, 36, 0.25);

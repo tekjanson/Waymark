@@ -252,3 +252,4 @@
 [data-theme="dark"] .social-post-source-name,
 [data-theme="dark"] .social-feed-more { color: #a5b4fc; }
 [data-theme="dark"] .social-feed-more:hover { background: rgba(129, 140, 248, 0.12); }
+[data-theme="dark"] .social-directory .social-post:hover { border-color: #818cf8; }
