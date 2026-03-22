@@ -18,6 +18,9 @@ export const LANE_LABELS = {
   qa: 'QA', done: 'Done', rejected: 'Rejected', archived: 'Archived',
 };
 
+/** Ordered stage keys for swipe navigation (forward ← → backward, excluding rejected/archived). */
+export const SWIPE_STAGE_FLOW = ['backlog', 'todo', 'inprogress', 'qa', 'done'];
+
 /** Number of cards rendered per lane before showing "Show more" */
 export const LANE_PAGE_SIZE = 50;
 

@@ -13,7 +13,7 @@ import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
 } from '../shared.js';
-import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
+import { LANE_LABELS, LANE_PAGE_SIZE, SWIPE_STAGE_FLOW, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 
@@ -48,6 +48,19 @@ let _touchDropCols = null;
 let _touchDropFn   = null;       // insertStageNote fn from current render
 let _touchLaneKeys = null;       // allLaneKeys from current render
 let _touchTemplate = null;       // template from current render
+
+/* ---------- Swipe gesture state (short horizontal swipe → advance/retreat stage) ---------- */
+
+let _swipeCard = null;           // card DOM element being swiped
+let _swipeRowIdx = null;         // 1-based row index
+let _swipeStartTime = 0;         // timestamp at touchstart
+let _swipeActive = false;        // true once recognized as horizontal swipe
+/** Swipe-time render context (closed over when swipe starts) */
+let _swipeDropCols = null;
+let _swipeDropFn   = null;
+let _swipeTemplate = null;
+/** Minimum horizontal travel (px) to commit a stage change. */
+const SWIPE_THRESHOLD = 70;
 
 /** Move handler — tracks finger position and highlights target lane. */
 function _handleTouchMove(e) {
@@ -106,6 +119,37 @@ function _handleTouchEnd(e) {
   _touchDropFn = null;
   _touchLaneKeys = null;
   _touchTemplate = null;
+}
+
+/**
+ * Execute a committed swipe gesture — advance or retreat the card's stage.
+ * @param {'forward'|'back'} direction  forward=left-swipe, back=right-swipe
+ */
+function _performSwipe(direction) {
+  if (!_swipeCard || !_swipeDropCols || _swipeDropCols.stage < 0 || !_swipeTemplate) return;
+  const stageBadge = _swipeCard.querySelector('.kanban-stage-btn');
+  const currentStage = stageBadge ? stageBadge.textContent.trim() : '';
+  const currentKey = _swipeTemplate.stageClass(currentStage);
+  const idx = SWIPE_STAGE_FLOW.indexOf(currentKey);
+  if (idx === -1) return;
+  const nextIdx = direction === 'forward' ? idx + 1 : idx - 1;
+  if (nextIdx < 0 || nextIdx >= SWIPE_STAGE_FLOW.length) return; // already at boundary
+  const nextKey = SWIPE_STAGE_FLOW[nextIdx];
+  const nextStage = LANE_LABELS[nextKey] || nextKey;
+  if (currentStage === nextStage) return;
+  // Emit the stage change
+  const noteInserted = _swipeDropFn ? _swipeDropFn(_swipeRowIdx, currentStage, nextStage) : false;
+  if (!noteInserted) emitEdit(_swipeRowIdx, _swipeDropCols.stage, nextStage);
+  // Update badge immediately
+  if (stageBadge) {
+    stageBadge.textContent = nextStage;
+    stageBadge.className = `kanban-stage-btn kanban-stage-${_swipeTemplate.stageClass(nextStage)}`;
+  }
+  // Brief success flash
+  _swipeCard.classList.add('kanban-card-swipe-done');
+  const card = _swipeCard;
+  setTimeout(() => card.classList.remove('kanban-card-swipe-done'), 400);
+  if (navigator.vibrate) navigator.vibrate(20);
 }
 
 /* ---------- Template Definition ---------- */
@@ -773,9 +817,9 @@ const definition = {
       buildLaneSkeleton(laneKey);
     }
 
-    /* ---- Touch drag-and-drop (mobile) ---- */
+    /* ---- Swipe gestures + long-press drag (mobile) ---- */
 
-    // Long-press on a card starts touch drag (500ms threshold to distinguish from scroll)
+    // touchstart: begin tracking for both long-press drag and horizontal swipe
     boardEl.addEventListener('touchstart', (e) => {
       const card = e.target.closest('.kanban-card');
       if (!card) return;
@@ -785,6 +829,8 @@ const definition = {
       _touchCard = card;
       _touchRowIdx = Number(card.dataset.rowIdx);
       _touchDragActive = false;
+      _swipeActive = false;
+      _swipeStartTime = Date.now();
       _touchLongPressTimer = setTimeout(() => {
         _touchDragActive = true;
         _touchDropCols = cols;
@@ -799,26 +845,66 @@ const definition = {
       }, 500);
     }, { passive: true });
 
-    // Cancel long-press if the finger moves significantly (user is scrolling)
+    // touchmove: distinguish scroll vs swipe vs long-press drag
     boardEl.addEventListener('touchmove', (e) => {
-      if (!_touchDragActive && _touchCard) {
-        const dx = e.touches[0].clientX - _touchStartX;
-        const dy = e.touches[0].clientY - _touchStartY;
-        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-          clearTimeout(_touchLongPressTimer);
-          _touchCard = null;
-          _touchRowIdx = null;
+      if (_touchDragActive || !_touchCard) return;
+      const dx = e.touches[0].clientX - _touchStartX;
+      const dy = e.touches[0].clientY - _touchStartY;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      if (absDy > 12 && absDy > absDx) {
+        // Vertical scroll — cancel both long-press and any in-progress swipe
+        clearTimeout(_touchLongPressTimer);
+        if (_swipeActive && _swipeCard) {
+          _swipeCard.style.transform = '';
+          _swipeCard.classList.remove('kanban-card-swiping-fwd', 'kanban-card-swiping-bck');
         }
+        _swipeActive = false;
+        _swipeCard = null;
+        _touchCard = null;
+        _touchRowIdx = null;
+        return;
+      }
+      if (absDx > 10 && absDx > absDy * 1.5) {
+        // Horizontal swipe — cancel long-press drag, begin swipe tracking
+        clearTimeout(_touchLongPressTimer);
+        if (!_swipeActive) {
+          _swipeActive = true;
+          _swipeCard = _touchCard;
+          _swipeRowIdx = _touchRowIdx;
+          _swipeDropCols = cols;
+          _swipeDropFn = insertStageNote;
+          _swipeTemplate = template;
+        }
+        // Rubber-band visual feedback (40% resistance)
+        _swipeCard.style.transform = `translateX(${dx * 0.4}px)`;
+        const dir = dx < 0 ? 'fwd' : 'bck';
+        _swipeCard.classList.toggle('kanban-card-swiping-fwd', dir === 'fwd');
+        _swipeCard.classList.toggle('kanban-card-swiping-bck', dir === 'bck');
       }
     }, { passive: true });
 
-    // Cancel long-press if finger lifts before threshold
-    boardEl.addEventListener('touchend', () => {
-      if (!_touchDragActive) {
-        clearTimeout(_touchLongPressTimer);
-        _touchCard = null;
-        _touchRowIdx = null;
+    // touchend: commit swipe if threshold met, otherwise cancel
+    boardEl.addEventListener('touchend', (e) => {
+      if (_touchDragActive) return;
+      clearTimeout(_touchLongPressTimer);
+      if (_swipeActive && _swipeCard) {
+        const dx = e.changedTouches[0].clientX - _touchStartX;
+        const dy = e.changedTouches[0].clientY - _touchStartY;
+        const elapsed = Date.now() - _swipeStartTime;
+        _swipeCard.style.transform = '';
+        _swipeCard.classList.remove('kanban-card-swiping-fwd', 'kanban-card-swiping-bck');
+        if (Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dy) < 50 && elapsed < 500) {
+          _performSwipe(dx < 0 ? 'forward' : 'back');
+        }
+        _swipeActive = false;
+        _swipeCard = null;
+        _swipeRowIdx = null;
+        _swipeDropCols = null;
+        _swipeDropFn = null;
+        _swipeTemplate = null;
       }
+      _touchCard = null;
+      _touchRowIdx = null;
     }, { passive: true });
 
     /**

@@ -649,6 +649,37 @@ body.kanban-touch-dragging {
 /* Touch-drag affordance: slightly longer press feedback */
 .kanban-card {
   -webkit-tap-highlight-color: transparent;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+/* ---------- Swipe gesture visual feedback ---------- */
+
+/* During swipe: disable transition so card tracks finger without lag */
+.kanban-card-swiping-fwd,
+.kanban-card-swiping-bck {
+  transition: none;
+}
+
+/* Swipe-forward (left swipe → advance stage): green right edge glow */
+.kanban-card-swiping-fwd {
+  box-shadow: 3px 0 10px rgba(34, 197, 94, 0.45), var(--shadow);
+  border-right-color: var(--color-success, #16a34a);
+}
+
+/* Swipe-back (right swipe → retreat stage): amber left edge glow */
+.kanban-card-swiping-bck {
+  box-shadow: -3px 0 10px rgba(251, 191, 36, 0.45), var(--shadow);
+  border-left-color: #d97706;
+}
+
+/* After a committed swipe: brief success flash */
+@keyframes kanban-swipe-done-flash {
+  from { box-shadow: 0 0 10px rgba(34, 197, 94, 0.7); }
+  to   { box-shadow: var(--shadow); }
+}
+
+.kanban-card-swipe-done {
+  animation: kanban-swipe-done-flash 400ms ease;
 }
 
 /* ---------- Combo cell / Textarea ---------- */
