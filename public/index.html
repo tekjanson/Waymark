@@ -389,6 +389,13 @@
         <label class="create-sheet-label" for="create-sheet-name">Sheet Name</label>
         <input type="text" id="create-sheet-name" class="create-sheet-input" placeholder="My New Sheet" autocomplete="off">
       </div>
+      <div class="create-sheet-location">
+        <label class="create-sheet-label">Location</label>
+        <div class="create-sheet-folder-row">
+          <span id="create-sheet-folder-display" class="create-sheet-folder-name">Waymark (default)</span>
+          <button id="create-sheet-choose-folder-btn" class="btn btn-secondary" type="button">📁 Choose Folder</button>
+        </div>
+      </div>
       <div id="create-sheet-templates" class="create-sheet-grid"></div>
       <div class="modal-footer">
         <span id="create-sheet-status" class="text-muted"></span>

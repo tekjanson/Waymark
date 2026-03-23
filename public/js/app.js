@@ -103,14 +103,16 @@ const recipeUrlImportBtn   = document.getElementById('recipe-url-import-btn');
 const recipeUrlStatus      = document.getElementById('recipe-url-status');
 
 /* ---------- Create Sheet Modal refs ---------- */
-const createSheetModal      = document.getElementById('create-sheet-modal');
-const createSheetModalClose = document.getElementById('create-sheet-modal-close');
-const createSheetCancelBtn  = document.getElementById('create-sheet-cancel-btn');
-const createSheetCreateBtn  = document.getElementById('create-sheet-create-btn');
-const createSheetNameInput  = document.getElementById('create-sheet-name');
-const createSheetGrid       = document.getElementById('create-sheet-templates');
-const createSheetStatus     = document.getElementById('create-sheet-status');
-const createSheetProgress   = document.getElementById('create-sheet-progress');
+const createSheetModal          = document.getElementById('create-sheet-modal');
+const createSheetModalClose     = document.getElementById('create-sheet-modal-close');
+const createSheetCancelBtn      = document.getElementById('create-sheet-cancel-btn');
+const createSheetCreateBtn      = document.getElementById('create-sheet-create-btn');
+const createSheetNameInput      = document.getElementById('create-sheet-name');
+const createSheetGrid           = document.getElementById('create-sheet-templates');
+const createSheetStatus         = document.getElementById('create-sheet-status');
+const createSheetProgress       = document.getElementById('create-sheet-progress');
+const createSheetFolderDisplay  = document.getElementById('create-sheet-folder-display');
+const createSheetChooseFolderBtn = document.getElementById('create-sheet-choose-folder-btn');
 
 /* ---------- Legacy template headers fallback ---------- */
 const LEGACY_TEMPLATE_HEADERS = {
@@ -1323,7 +1325,9 @@ async function handleGenerateExamples() {
 
 /* ---------- Create Sheet Modal ---------- */
 
-let selectedTemplateKey = null;
+let selectedTemplateKey  = null;
+let createSheetParentId   = null;
+let createSheetParentName = null;
 
 function initCreateSheetModal() {
   if (!createSheetModal) return;
@@ -1338,17 +1342,41 @@ function initCreateSheetModal() {
   // Name input enables/disables create button
   createSheetNameInput.addEventListener('input', updateCreateSheetButton);
 
+  // Choose Folder button — opens Google Picker to select destination
+  if (createSheetChooseFolderBtn) {
+    createSheetChooseFolderBtn.addEventListener('click', async () => {
+      try {
+        createSheetChooseFolderBtn.disabled = true;
+        createSheetChooseFolderBtn.textContent = 'Opening…';
+        const folder = await api.picker.pickFolder();
+        if (folder) {
+          createSheetParentId   = folder.id;
+          createSheetParentName = folder.name;
+          if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = folder.name;
+        }
+      } catch {
+        // Silently ignore — user can try again
+      } finally {
+        createSheetChooseFolderBtn.disabled = false;
+        createSheetChooseFolderBtn.textContent = '📁 Choose Folder';
+      }
+    });
+  }
+
   // Create button
   createSheetCreateBtn.addEventListener('click', handleCreateSheet);
 }
 
 function openCreateSheetModal() {
-  selectedTemplateKey = null;
+  selectedTemplateKey   = null;
+  createSheetParentId   = null;
+  createSheetParentName = null;
   createSheetNameInput.value = '';
   createSheetStatus.textContent = '';
   createSheetCreateBtn.disabled = true;
   createSheetCreateBtn.textContent = 'Create Sheet';
   createSheetProgress.classList.add('hidden');
+  if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = 'Waymark (default)';
   renderCreateSheetGrid();
   createSheetModal.classList.remove('hidden');
   createSheetNameInput.focus();
@@ -1420,13 +1448,14 @@ async function handleCreateSheet() {
   createSheetProgress.textContent = 'Creating sheet…';
 
   try {
-    // Use the Waymark root folder as the parent
-    let parentId = null;
-    try {
-      parentId = await userData.getRootFolderId();
-    } catch {
-      // Fall back to root if folder lookup fails
-      parentId = null;
+    // Use selected folder if the user chose one, otherwise default to Waymark root
+    let parentId = createSheetParentId;
+    if (!parentId) {
+      try {
+        parentId = await userData.getRootFolderId();
+      } catch {
+        parentId = null;
+      }
     }
 
     // Create the spreadsheet with just the header row

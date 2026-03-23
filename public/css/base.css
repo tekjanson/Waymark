@@ -1574,6 +1574,9 @@ ul { list-style: none; }
 .create-sheet-card-info { flex: 1; min-width: 0; }
 .create-sheet-card-name { font-weight: 600; font-size: 0.9rem; }
 .create-sheet-card-headers { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.create-sheet-location { padding: 0 24px 12px; }
+.create-sheet-folder-row { display: flex; align-items: center; gap: 10px; }
+.create-sheet-folder-name { font-size: 0.85rem; color: var(--color-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Tutorial Overlay ---------- */
 .tutorial-overlay {
