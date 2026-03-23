@@ -866,4 +866,18 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Scoreboard examples ---- */
+  'Season Championship': {
+    folder: 'Sports',
+    headers: ['Player', 'Score', 'Games Played', 'Win Rate', 'Streak'],
+    rows: [
+      ['Alex',    '5800', '60', '78%', '12'],
+      ['Jordan',  '5200', '58', '74%', '4'],
+      ['Morgan',  '4900', '55', '70%', '7'],
+      ['Taylor',  '4100', '50', '62%', '0'],
+      ['Riley',   '3600', '48', '58%', '3'],
+      ['Casey',   '2800', '40', '52%', '1'],
+    ],
+  },
 };

@@ -1,0 +1,176 @@
+/* Scoreboard / Leaderboard Template */
+
+/* ---------- Podium ---------- */
+.scoreboard-podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 28px;
+  padding: 0 8px;
+}
+
+.scoreboard-podium-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  max-width: 160px;
+}
+
+.scoreboard-podium-medal {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.scoreboard-podium-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 2px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scoreboard-podium-name:hover { color: var(--color-primary); }
+
+.scoreboard-podium-score {
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.scoreboard-rank-1 .scoreboard-podium-score { color: #d97706; }
+.scoreboard-rank-2 .scoreboard-podium-score { color: var(--color-text-secondary); }
+.scoreboard-rank-3 .scoreboard-podium-score { color: #b45309; }
+
+.scoreboard-podium-stand {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.scoreboard-rank-1 .scoreboard-podium-stand { background: linear-gradient(180deg, #fde68a, #f59e0b); }
+.scoreboard-rank-2 .scoreboard-podium-stand { background: linear-gradient(180deg, #e5e7eb, #9ca3af); }
+.scoreboard-rank-3 .scoreboard-podium-stand { background: linear-gradient(180deg, #fcd9a8, #d97706); }
+
+.scoreboard-podium-pos {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.05em;
+}
+
+/* ---------- Ranked list ---------- */
+.scoreboard-list {}
+
+.scoreboard-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  transition: box-shadow 150ms ease;
+}
+.scoreboard-row:hover { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07); }
+.scoreboard-row-top { border-left: 3px solid var(--color-primary); }
+
+/* Rank number / medal */
+.scoreboard-rank-num {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.scoreboard-medal { font-size: 1.3rem; }
+.scoreboard-ordinal {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+/* Player info */
+.scoreboard-player-info { flex: 1; min-width: 0; }
+.scoreboard-player-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scoreboard-player-name:hover { color: var(--color-primary); }
+
+.scoreboard-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.scoreboard-streak-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.scoreboard-winrate-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-primary);
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.scoreboard-games-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+/* Score */
+.scoreboard-score {
+  font-size: 1.1rem;
+  font-weight: 700;
+  min-width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+.scoreboard-score-top { color: var(--color-text); }
+.scoreboard-score:hover { color: var(--color-primary); }
+
+/* ---------- Dark mode ---------- */
+[data-theme="dark"] .scoreboard-row:hover { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+[data-theme="dark"] .scoreboard-podium-pos { color: rgba(255, 255, 255, 0.4); }
+[data-theme="dark"] .scoreboard-streak-badge { background: rgba(239, 68, 68, 0.2); }
+[data-theme="dark"] .scoreboard-winrate-badge { background: rgba(22, 163, 74, 0.2); }
+[data-theme="dark"] .scoreboard-games-badge { background: rgba(255, 255, 255, 0.08); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 600px) {
+  .scoreboard-podium { gap: 2px; }
+  .scoreboard-podium-block { max-width: 100px; }
+  .scoreboard-podium-name { font-size: 0.75rem; max-width: 90px; }
+  .scoreboard-podium-score { font-size: 0.85rem; }
+  .scoreboard-score { font-size: 0.95rem; min-width: 50px; }
+}

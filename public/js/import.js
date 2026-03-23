@@ -211,6 +211,12 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  'scoreboard.player': 'Player / competitor name',
+  'scoreboard.score': 'Score / points total',
+  'scoreboard.games': 'Number of games played',
+  'scoreboard.winrate': 'Win rate (e.g. 72%)',
+  'scoreboard.streak': 'Current win streak',
+  'scoreboard.rank': 'Current rank / position',
 };
 
 /**
@@ -316,6 +322,10 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Scoreboard
+  'scoreboard.player': 'Player', 'scoreboard.score': 'Score',
+  'scoreboard.games': 'Games Played', 'scoreboard.winrate': 'Win Rate',
+  'scoreboard.streak': 'Streak', 'scoreboard.rank': 'Rank',
 };
 
 /**

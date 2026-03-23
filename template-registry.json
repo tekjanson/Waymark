@@ -1075,10 +1075,48 @@
         "gantt-campaign",
         "gantt-sprint"
       ]
+    },
+    {
+      "key": "scoreboard",
+      "name": "Scoreboard",
+      "icon": "🏆",
+      "color": "#d97706",
+      "priority": 33,
+      "category": "Productivity",
+      "detectSignals": [
+        "player",
+        "competitor",
+        "score",
+        "points",
+        "leaderboard",
+        "rank",
+        "streak",
+        "winrate",
+        "win rate",
+        "games played"
+      ],
+      "columnRoles": [
+        "player",
+        "score",
+        "games",
+        "winrate",
+        "streak",
+        "rank"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-059"
+      ],
+      "fixtureFiles": [
+        "scoreboard-gaming"
+      ]
     }
   ],
-  "nextSheetId": "sheet-057",
-  "totalTemplates": 27,
+  "nextSheetId": "sheet-060",
+  "totalTemplates": 28,
   "categories": [
     "Productivity",
     "Engineering",
