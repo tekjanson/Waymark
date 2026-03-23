@@ -866,4 +866,17 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Garden Planner examples ---- */
+  'Backyard Vegetable Garden': {
+    folder: 'Home',
+    headers: ['Plant', 'Variety', 'Date Planted', 'Zone', 'Water Frequency', 'Last Watered', 'Harvest Date', 'Notes'],
+    rows: [
+      ['Tomato',    'Cherry Roma',  '2026-03-15', 'Bed A',     'Every 2 days', '2026-06-01', '2026-07-15', 'Staked and thriving'],
+      ['Basil',     'Genovese',     '2026-04-01', 'Bed A',     'Daily',        '2026-06-02', '',           'Pinch flowering tops'],
+      ['Cucumber',  'English',      '2026-04-10', 'Bed B',     'Every 3 days', '2026-05-28', '2026-07-01', ''],
+      ['Zucchini',  'Black Beauty', '2026-04-20', 'Bed B',     'Every 3 days', '2026-05-25', '2026-06-20', 'Lots of flowers'],
+      ['Strawberry','Albion',       '2026-02-15', 'Raised Bed','Every 2 days', '2026-06-01', '2026-06-10', 'First berries forming'],
+    ],
+  },
 };

@@ -1,0 +1,234 @@
+/* ============================================================
+   css/templates/garden.css — Garden Planner template styles
+   ============================================================ */
+
+/* ---- Containers ---- */
+
+.garden-group {
+  margin-bottom: var(--space-6, 24px);
+}
+
+.garden-group-heading {
+  font-size: var(--text-sm, 13px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary, #6b7280);
+  margin: 0 0 var(--space-3, 12px);
+  padding: 0 0 var(--space-2, 8px);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.garden-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4, 16px);
+}
+
+/* ---- Plant card ---- */
+
+.garden-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.07));
+  transition: box-shadow 0.15s;
+}
+
+.garden-card:hover {
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,.10));
+}
+
+/* ---- Card header: icon + name + variety ---- */
+
+.garden-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 12px);
+}
+
+.garden-plant-icon {
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.garden-plant-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.garden-plant-name {
+  font-size: var(--text-base, 15px);
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.garden-plant-variety {
+  font-size: var(--text-sm, 13px);
+  color: var(--color-text-secondary, #6b7280);
+  cursor: text;
+  margin-top: 2px;
+}
+
+/* ---- Badges row ---- */
+
+.garden-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+}
+
+.garden-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: var(--radius-full, 9999px);
+  white-space: nowrap;
+}
+
+.garden-badge-icon {
+  font-size: 11px;
+}
+
+/* Water urgency badge colors */
+.garden-water-badge {
+  border: 1px solid transparent;
+}
+
+.garden-water-overdue {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.garden-water-due {
+  background: #fff7ed;
+  color: #ea580c;
+  border-color: #fdba74;
+}
+
+.garden-water-soon {
+  background: #fefce8;
+  color: #ca8a04;
+  border-color: #fde047;
+}
+
+.garden-water-ok {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #86efac;
+}
+
+/* Harvest badge colors */
+.garden-harvest-badge {
+  border: 1px solid transparent;
+}
+
+.garden-harvest-ready {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #4ade80;
+}
+
+.garden-harvest-soon {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #34d399;
+}
+
+.garden-harvest-later {
+  background: var(--color-surface-secondary, #f9fafb);
+  color: var(--color-text-secondary, #6b7280);
+  border-color: var(--color-border, #e5e7eb);
+}
+
+/* ---- Planted chip ---- */
+
+.garden-planted-chip {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-secondary, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  padding: 3px 8px;
+  border-radius: var(--radius-full, 9999px);
+}
+
+.garden-chip-label {
+  opacity: 0.6;
+}
+
+/* ---- Water detail row ---- */
+
+.garden-water-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+  font-size: var(--text-sm, 13px);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.garden-water-last,
+.garden-water-freq {
+  cursor: text;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.garden-water-last:hover,
+.garden-water-freq:hover {
+  background: var(--color-surface-secondary, #f9fafb);
+}
+
+/* ---- Notes ---- */
+
+.garden-card-notes {
+  font-size: var(--text-sm, 13px);
+  color: var(--color-text-secondary, #6b7280);
+  font-style: italic;
+  cursor: text;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: var(--space-2, 8px);
+}
+
+.garden-card-notes:hover {
+  color: var(--color-text-primary, #111827);
+}
+
+/* ---- Editable cell focus states ---- */
+
+.garden-plant-name.editable-cell,
+.garden-plant-variety.editable-cell,
+.garden-card-notes.editable-cell,
+.garden-water-last.editable-cell,
+.garden-water-freq.editable-cell {
+  cursor: text;
+  border-radius: var(--radius-sm, 4px);
+  transition: background 0.1s;
+}
+
+.garden-plant-name.editable-cell:hover,
+.garden-plant-variety.editable-cell:hover,
+.garden-card-notes.editable-cell:hover {
+  background: var(--color-surface-secondary, #f9fafb);
+}
+
+/* ---- Responsive: stack at narrow widths ---- */
+
+@media (max-width: 480px) {
+  .garden-cards {
+    grid-template-columns: 1fr;
+  }
+}

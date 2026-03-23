@@ -1,0 +1,16 @@
+{
+  "id": "sheet-060",
+  "title": "Backyard Garden 2026",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Plant", "Variety", "Date Planted", "Zone", "Water Frequency", "Last Watered", "Harvest Date", "Notes"],
+    ["Tomato", "Cherry Roma", "2026-03-15", "Bed A", "Every 2 days", "2026-06-01", "2026-07-15", "Staked, doing well"],
+    ["Basil", "Genovese", "2026-04-01", "Bed A", "Daily", "2026-06-02", "", "Pinch flowers to extend"],
+    ["Cucumber", "English", "2026-04-10", "Bed B", "Every 3 days", "2026-05-28", "2026-07-01", ""],
+    ["Sunflower", "Mammoth", "2026-03-20", "Border", "Weekly", "2026-05-30", "2026-08-01", "Growing fast!"],
+    ["Mint", "Spearmint", "2026-04-05", "Herb Pot", "Every 2 days", "2026-06-02", "", "Keep contained"],
+    ["Zucchini", "Black Beauty", "2026-04-20", "Bed B", "Every 3 days", "2026-05-25", "2026-06-20", "Lots of flowers"],
+    ["Rose", "Mr. Lincoln", "2026-03-01", "Border", "Every 4 days", "2026-05-29", "", "Deep red, fragrant"],
+    ["Strawberry", "Albion", "2026-02-15", "Raised Bed", "Every 2 days", "2026-06-01", "2026-06-10", "First berries forming"]
+  ]
+}

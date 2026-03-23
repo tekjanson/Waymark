@@ -211,6 +211,14 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  'garden.plant': 'Plant / Crop name',
+  'garden.variety': 'Variety or cultivar',
+  'garden.planted': 'Date Planted (YYYY-MM-DD)',
+  'garden.zone': 'Garden zone / bed / row',
+  'garden.waterFreq': 'Watering frequency (e.g. Every 3 days)',
+  'garden.lastWatered': 'Date last watered (YYYY-MM-DD)',
+  'garden.harvest': 'Expected harvest date (YYYY-MM-DD)',
+  'garden.notes': 'Observations and notes',
 };
 
 /**
@@ -316,6 +324,11 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Garden Planner
+  'garden.plant': 'Plant', 'garden.variety': 'Variety',
+  'garden.planted': 'Date Planted', 'garden.zone': 'Zone',
+  'garden.waterFreq': 'Water Frequency', 'garden.lastWatered': 'Last Watered',
+  'garden.harvest': 'Harvest Date', 'garden.notes': 'Notes',
 };
 
 /**

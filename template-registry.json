@@ -1075,10 +1075,51 @@
         "gantt-campaign",
         "gantt-sprint"
       ]
+    },
+    {
+      "key": "garden",
+      "name": "Garden Planner",
+      "icon": "🌱",
+      "color": "#16a34a",
+      "priority": 34,
+      "category": "Lifestyle",
+      "detectSignals": [
+        "plant",
+        "crop",
+        "flower",
+        "herb",
+        "harvest",
+        "watered",
+        "water frequency",
+        "zone",
+        "bed",
+        "date planted",
+        "garden"
+      ],
+      "columnRoles": [
+        "plant",
+        "variety",
+        "planted",
+        "zone",
+        "waterFreq",
+        "lastWatered",
+        "harvest",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-060"
+      ],
+      "fixtureFiles": [
+        "garden-backyard"
+      ]
     }
   ],
-  "nextSheetId": "sheet-057",
-  "totalTemplates": 27,
+  "nextSheetId": "sheet-061",
+  "totalTemplates": 28,
   "categories": [
     "Productivity",
     "Engineering",
