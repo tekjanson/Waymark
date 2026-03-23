@@ -18,6 +18,8 @@
 
 COMPOSE   := docker compose -f dev-worker/docker-compose.yml
 CONTAINER := waymark-dev-worker
+CYCLE_HOURS := 4
+PIDFILE   := .agent-cycle.pid
 
 # Overridable from the command line or environment
 AGENT_COMMAND ?= @waymark-builder start
@@ -27,7 +29,7 @@ AGENT_MODEL   ?= copilot/claude-sonnet-4.6
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
-.PHONY: help start stop restart build logs status vnc test auth workboard clean
+.PHONY: help run start stop restart build logs status vnc test auth workboard clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -62,7 +64,34 @@ start: ## Start the agent container
 	@echo "    Logs:    make logs"
 	@echo ""
 
+run: ## Start the agent + restart it every 4 hours
+	@# Kill any existing cycle loop
+	@if [ -f $(PIDFILE) ] && kill -0 $$(cat $(PIDFILE)) 2>/dev/null; then \
+		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
+	fi
+	AGENT_COMMAND="$(AGENT_COMMAND)" \
+	AGENT_NAME="$(AGENT_NAME)" \
+	AGENT_MODEL="$(AGENT_MODEL)" \
+	$(COMPOSE) up -d --build
+	@# Background loop: sleep CYCLE_HOURS then rebuild+restart
+	@nohup bash -c 'while true; do sleep $$(($(CYCLE_HOURS) * 3600)); \
+		echo "[cycle $$(date)] Restarting agent ($(CYCLE_HOURS)h cycle)..."; \
+		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" \
+		$(COMPOSE) up -d --build; \
+	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
+	@echo ""
+	@echo "  ✓ Agent started (restarts every $(CYCLE_HOURS)h)"
+	@echo "    Desktop: http://localhost:6080/vnc.html"
+	@echo "    Logs:    make logs"
+	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"
+	@echo ""
+
 stop: ## Stop the agent container
+	@# Kill cycle loop if running
+	@if [ -f $(PIDFILE) ]; then \
+		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
+		rm -f $(PIDFILE); \
+	fi
 	$(COMPOSE) down
 	@echo "  ✓ Agent stopped"
 
