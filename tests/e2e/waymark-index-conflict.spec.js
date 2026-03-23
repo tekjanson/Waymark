@@ -2,12 +2,15 @@
  * waymark-index-conflict.spec.js — E2E tests for duplicate .waymark-index
  * file resolution in shared/multi-session folders.
  *
- * When multiple sessions independently create a .waymark-index file in the
- * same folder, the app must:
+ * When multiple users in a shared directory each independently create a
+ * .waymark-index file, the app must:
  * 1. Find ALL index files (not just the first)
- * 2. Merge their sheet data together
- * 3. Delete duplicate index files to consolidate
- * 4. Continue rendering all sheets correctly
+ * 2. Merge their sheet data together (union of all entries)
+ * 3. Write the merged content back to the first WRITABLE file
+ * 4. Delete extra index files after a successful write (consolidation)
+ * 5. If NO existing index file is writable, do NOT create another one
+ * 6. Only create a fresh index when NO index files exist at all
+ * 7. Continue rendering all sheets correctly
  */
 
 const { test, expect } = require('@playwright/test');
@@ -71,22 +74,41 @@ test('folder with duplicate .waymark-index files loads all sheets', async ({ pag
   expect(sheetCount).toBeGreaterThanOrEqual(2);
 });
 
-test('duplicate index file is deleted when two .waymark-index files exist', async ({ page }) => {
+test('merged index is written back to a writable file after loading conflict folder', async ({ page }) => {
   await setupApp(page);
   await seedConflictingIndices(page);
   await navigateToConflictFolder(page);
 
-  // Wait for sheets and give fire-and-forget delete time to run
+  // Wait for sheets and give the fire-and-forget write-back time to run
   await page.waitForSelector('.sheet-list-item', { timeout: 10000 });
   await page.waitForTimeout(600);
 
-  // A file-delete record should have been created for the second (duplicate) index
+  // A json-update record should exist (write-back of merged content)
+  const records = await getCreatedRecords(page);
+  const updateRecords = records.filter(r => r.type === 'json-update');
+  expect(updateRecords.length).toBeGreaterThanOrEqual(1);
+  // The merged index must contain both sheets
+  const mergedContent = updateRecords[updateRecords.length - 1].content;
+  expect(mergedContent?.sheets?.['sheet-001']).toBeTruthy();
+  expect(mergedContent?.sheets?.['sheet-002']).toBeTruthy();
+});
+
+test('extra .waymark-index files are deleted after successful merge and write-back', async ({ page }) => {
+  await setupApp(page);
+  await seedConflictingIndices(page);
+  await navigateToConflictFolder(page);
+
+  // Wait for sheets and fire-and-forget operations to complete
+  await page.waitForSelector('.sheet-list-item', { timeout: 10000 });
+  await page.waitForTimeout(600);
+
+  // A file-delete record should exist for the extra index file
   const records = await getCreatedRecords(page);
   const deleteRecords = records.filter(r => r.type === 'file-delete');
   expect(deleteRecords.length).toBeGreaterThanOrEqual(1);
-  // The duplicate (idx-conflict-2) should be the deleted one
+  // The delete must target the extra index, NOT a sheet
   const deletedIds = deleteRecords.map(r => r.fileId);
-  expect(deletedIds).toContain('idx-conflict-2');
+  expect(deletedIds.some(id => id === 'idx-conflict-1' || id === 'idx-conflict-2')).toBe(true);
 });
 
 test('no file deletions when only one .waymark-index file exists', async ({ page }) => {
@@ -179,4 +201,40 @@ test('api.drive.deleteFile creates a file-delete record in mock mode', async ({ 
   const deleteRecord = records[records.length - 1];
   expect(deleteRecord.type).toBe('file-delete');
   expect(deleteRecord.fileId).toBe('idx-conflict-2');
+});
+
+test('no new index file is created when existing index files are present but unwritable', async ({ page }) => {
+  await setupApp(page);
+
+  // Inject a special mock that makes updateJsonFile always throw for this test
+  await page.evaluate(() => {
+    window.__WAYMARK_BLOCK_JSON_UPDATE = true;
+  });
+
+  // Patch updateJsonFile on api to simulate all writes failing
+  await page.evaluate(async () => {
+    // Monkey-patch the already-loaded api-client module
+    const { api } = await import('/js/api-client.js');
+    const original = api.drive.updateJsonFile.bind(api.drive);
+    api.drive.updateJsonFile = async (fileId, content) => {
+      if (window.__WAYMARK_BLOCK_JSON_UPDATE) {
+        throw new Error('Mock: permission denied 403');
+      }
+      return original(fileId, content);
+    };
+  });
+
+  await seedConflictingIndices(page);
+  await navigateToConflictFolder(page);
+  await page.waitForSelector('.sheet-list-item', { timeout: 10000 });
+  await page.waitForTimeout(600);
+
+  // No new json file should have been created (no createJsonFile records)
+  const records = await getCreatedRecords(page);
+  const createRecords = records.filter(r => r.mimeType === 'application/json');
+  expect(createRecords.length).toBe(0);
+
+  // Sheets should still render correctly (reads from existing index files)
+  const sheetCount = await page.locator('.sheet-list-item').count();
+  expect(sheetCount).toBeGreaterThanOrEqual(2);
 });

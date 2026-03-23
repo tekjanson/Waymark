@@ -788,13 +788,28 @@ function patchFolderIndex(folderId, sheet) {
           templateKey: key,
           icon: template.icon || '📊',
         };
-        await api.drive.updateJsonFile(indexFiles[0].id, merged);
-        // Delete duplicate index files
-        if (indexFiles.length > 1) {
-          for (const f of indexFiles.slice(1)) {
-            try { await api.drive.deleteFile(f.id); } catch { /* best-effort */ }
+        // Try writing to each index file in turn — handles shared folders
+        // where some files may be owned by other users (unwritable by us).
+        // On success, delete the extra copies to converge toward one shared index.
+        // If none are writable, do NOT create another copy — leave as-is.
+        let wrote = false;
+        let writtenFileId = null;
+        for (const f of indexFiles) {
+          try {
+            await api.drive.updateJsonFile(f.id, merged);
+            wrote = true;
+            writtenFileId = f.id;
+            break;
+          } catch { /* not writable — try next */ }
+        }
+        if (wrote) {
+          for (const f of indexFiles) {
+            if (f.id !== writtenFileId) {
+              try { await api.drive.deleteFile(f.id); } catch { /* best-effort */ }
+            }
           }
         }
+        // If !wrote: no writable file exists — do not create another index file.
       }
       // If no index file exists yet we skip — the next full folder load
       // will create it.  No point creating one for a folder that may
@@ -948,12 +963,16 @@ async function showFolderContents(folderId, folderName) {
       // were created independently and need to be merged into one.
       let folderIndex = null;   // { v: 1, sheets: { [id]: { name, headers, firstRow, modified } } }
       let indexFileId = null;
+      // All found index file IDs — we try each in write-back until one succeeds.
+      // In shared folders, some files may be owned by other users (unwritable).
+      let allIndexIds = [];
 
       try {
         const indexFiles = await api.drive.findAllFiles(INDEX_FILE, folderId);
         if (indexFiles.length > 0) {
           // Read all index files and merge — last-writer-wins per sheet ID.
-          // Sort by ID (creation order) so older entries are overwritten by newer.
+          // Handles shared directories where each user may have created their own
+          // .waymark-index file; we converge by merging all visible copies.
           const reads = await Promise.allSettled(
             indexFiles.map(f => api.drive.readJsonFile(f.id).then(d => ({ file: f, data: d })))
           );
@@ -963,16 +982,10 @@ async function showFolderContents(folderId, folderName) {
               Object.assign(folderIndex.sheets, r.value.data.sheets);
             }
           }
-          // Primary file for future updates; schedule deletion of any duplicates
-          indexFileId = indexFiles[0].id;
-          if (indexFiles.length > 1) {
-            const duplicateIds = indexFiles.slice(1).map(f => f.id);
-            (async () => {
-              for (const id of duplicateIds) {
-                try { await api.drive.deleteFile(id); } catch { /* best-effort */ }
-              }
-            })();
-          }
+          // Capture all IDs — write-back will try each until one succeeds.
+          // Never delete files owned by other users in shared folders.
+          allIndexIds = indexFiles.map(f => f.id);
+          indexFileId = allIndexIds[0];
         }
       } catch {
         folderIndex = null;  // corrupt or unreadable — rebuild from scratch
@@ -1036,15 +1049,37 @@ async function showFolderContents(folderId, folderName) {
             icon: template.icon || '📊',
           };
         }
-        // Fire-and-forget: update or create index file
+        // Fire-and-forget: consolidate the index into one shared file.
+        // Strategy: update the first writable file with merged+current data,
+        // then delete the extras.  If NONE are writable and files already
+        // exist, do NOT create another copy — "if you can't edit it, use it".
+        // Only create a fresh index when NO index file exists at all.
         (async () => {
-          try {
-            if (indexFileId) {
-              await api.drive.updateJsonFile(indexFileId, newIndex);
-            } else {
-              await api.drive.createJsonFile(INDEX_FILE, newIndex, [folderId]);
+          let wrote = false;
+          let writtenId = null;
+          for (const id of allIndexIds) {
+            try {
+              await api.drive.updateJsonFile(id, newIndex);
+              wrote = true;
+              writtenId = id;
+              break;
+            } catch { /* file may be owned by another user — try next */ }
+          }
+          if (wrote) {
+            // Consolidate: delete extras so the folder converges to one index.
+            // In Shared Drives all members can delete; in My Drive shared folders
+            // deleteFile throws 403 for files owned by others — ignore silently.
+            for (const id of allIndexIds) {
+              if (id !== writtenId) {
+                try { await api.drive.deleteFile(id); } catch { /* best-effort */ }
+              }
             }
-          } catch { /* best-effort — next visit will retry */ }
+          } else if (allIndexIds.length === 0) {
+            // No index files exist at all — create the first shared one.
+            try { await api.drive.createJsonFile(INDEX_FILE, newIndex, [folderId]); } catch { /* best-effort */ }
+          }
+          // allIndexIds.length > 0 but none writable: leave existing files as-is.
+          // Do not proliferate additional index files in the shared folder.
         })();
       }
 
