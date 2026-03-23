@@ -227,6 +227,4 @@ This means VS Code launched but Copilot is not authenticated. Run setup-auth.sh.
 | Volume mount path | `/root/.config/Code/User/globalStorage` |
 | Token format | `--password-store=basic` (portable AES, not gnome-keyring) |
 | Token locations | `vscode.github-authentication/` and/or `state.vscdb` |
-| Host seed behavior | Copies `~/.config/Code/User/*` EXCEPT `globalStorage` |
-| Watchdog re-inject interval | 600 seconds (heartbeat stale threshold) |
-| Container VS Code launch flags | `--no-sandbox --disable-gpu --user-data-dir /root/.config/Code --password-store=basic` |
+| Host seed behavior | Copies `~/.config/Code/User/*` EXCEPT `globalStorage` |\n| Container VS Code launch flags | `--no-sandbox --disable-gpu --user-data-dir /root/.config/Code --password-store=basic` |

@@ -41,14 +41,6 @@
        writes to it. This guarantees no existing data is overwritten.
        The note gets: column E=agent name, column G=today's date, column I=text.
 
-     heartbeat <agent-name> [--status STATUS] [--container NAME]
-       Write a heartbeat row to the Heartbeat sheet tab. The external
-       host-side watchdog reads this tab to detect stale agents.
-       STATUS is one of: idle, working, booting (default: idle).
-       NAME is the docker container name (default: CONTAINER_NAME env or waymark-dev-worker).
-       Creates the Heartbeat sheet tab automatically if it doesn't exist.
-       Upserts (updates existing row or appends new) — never grows unbounded.
-
    Exit codes:
      0 = success
      1 = error (message on stderr)
@@ -58,8 +50,6 @@
      node scripts/update-workboard.js claim 263 --agent alpha
      node scripts/update-workboard.js stage 263 QA
      node scripts/update-workboard.js note 263 "Branch: feature/foo" --agent alpha
-     node scripts/update-workboard.js heartbeat alpha --status working
-     node scripts/update-workboard.js heartbeat alpha --status working --container waymark-dev-worker
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
@@ -72,7 +62,6 @@ const WORKBOARD = resolveWorkboardConfig({
 });
 const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
 let _sheetGid = null; // fetched at runtime — Sheet1
-let _heartbeatGid = null; // fetched/created at runtime — Heartbeat tab
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Auth ---------- */
@@ -135,35 +124,6 @@ async function getSheetGid(token) {
   const sheet1 = data.sheets.find(s => s.properties.index === 0);
   _sheetGid = sheet1 ? sheet1.properties.sheetId : 0;
   return _sheetGid;
-}
-
-/** Get or create the Heartbeat sheet tab, returning its sheet ID (gid). */
-async function getOrCreateHeartbeatSheet(token) {
-  if (_heartbeatGid !== null) return _heartbeatGid;
-  const url = `${SHEETS_BASE}/${SPREADSHEET_ID}?fields=sheets.properties`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Sheets metadata ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  const hb = data.sheets.find(s => s.properties.title === 'Heartbeat');
-  if (hb) {
-    _heartbeatGid = hb.properties.sheetId;
-    return _heartbeatGid;
-  }
-  // Create the Heartbeat tab
-  const createUrl = `${SHEETS_BASE}/${SPREADSHEET_ID}:batchUpdate`;
-  const createRes = await fetch(createUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      requests: [{ addSheet: { properties: { title: 'Heartbeat' } } }],
-    }),
-  });
-  if (!createRes.ok) throw new Error(`Sheets addSheet ${createRes.status}: ${await createRes.text()}`);
-  const createData = await createRes.json();
-  _heartbeatGid = createData.replies[0].addSheet.properties.sheetId;
-  // Write header row
-  await writeRange(token, 'Heartbeat!A1:D1', [['Agent', 'Timestamp', 'Status', 'Container']]);
-  return _heartbeatGid;
 }
 
 /** Insert a blank row at a given 1-based position using batchUpdate */
@@ -292,41 +252,6 @@ async function cmdNote(afterRow, text, agentName) {
   console.log(JSON.stringify({ ok: true, action: 'note', taskRow: afterRow, insertedAt: newRowNum, text: text.slice(0, 80) + '...' }));
 }
 
-/**
- * Write (upsert) a heartbeat row to the Heartbeat sheet tab.
- * If a row for this agent already exists, overwrites it.
- * Otherwise appends a new row. Never grows unbounded.
- */
-async function cmdHeartbeat(agentName, status, containerName) {
-  const token = await getToken();
-  await getOrCreateHeartbeatSheet(token);
-
-  // Read all heartbeat rows to find existing entry for this agent
-  const rows = await readRange(token, 'Heartbeat!A:D');
-  let targetRow = -1;
-  for (let i = 1; i < rows.length; i++) {
-    if ((rows[i][0] || '').trim() === agentName) {
-      targetRow = i + 1; // 1-based
-      break;
-    }
-  }
-
-  const now = new Date().toISOString();
-  const container = containerName;
-  const values = [[agentName, now, status, container]];
-
-  if (targetRow > 0) {
-    // Upsert: overwrite existing row
-    await writeRange(token, `Heartbeat!A${targetRow}:D${targetRow}`, values);
-  } else {
-    // Append: write to the next empty row
-    const nextRow = rows.length + 1;
-    await writeRange(token, `Heartbeat!A${nextRow}:D${nextRow}`, values);
-  }
-
-  console.log(JSON.stringify({ ok: true, action: 'heartbeat', agent: agentName, status, timestamp: now }));
-}
-
 /* ---------- CLI ---------- */
 
 const rawArgs = process.argv.slice(2);
@@ -372,21 +297,11 @@ const [command, ...args] = argsNoAgent;
         await cmdNote(row, text, AGENT_NAME);
         break;
       }
-      case 'heartbeat': {
-        // heartbeat <agent-name> [--status STATUS] [--container NAME]
-        const hbAgent = args[0] || AGENT_NAME;
-        if (!hbAgent) {
-          console.error('Usage: heartbeat <agent-name> [--status idle|working|booting] [--container NAME]');
-          process.exit(1);
-        }
-        const { value: hbStatus, rest: hbRest1 } = extractFlagValue(args.slice(1), '--status', 'idle');
-        const { value: hbContainer } = extractFlagValue(hbRest1, '--container',
-          process.env.CONTAINER_NAME || 'waymark-dev-worker');
-        await cmdHeartbeat(hbAgent, hbStatus, hbContainer);
-        break;
-      }
+      case 'heartbeat':
+        console.error('The heartbeat command has been removed. Monitoring is not currently implemented.');
+        process.exit(1);
       default:
-        console.error('Unknown command. Available: claim, stage, note, heartbeat');
+        console.error('Unknown command. Available: claim, stage, note');
         console.error('Usage: node scripts/update-workboard.js <command> [args...] [--agent <name>]');
         process.exit(1);
     }
