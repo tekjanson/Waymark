@@ -32,7 +32,7 @@ services:
       - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
 
       # ── Named agent identity for multi-agent setups ────────────────────────
-      # When set, the agent uses this name for task claiming, heartbeats, and notes.
+      # When set, the agent uses this name for task claiming and notes.
       # Each container MUST have a unique AGENT_NAME when running multiple agents.
       # Leave unset for single-agent use (defaults to "AI" in workboard scripts).
       - AGENT_NAME=${AGENT_NAME:-}
