@@ -232,20 +232,12 @@ header "5. Agent Watchdog"
         fail "agent-watchdog.sh has NOT run"
     fi
 
-    # 5b. Heartbeat file exists (backward compat — agent-watchdog still touches it)
-    if exec_q "test -f /tmp/agent-heartbeat"; then
-        BEAT_AGE=$(exec_q "stat -c %Y /tmp/agent-heartbeat 2>/dev/null | xargs -I{} sh -c 'echo \$(( \$(date +%s) - {} ))'" || echo "99999")
-        pass "Local heartbeat file exists (${BEAT_AGE}s ago)"
-    else
-        skip "No local heartbeat file yet (agent may still be booting)"
-    fi
-
-    # 5c. AGENT_NAME is set (required for multi-agent heartbeats)
+    # 5b. AGENT_NAME is set (for multi-agent task claiming)
     AGENT_NAME_VAL=$(exec_q "grep AGENT_NAME /etc/agent-env.sh 2>/dev/null | cut -d'\"' -f2" || echo "")
     if [[ -n "$AGENT_NAME_VAL" ]]; then
         pass "AGENT_NAME is set: ${AGENT_NAME_VAL}"
     else
-        skip "AGENT_NAME not set — single-agent mode (no workboard heartbeats)"
+        skip "AGENT_NAME not set — single-agent mode"
     fi
 fi
 
