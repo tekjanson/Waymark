@@ -29,7 +29,7 @@ AGENT_MODEL   ?= copilot/claude-sonnet-4.6
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
-.PHONY: help start stop restart build logs status vnc test auth workboard watchdog watchdog-stop watchdog-logs clean
+.PHONY: help start stop restart build logs status vnc test auth workboard watchdog watchdog-stop watchdog-logs watchdog-reset clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -138,6 +138,10 @@ watchdog-stop: ## Stop the host watchdog
 
 watchdog-logs: ## Tail the host watchdog log
 	@tail -f /tmp/waymark-watchdog.log 2>/dev/null || echo "  No watchdog log found (is it running?)"
+
+watchdog-reset: ## Clear watchdog cooldown/circuit-breaker state
+	@rm -rf /tmp/waymark-watchdog-state
+	@echo "  ✓ Watchdog state cleared (cooldowns + circuit breakers reset)"
 
 # ── Cleanup ───────────────────────────────────────────────────────────
 
