@@ -211,6 +211,15 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+
+  'petcare.pet': 'Pet name',
+  'petcare.type': 'Pet type (Dog, Cat, Rabbit…)',
+  'petcare.vet': 'Last vet visit date (YYYY-MM-DD)',
+  'petcare.vacc': 'Last vaccination date (YYYY-MM-DD)',
+  'petcare.med': 'Current medication(s)',
+  'petcare.weight': 'Weight (e.g. 12 lbs)',
+  'petcare.notes': 'Health notes',
+  'petcare.appt': 'Next appointment date (YYYY-MM-DD)',
 };
 
 /**
@@ -316,6 +325,11 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Pet Care Tracker
+  'petcare.pet': 'Pet', 'petcare.type': 'Type',
+  'petcare.vet': 'Vet Visit', 'petcare.vacc': 'Vaccination',
+  'petcare.med': 'Medication', 'petcare.weight': 'Weight',
+  'petcare.notes': 'Notes', 'petcare.appt': 'Next Appointment',
 };
 
 /**

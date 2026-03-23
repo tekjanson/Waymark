@@ -866,4 +866,15 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Pet Care examples ---- */
+  'Family Pets': {
+    folder: 'Home',
+    headers: ['Pet', 'Type', 'Vet Visit', 'Vaccination', 'Medication', 'Weight', 'Notes', 'Next Appointment'],
+    rows: [
+      ['Buddy',    'Dog',    '2026-01-15', '2026-06-01', 'Heartworm monthly', '28 lbs', 'Golden Retriever, 4 years', '2026-07-15'],
+      ['Whiskers', 'Cat',    '2025-11-20', '2026-09-15', '',                  '10 lbs', 'Indoor only, senior cat',   '2026-10-20'],
+      ['Thumper',  'Rabbit', '2026-02-10', '2026-08-01', 'None',              '5 lbs',  'Holland Lop breed',         '2026-09-01'],
+    ],
+  },
 };

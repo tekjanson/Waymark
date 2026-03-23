@@ -1,0 +1,138 @@
+/* Pet Care Tracker Template */
+
+.petcare-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 10px;
+  transition: box-shadow 150ms ease;
+}
+.petcare-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+
+/* ---------- Header ---------- */
+.petcare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.petcare-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.petcare-header-right { flex-shrink: 0; }
+
+.petcare-icon { font-size: 1.4rem; line-height: 1; }
+
+.petcare-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.petcare-name:hover { color: var(--color-primary); }
+
+.petcare-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-primary);
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ---------- Appointment badge ---------- */
+.petcare-appt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.petcare-due-overdue {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-error);
+}
+.petcare-due-soon {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--color-warning);
+}
+.petcare-due-upcoming {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-primary);
+}
+.petcare-due-later {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+/* ---------- Stats row ---------- */
+.petcare-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.petcare-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 90px;
+}
+.petcare-stat-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.petcare-stat-value {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.petcare-stat-value:hover { color: var(--color-primary); }
+
+.petcare-med-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--color-border);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* ---------- Notes ---------- */
+.petcare-notes {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 4px 0 0;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.petcare-notes:hover { color: var(--color-text); }
+
+/* ---------- Dark mode ---------- */
+[data-theme="dark"] .petcare-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+[data-theme="dark"] .petcare-type-badge { background: rgba(22, 163, 74, 0.2); }
+[data-theme="dark"] .petcare-due-overdue { background: rgba(220, 38, 38, 0.2); }
+[data-theme="dark"] .petcare-due-soon    { background: rgba(245, 158, 11, 0.2); }
+[data-theme="dark"] .petcare-due-upcoming { background: rgba(22, 163, 74, 0.2); }
+[data-theme="dark"] .petcare-due-later   { background: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .petcare-med-pill    { background: rgba(255, 255, 255, 0.08); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 600px) {
+  .petcare-header { flex-direction: column; align-items: flex-start; }
+  .petcare-stats { gap: 10px; }
+}

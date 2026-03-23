@@ -1075,10 +1075,47 @@
         "gantt-campaign",
         "gantt-sprint"
       ]
+    },
+    {
+      "key": "petcare",
+      "name": "Pet Care Tracker",
+      "icon": "🐾",
+      "color": "#16a34a",
+      "priority": 35,
+      "category": "Health",
+      "detectSignals": [
+        "pet",
+        "vet",
+        "vaccination",
+        "vaccine",
+        "medication",
+        "weight",
+        "next appointment"
+      ],
+      "columnRoles": [
+        "pet",
+        "type",
+        "vet",
+        "vacc",
+        "med",
+        "weight",
+        "notes",
+        "appt"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-058"
+      ],
+      "fixtureFiles": [
+        "petcare-pets"
+      ]
     }
   ],
-  "nextSheetId": "sheet-057",
-  "totalTemplates": 27,
+  "nextSheetId": "sheet-059",
+  "totalTemplates": 28,
   "categories": [
     "Productivity",
     "Engineering",
