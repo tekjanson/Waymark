@@ -866,4 +866,19 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Calendar Events examples ---- */
+  'My Calendar Events': {
+    folder: 'Personal',
+    headers: ['Event', 'Date', 'Start Time', 'End Time', 'Location', 'Type', 'Description'],
+    rows: [
+      ['Team standup',         '2026-07-07', '09:00', '09:30', 'Conference Room A', 'Meeting',     'Daily standup'],
+      ['Product review',       '2026-07-07', '14:00', '15:00', 'Zoom',              'Meeting',     'Sprint review session'],
+      ['Dentist appointment',  '2026-07-08', '10:30', '11:30', 'Dental Care',       'Appointment', '6-month checkup'],
+      ['Lunch with Ana',       '2026-07-09', '12:30', '13:30', 'The Green Café',    'Personal',    'Catch up over lunch'],
+      ['Code review session',  '2026-07-10', '11:00', '12:00', 'Office',            'Meeting',     'PR review session'],
+      ['Team offsite',         '2026-07-11', '09:00', '17:00', 'Hilton Center',     'Work',        'Quarterly planning'],
+      ['Grocery shopping',     '2026-07-12', '10:00', '11:00', 'Whole Foods',       'Personal',    'Weekly groceries'],
+    ],
+  },
 };

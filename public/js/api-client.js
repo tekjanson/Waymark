@@ -16,12 +16,13 @@ const isLocal = window.__WAYMARK_LOCAL === true;
 const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Dynamic imports for production ---------- */
-let driveApi, sheetsApi, pickerApi;
+let driveApi, sheetsApi, pickerApi, calendarApi;
 if (!isLocal) {
-  [driveApi, sheetsApi, pickerApi] = await Promise.all([
+  [driveApi, sheetsApi, pickerApi, calendarApi] = await Promise.all([
     import('./drive.js'),
     import('./sheets.js'),
     import('./picker.js'),
+    import('./calendar-api.js'),
   ]);
 }
 
@@ -91,6 +92,7 @@ async function loadMockSheet(sheetId) {
     'sheet-054': 'okr-team',
     'sheet-055': 'gantt-campaign',
     'sheet-056': 'gantt-sprint',
+    'sheet-061': 'gcal-events',
     'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];
@@ -719,6 +721,50 @@ export const api = {
       }
       const token = await clientAuth.getToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
+    },
+  },
+
+  /* ---- Calendar ---- */
+  calendar: {
+    /**
+     * List calendars accessible by the current user.
+     * In local mode returns a minimal mock list.
+     * @returns {Promise<{items: Object[]}>}
+     */
+    async listCalendars() {
+      if (isLocal) {
+        return {
+          items: [
+            { id: 'primary', summary: 'My Calendar', primary: true },
+            { id: 'work@example.com', summary: 'Work Calendar', primary: false },
+          ],
+        };
+      }
+      const token = await clientAuth.getToken();
+      return calendarApi.listCalendars(token);
+    },
+
+    /**
+     * List upcoming events from a calendar.
+     * In local mode returns events from the gcal-events fixture.
+     * @param {string} [calendarId]  defaults to 'primary'
+     * @param {Object} [opts]        { timeMin, timeMax, maxResults }
+     * @returns {Promise<{items: Object[]}>}
+     */
+    async listEvents(calendarId = 'primary', opts = {}) {
+      if (isLocal) {
+        // Return mock events matching the sheet fixture schema
+        return {
+          items: [
+            { id: 'evt-1', summary: 'Team standup', start: { dateTime: '2026-07-07T09:00:00', date: null }, end: { dateTime: '2026-07-07T09:30:00' }, location: 'Conference Room A', description: 'Daily standup' },
+            { id: 'evt-2', summary: 'Product review', start: { dateTime: '2026-07-07T14:00:00' }, end: { dateTime: '2026-07-07T15:00:00' }, location: 'Zoom', description: 'Sprint review' },
+            { id: 'evt-3', summary: 'Dentist appointment', start: { dateTime: '2026-07-08T10:30:00' }, end: { dateTime: '2026-07-08T11:30:00' }, location: 'Dental Care on Main', description: '6-month checkup' },
+            { id: 'evt-4', summary: 'Lunch with Ana', start: { dateTime: '2026-07-09T12:30:00' }, end: { dateTime: '2026-07-09T13:30:00' }, location: 'The Green Café', description: 'Catch up' },
+          ],
+        };
+      }
+      const token = await clientAuth.getToken();
+      return calendarApi.listEvents(token, calendarId, opts);
     },
   },
 };

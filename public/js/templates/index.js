@@ -40,6 +40,7 @@ import './notification.js';
 import './iot/index.js';
 import './okr/index.js';
 import './gantt/index.js';
+import './gcal.js';
 
 /* ---------- Detection ---------- */
 

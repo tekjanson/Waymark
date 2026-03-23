@@ -211,6 +211,14 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  // Calendar Events
+  'gcal.text': 'Event name / Title',
+  'gcal.date': 'Date (YYYY-MM-DD)',
+  'gcal.start': 'Start Time (HH:MM)',
+  'gcal.end': 'End Time (HH:MM)',
+  'gcal.location': 'Location / Venue',
+  'gcal.type': 'Type / Category (Meeting, Appointment, etc.)',
+  'gcal.desc': 'Description / Notes',
 };
 
 /**
@@ -316,6 +324,10 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Calendar Events
+  'gcal.text': 'Event', 'gcal.date': 'Date',
+  'gcal.start': 'Start Time', 'gcal.end': 'End Time',
+  'gcal.location': 'Location', 'gcal.type': 'Type', 'gcal.desc': 'Description',
 };
 
 /**

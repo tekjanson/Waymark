@@ -26,6 +26,7 @@ const config = {
     'email',
     'profile',
     'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/calendar.readonly',
   ],
 
   GOOGLE_AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
