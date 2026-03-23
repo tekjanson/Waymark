@@ -370,14 +370,12 @@
   font-weight: 600; color: var(--color-text);
   font-size: 1.06rem;
   white-space: nowrap;
-  min-width: 3em; width: 3em; flex-shrink: 0;
+  min-width: 2.5em; flex-shrink: 0;
   text-align: left;
   padding: 1px 4px;
   margin: -1px 0;
   border-radius: var(--radius-sm);
   transition: color 0.15s;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .recipe-ingredient-unit {
   font-size: 1.06rem;
@@ -944,7 +942,7 @@
   }
   .recipe-ingredient-qty {
     color: #000;
-    min-width: 2.5em; width: 2.5em;
+    min-width: 2em;
   }
   .recipe-ingredient-unit {
     color: #000;
