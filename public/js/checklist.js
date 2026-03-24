@@ -22,7 +22,7 @@ let currentValues  = null;
 let currentDataTitle = null;
 
 /* DOM refs (set in init) */
-let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn;
+let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, printBtn;
 let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
@@ -38,6 +38,7 @@ export function init() {
   templateBadge = document.getElementById('template-badge');
   openInSheetsBtn = document.getElementById('open-in-sheets-btn');
   downloadCsvBtn  = document.getElementById('download-csv-btn');
+  printBtn         = document.getElementById('print-btn');
   sheetPinBtn     = document.getElementById('sheet-pin-btn');
   duplicateSheetBtn = document.getElementById('duplicate-sheet-btn');
   shareBtn          = document.getElementById('share-btn');
@@ -109,6 +110,10 @@ export function init() {
 
   if (downloadCsvBtn) {
     downloadCsvBtn.addEventListener('click', () => downloadCsv());
+  }
+
+  if (printBtn) {
+    printBtn.addEventListener('click', () => window.print());
   }
 
   if (duplicateSheetBtn) {

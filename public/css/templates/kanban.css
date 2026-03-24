@@ -1119,3 +1119,38 @@ body.kanban-touch-dragging {
 [data-theme="dark"] .kanban-stage-dropdown { background: var(--color-surface); border-color: var(--color-border); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 [data-theme="dark"] .kanban-lane-vis-panel { background: var(--color-surface); border-color: var(--color-border); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 [data-theme="dark"] .kanban-lane-vis-btn { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text-muted); }
+
+/* ---------- Print Layout (compact card grid) ---------- */
+@media print {
+  .kanban-board, .kanban-board[class*='kanban-board-'] {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 5mm;
+    align-items: flex-start;
+  }
+  .kanban-lane {
+    flex: 1 1 55mm;
+    min-width: 50mm;
+    border: 0.5pt solid #ccc;
+    border-radius: 0;
+    padding: 3mm;
+    break-inside: avoid;
+    box-shadow: none;
+    background: #fff;
+  }
+  .kanban-lane-header { padding: 0 0 2mm 0; border-bottom: 0.5pt solid #888; margin-bottom: 2mm; }
+  .kanban-card {
+    border: 0.3pt solid #ddd;
+    border-radius: 0;
+    padding: 2mm;
+    margin-bottom: 2mm;
+    break-inside: avoid;
+    box-shadow: none;
+  }
+  .kanban-card-expand, .kanban-card-open, .kanban-pri-dot,
+  .kanban-toolbar, .kanban-add-inline-btn, .kanban-lane-collapse,
+  .kanban-lane-more, .kanban-lane-form, .kanban-nav-controls,
+  .kanban-stage-btn, .kanban-lane-vis-btn { display: none !important; }
+  .kanban-card-title { font-size: 0.82rem; }
+  .kanban-card-badges { flex-wrap: wrap; }
+}
