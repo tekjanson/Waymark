@@ -694,9 +694,10 @@ function renderPinnedSheets() {
 
 /* ---------- Folder Contents ---------- */
 
-const openInDriveBtn = document.getElementById('open-in-drive-btn');
-const folderPinBtn   = document.getElementById('folder-pin-btn');
-const dirHelpBtn     = document.getElementById('dir-help-btn');
+const openInDriveBtn   = document.getElementById('open-in-drive-btn');
+const folderPinBtn     = document.getElementById('folder-pin-btn');
+const dirHelpBtn       = document.getElementById('dir-help-btn');
+const folderAddFilesBtn = document.getElementById('folder-add-files-btn');
 let currentFolderId  = null;
 let currentFolderName = null;
 let currentDirKey    = null;
@@ -735,9 +736,86 @@ if (dirHelpBtn) {
   });
 }
 
+// "Add Files" button — opens Picker so the user can grant drive.file
+// access to sheets others created in this shared folder.
+if (folderAddFilesBtn) {
+  folderAddFilesBtn.addEventListener('click', async () => {
+    if (!currentFolderId) return;
+    try {
+      const picked = await api.picker.pickSpreadsheets({ multiSelect: true, includeSharedDrives: true });
+      if (!picked || picked.length === 0) return;
+      showToast(`Added ${picked.length} file${picked.length > 1 ? 's' : ''} — refreshing…`, 'success');
+      // Re-load folder to include the newly-accessible files
+      showFolderContents(currentFolderId, currentFolderName);
+    } catch (err) {
+      showToast(`Picker error: ${err.message}`, 'error');
+    }
+  });
+}
+
 /* ---------- .waymark-index helpers ---------- */
 
 const INDEX_FILE = '.waymark-index';
+
+/**
+ * Consolidate multiple .waymark-index files into one.
+ * In My Drive shared folders you can only delete files you own, so
+ * we prefer keeping a non-owned file and deleting our own copies.
+ *
+ * @param {Object[]} indexFiles  Drive file objects (must include owners field)
+ * @param {Object}   mergedData  Complete merged index data to write
+ * @param {string}   folderId    Parent folder ID (used when creating if none exist)
+ */
+async function consolidateIndexFiles(indexFiles, mergedData, folderId) {
+  if (indexFiles.length === 0) {
+    try { await api.drive.createJsonFile(INDEX_FILE, mergedData, [folderId]); } catch { /* best-effort */ }
+    return;
+  }
+
+  if (indexFiles.length === 1) {
+    try { await api.drive.updateJsonFile(indexFiles[0].id, mergedData); } catch { /* best-effort */ }
+    return;
+  }
+
+  // Partition: files we own vs. files owned by others
+  const owned = [];
+  const notOwned = [];
+  for (const f of indexFiles) {
+    if (f.owners?.some(o => o.me)) owned.push(f);
+    else notOwned.push(f);
+  }
+
+  // Strategy: update a non-owned file first, then delete all our owned
+  // copies.  We CAN delete our own files but CANNOT delete files owned
+  // by other users in My Drive shared folders.
+  let writtenId = null;
+  for (const f of notOwned) {
+    try {
+      await api.drive.updateJsonFile(f.id, mergedData);
+      writtenId = f.id;
+      break;
+    } catch { /* can't update — try next */ }
+  }
+
+  if (writtenId) {
+    // Updated a non-owned file — delete ALL our owned copies.
+    for (const f of owned) {
+      try { await api.drive.deleteFile(f.id); } catch { /* best-effort */ }
+    }
+    return;
+  }
+
+  // No non-owned file writable — keep our first owned file, delete extras.
+  if (owned.length > 0) {
+    try {
+      await api.drive.updateJsonFile(owned[0].id, mergedData);
+      writtenId = owned[0].id;
+    } catch { return; /* nothing we can do */ }
+    for (let i = 1; i < owned.length; i++) {
+      try { await api.drive.deleteFile(owned[i].id); } catch { /* best-effort */ }
+    }
+  }
+}
 
 /**
  * Patch the .waymark-index in a folder to include a newly-created sheet.
@@ -788,28 +866,8 @@ function patchFolderIndex(folderId, sheet) {
           templateKey: key,
           icon: template.icon || '📊',
         };
-        // Try writing to each index file in turn — handles shared folders
-        // where some files may be owned by other users (unwritable by us).
-        // On success, delete the extra copies to converge toward one shared index.
-        // If none are writable, do NOT create another copy — leave as-is.
-        let wrote = false;
-        let writtenFileId = null;
-        for (const f of indexFiles) {
-          try {
-            await api.drive.updateJsonFile(f.id, merged);
-            wrote = true;
-            writtenFileId = f.id;
-            break;
-          } catch { /* not writable — try next */ }
-        }
-        if (wrote) {
-          for (const f of indexFiles) {
-            if (f.id !== writtenFileId) {
-              try { await api.drive.deleteFile(f.id); } catch { /* best-effort */ }
-            }
-          }
-        }
-        // If !wrote: no writable file exists — do not create another index file.
+        // Consolidate: prefers keeping non-owned files and deleting our own
+        await consolidateIndexFiles(indexFiles, merged, folderId);
       }
       // If no index file exists yet we skip — the next full folder load
       // will create it.  No point creating one for a folder that may
@@ -843,6 +901,7 @@ async function showFolderContents(folderId, folderName) {
   titleEl.textContent = folderName;
   noSheetsEl.classList.add('hidden');
   if (dirHelpBtn) dirHelpBtn.classList.add('hidden');
+  if (folderAddFilesBtn) folderAddFilesBtn.classList.add('hidden');
   currentDirKey = null;
 
   // Clear previous content immediately and show loading bar.
@@ -962,14 +1021,13 @@ async function showFolderContents(folderId, folderName) {
       // the multi-session conflict case where multiple .waymark-index files
       // were created independently and need to be merged into one.
       let folderIndex = null;   // { v: 1, sheets: { [id]: { name, headers, firstRow, modified } } }
-      let indexFileId = null;
-      // All found index file IDs — we try each in write-back until one succeeds.
-      // In shared folders, some files may be owned by other users (unwritable).
-      let allIndexIds = [];
+      // All found index file objects — kept with owners data for smart consolidation.
+      let allIndexFiles = [];
 
       try {
         const indexFiles = await api.drive.findAllFiles(INDEX_FILE, folderId);
         if (indexFiles.length > 0) {
+          allIndexFiles = indexFiles;
           // Read all index files and merge — last-writer-wins per sheet ID.
           // Handles shared directories where each user may have created their own
           // .waymark-index file; we converge by merging all visible copies.
@@ -982,10 +1040,6 @@ async function showFolderContents(folderId, folderName) {
               Object.assign(folderIndex.sheets, r.value.data.sheets);
             }
           }
-          // Capture all IDs — write-back will try each until one succeeds.
-          // Never delete files owned by other users in shared folders.
-          allIndexIds = indexFiles.map(f => f.id);
-          indexFileId = allIndexIds[0];
         }
       } catch {
         folderIndex = null;  // corrupt or unreadable — rebuild from scratch
@@ -1050,36 +1104,10 @@ async function showFolderContents(folderId, folderName) {
           };
         }
         // Fire-and-forget: consolidate the index into one shared file.
-        // Strategy: update the first writable file with merged+current data,
-        // then delete the extras.  If NONE are writable and files already
-        // exist, do NOT create another copy — "if you can't edit it, use it".
-        // Only create a fresh index when NO index file exists at all.
+        // Uses ownership-aware strategy — prefers keeping non-owned files
+        // and deleting our own so shared folders converge to one index.
         (async () => {
-          let wrote = false;
-          let writtenId = null;
-          for (const id of allIndexIds) {
-            try {
-              await api.drive.updateJsonFile(id, newIndex);
-              wrote = true;
-              writtenId = id;
-              break;
-            } catch { /* file may be owned by another user — try next */ }
-          }
-          if (wrote) {
-            // Consolidate: delete extras so the folder converges to one index.
-            // In Shared Drives all members can delete; in My Drive shared folders
-            // deleteFile throws 403 for files owned by others — ignore silently.
-            for (const id of allIndexIds) {
-              if (id !== writtenId) {
-                try { await api.drive.deleteFile(id); } catch { /* best-effort */ }
-              }
-            }
-          } else if (allIndexIds.length === 0) {
-            // No index files exist at all — create the first shared one.
-            try { await api.drive.createJsonFile(INDEX_FILE, newIndex, [folderId]); } catch { /* best-effort */ }
-          }
-          // allIndexIds.length > 0 but none writable: leave existing files as-is.
-          // Do not proliferate additional index files in the shared folder.
+          await consolidateIndexFiles(allIndexFiles, newIndex, folderId);
         })();
       }
 
@@ -1256,12 +1284,45 @@ async function showFolderContents(folderId, folderName) {
     // Hide loading bar once all content is rendered
     loadingBar.classList.add('hidden');
 
+    // Show the "Add Files" button so users can grant access to
+    // files created by others in this (possibly shared) folder.
+    if (folderAddFilesBtn) folderAddFilesBtn.classList.remove('hidden');
+
     // Register for search context
     collectKnownSheets();
   } catch (err) {
     if (gen !== _folderGen) return;
     loadingBar.classList.add('hidden');
-    sheetsEl.innerHTML = `<p class="empty-state">Failed to load folder: ${err.message}</p>`;
+
+    // Drive API 403/404 often means the drive.file scope doesn't cover
+    // this folder yet (e.g. a shared folder the user hasn't re-opened
+    // via Picker since an OAuth scope change).  Offer a one-click fix.
+    const isAccessError = /40[34]/.test(err.message);
+    sheetsEl.innerHTML = '';
+    sheetsEl.append(
+      el('div', { className: 'empty-state' }, [
+        el('p', {}, [isAccessError
+          ? 'This folder needs access — re-open it with the Picker to grant permission.'
+          : `Failed to load folder: ${err.message}`]),
+        isAccessError
+          ? el('button', {
+              className: 'btn btn-google',
+              on: {
+                async click() {
+                  try {
+                    const picked = await api.picker.pickFolder();
+                    if (picked) {
+                      // Re-pin with updated access and navigate
+                      await userData.addPinnedFolder({ id: picked.id, name: picked.name });
+                      navigate('folder', picked.id, picked.name);
+                    }
+                  } catch (e) { showToast(`Picker error: ${e.message}`, 'error'); }
+                },
+              },
+            }, ['📂 Re-open via Picker'])
+          : null,
+      ])
+    );
   }
 }
 

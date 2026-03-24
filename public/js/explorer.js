@@ -128,7 +128,16 @@ async function pinFolderViaPicker() {
   try {
     const folder = await api.picker.pickFolder();
     if (!folder) return;
-    await userData.addPinnedFolder({ id: folder.id, name: folder.name });
+    // Fetch full metadata to capture owner/shared info for the pin card
+    let owner = null;
+    let shared = false;
+    try {
+      const meta = await api.drive.getFile(folder.id);
+      shared = !!meta.shared;
+      const o = meta.owners?.[0];
+      if (o && !o.me) owner = o.displayName || o.emailAddress || null;
+    } catch { /* non-critical */ }
+    await userData.addPinnedFolder({ id: folder.id, name: folder.name, owner, shared });
     showToast(`📌 Pinned "${folder.name}"`, 'success');
     load();
   } catch (err) {

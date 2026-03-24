@@ -115,6 +115,7 @@ export async function pickFolder(token) {
     const folderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true)
+      .setEnableDrives(true)
       .setMimeTypes('application/vnd.google-apps.folder');
 
     // Shared folders view
@@ -122,11 +123,13 @@ export async function pickFolder(token) {
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true)
       .setOwnedByMe(false)
+      .setEnableDrives(true)
       .setMimeTypes('application/vnd.google-apps.folder');
 
     const builder = new google.picker.PickerBuilder()
       .addView(folderView)
       .addView(sharedFolderView)
+      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
       .setOAuthToken(token)
       .setAppId(getAppId())
       .setCallback((data) => {
@@ -171,6 +174,7 @@ export async function pickFilesForImport(token) {
       .setOAuthToken(token)
       .setAppId(getAppId())
       .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
       .setCallback((data) => {
         if (data.action === google.picker.Action.PICKED) {
           resolve(mapDocs(data.docs));

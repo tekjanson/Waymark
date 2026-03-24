@@ -12,6 +12,8 @@ async function list(token, params = {}) {
   const qs = new URLSearchParams({
     fields: 'nextPageToken,files(id,name,mimeType,owners,shared,modifiedTime,parents)',
     pageSize: '100',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
     ...params,
   });
   const res = await fetch(`${BASE}/files?${qs}`, {
@@ -79,7 +81,7 @@ export async function getSharedWithMe(token) {
  * @returns {Promise<Object>}     created file metadata
  */
 export async function createFile(token, name, mimeType, parents = []) {
-  const res = await fetch(`${BASE}/files`, {
+  const res = await fetch(`${BASE}/files?supportsAllDrives=true`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -140,7 +142,7 @@ export async function listImportableFiles(token) {
  */
 export async function exportDoc(token, fileId) {
   const res = await fetch(
-    `${BASE}/files/${fileId}/export?mimeType=text/plain`,
+    `${BASE}/files/${fileId}/export?mimeType=text/plain&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) throw new Error(`Drive export ${res.status}`);
@@ -155,7 +157,7 @@ export async function exportDoc(token, fileId) {
  */
 export async function getFile(token, fileId) {
   const res = await fetch(
-    `${BASE}/files/${fileId}?fields=id,name,mimeType,parents,modifiedTime`,
+    `${BASE}/files/${fileId}?fields=id,name,mimeType,parents,modifiedTime,owners,shared&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) throw new Error(`Drive getFile ${res.status}`);
@@ -189,7 +191,7 @@ export async function findAllFiles(token, name, parentId) {
  * Permanently delete a file from Drive.
  */
 export async function deleteFile(token, fileId) {
-  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}`, {
+  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -218,7 +220,7 @@ export async function createJsonFile(token, name, content, parents = []) {
     body +
     `\r\n--${boundary}--`;
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents', {
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents&supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -237,7 +239,7 @@ export async function createJsonFile(token, name, content, parents = []) {
  * @returns {Promise<Object>}  parsed JSON content
  */
 export async function readJsonFile(token, fileId) {
-  const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
+  const res = await fetch(`${BASE}/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Drive readJsonFile ${res.status}`);
@@ -251,7 +253,7 @@ export async function readJsonFile(token, fileId) {
  * @returns {Promise<string>}  raw text content
  */
 export async function readTextFile(token, fileId) {
-  const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
+  const res = await fetch(`${BASE}/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Drive readTextFile ${res.status}`);
@@ -267,7 +269,7 @@ export async function readTextFile(token, fileId) {
  */
 export async function updateJsonFile(token, fileId, content) {
   const body = JSON.stringify(content, null, 2);
-  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType&supportsAllDrives=true`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -298,7 +300,7 @@ export async function createTextFile(token, name, content, parents = []) {
     content +
     `\r\n--${boundary}--`;
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents', {
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents&supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -318,7 +320,7 @@ export async function createTextFile(token, name, content, parents = []) {
  * @returns {Promise<Object>}  updated file metadata
  */
 export async function updateTextFile(token, fileId, content) {
-  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType&supportsAllDrives=true`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${token}`,
