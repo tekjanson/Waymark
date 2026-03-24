@@ -1063,3 +1063,75 @@ test('recipe photo appears between header and toolbar', async ({ page }) => {
   expect(photoIdx).toBeGreaterThan(headerIdx);
   expect(photoIdx).toBeLessThan(scaleIdx);
 });
+
+/* ---------- Quantity truncation fix tests ---------- */
+
+test('recipe quantity cell does not overflow-hide its content', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
+
+  // overflow must NOT be hidden — the fix removes the old CSS truncation
+  const qtySpan = page.locator('.recipe-ingredient-qty').first();
+  const overflowX = await qtySpan.evaluate(el => getComputedStyle(el).overflowX);
+  expect(overflowX).not.toBe('hidden');
+
+  // text-overflow must NOT be ellipsis
+  const textOverflow = await qtySpan.evaluate(el => getComputedStyle(el).textOverflow);
+  expect(textOverflow).not.toBe('ellipsis');
+});
+
+test('recipe 4-digit quantities display fully without truncation at 3× scale', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
+
+  // Scale to 3× — spaghetti (index 3) goes from "400" to "1200" (4 digits)
+  await page.locator('.recipe-scale-select').selectOption('3');
+
+  const qtySpan = page.locator('.recipe-ingredient-qty').nth(3);
+  await expect(qtySpan).toContainText('1200');
+
+  // Verify the element is wider than it would be capped at the old 3em fixed width:
+  // at 1.06rem typical font, 3em ≈ 51px; "1200" in bold needs more.
+  // The element must expand to show all digits (scrollWidth <= offsetWidth means no truncation)
+  const notTruncated = await qtySpan.evaluate(el => {
+    const cs = getComputedStyle(el);
+    return cs.overflowX !== 'hidden' && cs.textOverflow !== 'ellipsis';
+  });
+  expect(notTruncated).toBe(true);
+});
+
+test('recipe 5-digit quantities from custom 4× scale display fully', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-toolbar', { timeout: 5_000 });
+
+  // Custom scale ×4 — 400g spaghetti → 1600 (4 digits), 800g tomatoes → 3200 (4 digits)
+  await page.locator('.recipe-scale-select').selectOption('custom');
+  const customInput = page.locator('.recipe-scale-custom');
+  await expect(customInput).toBeVisible();
+  await customInput.fill('4');
+
+  const spaghettiQty = page.locator('.recipe-ingredient-qty').nth(3);
+  await expect(spaghettiQty).toContainText('1600');
+
+  // Verify no overflow clipping
+  const notTruncated = await spaghettiQty.evaluate(el => {
+    const cs = getComputedStyle(el);
+    return cs.overflowX !== 'hidden' && cs.textOverflow !== 'ellipsis';
+  });
+  expect(notTruncated).toBe(true);
+});
+
+test('recipe quantity min-width ensures short values remain aligned', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-027');
+  await page.waitForSelector('.recipe-ingredient-qty', { timeout: 5_000 });
+
+  // Even single-digit qtys should have a minimum rendered width
+  const singleDigitQty = page.locator('.recipe-ingredient-qty').first();
+  const width = await singleDigitQty.evaluate(el => el.getBoundingClientRect().width);
+  // min-width: 2.5em at 1.06rem ≈ 40px at 16px base — should be at least 30px
+  expect(width).toBeGreaterThan(30);
+});
