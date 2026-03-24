@@ -3,7 +3,7 @@
    subtotals, chart, and statement upload
    ============================================================ */
 
-import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate } from '../shared.js';
+import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate, drawBarChart, drawPieChart } from '../shared.js';
 import { parseStatement, reParsePDFTransactions } from './parser.js';
 
 /* ---------- Helpers ---------- */
@@ -442,7 +442,7 @@ const definition = {
     /* ---------- Group by category ---------- */
     const groups = groupByColumn(rows, cols.category, 'Uncategorized');
 
-    /* ---------- Category chart (stacked horizontal bar) ---------- */
+    /* ---------- Category chart (SVG donut pie) ---------- */
     if (cols.category >= 0 && totalExpense > 0) {
       const catStats = [];
       let colorIdx = 0;
@@ -454,35 +454,26 @@ const definition = {
           if (cols.budget >= 0) budgeted += parseAmt(cell(row, cols.budget));
         }
         if (spent > 0) {
+          const over = budgeted > 0 && spent > budgeted;
           catStats.push({
-            cat, spent, budgeted,
-            pct: Math.round((spent / totalExpense) * 100),
+            label: over ? `${cat} \u26A0` : cat,
+            value: spent,
             color: CAT_COLORS[colorIdx % CAT_COLORS.length],
-            over: budgeted > 0 && spent > budgeted,
           });
         }
         colorIdx++;
       }
-
-      const chartBar = el('div', { className: 'budget-chart-bar' });
-      for (const s of catStats) {
-        chartBar.append(el('div', {
-          className: `budget-chart-segment ${s.over ? 'budget-chart-over' : ''}`,
-          style: `width:${Math.max(s.pct, 3)}%;background:${s.color}`,
-          title: `${s.cat}: $${s.spent.toLocaleString()} (${s.pct}%)${s.over ? ' \u2014 OVER BUDGET' : ''}`,
-        }));
+      if (catStats.length > 0) {
+        const chartWrap = el('div', { className: 'budget-chart' });
+        chartWrap.appendChild(el('div', { className: 'chart-container-title' }, ['Spending by Category']));
+        drawPieChart(chartWrap, { segments: catStats }, {
+          title: 'Spending by Category',
+          showLegend: true,
+          donut: true,
+          height: 200,
+        });
+        container.append(chartWrap);
       }
-
-      const legend = el('div', { className: 'budget-chart-legend' });
-      for (const s of catStats) {
-        legend.append(el('div', { className: `budget-chart-legend-item ${s.over ? 'budget-chart-legend-over' : ''}` }, [
-          el('span', { className: 'budget-chart-swatch', style: `background:${s.color}` }),
-          el('span', {}, [`${s.cat} $${s.spent.toLocaleString()} (${s.pct}%)`]),
-          s.over ? el('span', { className: 'budget-chart-over-badge' }, ['Over']) : null,
-        ]));
-      }
-
-      container.append(el('div', { className: 'budget-chart' }, [chartBar, legend]));
     }
 
     /* ---------- Category groups with subtotals ---------- */
@@ -593,33 +584,25 @@ const definition = {
       ]),
     ]));
 
-    /* Mini trend chart (horizontal bar per sheet) */
+    /* Mini SVG charts — income vs expenses per sheet */
     if (sheetStats.length > 1) {
-      const maxAmt = Math.max(...sheetStats.map(s => Math.max(s.income, s.expense)), 1);
-      const chart = el('div', { className: 'budget-dir-chart' });
-      chart.append(el('div', { className: 'budget-dir-chart-title' }, ['Income vs Expenses']));
-      for (const s of sheetStats) {
-        const incPct = Math.round((s.income / maxAmt) * 100);
-        const expPct = Math.round((s.expense / maxAmt) * 100);
-        chart.append(el('div', { className: 'budget-dir-chart-row' }, [
-          el('span', { className: 'budget-dir-chart-label' }, [s.name]),
-          el('div', { className: 'budget-dir-chart-bars' }, [
-            el('div', { className: 'budget-dir-bar budget-dir-bar-income', style: `width:${Math.max(incPct, 2)}%`, title: `Income: $${s.income.toLocaleString()}` }),
-            el('div', { className: 'budget-dir-bar budget-dir-bar-expense', style: `width:${Math.max(expPct, 2)}%`, title: `Expenses: $${s.expense.toLocaleString()}` }),
-          ]),
-        ]));
-      }
-      chart.append(el('div', { className: 'budget-dir-chart-legend' }, [
-        el('span', { className: 'budget-dir-legend-item' }, [
-          el('span', { className: 'budget-dir-legend-swatch budget-dir-bar-income' }),
-          'Income',
-        ]),
-        el('span', { className: 'budget-dir-legend-item' }, [
-          el('span', { className: 'budget-dir-legend-swatch budget-dir-bar-expense' }),
-          'Expenses',
-        ]),
+      const names = sheetStats.map(s => s.name);
+      const incomeChart = el('div', { className: 'budget-dir-chart-svg' });
+      const expenseChart = el('div', { className: 'budget-dir-chart-svg' });
+      drawBarChart(incomeChart, {
+        labels: names,
+        values: sheetStats.map(s => s.income),
+        color: '#059669',
+      }, { title: 'Income per sheet', showValues: true, height: 160 });
+      drawBarChart(expenseChart, {
+        labels: names,
+        values: sheetStats.map(s => s.expense),
+        color: '#dc2626',
+      }, { title: 'Expenses per sheet', showValues: true, height: 160 });
+      wrapper.append(el('div', { className: 'budget-dir-chart' }, [
+        el('div', { className: 'budget-dir-chart-title' }, ['Income vs Expenses']),
+        el('div', { className: 'budget-dir-charts-row' }, [incomeChart, expenseChart]),
       ]));
-      wrapper.append(chart);
     }
 
     /* Sheet cards grid */

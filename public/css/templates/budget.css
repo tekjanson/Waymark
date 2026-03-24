@@ -114,26 +114,11 @@
   font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted);
   text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;
 }
-.budget-dir-chart-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+.budget-dir-charts-row {
+  display: flex; gap: 16px;
 }
-.budget-dir-chart-label {
-  width: 120px; font-size: 0.8rem; font-weight: 500; text-align: right;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
-}
-.budget-dir-chart-bars { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.budget-dir-bar {
-  height: 10px; border-radius: 5px; transition: width 0.3s ease;
-}
-.budget-dir-bar-income { background: #059669; }
-.budget-dir-bar-expense { background: #dc2626; }
-.budget-dir-chart-legend {
-  display: flex; gap: 16px; margin-top: 8px;
-  font-size: 0.72rem; color: var(--color-text-muted);
-}
-.budget-dir-legend-item { display: flex; align-items: center; gap: 4px; }
-.budget-dir-legend-swatch {
-  display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+.budget-dir-chart-svg {
+  flex: 1; min-width: 0;
 }
 
 /* Sheet cards */
