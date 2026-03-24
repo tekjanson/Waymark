@@ -190,3 +190,7 @@ WayMark bridges that gap. Your spreadsheet stays your spreadsheet. We just make 
 ## License
 
 WayMark is licensed under the GNU General Public License v3.0 only.
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/waymark)
