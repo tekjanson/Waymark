@@ -138,7 +138,8 @@ export function formatAxisLabel(n) {
  * }} [opts]
  */
 export function drawLineChart(container, data, opts = {}) {
-  container.innerHTML = '';
+  _clearChart(container);
+  container.style.position = 'relative';
   const { labels = [], series = [] } = data;
   if (!series.length || !labels.length) {
     container.appendChild(_emptyMsg());
@@ -219,6 +220,7 @@ export function drawLineChart(container, data, opts = {}) {
   }));
 
   /* Series paths & dots */
+  const dotTooltipItems = [];
   series.forEach((s, si) => {
     const color = s.color || DEFAULT_COLORS[si % DEFAULT_COLORS.length];
     const vals = s.values || [];
@@ -249,7 +251,8 @@ export function drawLineChart(container, data, opts = {}) {
         class: 'chart-dot',
         fill: color,
       });
-      dot.appendChild(svgEl('title', {}, [`${p.label}: ${p.v}`]));
+      const seriesLabel = s.name ? `${s.name} — ${p.label}: ${p.v}` : `${p.label}: ${p.v}`;
+      dotTooltipItems.push({ el: dot, label: seriesLabel });
       svg.appendChild(dot);
     });
   });
@@ -276,6 +279,7 @@ export function drawLineChart(container, data, opts = {}) {
   }
 
   container.appendChild(svg);
+  _attachHoverTooltip(container, dotTooltipItems);
 }
 
 /* ---------- Bar Chart ---------- */
@@ -300,7 +304,8 @@ export function drawLineChart(container, data, opts = {}) {
  * }} [opts]
  */
 export function drawBarChart(container, data, opts = {}) {
-  container.innerHTML = '';
+  _clearChart(container);
+  container.style.position = 'relative';
   const { labels = [], values = [] } = data;
   if (!values.length || !labels.length) {
     container.appendChild(_emptyMsg());
@@ -370,6 +375,7 @@ export function drawBarChart(container, data, opts = {}) {
   }));
 
   /* Bars */
+  const barTooltipItems = [];
   values.forEach((v, i) => {
     const color = (data.colors && data.colors[i]) || data.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
     const barX = PAD.left + i * barSpacing + (barSpacing - barW) / 2;
@@ -385,7 +391,7 @@ export function drawBarChart(container, data, opts = {}) {
       class: 'chart-bar-rect',
       rx: '3',
     });
-    rect.appendChild(svgEl('title', {}, [`${labels[i]}: ${v}`]));
+    barTooltipItems.push({ el: rect, label: `${labels[i]}: ${formatAxisLabel(v)}` });
     svg.appendChild(rect);
 
     /* X label */
@@ -409,6 +415,7 @@ export function drawBarChart(container, data, opts = {}) {
   });
 
   container.appendChild(svg);
+  _attachHoverTooltip(container, barTooltipItems);
 }
 
 /* ---------- Pie / Donut Chart ---------- */
@@ -430,7 +437,8 @@ export function drawBarChart(container, data, opts = {}) {
  * }} [opts]
  */
 export function drawPieChart(container, data, opts = {}) {
-  container.innerHTML = '';
+  _clearChart(container);
+  container.style.position = 'relative';
   const { segments = [] } = data;
   const nonZero = segments.filter(s => s.value > 0);
   if (!nonZero.length) {
@@ -438,19 +446,19 @@ export function drawPieChart(container, data, opts = {}) {
     return;
   }
 
+  /* Legend is rendered as HTML — viewBox only needs the chart area */
   const W = opts.width || 360;
-  const H = opts.height || 240;
-  const showLegend = opts.showLegend !== false;
+  const H = opts.height || 220;
   const isDonut = !!opts.donut;
-  const legendH = showLegend ? Math.ceil(nonZero.length / 2) * 22 + 10 : 0;
+  const showLegend = opts.showLegend !== false;
 
   const cx = W / 2;
   const cy = H / 2;
-  const r = Math.min(cx, cy) - 20;
-  const innerR = isDonut ? r * 0.55 : 0;
+  const r = Math.min(cx, cy) - 16;
+  const innerR = isDonut ? r * 0.52 : 0;
 
   const svg = svgEl('svg', {
-    viewBox: `0 0 ${W} ${H + legendH}`,
+    viewBox: `0 0 ${W} ${H}`,
     class: `chart-svg chart-pie${isDonut ? ' chart-donut' : ''}`,
     role: 'img',
     'aria-label': opts.title || (isDonut ? 'Donut chart' : 'Pie chart'),
@@ -460,6 +468,7 @@ export function drawPieChart(container, data, opts = {}) {
 
   const total = nonZero.reduce((s, seg) => s + seg.value, 0);
   const angles = computePieAngles(nonZero);
+  const pieTooltipItems = [];
 
   angles.forEach((ang, i) => {
     const seg = nonZero[i];
@@ -467,10 +476,12 @@ export function drawPieChart(container, data, opts = {}) {
 
     if (ang.fraction >= 1) {
       /* Full circle — arc path degenerates; use circle element */
-      svg.appendChild(svgEl('circle', {
+      const circle = svgEl('circle', {
         cx: String(cx), cy: String(cy), r: String(r),
         fill: color, class: 'chart-pie-slice',
-      }));
+      });
+      pieTooltipItems.push({ el: circle, label: `${seg.label}: ${formatAxisLabel(seg.value)} (100%)` });
+      svg.appendChild(circle);
       if (isDonut) {
         svg.appendChild(svgEl('circle', {
           cx: String(cx), cy: String(cy), r: String(innerR),
@@ -503,55 +514,46 @@ export function drawPieChart(container, data, opts = {}) {
       }
 
       const path = svgEl('path', { d, fill: color, class: 'chart-pie-slice' });
-      path.appendChild(svgEl('title', {}, [
-        `${seg.label}: ${seg.value} (${Math.round(ang.fraction * 100)}%)`,
-      ]));
+      const pct = Math.round(ang.fraction * 100);
+      pieTooltipItems.push({ el: path, label: `${seg.label}: ${formatAxisLabel(seg.value)} (${pct}%)` });
       svg.appendChild(path);
     }
   });
 
-  /* Donut centre labels */
+  /* Donut centre — show total amount only (title would overflow small hole) */
   if (isDonut) {
-    if (opts.title) {
-      svg.appendChild(svgEl('text', {
-        x: String(cx), y: String(cy - 6),
-        class: 'chart-donut-center-title',
-        'text-anchor': 'middle',
-      }, [opts.title]));
-    }
     svg.appendChild(svgEl('text', {
-      x: String(cx), y: String(cy + (opts.title ? 16 : 8)),
+      x: String(cx), y: String(cy + 7),
       class: 'chart-donut-center-total',
       'text-anchor': 'middle',
     }, [formatAxisLabel(total)]));
   }
 
-  /* Legend */
+  container.appendChild(svg);
+  _attachHoverTooltip(container, pieTooltipItems);
+
+  /* Legend rendered as HTML for crisp typography */
   if (showLegend) {
-    const cols = 2;
-    const colW = W / cols;
+    const legendDiv = document.createElement('div');
+    legendDiv.className = 'chart-html-legend';
     nonZero.forEach((seg, i) => {
       const ang = angles[i];
       const pct = Math.round(ang.fraction * 100);
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const lx = col * colW + 8;
-      const ly = H + 8 + row * 22;
       const color = seg.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
-      svg.appendChild(svgEl('rect', {
-        x: String(lx), y: String(ly + 1),
-        width: '12', height: '12',
-        fill: color, rx: '2',
-        class: 'chart-legend-swatch',
-      }));
-      svg.appendChild(svgEl('text', {
-        x: String(lx + 16), y: String(ly + 12),
-        class: 'chart-legend-label',
-      }, [`${seg.label} (${pct}%)`]));
+      const item = document.createElement('div');
+      item.className = 'chart-legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'chart-legend-swatch';
+      swatch.style.background = color;
+      const label = document.createElement('span');
+      label.className = 'chart-legend-label';
+      label.textContent = `${seg.label} (${pct}%)`;
+      item.appendChild(swatch);
+      item.appendChild(label);
+      legendDiv.appendChild(item);
     });
+    container.appendChild(legendDiv);
   }
-
-  container.appendChild(svg);
 }
 
 /* ---------- Private helpers ---------- */
@@ -561,4 +563,56 @@ function _emptyMsg() {
   span.className = 'chart-empty';
   span.textContent = 'No data';
   return span;
+}
+
+/**
+ * Clear previous chart SVG, tooltip, and HTML legend from container.
+ * Preserves non-chart children (e.g. title divs placed before chart).
+ * @param {HTMLElement} container
+ */
+function _clearChart(container) {
+  const prevSvg = container.querySelector('svg.chart-svg');
+  if (prevSvg) prevSvg.remove();
+  const prevTip = container.querySelector('.chart-tooltip');
+  if (prevTip) prevTip.remove();
+  const prevLegend = container.querySelector('.chart-html-legend');
+  if (prevLegend) prevLegend.remove();
+  const prevEmpty = container.querySelector('.chart-empty');
+  if (prevEmpty) prevEmpty.remove();
+}
+
+/**
+ * Attach a visible floating tooltip to interactive SVG elements.
+ * Creates a `.chart-tooltip` div inside container (position: relative required).
+ * @param {HTMLElement} container — wrapper with position:relative
+ * @param {Array<{el: SVGElement, label: string}>} items
+ */
+function _attachHoverTooltip(container, items) {
+  if (!items.length) return;
+  const tip = document.createElement('div');
+  tip.className = 'chart-tooltip';
+  container.appendChild(tip);
+  items.forEach(({ el: svgNode, label }) => {
+    svgNode.addEventListener('mouseenter', (e) => {
+      tip.textContent = label;
+      tip.classList.add('chart-tooltip-show');
+      _moveTip(tip, e, container);
+    });
+    svgNode.addEventListener('mousemove', (e) => _moveTip(tip, e, container));
+    svgNode.addEventListener('mouseleave', () => tip.classList.remove('chart-tooltip-show'));
+  });
+}
+
+/**
+ * Reposition tooltip near the mouse cursor within its container.
+ * @param {HTMLElement} tip
+ * @param {MouseEvent} e
+ * @param {HTMLElement} container
+ */
+function _moveTip(tip, e, container) {
+  const r = container.getBoundingClientRect();
+  const x = e.clientX - r.left + 12;
+  const y = e.clientY - r.top - 36;
+  tip.style.left = `${Math.min(x, Math.max(0, container.offsetWidth - 160))}px`;
+  tip.style.top = `${Math.max(4, y)}px`;
 }

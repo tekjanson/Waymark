@@ -114,20 +114,25 @@ test('drawBarChart shows empty message when no data', async ({ page }) => {
   expect(text).toBe('No data');
 });
 
-test('drawBarChart bars have title tooltips', async ({ page }) => {
+test('drawBarChart has hover tooltip div and shows text on mouseenter', async ({ page }) => {
   await setupApp(page);
-  const tooltips = await page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     const { drawBarChart } = await import('/js/templates/charts.js');
     const div = document.createElement('div');
     document.body.appendChild(div);
     drawBarChart(div, { labels: ['Alpha', 'Beta'], values: [5, 10] });
-    const titles = [...div.querySelectorAll('.chart-bar-rect title')].map(t => t.textContent);
+    const hasTip = !!div.querySelector('.chart-tooltip');
+    const bar = div.querySelector('.chart-bar-rect');
+    // Simulate mouseenter
+    bar.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 100, clientY: 100 }));
+    const tipVisible = div.querySelector('.chart-tooltip')?.classList.contains('chart-tooltip-show');
+    const tipText = div.querySelector('.chart-tooltip')?.textContent || '';
     document.body.removeChild(div);
-    return titles;
+    return { hasTip, tipVisible, tipText };
   });
-  expect(tooltips).toHaveLength(2);
-  expect(tooltips[0]).toContain('Alpha');
-  expect(tooltips[1]).toContain('Beta');
+  expect(result.hasTip).toBe(true);
+  expect(result.tipVisible).toBe(true);
+  expect(result.tipText).toContain('Alpha');
 });
 
 /* ---------- drawLineChart direct rendering ---------- */
@@ -270,6 +275,95 @@ test('drawPieChart shows empty message when all values are zero', async ({ page 
     return msg;
   });
   expect(text).toBe('No data');
+});
+
+test('drawPieChart legend renders as HTML elements (not SVG text)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { drawPieChart } = await import('/js/templates/charts.js');
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    drawPieChart(div, {
+      segments: [
+        { label: 'Food', value: 40 },
+        { label: 'Transport', value: 30 },
+        { label: 'Housing', value: 30 },
+      ],
+      showLegend: true,
+    });
+    const htmlLegend = !!div.querySelector('.chart-html-legend');
+    const legendItems = div.querySelectorAll('.chart-legend-item').length;
+    const legendLabels = [...div.querySelectorAll('.chart-legend-label')].map(el => el.textContent);
+    // Legend should be HTML divs/spans, not SVG text elements
+    const svgTexts = div.querySelectorAll('svg text.chart-legend-label').length;
+    document.body.removeChild(div);
+    return { htmlLegend, legendItems, legendLabels, svgTexts };
+  });
+  expect(result.htmlLegend).toBe(true);
+  expect(result.legendItems).toBe(3);
+  expect(result.legendLabels[0]).toContain('Food');
+  expect(result.legendLabels[0]).toContain('%');
+  expect(result.svgTexts).toBe(0);
+});
+
+test('drawPieChart slice hover shows tooltip with label and percentage', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { drawPieChart } = await import('/js/templates/charts.js');
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    drawPieChart(div, {
+      segments: [
+        { label: 'Groceries', value: 60 },
+        { label: 'Utilities', value: 40 },
+      ],
+    });
+    const hasTip = !!div.querySelector('.chart-tooltip');
+    const slice = div.querySelector('.chart-pie-slice');
+    slice.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 100, clientY: 100 }));
+    const tipVisible = div.querySelector('.chart-tooltip')?.classList.contains('chart-tooltip-show');
+    const tipText = div.querySelector('.chart-tooltip')?.textContent || '';
+    document.body.removeChild(div);
+    return { hasTip, tipVisible, tipText };
+  });
+  expect(result.hasTip).toBe(true);
+  expect(result.tipVisible).toBe(true);
+  expect(result.tipText).toContain('Groceries');
+  expect(result.tipText).toContain('%');
+});
+
+test('drawBarChart preserves title div in container (does not wipe on re-render)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { drawBarChart } = await import('/js/templates/charts.js');
+    const wrap = document.createElement('div');
+    document.body.appendChild(wrap);
+    // Add a title div first — simulates how tracker.js uses drawBarChart
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'chart-container-title';
+    titleDiv.textContent = 'Progress Overview';
+    wrap.appendChild(titleDiv);
+    drawBarChart(wrap, { labels: ['A', 'B'], values: [10, 20] });
+    const titleStillThere = !!wrap.querySelector('.chart-container-title');
+    const titleText = wrap.querySelector('.chart-container-title')?.textContent || '';
+    document.body.removeChild(wrap);
+    return { titleStillThere, titleText };
+  });
+  expect(result.titleStillThere).toBe(true);
+  expect(result.titleText).toBe('Progress Overview');
+});
+
+test('chart SVG has max-width constraint applied via CSS class', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-010');
+  await page.waitForSelector('.tracker-chart-wrap .chart-svg', { timeout: 5_000 });
+
+  // The chart SVG should not exceed 520px max-width
+  const svgWidth = await page.evaluate(() => {
+    const svg = document.querySelector('.tracker-chart-wrap .chart-svg');
+    return svg ? svg.getBoundingClientRect().width : 0;
+  });
+  expect(svgWidth).toBeLessThanOrEqual(525); // 520px + 5px tolerance
 });
 
 /* ---------- Visual consistency ---------- */
