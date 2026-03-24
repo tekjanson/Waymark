@@ -736,16 +736,19 @@ if (dirHelpBtn) {
   });
 }
 
-// "Add Files" button — opens Picker so the user can grant drive.file
-// access to sheets others created in this shared folder.
+// "Add Files" button — opens Picker pre-navigated to this folder
+// so the user can grant drive.file access to sheets others created.
 if (folderAddFilesBtn) {
   folderAddFilesBtn.addEventListener('click', async () => {
     if (!currentFolderId) return;
     try {
-      const picked = await api.picker.pickSpreadsheets({ multiSelect: true, includeSharedDrives: true });
+      const picked = await api.picker.pickSpreadsheets({
+        multiSelect: true,
+        includeSharedDrives: true,
+        parentFolderId: currentFolderId,
+      });
       if (!picked || picked.length === 0) return;
       showToast(`Added ${picked.length} file${picked.length > 1 ? 's' : ''} — refreshing…`, 'success');
-      // Re-load folder to include the newly-accessible files
       showFolderContents(currentFolderId, currentFolderName);
     } catch (err) {
       showToast(`Picker error: ${err.message}`, 'error');
@@ -1088,7 +1091,9 @@ async function showFolderContents(folderId, folderName) {
           if (results[j].status === 'fulfilled') {
             freshSheets.push(results[j].value);
           } else {
-            failedSheets.push(batch[j]);
+            const s = batch[j];
+            s._fetchError = results[j].reason;
+            failedSheets.push(s);
           }
         }
       }
@@ -1273,33 +1278,61 @@ async function showFolderContents(folderId, folderName) {
         }
       }
 
-      // Render sheets that failed to load as plain items
+      // Render sheets that failed to load as plain items (non-access errors)
+      const accessFailedSheets = [];
       for (const s of failedSheets) {
-        sheetsEl.append(el('div', {
-          className: 'sheet-list-item',
-          on: { click() { navigate('sheet', s.id, s.name); } },
-        }, [
-          el('span', { className: 'sheet-emoji' }, ['📊']),
-          el('div', { className: 'sheet-list-item-name' }, [s.name]),
-        ]));
+        // With drive.metadata.readonly, files.list returns files we can SEE
+        // but can't READ. Sheets API fails with 403 for these — they need
+        // Picker access. Other errors (transient 500s, etc.) render normally.
+        const isAccessErr = s._fetchError && /40[34]/.test(String(s._fetchError));
+        if (isAccessErr) {
+          accessFailedSheets.push(s);
+        } else {
+          sheetsEl.append(el('div', {
+            className: 'sheet-list-item',
+            on: { click() { navigate('sheet', s.id, s.name); } },
+          }, [
+            el('span', { className: 'sheet-emoji' }, ['📊']),
+            el('div', { className: 'sheet-list-item-name' }, [s.name]),
+          ]));
+        }
       }
 
-      // --- Ghost cards for sheets the user can't access yet ---
-      // The .waymark-index knows these exist, but drive.file scope
-      // means files.list didn't return them. Show them so the user
-      // knows what they're missing and can grant access via Picker.
-      if (missingSheets.length > 0) {
+      // --- Ghost cards for inaccessible sheets ---
+      // Two sources: (a) accessFailedSheets — files.list returned them
+      // (via drive.metadata.readonly) but Sheets API rejected content access;
+      // (b) missingSheets — files the .waymark-index knows about but weren't
+      // even returned by files.list (fallback for edge cases).
+      // Merge both, dedup by ID, prefer real Drive metadata over index data.
+      const ghostMap = new Map();
+      for (const m of missingSheets) {
+        const icon = m.icon || (m.templateKey && TEMPLATES[m.templateKey]?.icon) || '📊';
+        ghostMap.set(m.id, { id: m.id, name: m.name || 'Untitled', icon });
+      }
+      for (const s of accessFailedSheets) {
+        const idx = indexSheets[s.id];
+        const icon = idx?.icon || (idx?.templateKey && TEMPLATES[idx.templateKey]?.icon) || '📊';
+        ghostMap.set(s.id, { id: s.id, name: s.name || 'Untitled', icon });
+      }
+      const allGhosts = [...ghostMap.values()];
+
+      if (allGhosts.length > 0) {
+        const n = allGhosts.length;
         const missingHeader = el('div', { className: 'missing-sheets-banner' }, [
           el('span', { className: 'missing-sheets-icon' }, ['🔒']),
           el('span', {}, [
-            `${missingSheets.length} file${missingSheets.length > 1 ? 's' : ''} shared by others — select below or `,
+            `${n} file${n > 1 ? 's' : ''} need${n === 1 ? 's' : ''} access — `,
           ]),
           el('button', {
             className: 'btn-link',
             on: {
               async click() {
                 try {
-                  const picked = await api.picker.pickSpreadsheets({ multiSelect: true, includeSharedDrives: true });
+                  const picked = await api.picker.pickSpreadsheets({
+                    multiSelect: true,
+                    includeSharedDrives: true,
+                    parentFolderId: currentFolderId,
+                  });
                   if (picked && picked.length > 0) {
                     showToast(`Granted access to ${picked.length} file${picked.length > 1 ? 's' : ''} — refreshing…`, 'success');
                     showFolderContents(currentFolderId, currentFolderName);
@@ -1307,19 +1340,22 @@ async function showFolderContents(folderId, folderName) {
                 } catch (e) { showToast(`Picker error: ${e.message}`, 'error'); }
               },
             },
-          }, ['open Picker to add all']),
+          }, ['open this folder in Picker to select them']),
         ]);
         sheetsEl.append(missingHeader);
 
-        for (const m of missingSheets) {
-          const icon = m.icon || (m.templateKey && TEMPLATES[m.templateKey]?.icon) || '📊';
+        for (const g of allGhosts) {
           sheetsEl.append(el('div', {
             className: 'sheet-list-item sheet-list-item--ghost',
-            title: `"${m.name}" — click to grant access via Picker`,
+            title: `"${g.name}" — click to grant access`,
             on: {
               async click() {
                 try {
-                  const picked = await api.picker.pickSpreadsheets({ multiSelect: false, includeSharedDrives: true });
+                  const picked = await api.picker.pickSpreadsheets({
+                    multiSelect: true,
+                    includeSharedDrives: true,
+                    parentFolderId: currentFolderId,
+                  });
                   if (picked && picked.length > 0) {
                     showToast('Access granted — refreshing…', 'success');
                     showFolderContents(currentFolderId, currentFolderName);
@@ -1328,8 +1364,8 @@ async function showFolderContents(folderId, folderName) {
               },
             },
           }, [
-            el('span', { className: 'sheet-emoji' }, [icon]),
-            el('div', { className: 'sheet-list-item-name' }, [m.name || 'Untitled']),
+            el('span', { className: 'sheet-emoji' }, [g.icon]),
+            el('div', { className: 'sheet-list-item-name' }, [g.name]),
             el('span', { className: 'sheet-ghost-badge' }, ['🔒 needs access']),
           ]));
         }
@@ -1344,13 +1380,13 @@ async function showFolderContents(folderId, folderName) {
     // Hide loading bar once all content is rendered
     loadingBar.classList.add('hidden');
 
-    // Update the header button with missing-file count (if any).
+    // Update the header button with ghost-file count (if any).
     // The button is only useful when there are files the user can't
-    // see yet — otherwise it stays hidden to avoid confusion.
+    // read yet — otherwise it stays hidden to avoid confusion.
     if (folderAddFilesBtn) {
-      const nMissing = (typeof missingSheets !== 'undefined') ? missingSheets.length : 0;
-      if (nMissing > 0) {
-        folderAddFilesBtn.textContent = `🔒 ${nMissing} need${nMissing > 1 ? '' : 's'} access`;
+      const nGhosts = (typeof allGhosts !== 'undefined') ? allGhosts.length : 0;
+      if (nGhosts > 0) {
+        folderAddFilesBtn.textContent = `🔒 ${nGhosts} need${nGhosts > 1 ? '' : 's'} access`;
         folderAddFilesBtn.classList.remove('hidden');
       } else {
         folderAddFilesBtn.classList.add('hidden');

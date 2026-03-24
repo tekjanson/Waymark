@@ -43,12 +43,23 @@ let toastContainer;
  * @param {'info'|'success'|'error'} type
  * @param {number} duration  ms before auto-dismiss
  */
-export function showToast(message, type = 'info', duration = 4000) {
+export function showToast(message, type = 'info', opts = 4000) {
+  const duration = typeof opts === 'number' ? opts : (opts.duration ?? 4000);
+  const action   = typeof opts === 'object' ? opts : null;
   if (!toastContainer) toastContainer = document.getElementById('toast-container');
-  const toast = el('div', { className: `toast toast-${type}` }, [message]);
+  const children = [message];
+  if (action?.action) {
+    const btn = el('button', {
+      className: 'toast-action',
+      on: { click(e) { e.stopPropagation(); toast.remove(); action.onAction?.(); } },
+    }, [action.action]);
+    children.push(btn);
+  }
+  const toast = el('div', { className: `toast toast-${type}` }, children);
   toastContainer.append(toast);
-  if (duration > 0) {
-    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
+  const dur = action?.action ? Math.max(duration, 8000) : duration;
+  if (dur > 0) {
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, dur);
   }
   return toast;
 }

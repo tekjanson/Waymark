@@ -82,6 +82,11 @@ export async function pickSpreadsheets(token, opts = {}) {
       sheetsView.setEnableDrives(true);
     }
 
+    // Pre-navigate to a specific folder so users don't have to hunt
+    if (opts.parentFolderId) {
+      sheetsView.setParent(opts.parentFolderId);
+    }
+
     if (opts.includeDocs) {
       const docsView = new google.picker.DocsView(google.picker.ViewId.DOCUMENTS)
         .setIncludeFolders(true)

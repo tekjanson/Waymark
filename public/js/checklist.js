@@ -169,7 +169,24 @@ export function init() {
     try {
       await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, newValue);
     } catch (err) {
-      showToast(`Failed to save: ${err.message}`, 'error');
+      // 403 usually means drive.file scope doesn't cover this sheet yet
+      // (user can read it via spreadsheets.readonly but hasn't Picker-opened
+      // it to grant write access). Offer a one-click fix.
+      if (/403/.test(String(err.message || err))) {
+        showToast('This file is read-only — open it with the Picker to enable editing', 'warning', {
+          action: 'Grant access',
+          async onAction() {
+            try {
+              const picked = await api.picker.pickSpreadsheets({ includeSharedDrives: true });
+              if (picked && picked.length > 0) {
+                showToast('Write access granted — you can now edit', 'success');
+              }
+            } catch (e) { showToast(`Picker error: ${e.message}`, 'error'); }
+          },
+        });
+      } else {
+        showToast(`Failed to save: ${err.message}`, 'error');
+      }
     }
   });
 

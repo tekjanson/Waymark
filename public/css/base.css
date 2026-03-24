@@ -1065,7 +1065,14 @@ ul { list-style: none; }
 }
 .toast.toast-error { background: var(--color-error); }
 .toast.toast-success { background: var(--color-success); }
+.toast.toast-warning { background: var(--color-warning, #e6a817); color: #000; }
 .toast.toast-update { background: var(--color-primary); cursor: pointer; }
+.toast-action {
+  margin-left: auto; padding: 4px 10px; border: 1px solid currentColor;
+  border-radius: var(--radius); background: transparent; color: inherit;
+  font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+}
+.toast-action:hover { background: rgba(255,255,255,0.2); }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---------- Loading Overlay ---------- */

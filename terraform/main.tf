@@ -33,11 +33,16 @@ locals {
     "profile",
   ]
 
-  # API scopes — only drive.file (non-restricted, no verification needed)
-  # Google Picker grants drive.file access to user-selected files,
-  # removing the need for drive.readonly and spreadsheets scopes.
+  # API scopes — all sensitive-tier, no restricted-scope verification needed.
+  # drive.file: create/edit files the app creates or user opens via Picker.
+  # drive.metadata.readonly: see ALL files in shared folders (names, IDs,
+  #   modified times) so users know what exists before granting content access.
+  # spreadsheets.readonly: read content of any spreadsheet the user can
+  #   access in Drive. Combined with drive.file for writes via Picker.
   api_scopes = [
-    "https://www.googleapis.com/auth/drive.file", # manage files created or selected via Picker
+    "https://www.googleapis.com/auth/drive.file",              # manage files created or selected via Picker
+    "https://www.googleapis.com/auth/drive.metadata.readonly", # see file metadata in shared folders
+    "https://www.googleapis.com/auth/spreadsheets.readonly",   # read any accessible spreadsheet
   ]
 
   all_scopes = concat(local.openid_scopes, local.api_scopes)
