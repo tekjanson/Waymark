@@ -757,6 +757,7 @@ if (folderAddFilesBtn) {
 
 const INDEX_FILE = '.waymark-index';
 
+
 /**
  * Consolidate multiple .waymark-index files into one.
  * In My Drive shared folders you can only delete files you own, so
@@ -1051,6 +1052,8 @@ async function showFolderContents(folderId, folderName) {
       const cachedSheets = [];
       const toFetch = [];
 
+      const visibleIds = new Set(sheets.map(s => s.id));
+
       for (const s of sheets) {
         const cached = indexSheets[s.id];
         if (cached && cached.modified === s.modifiedTime) {
@@ -1063,6 +1066,12 @@ async function showFolderContents(folderId, folderName) {
           toFetch.push(s);
         }
       }
+
+      // Sheets the index knows about but files.list didn't return —
+      // the current user hasn't granted drive.file access to these yet.
+      const missingSheets = Object.entries(indexSheets)
+        .filter(([id]) => !visibleIds.has(id))
+        .map(([id, entry]) => ({ id, ...entry }));
 
       // --- Phase 3: Fetch only new/modified sheets (batched) ---
       // Global throttle in sheets.js controls concurrency & rate — no
@@ -1274,6 +1283,57 @@ async function showFolderContents(folderId, folderName) {
           el('div', { className: 'sheet-list-item-name' }, [s.name]),
         ]));
       }
+
+      // --- Ghost cards for sheets the user can't access yet ---
+      // The .waymark-index knows these exist, but drive.file scope
+      // means files.list didn't return them. Show them so the user
+      // knows what they're missing and can grant access via Picker.
+      if (missingSheets.length > 0) {
+        const missingHeader = el('div', { className: 'missing-sheets-banner' }, [
+          el('span', { className: 'missing-sheets-icon' }, ['🔒']),
+          el('span', {}, [
+            `${missingSheets.length} file${missingSheets.length > 1 ? 's' : ''} shared by others — select below or `,
+          ]),
+          el('button', {
+            className: 'btn-link',
+            on: {
+              async click() {
+                try {
+                  const picked = await api.picker.pickSpreadsheets({ multiSelect: true, includeSharedDrives: true });
+                  if (picked && picked.length > 0) {
+                    showToast(`Granted access to ${picked.length} file${picked.length > 1 ? 's' : ''} — refreshing…`, 'success');
+                    showFolderContents(currentFolderId, currentFolderName);
+                  }
+                } catch (e) { showToast(`Picker error: ${e.message}`, 'error'); }
+              },
+            },
+          }, ['open Picker to add all']),
+        ]);
+        sheetsEl.append(missingHeader);
+
+        for (const m of missingSheets) {
+          const icon = m.icon || (m.templateKey && TEMPLATES[m.templateKey]?.icon) || '📊';
+          sheetsEl.append(el('div', {
+            className: 'sheet-list-item sheet-list-item--ghost',
+            title: `"${m.name}" — click to grant access via Picker`,
+            on: {
+              async click() {
+                try {
+                  const picked = await api.picker.pickSpreadsheets({ multiSelect: false, includeSharedDrives: true });
+                  if (picked && picked.length > 0) {
+                    showToast('Access granted — refreshing…', 'success');
+                    showFolderContents(currentFolderId, currentFolderName);
+                  }
+                } catch (e) { showToast(`Picker error: ${e.message}`, 'error'); }
+              },
+            },
+          }, [
+            el('span', { className: 'sheet-emoji' }, [icon]),
+            el('div', { className: 'sheet-list-item-name' }, [m.name || 'Untitled']),
+            el('span', { className: 'sheet-ghost-badge' }, ['🔒 needs access']),
+          ]));
+        }
+      }
     }
 
     // Append docs (if sheets were present, they weren't added yet)
@@ -1284,9 +1344,18 @@ async function showFolderContents(folderId, folderName) {
     // Hide loading bar once all content is rendered
     loadingBar.classList.add('hidden');
 
-    // Show the "Add Files" button so users can grant access to
-    // files created by others in this (possibly shared) folder.
-    if (folderAddFilesBtn) folderAddFilesBtn.classList.remove('hidden');
+    // Update the header button with missing-file count (if any).
+    // The button is only useful when there are files the user can't
+    // see yet — otherwise it stays hidden to avoid confusion.
+    if (folderAddFilesBtn) {
+      const nMissing = (typeof missingSheets !== 'undefined') ? missingSheets.length : 0;
+      if (nMissing > 0) {
+        folderAddFilesBtn.textContent = `🔒 ${nMissing} need${nMissing > 1 ? '' : 's'} access`;
+        folderAddFilesBtn.classList.remove('hidden');
+      } else {
+        folderAddFilesBtn.classList.add('hidden');
+      }
+    }
 
     // Register for search context
     collectKnownSheets();
