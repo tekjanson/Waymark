@@ -1150,3 +1150,26 @@
 [data-theme="dark"] .cookbook-description { background: rgba(180, 130, 60, 0.05); }
 [data-theme="dark"] .cookbook-row-header { background: rgba(180, 130, 60, 0.06); }
 [data-theme="dark"] .cookbook-sort-label { color: #c4a882; }
+
+/* ---------- Print Layout (clean recipe cards) ---------- */
+@media print {
+  .recipe-container { display: block !important; }
+  .recipe-toolbar, .recipe-search-bar, .recipe-controls,
+  .recipe-sort-btn, .recipe-filter-btn, .recipe-view-toggle,
+  .recipe-add-btn, .recipe-shopping-btn, .recipe-scale-controls { display: none !important; }
+  .recipe-card {
+    break-inside: avoid;
+    border: 0.5pt solid #ccc;
+    box-shadow: none;
+    border-radius: 0;
+    margin-bottom: 6mm;
+    padding: 4mm;
+    page-break-inside: avoid;
+  }
+  .recipe-card-header { border-bottom: 0.5pt solid #ddd; padding-bottom: 2mm; margin-bottom: 2mm; }
+  .recipe-ingredient-adjust, .recipe-ingredient-qty .editable-cell { display: none !important; }
+  .recipe-ingredient-qty { min-width: 0; }
+  .recipe-card-instructions ol li { break-inside: avoid; }
+  .cookbook-container { display: block !important; }
+  .cookbook-row-header { break-inside: avoid; border: 0.3pt solid #ccc; }
+}
