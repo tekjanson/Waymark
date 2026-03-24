@@ -1,0 +1,173 @@
+/* Charts — shared SVG chart engine styles */
+
+/* ---------- SVG containers ---------- */
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+/* ---------- Chart wrapper card ---------- */
+
+.chart-container {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px 16px 8px;
+  overflow: hidden;
+}
+
+.chart-container-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+/* ---------- Axis infrastructure ---------- */
+
+.chart-grid-line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.chart-axis {
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+}
+
+.chart-axis-label {
+  font-size: 10px;
+  fill: var(--color-text-secondary);
+  font-family: inherit;
+}
+
+.chart-axis-x {
+  font-size: 9px;
+}
+
+.chart-axis-y {
+  font-size: 9px;
+}
+
+/* ---------- Line chart ---------- */
+
+.chart-line-path {
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.chart-dot {
+  cursor: default;
+  transition: r var(--transition, 150ms ease);
+}
+
+.chart-dot:hover {
+  r: 6;
+}
+
+/* ---------- Bar chart ---------- */
+
+.chart-bar-rect {
+  cursor: default;
+  transition: opacity var(--transition, 150ms ease);
+}
+
+.chart-bar-rect:hover {
+  opacity: 0.8;
+}
+
+.chart-bar-value {
+  font-size: 10px;
+  fill: var(--color-text);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* ---------- Pie / donut chart ---------- */
+
+.chart-pie-slice {
+  cursor: default;
+  transition: opacity var(--transition, 150ms ease);
+  stroke: var(--color-surface);
+  stroke-width: 1.5;
+}
+
+.chart-pie-slice:hover {
+  opacity: 0.85;
+}
+
+.chart-donut-hole {
+  fill: var(--color-surface);
+}
+
+.chart-donut-center-title {
+  font-size: 11px;
+  fill: var(--color-text-secondary);
+  font-family: inherit;
+}
+
+.chart-donut-center-total {
+  font-size: 20px;
+  font-weight: 700;
+  fill: var(--color-text);
+  font-family: inherit;
+}
+
+/* ---------- Legend ---------- */
+
+.chart-legend-label {
+  font-size: 11px;
+  fill: var(--color-text);
+  font-family: inherit;
+}
+
+.chart-legend-swatch {
+  /* color set inline per data segment */
+}
+
+/* ---------- Empty state ---------- */
+
+.chart-empty {
+  display: block;
+  padding: 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ---------- Tracker chart integration ---------- */
+
+.tracker-chart-wrap {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px 16px 8px;
+  margin-bottom: 16px;
+}
+
+.tracker-chart-wrap .chart-container-title {
+  margin-bottom: 4px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 480px) {
+  .tracker-chart-wrap {
+    padding: 8px 10px 6px;
+    margin-bottom: 12px;
+  }
+
+  .chart-axis-label,
+  .chart-axis-x,
+  .chart-axis-y {
+    font-size: 8px;
+  }
+}

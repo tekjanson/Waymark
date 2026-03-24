@@ -2,7 +2,7 @@
    templates/tracker.js \u2014 Tracker: milestones + completion ETA
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate } from './shared.js';
+import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate, drawBarChart } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -55,6 +55,23 @@ const definition = {
   },
 
   render(container, rows, cols) {
+    /* Summary bar chart — shown when there are multiple rows */
+    if (rows.length > 1) {
+      const chartLabels = rows.map(r => (cell(r, cols.text) || r[0] || '').slice(0, 12));
+      const chartValues = rows.map(r => parseProgress(cell(r, cols.progress), cell(r, cols.target)));
+      const chartColors = chartValues.map(pct =>
+        pct >= 100 ? '#16a34a' : pct >= 50 ? '#2563eb' : pct >= 25 ? '#f59e0b' : '#dc2626'
+      );
+      const chartWrap = el('div', { className: 'tracker-chart-wrap' });
+      chartWrap.appendChild(el('div', { className: 'chart-container-title' }, ['Progress Overview']));
+      drawBarChart(chartWrap, { labels: chartLabels, values: chartValues, colors: chartColors }, {
+        height: 160,
+        showValues: false,
+        title: 'Progress Overview',
+      });
+      container.append(chartWrap);
+    }
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowIdx = i + 1;
