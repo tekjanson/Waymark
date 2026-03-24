@@ -282,3 +282,106 @@ test('home action create button opens modal with template grid populated', async
   const cards = page.locator('.create-sheet-card');
   expect(await cards.count()).toBeGreaterThan(0);
 });
+
+/* ────────────────── Location picker ────────────────── */
+
+test('create sheet modal shows location section with default text', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  const display = page.locator('#create-sheet-folder-display');
+  await expect(display).toBeVisible();
+  await expect(display).toContainText('Waymark (default)');
+});
+
+test('create sheet modal shows Choose Folder button', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  const btn = page.locator('#create-sheet-choose-folder-btn');
+  await expect(btn).toBeVisible();
+  await expect(btn).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking Choose Folder updates the location display', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  // default label
+  await expect(page.locator('#create-sheet-folder-display')).toContainText('Waymark (default)');
+
+  // click the button — mock returns { id: "f1", name: "Groceries" }
+  await page.locator('#create-sheet-choose-folder-btn').click();
+
+  // display should update
+  await expect(page.locator('#create-sheet-folder-display')).toContainText('Groceries');
+});
+
+test('creating a sheet with a selected folder passes the folder id', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+
+  // Choose a folder first
+  await page.locator('#create-sheet-choose-folder-btn').click();
+  await expect(page.locator('#create-sheet-folder-display')).toContainText('Groceries');
+
+  // Select a template and set a name
+  await page.locator('.create-sheet-card').first().click();
+  await page.locator('#create-sheet-name').fill('Located Sheet');
+
+  // Create
+  await page.locator('#create-sheet-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeHidden({ timeout: 5000 });
+
+  // Verify the parentId recorded is the chosen folder
+  const records = await getCreatedRecords(page);
+  const createRecord = records.find(r => r.title === 'Located Sheet');
+  expect(createRecord).toBeTruthy();
+  expect(createRecord.parentId).toBe('f1');
+});
+
+test('modal resets location when reopened', async ({ page }) => {
+  await setupApp(page);
+
+  // Open, pick a folder
+  await page.locator('#menu-create-btn').click();
+  await page.locator('#create-sheet-choose-folder-btn').click();
+  await expect(page.locator('#create-sheet-folder-display')).toContainText('Groceries');
+
+  // Close and reopen
+  await page.locator('#create-sheet-cancel-btn').click();
+  await page.locator('#menu-create-btn').click();
+
+  // Location display should be back to default
+  await expect(page.locator('#create-sheet-folder-display')).toContainText('Waymark (default)');
+});
+
+test('choosing folder shows error message when picker throws', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  // Override pickFolder to throw so we can test the error display path
+  await page.evaluate(async () => {
+    const mod = await import('/js/api-client.js');
+    mod.api.picker.pickFolder = async () => { throw new Error('Picker unavailable'); };
+  });
+
+  await page.locator('#create-sheet-choose-folder-btn').click();
+
+  // Error message should appear in the status area
+  await expect(page.locator('#create-sheet-status')).toContainText('Could not open folder picker', { timeout: 3000 });
+  await expect(page.locator('#create-sheet-status')).toContainText('Picker unavailable');
+
+  // Button should be restored — not stuck in disabled/loading state
+  await expect(page.locator('#create-sheet-choose-folder-btn')).toBeEnabled();
+  await expect(page.locator('#create-sheet-choose-folder-btn')).toContainText('Choose Folder');
+});
