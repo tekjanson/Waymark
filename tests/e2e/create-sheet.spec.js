@@ -362,3 +362,26 @@ test('modal resets location when reopened', async ({ page }) => {
   // Location display should be back to default
   await expect(page.locator('#create-sheet-folder-display')).toContainText('Waymark (default)');
 });
+
+test('choosing folder shows error message when picker throws', async ({ page }) => {
+  await setupApp(page);
+
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+
+  // Override pickFolder to throw so we can test the error display path
+  await page.evaluate(async () => {
+    const mod = await import('/js/api-client.js');
+    mod.api.picker.pickFolder = async () => { throw new Error('Picker unavailable'); };
+  });
+
+  await page.locator('#create-sheet-choose-folder-btn').click();
+
+  // Error message should appear in the status area
+  await expect(page.locator('#create-sheet-status')).toContainText('Could not open folder picker', { timeout: 3000 });
+  await expect(page.locator('#create-sheet-status')).toContainText('Picker unavailable');
+
+  // Button should be restored — not stuck in disabled/loading state
+  await expect(page.locator('#create-sheet-choose-folder-btn')).toBeEnabled();
+  await expect(page.locator('#create-sheet-choose-folder-btn')).toContainText('Choose Folder');
+});

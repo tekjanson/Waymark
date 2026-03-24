@@ -1348,14 +1348,17 @@ function initCreateSheetModal() {
       try {
         createSheetChooseFolderBtn.disabled = true;
         createSheetChooseFolderBtn.textContent = 'Opening…';
+        if (createSheetStatus) createSheetStatus.textContent = '';
         const folder = await api.picker.pickFolder();
         if (folder) {
           createSheetParentId   = folder.id;
           createSheetParentName = folder.name;
           if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = folder.name;
         }
-      } catch {
-        // Silently ignore — user can try again
+      } catch (err) {
+        if (createSheetStatus) {
+          createSheetStatus.textContent = `Could not open folder picker: ${err && err.message ? err.message : 'please try again'}`;
+        }
       } finally {
         createSheetChooseFolderBtn.disabled = false;
         createSheetChooseFolderBtn.textContent = '📁 Choose Folder';
