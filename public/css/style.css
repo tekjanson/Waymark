@@ -36,6 +36,8 @@
 @import url('./templates/okr.css');
 @import url('./templates/gantt.css');
 
+@import url('./templates/charts.css');
+
 /* Cross-template feature integration */
 @import url('./templates/cross-features.css');
 

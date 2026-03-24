@@ -1002,3 +1002,16 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
   root.append(trigger, form);
   return root;
 }
+
+/* ---------- Chart engine re-exports ---------- */
+
+/* Templates access these via shared.js (§1.5 — templates import only from shared.js) */
+export {
+  drawLineChart,
+  drawBarChart,
+  drawPieChart,
+  normalizeValues,
+  polarToCartesian,
+  computePieAngles,
+  formatAxisLabel,
+} from './charts.js';

@@ -49,29 +49,31 @@ test('budget category headers show subtotal amounts', async ({ page }) => {
 
 /* ---------- Category chart ---------- */
 
-test('budget chart shows expense allocation by category', async ({ page }) => {
+test('budget chart shows SVG donut pie for spending by category', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-016');
   await page.waitForSelector('.budget-chart', { timeout: 5_000 });
 
-  // Chart bar should have segments
-  const segments = await page.locator('.budget-chart-segment').count();
-  expect(segments).toBeGreaterThanOrEqual(3);
+  // SVG pie chart should be present
+  await expect(page.locator('.budget-chart .chart-svg')).toBeVisible();
 
-  // Legend should have items matching segments
-  const legendItems = await page.locator('.budget-chart-legend-item').count();
-  expect(legendItems).toBe(segments);
+  // Pie slices should exist — one per non-zero category
+  const slices = await page.locator('.budget-chart .chart-pie-slice').count();
+  expect(slices).toBeGreaterThanOrEqual(3);
+
+  // Legend labels should exist matching slices
+  const legendLabels = await page.locator('.budget-chart .chart-legend-label').count();
+  expect(legendLabels).toBe(slices);
 });
 
-test('budget chart legend items show category names and dollar amounts', async ({ page }) => {
+test('budget chart legend labels show category names and percentages', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-016');
-  await page.waitForSelector('.budget-chart-legend-item', { timeout: 5_000 });
+  await page.waitForSelector('.budget-chart .chart-legend-label', { timeout: 5_000 });
 
-  const texts = await page.locator('.budget-chart-legend-item').allTextContents();
-  // Each legend item should include a $ amount and a % value
+  const texts = await page.locator('.budget-chart .chart-legend-label').allTextContents();
+  // Each legend label includes category name and a % value
   for (const t of texts) {
-    expect(t).toContain('$');
     expect(t).toContain('%');
   }
 });
@@ -106,12 +108,18 @@ test('budget directoryView shows grand totals across sheets', async ({ page }) =
   for (const v of values) { expect(v).toContain('$'); }
 });
 
-test('budget directoryView shows trend chart with income/expense bars', async ({ page }) => {
+test('budget directoryView shows SVG bar charts for income and expenses', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/folder/f-budgets/Budgets'; });
   await page.waitForSelector('.budget-dir-chart', { timeout: 8_000 });
-  const bars = await page.locator('.budget-dir-bar').count();
-  expect(bars).toBeGreaterThanOrEqual(4); // 2 sheets × 2 bars each
+
+  // Two side-by-side SVG bar charts (income + expenses)
+  const svgCharts = await page.locator('.budget-dir-chart .chart-svg').count();
+  expect(svgCharts).toBe(2);
+
+  // Each sheet generates one bar per chart; 2 sheets × 2 charts = at least 4 bars total
+  const bars = await page.locator('.budget-dir-chart .chart-bar-rect').count();
+  expect(bars).toBeGreaterThanOrEqual(4);
 });
 
 test('budget directoryView shows per-sheet cards with balance', async ({ page }) => {
