@@ -99,6 +99,7 @@ body {
   color: var(--color-text);
   line-height: 1.5;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 a { color: var(--color-primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -228,14 +229,14 @@ ul { list-style: none; }
   text-decoration: none;
 }
 .brand:hover { text-decoration: none; }
-.top-bar-center { flex: 1; display: flex; justify-content: center; }
+.top-bar-center { flex: 1; min-width: 0; display: flex; justify-content: center; }
 .top-bar-right { display: flex; align-items: center; gap: 10px; }
 
 .search-container {
   display: flex; align-items: center; gap: 4px;
   background: var(--color-bg); border: 1px solid var(--color-border);
   border-radius: var(--radius); padding: 4px 8px;
-  width: 100%; max-width: 420px; transition: border-color var(--transition);
+  width: 100%; max-width: 420px; min-width: 0; transition: border-color var(--transition);
 }
 .search-container:focus-within { border-color: var(--color-primary); }
 #search-input {
@@ -1846,6 +1847,7 @@ ul { list-style: none; }
   #sidebar-overlay { display: block; pointer-events: none; }
   #sidebar-overlay.active { pointer-events: auto; }
   .top-bar-right #user-name { display: none; }
+  .top-bar-right { gap: 6px; }
   .search-container { max-width: 200px; }
   #content { padding: 16px; }
   .examples-grid { grid-template-columns: 1fr; }
@@ -1907,6 +1909,11 @@ ul { list-style: none; }
 }
 
 @media (max-width: 480px) {
+  /* Compact top-bar: hide non-essential buttons, reduce gaps so user+sign-out remain visible */
+  #tutorial-btn { display: none; }
+  .top-bar-right { gap: 4px; }
+  #top-bar { gap: 8px; padding: 0 12px; }
+  .avatar { width: 26px; height: 26px; }
   .search-container { max-width: 140px; }
   .add-row-form { padding: 12px; }
   .add-row-actions { flex-direction: column; }
