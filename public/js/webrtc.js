@@ -38,9 +38,9 @@ const OFF_PRESENCE = 0;
 const OFF_OFFERS   = 1;
 const OFF_ANSWERS  = 2;
 
-const POLL_MS   = 2000;  // Poll interval
-const HEART_MS  = 8000;  // Heartbeat interval
-const ALIVE_TTL = 25000; // Peer gone after 25s silence
+const POLL_MS   = 5000;  // Poll interval (5s to stay within Sheets rate limits)
+const HEART_MS  = 15000; // Heartbeat interval (15s reduces write pressure)
+const ALIVE_TTL = 50000; // Peer gone after 50s silence (>3× heartbeat)
 const ICE_WAIT  = 2000;  // ICE gathering timeout
 
 /* ---------- WaymarkConnect ---------- */
@@ -99,9 +99,9 @@ export class WaymarkConnect {
     this.onStatusChanged('listening');
   }
 
-  /** Send a chat message to all connected peers (BC + all DataChannels). */
-  send(text) {
-    const msg = { type: 'message', peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
+  /** Send a chat message (or typing signal) to all connected peers (BC + all DataChannels). */
+  send(text, msgType = 'message') {
+    const msg = { type: msgType, peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
@@ -256,6 +256,9 @@ export class WaymarkConnect {
         break;
       case 'message':
         this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, channel: 'local' });
+        break;
+      case 'typing':
+        this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
         break;
       case 'call-start': break;
       case 'call-end':
@@ -529,6 +532,9 @@ export class WaymarkConnect {
             break;
           case 'call-end':
             this.onCallEnded(m.peerId);
+            break;
+          case 'typing':
+            this.onMessage({ peerId: m.peerId, name: m.name, text: null, type: 'typing', ts: m.ts, channel: 'rtc' });
             break;
           case 'renego-offer':
             this._onRenegoOffer(remotePeerId, m);
