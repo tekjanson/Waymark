@@ -25,6 +25,39 @@ if (!isLocal) {
   ]);
 }
 
+/* ---------- Token helpers (production only) ---------- */
+
+/**
+ * Get the access token, throwing a descriptive error instead of
+ * silently passing null to Google APIs (which yields opaque 401/403).
+ * @returns {Promise<string>}
+ */
+async function requireToken() {
+  const token = await clientAuth.getToken();
+  if (!token) throw new Error('Not signed in — please log in to continue');
+  return token;
+}
+
+/**
+ * Run a Google API call with a single auto-retry on 401 (expired token).
+ * If the first attempt fails with 401, refreshes the token and retries once.
+ * Genuine 403 permission denials are NOT retried (they would just fail again).
+ * @param {function(): Promise<T>} fn  async function that calls a Google API
+ * @returns {Promise<T>}
+ */
+async function withAuthRetry(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err.status === 401) {
+      const ok = await clientAuth.refreshToken();
+      if (!ok) throw new Error('Session expired — please sign in again');
+      return fn();
+    }
+    throw err;
+  }
+}
+
 /* ---------- Mock state ---------- */
 let mockFixtures = null;
 
@@ -169,8 +202,10 @@ export const api = {
         const fix = await loadFixtures();
         return { files: fix.folders.myDrive };
       }
-      const token = await clientAuth.getToken();
-      return driveApi.listRootFolders(token);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.listRootFolders(token);
+      });
     },
 
     async listChildren(folderId) {
@@ -191,8 +226,10 @@ export const api = {
         const children = find([...fix.folders.myDrive, ...fix.folders.sharedWithMe]) || [];
         return { files: children };
       }
-      const token = await clientAuth.getToken();
-      return driveApi.listChildren(token, folderId);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.listChildren(token, folderId);
+      });
     },
 
     async getSharedWithMe() {
@@ -201,7 +238,7 @@ export const api = {
         const fix = await loadFixtures();
         return { files: fix.folders.sharedWithMe };
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.getSharedWithMe(token);
     },
 
@@ -217,7 +254,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.createFile(token, name, mimeType, parents);
     },
 
@@ -236,8 +273,10 @@ export const api = {
         };
         return search(fix.folders.myDrive) || null;
       }
-      const token = await clientAuth.getToken();
-      return driveApi.findFolder(token, name, parentId);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.findFolder(token, name, parentId);
+      });
     },
 
     async listSpreadsheets(query) {
@@ -254,7 +293,7 @@ export const api = {
         collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
         return { files: sheets };
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.listSpreadsheets(token, query);
     },
 
@@ -275,7 +314,7 @@ export const api = {
         collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
         return { files };
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.listImportableFiles(token);
     },
 
@@ -300,7 +339,7 @@ export const api = {
         collect([...fix.folders.myDrive, ...(fix.folders.sharedWithMe || [])], '');
         return sheets;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       const res = await driveApi.listSpreadsheets(token);
       return (res.files || []).map(f => ({ id: f.id, name: f.name, folder: '' }));
     },
@@ -310,7 +349,7 @@ export const api = {
         // In mock mode return a simple table-like text
         return 'Item\tStatus\tNotes\nTask 1\tDone\tSample note\nTask 2\tPending\tAnother note\n';
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.exportDoc(token, fileId);
     },
 
@@ -318,8 +357,10 @@ export const api = {
       if (isLocal) {
         return { id: fileId, name: 'Mock File', mimeType: 'application/vnd.google-apps.spreadsheet' };
       }
-      const token = await clientAuth.getToken();
-      return driveApi.getFile(token, fileId);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.getFile(token, fileId);
+      });
     },
 
     async findFile(name, parentId) {
@@ -337,7 +378,7 @@ export const api = {
         };
         return search(fix.folders.myDrive) || null;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.findFile(token, name, parentId);
     },
 
@@ -357,7 +398,7 @@ export const api = {
         window.__WAYMARK_JSON_FILES[record.id] = content;
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.createJsonFile(token, name, content, parents);
     },
 
@@ -368,7 +409,7 @@ export const api = {
         }
         return {};
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.readJsonFile(token, fileId);
     },
 
@@ -385,7 +426,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return { id: fileId, name: 'updated', mimeType: 'application/json' };
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.updateJsonFile(token, fileId, content);
     },
 
@@ -402,7 +443,7 @@ export const api = {
         }
         return '';
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.readTextFile(token, fileId);
     },
 
@@ -436,7 +477,7 @@ export const api = {
         };
         return search([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.findFile(token, name, parentId);
     },
 
@@ -488,7 +529,7 @@ export const api = {
 
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.createTextFile(token, name, content, parents);
     },
 
@@ -511,7 +552,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return { id: fileId, name: 'updated', mimeType: 'text/plain' };
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return driveApi.updateTextFile(token, fileId, content);
     },
   },
@@ -557,7 +598,7 @@ export const api = {
           ? sheets.map(s => ({ id: s.id, name: s.name, mimeType: s.mimeType }))
           : [{ id: sheets[0].id, name: sheets[0].name, mimeType: sheets[0].mimeType }];
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return pickerApi.pickSpreadsheets(token, opts);
     },
 
@@ -571,7 +612,7 @@ export const api = {
         const first = fix.folders.myDrive.find(f => f.mimeType === 'application/vnd.google-apps.folder');
         return first ? { id: first.id, name: first.name } : null;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return pickerApi.pickFolder(token);
     },
 
@@ -595,7 +636,7 @@ export const api = {
         collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
         return files.length ? [{ id: files[0].id, name: files[0].name, mimeType: files[0].mimeType }] : null;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return pickerApi.pickFilesForImport(token);
     },
   },
@@ -609,8 +650,10 @@ export const api = {
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
         return data;
       }
-      const token = await clientAuth.getToken();
-      return sheetsApi.getSpreadsheet(token, spreadsheetId);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.getSpreadsheet(token, spreadsheetId);
+      });
     },
 
     /**
@@ -627,8 +670,10 @@ export const api = {
         // Return only first two rows to mirror production behavior
         return { ...data, values: (data.values || []).slice(0, 2) };
       }
-      const token = await clientAuth.getToken();
-      return sheetsApi.getSpreadsheetSummary(token, spreadsheetId);
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.getSpreadsheetSummary(token, spreadsheetId);
+      });
     },
 
     async createSpreadsheet(title, rows, parentId) {
@@ -654,7 +699,7 @@ export const api = {
 
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return sheetsApi.createSpreadsheet(token, title, rows, parentId);
     },
 
@@ -681,7 +726,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return sheetsApi.appendRows(token, spreadsheetId, sheetTitle, rows);
     },
 
@@ -709,7 +754,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return sheetsApi.updateCell(token, spreadsheetId, sheetTitle, row, col, value);
     },
 
@@ -736,7 +781,7 @@ export const api = {
         window.__WAYMARK_RECORDS.push(record);
         return record;
       }
-      const token = await clientAuth.getToken();
+      const token = await requireToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
     },
   },

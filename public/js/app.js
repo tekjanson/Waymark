@@ -1296,7 +1296,12 @@ async function showFolderContents(folderId, folderName) {
   } catch (err) {
     if (gen !== _folderGen) return;
     loadingBar.classList.add('hidden');
-    sheetsEl.innerHTML = `<p class="empty-state">Failed to load folder: ${err.message}</p>`;
+    const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
+    if (is403) {
+      sheetsEl.innerHTML = `<p class="empty-state">Permission denied. Use the Drive picker to open this folder and grant access.</p>`;
+    } else {
+      sheetsEl.innerHTML = `<p class="empty-state">Failed to load folder: ${err.message}</p>`;
+    }
   }
 }
 
