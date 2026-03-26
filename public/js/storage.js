@@ -471,7 +471,7 @@ export function setCrossLinks(sheetId, links) {
 /* ---------- Chat Preferences ---------- */
 
 export function getChatSaveHistory() {
-  return get('chat_save_history') ?? false;
+  return get('chat_save_history') ?? true;
 }
 
 export function setChatSaveHistory(enabled) {
