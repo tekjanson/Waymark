@@ -120,6 +120,25 @@
   text-decoration: underline;
 }
 
+/* ---------- Image ---------- */
+
+.social-post-image {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  margin-top: 10px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+/* ---------- Likes ---------- */
+
+.social-post-likes {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
 /* ---------- Comments ---------- */
 
 .social-comments {
