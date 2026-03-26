@@ -489,12 +489,12 @@ function renderWithTemplate(values) {
   template._rtcSheetId = currentSheetId;
   template._rtcUserName = api.auth.getUser()?.name || 'Anonymous';
   template._rtcSignal = {
-    readHeader: async () => {
+    readAll: async () => {
       const data = await api.sheets.getSpreadsheet(currentSheetId);
-      return data.values?.[0] || [];
+      return data.values || [];
     },
-    writeCell: (col, value) =>
-      api.sheets.updateCell(currentSheetId, currentSheetTitle, 0, col, value),
+    writeCell: (row, col, value) =>
+      api.sheets.updateCell(currentSheetId, currentSheetTitle, row, col, value),
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)

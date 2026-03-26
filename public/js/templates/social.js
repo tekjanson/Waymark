@@ -131,7 +131,7 @@ function openChat(sheetId, displayName, signal) {
   const localVideo = el('video', { className: 'social-local-video', muted: true, autoplay: true, playsInline: true });
   const remoteVideo = el('video', { className: 'social-remote-video', autoplay: true, playsInline: true });
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
-  mediaContainer.append(remoteVideo, localVideo);
+  mediaContainer.append(remoteVideo, localVideo, remoteAudio);
 
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
