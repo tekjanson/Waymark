@@ -125,29 +125,46 @@ export class WaymarkConnect {
       this._localStream = null;
     }
 
-    // Try progressively relaxed constraints: requested → audio-only → listen-only
-    const attempts = [constraints];
-    if (constraints.video) attempts.push({ audio: true, video: false });
-    attempts.push(null); // null = listen-only (no local media)
+    // Try to get user media. If getUserMedia fails with a device error,
+    // join in listen-only mode so the user can still hear the other side.
+    let listenOnly = false;
+    let deviceError = null;
+    try {
+      this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      // NotAllowedError = user explicitly denied or permission is blocked.
+      // Re-throw so the UI can guide them to fix it.
+      if (e.name === 'NotAllowedError') throw e;
 
-    let stream = null;
-    let lastErr = null;
-    for (const c of attempts) {
-      if (!c) break; // fall through to listen-only
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(c);
-        break;
-      } catch (e) {
-        lastErr = e;
-        // NotAllowedError means user explicitly denied — don't retry
-        if (e.name === 'NotAllowedError') throw e;
+      // OverconstrainedError with video — retry audio-only before giving up
+      if (e.name === 'OverconstrainedError' && constraints.video) {
+        try {
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (e2) {
+          if (e2.name === 'NotAllowedError') throw e2;
+          listenOnly = true;
+          deviceError = e2;
+        }
+      } else if (constraints.video && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
+        // Camera failed — retry audio-only
+        try {
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (e2) {
+          if (e2.name === 'NotAllowedError') throw e2;
+          listenOnly = true;
+          deviceError = e2;
+        }
+      } else {
+        // Audio-only also failed (NotFoundError, NotReadableError, etc.)
+        listenOnly = true;
+        deviceError = e;
       }
     }
 
-    this._localStream = stream;
-    if (stream) {
+    // Add local tracks to all peer connections
+    if (this._localStream) {
       for (const [, r] of this._rtc) {
-        for (const t of stream.getTracks()) r.pc.addTrack(t, stream);
+        for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
       }
     }
     this._inCall = true;
@@ -155,14 +172,14 @@ export class WaymarkConnect {
     this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
 
-    // If we fell back, attach info so the UI can show a message
-    if (!stream && lastErr) {
-      const result = new MediaStream();
-      result._listenOnly = true;
-      result._fallbackReason = lastErr.message;
-      return result;
+    // Return stream with metadata for the UI
+    if (listenOnly) {
+      const s = this._localStream || new MediaStream();
+      s._listenOnly = true;
+      s._deviceError = deviceError;
+      return s;
     }
-    return stream;
+    return this._localStream;
   }
 
   /** End an active call, stopping all local media tracks. */
