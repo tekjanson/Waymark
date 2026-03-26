@@ -2,7 +2,7 @@
    templates/testcases.js — Test Cases: cycle, filter, bulk ops
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -164,7 +164,11 @@ const definition = {
    * @param {function} navigateFn
    */
   directoryView(container, sheets, navigateFn) {
-    container.append(el('div', { className: 'tc-dir-title' }, ['🧪 Test Suite Overview']));
+    const titleBar = el('div', { className: 'tc-dir-title-bar' }, [
+      el('span', { className: 'tc-dir-title' }, ['🧪 Test Suite Overview']),
+      buildDirSyncBtn(container),
+    ]);
+    container.append(titleBar);
 
     /* Aggregate stats across all sheets */
     const suiteStats = [];

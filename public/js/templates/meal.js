@@ -2,7 +2,7 @@
    templates/meal.js — Meal Planner: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, groupByColumn, delegateEvent, registerTemplate } from './shared.js';
+import { el, cell, editableCell, groupByColumn, delegateEvent, registerTemplate, buildDirSyncBtn } from './shared.js';
 
 /** Parse int from strings like "350" or "12g" */
 function parseNum(v) { return parseInt(v) || 0; }
@@ -115,7 +115,11 @@ const definition = {
   },
 
   directoryView(container, sheets, navigateFn) {
-    container.append(el('div', { className: 'meal-dir-title' }, ['\uD83C\uDF7D\uFE0F Meal Plans Overview']));
+    const titleBar = el('div', { className: 'meal-dir-title-bar' }, [
+      el('span', { className: 'meal-dir-title' }, ['\uD83C\uDF7D\uFE0F Meal Plans Overview']),
+      buildDirSyncBtn(container),
+    ]);
+    container.append(titleBar);
 
     /* Compute per-sheet stats */
     const sheetStats = [];

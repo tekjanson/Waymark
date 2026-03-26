@@ -628,23 +628,12 @@
   padding: 3px 12px;
   border-radius: 10px;
 }
-.cookbook-sync-btn {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 14px;
-  font-size: 0.76rem;
-  font-weight: 600;
+.cookbook-directory .dir-sync-btn {
   color: #92400e;
   background: rgba(146,64,14,0.08);
   border: 1px solid #d4a574;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
-  white-space: nowrap;
 }
-.cookbook-sync-btn:hover {
+.cookbook-directory .dir-sync-btn:hover {
   background: #c2410c;
   color: #fff;
   border-color: #c2410c;
@@ -844,7 +833,7 @@
     flex-wrap: wrap;
     gap: 8px;
   }
-  .cookbook-sync-btn {
+  .cookbook-directory .dir-sync-btn {
     font-size: 0.7rem;
     padding: 5px 10px;
   }
@@ -1145,12 +1134,12 @@
 [data-theme="dark"] .cookbook-title { color: #d4a574; }
 [data-theme="dark"] .cookbook-subtitle { color: #8b7355; }
 [data-theme="dark"] .cookbook-count { color: #d4a574; background: rgba(180, 130, 60, 0.12); }
-[data-theme="dark"] .cookbook-sync-btn {
+[data-theme="dark"] .cookbook-directory .dir-sync-btn {
   color: #d4a574;
   background: rgba(180, 130, 60, 0.1);
   border-color: rgba(180, 130, 60, 0.25);
 }
-[data-theme="dark"] .cookbook-sync-btn:hover {
+[data-theme="dark"] .cookbook-directory .dir-sync-btn:hover {
   background: #c2410c;
   color: #fff;
   border-color: #c2410c;

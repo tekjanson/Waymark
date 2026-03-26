@@ -6,7 +6,7 @@
    All events are delegated on stable ancestor nodes.
    ============================================================ */
 
-import { el, cell, delegateEvent } from '../shared.js';
+import { el, cell, delegateEvent, buildDirSyncBtn } from '../shared.js';
 
 /**
  * Render a cookbook-style directory view for a folder of recipe sheets.
@@ -142,11 +142,6 @@ export function cookbookDirectoryView(container, sheets, navigateFn) {
   const wrapper = el('div', { className: 'cookbook-directory' });
 
   const countSpan = el('span', { className: 'cookbook-count' });
-  const syncBtn = el('button', {
-    className: 'cookbook-sync-btn',
-    type: 'button',
-    title: 'Select recipes from the shared folder to add them to your cookbook',
-  }, ['\uD83D\uDD04 Sync Family Recipes']);
   wrapper.append(el('div', { className: 'cookbook-title-bar' }, [
     el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
     el('div', { className: 'cookbook-title-group' }, [
@@ -154,13 +149,8 @@ export function cookbookDirectoryView(container, sheets, navigateFn) {
       el('span', { className: 'cookbook-subtitle' }, ['Shared recipes from everyone in the family']),
     ]),
     countSpan,
-    syncBtn,
+    buildDirSyncBtn(wrapper),
   ]));
-
-  // --- Delegated sync button handler ---
-  delegateEvent(wrapper, 'click', '.cookbook-sync-btn', () => {
-    window.dispatchEvent(new CustomEvent('waymark:folder-refresh'));
-  });
 
   const grid = el('div', { className: 'cookbook-grid' });
   const emptyMsg = el('p', { className: 'cookbook-empty hidden' });

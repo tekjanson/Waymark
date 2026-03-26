@@ -1159,12 +1159,12 @@ test('cookbook directoryView shows family subtitle', async ({ page }) => {
   await expect(page.locator('.cookbook-subtitle')).toContainText('family');
 });
 
-test('cookbook directoryView shows Sync Family Recipes button', async ({ page }) => {
+test('cookbook directoryView shows Sync button', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
-  await page.waitForSelector('.cookbook-sync-btn', { timeout: 8_000 });
-  await expect(page.locator('.cookbook-sync-btn')).toBeVisible();
-  await expect(page.locator('.cookbook-sync-btn')).toContainText('Sync Family Recipes');
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
 });
 
 test('cookbook directoryView shows recipe cards', async ({ page }) => {
