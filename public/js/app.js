@@ -740,29 +740,30 @@ if (dirHelpBtn) {
 
 /**
  * Full folder refresh via Google Picker.
- * Re-selecting the folder re-grants drive.file access to all contents,
- * allowing the app to see recipes added by other family members.
- * Clears the cached index and rebuilds from scratch.
+ * Opens a multi-select spreadsheet Picker pre-navigated to the current folder.
+ * Each sheet the user selects gets drive.file access — this is how we pick up
+ * recipes from other family members without needing elevated scopes.
+ * After selection, clears the cache and rebuilds the folder view.
  */
 async function refreshFolderViaPicker() {
   if (!currentFolderId) return;
 
-  const folder = await api.picker.pickFolder();
-  if (!folder) return;          // user cancelled Picker
+  const picked = await api.picker.pickSpreadsheets({
+    multiSelect: true,
+    includeSharedDrives: true,
+    parentFolderId: currentFolderId,
+    title: 'Select all recipes to sync',
+  });
+  if (!picked || picked.length === 0) return;   // user cancelled Picker
 
-  // Use the selected folder (may differ from current if user switched)
-  const folderId = folder.id;
-  const folderName = folder.name;
-
-  showToast('Syncing shared recipes…', 'info');
+  showToast(`Syncing ${picked.length} recipe${picked.length !== 1 ? 's' : ''}…`, 'info');
 
   // Nuke the localStorage cache so showFolderContents treats everything as new
-  storage.setFolderIndex(folderId, null);
+  storage.setFolderIndex(currentFolderId, null);
 
-  // Navigate to the (possibly new) folder and rebuild everything from scratch.
-  // All sheets will be re-fetched and the .waymark-index will be rebuilt
-  // with content from all users in the shared directory.
-  navigate('folder', folderId, folderName);
+  // Re-render folder — the newly-picked sheets now have drive.file access
+  // so the app can read their content and rebuild the .waymark-index.
+  navigate('folder', currentFolderId, currentFolderName);
 }
 
 if (folderRefreshBtn) {

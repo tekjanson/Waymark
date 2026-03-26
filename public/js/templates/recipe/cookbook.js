@@ -145,7 +145,7 @@ export function cookbookDirectoryView(container, sheets, navigateFn) {
   const syncBtn = el('button', {
     className: 'cookbook-sync-btn',
     type: 'button',
-    title: 'Re-select this folder to pick up recipes from all family members',
+    title: 'Select recipes from the shared folder to add them to your cookbook',
   }, ['\uD83D\uDD04 Sync Family Recipes']);
   wrapper.append(el('div', { className: 'cookbook-title-bar' }, [
     el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
