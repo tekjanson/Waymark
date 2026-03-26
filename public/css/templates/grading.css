@@ -59,9 +59,13 @@
 .grading-dist-count { font-size: 0.75rem; color: var(--color-text-muted); }
 
 /* Directory-level classroom overview */
+.grading-dir-title-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+}
 .grading-dir-title {
   font-size: 1.1rem; font-weight: 700;
-  padding: 12px 0 8px; color: #7c2d12;
+  color: #7c2d12;
 }
 .grading-dir-totals {
   display: flex; gap: 16px; padding: 8px 12px;

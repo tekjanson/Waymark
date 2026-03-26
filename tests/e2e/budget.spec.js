@@ -174,3 +174,18 @@ test('budget directoryView per-card balances show correct values', async ({ page
     expect(val).toBeGreaterThan(0);
   }
 });
+
+test('budget directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-budgets/Budgets'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('budget directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-budgets/Budgets'; });
+  await page.waitForSelector('.budget-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

@@ -11,6 +11,7 @@
 
 import {
   el, cell, emitEdit, registerTemplate,
+  buildDirSyncBtn, delegateEvent,
 } from '../shared.js';
 import {
   svg, parseDate, formatMonthLabel, formatISO,
@@ -395,6 +396,39 @@ const definition = {
 
     chartScroll.append(chartSvg);
     wrapper.append(labelCol, chartScroll);
+    container.append(wrapper);
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'gantt-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'gantt-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'gantt-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCC5']),
+      el('span', { className: 'gantt-dir-title tmpl-dir-title' }, ['Gantt Timelines']),
+      el('span', { className: 'gantt-dir-count tmpl-dir-count' }, [
+        `${sheets.length} timeline${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'gantt-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'gantt-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'gantt-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'gantt-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} task${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.gantt-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
     container.append(wrapper);
   },
 };

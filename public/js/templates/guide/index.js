@@ -9,6 +9,7 @@ import {
   emitEdit,
   registerTemplate,
   delegateEvent,
+  buildDirSyncBtn,
 } from '../shared.js';
 import {
   STATUS_STATES,
@@ -219,7 +220,41 @@ const definition = {
       container.append(card);
     }
   },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'guide-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'guide-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'guide-dir-icon tmpl-dir-icon' }, ['\uD83E\uDEB4']),
+      el('span', { className: 'guide-dir-title tmpl-dir-title' }, ['Instruction Guides']),
+      el('span', { className: 'guide-dir-count tmpl-dir-count' }, [
+        `${sheets.length} guide${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'guide-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'guide-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'guide-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'guide-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} slide${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.guide-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
+  },
 };
 
 registerTemplate('guide', definition);
+export default definition;
 export default definition;

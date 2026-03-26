@@ -104,9 +104,13 @@
 .tc-bulk-btn.tc-bulk-copy  { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
 
 /* ---------- Directory View ---------- */
+.tc-dir-title-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 0 8px;
+}
 .tc-dir-title {
   font-size: 1.1rem; font-weight: 700;
-  padding: 12px 0 8px; color: #7c3aed;
+  color: #7c3aed;
 }
 .tc-dir-totals {
   display: flex; gap: 16px; padding: 8px 12px;

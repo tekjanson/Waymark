@@ -682,3 +682,20 @@ test('settings modal shows custom rules section with rule count', async ({ page 
   const sectionText = await page.locator('.notif-custom-rules-section').textContent();
   expect(sectionText).toContain('3');
 });
+
+/* ---------- Directory view ---------- */
+
+test('notification directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-notifications/Notification%20Centers'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('notification directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-notifications/Notification%20Centers'; });
+  await page.waitForSelector('.notification-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

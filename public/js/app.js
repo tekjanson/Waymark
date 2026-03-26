@@ -699,6 +699,7 @@ function renderPinnedSheets() {
 const openInDriveBtn = document.getElementById('open-in-drive-btn');
 const folderPinBtn   = document.getElementById('folder-pin-btn');
 const dirHelpBtn     = document.getElementById('dir-help-btn');
+const folderRefreshBtn = document.getElementById('folder-refresh-btn');
 let currentFolderId  = null;
 let currentFolderName = null;
 let currentDirKey    = null;
@@ -736,6 +737,105 @@ if (dirHelpBtn) {
     if (currentDirKey) Tutorial.startTemplateTutorial('dir-' + currentDirKey, true);
   });
 }
+
+/**
+ * Full folder refresh via Google Picker.
+ * Shows a step-by-step instruction guide, then opens a multi-select spreadsheet
+ * Picker pre-navigated to the current folder.  Each sheet the user selects gets
+ * drive.file access — this is how we pick up files from other team members
+ * without needing elevated scopes.
+ */
+async function refreshFolderViaPicker() {
+  if (!currentFolderId) return;
+
+  // Remove any previous guide that wasn't cleaned up
+  document.querySelector('.sync-guide-overlay')?.remove();
+
+  const folderName = currentFolderName || 'your shared folder';
+
+  // --- Build instruction guide overlay ---
+  const guide = el('div', { className: 'sync-guide-overlay' }, [
+    el('div', { className: 'sync-guide' }, [
+      el('h3', { className: 'sync-guide-title' }, ['🔄 Sync Shared Files']),
+      el('p', { className: 'sync-guide-intro' }, [
+        'Follow these steps to pick up files shared by your team:',
+      ]),
+      el('ol', { className: 'sync-guide-steps' }, [
+        el('li', {}, [
+          'In the Picker that opens, navigate to ',
+          el('strong', { className: 'sync-guide-folder' }, [folderName]),
+          ' (or use the search bar at the top to find it).',
+        ]),
+        el('li', {}, [
+          'Press ',
+          el('kbd', {}, ['Ctrl']), ' + ', el('kbd', {}, ['A']),
+          ' to select all files in the folder.',
+        ]),
+        el('li', {}, ['Click ', el('strong', {}, ['Select']), ' to confirm.']),
+      ]),
+      el('p', { className: 'sync-guide-wait' }, [
+        'The view will refresh automatically once you\'re done.',
+      ]),
+      el('div', { className: 'sync-guide-actions' }, [
+        el('button', {
+          className: 'sync-guide-btn sync-guide-open',
+          type: 'button',
+        }, ['Open Picker']),
+        el('button', {
+          className: 'sync-guide-btn sync-guide-cancel',
+          type: 'button',
+        }, ['Cancel']),
+      ]),
+    ]),
+  ]);
+
+  document.getElementById('folder-view').append(guide);
+
+  // Wait for user to click "Open Picker" or "Cancel"
+  const action = await new Promise((resolve) => {
+    guide.querySelector('.sync-guide-open').addEventListener('click', () => resolve('open'));
+    guide.querySelector('.sync-guide-cancel').addEventListener('click', () => resolve('cancel'));
+  });
+
+  if (action === 'cancel') {
+    guide.remove();
+    return;
+  }
+
+  // Keep the guide visible while the Picker is open — it sits behind the Picker
+  // popup and remains visible if the user moves windows around
+  guide.querySelector('.sync-guide-open').disabled = true;
+  guide.querySelector('.sync-guide-open').textContent = 'Waiting for Picker…';
+
+  const picked = await api.picker.pickSpreadsheets({
+    multiSelect: true,
+    includeSharedDrives: true,
+    parentFolderId: currentFolderId,
+    title: 'Select all files to sync',
+  });
+
+  guide.remove();
+
+  if (!picked || picked.length === 0) return;   // user cancelled Picker
+
+  showToast(`Syncing ${picked.length} file${picked.length !== 1 ? 's' : ''}…`, 'info');
+
+  // Nuke the localStorage cache so showFolderContents treats everything as new
+  storage.setFolderIndex(currentFolderId, null);
+
+  // Re-render folder — the newly-picked sheets now have drive.file access
+  // so the app can read their content and rebuild the .waymark-index.
+  navigate('folder', currentFolderId, currentFolderName);
+}
+
+if (folderRefreshBtn) {
+  folderRefreshBtn.addEventListener('click', refreshFolderViaPicker);
+}
+
+// Directory-view sync buttons dispatch this event
+window.addEventListener('waymark:folder-refresh', () => {
+  refreshFolderViaPicker();
+});
 
 /* ---------- .waymark-index helpers ---------- */
 
@@ -817,6 +917,7 @@ async function showFolderContents(folderId, folderName) {
   titleEl.textContent = folderName;
   noSheetsEl.classList.add('hidden');
   if (dirHelpBtn) dirHelpBtn.classList.add('hidden');
+  if (folderRefreshBtn) folderRefreshBtn.classList.add('hidden');
   currentDirKey = null;
 
   // Clear previous content immediately and show loading bar.
@@ -1129,9 +1230,10 @@ async function showFolderContents(folderId, folderName) {
           loadingBar.classList.add('hidden');
           usedDirectoryView = true;
 
-          // Show directory view help button and trigger first-time tutorial
+          // Show directory view help button, refresh button, and trigger first-time tutorial
           currentDirKey = key;
           if (dirHelpBtn) dirHelpBtn.classList.remove('hidden');
+          if (folderRefreshBtn) folderRefreshBtn.classList.remove('hidden');
           Tutorial.startTemplateTutorial('dir-' + key);
 
           // Render remaining non-matching sheets normally

@@ -129,3 +129,20 @@ test('categorized checklist checkbox toggle works within groups', async ({ page 
   expect(updates.length).toBeGreaterThanOrEqual(1);
   expect(updates[updates.length - 1].value).toBe('done');
 });
+
+/* ---------- Directory view ---------- */
+
+test('checklist directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-checklists/Checklists'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('checklist directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-checklists/Checklists'; });
+  await page.waitForSelector('.checklist-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

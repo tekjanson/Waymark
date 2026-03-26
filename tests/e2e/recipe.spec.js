@@ -1135,3 +1135,65 @@ test('recipe quantity min-width ensures short values remain aligned', async ({ p
   // min-width: 2.5em at 1.06rem ≈ 40px at 16px base — should be at least 30px
   expect(width).toBeGreaterThan(30);
 });
+
+/* ---------- Cookbook Directory View ---------- */
+
+test('cookbook directoryView renders for shared recipe folder', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-directory', { timeout: 8_000 });
+  await expect(page.locator('.cookbook-directory')).toBeVisible();
+});
+
+test('cookbook directoryView shows Family Cookbook title', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-title', { timeout: 8_000 });
+  await expect(page.locator('.cookbook-title')).toContainText('Family Cookbook');
+});
+
+test('cookbook directoryView shows family subtitle', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-subtitle', { timeout: 8_000 });
+  await expect(page.locator('.cookbook-subtitle')).toContainText('family');
+});
+
+test('cookbook directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('cookbook directoryView shows recipe cards', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-card', { timeout: 8_000 });
+  const cards = page.locator('.cookbook-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(2);
+});
+
+test('cookbook directoryView card click navigates to sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-card', { timeout: 8_000 });
+  await page.locator('.cookbook-card').first().click();
+  await page.waitForSelector('.recipe-card', { timeout: 5_000 });
+  expect(page.url()).toContain('#/sheet/');
+});
+
+test('cookbook directoryView shows recipe count badge', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-count', { timeout: 8_000 });
+  await expect(page.locator('.cookbook-count')).toContainText('recipe');
+});
+
+test('cookbook directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-recipes/Family%20Recipes'; });
+  await page.waitForSelector('.cookbook-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

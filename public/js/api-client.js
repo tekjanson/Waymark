@@ -534,9 +534,28 @@ export const api = {
             if (item.children) collect(item.children);
           }
         };
-        collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
-        // Simulate picking the first sheet
-        return sheets.length ? [{ id: sheets[0].id, name: sheets[0].name, mimeType: sheets[0].mimeType }] : null;
+        // If parentFolderId is given, only collect from that folder
+        if (opts.parentFolderId) {
+          const findFolder = (items) => {
+            for (const item of items) {
+              if (item.id === opts.parentFolderId && item.children) return item.children;
+              if (item.children) {
+                const found = findFolder(item.children);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+          const children = findFolder([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+          if (children) collect(children);
+        } else {
+          collect([...fix.folders.myDrive, ...fix.folders.sharedWithMe]);
+        }
+        // Simulate picking: return all matches when multiSelect, else first
+        if (!sheets.length) return null;
+        return opts.multiSelect
+          ? sheets.map(s => ({ id: s.id, name: s.name, mimeType: s.mimeType }))
+          : [{ id: sheets[0].id, name: sheets[0].name, mimeType: sheets[0].mimeType }];
       }
       const token = await clientAuth.getToken();
       return pickerApi.pickSpreadsheets(token, opts);

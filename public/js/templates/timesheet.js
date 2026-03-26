@@ -3,7 +3,7 @@
    subtotals, and invoice export
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate, delegateEvent } from './shared.js';
+import { el, cell, editableCell, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
 
 /* --- helpers ------------------------------------------------ */
 const BILLABLE_RE = /^(yes|true|1|\u2713|billable)$/i;
@@ -271,6 +271,43 @@ const definition = {
       document.getElementById('ts-inv-close').addEventListener('click', () => overlay.remove());
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     });
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'timesheet-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'timesheet-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'timesheet-dir-icon tmpl-dir-icon' }, ['\u23F1\uFE0F']),
+      el('span', { className: 'timesheet-dir-title tmpl-dir-title' }, ['Timesheets']),
+      el('span', { className: 'timesheet-dir-count tmpl-dir-count' }, [
+        `${sheets.length} timesheet${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'timesheet-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      let totalHrs = 0;
+      for (const row of rows) totalHrs += parseFloat(cell(row, cols.hours)) || 0;
+
+      grid.append(el('div', {
+        className: 'timesheet-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'timesheet-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'timesheet-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} entr${rows.length !== 1 ? 'ies' : 'y'} \u2022 ${totalHrs.toFixed(1)} hrs`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.timesheet-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

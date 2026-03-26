@@ -39,3 +39,20 @@ test('log hides Load more button when entries fit in one page', async ({ page })
   const moreBtn = await page.locator('.template-log-more').count();
   expect(moreBtn).toBe(0);
 });
+
+/* ---------- Directory view ---------- */
+
+test('log directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-logs/Activity%20Logs'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('log directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-logs/Activity%20Logs'; });
+  await page.waitForSelector('.log-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

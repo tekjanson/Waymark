@@ -60,6 +60,11 @@ export async function pickSpreadsheets(token, opts = {}) {
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true);
 
+    // Pre-navigate to a specific folder so the user sees its contents
+    if (opts.parentFolderId) {
+      sheetsView.setParent(opts.parentFolderId);
+    }
+
     const builder = new google.picker.PickerBuilder()
       .addView(sheetsView)
       .setOAuthToken(token)
@@ -71,7 +76,7 @@ export async function pickSpreadsheets(token, opts = {}) {
           resolve(null);
         }
       })
-      .setTitle('Open from Google Drive');
+      .setTitle(opts.title || 'Open from Google Drive');
 
     if (opts.multiSelect) {
       builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);

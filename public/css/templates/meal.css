@@ -45,9 +45,12 @@
 .meal-summary-prot { color: #059669; }
 
 /* Directory view */
+.meal-dir-title-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+}
 .meal-dir-title {
   font-size: 1.1rem; font-weight: 700; color: #65a30d;
-  margin-bottom: 12px;
 }
 .meal-dir-totals {
   display: flex; gap: 16px; flex-wrap: wrap;

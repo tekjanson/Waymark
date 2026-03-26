@@ -73,3 +73,20 @@ test('roster summary day cells show shift abbreviation counts', async ({ page })
   const hasShiftData = texts.some(t => t.includes(':'));
   expect(hasShiftData).toBe(true);
 });
+
+/* ---------- Directory view ---------- */
+
+test('roster directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-rosters/Rosters'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('roster directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-rosters/Rosters'; });
+  await page.waitForSelector('.roster-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

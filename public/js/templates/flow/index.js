@@ -15,6 +15,7 @@
 import {
   el, cell, editableCell, emitEdit,
   registerTemplate, buildAddRowForm, delegateEvent,
+  buildDirSyncBtn,
 } from '../shared.js';
 import {
   NODE_SHAPES, DEFAULT_TYPE, DRAG_THRESHOLD, NODE_W, NODE_H,
@@ -762,6 +763,39 @@ const definition = {
 
       container.append(section);
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'flow-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'flow-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'flow-dir-icon tmpl-dir-icon' }, ['\uD83D\uDD00']),
+      el('span', { className: 'flow-dir-title tmpl-dir-title' }, ['Flow Diagrams']),
+      el('span', { className: 'flow-dir-count tmpl-dir-count' }, [
+        `${sheets.length} diagram${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'flow-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'flow-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'flow-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'flow-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} step${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.flow-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

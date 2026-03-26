@@ -2,7 +2,7 @@
    templates/travel.js — Travel Itinerary: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate } from './shared.js';
+import { el, cell, editableCell, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -148,6 +148,39 @@ const definition = {
         ]),
       ]));
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'travel-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'travel-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'travel-dir-icon tmpl-dir-icon' }, ['\u2708\uFE0F']),
+      el('span', { className: 'travel-dir-title tmpl-dir-title' }, ['Travel Itineraries']),
+      el('span', { className: 'travel-dir-count tmpl-dir-count' }, [
+        `${sheets.length} itinerar${sheets.length !== 1 ? 'ies' : 'y'}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'travel-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'travel-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'travel-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'travel-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} activit${rows.length !== 1 ? 'ies' : 'y'}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.travel-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

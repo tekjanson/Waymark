@@ -2,7 +2,7 @@
    templates/contacts.js — Contacts: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, delegateEvent, registerTemplate } from './shared.js';
+import { el, cell, editableCell, delegateEvent, registerTemplate, buildDirSyncBtn } from './shared.js';
 
 const definition = {
   name: 'Contacts',
@@ -134,6 +134,39 @@ const definition = {
         hdr.style.display = q && !hasVisible ? 'none' : '';
       }
     });
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'contacts-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'contacts-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'contacts-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCC7']),
+      el('span', { className: 'contacts-dir-title tmpl-dir-title' }, ['Contact Books']),
+      el('span', { className: 'contacts-dir-count tmpl-dir-count' }, [
+        `${sheets.length} book${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'contacts-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'contacts-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'contacts-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'contacts-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} contact${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.contacts-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

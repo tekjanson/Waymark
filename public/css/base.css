@@ -636,6 +636,168 @@ ul { list-style: none; }
   /* Shown instantly from localStorage while fresh data loads */
 }
 
+/* ---------- Directory View Sync Button ---------- */
+.dir-sync-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #555);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+.dir-sync-btn:hover {
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
+}
+
+/* ---------- Generic Template Directory View ---------- */
+.tmpl-directory { max-width: 900px; }
+.tmpl-dir-title-bar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+}
+.tmpl-dir-icon { font-size: 1.6rem; }
+.tmpl-dir-title { font-size: 1.3rem; font-weight: 700; }
+.tmpl-dir-count {
+  font-size: 0.75rem; color: var(--color-text-muted);
+  background: var(--color-bg); padding: 2px 8px; border-radius: 10px;
+}
+.tmpl-dir-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.tmpl-dir-card {
+  padding: 14px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  cursor: pointer; transition: all var(--transition);
+}
+.tmpl-dir-card:hover {
+  border-color: var(--color-primary); transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.tmpl-dir-card-name { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+.tmpl-dir-card-stat {
+  font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;
+}
+
+/* ---------- Sync Guide Overlay ---------- */
+.sync-guide-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
+  animation: syncGuideIn 0.2s ease-out;
+}
+@keyframes syncGuideIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.sync-guide {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 14px;
+  padding: 28px 32px 24px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.sync-guide-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text, #1a1a1a);
+}
+.sync-guide-intro {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #555);
+  line-height: 1.45;
+}
+.sync-guide-steps {
+  margin: 0 0 14px;
+  padding-left: 1.4em;
+  font-size: 0.85rem;
+  color: var(--color-text, #1a1a1a);
+  line-height: 1.65;
+}
+.sync-guide-steps li {
+  margin-bottom: 8px;
+}
+.sync-guide-steps li:last-child {
+  margin-bottom: 0;
+}
+.sync-guide-folder {
+  color: var(--color-primary, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.sync-guide-steps kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: var(--color-text, #1a1a1a);
+  background: var(--color-bg, #f5f5f5);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--color-border, #ddd);
+}
+.sync-guide-wait {
+  margin: 0 0 18px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #777);
+  font-style: italic;
+}
+.sync-guide-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.sync-guide-btn {
+  padding: 8px 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.sync-guide-open {
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  border-color: var(--color-primary, #2563eb);
+}
+.sync-guide-open:hover:not(:disabled) {
+  filter: brightness(0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.sync-guide-open:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.sync-guide-cancel {
+  background: transparent;
+  color: var(--color-text-muted, #555);
+  border-color: var(--color-border, #ddd);
+}
+.sync-guide-cancel:hover {
+  background: var(--color-bg, #f5f5f5);
+}
+
 /* ---------- Home Page ---------- */
 .home-greeting {
   margin-bottom: 28px;
@@ -814,7 +976,8 @@ ul { list-style: none; }
 }
 
 /* ---------- Template Help Button ---------- */
-.btn-template-help {
+.btn-template-help,
+.btn-refresh {
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; border-radius: 50%;
   border: 1px solid var(--color-border); background: var(--color-surface);
@@ -822,7 +985,8 @@ ul { list-style: none; }
   color: var(--color-text-secondary);
   transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
-.btn-template-help:hover {
+.btn-template-help:hover,
+.btn-refresh:hover {
   background: var(--color-primary);
   color: #fff;
   border-color: var(--color-primary);

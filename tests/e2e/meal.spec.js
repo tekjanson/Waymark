@@ -65,3 +65,18 @@ test('meal planner directoryView card click navigates to sheet', async ({ page }
   await page.waitForSelector('.meal-card', { timeout: 5_000 });
   await expect(page.locator('#template-badge')).toContainText('Meal');
 });
+
+test('meal planner directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-meals/Meal Plans'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('meal planner directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-meals/Meal Plans'; });
+  await page.waitForSelector('.meal-dir-card', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

@@ -9,6 +9,7 @@
 
 import {
   el, cell, emitEdit, registerTemplate, editableCell,
+  buildDirSyncBtn, delegateEvent,
 } from '../shared.js';
 import {
   parseProgress, rollupProgress, progressClass,
@@ -188,6 +189,39 @@ const definition = {
       const group_el = el('div', { className: 'okr-group' }, [objHeader, krList]);
       container.append(group_el);
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'okr-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'okr-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'okr-dir-icon tmpl-dir-icon' }, ['\uD83C\uDFAF']),
+      el('span', { className: 'okr-dir-title tmpl-dir-title' }, ['OKR / Goals']),
+      el('span', { className: 'okr-dir-count tmpl-dir-count' }, [
+        `${sheets.length} set${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'okr-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'okr-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'okr-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'okr-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} key result${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.okr-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

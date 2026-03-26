@@ -2,7 +2,7 @@
    templates/poll.js \u2014 Poll / Survey: animated bars + live mode
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate } from './shared.js';
+import { el, cell, editableCell, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Module state ---------- */
 let liveTimer = null;
@@ -100,6 +100,43 @@ const definition = {
         ]),
       ]));
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'poll-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'poll-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'poll-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCCA']),
+      el('span', { className: 'poll-dir-title tmpl-dir-title' }, ['Polls & Surveys']),
+      el('span', { className: 'poll-dir-count tmpl-dir-count' }, [
+        `${sheets.length} poll${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'poll-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      let totalVotes = 0;
+      for (const row of rows) totalVotes += parseInt(cell(row, cols.votes)) || 0;
+
+      grid.append(el('div', {
+        className: 'poll-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'poll-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'poll-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} option${rows.length !== 1 ? 's' : ''} \u2022 ${totalVotes} vote${totalVotes !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.poll-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

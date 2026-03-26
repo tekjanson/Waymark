@@ -107,3 +107,20 @@ test('timesheet invoice close button removes overlay', async ({ page }) => {
   await page.locator('#ts-inv-close').click();
   await expect(page.locator('.ts-invoice-overlay')).toHaveCount(0);
 });
+
+/* ---------- Directory view ---------- */
+
+test('timesheet directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-timesheets/Timesheets'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('timesheet directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-timesheets/Timesheets'; });
+  await page.waitForSelector('.timesheet-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

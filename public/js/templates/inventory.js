@@ -2,7 +2,7 @@
    templates/inventory.js \u2014 Inventory: low-stock alerts + reorder
    ============================================================ */
 
-import { el, cell, editableCell, groupByColumn, registerTemplate } from './shared.js';
+import { el, cell, editableCell, groupByColumn, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -124,6 +124,51 @@ function buildCard(row, originalIndex, cols, isLow) {
     isLow ? el('span', { className: 'inv-low-badge' }, ['\u26A0 Low']) : null,
   ]);
 }
+
+definition.directoryView = function(container, sheets, navigateFn) {
+  const wrapper = el('div', { className: 'inventory-directory tmpl-directory' });
+  wrapper.append(el('div', { className: 'inventory-dir-title-bar tmpl-dir-title-bar' }, [
+    el('span', { className: 'inventory-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCE6']),
+    el('span', { className: 'inventory-dir-title tmpl-dir-title' }, ['Inventories']),
+    el('span', { className: 'inventory-dir-count tmpl-dir-count' }, [
+      `${sheets.length} inventor${sheets.length !== 1 ? 'ies' : 'y'}`,
+    ]),
+    buildDirSyncBtn(wrapper),
+  ]));
+
+  const grid = el('div', { className: 'inventory-dir-grid tmpl-dir-grid' });
+  for (const sheet of sheets) {
+    const rows = sheet.rows || [];
+    const cols = sheet.cols || {};
+    let totalQty = 0, lowCount = 0;
+    for (const row of rows) {
+      const qty = parseQty(cell(row, cols.quantity));
+      totalQty += qty;
+      const thresh = cols.threshold >= 0 ? parseQty(cell(row, cols.threshold)) : DEFAULT_THRESHOLD;
+      if (qty > 0 && qty < thresh) lowCount++;
+    }
+
+    grid.append(el('div', {
+      className: 'inventory-dir-card tmpl-dir-card',
+      dataset: { entryId: sheet.id, entryName: sheet.name },
+    }, [
+      el('div', { className: 'inventory-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+      el('div', { className: 'inventory-dir-card-stat tmpl-dir-card-stat' }, [
+        `${rows.length} item${rows.length !== 1 ? 's' : ''} \u2022 ${Math.round(totalQty)} total qty`,
+      ]),
+      lowCount > 0
+        ? el('div', { className: 'inventory-dir-card-stat tmpl-dir-card-stat' }, [`\u26A0 ${lowCount} low stock`])
+        : null,
+    ]));
+  }
+
+  delegateEvent(grid, 'click', '.inventory-dir-card', (_e, card) => {
+    navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+  });
+
+  wrapper.append(grid);
+  container.append(wrapper);
+};
 
 registerTemplate('inventory', definition);
 export default definition;

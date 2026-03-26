@@ -64,3 +64,20 @@ test('schedule has Today button', async ({ page }) => {
   await expect(btn).toBeVisible();
   await expect(btn).toContainText('Today');
 });
+
+/* ---------- Directory view ---------- */
+
+test('schedule directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-schedules/Schedules'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('schedule directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-schedules/Schedules'; });
+  await page.waitForSelector('.schedule-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

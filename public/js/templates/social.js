@@ -9,6 +9,7 @@
 import {
   el, cell, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, editableCell,
+  buildDirSyncBtn,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -104,6 +105,7 @@ const definition = {
       el('span', { className: 'social-dir-count' }, [
         `${sheets.length} profile${sheets.length !== 1 ? 's' : ''}`,
       ]),
+      buildDirSyncBtn(wrapper),
     );
     wrapper.append(titleBar);
 

@@ -9,7 +9,7 @@
    Live ingestion: WebSocket · HTTP polling · MQTT-over-WS · Web Serial
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, registerCrossFeature, delegateEvent } from '../shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, registerCrossFeature, delegateEvent, buildDirSyncBtn } from '../shared.js';
 import {
   ALERT_STATES,
   parseNumber,
@@ -836,6 +836,7 @@ const definition = {
 
     container.append(el('div', { className: 'iot-dir-header' }, [
       el('h2', { className: 'iot-dir-title' }, ['📡 Fleet Dashboard']),
+      buildDirSyncBtn(container),
       el('div', { className: 'iot-dir-totals' }, [
         el('span', { className: 'iot-dir-total-item' }, [`${total} sensor${total !== 1 ? 's' : ''}`]),
         attention > 0

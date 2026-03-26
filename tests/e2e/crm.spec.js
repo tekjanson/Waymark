@@ -186,3 +186,20 @@ test('crm cards show last activity date', async ({ page }) => {
   expect(await lastAct.count()).toBeGreaterThan(0);
   await expect(lastAct.first()).toContainText('Last:');
 });
+
+/* ---------- Directory view ---------- */
+
+test('crm directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-crm/CRM%20Pipelines'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('crm directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-crm/CRM%20Pipelines'; });
+  await page.waitForSelector('.crm-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

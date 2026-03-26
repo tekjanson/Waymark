@@ -2,7 +2,7 @@
    templates/roster.js — Roster: shift grid, weekly nav, summary
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Constants ---------- */
 const DAY_ABBRS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -179,6 +179,39 @@ const definition = {
 
     /* Initial render */
     buildGrid();
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'roster-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'roster-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'roster-dir-icon tmpl-dir-icon' }, ['\uD83D\uDC65']),
+      el('span', { className: 'roster-dir-title tmpl-dir-title' }, ['Rosters']),
+      el('span', { className: 'roster-dir-count tmpl-dir-count' }, [
+        `${sheets.length} roster${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'roster-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'roster-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'roster-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'roster-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} employee${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.roster-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

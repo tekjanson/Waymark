@@ -2,7 +2,7 @@
    templates/schedule.js \u2014 Schedule: time-sorted + conflict detection
    ============================================================ */
 
-import { el, cell, editableCell, groupByColumn, delegateEvent, registerTemplate } from './shared.js';
+import { el, cell, editableCell, groupByColumn, delegateEvent, registerTemplate, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -122,6 +122,39 @@ const definition = {
 
       container.append(section);
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'schedule-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'schedule-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'schedule-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCC5']),
+      el('span', { className: 'schedule-dir-title tmpl-dir-title' }, ['Schedules']),
+      el('span', { className: 'schedule-dir-count tmpl-dir-count' }, [
+        `${sheets.length} schedule${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'schedule-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'schedule-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'schedule-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'schedule-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} event${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.schedule-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

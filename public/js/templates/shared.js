@@ -501,6 +501,25 @@ export function delegateEvent(container, eventType, selector, handler) {
 }
 
 /**
+ * Build a directory-view sync button that triggers folder refresh.
+ * Dispatches `waymark:folder-refresh` on click via event delegation.
+ *
+ * @param {HTMLElement} delegateRoot — ancestor to attach the click listener to
+ * @returns {HTMLElement} the sync button element
+ */
+export function buildDirSyncBtn(delegateRoot) {
+  const btn = el('button', {
+    className: 'dir-sync-btn',
+    type: 'button',
+    title: 'Select files from the shared folder to sync with your team',
+  }, ['\uD83D\uDD04 Sync']);
+  delegateEvent(delegateRoot, 'click', '.dir-sync-btn', () => {
+    window.dispatchEvent(new CustomEvent('waymark:folder-refresh'));
+  });
+  return btn;
+}
+
+/**
  * Lazily render a section inside a parent element.
  * On first call, invokes `buildFn` and appends the result.
  * On subsequent calls, removes the `hidden` class to reveal it.

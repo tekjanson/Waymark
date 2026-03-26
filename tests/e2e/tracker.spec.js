@@ -56,3 +56,20 @@ test('tracker shows ETA for in-progress goals', async ({ page }) => {
   const text = await etas.first().textContent();
   expect(text).toMatch(/^ETA:/);
 });
+
+/* ---------- Directory view ---------- */
+
+test('tracker directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-trackers/Trackers'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('tracker directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-trackers/Trackers'; });
+  await page.waitForSelector('.tracker-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

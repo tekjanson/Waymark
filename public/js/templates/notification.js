@@ -5,7 +5,7 @@
    status cycling, filtering, and contextual metadata.
    ============================================================ */
 
-import { el, showToast, editableCell, emitEdit, registerTemplate } from './shared.js';
+import { el, showToast, editableCell, emitEdit, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -309,6 +309,39 @@ const definition = {
     ]);
     container.appendChild(view);
     renderList();
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'notification-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'notification-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'notification-dir-icon tmpl-dir-icon' }, ['\uD83D\uDD14']),
+      el('span', { className: 'notification-dir-title tmpl-dir-title' }, ['Notification Centers']),
+      el('span', { className: 'notification-dir-count tmpl-dir-count' }, [
+        `${sheets.length} source${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'notification-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      grid.append(el('div', {
+        className: 'notification-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'notification-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'notification-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} notification${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.notification-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 
