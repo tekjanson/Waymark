@@ -501,6 +501,8 @@ function renderWithTemplate(values) {
     },
     writeCell: (row, col, value) =>
       api.sheets.updateCell(currentSheetId, currentSheetTitle, row, col, value),
+    appendRows: (rows) =>
+      api.sheets.appendRows(currentSheetId, currentSheetTitle, rows),
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)

@@ -101,10 +101,13 @@ function stopRingtone() {
 
 /* --- Chat message log (for persistence) --- */
 let _chatLog = [];
+let _saveChatHistory = null; // set by openChat, called from destroyChat
 
 /** Clean up active connection and chat panel. */
 function destroyChat() {
   stopRingtone();
+  // Save chat history before teardown
+  if (_saveChatHistory) { _saveChatHistory(); _saveChatHistory = null; }
   if (_activeConnect) { _activeConnect.destroy(); _activeConnect = null; }
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
@@ -284,8 +287,12 @@ function openChat(sheetId, displayName, signal) {
     _chatPanel.classList.add('social-chat-in-call');
   }
 
-  /** Leave the "in call" visual state */
+  /** Leave the "in call" visual state and release all media devices */
   function exitCallUI() {
+    // Stop local tracks to release camera/mic hardware
+    if (_activeConnect?.localStream) {
+      for (const t of _activeConnect.localStream.getTracks()) t.stop();
+    }
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
     hangupBtn.classList.add('hidden');
@@ -469,21 +476,24 @@ function openChat(sheetId, displayName, signal) {
   });
 
   // --- Save chat history to sheet when disconnecting ---
+  let _historySaved = false;
   function saveChatHistory() {
+    if (_historySaved) return;
     if (!getChatSaveHistory() || _chatLog.length === 0) return;
-    if (!signal) return;
-    const lines = _chatLog.map(m => {
-      const t = new Date(m.ts).toLocaleTimeString();
-      return `[${t}] ${m.name}: ${m.text}`;
-    }).join('\n');
-    // Write to an available cell in the signaling column area
-    const chatCol = SIG_COL_CHAT;
-    if (chatCol >= 0) {
-      signal.writeCell(0, chatCol, lines).catch(() => {});
-    }
+    if (!signal?.appendRows) return;
+    _historySaved = true;
+    const sessionDate = new Date().toLocaleString();
+    const rows = [
+      ['--- Chat Session ' + sessionDate + ' ---', '', '', '', '', '', ''],
+      ...(_chatLog.map(m => {
+        const t = new Date(m.ts).toLocaleTimeString();
+        return [m.name, m.text, t, '', '', '', ''];
+      })),
+      ['--- End Session ---', '', '', '', '', '', ''],
+    ];
+    signal.appendRows(rows).catch(() => {});
   }
-
-  const SIG_COL_CHAT = 21; // Column 21 reserved for chat history
+  _saveChatHistory = saveChatHistory;
 
   // --- Create connection ---
   _activeConnect = new WaymarkConnect(sheetId, {
@@ -529,6 +539,7 @@ function openChat(sheetId, displayName, signal) {
     },
     onCallEnded() {
       hideIncomingCall();
+      if (_activeConnect) _activeConnect.endCall();
       exitCallUI();
       appendMessage('System', 'Peer ended the call.', Date.now(), false);
     },
