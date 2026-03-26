@@ -1,11 +1,25 @@
 /* ============================================================
-   webrtc.js — Peer-to-peer communication for Waymark
+   webrtc.js — Multi-peer mesh networking for Waymark
 
-   Row-based signaling: each peer claims a block of 5 rows in
-   column 20 of the spreadsheet for handshake data.
+   Row-based signaling: each peer claims a 5-row block in
+   column 20 for presence + handshake. Peers discover each
+   other continuously and establish SEPARATE WebRTC connections
+   to every live peer (full mesh).
+
+   Block layout (per peer):
+     Row +0  PRESENCE  { peerId, name, ts }
+     Row +1  OFFERS    { targetPeerId: { sdp, ts }, ... }
+     Row +2  ANSWERS   { toPeerId: { sdp, ts }, ... }
+     Row +3  (reserved)
+     Row +4  (reserved)
+
+   Each peer ONLY writes to its OWN block. Answers are written
+   to the answerer's ANSWERS row (keyed by initiator peerId),
+   so the initiator reads the answerer's block to find it.
+   No cross-writing → no race conditions.
 
    Same-browser:  BroadcastChannel (instant, no network)
-   Cross-device:  WebRTC DataChannel + MediaStream via Sheets signaling
+   Cross-device:  WebRTC DataChannel + MediaStream
    ============================================================ */
 
 /* ---------- Constants ---------- */
@@ -15,42 +29,31 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const SIG_COL      = 20;   // Column for all signaling data
-const BLOCK_SIZE   = 5;    // Rows per peer
-const BLOCK_START  = 1;    // First block at row 1 (row 0 = sheet header)
-const MAX_PEERS    = 8;    // Up to 8 simultaneous peers (40 rows)
+const SIG_COL     = 20;
+const BLOCK_SIZE  = 5;
+const BLOCK_START = 1;    // Row 0 = sheet header
+const MAX_SLOTS   = 8;   // Up to 8 peers (rows 1–40)
 
-// Row offsets within a peer's block
-const OFF_PRESENCE = 0;    // { peerId, name, ts }
-const OFF_OFFER    = 1;    // { peerId, target, sdp, ts }
-const OFF_ANSWER   = 2;    // { peerId, sdp, ts } — written by remote peer
-const OFF_ICE      = 3;    // Reserved for trickle ICE
-const OFF_CONTROL  = 4;    // Reserved for future call control
+const OFF_PRESENCE = 0;
+const OFF_OFFERS   = 1;
+const OFF_ANSWERS  = 2;
 
-const POLL_MS      = 1500; // Signaling poll interval
-const HEART_MS     = 8000; // Presence heartbeat interval
-const ALIVE_TTL    = 25000;// Peer considered gone after 25s no heartbeat
-const ICE_WAIT     = 2000; // ICE gathering timeout
-const MAX_RETRIES  = 3;
+const POLL_MS   = 2000;  // Poll interval
+const HEART_MS  = 8000;  // Heartbeat interval
+const ALIVE_TTL = 25000; // Peer gone after 25s silence
+const ICE_WAIT  = 2000;  // ICE gathering timeout
 
 /* ---------- WaymarkConnect ---------- */
 
 /**
- * Real-time P2P messaging + calling channel for a specific spreadsheet.
+ * Multi-peer mesh chat + calling channel for a spreadsheet.
  *
- * Signal interface (provided by checklist.js):
- *   signal.readAll()             → Promise<string[][]>  (all sheet values)
- *   signal.writeCell(row, col, v) → Promise<void>
+ * Signal interface (from checklist.js):
+ *   signal.readAll()                → Promise<string[][]>
+ *   signal.writeCell(row, col, val) → Promise<void>
  *
  * @param {string} sheetId
  * @param {Object} opts
- * @param {string}   opts.displayName
- * @param {Object}   [opts.signal]
- * @param {(msg: Object) => void}    opts.onMessage
- * @param {(peers: Map) => void}     opts.onPeersChanged
- * @param {(status: string) => void} opts.onStatusChanged — 'listening' | 'connected' | 'disconnected'
- * @param {(stream: MediaStream, id: string) => void} [opts.onRemoteStream]
- * @param {(peerId: string) => void} [opts.onCallEnded]
  */
 export class WaymarkConnect {
   constructor(sheetId, opts = {}) {
@@ -65,26 +68,19 @@ export class WaymarkConnect {
     this.onCallEnded = opts.onCallEnded || (() => {});
 
     this._bc = null;
-    this._pc = null;
-    this._dc = null;
-    this._peers = new Map();
+    this._peers = new Map();        // peerId → { name, channel }
+    this._rtc = new Map();          // peerId → { pc, dc, state }
     this._destroyed = false;
 
-    // Signaling state
-    this._block = -1;           // Our block start row (-1 = not claimed)
+    this._block = -1;
     this._pollTimer = null;
     this._heartTimer = null;
-    this._polling = false;      // Guard against overlapping polls
-    this._isInitiator = false;
-    this._retries = 0;
-    this._rtcPeerId = null;     // Remote peer we're RTC-connected to
+    this._polling = false;
 
-    // Call state
     this._localStream = null;
     this._inCall = false;
 
     this._onUnload = () => {
-      // Best-effort: clear presence so peers detect our departure faster
       if (this.signal && this._block >= 0) {
         this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL, '');
       }
@@ -94,41 +90,31 @@ export class WaymarkConnect {
 
   /* ---------- Public API ---------- */
 
-  /** Begin listening for peers and optionally start remote signaling. */
   start() {
     this._bc = new BroadcastChannel(`waymark-connect-${this.sheetId}`);
     this._bc.onmessage = (e) => this._onBC(e.data);
     this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName });
-
     if (this.signal) this._join();
     this.onStatusChanged('listening');
   }
 
-  /**
-   * Send a chat message to all connected peers.
-   * @param {string} text
-   * @returns {Object} the sent message (for local display)
-   */
+  /** Send a chat message to all connected peers (BC + all DataChannels). */
   send(text) {
     const msg = { type: 'message', peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
     if (this._bc) this._bc.postMessage(msg);
-    if (this._dc?.readyState === 'open') this._dc.send(JSON.stringify(msg));
+    this._dcBroadcast(msg);
     return msg;
   }
 
-  /**
-   * Start an audio/video call with the connected peer.
-   * @param {Object} [constraints]
-   * @returns {Promise<MediaStream>} the local stream (for self-view)
-   */
+  /** Start an audio/video call — adds tracks to ALL peer connections. */
   async startCall(constraints = { audio: true, video: true }) {
-    if (!this._pc || this._destroyed) throw new Error('Not connected');
     this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    for (const t of this._localStream.getTracks()) this._pc.addTrack(t, this._localStream);
+    for (const [, r] of this._rtc) {
+      for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
+    }
     this._inCall = true;
-    // onnegotiationneeded fires automatically → renegotiates via DataChannel
     const n = { type: 'call-start', peerId: this.peerId, name: this.displayName };
-    if (this._dc?.readyState === 'open') this._dc.send(JSON.stringify(n));
+    this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
     return this._localStream;
   }
@@ -139,22 +125,18 @@ export class WaymarkConnect {
       for (const t of this._localStream.getTracks()) t.stop();
       this._localStream = null;
     }
-    if (this._pc) {
-      for (const s of this._pc.getSenders()) { if (s.track) this._pc.removeTrack(s); }
+    for (const [, r] of this._rtc) {
+      for (const s of r.pc.getSenders()) { if (s.track) r.pc.removeTrack(s); }
     }
     this._inCall = false;
     const n = { type: 'call-end', peerId: this.peerId };
-    if (this._dc?.readyState === 'open') this._dc.send(JSON.stringify(n));
+    this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
   }
 
-  /** Is there an active call? */
   get inCall() { return this._inCall; }
-
-  /** Get the local media stream (if calling). */
   get localStream() { return this._localStream; }
 
-  /** Tear down all connections and listeners. */
   destroy() {
     this._destroyed = true;
     window.removeEventListener('beforeunload', this._onUnload);
@@ -166,70 +148,78 @@ export class WaymarkConnect {
     }
     clearInterval(this._pollTimer);
     clearInterval(this._heartTimer);
-    this._pollTimer = this._heartTimer = null;
-    this._closeRTC();
+    for (const [id] of this._rtc) this._closeOne(id);
     this._clearBlock();
     this._peers.clear();
     this.onStatusChanged('disconnected');
   }
 
-  /* ---------- RTC teardown ---------- */
+  /* ---------- Internal helpers ---------- */
 
-  _closeRTC() {
-    if (this._dc) { try { this._dc.close(); } catch {} this._dc = null; }
-    if (this._pc) { try { this._pc.close(); } catch {} this._pc = null; }
-    this._rtcPeerId = null;
+  _dcBroadcast(msg) {
+    const s = JSON.stringify(msg);
+    for (const [, r] of this._rtc) {
+      if (r.dc?.readyState === 'open') r.dc.send(s);
+    }
   }
 
-  /* ---------- BroadcastChannel (same-origin) ---------- */
+  _closeOne(peerId) {
+    const r = this._rtc.get(peerId);
+    if (!r) return;
+    try { r.dc?.close(); } catch {}
+    try { r.pc?.close(); } catch {}
+    this._rtc.delete(peerId);
+  }
+
+  _emitPeers() {
+    this.onPeersChanged(new Map(this._peers));
+    this.onStatusChanged(this._peers.size > 0 ? 'connected' : 'listening');
+  }
+
+  /* ---------- BroadcastChannel ---------- */
 
   _onBC(d) {
     if (this._destroyed || d.peerId === this.peerId) return;
     switch (d.type) {
       case 'announce':
-        this._peers.set(d.peerId, { name: d.name, channel: 'local', lastSeen: Date.now() });
+        this._peers.set(d.peerId, { name: d.name, channel: 'local' });
         this._bc.postMessage({ type: 'welcome', peerId: this.peerId, name: this.displayName, to: d.peerId });
-        this.onPeersChanged(new Map(this._peers));
-        this.onStatusChanged('connected');
+        this._emitPeers();
         break;
       case 'welcome':
         if (d.to !== this.peerId) return;
-        this._peers.set(d.peerId, { name: d.name, channel: 'local', lastSeen: Date.now() });
-        this.onPeersChanged(new Map(this._peers));
-        this.onStatusChanged('connected');
+        this._peers.set(d.peerId, { name: d.name, channel: 'local' });
+        this._emitPeers();
         break;
       case 'message':
         this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, channel: 'local' });
         break;
-      case 'call-start': break; // BC can't carry media — informational only
+      case 'call-start': break;
       case 'call-end':
         this.onCallEnded(d.peerId);
         break;
       case 'leave':
         this._peers.delete(d.peerId);
-        this.onPeersChanged(new Map(this._peers));
-        if (this._peers.size === 0) this.onStatusChanged('listening');
+        this._emitPeers();
         break;
     }
   }
 
-  /* ---------- Row-based Signaling ---------- */
+  /* ---------- Row-based signaling ---------- */
 
-  /** Claim a block and start polling + presence heartbeat. */
   async _join() {
     try {
       const vals = await this.signal.readAll();
-      this._block = this._claimBlock(vals);
-      if (this._block < 0) return; // all slots full
+      this._block = this._findSlot(vals);
+      if (this._block < 0) return;
       await this._heartbeat();
       this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
       this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
-    } catch { /* signaling unavailable — local-only */ }
+    } catch {}
   }
 
-  /** Find first free block (empty or expired presence). */
-  _claimBlock(vals) {
-    for (let i = 0; i < MAX_PEERS; i++) {
+  _findSlot(vals) {
+    for (let i = 0; i < MAX_SLOTS; i++) {
       const row = BLOCK_START + i * BLOCK_SIZE;
       const p = _json(vals[row]?.[SIG_COL]);
       if (!p || Date.now() - p.ts > ALIVE_TTL) return row;
@@ -237,7 +227,6 @@ export class WaymarkConnect {
     return -1;
   }
 
-  /** Write/refresh presence in our block. */
   async _heartbeat() {
     if (this._destroyed || this._block < 0) return;
     try {
@@ -246,201 +235,208 @@ export class WaymarkConnect {
     } catch {}
   }
 
-  /** Poll for remote peers and drive the signaling state machine. */
+  /** Main signaling loop — runs every POLL_MS, discovers + negotiates with ALL live peers. */
   async _poll() {
     if (this._destroyed || this._block < 0 || this._polling) return;
     this._polling = true;
     try {
       const vals = await this.signal.readAll();
-      const alive = this._livePeers(vals);
+      const alive = this._scanAlive(vals);
+      const aliveIds = new Set(alive.map(p => p.peerId));
 
-      // Sync remote peer list
-      this._syncPeers(alive);
-
-      // Already RTC-connected — just verify peer is still alive
-      if (this._dc?.readyState === 'open' && this._rtcPeerId) {
-        if (!alive.some(p => p.peerId === this._rtcPeerId)) {
-          this._closeRTC();
-          if (this._peers.size === 0) this.onStatusChanged('listening');
+      // Update peer list from presence
+      let peerChanged = false;
+      for (const p of alive) {
+        const cur = this._peers.get(p.peerId);
+        if (!cur || cur.channel === 'sig') {
+          const ch = this._rtc.get(p.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'sig';
+          this._peers.set(p.peerId, { name: p.name, channel: ch });
+          peerChanged = true;
         }
-        return;
+      }
+      for (const [id, p] of this._peers) {
+        if ((p.channel === 'sig' || p.channel === 'rtc') && !aliveIds.has(id)) {
+          this._peers.delete(id);
+          this._closeOne(id);
+          peerChanged = true;
+        }
+      }
+      if (peerChanged) this._emitPeers();
+
+      // Read our current signal data from the cached vals
+      let myOffers  = _json(vals[this._block + OFF_OFFERS]?.[SIG_COL]) || {};
+      let myAnswers = _json(vals[this._block + OFF_ANSWERS]?.[SIG_COL]) || {};
+      let offDirty = false;
+      let ansDirty = false;
+
+      // Clean stale entries for dead peers
+      for (const key of Object.keys(myOffers)) {
+        if (!aliveIds.has(key)) { delete myOffers[key]; offDirty = true; }
+      }
+      for (const key of Object.keys(myAnswers)) {
+        if (!aliveIds.has(key)) { delete myAnswers[key]; ansDirty = true; }
       }
 
-      // Not connected — try to connect to first available peer
-      const target = alive[0];
-      if (target) await this._negotiate(target, vals);
+      // Drive per-pair negotiation for each alive peer
+      for (const remote of alive) {
+        const r = this._rtc.get(remote.peerId);
+
+        // Already connected — clean signal entries
+        if (r?.dc?.readyState === 'open') {
+          if (myOffers[remote.peerId])  { delete myOffers[remote.peerId];  offDirty = true; }
+          if (myAnswers[remote.peerId]) { delete myAnswers[remote.peerId]; ansDirty = true; }
+          continue;
+        }
+
+        const weInit = this.peerId < remote.peerId;
+
+        if (weInit) {
+          // === INITIATOR: we create offer, wait for answer ===
+          if (!r) {
+            try {
+              const entry = await this._buildOffer(remote.peerId);
+              myOffers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
+              offDirty = true;
+            } catch { this._closeOne(remote.peerId); }
+          } else {
+            // Check if remote wrote answer to their ANSWERS row keyed by our peerId
+            const remoteAns = _json(vals[remote.block + OFF_ANSWERS]?.[SIG_COL]) || {};
+            const ans = remoteAns[this.peerId];
+            if (ans) {
+              try {
+                await r.pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
+                r.state = 'connected';
+                delete myOffers[remote.peerId];
+                offDirty = true;
+              } catch { this._closeOne(remote.peerId); }
+            }
+          }
+        } else {
+          // === ANSWERER: look for offer in remote's OFFERS row ===
+          if (!r) {
+            const remoteOff = _json(vals[remote.block + OFF_OFFERS]?.[SIG_COL]) || {};
+            const offer = remoteOff[this.peerId];
+            if (offer) {
+              try {
+                const entry = await this._buildAnswer(remote.peerId, offer.sdp);
+                myAnswers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
+                ansDirty = true;
+              } catch { this._closeOne(remote.peerId); }
+            }
+          }
+        }
+      }
+
+      // Batch-write any changed signal rows
+      if (offDirty) {
+        const v = Object.keys(myOffers).length ? JSON.stringify(myOffers) : '';
+        await this.signal.writeCell(this._block + OFF_OFFERS, SIG_COL, v);
+      }
+      if (ansDirty) {
+        const v = Object.keys(myAnswers).length ? JSON.stringify(myAnswers) : '';
+        await this.signal.writeCell(this._block + OFF_ANSWERS, SIG_COL, v);
+      }
     } catch {} finally {
       this._polling = false;
     }
   }
 
-  /** Parse all live (non-expired) peer blocks except our own. */
-  _livePeers(vals) {
+  _scanAlive(vals) {
     const out = [];
-    for (let i = 0; i < MAX_PEERS; i++) {
+    for (let i = 0; i < MAX_SLOTS; i++) {
       const row = BLOCK_START + i * BLOCK_SIZE;
       if (row === this._block) continue;
       const p = _json(vals[row]?.[SIG_COL]);
-      if (p && Date.now() - p.ts < ALIVE_TTL) {
-        out.push({ ...p, block: row });
-      }
+      if (p && Date.now() - p.ts < ALIVE_TTL) out.push({ ...p, block: row });
     }
     return out;
   }
 
-  /** Update _peers map with remote signaling peers. */
-  _syncPeers(alive) {
-    let changed = false;
-    const aliveIds = new Set(alive.map(p => p.peerId));
+  /* ---------- RTC creation (per-peer) ---------- */
 
-    for (const p of alive) {
-      if (!this._peers.has(p.peerId)) {
-        this._peers.set(p.peerId, { name: p.name, channel: 'sig', lastSeen: Date.now() });
-        changed = true;
-      }
+  async _buildOffer(remotePeerId) {
+    this._closeOne(remotePeerId);
+    const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    const dc = pc.createDataChannel('waymark');
+    const entry = { pc, dc, state: 'offering' };
+    this._rtc.set(remotePeerId, entry);
+
+    this._wirePC(remotePeerId, pc);
+    this._wireDC(remotePeerId, dc);
+    if (this._localStream) {
+      for (const t of this._localStream.getTracks()) pc.addTrack(t, this._localStream);
     }
-    for (const [id, peer] of this._peers) {
-      if ((peer.channel === 'sig' || peer.channel === 'rtc') && !aliveIds.has(id)) {
-        this._peers.delete(id);
-        changed = true;
-      }
-    }
-    if (changed) {
-      this.onPeersChanged(new Map(this._peers));
-      if (this._peers.size === 0) this.onStatusChanged('listening');
-    }
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await this._iceReady(pc);
+    return entry;
   }
 
-  /** Drive the offer/answer state machine for one target peer. */
-  async _negotiate(target, vals) {
-    // Tie-break: lower peerId is the initiator (deterministic, avoids dual-offer)
-    const weInit = this.peerId < target.peerId;
+  async _buildAnswer(remotePeerId, sdp) {
+    this._closeOne(remotePeerId);
+    const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    const entry = { pc, dc: null, state: 'answering' };
+    this._rtc.set(remotePeerId, entry);
 
-    if (weInit) {
-      const myOffer = _json(vals[this._block + OFF_OFFER]?.[SIG_COL]);
-      if (!myOffer || myOffer.target !== target.peerId) {
-        // Create and write a fresh offer
-        await this._makeOffer(target);
-      } else {
-        // Check if the target wrote an answer into our ANSWER row
-        const ans = _json(vals[this._block + OFF_ANSWER]?.[SIG_COL]);
-        if (ans && ans.peerId === target.peerId) {
-          try {
-            await this._pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
-            this._rtcPeerId = target.peerId;
-            // Clear signaling rows now that connection is established
-            await Promise.all([
-              this.signal.writeCell(this._block + OFF_OFFER, SIG_COL, ''),
-              this.signal.writeCell(this._block + OFF_ANSWER, SIG_COL, ''),
-            ]);
-          } catch { /* retry next poll */ }
-        }
-      }
-    } else {
-      // We're the answerer — look for an offer in the target's OFFER row
-      const offer = _json(vals[target.block + OFF_OFFER]?.[SIG_COL]);
-      if (offer && offer.target === this.peerId && !this._pc?.remoteDescription) {
-        await this._makeAnswer(offer, target);
-      }
-    }
-  }
-
-  async _makeOffer(target) {
-    this._closeRTC();
-    this._isInitiator = true;
-    this._pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-    this._wirePeerConnection();
-
-    this._dc = this._pc.createDataChannel('waymark');
-    this._wireDataChannel(this._dc);
-
-    const offer = await this._pc.createOffer();
-    await this._pc.setLocalDescription(offer);
-    await this._iceReady();
-
-    await this.signal.writeCell(this._block + OFF_OFFER, SIG_COL, JSON.stringify({
-      peerId: this.peerId,
-      target: target.peerId,
-      sdp: this._pc.localDescription.sdp,
-      ts: Date.now(),
-    }));
-  }
-
-  async _makeAnswer(offerData, target) {
-    this._closeRTC();
-    this._isInitiator = false;
-    this._pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-    this._wirePeerConnection();
-
-    this._pc.ondatachannel = (e) => {
-      this._dc = e.channel;
-      this._wireDataChannel(this._dc);
+    pc.ondatachannel = (e) => {
+      entry.dc = e.channel;
+      this._wireDC(remotePeerId, e.channel);
     };
 
-    await this._pc.setRemoteDescription({ type: 'offer', sdp: offerData.sdp });
-    const answer = await this._pc.createAnswer();
-    await this._pc.setLocalDescription(answer);
-    await this._iceReady();
+    this._wirePC(remotePeerId, pc);
+    if (this._localStream) {
+      for (const t of this._localStream.getTracks()) pc.addTrack(t, this._localStream);
+    }
 
-    // Write answer into the INITIATOR's answer row (their block)
-    await this.signal.writeCell(target.block + OFF_ANSWER, SIG_COL, JSON.stringify({
-      peerId: this.peerId,
-      sdp: this._pc.localDescription.sdp,
-      ts: Date.now(),
-    }));
-    this._rtcPeerId = target.peerId;
+    await pc.setRemoteDescription({ type: 'offer', sdp });
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await this._iceReady(pc);
+    return entry;
   }
 
-  /* ---------- PeerConnection + DataChannel wiring ---------- */
-
-  _wirePeerConnection() {
-    this._pc.ontrack = (e) => {
-      if (e.streams?.[0]) this.onRemoteStream(e.streams[0], e.track.id);
+  _wirePC(remotePeerId, pc) {
+    pc.ontrack = (e) => {
+      if (e.streams?.[0]) this.onRemoteStream(e.streams[0], remotePeerId);
     };
 
-    this._pc.oniceconnectionstatechange = () => {
+    pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
-      const s = this._pc?.iceConnectionState;
-      if (s === 'connected' || s === 'completed') {
-        this._retries = 0;
-      } else if (s === 'disconnected' || s === 'failed') {
-        for (const [id, p] of this._peers) {
-          if (p.channel === 'rtc') this._peers.delete(id);
-        }
-        this.onPeersChanged(new Map(this._peers));
-        if (this._peers.size === 0) this.onStatusChanged('listening');
-
-        // Auto-retry: tear down and clear our signaling rows so next poll re-negotiates
-        if (this._retries < MAX_RETRIES && this._block >= 0) {
-          this._retries++;
-          this._closeRTC();
-          try {
-            this.signal.writeCell(this._block + OFF_OFFER, SIG_COL, '');
-            this.signal.writeCell(this._block + OFF_ANSWER, SIG_COL, '');
-          } catch {}
+      const s = pc.iceConnectionState;
+      if (s === 'failed' || s === 'closed') {
+        this._closeOne(remotePeerId);
+        if (this._peers.get(remotePeerId)?.channel === 'rtc') {
+          this._peers.set(remotePeerId, { name: this._peers.get(remotePeerId)?.name || 'Peer', channel: 'sig' });
+          this._emitPeers();
         }
       }
     };
 
-    // Renegotiation (fires when media tracks are added mid-session)
-    this._pc.onnegotiationneeded = async () => {
-      if (this._destroyed || !this._isInitiator || !this._pc?.remoteDescription) return;
+    // Renegotiation (fires when media tracks are added/removed)
+    pc.onnegotiationneeded = async () => {
+      if (this._destroyed) return;
+      const r = this._rtc.get(remotePeerId);
+      if (!r?.dc || r.dc.readyState !== 'open') return;
       try {
-        const offer = await this._pc.createOffer();
-        await this._pc.setLocalDescription(offer);
-        await this._iceReady();
-        if (this._dc?.readyState === 'open') {
-          this._dc.send(JSON.stringify({
-            type: 'renego-offer', peerId: this.peerId, sdp: this._pc.localDescription.sdp,
-          }));
-        }
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await this._iceReady(pc);
+        r.dc.send(JSON.stringify({
+          type: 'renego-offer', peerId: this.peerId, sdp: pc.localDescription.sdp,
+        }));
       } catch {}
     };
   }
 
-  _wireDataChannel(dc) {
+  _wireDC(remotePeerId, dc) {
     dc.onopen = () => {
       dc.send(JSON.stringify({ type: 'announce', peerId: this.peerId, name: this.displayName }));
+      this._peers.set(remotePeerId, {
+        name: this._peers.get(remotePeerId)?.name || 'Peer',
+        channel: 'rtc',
+      });
+      this._emitPeers();
     };
 
     dc.onmessage = (e) => {
@@ -448,74 +444,70 @@ export class WaymarkConnect {
         const m = JSON.parse(e.data);
         switch (m.type) {
           case 'announce':
-            this._peers.set(m.peerId, { name: m.name, channel: 'rtc', lastSeen: Date.now() });
-            this.onPeersChanged(new Map(this._peers));
-            this.onStatusChanged('connected');
+            this._peers.set(m.peerId, { name: m.name, channel: 'rtc' });
+            this._emitPeers();
             break;
           case 'message':
-            if (!this._peers.has(m.peerId)) {
-              this._peers.set(m.peerId, { name: m.name, channel: 'rtc', lastSeen: Date.now() });
-              this.onPeersChanged(new Map(this._peers));
-            }
             this.onMessage({ peerId: m.peerId, name: m.name, text: m.text, ts: m.ts, channel: 'rtc' });
             break;
           case 'call-end':
             this.onCallEnded(m.peerId);
             break;
           case 'renego-offer':
-            this._handleRenegoOffer(m);
+            this._onRenegoOffer(remotePeerId, m);
             break;
           case 'renego-answer':
-            this._handleRenegoAnswer(m);
+            this._onRenegoAnswer(remotePeerId, m);
             break;
         }
       } catch {}
     };
 
     dc.onclose = () => {
-      for (const [id, p] of this._peers) {
-        if (p.channel === 'rtc') this._peers.delete(id);
+      const p = this._peers.get(remotePeerId);
+      if (p?.channel === 'rtc') {
+        this._peers.set(remotePeerId, { name: p.name, channel: 'sig' });
+        this._emitPeers();
       }
-      this.onPeersChanged(new Map(this._peers));
-      if (this._peers.size === 0) this.onStatusChanged('listening');
     };
   }
 
-  /* ---------- Renegotiation (via DataChannel, for adding media) ---------- */
+  /* ---------- Renegotiation (via DataChannel — either side can initiate) ---------- */
 
-  async _handleRenegoOffer(m) {
-    if (!this._pc || this._destroyed) return;
+  async _onRenegoOffer(remotePeerId, m) {
+    const r = this._rtc.get(remotePeerId);
+    if (!r?.pc || this._destroyed) return;
     try {
-      await this._pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
-      const a = await this._pc.createAnswer();
-      await this._pc.setLocalDescription(a);
-      await this._iceReady();
-      if (this._dc?.readyState === 'open') {
-        this._dc.send(JSON.stringify({
-          type: 'renego-answer', peerId: this.peerId, sdp: this._pc.localDescription.sdp,
+      await r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
+      const answer = await r.pc.createAnswer();
+      await r.pc.setLocalDescription(answer);
+      await this._iceReady(r.pc);
+      if (r.dc?.readyState === 'open') {
+        r.dc.send(JSON.stringify({
+          type: 'renego-answer', peerId: this.peerId, sdp: r.pc.localDescription.sdp,
         }));
       }
     } catch {}
   }
 
-  async _handleRenegoAnswer(m) {
-    if (!this._pc || this._destroyed) return;
-    try { await this._pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch {}
+  async _onRenegoAnswer(remotePeerId, m) {
+    const r = this._rtc.get(remotePeerId);
+    if (!r?.pc || this._destroyed) return;
+    try { await r.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch {}
   }
 
-  /* ---------- ICE helpers ---------- */
+  /* ---------- Helpers ---------- */
 
-  _iceReady() {
+  _iceReady(pc) {
     return new Promise(resolve => {
-      if (this._pc.iceGatheringState === 'complete') { resolve(); return; }
+      if (pc.iceGatheringState === 'complete') { resolve(); return; }
       const t = setTimeout(resolve, ICE_WAIT);
-      this._pc.onicegatheringstatechange = () => {
-        if (this._pc.iceGatheringState === 'complete') { clearTimeout(t); resolve(); }
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') { clearTimeout(t); resolve(); }
       };
     });
   }
 
-  /** Clear all 5 rows in our block (best-effort, called on destroy). */
   async _clearBlock() {
     if (!this.signal || this._block < 0) return;
     try {
