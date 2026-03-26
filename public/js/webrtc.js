@@ -2,10 +2,10 @@
    webrtc.js — Peer-to-peer communication for Waymark
 
    Provides the WaymarkConnect class for real-time messaging
-   between users viewing the same spreadsheet.
+   and audio/video calling between users viewing the same sheet.
 
    Same-browser:  BroadcastChannel for instant messaging (no network)
-   Cross-device:  WebRTC DataChannel with Sheets-based signaling
+   Cross-device:  WebRTC DataChannel + MediaStream with Sheets signaling
    ============================================================ */
 
 /* ---------- Constants ---------- */
@@ -22,32 +22,29 @@ const SIG_COL_B = 21;
 /** How often to poll Sheets for remote signaling data (ms) */
 const SIG_POLL_INTERVAL = 2500;
 
-/** Maximum age for a signaling offer to be considered valid (ms) */
-const SIG_OFFER_TTL = 60000;
+/** Maximum age for a signaling offer/answer to be considered valid (ms) */
+const SIG_OFFER_TTL = 30000;
 
 /** ICE gathering timeout (ms) */
-const ICE_TIMEOUT = 3000;
+const ICE_TIMEOUT = 4000;
+
+/** How many times to retry signaling after RTC failure before giving up */
+const MAX_RTC_RETRIES = 3;
 
 /* ---------- WaymarkConnect ---------- */
 
 /**
- * Real-time peer-to-peer messaging channel for a specific spreadsheet.
- *
- * Usage:
- *   const conn = new WaymarkConnect(sheetId, { displayName, signal, onMessage, ... });
- *   conn.start();
- *   conn.send('Hello!');
- *   conn.destroy();
+ * Real-time peer-to-peer messaging + calling channel for a specific spreadsheet.
  *
  * @param {string} sheetId — spreadsheet ID this channel is bound to
  * @param {Object} opts
- * @param {string}   opts.displayName — current user's display name
- * @param {Object}   [opts.signal]    — Sheets signaling callbacks (omit for local-only)
- * @param {() => Promise<string[]>} opts.signal.readHeader  — read header row cells
- * @param {(col: number, val: string) => Promise<void>} opts.signal.writeCell — write cell in header row
- * @param {(msg: Object) => void}  opts.onMessage       — called on incoming message
- * @param {(peers: Map) => void}   opts.onPeersChanged  — called when peer list changes
+ * @param {string}   opts.displayName
+ * @param {Object}   [opts.signal]         — Sheets signaling callbacks
+ * @param {(msg: Object) => void}  opts.onMessage
+ * @param {(peers: Map) => void}   opts.onPeersChanged
  * @param {(status: string) => void} opts.onStatusChanged — 'listening' | 'connected' | 'disconnected'
+ * @param {(stream: MediaStream, peerId: string) => void} [opts.onRemoteStream] — remote media
+ * @param {(peerId: string) => void} [opts.onCallEnded] — remote hung up
  */
 export class WaymarkConnect {
   constructor(sheetId, opts = {}) {
@@ -58,6 +55,8 @@ export class WaymarkConnect {
     this.onMessage = opts.onMessage || (() => {});
     this.onPeersChanged = opts.onPeersChanged || (() => {});
     this.onStatusChanged = opts.onStatusChanged || (() => {});
+    this.onRemoteStream = opts.onRemoteStream || (() => {});
+    this.onCallEnded = opts.onCallEnded || (() => {});
 
     this._bc = null;
     this._pc = null;
@@ -66,6 +65,13 @@ export class WaymarkConnect {
     this._sigPollTimer = null;
     this._isInitiator = false;
     this._destroyed = false;
+    this._rtcRetries = 0;
+    this._localStream = null;
+    this._inCall = false;
+
+    // Clean up signaling on page unload so stale data doesn't block reconnection
+    this._onBeforeUnload = () => this._clearAllSignaling();
+    window.addEventListener('beforeunload', this._onBeforeUnload);
   }
 
   /* ---------- Public API ---------- */
@@ -90,7 +96,7 @@ export class WaymarkConnect {
 
   /**
    * Send a chat message to all connected peers.
-   * @param {string} text — message text
+   * @param {string} text
    * @returns {Object} the message object (for local display)
    */
   send(text) {
@@ -110,9 +116,84 @@ export class WaymarkConnect {
     return msg;
   }
 
+  /**
+   * Start an audio/video call with the connected peer.
+   * @param {Object} [constraints] — getUserMedia constraints
+   * @param {boolean} [constraints.audio=true]
+   * @param {boolean} [constraints.video=true]
+   * @returns {Promise<MediaStream>} the local stream (for self-view)
+   */
+  async startCall(constraints = { audio: true, video: true }) {
+    if (!this._pc || this._destroyed) throw new Error('Not connected');
+
+    this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    for (const track of this._localStream.getTracks()) {
+      this._pc.addTrack(track, this._localStream);
+    }
+    this._inCall = true;
+
+    // Notify peers via DataChannel
+    if (this._dc && this._dc.readyState === 'open') {
+      this._dc.send(JSON.stringify({ type: 'call-start', peerId: this.peerId, name: this.displayName }));
+    }
+    // Notify local BroadcastChannel peers
+    if (this._bc) {
+      this._bc.postMessage({ type: 'call-start', peerId: this.peerId, name: this.displayName });
+    }
+
+    // If we're the initiator, we need to renegotiate so our tracks reach the peer
+    if (this._isInitiator && this._pc.remoteDescription) {
+      const offer = await this._pc.createOffer();
+      await this._pc.setLocalDescription(offer);
+      await this._waitForIce();
+      // Send renegotiation offer via DataChannel
+      if (this._dc && this._dc.readyState === 'open') {
+        this._dc.send(JSON.stringify({
+          type: 'renegotiate-offer',
+          peerId: this.peerId,
+          sdp: this._pc.localDescription.sdp,
+        }));
+      }
+    }
+
+    return this._localStream;
+  }
+
+  /** End an active call, stopping all local media tracks. */
+  endCall() {
+    if (this._localStream) {
+      for (const track of this._localStream.getTracks()) track.stop();
+      this._localStream = null;
+    }
+    // Remove senders from peer connection
+    if (this._pc) {
+      for (const sender of this._pc.getSenders()) {
+        if (sender.track) this._pc.removeTrack(sender);
+      }
+    }
+    this._inCall = false;
+
+    // Notify peers
+    if (this._dc && this._dc.readyState === 'open') {
+      this._dc.send(JSON.stringify({ type: 'call-end', peerId: this.peerId }));
+    }
+    if (this._bc) {
+      this._bc.postMessage({ type: 'call-end', peerId: this.peerId });
+    }
+  }
+
+  /** Is there an active call? */
+  get inCall() { return this._inCall; }
+
+  /** Get the local media stream (if calling). */
+  get localStream() { return this._localStream; }
+
   /** Tear down all connections and listeners. */
   destroy() {
     this._destroyed = true;
+    window.removeEventListener('beforeunload', this._onBeforeUnload);
+
+    if (this._inCall) this.endCall();
 
     if (this._bc) {
       this._bc.postMessage({ type: 'leave', peerId: this.peerId });
@@ -125,17 +206,21 @@ export class WaymarkConnect {
       this._sigPollTimer = null;
     }
 
-    if (this._dc) { this._dc.close(); this._dc = null; }
-    if (this._pc) { this._pc.close(); this._pc = null; }
-
-    this._cleanupSignaling();
+    this._teardownRTC();
+    this._clearAllSignaling();
     this._peers.clear();
     this.onStatusChanged('disconnected');
   }
 
+  /* ---------- Internal: RTC lifecycle ---------- */
+
+  _teardownRTC() {
+    if (this._dc) { try { this._dc.close(); } catch {} this._dc = null; }
+    if (this._pc) { try { this._pc.close(); } catch {} this._pc = null; }
+  }
+
   /* ---------- BroadcastChannel (same-origin) ---------- */
 
-  /** @param {Object} data */
   _handleBroadcast(data) {
     if (this._destroyed || data.peerId === this.peerId) return;
 
@@ -158,6 +243,15 @@ export class WaymarkConnect {
         this.onMessage({ peerId: data.peerId, name: data.name, text: data.text, ts: data.ts, channel: 'local' });
         break;
 
+      case 'call-start':
+        // For BroadcastChannel (same browser), media sharing isn't meaningful
+        // but we track that the peer started a call
+        break;
+
+      case 'call-end':
+        this.onCallEnded(data.peerId);
+        break;
+
       case 'leave':
         this._peers.delete(data.peerId);
         this.onPeersChanged(new Map(this._peers));
@@ -170,24 +264,30 @@ export class WaymarkConnect {
 
   async _startSignaling() {
     try {
+      // Clear any stale data from a previous session by this peer
+      await this._clearAllSignaling();
+
       const header = await this.signal.readHeader();
       const existingA = _parseJSON(header[SIG_COL_A]);
 
+      // Only answer a FRESH offer from a DIFFERENT peer
       if (existingA && existingA.peerId !== this.peerId && Date.now() - existingA.ts < SIG_OFFER_TTL) {
         this._isInitiator = false;
         await this._createAnswer(existingA);
       } else {
+        // Overwrite any stale/expired offer
         this._isInitiator = true;
         await this._createOffer();
       }
 
       this._sigPollTimer = setInterval(() => this._pollSignaling(), SIG_POLL_INTERVAL);
-    } catch (err) {
+    } catch {
       // Signaling not available — local-only mode still works
     }
   }
 
   async _createOffer() {
+    this._teardownRTC();
     this._pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
     this._setupPeerConnection();
 
@@ -207,6 +307,7 @@ export class WaymarkConnect {
   }
 
   async _createAnswer(offerData) {
+    this._teardownRTC();
     this._pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
     this._setupPeerConnection();
 
@@ -233,25 +334,43 @@ export class WaymarkConnect {
     try {
       const header = await this.signal.readHeader();
 
-      if (this._isInitiator && !this._pc?.remoteDescription) {
-        const answerData = _parseJSON(header[SIG_COL_B]);
-        if (answerData && answerData.peerId !== this.peerId) {
-          await this._pc.setRemoteDescription({ type: 'answer', sdp: answerData.sdp });
-          clearInterval(this._sigPollTimer);
-          this._sigPollTimer = null;
+      if (this._isInitiator) {
+        // Initiator waits for an answer
+        if (!this._pc?.remoteDescription) {
+          const answerData = _parseJSON(header[SIG_COL_B]);
+          if (answerData && answerData.peerId !== this.peerId && Date.now() - answerData.ts < SIG_OFFER_TTL) {
+            await this._pc.setRemoteDescription({ type: 'answer', sdp: answerData.sdp });
+          }
+        }
+      } else {
+        // Non-initiator: if the offer we answered has been replaced with a new one
+        // (e.g. the initiator refreshed), re-answer the new offer
+        const offerData = _parseJSON(header[SIG_COL_A]);
+        if (offerData && offerData.peerId !== this.peerId && !this._pc?.remoteDescription) {
+          // Our original answer might not have been picked up — re-answer
         }
       }
     } catch { /* retry on next poll */ }
   }
 
   _setupPeerConnection() {
+    // Handle remote media streams (for calls)
+    this._pc.ontrack = (e) => {
+      if (e.streams && e.streams[0]) {
+        this.onRemoteStream(e.streams[0], e.track.id);
+      }
+    };
+
     this._pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
       const state = this._pc.iceConnectionState;
+
       if (state === 'connected' || state === 'completed') {
-        this.onStatusChanged('connected');
+        // ICE transport is up. Status update happens when DataChannel opens
+        // and peer announces — NOT here. (Fixes "connected but 0 peers" bug.)
         if (this._sigPollTimer) { clearInterval(this._sigPollTimer); this._sigPollTimer = null; }
-        this._cleanupSignaling();
+        this._clearAllSignaling();
+        this._rtcRetries = 0;
       } else if (state === 'disconnected' || state === 'failed') {
         // Remove RTC peers
         for (const [id, peer] of this._peers) {
@@ -259,7 +378,33 @@ export class WaymarkConnect {
         }
         this.onPeersChanged(new Map(this._peers));
         if (this._peers.size === 0) this.onStatusChanged('listening');
+
+        // Auto-retry signaling (tear down old RTC, start fresh)
+        if (this.signal && this._rtcRetries < MAX_RTC_RETRIES) {
+          this._rtcRetries++;
+          this._teardownRTC();
+          this._startSignaling();
+        }
       }
+    };
+
+    // Handle renegotiation (needed for adding media tracks mid-session)
+    this._pc.onnegotiationneeded = async () => {
+      if (this._destroyed || !this._isInitiator) return;
+      // Only renegotiate once the initial connection is established
+      if (!this._pc.remoteDescription) return;
+      try {
+        const offer = await this._pc.createOffer();
+        await this._pc.setLocalDescription(offer);
+        await this._waitForIce();
+        if (this._dc && this._dc.readyState === 'open') {
+          this._dc.send(JSON.stringify({
+            type: 'renegotiate-offer',
+            peerId: this.peerId,
+            sdp: this._pc.localDescription.sdp,
+          }));
+        }
+      } catch { /* renegotiation failed — non-fatal */ }
     };
   }
 
@@ -271,16 +416,32 @@ export class WaymarkConnect {
     dc.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'announce') {
-          this._peers.set(msg.peerId, { name: msg.name, channel: 'rtc', lastSeen: Date.now() });
-          this.onPeersChanged(new Map(this._peers));
-          this.onStatusChanged('connected');
-        } else if (msg.type === 'message') {
-          if (!this._peers.has(msg.peerId)) {
+        switch (msg.type) {
+          case 'announce':
             this._peers.set(msg.peerId, { name: msg.name, channel: 'rtc', lastSeen: Date.now() });
             this.onPeersChanged(new Map(this._peers));
-          }
-          this.onMessage({ peerId: msg.peerId, name: msg.name, text: msg.text, ts: msg.ts, channel: 'rtc' });
+            this.onStatusChanged('connected');
+            break;
+
+          case 'message':
+            if (!this._peers.has(msg.peerId)) {
+              this._peers.set(msg.peerId, { name: msg.name, channel: 'rtc', lastSeen: Date.now() });
+              this.onPeersChanged(new Map(this._peers));
+            }
+            this.onMessage({ peerId: msg.peerId, name: msg.name, text: msg.text, ts: msg.ts, channel: 'rtc' });
+            break;
+
+          case 'call-end':
+            this.onCallEnded(msg.peerId);
+            break;
+
+          case 'renegotiate-offer':
+            this._handleRenegotiateOffer(msg);
+            break;
+
+          case 'renegotiate-answer':
+            this._handleRenegotiateAnswer(msg);
+            break;
         }
       } catch { /* ignore malformed */ }
     };
@@ -290,10 +451,38 @@ export class WaymarkConnect {
         if (peer.channel === 'rtc') this._peers.delete(id);
       }
       this.onPeersChanged(new Map(this._peers));
+      if (this._peers.size === 0) this.onStatusChanged('listening');
     };
   }
 
-  /** Wait for ICE gathering to complete (or timeout). */
+  /* ---------- Renegotiation (for adding media mid-call) ---------- */
+
+  async _handleRenegotiateOffer(msg) {
+    if (!this._pc || this._destroyed) return;
+    try {
+      await this._pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+      const answer = await this._pc.createAnswer();
+      await this._pc.setLocalDescription(answer);
+      await this._waitForIce();
+      if (this._dc && this._dc.readyState === 'open') {
+        this._dc.send(JSON.stringify({
+          type: 'renegotiate-answer',
+          peerId: this.peerId,
+          sdp: this._pc.localDescription.sdp,
+        }));
+      }
+    } catch { /* renegotiation failed — non-fatal */ }
+  }
+
+  async _handleRenegotiateAnswer(msg) {
+    if (!this._pc || this._destroyed) return;
+    try {
+      await this._pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+    } catch { /* non-fatal */ }
+  }
+
+  /* ---------- ICE helpers ---------- */
+
   _waitForIce() {
     return new Promise((resolve) => {
       if (this._pc.iceGatheringState === 'complete') { resolve(); return; }
@@ -307,12 +496,14 @@ export class WaymarkConnect {
     });
   }
 
-  /** Best-effort cleanup of signaling cells after connection. */
-  async _cleanupSignaling() {
+  /** Clear BOTH signaling cells (best-effort). */
+  async _clearAllSignaling() {
     if (!this.signal) return;
     try {
-      const col = this._isInitiator ? SIG_COL_A : SIG_COL_B;
-      await this.signal.writeCell(col, '');
+      await Promise.all([
+        this.signal.writeCell(SIG_COL_A, ''),
+        this.signal.writeCell(SIG_COL_B, ''),
+      ]);
     } catch { /* best-effort */ }
   }
 }

@@ -100,6 +100,107 @@ function openChat(sheetId, displayName, signal) {
 
   const messages = el('div', { className: 'social-chat-messages' });
 
+  // --- Call UI ---
+  const callBar = el('div', { className: 'social-call-bar' });
+
+  const callBtn = el('button', {
+    className: 'social-call-btn',
+    title: 'Start audio/video call',
+  }, ['📞 Call']);
+  const videoCallBtn = el('button', {
+    className: 'social-call-btn social-call-btn-video',
+    title: 'Start video call',
+  }, ['📹 Video']);
+  const hangupBtn = el('button', {
+    className: 'social-call-btn social-call-btn-hangup hidden',
+    title: 'End call',
+  }, ['🔴 Hang Up']);
+  const muteBtn = el('button', {
+    className: 'social-call-btn social-call-btn-mute hidden',
+    title: 'Toggle mute',
+  }, ['🔇 Mute']);
+  const camToggleBtn = el('button', {
+    className: 'social-call-btn social-call-btn-cam hidden',
+    title: 'Toggle camera',
+  }, ['📷 Cam Off']);
+
+  callBar.append(callBtn, videoCallBtn, hangupBtn, muteBtn, camToggleBtn);
+
+  // Media container for video streams
+  const mediaContainer = el('div', { className: 'social-media-container hidden' });
+  const localVideo = el('video', { className: 'social-local-video', muted: true, autoplay: true, playsInline: true });
+  const remoteVideo = el('video', { className: 'social-remote-video', autoplay: true, playsInline: true });
+  const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
+  mediaContainer.append(remoteVideo, localVideo);
+
+  /** Enter the "in call" visual state */
+  function enterCallUI(hasVideo) {
+    callBtn.classList.add('hidden');
+    videoCallBtn.classList.add('hidden');
+    hangupBtn.classList.remove('hidden');
+    muteBtn.classList.remove('hidden');
+    if (hasVideo) {
+      camToggleBtn.classList.remove('hidden');
+      mediaContainer.classList.remove('hidden');
+    }
+    _chatPanel.classList.add('social-chat-in-call');
+  }
+
+  /** Leave the "in call" visual state */
+  function exitCallUI() {
+    callBtn.classList.remove('hidden');
+    videoCallBtn.classList.remove('hidden');
+    hangupBtn.classList.add('hidden');
+    muteBtn.classList.add('hidden');
+    camToggleBtn.classList.add('hidden');
+    mediaContainer.classList.add('hidden');
+    _chatPanel.classList.remove('social-chat-in-call');
+    localVideo.srcObject = null;
+    remoteVideo.srcObject = null;
+    remoteAudio.srcObject = null;
+    muteBtn.textContent = '🔇 Mute';
+    camToggleBtn.textContent = '📷 Cam Off';
+  }
+
+  /** Start a call with the given constraints */
+  async function startCall(constraints) {
+    if (!_activeConnect) return;
+    try {
+      const stream = await _activeConnect.startCall(constraints);
+      localVideo.srcObject = stream;
+      enterCallUI(constraints.video);
+    } catch (err) {
+      appendMessage('System', `Could not start call: ${err.message}`, Date.now(), false);
+    }
+  }
+
+  callBtn.addEventListener('click', () => startCall({ audio: true, video: false }));
+  videoCallBtn.addEventListener('click', () => startCall({ audio: true, video: true }));
+
+  hangupBtn.addEventListener('click', () => {
+    if (_activeConnect) _activeConnect.endCall();
+    exitCallUI();
+  });
+
+  muteBtn.addEventListener('click', () => {
+    if (!_activeConnect?.localStream) return;
+    const audioTrack = _activeConnect.localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      muteBtn.textContent = audioTrack.enabled ? '🔇 Mute' : '🔊 Unmute';
+    }
+  });
+
+  camToggleBtn.addEventListener('click', () => {
+    if (!_activeConnect?.localStream) return;
+    const videoTrack = _activeConnect.localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      camToggleBtn.textContent = videoTrack.enabled ? '📷 Cam Off' : '📷 Cam On';
+    }
+  });
+
+  // --- Input bar ---
   const inputBar = el('div', { className: 'social-chat-input-bar' });
   const input = el('input', {
     className: 'social-chat-input',
@@ -110,7 +211,7 @@ function openChat(sheetId, displayName, signal) {
   const sendBtn = el('button', { className: 'social-chat-send' }, ['Send']);
   inputBar.append(input, sendBtn);
 
-  _chatPanel.append(header, messages, inputBar);
+  _chatPanel.append(header, mediaContainer, messages, callBar, inputBar);
   document.body.append(_chatPanel);
 
   // --- Render a chat message ---
@@ -156,6 +257,21 @@ function openChat(sheetId, displayName, signal) {
     onStatusChanged(status) {
       statusDot.className = `social-chat-status social-chat-status-${status}`;
       statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
+    },
+    onRemoteStream(stream) {
+      // Determine if it has video tracks
+      if (stream.getVideoTracks().length > 0) {
+        remoteVideo.srcObject = stream;
+        mediaContainer.classList.remove('hidden');
+      } else {
+        remoteAudio.srcObject = stream;
+      }
+      // Enter call UI if not already in call
+      if (!_activeConnect?.inCall) enterCallUI(stream.getVideoTracks().length > 0);
+    },
+    onCallEnded() {
+      exitCallUI();
+      appendMessage('System', 'Peer ended the call.', Date.now(), false);
     },
   });
   _activeConnect.start();
