@@ -109,6 +109,21 @@ export class WaymarkConnect {
 
   /** Start an audio/video call — adds tracks to ALL peer connections. */
   async startCall(constraints = { audio: true, video: true }) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw Object.assign(
+        new Error('Media devices unavailable — this site must be loaded over HTTPS.'),
+        { name: 'InsecureContextError' },
+      );
+    }
+
+    // If we already have a local stream (reconnection), stop old tracks first
+    if (this._localStream) {
+      for (const t of this._localStream.getTracks()) t.stop();
+      for (const [, r] of this._rtc) {
+        for (const s of r.pc.getSenders()) { if (s.track) r.pc.removeTrack(s); }
+      }
+    }
+
     this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
     for (const [, r] of this._rtc) {
       for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);

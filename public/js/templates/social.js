@@ -172,10 +172,18 @@ function openChat(sheetId, displayName, signal) {
       enterCallUI(constraints.video);
     } catch (err) {
       let msg = `Could not start call: ${err.message}`;
-      if (err.name === 'NotAllowedError') {
+      if (err.name === 'InsecureContextError') {
+        msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
+      } else if (err.name === 'NotAllowedError') {
         msg = 'Microphone/camera access was denied. Please allow access in your browser settings and try again.';
       } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
         msg = 'No microphone or camera found. Please connect a device and try again.';
+      } else if (err.name === 'OverconstrainedError') {
+        msg = 'Camera/microphone does not support the requested settings. Trying audio only…';
+        if (constraints.video) {
+          appendMessage('System', msg, Date.now(), false);
+          return startCall({ audio: true, video: false });
+        }
       }
       appendMessage('System', msg, Date.now(), false);
     }
@@ -262,10 +270,17 @@ function openChat(sheetId, displayName, signal) {
     try {
       const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
       localVideo.srcObject = stream;
+      enterCallUI(withVideo);
     } catch (err) {
       let msg = `Could not join call: ${err.message}`;
-      if (err.name === 'NotAllowedError') {
+      if (err.name === 'InsecureContextError') {
+        msg = 'Camera/microphone require HTTPS. You can hear the caller but they cannot hear you.';
+      } else if (err.name === 'NotAllowedError') {
         msg = 'Microphone/camera access was denied. You can hear the caller but they cannot hear you.';
+      } else if (err.name === 'OverconstrainedError' && withVideo) {
+        // Retry audio-only
+        _autoAccepting = false;
+        return autoAcceptCall(false);
       }
       appendMessage('System', msg, Date.now(), false);
     } finally {
