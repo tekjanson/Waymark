@@ -421,6 +421,11 @@
   opacity: 0.5;
 }
 
+/* History bubbles (restored from sheet) */
+.social-chat-history {
+  opacity: 0.6;
+}
+
 /* Input bar */
 .social-chat-input-bar {
   display: flex;

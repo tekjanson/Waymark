@@ -16,6 +16,9 @@ import {
 
 /* ---------- Constants ---------- */
 
+/** Column reserved for WebRTC signaling (must match webrtc.js SIG_COL). */
+const SIG_COL = 20;
+
 const MOOD_MAP = {
   happy: '😊', sad: '😢', excited: '🎉', angry: '😤',
   love: '❤️', thinking: '🤔', laughing: '😂', cool: '😎',
@@ -504,6 +507,41 @@ function openChat(sheetId, displayName, signal) {
   }
   _saveChatHistory = saveChatHistory;
 
+  // --- Restore previous chat messages from the sheet ---
+  if (signal?.readAll && signal.cols) {
+    const c = signal.cols;
+    signal.readAll().then(allRows => {
+      const dataRows = allRows.slice(1); // skip header
+      for (const row of dataRows) {
+        const cat = c.category >= 0 ? (row[c.category] || '').toLowerCase() : '';
+        if (cat !== 'chat') continue;
+        const text   = c.text >= 0 ? (row[c.text] || '') : '';
+        const author = c.author >= 0 ? (row[c.author] || '') : '';
+        const date   = c.date >= 0 ? (row[c.date] || '') : '';
+        if (!text) continue;
+        const ts = date ? new Date(date).getTime() : 0;
+        // Render as a history bubble without adding to _chatLog
+        const isSelf = author === displayName;
+        const bubble = el('div', {
+          className: `social-chat-bubble social-chat-history ${isSelf ? 'social-chat-self' : 'social-chat-peer'}`,
+        });
+        const initial = (author || '?')[0].toUpperCase();
+        bubble.append(
+          el('div', { className: 'social-avatar social-avatar-sm', style: `background: ${avatarColor(author || 'Anonymous')}` }, [initial]),
+          el('div', { className: 'social-chat-bubble-body' }, [
+            el('span', { className: 'social-chat-bubble-name' }, [author]),
+            el('span', { className: 'social-chat-bubble-text' }, [text]),
+            el('span', { className: 'social-chat-bubble-time' }, [timeAgo(date)]),
+          ]),
+        );
+        messages.append(bubble);
+      }
+      if (messages.children.length > 0) {
+        messages.scrollTop = messages.scrollHeight;
+      }
+    }).catch(() => {}); // silent — don't block chat if read fails
+  }
+
   // --- Create connection ---
   _activeConnect = new WaymarkConnect(sheetId, {
     displayName,
@@ -602,7 +640,7 @@ const definition = {
       { role: 'text',     label: 'Post',      colIndex: cols.text,     type: 'textarea', placeholder: "What's on your mind?", required: true },
       { role: 'author',   label: 'Author',     colIndex: cols.author,   type: 'text',     placeholder: 'Your name' },
       { role: 'date',     label: 'Date',        colIndex: cols.date,     type: 'date' },
-      { role: 'category', label: 'Category',    colIndex: cols.category, type: 'select',   options: ['update', 'photo', 'link', 'thought', 'milestone', 'question', 'chat'] },
+      { role: 'category', label: 'Category',    colIndex: cols.category, type: 'select',   options: ['update', 'photo', 'link', 'thought', 'milestone', 'question'] },
       { role: 'mood',     label: 'Mood',        colIndex: cols.mood,     type: 'select',   options: ['', ...Object.keys(MOOD_MAP)] },
       { role: 'link',     label: 'Link',        colIndex: cols.link,     type: 'text',     placeholder: 'https://...' },
       { role: 'image',    label: 'Image URL',   colIndex: cols.image,    type: 'text',     placeholder: 'https://...' },
@@ -632,6 +670,9 @@ const definition = {
       for (const row of (sheet.rows || [])) {
         const postText = cols.text >= 0 ? (row[cols.text] || '') : '';
         if (!postText) continue;
+        // Chat rows belong in the chat panel, not the post feed
+        const cat = cols.category >= 0 ? (row[cols.category] || '') : '';
+        if (cat.toLowerCase() === 'chat') continue;
         allPosts.push({
           sheetId: sheet.id,
           sheetName: sheet.name,
@@ -851,6 +892,8 @@ const definition = {
       const author   = cols.author >= 0 ? cell(group.row, cols.author) : '';
       const date     = cols.date >= 0 ? cell(group.row, cols.date) : '';
       const category = cols.category >= 0 ? cell(group.row, cols.category) : '';
+      // Chat rows belong in the chat panel, not the post feed
+      if (category.toLowerCase() === 'chat') continue;
       const mood     = cols.mood >= 0 ? cell(group.row, cols.mood) : '';
       const link     = cols.link >= 0 ? cell(group.row, cols.link) : '';
       const likes    = cols.likes >= 0 ? cell(group.row, cols.likes) : '';
@@ -945,11 +988,14 @@ const definition = {
           }
           if (!cmtText) {
             // Fallback: find the first non-empty cell that isn't the author or date
-            const skip = new Set([cols.text, cols.author, cols.date, cols.category, cols.mood, cols.link, cols.likes, cols.image].filter(c => c >= 0));
+            // Skip SIG_COL (WebRTC signaling) so handshake JSON never leaks into the UX
+            const skip = new Set([cols.text, cols.author, cols.date, cols.category, cols.mood, cols.link, cols.likes, cols.image, SIG_COL].filter(c => c >= 0));
             for (let ci = 0; ci < cmt.row.length; ci++) {
               if (!skip.has(ci) && cell(cmt.row, ci)) { cmtText = cell(cmt.row, ci); break; }
             }
           }
+          // Skip rows with no visible content (e.g. signaling-only rows)
+          if (!cmtText && !cmtAuthor) continue;
           const cmtDate   = cols.date >= 0 ? cell(cmt.row, cols.date) : '';
 
           const cmtEl = el('div', { className: 'social-comment' });
