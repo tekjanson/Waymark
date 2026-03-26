@@ -154,6 +154,8 @@ const ROLE_LABELS = {
   'social.mood': 'Mood / Feeling emoji',
   'social.link': 'Link / URL',
   'social.comment': 'Comment / Reply',
+  'social.likes': 'Likes / Engagement count',
+  'social.image': 'Image / Photo URL',
   // Automation
   'automation.workflow': 'Workflow / Automation name',
   'automation.step': 'Step / Instruction description',
@@ -282,7 +284,7 @@ const CANONICAL_HEADERS = {
   // Social Feed
   'social.text': 'Post', 'social.author': 'Author', 'social.date': 'Date',
   'social.category': 'Category', 'social.mood': 'Mood', 'social.link': 'Link',
-  'social.comment': 'Comment',
+  'social.comment': 'Comment', 'social.likes': 'Likes', 'social.image': 'Image',
   // Recipe
   'recipe.text': 'Recipe', 'recipe.servings': 'Servings',
   'recipe.prepTime': 'Prep Time', 'recipe.cookTime': 'Cook Time',

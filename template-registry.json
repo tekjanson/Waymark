@@ -780,7 +780,9 @@
         "category",
         "mood",
         "link",
-        "comment"
+        "comment",
+        "likes",
+        "image"
       ],
       "interactive": true,
       "interactionType": "inline-edit",

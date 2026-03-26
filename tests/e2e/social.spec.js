@@ -139,9 +139,9 @@ test('closing chat saves history to data sheet', async ({ page }) => {
   // Should contain the message text in one of the row cells
   const hasMessage = chatSave.rows.some(row => row.includes('Test message for history'));
   expect(hasMessage).toBe(true);
-  // Should have the chat history header row
-  const hasHeader = chatSave.rows.some(row => row.includes('--- Chat History ---'));
-  expect(hasHeader).toBe(true);
+  // Chat rows should use 'chat' category to integrate with the feed
+  const hasChatCategory = chatSave.rows.some(row => row.includes('chat'));
+  expect(hasChatCategory).toBe(true);
 });
 
 test('navigating away from sheet saves chat history', async ({ page }) => {
