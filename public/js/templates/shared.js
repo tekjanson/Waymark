@@ -1035,3 +1035,13 @@ export {
   computePieAngles,
   formatAxisLabel,
 } from './charts.js';
+
+/* ---------- Chat preference re-exports ---------- */
+
+/* Templates access these via shared.js (§1.5 — templates import only from shared.js) */
+export {
+  getChatSaveHistory,
+  setChatSaveHistory,
+  getChatSoundEnabled,
+  setChatSoundEnabled,
+} from '../storage.js';

@@ -467,3 +467,21 @@ export function setCrossLinks(sheetId, links) {
   }
   set('cross_links', all);
 }
+
+/* ---------- Chat Preferences ---------- */
+
+export function getChatSaveHistory() {
+  return get('chat_save_history') ?? true;
+}
+
+export function setChatSaveHistory(enabled) {
+  set('chat_save_history', !!enabled);
+}
+
+export function getChatSoundEnabled() {
+  return get('chat_sound_enabled') ?? true;
+}
+
+export function setChatSoundEnabled(enabled) {
+  set('chat_sound_enabled', !!enabled);
+}

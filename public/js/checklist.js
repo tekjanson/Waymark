@@ -223,14 +223,15 @@ export async function show(sheetId, sheetName) {
 
 /** Stop auto-refresh (called when navigating away). */
 export function hide() {
+  // Notify templates BEFORE clearing state — async cleanup closures
+  // still reference currentSheetId and need it to be non-null.
+  window.dispatchEvent(new CustomEvent('waymark:sheet-hidden'));
+
   currentSheetId = null;
   currentValues = null;
   currentDataTitle = null;
   clearInterval(refreshTimer);
   refreshTimer = null;
-
-  // Notify templates that need to clean up live connections
-  window.dispatchEvent(new CustomEvent('waymark:sheet-hidden'));
 }
 
 /* ---------- CSV Download ---------- */
@@ -491,16 +492,22 @@ function renderWithTemplate(values) {
   template._onAddRow = addRowCallback;
   template._totalColumns = totalCols;
 
-  // WebRTC signaling callbacks for peer-to-peer communication
-  template._rtcSheetId = currentSheetId;
+  // WebRTC signaling callbacks for peer-to-peer communication.
+  // Capture IDs by value so async callbacks survive hide() nulling currentSheetId.
+  const rtcSheetId = currentSheetId;
+  const rtcSheetTitle = currentSheetTitle;
+  template._rtcSheetId = rtcSheetId;
   template._rtcUserName = api.auth.getUser()?.name || 'Anonymous';
   template._rtcSignal = {
     readAll: async () => {
-      const data = await api.sheets.getSpreadsheet(currentSheetId);
+      const data = await api.sheets.getSpreadsheet(rtcSheetId);
       return data.values || [];
     },
     writeCell: (row, col, value) =>
-      api.sheets.updateCell(currentSheetId, currentSheetTitle, row, col, value),
+      api.sheets.updateCell(rtcSheetId, rtcSheetTitle, row, col, value),
+    /** Append chat history rows to the main data sheet. */
+    appendChatHistory: (rows) =>
+      api.sheets.appendRows(rtcSheetId, rtcSheetTitle, rows),
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)
