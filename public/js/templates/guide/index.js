@@ -257,4 +257,3 @@ const definition = {
 
 registerTemplate('guide', definition);
 export default definition;
-export default definition;
