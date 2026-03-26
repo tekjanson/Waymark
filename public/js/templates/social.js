@@ -10,6 +10,8 @@ import {
   el, cell, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, editableCell,
   buildDirSyncBtn, WaymarkConnect,
+  getChatSaveHistory, setChatSaveHistory,
+  getChatSoundEnabled, setChatSoundEnabled,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -54,11 +56,59 @@ let _activeConnect = null;
 let _activeSheetId = null;
 let _chatPanel = null;
 
+/* --- Ringtone via Web Audio API --- */
+let _ringCtx = null;
+let _ringOsc = null;
+let _ringGain = null;
+let _ringInterval = null;
+
+function startRingtone() {
+  if (!getChatSoundEnabled()) return;
+  stopRingtone();
+  try {
+    _ringCtx = new AudioContext();
+    _ringGain = _ringCtx.createGain();
+    _ringGain.gain.value = 0.15;
+    _ringGain.connect(_ringCtx.destination);
+    // Two-tone ring pattern
+    let on = true;
+    const play = () => {
+      if (!on) return;
+      _ringOsc = _ringCtx.createOscillator();
+      _ringOsc.type = 'sine';
+      _ringOsc.frequency.value = 440;
+      _ringOsc.connect(_ringGain);
+      _ringOsc.start();
+      _ringOsc.frequency.setValueAtTime(440, _ringCtx.currentTime);
+      _ringOsc.frequency.setValueAtTime(480, _ringCtx.currentTime + 0.15);
+      setTimeout(() => { try { _ringOsc?.stop(); } catch {} }, 300);
+    };
+    play();
+    _ringInterval = setInterval(play, 1200);
+    // Auto-stop after 30s
+    setTimeout(stopRingtone, 30000);
+  } catch {}
+}
+
+function stopRingtone() {
+  try { _ringOsc?.stop(); } catch {}
+  _ringOsc = null;
+  clearInterval(_ringInterval);
+  _ringInterval = null;
+  try { _ringCtx?.close(); } catch {}
+  _ringCtx = null;
+}
+
+/* --- Chat message log (for persistence) --- */
+let _chatLog = [];
+
 /** Clean up active connection and chat panel. */
 function destroyChat() {
+  stopRingtone();
   if (_activeConnect) { _activeConnect.destroy(); _activeConnect = null; }
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
+  _chatLog = [];
 }
 
 // Tear down when navigating away from the sheet
@@ -86,19 +136,106 @@ function openChat(sheetId, displayName, signal) {
   const statusDot = el('span', { className: 'social-chat-status social-chat-status-listening' });
   const statusLabel = el('span', {}, ['Listening…']);
   const peerCount = el('span', { className: 'social-chat-peer-count' }, ['0 peers']);
+  const unreadBadge = el('span', { className: 'social-chat-unread hidden' }, ['0']);
+  const settingsBtn = el('button', {
+    className: 'social-chat-settings-btn',
+    title: 'Chat settings',
+  }, ['⚙️']);
   const minimizeBtn = el('button', {
     className: 'social-chat-minimize',
     title: 'Minimize',
-    on: { click() { _chatPanel.classList.toggle('social-chat-minimized'); } },
+    on: { click() {
+      _chatPanel.classList.toggle('social-chat-minimized');
+      if (!_chatPanel.classList.contains('social-chat-minimized')) {
+        _unreadCount = 0;
+        unreadBadge.classList.add('hidden');
+      }
+    } },
   }, ['—']);
   const closeBtn = el('button', {
     className: 'social-chat-close',
     title: 'Disconnect',
     on: { click: destroyChat },
   }, ['✕']);
-  header.append(el('span', { className: 'social-chat-title' }, ['📡 Live Chat']), statusDot, statusLabel, peerCount, minimizeBtn, closeBtn);
+  header.append(
+    el('span', { className: 'social-chat-title' }, ['📡 Live Chat']),
+    statusDot, statusLabel, peerCount, unreadBadge,
+    settingsBtn, minimizeBtn, closeBtn,
+  );
+
+  /* --- Settings panel --- */
+  const settingsPanel = el('div', { className: 'social-chat-settings-panel hidden' });
+  const saveHistoryCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getChatSaveHistory(),
+    on: { change(e) { setChatSaveHistory(e.target.checked); } },
+  });
+  const soundCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getChatSoundEnabled(),
+    on: { change(e) { setChatSoundEnabled(e.target.checked); } },
+  });
+  settingsPanel.append(
+    el('div', { className: 'social-settings-title' }, ['Chat Settings']),
+    el('label', { className: 'social-settings-row' }, [
+      saveHistoryCheckbox,
+      el('span', {}, ['Save chat history to sheet']),
+    ]),
+    el('label', { className: 'social-settings-row' }, [
+      soundCheckbox,
+      el('span', {}, ['Incoming call sound']),
+    ]),
+  );
+  settingsBtn.addEventListener('click', () => {
+    settingsPanel.classList.toggle('hidden');
+  });
 
   const messages = el('div', { className: 'social-chat-messages' });
+
+  /* --- Incoming call modal (hidden by default) --- */
+  const incomingCallModal = el('div', { className: 'social-incoming-call hidden' });
+  const incomingCallerName = el('span', { className: 'social-incoming-caller' }, ['']);
+  const incomingLabel = el('span', { className: 'social-incoming-label' }, ['is calling…']);
+  const acceptBtn = el('button', { className: 'social-incoming-accept' }, ['✅ Accept']);
+  const acceptVideoBtn = el('button', { className: 'social-incoming-accept-video' }, ['📹 Accept w/ Video']);
+  const declineBtn = el('button', { className: 'social-incoming-decline' }, ['❌ Decline']);
+  incomingCallModal.append(
+    el('div', { className: 'social-incoming-ring-icon' }, ['📞']),
+    el('div', { className: 'social-incoming-info' }, [incomingCallerName, incomingLabel]),
+    el('div', { className: 'social-incoming-actions' }, [acceptBtn, acceptVideoBtn, declineBtn]),
+  );
+
+  let _pendingCallPeerId = null;
+  let _pendingCallName = null;
+
+  function showIncomingCall(peerId, name) {
+    _pendingCallPeerId = peerId;
+    _pendingCallName = name;
+    incomingCallerName.textContent = name || 'Peer';
+    incomingCallModal.classList.remove('hidden');
+    _chatPanel.classList.remove('social-chat-minimized');
+    startRingtone();
+  }
+
+  function hideIncomingCall() {
+    incomingCallModal.classList.add('hidden');
+    _pendingCallPeerId = null;
+    _pendingCallName = null;
+    stopRingtone();
+  }
+
+  acceptBtn.addEventListener('click', () => {
+    hideIncomingCall();
+    doAcceptCall(false);
+  });
+  acceptVideoBtn.addEventListener('click', () => {
+    hideIncomingCall();
+    doAcceptCall(true);
+  });
+  declineBtn.addEventListener('click', () => {
+    hideIncomingCall();
+    appendMessage('System', 'You declined the call.', Date.now(), false);
+  });
 
   // --- Call UI ---
   const callBar = el('div', { className: 'social-call-bar' });
@@ -203,6 +340,27 @@ function openChat(sheetId, displayName, signal) {
     }
   }
 
+  /** Accept an incoming call — media permission is requested HERE, not before. */
+  async function doAcceptCall(withVideo) {
+    if (!_activeConnect || _activeConnect.inCall) return;
+    appendMessage('System', 'Joining call…', Date.now(), false);
+    try {
+      const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
+      if (stream?._listenOnly) {
+        appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
+      } else {
+        localVideo.srcObject = stream;
+      }
+      enterCallUI(withVideo && !stream?._listenOnly);
+    } catch (err) {
+      let msg = `Could not join call: ${err.message}`;
+      if (err.name === 'NotAllowedError') {
+        msg = '🔒 Microphone blocked. Click the lock 🔒 icon → Site settings → Microphone → Allow, then reload.';
+      }
+      appendMessage('System', msg, Date.now(), false);
+    }
+  }
+
   callBtn.addEventListener('click', () => startCall({ audio: true, video: false }));
   videoCallBtn.addEventListener('click', () => startCall({ audio: true, video: true }));
 
@@ -229,6 +387,20 @@ function openChat(sheetId, displayName, signal) {
     }
   });
 
+  // --- Typing indicator ---
+  const typingIndicator = el('div', { className: 'social-typing-indicator hidden' });
+  let _typingTimer = null;
+
+  function showTyping(name) {
+    typingIndicator.textContent = `${name} is typing…`;
+    typingIndicator.classList.remove('hidden');
+    clearTimeout(_typingTimer);
+    _typingTimer = setTimeout(() => typingIndicator.classList.add('hidden'), 3000);
+  }
+
+  // --- Unread count ---
+  let _unreadCount = 0;
+
   // --- Input bar ---
   const inputBar = el('div', { className: 'social-chat-input-bar' });
   const input = el('input', {
@@ -240,7 +412,18 @@ function openChat(sheetId, displayName, signal) {
   const sendBtn = el('button', { className: 'social-chat-send' }, ['Send']);
   inputBar.append(input, sendBtn);
 
-  _chatPanel.append(header, mediaContainer, remoteAudio, messages, callBar, inputBar);
+  // Broadcast typing indicator on keypress
+  let _lastTypingBroadcast = 0;
+  input.addEventListener('input', () => {
+    if (!_activeConnect) return;
+    const now = Date.now();
+    if (now - _lastTypingBroadcast > 2000) {
+      _lastTypingBroadcast = now;
+      _activeConnect.send(null, 'typing');
+    }
+  });
+
+  _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, inputBar);
   document.body.append(_chatPanel);
 
   // --- Render a chat message ---
@@ -257,6 +440,18 @@ function openChat(sheetId, displayName, signal) {
     );
     messages.append(bubble);
     messages.scrollTop = messages.scrollHeight;
+
+    // Track for history persistence
+    if (name !== 'System') {
+      _chatLog.push({ name, text, ts, self: isSelf });
+    }
+
+    // Unread badge if minimized
+    if (_chatPanel.classList.contains('social-chat-minimized') && !isSelf && name !== 'System') {
+      _unreadCount++;
+      unreadBadge.textContent = String(_unreadCount);
+      unreadBadge.classList.remove('hidden');
+    }
   }
 
   // --- Send handler ---
@@ -273,37 +468,32 @@ function openChat(sheetId, displayName, signal) {
     if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
   });
 
-  // --- Create connection ---
-  let _autoAccepting = false;
-
-  /** Auto-accept an incoming call (triggers getUserMedia permission prompt). */
-  async function autoAcceptCall(withVideo) {
-    if (_autoAccepting || !_activeConnect || _activeConnect.inCall) return;
-    _autoAccepting = true;
-    appendMessage('System', 'Incoming call — joining…', Date.now(), false);
-    try {
-      const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
-      if (stream?._listenOnly) {
-        appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
-      } else {
-        localVideo.srcObject = stream;
-      }
-      enterCallUI(withVideo && !stream?._listenOnly);
-    } catch (err) {
-      let msg = `Could not join call: ${err.message}`;
-      if (err.name === 'NotAllowedError') {
-        msg = 'Microphone blocked. Click the lock 🔒 icon → Site settings → Microphone → Allow, then reload.';
-      }
-      appendMessage('System', msg, Date.now(), false);
-    } finally {
-      _autoAccepting = false;
+  // --- Save chat history to sheet when disconnecting ---
+  function saveChatHistory() {
+    if (!getChatSaveHistory() || _chatLog.length === 0) return;
+    if (!signal) return;
+    const lines = _chatLog.map(m => {
+      const t = new Date(m.ts).toLocaleTimeString();
+      return `[${t}] ${m.name}: ${m.text}`;
+    }).join('\n');
+    // Write to an available cell in the signaling column area
+    const chatCol = SIG_COL_CHAT;
+    if (chatCol >= 0) {
+      signal.writeCell(0, chatCol, lines).catch(() => {});
     }
   }
 
+  const SIG_COL_CHAT = 21; // Column 21 reserved for chat history
+
+  // --- Create connection ---
   _activeConnect = new WaymarkConnect(sheetId, {
     displayName,
     signal,
     onMessage(msg) {
+      if (msg.text === null && msg.type === 'typing') {
+        showTyping(msg.name);
+        return;
+      }
       appendMessage(msg.name, msg.text, msg.ts, false);
     },
     onPeersChanged(peers) {
@@ -312,6 +502,7 @@ function openChat(sheetId, displayName, signal) {
     onStatusChanged(status) {
       statusDot.className = `social-chat-status social-chat-status-${status}`;
       statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
+      if (status === 'disconnected') saveChatHistory();
     },
     onRemoteStream(stream) {
       const hasVideo = stream.getVideoTracks().length > 0;
@@ -325,19 +516,19 @@ function openChat(sheetId, displayName, signal) {
         remoteVideo.srcObject = null;
         remoteAudio.play().catch(() => {});
       }
-      // Auto-accept: enter call UI and request local media so both sides can talk
-      if (!_activeConnect?.inCall) {
+      // If we're already in a call (user initiated), just update UI
+      if (_activeConnect?.inCall) {
         enterCallUI(hasVideo);
-        autoAcceptCall(hasVideo);
       }
     },
     onCallActive(peerId, name) {
+      // Show incoming call prompt instead of auto-joining
       if (!_activeConnect?.inCall) {
-        appendMessage('System', `${name || 'Peer'} is in a call. Joining…`, Date.now(), false);
-        autoAcceptCall(false);
+        showIncomingCall(peerId, name);
       }
     },
     onCallEnded() {
+      hideIncomingCall();
       exitCallUI();
       appendMessage('System', 'Peer ended the call.', Date.now(), false);
     },

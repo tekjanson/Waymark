@@ -99,9 +99,9 @@ export class WaymarkConnect {
     this.onStatusChanged('listening');
   }
 
-  /** Send a chat message to all connected peers (BC + all DataChannels). */
-  send(text) {
-    const msg = { type: 'message', peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
+  /** Send a chat message (or typing signal) to all connected peers (BC + all DataChannels). */
+  send(text, msgType = 'message') {
+    const msg = { type: msgType, peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
@@ -256,6 +256,9 @@ export class WaymarkConnect {
         break;
       case 'message':
         this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, channel: 'local' });
+        break;
+      case 'typing':
+        this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
         break;
       case 'call-start': break;
       case 'call-end':
@@ -529,6 +532,9 @@ export class WaymarkConnect {
             break;
           case 'call-end':
             this.onCallEnded(m.peerId);
+            break;
+          case 'typing':
+            this.onMessage({ peerId: m.peerId, name: m.name, text: null, type: 'typing', ts: m.ts, channel: 'rtc' });
             break;
           case 'renego-offer':
             this._onRenegoOffer(remotePeerId, m);
