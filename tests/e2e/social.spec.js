@@ -153,3 +153,54 @@ test('two tabs can exchange messages via BroadcastChannel', async ({ context }) 
   const bubbles1 = page1.locator('.social-chat-bubble-text');
   await expect(bubbles1.nth(1)).toContainText('Hello back from tab 2!');
 });
+
+/* ---------- Call UI ---------- */
+
+test('chat panel shows call buttons after connecting', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  await expect(page.locator('.social-call-btn').first()).toBeVisible();
+  await expect(page.locator('.social-call-btn').first()).toContainText('Call');
+  await expect(page.locator('.social-call-btn-video')).toBeVisible();
+  await expect(page.locator('.social-call-btn-video')).toContainText('Video');
+  // Hang up should be hidden initially
+  await expect(page.locator('.social-call-btn-hangup')).toBeHidden();
+});
+
+test('minimized chat hides call bar and media', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  await page.click('.social-chat-minimize');
+  await expect(page.locator('.social-call-bar')).not.toBeVisible();
+
+  // Expand again
+  await page.click('.social-chat-minimize');
+  await expect(page.locator('.social-call-bar')).toBeVisible();
+});
+
+/* ---------- Reconnection ---------- */
+
+test('closing and reopening Connect creates a new chat panel', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+
+  // First connect
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  // Close
+  await page.click('.social-chat-close');
+  await expect(page.locator('.social-chat-panel')).toHaveCount(0);
+
+  // Re-connect
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await expect(page.locator('.social-chat-panel')).toBeVisible();
+  await expect(page.locator('.social-chat-title')).toContainText('Live Chat');
+});
