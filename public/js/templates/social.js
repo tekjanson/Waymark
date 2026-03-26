@@ -168,32 +168,36 @@ function openChat(sheetId, displayName, signal) {
     if (!_activeConnect) return;
     try {
       const stream = await _activeConnect.startCall(constraints);
-      localVideo.srcObject = stream;
-      enterCallUI(constraints.video);
+      if (stream?._listenOnly) {
+        // Joined but couldn't get mic/camera
+        enterCallUI(false);
+        const reason = stream._deviceError?.name || '';
+        if (reason === 'NotFoundError' || reason === 'NotReadableError') {
+          appendMessage('System',
+            '🔇 Joined call in listen-only mode (no microphone detected).\n'
+            + 'You can hear the other person but they cannot hear you.\n\n'
+            + 'To fix: click the lock/tune 🔒 icon in your address bar → Site settings → Microphone → Allow, then reload.',
+            Date.now(), false);
+        } else {
+          appendMessage('System',
+            '🔇 Joined call in listen-only mode. You can hear the other person but they cannot hear you.',
+            Date.now(), false);
+        }
+      } else {
+        localVideo.srcObject = stream;
+        enterCallUI(constraints.video);
+      }
     } catch (err) {
       let msg = `Could not start call: ${err.message}`;
       if (err.name === 'InsecureContextError') {
         msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
-      } else if (err.name === 'PermissionDenied' || err.name === 'NotAllowedError') {
-        msg = 'Microphone access is blocked. To fix this:\n'
-            + '1. Click the lock 🔒 icon (or tune icon) in your address bar\n'
-            + '2. Find "Microphone" and set it to "Allow"\n'
-            + '3. Reload the page and try again';
-      } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
-        if (constraints.video) {
-          appendMessage('System', 'Camera not found — trying audio only…', Date.now(), false);
-          return startCall({ audio: true, video: false });
-        }
-        // On Linux, NotFoundError often means permission issue, not missing hardware
-        msg = 'Could not access microphone. This can happen if:\n'
-            + '• Browser permission is blocked — click the lock 🔒 icon in your address bar and allow Microphone\n'
-            + '• No audio input device — check your system sound settings\n'
-            + '• Another app is using the mic — close other voice/video apps';
-      } else if (err.name === 'OverconstrainedError') {
-        if (constraints.video) {
-          appendMessage('System', 'Camera constraints not supported — trying audio only…', Date.now(), false);
-          return startCall({ audio: true, video: false });
-        }
+      } else if (err.name === 'NotAllowedError') {
+        msg = '🔒 Microphone access was blocked by your browser.\n\n'
+            + 'To fix this in Chrome:\n'
+            + '1. Click the lock/tune icon in the address bar\n'
+            + '2. Click "Site settings"\n'
+            + '3. Set Microphone to "Allow"\n'
+            + '4. Close this tab and reopen the page';
       }
       appendMessage('System', msg, Date.now(), false);
     }
@@ -276,22 +280,19 @@ function openChat(sheetId, displayName, signal) {
   async function autoAcceptCall(withVideo) {
     if (_autoAccepting || !_activeConnect || _activeConnect.inCall) return;
     _autoAccepting = true;
-    appendMessage('System', 'Incoming call — requesting microphone access…', Date.now(), false);
+    appendMessage('System', 'Incoming call — joining…', Date.now(), false);
     try {
       const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
-      localVideo.srcObject = stream;
-      enterCallUI(withVideo);
+      if (stream?._listenOnly) {
+        appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
+      } else {
+        localVideo.srcObject = stream;
+      }
+      enterCallUI(withVideo && !stream?._listenOnly);
     } catch (err) {
       let msg = `Could not join call: ${err.message}`;
-      if (err.name === 'InsecureContextError') {
-        msg = 'Camera/microphone require HTTPS. You can hear the caller but they cannot hear you.';
-      } else if (err.name === 'PermissionDenied' || err.name === 'NotAllowedError') {
-        msg = 'Microphone access is blocked. Click the lock 🔒 icon in your address bar, allow Microphone, then reload.';
-      } else if ((err.name === 'NotFoundError' || err.name === 'NotReadableError') && withVideo) {
-        _autoAccepting = false;
-        return autoAcceptCall(false);
-      } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
-        msg = 'Could not access microphone — click the lock 🔒 icon in your address bar and allow Microphone, then reload.';
+      if (err.name === 'NotAllowedError') {
+        msg = 'Microphone blocked. Click the lock 🔒 icon → Site settings → Microphone → Allow, then reload.';
       }
       appendMessage('System', msg, Date.now(), false);
     } finally {

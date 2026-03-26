@@ -125,24 +125,60 @@ export class WaymarkConnect {
       this._localStream = null;
     }
 
-    // Check permission state — Chrome on Linux sometimes blocks silently
-    const micPerm = await navigator.permissions?.query?.({ name: 'microphone' }).catch(() => null);
-    if (micPerm?.state === 'denied') {
-      throw Object.assign(
-        new Error('Microphone permission is blocked.'),
-        { name: 'PermissionDenied' },
-      );
+    // Try to get user media. If getUserMedia fails with a device error,
+    // join in listen-only mode so the user can still hear the other side.
+    let listenOnly = false;
+    let deviceError = null;
+    try {
+      this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      // NotAllowedError = user explicitly denied or permission is blocked.
+      // Re-throw so the UI can guide them to fix it.
+      if (e.name === 'NotAllowedError') throw e;
+
+      // OverconstrainedError with video — retry audio-only before giving up
+      if (e.name === 'OverconstrainedError' && constraints.video) {
+        try {
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (e2) {
+          if (e2.name === 'NotAllowedError') throw e2;
+          listenOnly = true;
+          deviceError = e2;
+        }
+      } else if (constraints.video && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
+        // Camera failed — retry audio-only
+        try {
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (e2) {
+          if (e2.name === 'NotAllowedError') throw e2;
+          listenOnly = true;
+          deviceError = e2;
+        }
+      } else {
+        // Audio-only also failed (NotFoundError, NotReadableError, etc.)
+        listenOnly = true;
+        deviceError = e;
+      }
     }
 
-    // Call getUserMedia — this triggers the browser's native permission prompt
-    this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    for (const [, r] of this._rtc) {
-      for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
+    // Add local tracks to all peer connections
+    if (this._localStream) {
+      for (const [, r] of this._rtc) {
+        for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
+      }
     }
     this._inCall = true;
     const n = { type: 'call-start', peerId: this.peerId, name: this.displayName };
     this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
+
+    // Return stream with metadata for the UI
+    if (listenOnly) {
+      const s = this._localStream || new MediaStream();
+      s._listenOnly = true;
+      s._deviceError = deviceError;
+      return s;
+    }
     return this._localStream;
   }
 
