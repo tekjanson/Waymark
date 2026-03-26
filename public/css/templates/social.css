@@ -437,6 +437,7 @@
 @media (max-width: 480px) {
   .social-chat-panel { width: calc(100vw - 20px); right: 10px; bottom: 10px; }
   .social-connect-btn { padding: 6px 10px; font-size: 0.75rem; }
+  .social-call-bar { flex-wrap: wrap; }
 }
 
 /* --- Dark Theme --- */
@@ -446,4 +447,73 @@
 }
 [data-theme="dark"] .social-chat-panel {
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* ---------- Call Bar & Media ---------- */
+
+.social-call-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.social-call-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.social-call-btn:hover { background: var(--color-border); }
+.social-call-btn.hidden { display: none; }
+
+.social-call-btn-hangup {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+.social-call-btn-hangup:hover { background: #dc2626; }
+
+/* Media container */
+.social-media-container {
+  position: relative;
+  width: 100%;
+  background: #000;
+  aspect-ratio: 16 / 9;
+  max-height: 220px;
+  overflow: hidden;
+}
+.social-media-container.hidden { display: none; }
+
+.social-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.social-local-video {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28%;
+  max-width: 120px;
+  border-radius: 6px;
+  border: 2px solid rgba(255,255,255,0.5);
+  object-fit: cover;
+}
+
+/* Expand panel when in a video call */
+.social-chat-panel.social-chat-in-call {
+  max-height: 720px;
+}
+
+.social-chat-panel.social-chat-minimized .social-call-bar,
+.social-chat-panel.social-chat-minimized .social-media-container {
+  display: none;
 }
