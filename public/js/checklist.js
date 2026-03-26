@@ -434,8 +434,14 @@ async function loadSheet(sheetId) {
       },
     }));
   } catch (err) {
-    showToast(`Failed to load sheet: ${err.message}`, 'error');
-    itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;
+    const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
+    if (is403) {
+      showToast('Permission denied — open this file with the Drive picker to grant access', 'error');
+      itemsEl.innerHTML = `<p class="empty-state">Permission denied. Use the Drive picker to open this sheet.</p>`;
+    } else {
+      showToast(`Failed to load sheet: ${err.message}`, 'error');
+      itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;
+    }
     if (templateBadge) templateBadge.classList.add('hidden');
   }
 }

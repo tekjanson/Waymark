@@ -4,6 +4,26 @@
 
 const BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+/* ---------- Error classification ---------- */
+
+/**
+ * Build a descriptive error from a failed Sheets API response.
+ * Attaches a `status` property so callers can distinguish auth
+ * failures (401/403) from not-found (404) and other errors.
+ * @param {string} label  human context (e.g. 'Sheets read', 'Sheets create')
+ * @param {Response} res  fetch Response object
+ * @returns {Error}
+ */
+function sheetsError(label, res) {
+  let msg = `${label} ${res.status}`;
+  if (res.status === 401) msg = 'Session expired — please sign in again';
+  else if (res.status === 403) msg = 'Permission denied — open this sheet via the Drive picker to grant access';
+  else if (res.status === 404) msg = 'Sheet not found — it may have been deleted or moved';
+  const err = new Error(msg);
+  err.status = res.status;
+  return err;
+}
+
 /* ---------- Global throttled request queue ---------- */
 
 // Google Sheets API quota: 60 read requests/user/minute.
@@ -99,7 +119,7 @@ export async function getSpreadsheet(token, spreadsheetId) {
     `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets read', res);
   const body = await res.json();
 
   const title = body.properties?.title || 'Untitled';
@@ -132,7 +152,7 @@ export async function getSpreadsheetSummary(token, spreadsheetId) {
     `${BASE}/${spreadsheetId}?ranges=Sheet1!1:2&fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) throw new Error(`Sheets API ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets summary', res);
   const body = await res.json();
 
   const title = body.properties?.title || 'Untitled';
@@ -182,18 +202,21 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Sheets create ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets create', res);
   const created = await res.json();
 
   // Move to parent folder if specified (requires drive.file scope)
   if (parentId) {
-    await fetch(
+    const moveRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${created.spreadsheetId}?addParents=${parentId}&fields=id`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
       }
     );
+    if (!moveRes.ok) {
+      console.warn(`[sheets] Failed to move sheet to folder (${moveRes.status}) — sheet created at Drive root`);
+    }
   }
 
   return created;
@@ -221,7 +244,7 @@ export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
       body: JSON.stringify({ values: rows }),
     }
   );
-  if (!res.ok) throw new Error(`Sheets append ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets append', res);
   return res.json();
 }
 
@@ -248,7 +271,7 @@ export async function updateCell(token, spreadsheetId, sheetTitle, row, col, val
       body: JSON.stringify({ values: [[value]] }),
     }
   );
-  if (!res.ok) throw new Error(`Sheets update ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets update', res);
   return res.json();
 }
 
@@ -283,6 +306,6 @@ export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
       body: JSON.stringify({ values: rows }),
     }
   );
-  if (!res.ok) throw new Error(`Sheets replace ${res.status}`);
+  if (!res.ok) throw sheetsError('Sheets replace', res);
   return res.json();
 }

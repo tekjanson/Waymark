@@ -5,6 +5,26 @@
 
 const BASE = 'https://www.googleapis.com/drive/v3';
 
+/* ---------- Error classification ---------- */
+
+/**
+ * Build a descriptive error from a failed Drive API response.
+ * Attaches a `status` property so callers can distinguish auth
+ * failures (401/403) from not-found (404) and other errors.
+ * @param {string} label  human context (e.g. 'Drive list', 'Drive create')
+ * @param {Response} res  fetch Response object
+ * @returns {Error}
+ */
+function driveError(label, res) {
+  let msg = `${label} ${res.status}`;
+  if (res.status === 401) msg = 'Session expired — please sign in again';
+  else if (res.status === 403) msg = 'Permission denied — open this file via the Drive picker to grant access';
+  else if (res.status === 404) msg = 'File not found — it may have been deleted or moved';
+  const err = new Error(msg);
+  err.status = res.status;
+  return err;
+}
+
 /**
  * Generic Drive list request.
  */
@@ -17,7 +37,7 @@ async function list(token, params = {}) {
   const res = await fetch(`${BASE}/files?${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Drive API ${res.status}`);
+  if (!res.ok) throw driveError('Drive list', res);
   return res.json();
 }
 
@@ -87,7 +107,7 @@ export async function createFile(token, name, mimeType, parents = []) {
     },
     body: JSON.stringify({ name, mimeType, parents }),
   });
-  if (!res.ok) throw new Error(`Drive create ${res.status}`);
+  if (!res.ok) throw driveError('Drive create', res);
   return res.json();
 }
 
@@ -143,7 +163,7 @@ export async function exportDoc(token, fileId) {
     `${BASE}/files/${fileId}/export?mimeType=text/plain`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) throw new Error(`Drive export ${res.status}`);
+  if (!res.ok) throw driveError('Drive export', res);
   return res.text();
 }
 
@@ -158,7 +178,7 @@ export async function getFile(token, fileId) {
     `${BASE}/files/${fileId}?fields=id,name,mimeType,parents,modifiedTime`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) throw new Error(`Drive getFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive getFile', res);
   return res.json();
 }
 
@@ -204,7 +224,7 @@ export async function createJsonFile(token, name, content, parents = []) {
     },
     body: multipart,
   });
-  if (!res.ok) throw new Error(`Drive createJsonFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive createJsonFile', res);
   return res.json();
 }
 
@@ -218,7 +238,7 @@ export async function readJsonFile(token, fileId) {
   const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Drive readJsonFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive readJsonFile', res);
   return res.json();
 }
 
@@ -232,7 +252,7 @@ export async function readTextFile(token, fileId) {
   const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Drive readTextFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive readTextFile', res);
   return res.text();
 }
 
@@ -253,7 +273,7 @@ export async function updateJsonFile(token, fileId, content) {
     },
     body,
   });
-  if (!res.ok) throw new Error(`Drive updateJsonFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive updateJsonFile', res);
   return res.json();
 }
 
@@ -284,7 +304,7 @@ export async function createTextFile(token, name, content, parents = []) {
     },
     body: multipart,
   });
-  if (!res.ok) throw new Error(`Drive createTextFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive createTextFile', res);
   return res.json();
 }
 
@@ -304,6 +324,6 @@ export async function updateTextFile(token, fileId, content) {
     },
     body: content,
   });
-  if (!res.ok) throw new Error(`Drive updateTextFile ${res.status}`);
+  if (!res.ok) throw driveError('Drive updateTextFile', res);
   return res.json();
 }
