@@ -505,11 +505,9 @@ function renderWithTemplate(values) {
     },
     writeCell: (row, col, value) =>
       api.sheets.updateCell(rtcSheetId, rtcSheetTitle, row, col, value),
-    /** Append chat history to a separate 'Chat Log' tab (auto-created if missing). */
-    appendChatHistory: async (rows) => {
-      await api.sheets.ensureTab(rtcSheetId, 'Chat Log', ['Name', 'Message', 'Time']);
-      return api.sheets.appendRows(rtcSheetId, 'Chat Log', rows);
-    },
+    /** Append chat history rows to the main data sheet. */
+    appendChatHistory: (rows) =>
+      api.sheets.appendRows(rtcSheetId, rtcSheetTitle, rows),
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)

@@ -108,7 +108,7 @@ test('chat panel can be minimized and closed', async ({ page }) => {
   await expect(page.locator('.social-chat-panel')).toHaveCount(0);
 });
 
-test('closing chat saves history to Chat Log tab', async ({ page }) => {
+test('closing chat saves history to data sheet', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-030');
   await page.click('.social-connect-btn');
@@ -128,17 +128,20 @@ test('closing chat saves history to Chat Log tab', async ({ page }) => {
 
   // Wait for the async save to complete
   await page.waitForFunction(
-    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log'),
+    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append'),
     { timeout: 5_000 },
   );
 
   const records = await page.evaluate(() => window.__WAYMARK_RECORDS);
-  const chatSave = records.find(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log');
+  const chatSave = records.find(r => r.type === 'row-append');
   expect(chatSave).toBeTruthy();
   expect(chatSave.spreadsheetId).toBe('sheet-030');
-  // Should contain the message text
+  // Should contain the message text in one of the row cells
   const hasMessage = chatSave.rows.some(row => row.includes('Test message for history'));
   expect(hasMessage).toBe(true);
+  // Should have the chat history header row
+  const hasHeader = chatSave.rows.some(row => row.includes('--- Chat History ---'));
+  expect(hasHeader).toBe(true);
 });
 
 test('navigating away from sheet saves chat history', async ({ page }) => {
@@ -160,12 +163,12 @@ test('navigating away from sheet saves chat history', async ({ page }) => {
 
   // Wait for the async save to complete
   await page.waitForFunction(
-    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log'),
+    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append'),
     { timeout: 5_000 },
   );
 
   const records = await page.evaluate(() => window.__WAYMARK_RECORDS);
-  const chatSave = records.find(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log');
+  const chatSave = records.find(r => r.type === 'row-append');
   expect(chatSave).toBeTruthy();
   expect(chatSave.spreadsheetId).toBe('sheet-030');
   const hasMessage = chatSave.rows.some(row => row.includes('History before navigate'));

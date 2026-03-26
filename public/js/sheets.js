@@ -223,39 +223,6 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
 }
 
 /**
- * Ensure a sheet tab exists inside a spreadsheet.
- * Creates it if missing; silently succeeds if it already exists.
- * @param {string} token
- * @param {string} spreadsheetId
- * @param {string} tabTitle       e.g. 'Chat Log'
- * @param {string[][]} [headerRow] optional header row written after creation
- */
-export async function ensureTab(token, spreadsheetId, tabTitle, headerRow) {
-  const res = await fetchWithRetry(
-    `${BASE}/${spreadsheetId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [{ addSheet: { properties: { title: tabTitle } } }],
-      }),
-    }
-  );
-  if (!res.ok) {
-    // 400 = tab already exists — that's fine, swallow it
-    if (res.status === 400) return;
-    throw sheetsError('Sheets ensureTab', res);
-  }
-  // Write header row into the newly-created tab
-  if (headerRow) {
-    await appendRows(token, spreadsheetId, tabTitle, [headerRow]);
-  }
-}
-
-/**
  * Append one or more rows to the end of a sheet.
  * Uses the Sheets API values:append endpoint.
  * @param {string}     token

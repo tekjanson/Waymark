@@ -478,27 +478,23 @@ function openChat(sheetId, displayName, signal) {
     if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
   });
 
-  // --- Save chat history to a separate 'Chat Log' sheet tab ---
+  // --- Save chat history as a simple table appended to the data sheet ---
   let _historySaved = false;
   async function saveChatHistory() {
     if (_historySaved) return;
     if (!getChatSaveHistory() || _chatLog.length === 0) return;
     if (!signal?.appendChatHistory) return;
     _historySaved = true;
-    const sessionDate = new Date().toLocaleString();
     const rows = [
-      ['--- Chat Session ' + sessionDate + ' ---', '', ''],
-      ...(_chatLog.map(m => {
-        const t = new Date(m.ts).toLocaleTimeString();
-        return [m.name, m.text, t];
-      })),
-      ['--- End Session ---', '', ''],
+      ['--- Chat History ---', '', ''],
+      ['Message', 'From', 'Time'],
+      ..._chatLog.map(m => [m.text, m.name, new Date(m.ts).toLocaleString()]),
     ];
     try {
       await signal.appendChatHistory(rows);
     } catch (err) {
       console.warn('[social] chat history save failed:', err);
-      _historySaved = false;   // allow retry on next disconnect
+      _historySaved = false;
     }
   }
   _saveChatHistory = saveChatHistory;
