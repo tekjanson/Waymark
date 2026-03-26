@@ -108,6 +108,70 @@ test('chat panel can be minimized and closed', async ({ page }) => {
   await expect(page.locator('.social-chat-panel')).toHaveCount(0);
 });
 
+test('closing chat saves history to Chat Log tab', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  // Send a message
+  await page.fill('.social-chat-input', 'Test message for history');
+  await page.click('.social-chat-send');
+  await page.waitForSelector('.social-chat-bubble-text', { timeout: 3_000 });
+
+  // Clear records so we only see what the close produces
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+
+  // Close the chat panel — should trigger saveChatHistory
+  await page.click('.social-chat-close');
+  await expect(page.locator('.social-chat-panel')).toHaveCount(0);
+
+  // Wait for the async save to complete
+  await page.waitForFunction(
+    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log'),
+    { timeout: 5_000 },
+  );
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS);
+  const chatSave = records.find(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log');
+  expect(chatSave).toBeTruthy();
+  expect(chatSave.spreadsheetId).toBe('sheet-030');
+  // Should contain the message text
+  const hasMessage = chatSave.rows.some(row => row.includes('Test message for history'));
+  expect(hasMessage).toBe(true);
+});
+
+test('navigating away from sheet saves chat history', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  // Send a message
+  await page.fill('.social-chat-input', 'History before navigate');
+  await page.click('.social-chat-send');
+  await page.waitForSelector('.social-chat-bubble-text', { timeout: 3_000 });
+
+  // Clear records
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+
+  // Navigate to a different sheet — triggers waymark:sheet-hidden → destroyChat
+  await navigateToSheet(page, 'sheet-001');
+
+  // Wait for the async save to complete
+  await page.waitForFunction(
+    () => window.__WAYMARK_RECORDS.some(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log'),
+    { timeout: 5_000 },
+  );
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS);
+  const chatSave = records.find(r => r.type === 'row-append' && r.sheetTitle === 'Chat Log');
+  expect(chatSave).toBeTruthy();
+  expect(chatSave.spreadsheetId).toBe('sheet-030');
+  const hasMessage = chatSave.rows.some(row => row.includes('History before navigate'));
+  expect(hasMessage).toBe(true);
+});
+
 test('two tabs can exchange messages via BroadcastChannel', async ({ context }) => {
   // Use two pages in the same context so BroadcastChannel works between them
   const page1 = await context.newPage();
