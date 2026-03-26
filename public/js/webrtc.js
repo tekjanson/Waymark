@@ -122,17 +122,47 @@ export class WaymarkConnect {
       for (const [, r] of this._rtc) {
         for (const s of r.pc.getSenders()) { if (s.track) r.pc.removeTrack(s); }
       }
+      this._localStream = null;
     }
 
-    this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    for (const [, r] of this._rtc) {
-      for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
+    // Try progressively relaxed constraints: requested → audio-only → listen-only
+    const attempts = [constraints];
+    if (constraints.video) attempts.push({ audio: true, video: false });
+    attempts.push(null); // null = listen-only (no local media)
+
+    let stream = null;
+    let lastErr = null;
+    for (const c of attempts) {
+      if (!c) break; // fall through to listen-only
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(c);
+        break;
+      } catch (e) {
+        lastErr = e;
+        // NotAllowedError means user explicitly denied — don't retry
+        if (e.name === 'NotAllowedError') throw e;
+      }
+    }
+
+    this._localStream = stream;
+    if (stream) {
+      for (const [, r] of this._rtc) {
+        for (const t of stream.getTracks()) r.pc.addTrack(t, stream);
+      }
     }
     this._inCall = true;
     const n = { type: 'call-start', peerId: this.peerId, name: this.displayName };
     this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
-    return this._localStream;
+
+    // If we fell back, attach info so the UI can show a message
+    if (!stream && lastErr) {
+      const result = new MediaStream();
+      result._listenOnly = true;
+      result._fallbackReason = lastErr.message;
+      return result;
+    }
+    return stream;
   }
 
   /** End an active call, stopping all local media tracks. */
