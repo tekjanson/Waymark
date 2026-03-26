@@ -66,6 +66,7 @@ export class WaymarkConnect {
     this.onStatusChanged = opts.onStatusChanged || (() => {});
     this.onRemoteStream = opts.onRemoteStream || (() => {});
     this.onCallEnded = opts.onCallEnded || (() => {});
+    this.onCallActive = opts.onCallActive || (() => {});
 
     this._bc = null;
     this._peers = new Map();        // peerId → { name, channel }
@@ -281,6 +282,12 @@ export class WaymarkConnect {
       for (const remote of alive) {
         const r = this._rtc.get(remote.peerId);
 
+        // Clean up failed/closed connections — will rebuild next cycle
+        if (r?.pc && (r.pc.iceConnectionState === 'failed' || r.pc.iceConnectionState === 'closed')) {
+          this._closeOne(remote.peerId);
+          continue;
+        }
+
         // Already connected — clean signal entries
         if (r?.dc?.readyState === 'open') {
           if (myOffers[remote.peerId])  { delete myOffers[remote.peerId];  offDirty = true; }
@@ -437,6 +444,10 @@ export class WaymarkConnect {
         channel: 'rtc',
       });
       this._emitPeers();
+      // Let newly connected peer know we're in a call so they can auto-join
+      if (this._inCall) {
+        dc.send(JSON.stringify({ type: 'call-active', peerId: this.peerId, name: this.displayName }));
+      }
     };
 
     dc.onmessage = (e) => {
@@ -449,6 +460,10 @@ export class WaymarkConnect {
             break;
           case 'message':
             this.onMessage({ peerId: m.peerId, name: m.name, text: m.text, ts: m.ts, channel: 'rtc' });
+            break;
+          case 'call-start':
+          case 'call-active':
+            this.onCallActive(m.peerId, m.name);
             break;
           case 'call-end':
             this.onCallEnded(m.peerId);

@@ -130,8 +130,9 @@ function openChat(sheetId, displayName, signal) {
   const mediaContainer = el('div', { className: 'social-media-container hidden' });
   const localVideo = el('video', { className: 'social-local-video', muted: true, autoplay: true, playsInline: true });
   const remoteVideo = el('video', { className: 'social-remote-video', autoplay: true, playsInline: true });
+  // remoteAudio lives OUTSIDE mediaContainer so it's never hidden by display:none
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
-  mediaContainer.append(remoteVideo, localVideo, remoteAudio);
+  mediaContainer.append(remoteVideo, localVideo);
 
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
@@ -170,7 +171,13 @@ function openChat(sheetId, displayName, signal) {
       localVideo.srcObject = stream;
       enterCallUI(constraints.video);
     } catch (err) {
-      appendMessage('System', `Could not start call: ${err.message}`, Date.now(), false);
+      let msg = `Could not start call: ${err.message}`;
+      if (err.name === 'NotAllowedError') {
+        msg = 'Microphone/camera access was denied. Please allow access in your browser settings and try again.';
+      } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
+        msg = 'No microphone or camera found. Please connect a device and try again.';
+      }
+      appendMessage('System', msg, Date.now(), false);
     }
   }
 
@@ -211,7 +218,7 @@ function openChat(sheetId, displayName, signal) {
   const sendBtn = el('button', { className: 'social-chat-send' }, ['Send']);
   inputBar.append(input, sendBtn);
 
-  _chatPanel.append(header, mediaContainer, messages, callBar, inputBar);
+  _chatPanel.append(header, mediaContainer, remoteAudio, messages, callBar, inputBar);
   document.body.append(_chatPanel);
 
   // --- Render a chat message ---
@@ -245,6 +252,27 @@ function openChat(sheetId, displayName, signal) {
   });
 
   // --- Create connection ---
+  let _autoAccepting = false;
+
+  /** Auto-accept an incoming call (triggers getUserMedia permission prompt). */
+  async function autoAcceptCall(withVideo) {
+    if (_autoAccepting || !_activeConnect || _activeConnect.inCall) return;
+    _autoAccepting = true;
+    appendMessage('System', 'Incoming call — requesting microphone access…', Date.now(), false);
+    try {
+      const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
+      localVideo.srcObject = stream;
+    } catch (err) {
+      let msg = `Could not join call: ${err.message}`;
+      if (err.name === 'NotAllowedError') {
+        msg = 'Microphone/camera access was denied. You can hear the caller but they cannot hear you.';
+      }
+      appendMessage('System', msg, Date.now(), false);
+    } finally {
+      _autoAccepting = false;
+    }
+  }
+
   _activeConnect = new WaymarkConnect(sheetId, {
     displayName,
     signal,
@@ -259,15 +287,28 @@ function openChat(sheetId, displayName, signal) {
       statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
     },
     onRemoteStream(stream) {
-      // Determine if it has video tracks
-      if (stream.getVideoTracks().length > 0) {
+      const hasVideo = stream.getVideoTracks().length > 0;
+      if (hasVideo) {
         remoteVideo.srcObject = stream;
+        remoteAudio.srcObject = null; // prevent double audio
         mediaContainer.classList.remove('hidden');
+        remoteVideo.play().catch(() => {});
       } else {
         remoteAudio.srcObject = stream;
+        remoteVideo.srcObject = null;
+        remoteAudio.play().catch(() => {});
       }
-      // Enter call UI if not already in call
-      if (!_activeConnect?.inCall) enterCallUI(stream.getVideoTracks().length > 0);
+      // Auto-accept: enter call UI and request local media so both sides can talk
+      if (!_activeConnect?.inCall) {
+        enterCallUI(hasVideo);
+        autoAcceptCall(hasVideo);
+      }
+    },
+    onCallActive(peerId, name) {
+      if (!_activeConnect?.inCall) {
+        appendMessage('System', `${name || 'Peer'} is in a call. Joining…`, Date.now(), false);
+        autoAcceptCall(false);
+      }
     },
     onCallEnded() {
       exitCallUI();
