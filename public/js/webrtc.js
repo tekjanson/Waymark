@@ -38,9 +38,9 @@ const OFF_PRESENCE = 0;
 const OFF_OFFERS   = 1;
 const OFF_ANSWERS  = 2;
 
-const POLL_MS   = 2000;  // Poll interval
-const HEART_MS  = 8000;  // Heartbeat interval
-const ALIVE_TTL = 25000; // Peer gone after 25s silence
+const POLL_MS   = 5000;  // Poll interval (5s to stay within Sheets rate limits)
+const HEART_MS  = 15000; // Heartbeat interval (15s reduces write pressure)
+const ALIVE_TTL = 50000; // Peer gone after 50s silence (>3× heartbeat)
 const ICE_WAIT  = 2000;  // ICE gathering timeout
 
 /* ---------- WaymarkConnect ---------- */

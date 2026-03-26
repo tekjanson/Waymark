@@ -104,10 +104,13 @@ let _chatLog = [];
 let _saveChatHistory = null; // set by openChat, called from destroyChat
 
 /** Clean up active connection and chat panel. */
-function destroyChat() {
+async function destroyChat() {
   stopRingtone();
-  // Save chat history before teardown
-  if (_saveChatHistory) { _saveChatHistory(); _saveChatHistory = null; }
+  // Save chat history before teardown (must await to avoid aborted requests)
+  if (_saveChatHistory) {
+    try { await _saveChatHistory(); } catch {}
+    _saveChatHistory = null;
+  }
   if (_activeConnect) { _activeConnect.destroy(); _activeConnect = null; }
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
@@ -475,23 +478,23 @@ function openChat(sheetId, displayName, signal) {
     if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
   });
 
-  // --- Save chat history to sheet when disconnecting ---
+  // --- Save chat history to a separate 'Chat Log' sheet tab ---
   let _historySaved = false;
-  function saveChatHistory() {
+  async function saveChatHistory() {
     if (_historySaved) return;
     if (!getChatSaveHistory() || _chatLog.length === 0) return;
-    if (!signal?.appendRows) return;
+    if (!signal?.appendChatHistory) return;
     _historySaved = true;
     const sessionDate = new Date().toLocaleString();
     const rows = [
-      ['--- Chat Session ' + sessionDate + ' ---', '', '', '', '', '', ''],
+      ['--- Chat Session ' + sessionDate + ' ---', '', ''],
       ...(_chatLog.map(m => {
         const t = new Date(m.ts).toLocaleTimeString();
-        return [m.name, m.text, t, '', '', '', ''];
+        return [m.name, m.text, t];
       })),
-      ['--- End Session ---', '', '', '', '', '', ''],
+      ['--- End Session ---', '', ''],
     ];
-    signal.appendRows(rows).catch(() => {});
+    try { await signal.appendChatHistory(rows); } catch {}
   }
   _saveChatHistory = saveChatHistory;
 
@@ -882,7 +885,19 @@ const definition = {
 
         for (const cmt of group.comments) {
           const cmtAuthor = cols.author >= 0 ? cell(cmt.row, cols.author) : '';
-          const cmtText   = cell(cmt.row, cols.text) || (cols.comment >= 0 ? cell(cmt.row, cols.comment) : '');
+          // Comment rows have empty text column (that's how parseGroups classifies them).
+          // Try dedicated comment column first, then scan all columns for any content.
+          let cmtText = '';
+          if (cols.comment >= 0) {
+            cmtText = cell(cmt.row, cols.comment);
+          }
+          if (!cmtText) {
+            // Fallback: find the first non-empty cell that isn't the author or date
+            const skip = new Set([cols.text, cols.author, cols.date, cols.category, cols.mood, cols.link].filter(c => c >= 0));
+            for (let ci = 0; ci < cmt.row.length; ci++) {
+              if (!skip.has(ci) && cell(cmt.row, ci)) { cmtText = cell(cmt.row, ci); break; }
+            }
+          }
           const cmtDate   = cols.date >= 0 ? cell(cmt.row, cols.date) : '';
 
           const cmtEl = el('div', { className: 'social-comment' });

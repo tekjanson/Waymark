@@ -26,12 +26,12 @@ function sheetsError(label, res) {
 
 /* ---------- Global throttled request queue ---------- */
 
-// Google Sheets API quota: 60 read requests/user/minute.
+// Google Sheets API quota: 60 read requests/user/minute, 60 write/user/minute.
 // We allow at most MAX_CONCURRENT in-flight requests and enforce a
 // minimum gap of MIN_GAP_MS between request starts to stay well
-// under the quota (~40 req/min at 1500 ms gap).
-const MAX_CONCURRENT = 2;
-const MIN_GAP_MS = 1500;
+// under the quota.  All reads AND writes go through this queue.
+const MAX_CONCURRENT = 3;
+const MIN_GAP_MS = 1000;
 
 let _inFlight = 0;
 let _lastRequestTime = 0;
@@ -233,7 +233,7 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
  */
 export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
   const range = `${sheetTitle}!A1`;
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
@@ -260,7 +260,7 @@ export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
 export async function updateCell(token, spreadsheetId, sheetTitle, row, col, value) {
   const colLetter = String.fromCharCode(65 + col);  // A-Z
   const range = `${sheetTitle}!${colLetter}${row + 1}`;
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
     {
       method: 'PUT',

@@ -501,8 +501,9 @@ function renderWithTemplate(values) {
     },
     writeCell: (row, col, value) =>
       api.sheets.updateCell(currentSheetId, currentSheetTitle, row, col, value),
-    appendRows: (rows) =>
-      api.sheets.appendRows(currentSheetId, currentSheetTitle, rows),
+    /** Append chat history to a separate 'Chat Log' tab (not the data sheet). */
+    appendChatHistory: (rows) =>
+      api.sheets.appendRows(currentSheetId, 'Chat Log', rows),
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)
