@@ -7,6 +7,7 @@
 let accessToken = null;
 let tokenExpiry  = 0;          // epoch ms
 let currentUser  = null;
+let _refreshPromise = null;    // dedup concurrent refreshes
 const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Public API ---------- */
@@ -34,14 +35,33 @@ export async function init() {
 /**
  * POST /auth/refresh → exchange httpOnly cookie for a new access token.
  * Returns true on success.
+ *
+ * Deduplicates concurrent callers — if a refresh is already in-flight,
+ * subsequent callers share the same promise instead of firing parallel
+ * requests that can race and leave some callers with a stale/null token.
  */
 export async function refreshToken() {
-  const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
-  if (!res.ok) { accessToken = null; return false; }
-  const data = await res.json();
-  accessToken  = data.access_token;
-  tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
-  return true;
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = _doRefresh();
+  try {
+    return await _refreshPromise;
+  } finally {
+    _refreshPromise = null;
+  }
+}
+
+async function _doRefresh() {
+  try {
+    const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
+    if (!res.ok) { accessToken = null; return false; }
+    const data = await res.json();
+    accessToken  = data.access_token;
+    tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
+    return true;
+  } catch {
+    accessToken = null;
+    return false;
+  }
 }
 
 /** POST /auth/logout → clear refresh token cookie. */
