@@ -499,13 +499,15 @@ function renderWithTemplate(values) {
   template._rtcSheetId = rtcSheetId;
   template._rtcUserName = api.auth.getUser()?.name || 'Anonymous';
   template._rtcSignal = {
+    cols,
+    totalCols,
     readAll: async () => {
       const data = await api.sheets.getSpreadsheet(rtcSheetId);
       return data.values || [];
     },
     writeCell: (row, col, value) =>
       api.sheets.updateCell(rtcSheetId, rtcSheetTitle, row, col, value),
-    /** Append chat history rows to the main data sheet. */
+    /** Append chat history as proper post rows to the data sheet. */
     appendChatHistory: (rows) =>
       api.sheets.appendRows(rtcSheetId, rtcSheetTitle, rows),
   };
