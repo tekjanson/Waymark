@@ -494,7 +494,12 @@ function openChat(sheetId, displayName, signal) {
       })),
       ['--- End Session ---', '', ''],
     ];
-    try { await signal.appendChatHistory(rows); } catch {}
+    try {
+      await signal.appendChatHistory(rows);
+    } catch (err) {
+      console.warn('[social] chat history save failed:', err);
+      _historySaved = false;   // allow retry on next disconnect
+    }
   }
   _saveChatHistory = saveChatHistory;
 

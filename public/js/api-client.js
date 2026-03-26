@@ -784,5 +784,17 @@ export const api = {
       const token = await requireToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
     },
+
+    /**
+     * Ensure a sheet tab exists (create if missing).
+     * @param {string}   spreadsheetId
+     * @param {string}   tabTitle       e.g. 'Chat Log'
+     * @param {string[]} [headerRow]    optional header row
+     */
+    async ensureTab(spreadsheetId, tabTitle, headerRow) {
+      if (isLocal) return;   // mock mode doesn't validate tabs
+      const token = await requireToken();
+      return sheetsApi.ensureTab(token, spreadsheetId, tabTitle, headerRow);
+    },
   },
 };

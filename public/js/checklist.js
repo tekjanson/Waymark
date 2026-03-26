@@ -501,9 +501,11 @@ function renderWithTemplate(values) {
     },
     writeCell: (row, col, value) =>
       api.sheets.updateCell(currentSheetId, currentSheetTitle, row, col, value),
-    /** Append chat history to a separate 'Chat Log' tab (not the data sheet). */
-    appendChatHistory: (rows) =>
-      api.sheets.appendRows(currentSheetId, 'Chat Log', rows),
+    /** Append chat history to a separate 'Chat Log' tab (auto-created if missing). */
+    appendChatHistory: async (rows) => {
+      await api.sheets.ensureTab(currentSheetId, 'Chat Log', ['Name', 'Message', 'Time']);
+      return api.sheets.appendRows(currentSheetId, 'Chat Log', rows);
+    },
   };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)
