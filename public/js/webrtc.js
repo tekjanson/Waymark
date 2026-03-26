@@ -125,8 +125,16 @@ export class WaymarkConnect {
       this._localStream = null;
     }
 
-    // Single getUserMedia call — this is what triggers the browser permission prompt.
-    // Do NOT swallow errors; let them propagate so the UI can show the right message.
+    // Check permission state — Chrome on Linux sometimes blocks silently
+    const micPerm = await navigator.permissions?.query?.({ name: 'microphone' }).catch(() => null);
+    if (micPerm?.state === 'denied') {
+      throw Object.assign(
+        new Error('Microphone permission is blocked.'),
+        { name: 'PermissionDenied' },
+      );
+    }
+
+    // Call getUserMedia — this triggers the browser's native permission prompt
     this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
     for (const [, r] of this._rtc) {
       for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);

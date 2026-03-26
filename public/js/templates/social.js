@@ -174,15 +174,21 @@ function openChat(sheetId, displayName, signal) {
       let msg = `Could not start call: ${err.message}`;
       if (err.name === 'InsecureContextError') {
         msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
-      } else if (err.name === 'NotAllowedError') {
-        msg = 'Microphone/camera access was denied. Please click the lock/site-settings icon in your address bar, allow microphone access, then try again.';
+      } else if (err.name === 'PermissionDenied' || err.name === 'NotAllowedError') {
+        msg = 'Microphone access is blocked. To fix this:\n'
+            + '1. Click the lock 🔒 icon (or tune icon) in your address bar\n'
+            + '2. Find "Microphone" and set it to "Allow"\n'
+            + '3. Reload the page and try again';
       } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
         if (constraints.video) {
-          // Camera not found — retry audio-only
           appendMessage('System', 'Camera not found — trying audio only…', Date.now(), false);
           return startCall({ audio: true, video: false });
         }
-        msg = 'No microphone found. Please check that a microphone is connected and that your browser has permission to use it.';
+        // On Linux, NotFoundError often means permission issue, not missing hardware
+        msg = 'Could not access microphone. This can happen if:\n'
+            + '• Browser permission is blocked — click the lock 🔒 icon in your address bar and allow Microphone\n'
+            + '• No audio input device — check your system sound settings\n'
+            + '• Another app is using the mic — close other voice/video apps';
       } else if (err.name === 'OverconstrainedError') {
         if (constraints.video) {
           appendMessage('System', 'Camera constraints not supported — trying audio only…', Date.now(), false);
@@ -279,13 +285,13 @@ function openChat(sheetId, displayName, signal) {
       let msg = `Could not join call: ${err.message}`;
       if (err.name === 'InsecureContextError') {
         msg = 'Camera/microphone require HTTPS. You can hear the caller but they cannot hear you.';
-      } else if (err.name === 'NotAllowedError') {
-        msg = 'Microphone/camera access was denied. Click the lock icon in your address bar to allow microphone access.';
+      } else if (err.name === 'PermissionDenied' || err.name === 'NotAllowedError') {
+        msg = 'Microphone access is blocked. Click the lock 🔒 icon in your address bar, allow Microphone, then reload.';
       } else if ((err.name === 'NotFoundError' || err.name === 'NotReadableError') && withVideo) {
         _autoAccepting = false;
         return autoAcceptCall(false);
       } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
-        msg = 'No microphone found. You can hear the caller but they cannot hear you.';
+        msg = 'Could not access microphone — click the lock 🔒 icon in your address bar and allow Microphone, then reload.';
       }
       appendMessage('System', msg, Date.now(), false);
     } finally {
