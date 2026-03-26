@@ -2,7 +2,7 @@
    templates/tracker.js \u2014 Tracker: milestones + completion ETA
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate, drawBarChart } from './shared.js';
+import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate, drawBarChart, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -143,6 +143,44 @@ const definition = {
         pctEl,
       ]));
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'tracker-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'tracker-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'tracker-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCCA']),
+      el('span', { className: 'tracker-dir-title tmpl-dir-title' }, ['Progress Trackers']),
+      el('span', { className: 'tracker-dir-count tmpl-dir-count' }, [
+        `${sheets.length} tracker${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'tracker-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      let totalPct = 0;
+      for (const row of rows) totalPct += parseProgress(cell(row, cols.progress), cell(row, cols.target));
+      const avg = rows.length ? Math.round(totalPct / rows.length) : 0;
+
+      grid.append(el('div', {
+        className: 'tracker-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'tracker-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'tracker-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} goal${rows.length !== 1 ? 's' : ''} \u2022 ${avg}% avg`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.tracker-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

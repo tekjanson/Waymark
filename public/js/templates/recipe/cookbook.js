@@ -6,7 +6,7 @@
    All events are delegated on stable ancestor nodes.
    ============================================================ */
 
-import { el, cell, delegateEvent } from '../shared.js';
+import { el, cell, delegateEvent, buildDirSyncBtn } from '../shared.js';
 
 /**
  * Render a cookbook-style directory view for a folder of recipe sheets.
@@ -144,8 +144,12 @@ export function cookbookDirectoryView(container, sheets, navigateFn) {
   const countSpan = el('span', { className: 'cookbook-count' });
   wrapper.append(el('div', { className: 'cookbook-title-bar' }, [
     el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
-    el('span', { className: 'cookbook-title' }, ['Cookbook']),
+    el('div', { className: 'cookbook-title-group' }, [
+      el('span', { className: 'cookbook-title' }, ['Family Cookbook']),
+      el('span', { className: 'cookbook-subtitle' }, ['Shared recipes from everyone in the family']),
+    ]),
     countSpan,
+    buildDirSyncBtn(wrapper),
   ]));
 
   const grid = el('div', { className: 'cookbook-grid' });

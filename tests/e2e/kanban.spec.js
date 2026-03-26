@@ -1811,3 +1811,56 @@ test('kanban touch drag cleans up body class on touchend', async ({ page }) => {
   expect(bodyStillHasClass).toBe(false);
 });
 
+test('kanban directoryView renders for board folder', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-directory', { timeout: 8_000 });
+  await expect(page.locator('.kanban-directory')).toBeVisible();
+});
+
+test('kanban directoryView shows Project Boards title', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-dir-title', { timeout: 8_000 });
+  await expect(page.locator('.kanban-dir-title')).toContainText('Project Boards');
+});
+
+test('kanban directoryView shows board cards', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-dir-card', { timeout: 8_000 });
+  const cards = page.locator('.kanban-dir-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(2);
+});
+
+test('kanban directoryView card click navigates to sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-dir-card', { timeout: 8_000 });
+  await page.locator('.kanban-dir-card').first().click();
+  await page.waitForSelector('.kanban-lane', { timeout: 5_000 });
+  await expect(page.locator('#template-badge')).toContainText('Kanban');
+});
+
+test('kanban directoryView shows board count', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-dir-count', { timeout: 8_000 });
+  await expect(page.locator('.kanban-dir-count')).toContainText('board');
+});
+
+test('kanban directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('kanban directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-kanban/Project%20Boards'; });
+  await page.waitForSelector('.kanban-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});
+

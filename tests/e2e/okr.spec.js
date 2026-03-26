@@ -245,3 +245,20 @@ test('okr renders correctly at 375px mobile width', async ({ page }) => {
   });
   expect(overflows).toHaveLength(0);
 });
+
+/* ---------- Directory view ---------- */
+
+test('okr directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-okrs/OKR%20Sets'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('okr directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-okrs/OKR%20Sets'; });
+  await page.waitForSelector('.okr-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

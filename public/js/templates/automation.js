@@ -2,7 +2,7 @@
    templates/automation.js — Automation: browser workflow steps
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, parseGroups } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, parseGroups, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -190,6 +190,42 @@ const definition = {
 
       container.append(card);
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'automation-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'automation-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'automation-dir-icon tmpl-dir-icon' }, ['\uD83E\uDD16']),
+      el('span', { className: 'automation-dir-title tmpl-dir-title' }, ['Automations']),
+      el('span', { className: 'automation-dir-count tmpl-dir-count' }, [
+        `${sheets.length} automation${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'automation-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      const workflows = parseGroups(rows, cols.workflow);
+
+      grid.append(el('div', {
+        className: 'automation-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'automation-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'automation-dir-card-stat tmpl-dir-card-stat' }, [
+          `${workflows.length} workflow${workflows.length !== 1 ? 's' : ''} \u2022 ${rows.length} step${rows.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.automation-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

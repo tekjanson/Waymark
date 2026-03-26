@@ -623,3 +623,20 @@ test('collapse hides reaction bar and comments section', async ({ page }) => {
   await expect(firstCard.locator('.knowledge-comments-section')).toBeHidden();
 });
 
+/* ---------- Directory view ---------- */
+
+test('knowledge directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-knowledge/Knowledge%20Bases'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('knowledge directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-knowledge/Knowledge%20Bases'; });
+  await page.waitForSelector('.knowledge-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});
+

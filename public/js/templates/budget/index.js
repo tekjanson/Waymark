@@ -3,7 +3,7 @@
    subtotals, chart, and statement upload
    ============================================================ */
 
-import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate, drawBarChart, drawPieChart } from '../shared.js';
+import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn } from '../shared.js';
 import { parseStatement, reParsePDFTransactions } from './parser.js';
 
 /* ---------- Helpers ---------- */
@@ -543,6 +543,7 @@ const definition = {
       el('span', { className: 'budget-dir-count' }, [
         `${sheets.length} budget${sheets.length !== 1 ? 's' : ''}`,
       ]),
+      buildDirSyncBtn(wrapper),
     ]));
 
     /* Compute per-sheet summaries — prefer pre-computed dirStats when available */

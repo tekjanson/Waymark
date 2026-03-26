@@ -2,7 +2,7 @@
    templates/changelog.js — Changelog: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, lazySection, delegateEvent, registerTemplate } from './shared.js';
+import { el, cell, editableCell, lazySection, delegateEvent, registerTemplate, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -151,6 +151,42 @@ const definition = {
 
     const layout = el('div', { className: 'changelog-layout' }, [sidebar, main]);
     container.append(layout);
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'changelog-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'changelog-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'changelog-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCCB']),
+      el('span', { className: 'changelog-dir-title tmpl-dir-title' }, ['Changelogs']),
+      el('span', { className: 'changelog-dir-count tmpl-dir-count' }, [
+        `${sheets.length} changelog${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'changelog-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      const latest = rows.length > 0 ? (cell(rows[0], cols.version) || '') : '';
+
+      grid.append(el('div', {
+        className: 'changelog-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'changelog-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'changelog-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} entr${rows.length !== 1 ? 'ies' : 'y'}${latest ? ` \u2022 latest ${latest}` : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.changelog-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

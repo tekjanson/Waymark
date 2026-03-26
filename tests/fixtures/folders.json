@@ -358,6 +358,322 @@
       ]
     },
     {
+      "id": "f-kanban",
+      "name": "Project Boards",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-017",
+          "name": "Kanban Project",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-028",
+          "name": "Waymark Board",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-social",
+      "name": "Social Walls",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-030",
+          "name": "Team Wall",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-knowledge",
+      "name": "Knowledge Bases",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-044",
+          "name": "DevOps KB",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-045",
+          "name": "Waymark KB",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-checklists",
+      "name": "Checklists",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-001",
+          "name": "Grocery List",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-002",
+          "name": "Move-In Checklist",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-trackers",
+      "name": "Trackers",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-010",
+          "name": "Fitness Tracker",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-schedules",
+      "name": "Schedules",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-011",
+          "name": "Class Schedule",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-inventories",
+      "name": "Inventories",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-012",
+          "name": "Pantry Inventory",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-contacts",
+      "name": "Contact Books",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-013",
+          "name": "Personal Contacts",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-logs",
+      "name": "Activity Logs",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-014",
+          "name": "Server Log",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-habits",
+      "name": "Habit Trackers",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-018",
+          "name": "Weekly Habits",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-038",
+          "name": "Habit Streak Log",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-timesheets",
+      "name": "Timesheets",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-020",
+          "name": "January Timesheet",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-polls",
+      "name": "Polls",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-021",
+          "name": "Team Lunch Poll",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-changelogs",
+      "name": "Changelogs",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-022",
+          "name": "App Changelog",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-crm",
+      "name": "CRM Pipelines",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-023",
+          "name": "Sales Pipeline",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-travel",
+      "name": "Travel Itineraries",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-025",
+          "name": "Europe Trip",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-rosters",
+      "name": "Rosters",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-026",
+          "name": "Team Roster",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-flows",
+      "name": "Flow Diagrams",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-029",
+          "name": "Onboarding Flow",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-automations",
+      "name": "Automations",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-036",
+          "name": "CI/CD Pipeline",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-guides",
+      "name": "Instruction Guides",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-049",
+          "name": "Setup Guide",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-notifications",
+      "name": "Notification Centers",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-046",
+          "name": "System Alerts",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-okrs",
+      "name": "OKR Sets",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-053",
+          "name": "Q1 OKRs",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-054",
+          "name": "Q2 OKRs",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-gantt",
+      "name": "Gantt Timelines",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-055",
+          "name": "Product Roadmap",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-056",
+          "name": "Sprint Timeline",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
       "id": "root-ignore",
       "name": ".waymarkIgnore",
       "mimeType": "text/plain"
@@ -388,6 +704,25 @@
         {
           "id": "sheet-004",
           "name": "Sprint Tasks",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-recipes",
+      "name": "Family Recipes",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": true,
+      "owner": "mom@family.com",
+      "children": [
+        {
+          "id": "sheet-027",
+          "name": "Spaghetti Bolognese",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-032",
+          "name": "Grandma's Cookies",
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]

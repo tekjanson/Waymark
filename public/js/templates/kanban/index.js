@@ -12,6 +12,7 @@
 import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
+  buildDirSyncBtn,
 } from '../shared.js';
 import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
@@ -184,6 +185,7 @@ const definition = {
       el('span', { className: 'kanban-dir-title-icon' }, ['📋']),
       el('span', { className: 'kanban-dir-title' }, ['Project Boards']),
       el('span', { className: 'kanban-dir-count' }, [`${sheets.length} board${sheets.length !== 1 ? 's' : ''}`]),
+      buildDirSyncBtn(wrapper),
     );
     wrapper.append(titleBar);
 

@@ -104,3 +104,20 @@ test('automation step count badge shows correct count', async ({ page }) => {
   const firstCount = page.locator('.automation-step-count').first();
   await expect(firstCount).toContainText('6 steps');
 });
+
+/* ---------- Directory view ---------- */
+
+test('automation directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-automations/Automations'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('automation directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-automations/Automations'; });
+  await page.waitForSelector('.automation-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

@@ -864,3 +864,20 @@ test('month view shows no-data banner when navigated outside data range', async 
   expect(text).toContain('No habit data');
   expect(text).toContain('arrows');
 });
+
+/* ---------- Directory view ---------- */
+
+test('habit tracker directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-habits/Habit%20Trackers'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('habit tracker directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-habits/Habit%20Trackers'; });
+  await page.waitForSelector('.habit-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

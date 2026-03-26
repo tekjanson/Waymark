@@ -66,3 +66,20 @@ test('travel itinerary shows map links for locations', async ({ page }) => {
   const href = await mapLinks.first().getAttribute('href');
   expect(href).toContain('google.com/maps');
 });
+
+/* ---------- Directory view ---------- */
+
+test('travel directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-travel/Travel%20Itineraries'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('travel directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-travel/Travel%20Itineraries'; });
+  await page.waitForSelector('.travel-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});
