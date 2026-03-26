@@ -2,7 +2,7 @@
    templates/grading.js — Gradebook: all fields editable inline, shows averages
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate, delegateEvent } from './shared.js';
+import { el, cell, editableCell, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
 
 const definition = {
   name: 'Gradebook',
@@ -176,7 +176,12 @@ const definition = {
       return num >= 90 ? 'grading-a' : num >= 80 ? 'grading-b' : num >= 70 ? 'grading-c' : num >= 60 ? 'grading-d' : 'grading-f';
     }
 
-    container.append(el('div', { className: 'grading-dir-title' }, ['\uD83C\uDF93 Classroom Overview']));
+    const titleBar = el('div', { className: 'grading-dir-title-bar' });
+    titleBar.append(
+      el('span', { className: 'grading-dir-title' }, ['\uD83C\uDF93 Classroom Overview']),
+      buildDirSyncBtn(container),
+    );
+    container.append(titleBar);
 
     /* Aggregate per-class stats — prefer pre-computed dirStats when available */
     const classStats = [];

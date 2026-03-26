@@ -80,3 +80,20 @@ test('changelog sidebar has version nav buttons', async ({ page }) => {
   expect(texts).toContain('2.3.0');
   expect(texts).toContain('2.0.0');
 });
+
+/* ---------- Directory view ---------- */
+
+test('changelog directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-changelogs/Changelogs'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('changelog directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-changelogs/Changelogs'; });
+  await page.waitForSelector('.changelog-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

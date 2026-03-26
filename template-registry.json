@@ -85,7 +85,8 @@
         "groceries",
         "home-projects",
         "shared-chores"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "tracker",
@@ -118,7 +119,8 @@
       ],
       "fixtureFiles": [
         "tracker-fitness"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "schedule",
@@ -152,7 +154,8 @@
       ],
       "fixtureFiles": [
         "schedule-weekly"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "inventory",
@@ -185,7 +188,8 @@
       ],
       "fixtureFiles": [
         "inventory-pantry"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "contacts",
@@ -216,7 +220,8 @@
       ],
       "fixtureFiles": [
         "contacts-emergency"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "log",
@@ -246,7 +251,8 @@
       ],
       "fixtureFiles": [
         "log-workout"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "budget",
@@ -373,7 +379,8 @@
       "fixtureFiles": [
         "habit-morning",
         "habit-multiweek"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "grading",
@@ -441,7 +448,8 @@
       ],
       "fixtureFiles": [
         "timesheet-weekly"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "poll",
@@ -475,7 +483,8 @@
       ],
       "fixtureFiles": [
         "poll-team"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "changelog",
@@ -506,7 +515,8 @@
       ],
       "fixtureFiles": [
         "changelog-app"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "crm",
@@ -548,7 +558,8 @@
       ],
       "fixtureFiles": [
         "crm-sales"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "meal",
@@ -614,7 +625,8 @@
       ],
       "fixtureFiles": [
         "travel-europe"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "roster",
@@ -653,7 +665,8 @@
       ],
       "fixtureFiles": [
         "roster-team"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "recipe",
@@ -703,7 +716,8 @@
       ],
       "fixtureFiles": [
         "recipe-spaghetti-bolognese"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "flow",
@@ -741,7 +755,8 @@
       ],
       "fixtureFiles": [
         "flow-login"
-      ]
+      ],
+      "hasDirectoryView": true
     },
     {
       "key": "social",
@@ -811,7 +826,7 @@
         "failed",
         "skipped"
       ],
-      "hasDirectoryView": false,
+      "hasDirectoryView": true,
       "exampleCount": 2,
       "fixtureIds": [
         "sheet-036"
@@ -823,7 +838,7 @@
     {
       "key": "guide",
       "name": "Instruction Guide",
-      "icon": "🪴",
+      "icon": "\ud83e\udeb4",
       "color": "#15803d",
       "priority": 22,
       "category": "Documentation",
@@ -852,7 +867,7 @@
         "Ready",
         "Done"
       ],
-      "hasDirectoryView": false,
+      "hasDirectoryView": true,
       "exampleCount": 1,
       "fixtureIds": [
         "sheet-049"
@@ -864,7 +879,7 @@
     {
       "key": "knowledge",
       "name": "Knowledge Base",
-      "icon": "📚",
+      "icon": "\ud83d\udcda",
       "color": "#6366f1",
       "priority": 18,
       "category": "Documentation",
@@ -942,7 +957,7 @@
         "Read",
         "Dismissed"
       ],
-      "hasDirectoryView": false,
+      "hasDirectoryView": true,
       "exampleCount": 1,
       "fixtureIds": [
         "sheet-046"
@@ -954,7 +969,7 @@
     {
       "key": "iot",
       "name": "IoT Sensor Log",
-      "icon": "📡",
+      "icon": "\ud83d\udce1",
       "color": "#0f766e",
       "priority": 24,
       "category": "Monitoring",
@@ -1000,7 +1015,7 @@
     {
       "key": "okr",
       "name": "OKR / Goals",
-      "icon": "\uD83C\uDFAF",
+      "icon": "\ud83c\udfaf",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Goals",
@@ -1038,7 +1053,7 @@
     {
       "key": "gantt",
       "name": "Gantt Timeline",
-      "icon": "📅",
+      "icon": "\ud83d\udcc5",
       "color": "#059669",
       "priority": 23,
       "category": "Project Management",

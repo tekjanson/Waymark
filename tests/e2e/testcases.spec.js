@@ -399,3 +399,18 @@ test('testcases directoryView uses grid layout for cards', async ({ page }) => {
 
   await expect(page.locator('.tc-dir-grid')).toHaveCSS('display', 'grid');
 });
+
+test('testcases directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('testcases directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-testcases/Test Suites'; });
+  await page.waitForSelector('.tc-dir-title', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

@@ -675,3 +675,20 @@ test('flow positions persist across re-renders via localStorage', async ({ page 
     expect(Object.keys(parsed).length).toBeGreaterThan(0);
   }
 });
+
+/* ---------- Directory view ---------- */
+
+test('flow directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-flows/Flow%20Diagrams'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('flow directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-flows/Flow%20Diagrams'; });
+  await page.waitForSelector('.flow-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

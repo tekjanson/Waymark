@@ -9,6 +9,7 @@
 import {
   el, cell, editableCell, emitEdit,
   registerTemplate, delegateEvent, parseGroups,
+  buildDirSyncBtn,
 } from '../shared.js';
 
 import {
@@ -508,6 +509,42 @@ const definition = {
     if (addWeekBtn) addWeekBtn.style.display = 'none';
 
     rebuildView();
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'habit-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'habit-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'habit-dir-icon tmpl-dir-icon' }, ['\uD83D\uDD04']),
+      el('span', { className: 'habit-dir-title tmpl-dir-title' }, ['Habit Trackers']),
+      el('span', { className: 'habit-dir-count tmpl-dir-count' }, [
+        `${sheets.length} tracker${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'habit-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      const groups = parseGroups(rows, cols.text);
+
+      grid.append(el('div', {
+        className: 'habit-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'habit-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'habit-dir-card-stat tmpl-dir-card-stat' }, [
+          `${groups.length} habit${groups.length !== 1 ? 's' : ''}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.habit-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

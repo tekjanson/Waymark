@@ -59,3 +59,20 @@ test('poll bars have CSS transition for animation', async ({ page }) => {
   );
   expect(transition).toContain('width');
 });
+
+/* ---------- Directory view ---------- */
+
+test('poll directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-polls/Polls'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('poll directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-polls/Polls'; });
+  await page.waitForSelector('.poll-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

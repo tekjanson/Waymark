@@ -145,3 +145,18 @@ test('gradebook directoryView per-card shows student counts', async ({ page }) =
   const hasStudentInfo = cardTexts.every(t => /\d/.test(t));
   expect(hasStudentInfo).toBe(true);
 });
+
+test('gradebook directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-grades/Gradebooks'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('gradebook directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-grades/Gradebooks'; });
+  await page.waitForSelector('.grading-dir-title', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

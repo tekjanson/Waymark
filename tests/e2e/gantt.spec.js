@@ -236,3 +236,20 @@ test('gantt renders correctly at 375px mobile width', async ({ page }) => {
   // Chart scroll area visible
   await expect(page.locator('.gantt-chart-scroll')).toBeVisible();
 });
+
+/* ---------- Directory view ---------- */
+
+test('gantt directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-gantt/Gantt%20Timelines'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('gantt directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-gantt/Gantt%20Timelines'; });
+  await page.waitForSelector('.gantt-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

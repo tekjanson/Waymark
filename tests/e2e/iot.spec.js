@@ -461,3 +461,22 @@ test('blank IoT sheet shows add row form', async ({ page }) => {
   await expect(addBtn).toBeVisible();
 });
 
+test('iot fleet directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    window.location.hash = '#/folder/f-iot-fleet/Building Sensors';
+  });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('iot fleet directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    window.location.hash = '#/folder/f-iot-fleet/Building Sensors';
+  });
+  await page.waitForSelector('.iot-dir-title', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});
+

@@ -50,3 +50,20 @@ test('social profile header shows dominant author', async ({ page }) => {
   // Profile header should exist with author name
   await expect(page.locator('.social-profile-name')).not.toBeEmpty();
 });
+
+/* ---------- Directory view ---------- */
+
+test('social directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-social/Social%20Walls'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('social directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-social/Social%20Walls'; });
+  await page.waitForSelector('.social-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

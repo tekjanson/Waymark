@@ -2,7 +2,7 @@
    templates/log.js — Activity Log: all fields editable inline
    ============================================================ */
 
-import { el, cell, editableCell, registerTemplate } from './shared.js';
+import { el, cell, editableCell, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /** Number of entries to show per page */
 const PAGE_SIZE = 50;
@@ -90,6 +90,39 @@ const definition = {
 
     renderBatch(PAGE_SIZE);
   },
+}
+
+definition.directoryView = function(container, sheets, navigateFn) {
+  const wrapper = el('div', { className: 'log-directory tmpl-directory' });
+  wrapper.append(el('div', { className: 'log-dir-title-bar tmpl-dir-title-bar' }, [
+    el('span', { className: 'log-dir-icon tmpl-dir-icon' }, ['\uD83D\uDCDD']),
+    el('span', { className: 'log-dir-title tmpl-dir-title' }, ['Activity Logs']),
+    el('span', { className: 'log-dir-count tmpl-dir-count' }, [
+      `${sheets.length} log${sheets.length !== 1 ? 's' : ''}`,
+    ]),
+    buildDirSyncBtn(wrapper),
+  ]));
+
+  const grid = el('div', { className: 'log-dir-grid tmpl-dir-grid' });
+  for (const sheet of sheets) {
+    const rows = sheet.rows || [];
+    grid.append(el('div', {
+      className: 'log-dir-card tmpl-dir-card',
+      dataset: { entryId: sheet.id, entryName: sheet.name },
+    }, [
+      el('div', { className: 'log-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+      el('div', { className: 'log-dir-card-stat tmpl-dir-card-stat' }, [
+        `${rows.length} entr${rows.length !== 1 ? 'ies' : 'y'}`,
+      ]),
+    ]));
+  }
+
+  delegateEvent(grid, 'click', '.log-dir-card', (_e, card) => {
+    navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+  });
+
+  wrapper.append(grid);
+  container.append(wrapper);
 };
 
 registerTemplate('log', definition);

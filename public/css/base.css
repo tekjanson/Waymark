@@ -660,6 +660,35 @@ ul { list-style: none; }
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
 }
 
+/* ---------- Generic Template Directory View ---------- */
+.tmpl-directory { max-width: 900px; }
+.tmpl-dir-title-bar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+}
+.tmpl-dir-icon { font-size: 1.6rem; }
+.tmpl-dir-title { font-size: 1.3rem; font-weight: 700; }
+.tmpl-dir-count {
+  font-size: 0.75rem; color: var(--color-text-muted);
+  background: var(--color-bg); padding: 2px 8px; border-radius: 10px;
+}
+.tmpl-dir-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.tmpl-dir-card {
+  padding: 14px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  cursor: pointer; transition: all var(--transition);
+}
+.tmpl-dir-card:hover {
+  border-color: var(--color-primary); transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.tmpl-dir-card-name { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+.tmpl-dir-card-stat {
+  font-size: 0.8rem; color: var(--color-text-muted); margin-top: 2px;
+}
+
 /* ---------- Sync Guide Overlay ---------- */
 .sync-guide-overlay {
   position: absolute;

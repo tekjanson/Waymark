@@ -61,3 +61,20 @@ test('inventory low-stock items appear before categories', async ({ page }) => {
   const elements = await page.locator('.inv-reorder-header, .template-inv-category').allTextContents();
   expect(elements[0]).toContain('Reorder');
 });
+
+/* ---------- Directory view ---------- */
+
+test('inventory directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-inventories/Inventories'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('inventory directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-inventories/Inventories'; });
+  await page.waitForSelector('.inventory-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

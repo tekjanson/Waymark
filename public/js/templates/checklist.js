@@ -4,7 +4,7 @@
    all fields editable, delegated events
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, groupByColumn, registerTemplate, delegateEvent } from './shared.js';
+import { el, cell, editableCell, emitEdit, groupByColumn, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -165,6 +165,44 @@ const definition = {
       }
       container.append(groupEl);
     }
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'checklist-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'checklist-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'checklist-dir-icon tmpl-dir-icon' }, ['\u2713']),
+      el('span', { className: 'checklist-dir-title tmpl-dir-title' }, ['Checklists']),
+      el('span', { className: 'checklist-dir-count tmpl-dir-count' }, [
+        `${sheets.length} checklist${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'checklist-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      let done = 0;
+      for (const row of rows) { if (isComplete(cell(row, cols.status))) done++; }
+      const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
+
+      grid.append(el('div', {
+        className: 'checklist-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'checklist-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'checklist-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} item${rows.length !== 1 ? 's' : ''} \u2022 ${pct}% done`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.checklist-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 

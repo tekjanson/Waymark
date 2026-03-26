@@ -88,3 +88,20 @@ test('contacts search clears to show all cards', async ({ page }) => {
   const visibleCards = page.locator('.template-contact-card:not([style*="display: none"])');
   expect(await visibleCards.count()).toBe(8);
 });
+
+/* ---------- Directory view ---------- */
+
+test('contacts directoryView shows Sync button', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-contacts/Contact%20Books'; });
+  await page.waitForSelector('.dir-sync-btn', { timeout: 8_000 });
+  await expect(page.locator('.dir-sync-btn')).toBeVisible();
+  await expect(page.locator('.dir-sync-btn')).toContainText('Sync');
+});
+
+test('contacts directoryView shows folder refresh button in header', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/folder/f-contacts/Contact%20Books'; });
+  await page.waitForSelector('.contacts-directory', { timeout: 8_000 });
+  await expect(page.locator('#folder-refresh-btn')).toBeVisible();
+});

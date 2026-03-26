@@ -9,6 +9,7 @@
 import {
   el, cell, emitEdit, registerTemplate, editableCell,
   parseGroups, delegateEvent, getUserName,
+  buildDirSyncBtn,
 } from '../shared.js';
 import {
   classifyStatus, STATUS_COLORS, STATUS_LABELS,
@@ -97,6 +98,7 @@ const definition = {
       el('span', { className: 'knowledge-dir-count' }, [
         `${sheets.length} source${sheets.length !== 1 ? 's' : ''}`,
       ]),
+      buildDirSyncBtn(wrapper),
     );
     wrapper.append(titleBar);
 

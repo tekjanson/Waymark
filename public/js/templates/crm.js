@@ -3,7 +3,7 @@
    activity timeline, stale deal detection
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -294,6 +294,43 @@ const definition = {
       cardList.classList.toggle('hidden', !isFunnel);
       viewToggle.textContent = isFunnel ? 'Funnel View' : 'Card View';
     });
+  },
+
+  directoryView(container, sheets, navigateFn) {
+    const wrapper = el('div', { className: 'crm-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'crm-dir-title-bar tmpl-dir-title-bar' }, [
+      el('span', { className: 'crm-dir-icon tmpl-dir-icon' }, ['\uD83E\uDD1D']),
+      el('span', { className: 'crm-dir-title tmpl-dir-title' }, ['CRM Pipelines']),
+      el('span', { className: 'crm-dir-count tmpl-dir-count' }, [
+        `${sheets.length} pipeline${sheets.length !== 1 ? 's' : ''}`,
+      ]),
+      buildDirSyncBtn(wrapper),
+    ]));
+
+    const grid = el('div', { className: 'crm-dir-grid tmpl-dir-grid' });
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const cols = sheet.cols || {};
+      let totalVal = 0;
+      for (const row of rows) totalVal += parseValue(cell(row, cols.value));
+
+      grid.append(el('div', {
+        className: 'crm-dir-card tmpl-dir-card',
+        dataset: { entryId: sheet.id, entryName: sheet.name },
+      }, [
+        el('div', { className: 'crm-dir-card-name tmpl-dir-card-name' }, [sheet.name]),
+        el('div', { className: 'crm-dir-card-stat tmpl-dir-card-stat' }, [
+          `${rows.length} deal${rows.length !== 1 ? 's' : ''} \u2022 $${totalVal.toLocaleString()}`,
+        ]),
+      ]));
+    }
+
+    delegateEvent(grid, 'click', '.crm-dir-card', (_e, card) => {
+      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
+    });
+
+    wrapper.append(grid);
+    container.append(wrapper);
   },
 };
 
