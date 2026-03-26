@@ -228,6 +228,9 @@ export function hide() {
   currentDataTitle = null;
   clearInterval(refreshTimer);
   refreshTimer = null;
+
+  // Notify templates that need to clean up live connections
+  window.dispatchEvent(new CustomEvent('waymark:sheet-hidden'));
 }
 
 /* ---------- CSV Download ---------- */
@@ -481,6 +484,18 @@ function renderWithTemplate(values) {
   };
   template._onAddRow = addRowCallback;
   template._totalColumns = totalCols;
+
+  // WebRTC signaling callbacks for peer-to-peer communication
+  template._rtcSheetId = currentSheetId;
+  template._rtcUserName = api.auth.getUser()?.name || 'Anonymous';
+  template._rtcSignal = {
+    readHeader: async () => {
+      const data = await api.sheets.getSpreadsheet(currentSheetId);
+      return data.values?.[0] || [];
+    },
+    writeCell: (col, value) =>
+      api.sheets.updateCell(currentSheetId, currentSheetTitle, 0, col, value),
+  };
 
   // Insert-after-row callback for sub-tasks and notes (kanban)
   // pendingEdits: optional [{rowIdx (0-based), colIdx, value}] applied atomically

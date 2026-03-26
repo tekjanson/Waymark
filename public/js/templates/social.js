@@ -9,7 +9,7 @@
 import {
   el, cell, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, editableCell,
-  buildDirSyncBtn,
+  buildDirSyncBtn, WaymarkConnect,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -46,6 +46,119 @@ function timeAgo(dateStr) {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return d.toLocaleDateString();
+}
+
+/* ---------- Live Chat (P2P via WaymarkConnect) ---------- */
+
+let _activeConnect = null;
+let _activeSheetId = null;
+let _chatPanel = null;
+
+/** Clean up active connection and chat panel. */
+function destroyChat() {
+  if (_activeConnect) { _activeConnect.destroy(); _activeConnect = null; }
+  if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
+  _activeSheetId = null;
+}
+
+// Tear down when navigating away from the sheet
+window.addEventListener('waymark:sheet-hidden', destroyChat);
+
+/**
+ * Build the floating chat panel and connect to peers.
+ * @param {string} sheetId
+ * @param {string} displayName
+ * @param {Object} [signal] — Sheets signaling callbacks
+ */
+function openChat(sheetId, displayName, signal) {
+  // Don't double-open for the same sheet
+  if (_activeConnect && _activeSheetId === sheetId) {
+    if (_chatPanel) _chatPanel.classList.remove('hidden');
+    return;
+  }
+  destroyChat();
+  _activeSheetId = sheetId;
+
+  // --- Build panel DOM ---
+  _chatPanel = el('div', { className: 'social-chat-panel' });
+
+  const header = el('div', { className: 'social-chat-header' });
+  const statusDot = el('span', { className: 'social-chat-status social-chat-status-listening' });
+  const statusLabel = el('span', {}, ['Listening…']);
+  const peerCount = el('span', { className: 'social-chat-peer-count' }, ['0 peers']);
+  const minimizeBtn = el('button', {
+    className: 'social-chat-minimize',
+    title: 'Minimize',
+    on: { click() { _chatPanel.classList.toggle('social-chat-minimized'); } },
+  }, ['—']);
+  const closeBtn = el('button', {
+    className: 'social-chat-close',
+    title: 'Disconnect',
+    on: { click: destroyChat },
+  }, ['✕']);
+  header.append(el('span', { className: 'social-chat-title' }, ['📡 Live Chat']), statusDot, statusLabel, peerCount, minimizeBtn, closeBtn);
+
+  const messages = el('div', { className: 'social-chat-messages' });
+
+  const inputBar = el('div', { className: 'social-chat-input-bar' });
+  const input = el('input', {
+    className: 'social-chat-input',
+    type: 'text',
+    placeholder: 'Type a message…',
+    autocomplete: 'off',
+  });
+  const sendBtn = el('button', { className: 'social-chat-send' }, ['Send']);
+  inputBar.append(input, sendBtn);
+
+  _chatPanel.append(header, messages, inputBar);
+  document.body.append(_chatPanel);
+
+  // --- Render a chat message ---
+  function appendMessage(name, text, ts, isSelf) {
+    const bubble = el('div', { className: `social-chat-bubble ${isSelf ? 'social-chat-self' : 'social-chat-peer'}` });
+    const initial = (name || '?')[0].toUpperCase();
+    bubble.append(
+      el('div', { className: 'social-avatar social-avatar-sm', style: `background: ${avatarColor(name || 'Anonymous')}` }, [initial]),
+      el('div', { className: 'social-chat-bubble-body' }, [
+        el('span', { className: 'social-chat-bubble-name' }, [name]),
+        el('span', { className: 'social-chat-bubble-text' }, [text]),
+        el('span', { className: 'social-chat-bubble-time' }, [timeAgo(new Date(ts).toISOString())]),
+      ]),
+    );
+    messages.append(bubble);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // --- Send handler ---
+  function sendMessage() {
+    const text = input.value.trim();
+    if (!text || !_activeConnect) return;
+    const msg = _activeConnect.send(text);
+    appendMessage(msg.name, msg.text, msg.ts, true);
+    input.value = '';
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+  });
+
+  // --- Create connection ---
+  _activeConnect = new WaymarkConnect(sheetId, {
+    displayName,
+    signal,
+    onMessage(msg) {
+      appendMessage(msg.name, msg.text, msg.ts, false);
+    },
+    onPeersChanged(peers) {
+      peerCount.textContent = `${peers.size} peer${peers.size !== 1 ? 's' : ''}`;
+    },
+    onStatusChanged(status) {
+      statusDot.className = `social-chat-status social-chat-status-${status}`;
+      statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
+    },
+  });
+  _activeConnect.start();
 }
 
 /* ---------- Template Definition ---------- */
@@ -269,6 +382,12 @@ const definition = {
     const pageOwner = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'My Feed';
 
     const ownerInitial = pageOwner[0].toUpperCase();
+    const connectBtn = el('button', {
+      className: 'social-connect-btn',
+      title: 'Start live peer-to-peer chat with anyone viewing this sheet',
+      on: { click() { openChat(template._rtcSheetId, template._rtcUserName, template._rtcSignal); } },
+    }, ['📡 Connect']);
+
     profileHeader.append(
       el('div', {
         className: 'social-avatar social-avatar-lg',
@@ -280,6 +399,7 @@ const definition = {
           `${groups.length} post${groups.length !== 1 ? 's' : ''} · ${allAuthors.length} contributor${allAuthors.length !== 1 ? 's' : ''}`,
         ]),
       ]),
+      connectBtn,
     );
     container.append(profileHeader);
 

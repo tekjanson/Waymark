@@ -6,6 +6,7 @@
    ============================================================ */
 
 import { el, showToast } from '../ui.js';
+export { WaymarkConnect } from '../webrtc.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
