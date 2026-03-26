@@ -142,11 +142,25 @@ export function cookbookDirectoryView(container, sheets, navigateFn) {
   const wrapper = el('div', { className: 'cookbook-directory' });
 
   const countSpan = el('span', { className: 'cookbook-count' });
+  const syncBtn = el('button', {
+    className: 'cookbook-sync-btn',
+    type: 'button',
+    title: 'Re-select this folder to pick up recipes from all family members',
+  }, ['\uD83D\uDD04 Sync Family Recipes']);
   wrapper.append(el('div', { className: 'cookbook-title-bar' }, [
     el('span', { className: 'cookbook-title-icon' }, ['\ud83d\udcd6']),
-    el('span', { className: 'cookbook-title' }, ['Cookbook']),
+    el('div', { className: 'cookbook-title-group' }, [
+      el('span', { className: 'cookbook-title' }, ['Family Cookbook']),
+      el('span', { className: 'cookbook-subtitle' }, ['Shared recipes from everyone in the family']),
+    ]),
     countSpan,
+    syncBtn,
   ]));
+
+  // --- Delegated sync button handler ---
+  delegateEvent(wrapper, 'click', '.cookbook-sync-btn', () => {
+    window.dispatchEvent(new CustomEvent('waymark:folder-refresh'));
+  });
 
   const grid = el('div', { className: 'cookbook-grid' });
   const emptyMsg = el('p', { className: 'cookbook-empty hidden' });

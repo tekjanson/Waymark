@@ -699,6 +699,7 @@ function renderPinnedSheets() {
 const openInDriveBtn = document.getElementById('open-in-drive-btn');
 const folderPinBtn   = document.getElementById('folder-pin-btn');
 const dirHelpBtn     = document.getElementById('dir-help-btn');
+const folderRefreshBtn = document.getElementById('folder-refresh-btn');
 let currentFolderId  = null;
 let currentFolderName = null;
 let currentDirKey    = null;
@@ -736,6 +737,42 @@ if (dirHelpBtn) {
     if (currentDirKey) Tutorial.startTemplateTutorial('dir-' + currentDirKey, true);
   });
 }
+
+/**
+ * Full folder refresh via Google Picker.
+ * Re-selecting the folder re-grants drive.file access to all contents,
+ * allowing the app to see recipes added by other family members.
+ * Clears the cached index and rebuilds from scratch.
+ */
+async function refreshFolderViaPicker() {
+  if (!currentFolderId) return;
+
+  const folder = await api.picker.pickFolder();
+  if (!folder) return;          // user cancelled Picker
+
+  // Use the selected folder (may differ from current if user switched)
+  const folderId = folder.id;
+  const folderName = folder.name;
+
+  showToast('Syncing shared recipes…', 'info');
+
+  // Nuke the localStorage cache so showFolderContents treats everything as new
+  storage.setFolderIndex(folderId, null);
+
+  // Navigate to the (possibly new) folder and rebuild everything from scratch.
+  // All sheets will be re-fetched and the .waymark-index will be rebuilt
+  // with content from all users in the shared directory.
+  navigate('folder', folderId, folderName);
+}
+
+if (folderRefreshBtn) {
+  folderRefreshBtn.addEventListener('click', refreshFolderViaPicker);
+}
+
+// Cookbook "Sync Family Recipes" button dispatches this event
+window.addEventListener('waymark:folder-refresh', () => {
+  refreshFolderViaPicker();
+});
 
 /* ---------- .waymark-index helpers ---------- */
 
@@ -817,6 +854,7 @@ async function showFolderContents(folderId, folderName) {
   titleEl.textContent = folderName;
   noSheetsEl.classList.add('hidden');
   if (dirHelpBtn) dirHelpBtn.classList.add('hidden');
+  if (folderRefreshBtn) folderRefreshBtn.classList.add('hidden');
   currentDirKey = null;
 
   // Clear previous content immediately and show loading bar.
@@ -1129,9 +1167,10 @@ async function showFolderContents(folderId, folderName) {
           loadingBar.classList.add('hidden');
           usedDirectoryView = true;
 
-          // Show directory view help button and trigger first-time tutorial
+          // Show directory view help button, refresh button, and trigger first-time tutorial
           currentDirKey = key;
           if (dirHelpBtn) dirHelpBtn.classList.remove('hidden');
+          if (folderRefreshBtn) folderRefreshBtn.classList.remove('hidden');
           Tutorial.startTemplateTutorial('dir-' + key);
 
           // Render remaining non-matching sheets normally
