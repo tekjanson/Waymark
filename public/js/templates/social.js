@@ -458,6 +458,9 @@ function openChat(sheetId, displayName, signal) {
   debugBtn.addEventListener('click', () => {
     debugPanel.classList.toggle('hidden');
     debugBtn.classList.toggle('social-debug-btn-active');
+    if (!debugPanel.classList.contains('hidden') && _activeConnect && !_debugCleanup) {
+      startDebug(_activeConnect);
+    }
   });
   callBar.append(debugBtn);
 
@@ -625,6 +628,7 @@ function openChat(sheetId, displayName, signal) {
     }
     debugBtn.classList.remove('hidden');
     _chatPanel.classList.add('social-chat-in-call');
+    if (_activeConnect) startDebug(_activeConnect);
   }
 
   /** Leave the "in call" visual state and release all media devices */
