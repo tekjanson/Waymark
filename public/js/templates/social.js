@@ -421,11 +421,12 @@ function openChat(sheetId, displayName, signal) {
     if (_activeConnect?.localStream) {
       for (const t of _activeConnect.localStream.getTracks()) t.stop();
     }
-    // Tear down remote audio filter
+    // Tear down remote audio filter and stop audio element
     if (_remoteFilterCleanup) {
       _remoteFilterCleanup();
       _remoteFilterCleanup = null;
     }
+    remoteAudio.srcObject = null;
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
     hangupBtn.classList.add('hidden');
@@ -713,6 +714,9 @@ function openChat(sheetId, displayName, signal) {
           // Only store cleanup if this is still the active connection
           if (_activeConnect === connect) {
             _remoteFilterCleanup = result.cleanup;
+            // Play processed audio through <audio> element so Chrome's AEC
+            // can reference it. Direct ctx.destination bypasses AEC on Linux.
+            remoteAudio.srcObject = result.outputStream || null;
           } else {
             result.cleanup();
           }

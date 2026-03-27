@@ -347,7 +347,7 @@ export class WaymarkConnect {
    * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
    * @param {number} [opts.duckThreshold=0.03]   — mic RMS above this triggers ducking
    * @param {number} [opts.holdMs=3000]           — base hold after speech ends (auto-extends on echo detection)
-   * @returns {Promise<{ cleanup: Function }>} — call cleanup() on hangup
+   * @returns {Promise<{ cleanup: Function, outputStream: MediaStream|null }>}
    */
   async createRemoteAudioPipeline(remoteStream, opts = {}) {
     // Clean up previous pipeline
@@ -365,13 +365,13 @@ export class WaymarkConnect {
     }
 
     const audioTracks = remoteStream.getAudioTracks();
-    if (audioTracks.length === 0) return { cleanup() {} };
+    if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
 
     // If mic processing isn't ready yet (answerer hasn't accepted the call),
     // don't play remote audio at all — it would bypass echo suppression.
     // The pipeline will be rebuilt when startCall sets up _micAnalyser.
     if (!this._micAnalyser) {
-      return { cleanup() {} };
+      return { cleanup() {}, outputStream: null };
     }
 
     // Resume AudioContext if suspended (required on mobile after tab switch)
@@ -422,13 +422,18 @@ export class WaymarkConnect {
     // Wire: remote → hp → gate input 1
     source.connect(hp);
     hp.connect(gate, 0, 1);
-    // Wire: gate output → speakers
-    gate.connect(ctx.destination);
+    // Wire: gate output → MediaStreamDestination (NOT ctx.destination).
+    // The caller plays the output through an <audio> element so Chrome's
+    // AEC can reference it. Playing directly to ctx.destination bypasses
+    // AEC reference tracking on Linux/PulseAudio.
+    const dest = ctx.createMediaStreamDestination();
+    gate.connect(dest);
 
     this._echoGateNode = gate;
 
     const self = this;
     return {
+      outputStream: dest.stream,
       cleanup() {
         source.disconnect();
         hp.disconnect();
@@ -458,9 +463,13 @@ export class WaymarkConnect {
       const duckGain = ctx.createGain();
       duckGain.gain.value = 1.0;
 
+      // Route through MediaStreamDestination so the caller can play via
+      // an <audio> element. This lets Chrome's AEC reference the output.
+      const dest = ctx.createMediaStreamDestination();
+
       source.connect(hp);
       hp.connect(duckGain);
-      duckGain.connect(ctx.destination);
+      duckGain.connect(dest);
 
       const suppression = opts.echoSuppression ?? 0.95;
       const gainWhenDucked = Math.max(0, 1 - suppression);
@@ -497,6 +506,7 @@ export class WaymarkConnect {
 
       const self = this;
       return {
+        outputStream: dest.stream,
         cleanup() {
           if (self._duckingRAF) {
             cancelAnimationFrame(self._duckingRAF);
@@ -507,7 +517,7 @@ export class WaymarkConnect {
         },
       };
     } catch {
-      return { cleanup() {} };
+      return { cleanup() {}, outputStream: null };
     }
   }
 

@@ -548,18 +548,26 @@ await testAsync('worklet pipeline wires remote → hp → gate input 1', async (
   assert(hpToGate.input === 1, `HP connection should go to gate input 1, got ${hpToGate.input}`);
 });
 
-await testAsync('worklet pipeline connects gate → ctx.destination (speakers)', async () => {
+await testAsync('worklet pipeline routes gate → MediaStreamDestination (AEC-compatible)', async () => {
   const wc = createInstance();
   const raw = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   wc._processAudio(raw);
   wc._workletReady = Promise.resolve();
 
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
-  await wc.createRemoteAudioPipeline(remoteStream);
+  const result = await wc.createRemoteAudioPipeline(remoteStream);
 
   const gate = wc._echoGateNode;
-  const toDest = gate._connections.find(c => c.target === wc._audioCtx.destination);
-  assert(toDest, 'Echo gate should be connected to ctx.destination (speakers)');
+  const toDest = gate._connections.find(c => c.target._type === 'MediaStreamDestination');
+  assert(toDest, 'Echo gate should connect to MediaStreamDestination (not ctx.destination)');
+
+  // Should NOT connect to ctx.destination directly
+  const toCtxDest = gate._connections.find(c => c.target === wc._audioCtx.destination);
+  assert(!toCtxDest, 'Echo gate should NOT connect directly to ctx.destination');
+
+  // Should return an outputStream for the <audio> element
+  assert(result.outputStream, 'Pipeline should return outputStream for <audio> element playback');
+  assert(result.outputStream.getAudioTracks().length > 0, 'outputStream should have audio tracks');
 });
 
 await testAsync('worklet parameterData passes opts correctly', async () => {
@@ -646,14 +654,14 @@ await testAsync('falls back to rAF pipeline when worklet unavailable', async () 
   cleanup();
 });
 
-await testAsync('fallback pipeline wires source → hp → gain → destination', async () => {
+await testAsync('fallback pipeline wires source → hp → gain → MediaStreamDestination', async () => {
   const wc = createInstance();
   const raw = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   wc._processAudio(raw);
   wc._workletReady = null;
 
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
-  await wc.createRemoteAudioPipeline(remoteStream);
+  const result = await wc.createRemoteAudioPipeline(remoteStream);
 
   const ctx = wc._remoteCtx;
   assert(ctx, 'Fallback AudioContext should exist');
@@ -662,11 +670,15 @@ await testAsync('fallback pipeline wires source → hp → gain → destination'
   assert(source, 'Remote source should exist');
 
   const path = tracePath(source);
-  const expected = ['MediaStreamSource', 'BiquadFilter', 'Gain', 'Destination'];
+  const expected = ['MediaStreamSource', 'BiquadFilter', 'Gain', 'MediaStreamDestination'];
   assert(
     JSON.stringify(path) === JSON.stringify(expected),
     `Expected path ${expected.join(' → ')} but got ${path.join(' → ')}`,
   );
+
+  // Should return outputStream for <audio> element
+  assert(result.outputStream, 'Fallback should return outputStream');
+  assert(result.outputStream.getAudioTracks().length > 0, 'outputStream should have audio tracks');
 });
 
 await testAsync('no-audio remote stream returns noop cleanup', async () => {
@@ -833,6 +845,7 @@ await testAsync('full answerer flow: noop → accept → rebuild with worklet', 
   const result1 = await wc.createRemoteAudioPipeline(remoteStream);
   assert(!wc._echoGateNode, 'Phase 1: No worklet node should exist');
   assert(!wc._remoteCtx, 'Phase 1: No fallback context should exist');
+  assert(!result1.outputStream, 'Phase 1: outputStream should be null (no audio plays)');
   result1.cleanup();
 
   // Phase 2: User accepts call → _processAudio sets up _micAnalyser.
@@ -844,6 +857,12 @@ await testAsync('full answerer flow: noop → accept → rebuild with worklet', 
   const result2 = await wc.createRemoteAudioPipeline(remoteStream);
   assert(wc._echoGateNode, 'Phase 3: Worklet node should now exist');
   assert(wc._echoGateNode._type === 'AudioWorkletNode', 'Phase 3: Should use worklet path');
+  assert(result2.outputStream, 'Phase 3: outputStream should exist for <audio> element');
+
+  // Verify gate routes to MediaStreamDestination (not ctx.destination)
+  const gate = wc._echoGateNode;
+  const toDest = gate._connections.find(c => c.target._type === 'MediaStreamDestination');
+  assert(toDest, 'Phase 3: Gate should route to MediaStreamDestination');
 
   // Verify mic analyser is connected to gate input 0 (sidechain)
   const micConnection = wc._micAnalyser._connections.find(c => c.target === wc._echoGateNode);
