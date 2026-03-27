@@ -485,3 +485,35 @@ export function getChatSoundEnabled() {
 export function setChatSoundEnabled(enabled) {
   set('chat_sound_enabled', !!enabled);
 }
+
+/* ---------- Audio Processing ---------- */
+
+/** @returns {boolean} Echo cancellation enabled (default true) */
+export function getEchoCancellation() {
+  return get('audio_echo_cancellation') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setEchoCancellation(enabled) {
+  set('audio_echo_cancellation', !!enabled);
+}
+
+/** @returns {boolean} Noise suppression enabled (default true) */
+export function getNoiseSuppression() {
+  return get('audio_noise_suppression') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setNoiseSuppression(enabled) {
+  set('audio_noise_suppression', !!enabled);
+}
+
+/** @returns {boolean} Auto gain control enabled (default true) */
+export function getAutoGainControl() {
+  return get('audio_auto_gain') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setAutoGainControl(enabled) {
+  set('audio_auto_gain', !!enabled);
+}

@@ -139,7 +139,7 @@ export class WaymarkConnect {
       // OverconstrainedError with video — retry audio-only before giving up
       if (e.name === 'OverconstrainedError' && constraints.video) {
         try {
-          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
         } catch (e2) {
           if (e2.name === 'NotAllowedError') throw e2;
           listenOnly = true;
@@ -148,7 +148,7 @@ export class WaymarkConnect {
       } else if (constraints.video && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
         // Camera failed — retry audio-only
         try {
-          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
         } catch (e2) {
           if (e2.name === 'NotAllowedError') throw e2;
           listenOnly = true;

@@ -271,3 +271,90 @@ test('closing and reopening Connect creates a new chat panel', async ({ page }) 
   await expect(page.locator('.social-chat-panel')).toBeVisible();
   await expect(page.locator('.social-chat-title')).toContainText('Live Chat');
 });
+
+/* ---------- Audio Settings ---------- */
+
+test('settings panel shows audio processing checkboxes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+
+  // Open settings
+  await page.click('.social-chat-settings-btn');
+  await expect(page.locator('.social-chat-settings-panel')).toBeVisible();
+
+  // Audio processing section should be visible
+  const titles = page.locator('.social-settings-title');
+  const count = await titles.count();
+  const texts = [];
+  for (let i = 0; i < count; i++) texts.push(await titles.nth(i).textContent());
+  expect(texts).toContain('Audio Processing');
+
+  // All three audio checkboxes should be present and checked by default
+  const rows = page.locator('.social-settings-row');
+  const rowCount = await rows.count();
+  const labels = [];
+  for (let i = 0; i < rowCount; i++) labels.push(await rows.nth(i).textContent());
+  expect(labels.some(l => l.includes('Echo cancellation'))).toBe(true);
+  expect(labels.some(l => l.includes('Noise suppression'))).toBe(true);
+  expect(labels.some(l => l.includes('Auto gain control'))).toBe(true);
+});
+
+test('audio settings default to enabled', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  // All audio checkboxes should be checked by default
+  const checkboxes = page.locator('.social-chat-settings-panel input[type="checkbox"]');
+  const count = await checkboxes.count();
+  // There are 5 checkboxes total: save history, sound, echo, noise, gain
+  expect(count).toBe(5);
+  // The last three (echo, noise, gain) should all be checked
+  for (let i = 2; i < 5; i++) {
+    await expect(checkboxes.nth(i)).toBeChecked();
+  }
+});
+
+test('unchecking audio settings persists to localStorage', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  // Uncheck echo cancellation (3rd checkbox, index 2)
+  const checkboxes = page.locator('.social-chat-settings-panel input[type="checkbox"]');
+  await checkboxes.nth(2).uncheck();
+
+  // Verify localStorage was updated
+  const echoVal = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_echo_cancellation')),
+  );
+  expect(echoVal).toBe(false);
+
+  // Other settings should still be true
+  const noiseVal = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_noise_suppression')),
+  );
+  const gainVal = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_auto_gain')),
+  );
+  // null means not yet set (defaults to true), or explicitly true
+  expect(noiseVal === null || noiseVal === true).toBe(true);
+  expect(gainVal === null || gainVal === true).toBe(true);
+});
+
+test('audio settings hint text is shown', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  await expect(page.locator('.social-settings-hint')).toBeVisible();
+  await expect(page.locator('.social-settings-hint')).toContainText('next call');
+});

@@ -1044,4 +1044,10 @@ export {
   setChatSaveHistory,
   getChatSoundEnabled,
   setChatSoundEnabled,
+  getEchoCancellation,
+  setEchoCancellation,
+  getNoiseSuppression,
+  setNoiseSuppression,
+  getAutoGainControl,
+  setAutoGainControl,
 } from '../storage.js';

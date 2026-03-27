@@ -12,12 +12,29 @@ import {
   buildDirSyncBtn, WaymarkConnect,
   getChatSaveHistory, setChatSaveHistory,
   getChatSoundEnabled, setChatSoundEnabled,
+  getEchoCancellation, setEchoCancellation,
+  getNoiseSuppression, setNoiseSuppression,
+  getAutoGainControl, setAutoGainControl,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
 
 /** Column reserved for WebRTC signaling (must match webrtc.js SIG_COL). */
 const SIG_COL = 20;
+
+/**
+ * Build getUserMedia audio constraints from saved preferences.
+ * Returns a detailed constraints object with echo cancellation,
+ * noise suppression, and auto gain control settings.
+ * @returns {Object} Audio constraints for getUserMedia
+ */
+function buildAudioConstraints() {
+  return {
+    echoCancellation: getEchoCancellation(),
+    noiseSuppression: getNoiseSuppression(),
+    autoGainControl: getAutoGainControl(),
+  };
+}
 
 const MOOD_MAP = {
   happy: '😊', sad: '😢', excited: '🎉', angry: '😤',
@@ -185,6 +202,21 @@ function openChat(sheetId, displayName, signal) {
     checked: getChatSoundEnabled(),
     on: { change(e) { setChatSoundEnabled(e.target.checked); } },
   });
+  const echoCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getEchoCancellation(),
+    on: { change(e) { setEchoCancellation(e.target.checked); } },
+  });
+  const noiseCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getNoiseSuppression(),
+    on: { change(e) { setNoiseSuppression(e.target.checked); } },
+  });
+  const gainCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getAutoGainControl(),
+    on: { change(e) { setAutoGainControl(e.target.checked); } },
+  });
   settingsPanel.append(
     el('div', { className: 'social-settings-title' }, ['Chat Settings']),
     el('label', { className: 'social-settings-row' }, [
@@ -194,6 +226,22 @@ function openChat(sheetId, displayName, signal) {
     el('label', { className: 'social-settings-row' }, [
       soundCheckbox,
       el('span', {}, ['Incoming call sound']),
+    ]),
+    el('div', { className: 'social-settings-title social-settings-divider' }, ['Audio Processing']),
+    el('label', { className: 'social-settings-row' }, [
+      echoCheckbox,
+      el('span', {}, ['Echo cancellation']),
+    ]),
+    el('label', { className: 'social-settings-row' }, [
+      noiseCheckbox,
+      el('span', {}, ['Noise suppression']),
+    ]),
+    el('label', { className: 'social-settings-row' }, [
+      gainCheckbox,
+      el('span', {}, ['Auto gain control']),
+    ]),
+    el('div', { className: 'social-settings-hint' }, [
+      'Audio settings apply to your next call. Changes mid-call require hanging up and redialling.',
     ]),
   );
   settingsBtn.addEventListener('click', () => {
@@ -359,7 +407,7 @@ function openChat(sheetId, displayName, signal) {
     if (!_activeConnect || _activeConnect.inCall) return;
     appendMessage('System', 'Joining call…', Date.now(), false);
     try {
-      const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
+      const stream = await _activeConnect.startCall({ audio: buildAudioConstraints(), video: withVideo });
       if (stream?._listenOnly) {
         appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
       } else {
@@ -375,8 +423,8 @@ function openChat(sheetId, displayName, signal) {
     }
   }
 
-  callBtn.addEventListener('click', () => startCall({ audio: true, video: false }));
-  videoCallBtn.addEventListener('click', () => startCall({ audio: true, video: true }));
+  callBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: false }));
+  videoCallBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: true }));
 
   hangupBtn.addEventListener('click', () => {
     if (_activeConnect) _activeConnect.endCall();
