@@ -83,8 +83,10 @@ export class WaymarkConnect {
     this._processedStream = null;   // MediaStream sent to peer connections
     this._rawStream = null;         // original getUserMedia stream
     this._micAnalyser = null;       // AnalyserNode for echo ducking
-    this._remoteCtx = null;         // AudioContext for remote playback pipeline
-    this._duckingRAF = null;        // requestAnimationFrame ID for ducking loop
+    this._remoteCtx = null;         // AudioContext for remote playback (fallback)
+    this._duckingRAF = null;        // requestAnimationFrame ID (fallback)
+    this._workletReady = null;      // Promise: AudioWorklet registration
+    this._echoGateNode = null;      // AudioWorkletNode for echo gating
 
     this._localStream = null;
     this._inCall = false;
@@ -271,6 +273,15 @@ export class WaymarkConnect {
       gate.connect(analyser);
       analyser.connect(dest);
 
+      // 5. Register AudioWorklet for sample-accurate echo gating.
+      //    Non-blocking — by the time the remote stream arrives (after SDP + ICE)
+      //    this will have resolved. Falls back to rAF if it fails.
+      if (ctx.audioWorklet) {
+        this._workletReady = ctx.audioWorklet
+          .addModule('/js/echo-gate-processor.js')
+          .catch(() => null);
+      }
+
       // Combine processed audio with original video tracks
       const processed = new MediaStream();
       for (const t of dest.stream.getAudioTracks()) processed.addTrack(t);
@@ -289,6 +300,10 @@ export class WaymarkConnect {
       cancelAnimationFrame(this._duckingRAF);
       this._duckingRAF = null;
     }
+    if (this._echoGateNode) {
+      this._echoGateNode.disconnect();
+      this._echoGateNode = null;
+    }
     if (this._audioCtx) {
       this._audioCtx.close().catch(() => {});
       this._audioCtx = null;
@@ -299,18 +314,18 @@ export class WaymarkConnect {
     }
     this._processedStream = null;
     this._micAnalyser = null;
+    this._workletReady = null;
   }
 
   /**
    * Create a remote audio playback pipeline with echo suppression.
    *
-   * Extracts audio tracks from a remote MediaStream, routes through:
-   *   Source → HighPass → DuckingGain → speakers (ctx.destination)
+   * Preferred path: AudioWorklet (sample-accurate ~0.13ms gating on audio thread).
+   * Fallback path: rAF + GainNode (~16ms gating on main thread).
    *
-   * The DuckingGain is driven by a rAF loop that reads the local mic
-   * AnalyserNode. When the user is speaking (mic RMS above threshold),
-   * remote gain is reduced to near-silence so the user doesn't hear
-   * their own delayed voice bounced back by the remote peer.
+   * The AudioWorklet runs in the SAME AudioContext as the mic processing so it
+   * can sidechain the local mic signal. The worklet monitors mic RMS and gates
+   * the remote audio in real time — no main-thread involvement.
    *
    * @param {MediaStream} remoteStream — the remote peer's MediaStream
    * @param {Object} [opts]
@@ -318,50 +333,109 @@ export class WaymarkConnect {
    * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
    * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
    * @param {number} [opts.holdMs=400]           — ms to stay ducked after speech ends
-   * @returns {{ cleanup: Function }} — call cleanup() on hangup
+   * @returns {Promise<{ cleanup: Function }>} — call cleanup() on hangup
    */
-  createRemoteAudioPipeline(remoteStream, opts = {}) {
-    // Clean up previous remote context if any
-    if (this._remoteCtx) {
-      this._remoteCtx.close().catch(() => {});
-      this._remoteCtx = null;
+  async createRemoteAudioPipeline(remoteStream, opts = {}) {
+    // Clean up previous pipeline
+    if (this._echoGateNode) {
+      this._echoGateNode.disconnect();
+      this._echoGateNode = null;
     }
     if (this._duckingRAF) {
       cancelAnimationFrame(this._duckingRAF);
       this._duckingRAF = null;
     }
-
-    const audioTracks = remoteStream.getAudioTracks();
-    if (audioTracks.length === 0) {
-      return { cleanup() {} };
+    if (this._remoteCtx) {
+      this._remoteCtx.close().catch(() => {});
+      this._remoteCtx = null;
     }
 
+    const audioTracks = remoteStream.getAudioTracks();
+    if (audioTracks.length === 0) return { cleanup() {} };
+
+    // Try AudioWorklet path: sample-accurate gating on the audio thread
+    if (this._audioCtx && this._workletReady && this._micAnalyser) {
+      try {
+        await this._workletReady;
+        return this._createWorkletPipeline(audioTracks, opts);
+      } catch { /* fall through to rAF fallback */ }
+    }
+
+    // Fallback: separate AudioContext with rAF-driven gating
+    return this._createFallbackPipeline(audioTracks, opts);
+  }
+
+  /**
+   * AudioWorklet path — echo gating on the audio rendering thread.
+   * Uses the SAME AudioContext as mic processing so the worklet can
+   * sidechain the mic analyser output.
+   */
+  _createWorkletPipeline(audioTracks, opts) {
+    const ctx = this._audioCtx;
+    const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+
+    // High-pass filter on remote playback
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = opts.highPassFreq ?? 120;
+    hp.Q.value = 0.7;
+
+    // Echo gate worklet: input 0 = mic sidechain, input 1 = remote audio
+    const gate = new AudioWorkletNode(ctx, 'echo-gate', {
+      numberOfInputs: 2,
+      numberOfOutputs: 1,
+      parameterData: {
+        suppression: opts.echoSuppression ?? 0.95,
+        threshold: opts.duckThreshold ?? 0.012,
+        holdMs: opts.holdMs ?? 400,
+      },
+    });
+
+    // Wire: mic analyser → gate input 0 (sidechain for level detection)
+    this._micAnalyser.connect(gate, 0, 0);
+    // Wire: remote → hp → gate input 1
+    source.connect(hp);
+    hp.connect(gate, 0, 1);
+    // Wire: gate output → speakers
+    gate.connect(ctx.destination);
+
+    this._echoGateNode = gate;
+
+    const self = this;
+    return {
+      cleanup() {
+        source.disconnect();
+        hp.disconnect();
+        gate.disconnect();
+        try { self._micAnalyser?.disconnect(gate); } catch {}
+        if (self._echoGateNode === gate) self._echoGateNode = null;
+      },
+    };
+  }
+
+  /**
+   * Fallback path — separate AudioContext with requestAnimationFrame gating.
+   * Used when AudioWorklet is unavailable (older browsers, addModule failure).
+   */
+  _createFallbackPipeline(audioTracks, opts) {
     try {
       const ctx = new AudioContext();
       this._remoteCtx = ctx;
 
-      // Source from remote stream
-      const source = ctx.createMediaStreamSource(
-        new MediaStream(audioTracks),
-      );
+      const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
-      // 1. High-pass filter on remote playback
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass';
       hp.frequency.value = opts.highPassFreq ?? 120;
       hp.Q.value = 0.7;
 
-      // 2. Ducking gain node — attenuated when local mic detects speech
       const duckGain = ctx.createGain();
       duckGain.gain.value = 1.0;
 
-      // Wire: source → hp → duckGain → speakers
       source.connect(hp);
       hp.connect(duckGain);
       duckGain.connect(ctx.destination);
 
-      // 3. Echo suppression loop — read local mic level, duck remote when speaking
-      //    echoSuppression: 0 = off (gain stays 1.0), 1 = full mute while speaking
       const suppression = opts.echoSuppression ?? 0.95;
       const gainWhenDucked = Math.max(0, 1 - suppression);
       const duckThreshold = opts.duckThreshold ?? 0.012;
@@ -376,28 +450,16 @@ export class WaymarkConnect {
         const duckLoop = () => {
           if (!this._remoteCtx || ctx.state === 'closed') return;
           analyser.getFloatTimeDomainData(buf);
-
-          // Calculate RMS (root mean square) of mic signal
           let sum = 0;
           for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
           const rms = Math.sqrt(sum / buf.length);
-
           const now = performance.now();
-
-          // Extend hold window whenever speech is detected
           if (rms > duckThreshold) holdUntil = now + holdMs;
-
-          // Stay ducked through hold period to cover pauses between words
           const target = now < holdUntil ? gainWhenDucked : 1.0;
-
-          // Fast attack (0.7), slow release (0.04) to avoid clicks
           const rate = target < smooth.gain ? 0.7 : 0.04;
           smooth.gain += (target - smooth.gain) * rate;
-
-          // Snap to target when very close to avoid asymptotic crawl
           if (Math.abs(smooth.gain - target) < 0.005) smooth.gain = target;
           duckGain.gain.value = smooth.gain;
-
           this._duckingRAF = requestAnimationFrame(duckLoop);
         };
         this._duckingRAF = requestAnimationFrame(duckLoop);

@@ -690,8 +690,11 @@ function openChat(sheetId, displayName, signal) {
     onRemoteStream(stream) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
-        remoteVideo.srcObject = stream;
-        remoteVideo.muted = true; // mute video element — audio goes through ducking pipeline
+        // Attach ONLY video tracks — audio goes exclusively through the echo
+        // suppression pipeline. This prevents any unprocessed audio leaking
+        // through the <video> element (muted attr is unreliable across platforms).
+        const videoOnly = new MediaStream(stream.getVideoTracks());
+        remoteVideo.srcObject = videoOnly;
         remoteAudio.srcObject = null;
         mediaContainer.classList.remove('hidden');
         remoteVideo.play().catch(() => {});
@@ -699,14 +702,21 @@ function openChat(sheetId, displayName, signal) {
         remoteVideo.srcObject = null;
         remoteAudio.srcObject = null;
       }
-      // Route ALL remote audio through the ducking pipeline (audio-only AND video)
-      if (_remoteFilterCleanup) _remoteFilterCleanup();
+      // Route ALL remote audio through the echo suppression pipeline
+      if (_remoteFilterCleanup) { _remoteFilterCleanup(); _remoteFilterCleanup = null; }
       if (stream.getAudioTracks().length > 0 && _activeConnect) {
-        const result = _activeConnect.createRemoteAudioPipeline(stream, {
+        const connect = _activeConnect;
+        connect.createRemoteAudioPipeline(stream, {
           highPassFreq: getHighPassFreq(),
           echoSuppression: getEchoSuppression(),
+        }).then(result => {
+          // Only store cleanup if this is still the active connection
+          if (_activeConnect === connect) {
+            _remoteFilterCleanup = result.cleanup;
+          } else {
+            result.cleanup();
+          }
         });
-        _remoteFilterCleanup = result.cleanup;
       }
       // If we're already in a call (user initiated), just update UI
       if (_activeConnect?.inCall) {
