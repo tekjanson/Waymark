@@ -288,10 +288,10 @@ console.log('\n🔌 Audio Pipeline Wiring Tests\n');
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────
-console.log('━━ 1. _processAudio: Signal chain wiring order');
+console.log('━━ 1. _processAudio: Read-only analyser tap (preserves browser AEC)');
 // ─────────────────────────────────────────────────────────────
 
-test('signal chain is source → highPass → analyser → compressor → destination', () => {
+test('mic path is source → analyser (read-only tap, no output destination)', () => {
   const wc = createInstance();
   const rawStream = new MockMediaStream([
     new MockMediaStreamTrack('audio'),
@@ -300,58 +300,39 @@ test('signal chain is source → highPass → analyser → compressor → destin
 
   const result = wc._processAudio(rawStream);
 
-  // Find the source node (should be the first node created on the context)
   const ctx = wc._audioCtx;
   assert(ctx, 'AudioContext should be created');
 
   const source = ctx._nodesCreated.find(n => n._type === 'MediaStreamSource');
   assert(source, 'MediaStreamSource should be created');
 
-  // Trace the full signal path
+  // Trace the path: should be source → analyser only
   const path = tracePath(source);
-  const expected = ['MediaStreamSource', 'BiquadFilter', 'Analyser', 'DynamicsCompressor', 'MediaStreamDestination'];
+  const expected = ['MediaStreamSource', 'Analyser'];
   assert(
     JSON.stringify(path) === JSON.stringify(expected),
     `Expected path ${expected.join(' → ')} but got ${path.join(' → ')}`,
   );
 });
 
-test('analyser is wired BEFORE compressor (not after)', () => {
+test('no HP filter or compressor in mic path (browser AEC preserved)', () => {
   const wc = createInstance();
-  const rawStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
-  wc._processAudio(rawStream);
+  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
 
   const ctx = wc._audioCtx;
-  const source = ctx._nodesCreated.find(n => n._type === 'MediaStreamSource');
-  const path = tracePath(source);
-
-  const analyserIdx = path.indexOf('Analyser');
-  const compressorIdx = path.indexOf('DynamicsCompressor');
-  assert(analyserIdx >= 0, 'Analyser should be in the signal chain');
-  assert(compressorIdx >= 0, 'DynamicsCompressor should be in the signal chain');
-  assert(
-    analyserIdx < compressorIdx,
-    `Analyser (index ${analyserIdx}) must come BEFORE DynamicsCompressor (index ${compressorIdx}). ` +
-    `If the analyser is after the compressor, RMS is crushed to ~0.004 regardless of input, ` +
-    `making the echo gate threshold useless.`,
-  );
+  const hp = ctx._nodesCreated.find(n => n._type === 'BiquadFilter');
+  const comp = ctx._nodesCreated.find(n => n._type === 'DynamicsCompressor');
+  assert(!hp, 'No BiquadFilter should exist in mic path (would break AEC)');
+  assert(!comp, 'No DynamicsCompressor should exist in mic path (would break AEC)');
 });
 
-test('highPass filter is first in chain (before analyser and compressor)', () => {
+test('no MediaStreamDestination in mic path (raw track sent to peers)', () => {
   const wc = createInstance();
-  const rawStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
-  wc._processAudio(rawStream);
+  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
 
   const ctx = wc._audioCtx;
-  const source = ctx._nodesCreated.find(n => n._type === 'MediaStreamSource');
-  const path = tracePath(source);
-
-  const hpIdx = path.indexOf('BiquadFilter');
-  const analyserIdx = path.indexOf('Analyser');
-  const compressorIdx = path.indexOf('DynamicsCompressor');
-  assert(hpIdx === 1, `BiquadFilter should be at index 1 (after source), got ${hpIdx}`);
-  assert(hpIdx < analyserIdx, 'HighPass must come before Analyser');
-  assert(hpIdx < compressorIdx, 'HighPass must come before DynamicsCompressor');
+  const dest = ctx._nodesCreated.find(n => n._type === 'MediaStreamDestination');
+  assert(!dest, 'No MediaStreamDestination should exist — raw stream goes to peers');
 });
 
 test('mic analyser is stored on instance for sidechain use', () => {
@@ -369,61 +350,46 @@ test('mic analyser is stored on instance for sidechain use', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-console.log('\n━━ 2. _processAudio: Node parameters');
+console.log('\n━━ 2. _processAudio: Browser AEC preservation');
 // ─────────────────────────────────────────────────────────────
 
-test('highPass defaults to 80 Hz when no opts provided', () => {
+test('returns the ORIGINAL raw stream (not a processed copy)', () => {
   const wc = createInstance();
-  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
-  const hp = wc._audioCtx._nodesCreated.find(n => n._type === 'BiquadFilter');
-  assert(hp.type === 'highpass', `Filter type should be highpass, got ${hp.type}`);
-  assert(hp.frequency.value === 80, `Frequency should be 80, got ${hp.frequency.value}`);
-  assert(hp.Q.value === 0.7, `Q should be 0.7, got ${hp.Q.value}`);
+  const audioTrack = new MockMediaStreamTrack('audio');
+  const raw = new MockMediaStream([audioTrack]);
+  const result = wc._processAudio(raw);
+  assert(result === raw, 'Must return the original raw stream to preserve browser AEC');
+  assert(result.getAudioTracks()[0] === audioTrack, 'Audio track must be the original getUserMedia track');
 });
 
-test('highPass uses custom frequency from opts', () => {
+test('returning raw stream preserves browser echoCancellation constraint', () => {
+  // If _processAudio returns a new MediaStreamDestination track, Chrome\'s
+  // AEC loses the reference to the capture device and echo cancellation
+  // stops working. This test ensures we return the ORIGINAL track.
   const wc = createInstance();
-  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]), { highPassFreq: 150 });
-  const hp = wc._audioCtx._nodesCreated.find(n => n._type === 'BiquadFilter');
-  assert(hp.frequency.value === 150, `Frequency should be 150, got ${hp.frequency.value}`);
-});
-
-test('compressor defaults to -50 dB threshold with 20:1 ratio', () => {
-  const wc = createInstance();
-  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
-  const gate = wc._audioCtx._nodesCreated.find(n => n._type === 'DynamicsCompressor');
-  assert(gate.threshold.value === -50, `Threshold should be -50, got ${gate.threshold.value}`);
-  assert(gate.ratio.value === 20, `Ratio should be 20, got ${gate.ratio.value}`);
-  assert(gate.knee.value === 2, `Knee should be 2, got ${gate.knee.value}`);
-  assert(gate.attack.value === 0.002, `Attack should be 0.002, got ${gate.attack.value}`);
-  assert(gate.release.value === 0.05, `Release should be 0.05, got ${gate.release.value}`);
-});
-
-test('compressor uses custom gateThreshold from opts', () => {
-  const wc = createInstance();
-  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]), { gateThreshold: -35 });
-  const gate = wc._audioCtx._nodesCreated.find(n => n._type === 'DynamicsCompressor');
-  assert(gate.threshold.value === -35, `Threshold should be -35, got ${gate.threshold.value}`);
+  const original = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  const result = wc._processAudio(original);
+  assert(result === original,
+    'Raw stream must be returned unchanged — Web Audio MediaStreamDestination ' +
+    'tracks bypass Chrome\'s AEC on Linux (PipeWire, PulseAudio, ALSA)');
 });
 
 // ─────────────────────────────────────────────────────────────
 console.log('\n━━ 3. _processAudio: Output stream composition');
 // ─────────────────────────────────────────────────────────────
 
-test('output stream has processed audio + original video tracks', () => {
+test('output stream is the original raw stream with all tracks intact', () => {
   const wc = createInstance();
   const audioTrack = new MockMediaStreamTrack('audio');
   const videoTrack = new MockMediaStreamTrack('video');
   const raw = new MockMediaStream([audioTrack, videoTrack]);
 
   const result = wc._processAudio(raw);
-  assert(result instanceof MockMediaStream, 'Should return a MediaStream');
-  assert(result.getAudioTracks().length === 1, 'Should have 1 audio track (processed)');
+  assert(result === raw, 'Should return the original raw stream');
+  assert(result.getAudioTracks().length === 1, 'Should have 1 audio track');
   assert(result.getVideoTracks().length === 1, 'Should have 1 video track');
-  // The video track should be the ORIGINAL one (passthrough)
-  assert(result.getVideoTracks()[0] === videoTrack, 'Video track should be the original (passthrough)');
-  // The audio track should NOT be the original (it's from the processing chain)
-  assert(result.getAudioTracks()[0] !== audioTrack, 'Audio track should be processed, not original');
+  assert(result.getAudioTracks()[0] === audioTrack, 'Audio track should be the ORIGINAL (browser AEC intact)');
+  assert(result.getVideoTracks()[0] === videoTrack, 'Video track should be the original');
 });
 
 test('no-audio stream is returned unchanged', () => {
@@ -482,8 +448,8 @@ test('worklet failure does not break _processAudio (catch → null)', () => {
 
   const result = wc._processAudio(raw);
 
-  // Should still return a valid processed stream (not the raw one)
-  assert(result instanceof MockMediaStream, 'Should still return a MediaStream');
+  // Should return the raw stream (browser AEC preserved)
+  assert(result === raw, 'Should return raw stream even when worklet fails');
   assert(result.getAudioTracks().length === 1, 'Should still have 1 audio track');
 
   globalThis.window.AudioContext = origCtor;
@@ -738,40 +704,38 @@ test('teardownAudio resets all audio state', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-console.log('\n━━ 9. Regression: analyser position prevents echo gate from triggering');
+console.log('\n━━ 9. AEC preservation: mic audio must NOT route through Web Audio output');
 // ─────────────────────────────────────────────────────────────
 
-test('analyser is connected directly to highPass output (not compressor output)', () => {
+test('source connects directly to analyser (no intermediate processing)', () => {
   const wc = createInstance();
   wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
 
-  // The highPass node's FIRST connection target must be the analyser
   const ctx = wc._audioCtx;
   const source = ctx._nodesCreated.find(n => n._type === 'MediaStreamSource');
-  const hp = source._connections[0].target;
-  assert(hp._type === 'BiquadFilter', 'Source first connection should be HP filter');
-
-  const analyser = hp._connections[0].target;
-  assert(analyser._type === 'Analyser',
-    `HP filter output should go to Analyser, got ${analyser._type}. ` +
-    `If HP → Compressor → Analyser, the compressor crushes dynamics to ~0.004 RMS ` +
-    `and the echo gate threshold (0.03) is never reached.`);
+  assert(source._connections.length === 1, 'Source should have exactly one connection');
+  const target = source._connections[0].target;
+  assert(target._type === 'Analyser',
+    `Source should connect directly to Analyser, got ${target._type}. ` +
+    `Routing mic through HP/compressor/destination creates a new track that ` +
+    `bypasses Chrome\'s AEC on Linux (PipeWire, PulseAudio, ALSA).`);
 });
 
-test('compressor is the LAST processing node before destination', () => {
+test('analyser has no downstream output (read-only sidechain tap)', () => {
   const wc = createInstance();
   wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
 
-  const ctx = wc._audioCtx;
-  const dest = ctx._nodesCreated.find(n => n._type === 'MediaStreamDestination');
-  // Who connects to dest? Should be the compressor.
-  const compressor = ctx._nodesCreated.find(n => n._type === 'DynamicsCompressor');
-  const compToDest = compressor._connections.find(c => c.target === dest);
-  assert(compToDest, 'Compressor should connect directly to destination');
-  // Analyser should NOT connect to destination
-  const analyser = ctx._nodesCreated.find(n => n._type === 'Analyser');
-  const analyserToDest = analyser._connections.find(c => c.target === dest);
-  assert(!analyserToDest, 'Analyser should NOT connect directly to destination');
+  const analyser = wc._micAnalyser;
+  // Analyser should have NO connections to any output nodes
+  // (connections TO it from source are fine, connections FROM it to gate
+  // are added later by createRemoteAudioPipeline)
+  const downstreamTypes = analyser._connections.map(c => c.target._type);
+  const badOutputs = downstreamTypes.filter(t =>
+    t === 'MediaStreamDestination' || t === 'DynamicsCompressor' || t === 'Gain');
+  assert(badOutputs.length === 0,
+    `Analyser should not connect to output nodes, got: ${badOutputs.join(', ')}. ` +
+    `The mic analyser is a read-only tap — sending its output anywhere would ` +
+    `create a processed track that bypasses browser AEC.`);
 });
 
 // ─────────────────────────────────────────────────────────────

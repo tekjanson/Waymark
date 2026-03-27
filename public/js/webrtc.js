@@ -237,72 +237,53 @@ export class WaymarkConnect {
   /* ---------- Web Audio processing pipeline ---------- */
 
   /**
-   * Route mic audio through a processing chain to suppress echo and noise.
-   * Chain: Source → HighPass → NoiseGate (compressor) → Destination
-   * Also creates a mic-level AnalyserNode used for echo ducking.
-   * Video tracks pass through unchanged.
+   * Set up mic-level analysis for the echo gate sidechain and register
+   * the AudioWorklet. The ORIGINAL getUserMedia audio tracks are returned
+   * unchanged — the browser's built-in AEC/NS/AGC operate on those tracks
+   * and routing them through Web Audio processing (MediaStreamSource →
+   * nodes → MediaStreamDestination) would produce a NEW track that bypasses
+   * Chrome's echo cancellation pipeline.
+   *
+   * The Web Audio graph here is read-only: we tap the mic signal through
+   * an AnalyserNode so the echo gate worklet can sidechain local mic levels.
    *
    * @param {MediaStream} raw — getUserMedia stream
-   * @param {Object} opts — { highPassFreq, gateThreshold }
-   * @returns {MediaStream} processed stream for peer connections
+   * @param {Object} opts — (unused, kept for API compat)
+   * @returns {MediaStream} raw stream (unmodified, browser AEC intact)
    */
   _processAudio(raw, opts = {}) {
     const audioTracks = raw.getAudioTracks();
-    if (audioTracks.length === 0) return raw; // no audio to process
+    if (audioTracks.length === 0) return raw;
 
     try {
       const ctx = new AudioContext();
       this._audioCtx = ctx;
+
+      // Create a read-only tap of the mic signal for level analysis.
+      // This does NOT modify the audio sent to peers.
       const source = ctx.createMediaStreamSource(raw);
 
-      // 1. High-pass filter: cut low-frequency room reverb & rumble
-      const highPass = ctx.createBiquadFilter();
-      highPass.type = 'highpass';
-      highPass.frequency.value = opts.highPassFreq ?? 80;
-      highPass.Q.value = 0.7;
-
-      // 2. Noise gate via DynamicsCompressor
-      const gate = ctx.createDynamicsCompressor();
-      gate.threshold.value = opts.gateThreshold ?? -50;
-      gate.knee.value = 2;
-      gate.ratio.value = 20;
-      gate.attack.value = 0.002;
-      gate.release.value = 0.05;
-
-      // 3. AnalyserNode — tapped BEFORE the compressor so the echo gate
-      //    reads pre-compression mic levels with accurate dynamics.
-      //    Post-compressor RMS is crushed to ~0.004 regardless of input,
-      //    which makes the echo gate threshold useless.
+      // AnalyserNode reads mic levels for the echo gate sidechain.
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.5;
       this._micAnalyser = analyser;
 
-      // 4. Output destination — produces a new MediaStream
-      const dest = ctx.createMediaStreamDestination();
+      // Wire: source → analyser (read-only tap, no output destination)
+      // The analyser sits in the graph so it receives data, but nothing
+      // downstream plays audio — the raw stream goes to peers untouched.
+      source.connect(analyser);
 
-      // Wire: source → highPass → analyser → gate (compressor) → dest
-      source.connect(highPass);
-      highPass.connect(analyser);
-      analyser.connect(gate);
-      gate.connect(dest);
-
-      // 5. Register AudioWorklet for sample-accurate echo gating.
-      //    Non-blocking — by the time the remote stream arrives (after SDP + ICE)
-      //    this will have resolved. Falls back to rAF if it fails.
+      // Register AudioWorklet for sample-accurate echo gating on remote audio.
       if (ctx.audioWorklet) {
         this._workletReady = ctx.audioWorklet
           .addModule('/js/echo-gate-processor.js')
           .catch(() => null);
       }
 
-      // Combine processed audio with original video tracks
-      const processed = new MediaStream();
-      for (const t of dest.stream.getAudioTracks()) processed.addTrack(t);
-      for (const t of raw.getVideoTracks()) processed.addTrack(t);
-
-      this._processedStream = processed;
-      return processed;
+      // Return the ORIGINAL stream — browser AEC/NS/AGC are preserved.
+      this._processedStream = raw;
+      return raw;
     } catch {
       return raw;
     }
