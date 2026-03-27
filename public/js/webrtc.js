@@ -403,11 +403,9 @@ export class WaymarkConnect {
       } catch { /* fall through to rAF fallback */ }
     }
 
-    // Fallback: rAF-driven gating with a DEDICATED AudioContext for remote
-    // playback. Using a separate context keeps remote audio alive even when
-    // _teardownAudio closes _audioCtx (e.g. during call reconnection).
-    // Audio is routed to ctx.destination (speakers) — this bypasses the <audio>
-    // element autoplay policy which fails from ICE callbacks (no user gesture).
+    // Fallback: rAF-driven gating on the EXISTING _audioCtx (created during
+    // user gesture in startCall). Routes to BOTH ctx.destination (speakers,
+    // bypasses autoplay) AND MediaStreamDestination (<audio> AEC reference).
     return this._createFallbackPipeline(audioTracks, opts);
   }
 
@@ -469,21 +467,30 @@ export class WaymarkConnect {
   }
 
   /**
-   * Fallback path — dedicated AudioContext with rAF-driven echo ducking.
+   * Fallback path — rAF-driven echo ducking on the EXISTING _audioCtx.
    * Used when AudioWorklet is unavailable (older browsers, addModule failure).
    *
-   * Creates its OWN AudioContext and routes to ctx.destination (speakers).
-   * This is the original proven pattern from the first working audio commit.
-   * ctx.destination bypasses Chrome's <audio> autoplay policy — audio plays
-   * immediately without a user gesture on the call stack.
+   * MUST use the existing _audioCtx (created during startCall user gesture)
+   * because creating a new AudioContext from an ICE callback starts it
+   * SUSPENDED — Chrome requires a user gesture to resume, and a suspended
+   * context processes zero audio through ALL nodes (destination AND
+   * MediaStreamDestination both go silent).
+   *
+   * Audio is routed to BOTH destinations:
+   *   1. ctx.destination — direct to speakers, bypasses <audio> autoplay policy
+   *   2. MediaStreamDestination — output stream for <audio> AEC reference
    */
   _createFallbackPipeline(audioTracks, opts) {
     try {
-      const ctx = new AudioContext();
-      this._remoteCtx = ctx;
-      // Resume immediately — on desktop this works without gesture,
-      // on mobile we'll also try the <audio> element as backup.
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      // Reuse mic AudioContext (created during user gesture, already running).
+      // Only create a new one as absolute last resort — it will likely be
+      // suspended but we try resume() and the <audio> element may still work.
+      const useExisting = !!this._audioCtx;
+      const ctx = this._audioCtx || new AudioContext();
+      if (!useExisting) {
+        this._remoteCtx = ctx;
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      }
 
       const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
@@ -495,17 +502,17 @@ export class WaymarkConnect {
       const duckGain = ctx.createGain();
       duckGain.gain.value = 1.0;
 
-      // PRIMARY: route to ctx.destination (speakers) — this always works
-      // on desktop. On mobile, if ctx is suspended, the <audio> element
-      // with outputStream serves as backup.
       source.connect(hp);
       hp.connect(duckGain);
+
+      // PRIMARY: route to ctx.destination (speakers). Since _audioCtx was
+      // created during startCall (user gesture), it's already running —
+      // audio plays immediately with no autoplay restrictions.
       duckGain.connect(ctx.destination);
 
-      // SECONDARY: also route to MediaStreamDestination so the caller
-      // can set remoteAudio.srcObject for <audio> element playback.
-      // On mobile (where ctx.destination may be suspended), this is the
-      // actual audio output. On desktop, it serves as AEC reference.
+      // SECONDARY: also route to MediaStreamDestination so the caller can
+      // set remoteAudio.srcObject. This gives Chrome's AEC a reference
+      // signal and serves as backup playback via the <audio> element.
       const dest = ctx.createMediaStreamDestination();
       duckGain.connect(dest);
 
@@ -529,7 +536,6 @@ export class WaymarkConnect {
           const now = performance.now();
           if (rms > duckThreshold) holdUntil = now + holdMs;
           const target = now < holdUntil ? gainWhenDucked : 1.0;
-          // Instant attack: jump to muted immediately. Slow release for smooth fade-in.
           if (target < smooth.gain) {
             smooth.gain = target;
           } else {
@@ -543,6 +549,7 @@ export class WaymarkConnect {
       }
 
       const self = this;
+      const ownCtx = !useExisting;
       return {
         outputStream: dest.stream,
         cleanup() {
@@ -553,13 +560,14 @@ export class WaymarkConnect {
           source.disconnect();
           hp.disconnect();
           duckGain.disconnect();
-          ctx.close().catch(() => {});
-          if (self._remoteCtx === ctx) self._remoteCtx = null;
+          // Only close the context if we created it — don't close shared _audioCtx
+          if (ownCtx) {
+            ctx.close().catch(() => {});
+            if (self._remoteCtx === ctx) self._remoteCtx = null;
+          }
         },
       };
     } catch (err) {
-      // Pipeline node creation failed (e.g. context closed mid-setup).
-      // Fall back to raw passthrough — silence-free degradation.
       console.warn('[webrtc] fallback pipeline failed, using raw passthrough:', err?.message || err);
       const raw = new MediaStream(audioTracks);
       return { outputStream: raw, cleanup() {} };
