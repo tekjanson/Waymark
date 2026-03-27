@@ -403,6 +403,8 @@ function openChat(sheetId, displayName, signal) {
       <div class="social-debug-meter"><div class="social-debug-meter-fill sd-mic-meter"></div><span class="social-debug-meter-val sd-mic-val">—</span></div>
       <div class="social-debug-label">Remote Level</div>
       <div class="social-debug-meter"><div class="social-debug-meter-fill sd-rem-meter" style="background:#5bf"></div><span class="social-debug-meter-val sd-rem-val">—</span></div>
+      <div class="social-debug-label">Audio Out (speakers)</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-out-meter" style="background:#f80"></div><span class="social-debug-meter-val sd-out-val">—</span></div>
     </div>
     <div class="social-debug-section">
       <div class="social-debug-label">Echo Gate</div>
@@ -488,6 +490,8 @@ function openChat(sheetId, displayName, signal) {
       micVal: debugPanel.querySelector('.sd-mic-val'),
       remMeter: debugPanel.querySelector('.sd-rem-meter'),
       remVal: debugPanel.querySelector('.sd-rem-val'),
+      outMeter: debugPanel.querySelector('.sd-out-meter'),
+      outVal: debugPanel.querySelector('.sd-out-val'),
       gateState: debugPanel.querySelector('.sd-gate-state'),
       gateGain: debugPanel.querySelector('.sd-gate-gain'),
       gateHold: debugPanel.querySelector('.sd-gate-hold'),
@@ -524,21 +528,63 @@ function openChat(sheetId, displayName, signal) {
     // Live mic level via AnalyserNode (independent of worklet)
     const analyser = connect._micAnalyser;
     let micRAF = 0;
+    // Audio out monitoring (what actually reaches speakers)
+    let outAnalyser = null;
+    let outSource = null;
+    let outBuf = null;
+
     if (analyser) {
       const buf = new Float32Array(analyser.fftSize);
-      const updateMicMeter = () => {
+      const updateMeters = () => {
         if (!connect._audioCtx) return;
+        // Mic level
         analyser.getFloatTimeDomainData(buf);
         let sum = 0;
         for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
         const rmsVal = Math.sqrt(sum / buf.length);
-        const pct = Math.min(100, rmsVal * 500); // scale 0-0.2 → 0-100%
+        const pct = Math.min(100, rmsVal * 500);
         els.micMeter.style.width = pct + '%';
         els.micMeter.style.background = rmsVal > 0.05 ? '#5f5' : rmsVal > 0.02 ? '#ff5' : '#555';
         els.micVal.textContent = rmsVal.toFixed(4);
-        micRAF = requestAnimationFrame(updateMicMeter);
+
+        // Audio out level
+        if (outAnalyser && outBuf) {
+          outAnalyser.getFloatTimeDomainData(outBuf);
+          let oSum = 0;
+          for (let i = 0; i < outBuf.length; i++) oSum += outBuf[i] * outBuf[i];
+          const outRms = Math.sqrt(oSum / outBuf.length);
+          const oPct = Math.min(100, outRms * 500);
+          els.outMeter.style.width = oPct + '%';
+          els.outMeter.style.background = outRms > 0.05 ? '#f55' : outRms > 0.01 ? '#f80' : '#555';
+          els.outVal.textContent = outRms.toFixed(4);
+        } else if (remoteAudio.srcObject) {
+          // Output stream appeared — attach analyser
+          try {
+            const outCtx = connect._audioCtx;
+            outSource = outCtx.createMediaStreamSource(remoteAudio.srcObject);
+            outAnalyser = outCtx.createAnalyser();
+            outAnalyser.fftSize = 256;
+            outAnalyser.smoothingTimeConstant = 0.5;
+            outSource.connect(outAnalyser);
+            outBuf = new Float32Array(outAnalyser.fftSize);
+            debugLog('Audio out monitoring attached');
+          } catch { /* output stream may not be ready yet */ }
+        }
+
+        micRAF = requestAnimationFrame(updateMeters);
       };
-      micRAF = requestAnimationFrame(updateMicMeter);
+      micRAF = requestAnimationFrame(updateMeters);
+    }
+
+    // Detect audio leak: warn if localVideo has audio tracks
+    const lvTracks = localVideo.srcObject?.getAudioTracks?.() || [];
+    if (lvTracks.length > 0) {
+      debugLog('⚠️ LOCAL VIDEO HAS AUDIO TRACKS — possible feedback loop!');
+    }
+    // Also check remoteVideo
+    const rvTracks = remoteVideo.srcObject?.getAudioTracks?.() || [];
+    if (rvTracks.length > 0) {
+      debugLog('⚠️ REMOTE VIDEO HAS AUDIO TRACKS — possible unprocessed audio leak!');
     }
 
     // Worklet diagnostic messages
@@ -592,6 +638,7 @@ function openChat(sheetId, displayName, signal) {
 
     _debugCleanup = () => {
       if (micRAF) cancelAnimationFrame(micRAF);
+      if (outSource) { try { outSource.disconnect(); } catch {} }
       if (gate?.port && gateHandler) {
         try { gate.port.postMessage({ type: 'disable-diag' }); } catch {}
         gate.port.removeEventListener('message', gateHandler);
@@ -682,7 +729,8 @@ function openChat(sheetId, displayName, signal) {
             Date.now(), false);
         }
       } else {
-        localVideo.srcObject = stream;
+        localVideo.srcObject = stream.getVideoTracks().length
+          ? new MediaStream(stream.getVideoTracks()) : null;
         enterCallUI(constraints.video);
       }
     } catch (err) {
@@ -710,7 +758,8 @@ function openChat(sheetId, displayName, signal) {
       if (stream?._listenOnly) {
         appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
       } else {
-        localVideo.srcObject = stream;
+        localVideo.srcObject = stream.getVideoTracks().length
+          ? new MediaStream(stream.getVideoTracks()) : null;
       }
       enterCallUI(withVideo && !stream?._listenOnly);
     } catch (err) {
