@@ -90,6 +90,7 @@ export class WaymarkConnect {
 
     this._localStream = null;
     this._inCall = false;
+    this._remoteStreams = new Map(); // peerId → MediaStream (for pipeline rebuild)
 
     this._onUnload = () => {
       if (this.signal && this._block >= 0) {
@@ -188,6 +189,17 @@ export class WaymarkConnect {
     const n = { type: 'call-start', peerId: this.peerId, name: this.displayName };
     this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
+
+    // If remote streams arrived BEFORE mic processing was ready (answerer
+    // scenario), re-emit onRemoteStream so the echo suppression pipeline
+    // is rebuilt with the now-available _micAnalyser.
+    if (this._micAnalyser) {
+      for (const [peerId, stream] of this._remoteStreams) {
+        if (stream.getAudioTracks().length > 0) {
+          this.onRemoteStream(stream, peerId);
+        }
+      }
+    }
 
     // Return stream with metadata for the UI
     if (listenOnly) {
@@ -354,6 +366,13 @@ export class WaymarkConnect {
 
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return { cleanup() {} };
+
+    // If mic processing isn't ready yet (answerer hasn't accepted the call),
+    // don't play remote audio at all — it would bypass echo suppression.
+    // The pipeline will be rebuilt when startCall sets up _micAnalyser.
+    if (!this._micAnalyser) {
+      return { cleanup() {} };
+    }
 
     // Resume AudioContext if suspended (required on mobile after tab switch)
     if (this._audioCtx?.state === 'suspended') {
@@ -532,6 +551,7 @@ export class WaymarkConnect {
     for (const [id] of this._rtc) this._closeOne(id);
     this._clearBlock();
     this._peers.clear();
+    this._remoteStreams.clear();
     this.onStatusChanged('disconnected');
   }
 
@@ -550,6 +570,7 @@ export class WaymarkConnect {
     try { r.dc?.close(); } catch {}
     try { r.pc?.close(); } catch {}
     this._rtc.delete(peerId);
+    this._remoteStreams.delete(peerId);
   }
 
   _emitPeers() {
@@ -788,7 +809,10 @@ export class WaymarkConnect {
 
   _wirePC(remotePeerId, pc) {
     pc.ontrack = (e) => {
-      if (e.streams?.[0]) this.onRemoteStream(e.streams[0], remotePeerId);
+      if (e.streams?.[0]) {
+        this._remoteStreams.set(remotePeerId, e.streams[0]);
+        this.onRemoteStream(e.streams[0], remotePeerId);
+      }
     };
 
     pc.oniceconnectionstatechange = () => {

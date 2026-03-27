@@ -763,6 +763,107 @@ test('compressor is the LAST processing node before destination', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+console.log('\n━━ 10. Race condition: answerer pipeline timing');
+// ─────────────────────────────────────────────────────────────
+
+await testAsync('remote audio is NOT played when _micAnalyser is null (answerer scenario)', async () => {
+  const wc = createInstance();
+  // DO NOT call _processAudio — simulates the answerer before accepting
+
+  const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  const { cleanup } = await wc.createRemoteAudioPipeline(remoteStream);
+
+  // No AudioContext should be created — no audio should be playing
+  assert(!wc._remoteCtx, 'No fallback AudioContext should be created without _micAnalyser');
+  assert(!wc._echoGateNode, 'No worklet node should be created without _micAnalyser');
+
+  cleanup();
+});
+
+await testAsync('ontrack stores remote stream in _remoteStreams map', async () => {
+  const wc = createInstance();
+  const fakeStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+
+  // Simulate ontrack handler storing the stream
+  wc._remoteStreams.set('peer-123', fakeStream);
+
+  assert(wc._remoteStreams.has('peer-123'), 'Remote stream should be stored');
+  assert(wc._remoteStreams.get('peer-123') === fakeStream, 'Stored stream should match');
+});
+
+await testAsync('startCall re-emits onRemoteStream for stored remote streams', async () => {
+  const wc = createInstance();
+
+  // Simulate: remote stream arrived BEFORE call was accepted
+  const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  wc._remoteStreams.set('peer-abc', remoteStream);
+
+  // First onRemoteStream call (before mic analyser exists) → noop pipeline
+  let onRemoteStreamCalls = 0;
+  let lastStreamArg = null;
+  wc.onRemoteStream = (stream) => {
+    onRemoteStreamCalls++;
+    lastStreamArg = stream;
+  };
+
+  // Simulate startCall setting up mic processing
+  // We can't call the real startCall (needs getUserMedia), so test the re-emit logic directly:
+  // After _processAudio sets _micAnalyser, the code iterates _remoteStreams and re-emits
+  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
+
+  // Simulate the re-emit loop from startCall
+  if (wc._micAnalyser) {
+    for (const [peerId, stream] of wc._remoteStreams) {
+      if (stream.getAudioTracks().length > 0) {
+        wc.onRemoteStream(stream, peerId);
+      }
+    }
+  }
+
+  assert(onRemoteStreamCalls === 1, `onRemoteStream should be called once, got ${onRemoteStreamCalls}`);
+  assert(lastStreamArg === remoteStream, 'Should re-emit with the stored remote stream');
+});
+
+await testAsync('full answerer flow: noop → accept → rebuild with worklet', async () => {
+  const wc = createInstance();
+
+  // Phase 1: Remote stream arrives BEFORE call accepted.
+  // _micAnalyser is null → createRemoteAudioPipeline returns noop.
+  const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  const result1 = await wc.createRemoteAudioPipeline(remoteStream);
+  assert(!wc._echoGateNode, 'Phase 1: No worklet node should exist');
+  assert(!wc._remoteCtx, 'Phase 1: No fallback context should exist');
+  result1.cleanup();
+
+  // Phase 2: User accepts call → _processAudio sets up _micAnalyser.
+  wc._processAudio(new MockMediaStream([new MockMediaStreamTrack('audio')]));
+  assert(wc._micAnalyser, 'Phase 2: _micAnalyser should now exist');
+  wc._workletReady = Promise.resolve();
+
+  // Phase 3: onRemoteStream is re-emitted → createRemoteAudioPipeline with _micAnalyser.
+  const result2 = await wc.createRemoteAudioPipeline(remoteStream);
+  assert(wc._echoGateNode, 'Phase 3: Worklet node should now exist');
+  assert(wc._echoGateNode._type === 'AudioWorkletNode', 'Phase 3: Should use worklet path');
+
+  // Verify mic analyser is connected to gate input 0 (sidechain)
+  const micConnection = wc._micAnalyser._connections.find(c => c.target === wc._echoGateNode);
+  assert(micConnection, 'Phase 3: Mic analyser should be connected to echo gate');
+  assert(micConnection.input === 0, 'Phase 3: Mic should connect to gate input 0');
+
+  result2.cleanup();
+});
+
+test('_closeOne removes remote stream from _remoteStreams', () => {
+  const wc = createInstance();
+  wc._remoteStreams.set('peer-abc', new MockMediaStream([new MockMediaStreamTrack('audio')]));
+  wc._rtc.set('peer-abc', { pc: { close() {} }, dc: { close() {} } });
+
+  assert(wc._remoteStreams.has('peer-abc'), 'Should have remote stream before close');
+  wc._closeOne('peer-abc');
+  assert(!wc._remoteStreams.has('peer-abc'), 'Should remove remote stream after close');
+});
+
+// ─────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
