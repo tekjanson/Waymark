@@ -332,7 +332,7 @@ export class WaymarkConnect {
    * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
    * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
    * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
-   * @param {number} [opts.holdMs=400]           — ms to stay ducked after speech ends
+   * @param {number} [opts.holdMs=1500]           — base hold after speech ends (auto-extends on echo detection)
    * @returns {Promise<{ cleanup: Function }>} — call cleanup() on hangup
    */
   async createRemoteAudioPipeline(remoteStream, opts = {}) {
@@ -352,6 +352,11 @@ export class WaymarkConnect {
 
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return { cleanup() {} };
+
+    // Resume AudioContext if suspended (required on mobile after tab switch)
+    if (this._audioCtx?.state === 'suspended') {
+      await this._audioCtx.resume().catch(() => {});
+    }
 
     // Try AudioWorklet path: sample-accurate gating on the audio thread
     if (this._audioCtx && this._workletReady && this._micAnalyser) {
@@ -387,7 +392,7 @@ export class WaymarkConnect {
       parameterData: {
         suppression: opts.echoSuppression ?? 0.95,
         threshold: opts.duckThreshold ?? 0.012,
-        holdMs: opts.holdMs ?? 400,
+        holdMs: opts.holdMs ?? 1500,
       },
     });
 
@@ -439,7 +444,7 @@ export class WaymarkConnect {
       const suppression = opts.echoSuppression ?? 0.95;
       const gainWhenDucked = Math.max(0, 1 - suppression);
       const duckThreshold = opts.duckThreshold ?? 0.012;
-      const holdMs = opts.holdMs ?? 400;
+      const holdMs = opts.holdMs ?? 1500;
       const analyser = this._micAnalyser;
 
       if (analyser && suppression > 0) {
@@ -456,9 +461,13 @@ export class WaymarkConnect {
           const now = performance.now();
           if (rms > duckThreshold) holdUntil = now + holdMs;
           const target = now < holdUntil ? gainWhenDucked : 1.0;
-          const rate = target < smooth.gain ? 0.7 : 0.04;
-          smooth.gain += (target - smooth.gain) * rate;
-          if (Math.abs(smooth.gain - target) < 0.005) smooth.gain = target;
+          // Instant attack: jump to muted immediately. Slow release for smooth fade-in.
+          if (target < smooth.gain) {
+            smooth.gain = target;
+          } else {
+            smooth.gain += (target - smooth.gain) * 0.04;
+            if (Math.abs(smooth.gain - target) < 0.005) smooth.gain = target;
+          }
           duckGain.gain.value = smooth.gain;
           this._duckingRAF = requestAnimationFrame(duckLoop);
         };
