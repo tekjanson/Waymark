@@ -105,7 +105,7 @@ function runProcessor(micSignal, remoteSignal, params = {}) {
 
   const p = {
     suppression: [params.suppression ?? 0.95],
-    threshold: [params.threshold ?? 0.012],
+    threshold: [params.threshold ?? 0.03],
     holdMs: [params.holdMs ?? 3000],
   };
 
@@ -149,7 +149,7 @@ function runProcessorFixed(micSignal, remoteSignal, params = {}) {
 
   const p = {
     suppression: [params.suppression ?? 0.95],
-    threshold: [params.threshold ?? 0.012],
+    threshold: [params.threshold ?? 0.03],
     holdMs: [params.holdMs ?? 3000],
   };
 
@@ -194,7 +194,7 @@ function runWithTrace(micSignal, remoteSignal, params = {}) {
 
   const p = {
     suppression: [params.suppression ?? 0.95],
-    threshold: [params.threshold ?? 0.012],
+    threshold: [params.threshold ?? 0.03],
     holdMs: [params.holdMs ?? 3000],
   };
 

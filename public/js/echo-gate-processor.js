@@ -33,7 +33,7 @@ class EchoGateProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       { name: 'suppression', defaultValue: 0.95, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'threshold', defaultValue: 0.012, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'threshold', defaultValue: 0.03, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'holdMs', defaultValue: 3000, minValue: 0, maxValue: 8000, automationRate: 'k-rate' },
     ];
   }

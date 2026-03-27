@@ -257,8 +257,10 @@ export class WaymarkConnect {
       gate.attack.value = 0.002;
       gate.release.value = 0.05;
 
-      // 3. AnalyserNode — tapped AFTER processing for echo ducking reference.
-      //    Remote playback pipeline reads this to know when the user is speaking.
+      // 3. AnalyserNode — tapped BEFORE the compressor so the echo gate
+      //    reads pre-compression mic levels with accurate dynamics.
+      //    Post-compressor RMS is crushed to ~0.004 regardless of input,
+      //    which makes the echo gate threshold useless.
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.5;
@@ -267,11 +269,11 @@ export class WaymarkConnect {
       // 4. Output destination — produces a new MediaStream
       const dest = ctx.createMediaStreamDestination();
 
-      // Wire: source → highPass → gate → analyser → dest
+      // Wire: source → highPass → analyser → gate (compressor) → dest
       source.connect(highPass);
-      highPass.connect(gate);
-      gate.connect(analyser);
-      analyser.connect(dest);
+      highPass.connect(analyser);
+      analyser.connect(gate);
+      gate.connect(dest);
 
       // 5. Register AudioWorklet for sample-accurate echo gating.
       //    Non-blocking — by the time the remote stream arrives (after SDP + ICE)
@@ -331,7 +333,7 @@ export class WaymarkConnect {
    * @param {Object} [opts]
    * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
    * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
-   * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
+   * @param {number} [opts.duckThreshold=0.03]   — mic RMS above this triggers ducking
    * @param {number} [opts.holdMs=3000]           — base hold after speech ends (auto-extends on echo detection)
    * @returns {Promise<{ cleanup: Function }>} — call cleanup() on hangup
    */
@@ -391,7 +393,7 @@ export class WaymarkConnect {
       numberOfOutputs: 1,
       parameterData: {
         suppression: opts.echoSuppression ?? 0.95,
-        threshold: opts.duckThreshold ?? 0.012,
+        threshold: opts.duckThreshold ?? 0.03,
         holdMs: opts.holdMs ?? 3000,
       },
     });
@@ -443,7 +445,7 @@ export class WaymarkConnect {
 
       const suppression = opts.echoSuppression ?? 0.95;
       const gainWhenDucked = Math.max(0, 1 - suppression);
-      const duckThreshold = opts.duckThreshold ?? 0.012;
+      const duckThreshold = opts.duckThreshold ?? 0.03;
       const holdMs = opts.holdMs ?? 3000;
       const analyser = this._micAnalyser;
 
