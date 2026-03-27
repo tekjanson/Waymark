@@ -627,11 +627,12 @@ function openChat(sheetId, displayName, signal) {
       debugLog('No AudioWorklet — using fallback pipeline');
     }
 
-    // Update context state periodically
+    // Update context state and pipeline info periodically
     const ctxInterval = setInterval(() => {
       if (connect._audioCtx) {
         els.ctxState.textContent = connect._audioCtx.state;
       }
+      els.pipelineType.textContent = connect._echoGateNode ? 'AudioWorklet' : connect._duckingRAF ? 'rAF fallback' : 'none';
     }, 2000);
 
     debugLog('Debug panel started');
@@ -662,6 +663,7 @@ function openChat(sheetId, displayName, signal) {
 
   // Cleanup handle for the Web Audio remote playback filter
   let _remoteFilterCleanup = null;
+  let _pipelineGen = 0;
 
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
@@ -675,7 +677,8 @@ function openChat(sheetId, displayName, signal) {
     }
     debugBtn.classList.remove('hidden');
     _chatPanel.classList.add('social-chat-in-call');
-    if (_activeConnect) startDebug(_activeConnect);
+    // Only start debug if not already running (prevents start/stop spam)
+    if (_activeConnect && !_debugCleanup) startDebug(_activeConnect);
   }
 
   /** Leave the "in call" visual state and release all media devices */
@@ -954,7 +957,8 @@ function openChat(sheetId, displayName, signal) {
     },
     onStatusChanged(status) {
       statusDot.className = `social-chat-status social-chat-status-${status}`;
-      statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
+      const labels = { connected: 'Connected', listening: 'Listening…', pairing: 'Pairing…', disconnected: 'Disconnected' };
+      statusLabel.textContent = labels[status] || status;
       if (status === 'disconnected') saveChatHistory();
     },
     onRemoteStream(stream) {
@@ -965,34 +969,39 @@ function openChat(sheetId, displayName, signal) {
         // through the <video> element (muted attr is unreliable across platforms).
         const videoOnly = new MediaStream(stream.getVideoTracks());
         remoteVideo.srcObject = videoOnly;
-        remoteAudio.srcObject = null;
         mediaContainer.classList.remove('hidden');
         remoteVideo.play().catch(() => {});
       } else {
         remoteVideo.srcObject = null;
-        remoteAudio.srcObject = null;
       }
-      // Route ALL remote audio through the echo suppression pipeline
-      if (_remoteFilterCleanup) { _remoteFilterCleanup(); _remoteFilterCleanup = null; }
+      // Route ALL remote audio through the echo suppression pipeline.
+      // Use a generation counter so only the latest pipeline result is applied
+      // (onRemoteStream may fire multiple times from ontrack / renegotiation).
       if (stream.getAudioTracks().length > 0 && _activeConnect) {
         const connect = _activeConnect;
+        const gen = ++_pipelineGen;
+        // Keep old pipeline running until new one is ready
+        const oldCleanup = _remoteFilterCleanup;
+        _remoteFilterCleanup = null;
         connect.createRemoteAudioPipeline(stream, {
           highPassFreq: getHighPassFreq(),
           echoSuppression: getEchoSuppression(),
           duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
         }).then(result => {
-          // Only store cleanup if this is still the active connection
-          if (_activeConnect === connect) {
-            _remoteFilterCleanup = result.cleanup;
-            // Play processed audio through <audio> element so Chrome's AEC
-            // can reference it. Direct ctx.destination bypasses AEC on Linux.
-            remoteAudio.srcObject = result.outputStream || null;
-            if (result.outputStream && remoteAudio.paused) {
-              remoteAudio.play().catch(() => {});
-            }
-            startDebug(connect);
-          } else {
+          // Discard if superseded by a newer onRemoteStream call
+          if (_activeConnect !== connect || _pipelineGen !== gen) {
             result.cleanup();
+            if (oldCleanup) oldCleanup();
+            return;
+          }
+          // Swap: tear down old, install new
+          if (oldCleanup) oldCleanup();
+          _remoteFilterCleanup = result.cleanup;
+          // Play processed audio through <audio> element so Chrome's AEC
+          // can reference it. Direct ctx.destination bypasses AEC on Linux.
+          remoteAudio.srcObject = result.outputStream || null;
+          if (result.outputStream && remoteAudio.paused) {
+            remoteAudio.play().catch(() => {});
           }
         });
       }
@@ -1009,7 +1018,9 @@ function openChat(sheetId, displayName, signal) {
     },
     onCallEnded() {
       hideIncomingCall();
-      if (_activeConnect) _activeConnect.endCall();
+      // Deduplicate: call-end arrives via both BroadcastChannel and DataChannel
+      if (!_activeConnect?.inCall) return;
+      _activeConnect.endCall();
       exitCallUI();
       appendMessage('System', 'Peer ended the call.', Date.now(), false);
     },

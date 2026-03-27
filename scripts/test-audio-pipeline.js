@@ -742,18 +742,19 @@ test('analyser has no downstream output (read-only sidechain tap)', () => {
 console.log('\n━━ 10. Race condition: answerer pipeline timing');
 // ─────────────────────────────────────────────────────────────
 
-await testAsync('remote audio is NOT played when _micAnalyser is null (answerer scenario)', async () => {
+await testAsync('remote audio plays via fallback when _micAnalyser is null (answerer scenario)', async () => {
   const wc = createInstance();
   // DO NOT call _processAudio — simulates the answerer before accepting
 
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
-  const { cleanup } = await wc.createRemoteAudioPipeline(remoteStream);
+  const result = await wc.createRemoteAudioPipeline(remoteStream);
 
-  // No AudioContext should be created — no audio should be playing
-  assert(!wc._remoteCtx, 'No fallback AudioContext should be created without _micAnalyser');
+  // Fallback pipeline should be created — audio plays without echo ducking
+  assert(wc._remoteCtx, 'Fallback AudioContext should be created for passthrough audio');
   assert(!wc._echoGateNode, 'No worklet node should be created without _micAnalyser');
+  assert(result.outputStream, 'outputStream should exist so <audio> element can play');
 
-  cleanup();
+  result.cleanup();
 });
 
 await testAsync('ontrack stores remote stream in _remoteStreams map', async () => {
@@ -800,16 +801,16 @@ await testAsync('startCall re-emits onRemoteStream for stored remote streams', a
   assert(lastStreamArg === remoteStream, 'Should re-emit with the stored remote stream');
 });
 
-await testAsync('full answerer flow: noop → accept → rebuild with worklet', async () => {
+await testAsync('full answerer flow: fallback → accept → rebuild with worklet', async () => {
   const wc = createInstance();
 
   // Phase 1: Remote stream arrives BEFORE call accepted.
-  // _micAnalyser is null → createRemoteAudioPipeline returns noop.
+  // _micAnalyser is null → createRemoteAudioPipeline creates fallback (no ducking).
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   const result1 = await wc.createRemoteAudioPipeline(remoteStream);
   assert(!wc._echoGateNode, 'Phase 1: No worklet node should exist');
-  assert(!wc._remoteCtx, 'Phase 1: No fallback context should exist');
-  assert(!result1.outputStream, 'Phase 1: outputStream should be null (no audio plays)');
+  assert(wc._remoteCtx, 'Phase 1: Fallback context should exist for passthrough audio');
+  assert(result1.outputStream, 'Phase 1: outputStream should exist (audio plays without ducking)');
   result1.cleanup();
 
   // Phase 2: User accepts call → _processAudio sets up _micAnalyser.

@@ -343,6 +343,7 @@
   flex-shrink: 0;
 }
 .social-chat-status-listening { background: #fbbf24; }
+.social-chat-status-pairing { background: #f97316; }
 .social-chat-status-connected { background: #22c55e; }
 .social-chat-status-disconnected { background: #ef4444; }
 

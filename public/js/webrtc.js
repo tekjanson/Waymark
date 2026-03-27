@@ -359,11 +359,9 @@ export class WaymarkConnect {
     if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
 
     // If mic processing isn't ready yet (answerer hasn't accepted the call),
-    // don't play remote audio at all — it would bypass echo suppression.
-    // The pipeline will be rebuilt when startCall sets up _micAnalyser.
-    if (!this._micAnalyser) {
-      return { cleanup() {}, outputStream: null };
-    }
+    // play remote audio without echo gating. No echo risk since the user
+    // isn't sending audio yet. Pipeline will be rebuilt with gating when
+    // startCall sets up _micAnalyser.
 
     // Resume AudioContext if suspended (required on mobile after tab switch)
     if (this._audioCtx?.state === 'suspended') {
@@ -577,7 +575,12 @@ export class WaymarkConnect {
 
   _emitPeers() {
     this.onPeersChanged(new Map(this._peers));
-    this.onStatusChanged(this._peers.size > 0 ? 'connected' : 'listening');
+    if (this._peers.size === 0) {
+      this.onStatusChanged('listening');
+    } else {
+      const hasOpenDC = Array.from(this._rtc.values()).some(r => r.dc?.readyState === 'open');
+      this.onStatusChanged(hasOpenDC || this._bc ? 'connected' : 'pairing');
+    }
   }
 
   /* ---------- BroadcastChannel ---------- */
