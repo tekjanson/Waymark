@@ -1022,8 +1022,8 @@ function openChat(sheetId, displayName, signal) {
           // Swap: tear down old, install new
           if (oldCleanup) oldCleanup();
           _remoteFilterCleanup = result.cleanup;
-          // Play processed audio through <audio> element so Chrome's AEC
-          // can reference it. Direct ctx.destination bypasses AEC on Linux.
+          // Set <audio> element as SECONDARY output for Chrome AEC reference.
+          // Primary audio plays through ctx.destination in the pipeline itself.
           remoteAudio.srcObject = result.outputStream || null;
           // Always call play() — autoplay attribute may not trigger after
           // srcObject change, and checking .paused misses edge cases.
@@ -1033,7 +1033,7 @@ function openChat(sheetId, displayName, signal) {
           const ptype = connect._echoGateNode ? 'worklet' : connect._duckingRAF ? 'rAF fallback' : 'direct';
           const outTracks = result.outputStream?.getAudioTracks() || [];
           const ot = outTracks[0];
-          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
+          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, remoteCtx=${connect._remoteCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
         }).catch(err => {
           debugLog(`Pipeline error: ${err.message}`);
         });

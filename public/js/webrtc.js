@@ -403,10 +403,11 @@ export class WaymarkConnect {
       } catch { /* fall through to rAF fallback */ }
     }
 
-    // Fallback: rAF-driven gating using the EXISTING _audioCtx.
-    // Creating a new AudioContext here would start suspended (no user gesture
-    // on the call stack — onRemoteStream fires from an ICE callback) and
-    // resume() would fail silently, producing total silence.
+    // Fallback: rAF-driven gating with a DEDICATED AudioContext for remote
+    // playback. Using a separate context keeps remote audio alive even when
+    // _teardownAudio closes _audioCtx (e.g. during call reconnection).
+    // Audio is routed to ctx.destination (speakers) — this bypasses the <audio>
+    // element autoplay policy which fails from ICE callbacks (no user gesture).
     return this._createFallbackPipeline(audioTracks, opts);
   }
 
@@ -414,6 +415,9 @@ export class WaymarkConnect {
    * AudioWorklet path — echo gating on the audio rendering thread.
    * Uses the SAME AudioContext as mic processing so the worklet can
    * sidechain the mic analyser output.
+   *
+   * Audio output: gate → ctx.destination (speakers) for reliable playback,
+   * PLUS gate → MediaStreamDestination for <audio> element AEC reference.
    */
   _createWorkletPipeline(audioTracks, opts) {
     const ctx = this._audioCtx;
@@ -441,10 +445,11 @@ export class WaymarkConnect {
     // Wire: remote → hp → gate input 1
     source.connect(hp);
     hp.connect(gate, 0, 1);
-    // Wire: gate output → MediaStreamDestination (NOT ctx.destination).
-    // The caller plays the output through an <audio> element so Chrome's
-    // AEC can reference it. Playing directly to ctx.destination bypasses
-    // AEC reference tracking on Linux/PulseAudio.
+
+    // PRIMARY: gate → ctx.destination (speakers) — always works, no autoplay
+    // issues since AudioContext was resumed during startCall (user gesture).
+    gate.connect(ctx.destination);
+    // SECONDARY: gate → MediaStreamDestination for <audio> AEC reference.
     const dest = ctx.createMediaStreamDestination();
     gate.connect(dest);
 
@@ -464,23 +469,21 @@ export class WaymarkConnect {
   }
 
   /**
-   * Fallback path — rAF-driven gating using the existing _audioCtx.
+   * Fallback path — dedicated AudioContext with rAF-driven echo ducking.
    * Used when AudioWorklet is unavailable (older browsers, addModule failure).
-   * MUST use the existing _audioCtx (created during user gesture in startCall)
-   * because creating a new AudioContext here would start suspended — Chrome
-   * requires a user gesture to resume, and onRemoteStream fires from an ICE
-   * callback with no gesture on the stack.
+   *
+   * Creates its OWN AudioContext and routes to ctx.destination (speakers).
+   * This is the original proven pattern from the first working audio commit.
+   * ctx.destination bypasses Chrome's <audio> autoplay policy — audio plays
+   * immediately without a user gesture on the call stack.
    */
   _createFallbackPipeline(audioTracks, opts) {
     try {
-      // Use existing mic AudioContext (created during user gesture).
-      // Only create a new one as absolute last resort.
-      const useExisting = !!this._audioCtx;
-      const ctx = this._audioCtx || new AudioContext();
-      if (!useExisting) {
-        this._remoteCtx = ctx;
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      }
+      const ctx = new AudioContext();
+      this._remoteCtx = ctx;
+      // Resume immediately — on desktop this works without gesture,
+      // on mobile we'll also try the <audio> element as backup.
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
       const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
@@ -492,12 +495,18 @@ export class WaymarkConnect {
       const duckGain = ctx.createGain();
       duckGain.gain.value = 1.0;
 
-      // Route through MediaStreamDestination so the caller can play via
-      // an <audio> element. This lets Chrome's AEC reference the output.
-      const dest = ctx.createMediaStreamDestination();
-
+      // PRIMARY: route to ctx.destination (speakers) — this always works
+      // on desktop. On mobile, if ctx is suspended, the <audio> element
+      // with outputStream serves as backup.
       source.connect(hp);
       hp.connect(duckGain);
+      duckGain.connect(ctx.destination);
+
+      // SECONDARY: also route to MediaStreamDestination so the caller
+      // can set remoteAudio.srcObject for <audio> element playback.
+      // On mobile (where ctx.destination may be suspended), this is the
+      // actual audio output. On desktop, it serves as AEC reference.
+      const dest = ctx.createMediaStreamDestination();
       duckGain.connect(dest);
 
       const suppression = opts.echoSuppression ?? 0.90;
@@ -534,7 +543,6 @@ export class WaymarkConnect {
       }
 
       const self = this;
-      const ownCtx = !useExisting;
       return {
         outputStream: dest.stream,
         cleanup() {
@@ -545,11 +553,8 @@ export class WaymarkConnect {
           source.disconnect();
           hp.disconnect();
           duckGain.disconnect();
-          // Only close the context if we created it (don't close _audioCtx)
-          if (ownCtx) {
-            ctx.close().catch(() => {});
-            if (self._remoteCtx === ctx) self._remoteCtx = null;
-          }
+          ctx.close().catch(() => {});
+          if (self._remoteCtx === ctx) self._remoteCtx = null;
         },
       };
     } catch (err) {
