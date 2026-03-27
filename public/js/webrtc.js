@@ -332,7 +332,7 @@ export class WaymarkConnect {
    * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
    * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
    * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
-   * @param {number} [opts.holdMs=1500]           — base hold after speech ends (auto-extends on echo detection)
+   * @param {number} [opts.holdMs=3000]           — base hold after speech ends (auto-extends on echo detection)
    * @returns {Promise<{ cleanup: Function }>} — call cleanup() on hangup
    */
   async createRemoteAudioPipeline(remoteStream, opts = {}) {
@@ -392,7 +392,7 @@ export class WaymarkConnect {
       parameterData: {
         suppression: opts.echoSuppression ?? 0.95,
         threshold: opts.duckThreshold ?? 0.012,
-        holdMs: opts.holdMs ?? 1500,
+        holdMs: opts.holdMs ?? 3000,
       },
     });
 
@@ -444,7 +444,7 @@ export class WaymarkConnect {
       const suppression = opts.echoSuppression ?? 0.95;
       const gainWhenDucked = Math.max(0, 1 - suppression);
       const duckThreshold = opts.duckThreshold ?? 0.012;
-      const holdMs = opts.holdMs ?? 1500;
+      const holdMs = opts.holdMs ?? 3000;
       const analyser = this._micAnalyser;
 
       if (analyser && suppression > 0) {
