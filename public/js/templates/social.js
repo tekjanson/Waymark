@@ -33,9 +33,9 @@ const SIG_COL = 20;
  */
 function buildAudioConstraints() {
   return {
-    echoCancellation: getEchoCancellation(),
-    noiseSuppression: getNoiseSuppression(),
-    autoGainControl: getAutoGainControl(),
+    echoCancellation: { ideal: getEchoCancellation() },
+    noiseSuppression: { ideal: getNoiseSuppression() },
+    autoGainControl: { ideal: getAutoGainControl() },
   };
 }
 
@@ -987,6 +987,9 @@ function openChat(sheetId, displayName, signal) {
             // Play processed audio through <audio> element so Chrome's AEC
             // can reference it. Direct ctx.destination bypasses AEC on Linux.
             remoteAudio.srcObject = result.outputStream || null;
+            if (result.outputStream && remoteAudio.paused) {
+              remoteAudio.play().catch(() => {});
+            }
             startDebug(connect);
           } else {
             result.cleanup();

@@ -103,9 +103,11 @@ export class WaymarkConnect {
   /* ---------- Public API ---------- */
 
   start() {
-    this._bc = new BroadcastChannel(`waymark-connect-${this.sheetId}`);
-    this._bc.onmessage = (e) => this._onBC(e.data);
-    this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName });
+    if (typeof BroadcastChannel !== 'undefined') {
+      this._bc = new BroadcastChannel(`waymark-connect-${this.sheetId}`);
+      this._bc.onmessage = (e) => this._onBC(e.data);
+      this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName });
+    }
     if (this.signal) this._join();
     this.onStatusChanged('listening');
   }
@@ -177,6 +179,14 @@ export class WaymarkConnect {
     if (this._rawStream) {
       const audioProcessing = constraints.audioProcessing || {};
       this._localStream = this._processAudio(this._rawStream, audioProcessing);
+
+      // Resume AudioContext inside the user-gesture call stack so mobile
+      // browsers (iOS Safari, mobile Chrome) allow it. Deferring resume
+      // to onRemoteStream (which fires from an ICE callback, not a gesture)
+      // silently fails on iOS.
+      if (this._audioCtx?.state === 'suspended') {
+        this._audioCtx.resume().catch(() => {});
+      }
     }
 
     // Add local tracks to all peer connections
@@ -433,6 +443,7 @@ export class WaymarkConnect {
     try {
       const ctx = new AudioContext();
       this._remoteCtx = ctx;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
       const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
