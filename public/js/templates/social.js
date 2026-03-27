@@ -547,7 +547,15 @@ function openChat(sheetId, displayName, signal) {
         els.micMeter.style.background = rmsVal > 0.05 ? '#5f5' : rmsVal > 0.02 ? '#ff5' : '#555';
         els.micVal.textContent = rmsVal.toFixed(4);
 
-        // Audio out level
+        // Audio out level — reconnect if srcObject changed
+        let monitoredSrc = outAnalyser ? outAnalyser._wm_src : null;
+        if (outAnalyser && monitoredSrc !== remoteAudio.srcObject) {
+          // srcObject changed — tear down old monitor
+          try { outSource?.disconnect(); } catch {}
+          outAnalyser = null;
+          outSource = null;
+          outBuf = null;
+        }
         if (outAnalyser && outBuf) {
           outAnalyser.getFloatTimeDomainData(outBuf);
           let oSum = 0;
@@ -566,6 +574,7 @@ function openChat(sheetId, displayName, signal) {
             outAnalyser.fftSize = 256;
             outAnalyser.smoothingTimeConstant = 0.5;
             outSource.connect(outAnalyser);
+            outAnalyser._wm_src = remoteAudio.srcObject;
             outBuf = new Float32Array(outAnalyser.fftSize);
             debugLog('Audio out monitoring attached');
           } catch { /* output stream may not be ready yet */ }
@@ -979,7 +988,9 @@ function openChat(sheetId, displayName, signal) {
       // (onRemoteStream may fire multiple times from ontrack / renegotiation).
       const nAudioTracks = stream.getAudioTracks().length;
       if (nAudioTracks > 0 && _activeConnect) {
-        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}`);
+        const tracks = stream.getAudioTracks();
+        const t0 = tracks[0];
+        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}, track=${t0?.readyState}/${t0?.enabled ? 'en' : 'dis'}/${t0?.muted ? 'muted' : 'live'}`);
         const connect = _activeConnect;
         const gen = ++_pipelineGen;
         // Keep old pipeline running until new one is ready
@@ -1003,11 +1014,15 @@ function openChat(sheetId, displayName, signal) {
           // Play processed audio through <audio> element so Chrome's AEC
           // can reference it. Direct ctx.destination bypasses AEC on Linux.
           remoteAudio.srcObject = result.outputStream || null;
-          if (result.outputStream && remoteAudio.paused) {
+          // Always call play() — autoplay attribute may not trigger after
+          // srcObject change, and checking .paused misses edge cases.
+          if (result.outputStream) {
             remoteAudio.play().catch(() => {});
           }
           const ptype = connect._echoGateNode ? 'worklet' : connect._duckingRAF ? 'rAF fallback' : 'direct';
-          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}`);
+          const outTracks = result.outputStream?.getAudioTracks() || [];
+          const ot = outTracks[0];
+          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
         }).catch(err => {
           debugLog(`Pipeline error: ${err.message}`);
         });

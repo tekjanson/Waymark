@@ -137,7 +137,12 @@ export class WaymarkConnect {
       }
       this._localStream = null;
     }
-    this._teardownAudio();
+    // NOTE: _teardownAudio is deferred until AFTER getUserMedia resolves.
+    // Calling it here would clear _micAnalyser, and during the await below
+    // onRemoteStream can fire from ICE events — if _micAnalyser is null
+    // the pipeline falls to the "direct" passthrough which may get stale
+    // tracks from renegotiation. Keep the old analyser alive until the
+    // new one is ready.
 
     // Try to get user media. If getUserMedia fails with a device error,
     // join in listen-only mode so the user can still hear the other side.
@@ -177,6 +182,8 @@ export class WaymarkConnect {
 
     // Process audio through Web Audio API pipeline, pass video through
     if (this._rawStream) {
+      // NOW tear down old audio pipeline (after getUserMedia resolved)
+      this._teardownAudio();
       const audioProcessing = constraints.audioProcessing || {};
       this._localStream = this._processAudio(this._rawStream, audioProcessing);
 
@@ -288,7 +295,10 @@ export class WaymarkConnect {
       if (ctx.audioWorklet) {
         this._workletReady = ctx.audioWorklet
           .addModule('/js/echo-gate-processor.js')
-          .catch(() => null);
+          .catch((err) => {
+            console.warn('[webrtc] AudioWorklet addModule failed:', err?.message || err);
+            return null;
+          });
       }
 
       // Return the ORIGINAL stream — browser AEC/NS/AGC are preserved.
@@ -357,6 +367,11 @@ export class WaymarkConnect {
 
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
+
+    const t0 = audioTracks[0];
+    console.log('[webrtc] createRemoteAudioPipeline: micAnalyser=%s, ctx=%s, tracks=%d, track0=%s/%s/%s',
+      !!this._micAnalyser, this._audioCtx?.state || 'none', audioTracks.length,
+      t0?.readyState, t0?.enabled ? 'en' : 'dis', t0?.muted ? 'muted' : 'live');
 
     // If mic processing isn't ready yet (answerer hasn't accepted the call),
     // return the raw audio stream for direct <audio> playback — no Web Audio
@@ -489,7 +504,7 @@ export class WaymarkConnect {
         let holdUntil = 0;
 
         const duckLoop = () => {
-          if (!this._remoteCtx || ctx.state === 'closed') return;
+          if (ctx.state === 'closed') return;
           analyser.getFloatTimeDomainData(buf);
           let sum = 0;
           for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
@@ -530,7 +545,10 @@ export class WaymarkConnect {
         },
       };
     } catch {
-      return { cleanup() {}, outputStream: null };
+      // Pipeline node creation failed (e.g. context closed mid-setup).
+      // Fall back to raw passthrough — silence-free degradation.
+      const raw = new MediaStream(audioTracks);
+      return { outputStream: raw, cleanup() {} };
     }
   }
 
