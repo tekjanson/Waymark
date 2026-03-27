@@ -422,6 +422,212 @@ test('suppression=1.0 gives zero output while mic active', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 7: Edge cases — threshold sensitivity');
+// ─────────────────────────────────────────────────────────────
+
+test('mic signal just above threshold (0.04 RMS) triggers gate', () => {
+  // Speech at low amplitude — should still trigger at threshold=0.03
+  const dur = SR * 2;
+  const mic = speechSignal(dur, 0.08, 70); // low amplitude → RMS ~0.04
+  const remote = speechSignal(dur, 0.3, 71);
+  const out = runProcessorFixed(mic, remote, { threshold: 0.03 });
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     Low-mic suppression: ${(suppression * 100).toFixed(1)}%`);
+  assert(suppression > 0.80, `Suppression ${(suppression*100).toFixed(1)}% should be >80% — mic barely above threshold`);
+});
+
+test('mic signal below threshold (0.01 RMS) does NOT trigger gate', () => {
+  // Very quiet mic signal — below threshold, gate should stay open
+  const dur = SR * 2;
+  const mic = noiseBurst(dur, 0.015); // RMS ~0.01 < threshold 0.03
+  const remote = speechSignal(dur, 0.3, 72);
+  const out = runProcessorFixed(mic, remote, { threshold: 0.03 });
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const passthrough = outRms / remRms;
+  console.log(`     Below-threshold passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.80, `Passthrough ${(passthrough*100).toFixed(1)}% should be >80% — mic below threshold`);
+});
+
+test('custom threshold=0.10 ignores moderate mic signal', () => {
+  // With a high threshold, moderate mic signal should not trigger the gate
+  const dur = SR * 2;
+  const mic = speechSignal(dur, 0.15, 73); // RMS ~0.07 < threshold 0.10
+  const remote = speechSignal(dur, 0.3, 74);
+  const out = runProcessorFixed(mic, remote, { threshold: 0.10 });
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const passthrough = outRms / remRms;
+  console.log(`     High-threshold passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.70, `Passthrough ${(passthrough*100).toFixed(1)}% should be >70% — mic below high threshold`);
+});
+
+// ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 8: Edge cases — rapid speech transitions');
+// ─────────────────────────────────────────────────────────────
+
+test('rapid on/off speech (200ms bursts) still suppresses', () => {
+  // Quick talker: 200ms bursts with 200ms gaps, over 4 seconds
+  const burstLen = Math.round(SR * 0.2);
+  const gapLen = Math.round(SR * 0.2);
+  const cycles = 10;
+  const micParts = [];
+  for (let i = 0; i < cycles; i++) {
+    micParts.push(speechSignal(burstLen, 0.3, 80 + i));
+    micParts.push(silence(gapLen));
+  }
+  const mic = concat(...micParts);
+  const remote = speechSignal(mic.length, 0.3, 90);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, BLOCK, mic.length);
+  const remRms = rms(remote, BLOCK, mic.length);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     Rapid-burst suppression: ${(suppression * 100).toFixed(1)}%`);
+  // The 3000ms hold should keep the gate closed through 200ms gaps
+  assert(suppression > 0.85, `Suppression ${(suppression*100).toFixed(1)}% should be >85% — hold bridges short gaps`);
+});
+
+test('long silence after speech allows full recovery', () => {
+  // Speak for 1s, then 5s silence — gate should fully open well before 5s
+  const mic = concat(speechSignal(SR, 0.3, 95), silence(SR * 5));
+  const remote = concat(silence(SR * 4.5), speechSignal(SR * 1.5, 0.3, 96));
+  const out = runProcessorFixed(mic, remote);
+  // Remote speech starts at 4.5s. Hold expires at 1s+3s=4s. Should be open by 4.5s.
+  const measureStart = Math.round(SR * 4.7);
+  const measureEnd = Math.round(SR * 6);
+  const outRms = rms(out, measureStart, measureEnd);
+  const remRms = rms(remote, measureStart, measureEnd);
+  const passthrough = outRms / remRms;
+  console.log(`     Recovery passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.70, `Passthrough ${(passthrough*100).toFixed(1)}% should be >70% after long silence`);
+});
+
+// ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 9: Edge cases — extreme amplitudes');
+// ─────────────────────────────────────────────────────────────
+
+test('very loud mic (amplitude 1.0) triggers gate', () => {
+  const dur = SR;
+  const mic = speechSignal(dur, 1.0, 100);
+  const remote = speechSignal(dur, 0.3, 101);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     Loud-mic suppression: ${(suppression * 100).toFixed(1)}%`);
+  assert(suppression > 0.90, `Suppression ${(suppression*100).toFixed(1)}% should be >90%`);
+});
+
+test('very loud remote (amplitude 1.0) is still gated', () => {
+  const dur = SR;
+  const mic = speechSignal(dur, 0.3, 102);
+  const remote = speechSignal(dur, 1.0, 103);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     Loud-remote suppression: ${(suppression * 100).toFixed(1)}%`);
+  assert(suppression > 0.90, `Suppression ${(suppression*100).toFixed(1)}% should be >90%`);
+});
+
+// ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 10: Edge cases — holdMs behavior');
+// ─────────────────────────────────────────────────────────────
+
+test('holdMs=0 releases immediately after speech stops', () => {
+  // With holdMs=0, gate should open as soon as mic goes silent.
+  // Remote starts 0.5s after mic stops — should mostly pass through.
+  const mic = concat(speechSignal(SR, 0.3, 110), silence(SR * 2));
+  const remote = concat(silence(Math.round(SR * 1.5)), speechSignal(Math.round(SR * 1.5), 0.3, 111));
+  const out = runProcessorFixed(mic, remote, { holdMs: 0 });
+  // Measure from 1.6s to 3s (remote speech after mic ended at 1s)
+  const start = Math.round(SR * 1.6);
+  const end = Math.round(SR * 3);
+  const outRms = rms(out, start, end);
+  const remRms = rms(remote, start, end);
+  const passthrough = outRms / remRms;
+  console.log(`     holdMs=0 passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.60, `Passthrough ${(passthrough*100).toFixed(1)}% should be >60% with holdMs=0`);
+});
+
+test('holdMs=8000 (max) blocks echo for 8 seconds after speech', () => {
+  // Long hold blocks even remote speech that starts 5s after mic stops
+  const mic = concat(speechSignal(SR, 0.3, 120), silence(SR * 7));
+  const remote = concat(silence(SR * 5), speechSignal(SR * 3, 0.3, 121));
+  const out = runProcessorFixed(mic, remote, { holdMs: 8000 });
+  // Remote speech at 5-8s. Mic stopped at 1s. Hold keeps gate closed until 9s.
+  const start = Math.round(SR * 5.1);
+  const end = Math.round(SR * 8);
+  const outRms = rms(out, start, end);
+  const remRms = rms(remote, start, end);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     holdMs=8000 suppression: ${(suppression * 100).toFixed(1)}%`);
+  assert(suppression > 0.85, `Suppression ${(suppression*100).toFixed(1)}% should be >85% with 8s hold`);
+});
+
+// ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 11: Edge cases — mobile AGC simulation');
+// ─────────────────────────────────────────────────────────────
+
+test('AGC-boosted mic (fluctuating amplitude) still triggers gate', () => {
+  // Simulate mobile AGC: amplitude ramps from 0.1 to 0.5 over 2 seconds
+  const dur = SR * 2;
+  const mic = new Float32Array(dur);
+  for (let i = 0; i < dur; i++) {
+    const t = i / dur;
+    const amp = 0.1 + t * 0.4; // ramp from 0.1 to 0.5
+    mic[i] = (Math.random() * 2 - 1) * amp;
+  }
+  const remote = speechSignal(dur, 0.3, 130);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, BLOCK, dur);
+  const remRms = rms(remote, BLOCK, dur);
+  const suppression = 1 - (outRms / remRms);
+  console.log(`     AGC-boosted suppression: ${(suppression * 100).toFixed(1)}%`);
+  assert(suppression > 0.85, `Suppression ${(suppression*100).toFixed(1)}% should be >85% with AGC boost`);
+});
+
+test('ambient noise (0.02 RMS constant) does NOT trigger gate', () => {
+  // Background noise at steady 0.02 RMS — below 0.03 threshold
+  const dur = SR * 3;
+  const mic = noiseBurst(dur, 0.03); // amplitude 0.03 → RMS ~0.018
+  const remote = speechSignal(dur, 0.3, 131);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, BLOCK * 10, dur);
+  const remRms = rms(remote, BLOCK * 10, dur);
+  const passthrough = outRms / remRms;
+  console.log(`     Ambient-noise passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.70, `Passthrough ${(passthrough*100).toFixed(1)}% should be >70% — ambient noise below threshold`);
+});
+
+// ─────────────────────────────────────────────────────────────
+console.log('\n━━ Test 12: Edge cases — empty/missing inputs');
+// ─────────────────────────────────────────────────────────────
+
+test('empty mic + empty remote produces silence', () => {
+  const dur = SR;
+  const mic = silence(dur);
+  const remote = silence(dur);
+  const out = runProcessorFixed(mic, remote);
+  const maxSample = peak(out, 0, dur);
+  assert(maxSample === 0, `Peak should be exactly 0, got ${maxSample}`);
+});
+
+test('empty mic + active remote passes remote through', () => {
+  const dur = SR;
+  const mic = silence(dur);
+  const remote = speechSignal(dur, 0.3, 140);
+  const out = runProcessorFixed(mic, remote);
+  const outRms = rms(out, 0, dur);
+  const remRms = rms(remote, 0, dur);
+  const passthrough = outRms / remRms;
+  console.log(`     Empty-mic passthrough: ${(passthrough * 100).toFixed(1)}%`);
+  assert(passthrough > 0.90, `Passthrough ${(passthrough*100).toFixed(1)}% should be >90%`);
+});
+
+// ─────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────
 console.log('\n' + '═'.repeat(60));
