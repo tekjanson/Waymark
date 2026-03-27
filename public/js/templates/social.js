@@ -391,54 +391,215 @@ function openChat(sheetId, displayName, signal) {
 
   callBar.append(callBtn, videoCallBtn, hangupBtn, muteBtn, camToggleBtn);
 
-  // --- Audio Diagnostic Overlay (shown during calls) ---
-  const diagOverlay = el('div', { className: 'social-audio-diag hidden' });
-  diagOverlay.innerHTML = `<div class="social-diag-row"><span>Mic:</span> <span class="sd-mic">—</span></div>
-<div class="social-diag-row"><span>Remote:</span> <span class="sd-rem">—</span></div>
-<div class="social-diag-row"><span>Gate:</span> <span class="sd-gate">—</span></div>
-<div class="social-diag-row"><span>Gain:</span> <span class="sd-gain">—</span></div>
-<div class="social-diag-row"><span>Hold:</span> <span class="sd-hold">—</span></div>
-<div class="social-diag-row"><span>Floor:</span> <span class="sd-floor">—</span></div>
-<div class="social-diag-row"><span>Thresh:</span> <span class="sd-thresh">—</span></div>
-<div class="social-diag-row"><span>AEC:</span> <span class="sd-aec">—</span></div>`;
-  let _diagListenerCleanup = null;
-  function startDiag(connect) {
-    stopDiag();
-    const gate = connect?._echoGateNode;
-    if (!gate?.port) return;
-    gate.port.postMessage({ type: 'enable-diag' });
-    const sdMic = diagOverlay.querySelector('.sd-mic');
-    const sdRem = diagOverlay.querySelector('.sd-rem');
-    const sdGate = diagOverlay.querySelector('.sd-gate');
-    const sdGain = diagOverlay.querySelector('.sd-gain');
-    const sdHold = diagOverlay.querySelector('.sd-hold');
-    const sdFloor = diagOverlay.querySelector('.sd-floor');
-    const sdThresh = diagOverlay.querySelector('.sd-thresh');
-    const sdAec = diagOverlay.querySelector('.sd-aec');
-    const handler = (e) => {
-      if (e.data?.type !== 'diag') return;
-      const d = e.data;
-      sdMic.textContent = d.micRms.toFixed(4);
-      sdMic.style.color = d.micRms > d.threshold ? '#f55' : '#5f5';
-      sdRem.textContent = d.remRms.toFixed(4);
-      sdGate.textContent = d.gated ? '🔴 CLOSED' : '🟢 OPEN';
-      sdGain.textContent = (d.gain * 100).toFixed(0) + '%';
-      sdHold.textContent = d.holdMs > 0 ? d.holdMs.toFixed(0) + 'ms' : d.echoHoldMs > 0 ? 'echo ' + d.echoHoldMs.toFixed(0) + 'ms' : '—';
-      sdFloor.textContent = d.noiseFloor.toFixed(4);
-      sdThresh.textContent = d.threshold.toFixed(4) + (d.threshold > d.paramThreshold ? ' (adaptive)' : ' (param)');
-      sdAec.textContent = d.micRms > d.threshold && d.remRms > 0.01 ? '⚠️ weak' : '✓';
+  // --- Audio Debug Panel (toggled during calls) ---
+  const debugPanel = el('div', { className: 'social-debug-panel hidden' });
+  debugPanel.innerHTML = `
+    <div class="social-debug-header">
+      <span>🔊 Audio Debug</span>
+      <button class="social-debug-close" title="Close">✕</button>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Mic Level</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-mic-meter"></div><span class="social-debug-meter-val sd-mic-val">—</span></div>
+      <div class="social-debug-label">Remote Level</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-rem-meter" style="background:#5bf"></div><span class="social-debug-meter-val sd-rem-val">—</span></div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Echo Gate</div>
+      <div class="social-debug-grid">
+        <span>State</span><span class="sd-gate-state">—</span>
+        <span>Output</span><span class="sd-gate-gain">—</span>
+        <span>Hold</span><span class="sd-gate-hold">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Adaptive Floor</div>
+      <div class="social-debug-grid">
+        <span>Noise floor</span><span class="sd-noise-floor">—</span>
+        <span>Threshold</span><span class="sd-eff-thresh">—</span>
+        <span>Source</span><span class="sd-thresh-src">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Browser AEC</div>
+      <div class="social-debug-grid">
+        <span>Echo cancel</span><span class="sd-aec">—</span>
+        <span>Noise supp</span><span class="sd-ns">—</span>
+        <span>Auto gain</span><span class="sd-agc">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Pipeline</div>
+      <div class="social-debug-grid">
+        <span>AudioCtx</span><span class="sd-ctx-state">—</span>
+        <span>Path</span><span class="sd-pipeline-type">—</span>
+        <span>Sample rate</span><span class="sd-sample-rate">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section social-debug-log-section">
+      <div class="social-debug-label">Event Log <button class="social-debug-clear-log" title="Clear">clear</button></div>
+      <div class="social-debug-log sd-event-log"></div>
+    </div>`;
+
+  // Wire close button
+  debugPanel.querySelector('.social-debug-close').addEventListener('click', () => {
+    debugPanel.classList.add('hidden');
+    debugBtn.classList.remove('social-debug-btn-active');
+  });
+  debugPanel.querySelector('.social-debug-clear-log').addEventListener('click', () => {
+    debugPanel.querySelector('.sd-event-log').textContent = '';
+  });
+
+  // Debug toggle button — added to call bar when in a call
+  const debugBtn = el('button', {
+    className: 'social-call-btn social-debug-btn hidden',
+    title: 'Audio debug panel',
+  }, ['🐛 Debug']);
+  debugBtn.addEventListener('click', () => {
+    debugPanel.classList.toggle('hidden');
+    debugBtn.classList.toggle('social-debug-btn-active');
+  });
+  callBar.append(debugBtn);
+
+  let _debugCleanup = null;
+  let _debugLogLines = 0;
+
+  function debugLog(msg) {
+    const log = debugPanel.querySelector('.sd-event-log');
+    if (!log) return;
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const line = document.createElement('div');
+    line.textContent = `[${ts}] ${msg}`;
+    log.append(line);
+    _debugLogLines++;
+    if (_debugLogLines > 200) { log.firstChild?.remove(); _debugLogLines--; }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function startDebug(connect) {
+    stopDebug();
+    if (!connect) return;
+
+    const els = {
+      micMeter: debugPanel.querySelector('.sd-mic-meter'),
+      micVal: debugPanel.querySelector('.sd-mic-val'),
+      remMeter: debugPanel.querySelector('.sd-rem-meter'),
+      remVal: debugPanel.querySelector('.sd-rem-val'),
+      gateState: debugPanel.querySelector('.sd-gate-state'),
+      gateGain: debugPanel.querySelector('.sd-gate-gain'),
+      gateHold: debugPanel.querySelector('.sd-gate-hold'),
+      noiseFloor: debugPanel.querySelector('.sd-noise-floor'),
+      effThresh: debugPanel.querySelector('.sd-eff-thresh'),
+      threshSrc: debugPanel.querySelector('.sd-thresh-src'),
+      aec: debugPanel.querySelector('.sd-aec'),
+      ns: debugPanel.querySelector('.sd-ns'),
+      agc: debugPanel.querySelector('.sd-agc'),
+      ctxState: debugPanel.querySelector('.sd-ctx-state'),
+      pipelineType: debugPanel.querySelector('.sd-pipeline-type'),
+      sampleRate: debugPanel.querySelector('.sd-sample-rate'),
     };
-    gate.port.addEventListener('message', handler);
-    gate.port.start();
-    diagOverlay.classList.remove('hidden');
-    _diagListenerCleanup = () => {
-      try { gate.port.postMessage({ type: 'disable-diag' }); } catch {}
-      gate.port.removeEventListener('message', handler);
-      diagOverlay.classList.add('hidden');
+
+    // Populate one-time info
+    const ctx = connect._audioCtx;
+    els.ctxState.textContent = ctx?.state || 'none';
+    els.sampleRate.textContent = ctx?.sampleRate ? `${ctx.sampleRate} Hz` : '—';
+    els.pipelineType.textContent = connect._echoGateNode ? 'AudioWorklet' : connect._duckingRAF ? 'rAF fallback' : 'none';
+
+    // Read browser constraints from the actual mic track
+    const micTrack = connect._rawStream?.getAudioTracks()?.[0];
+    if (micTrack) {
+      try {
+        const settings = micTrack.getSettings();
+        els.aec.textContent = settings.echoCancellation ? '✅ on' : '❌ off';
+        els.ns.textContent = settings.noiseSuppression ? '✅ on' : '❌ off';
+        els.agc.textContent = settings.autoGainControl ? '✅ on' : '❌ off';
+        debugLog(`Mic: ${micTrack.label}`);
+        debugLog(`AEC=${settings.echoCancellation} NS=${settings.noiseSuppression} AGC=${settings.autoGainControl}`);
+      } catch { /* some browsers don't support getSettings */ }
+    }
+
+    // Live mic level via AnalyserNode (independent of worklet)
+    const analyser = connect._micAnalyser;
+    let micRAF = 0;
+    if (analyser) {
+      const buf = new Float32Array(analyser.fftSize);
+      const updateMicMeter = () => {
+        if (!connect._audioCtx) return;
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rmsVal = Math.sqrt(sum / buf.length);
+        const pct = Math.min(100, rmsVal * 500); // scale 0-0.2 → 0-100%
+        els.micMeter.style.width = pct + '%';
+        els.micMeter.style.background = rmsVal > 0.05 ? '#5f5' : rmsVal > 0.02 ? '#ff5' : '#555';
+        els.micVal.textContent = rmsVal.toFixed(4);
+        micRAF = requestAnimationFrame(updateMicMeter);
+      };
+      micRAF = requestAnimationFrame(updateMicMeter);
+    }
+
+    // Worklet diagnostic messages
+    let gateHandler = null;
+    const gate = connect._echoGateNode;
+    if (gate?.port) {
+      gate.port.postMessage({ type: 'enable-diag' });
+      let gateWasOpen = true;
+      gateHandler = (e) => {
+        if (e.data?.type !== 'diag') return;
+        const d = e.data;
+        // Remote level meter
+        const remPct = Math.min(100, d.remRms * 500);
+        els.remMeter.style.width = remPct + '%';
+        els.remVal.textContent = d.remRms.toFixed(4);
+        // Gate state
+        els.gateState.textContent = d.gated ? '🔴 CLOSED' : '🟢 OPEN';
+        els.gateState.style.color = d.gated ? '#f55' : '#5f5';
+        els.gateGain.textContent = (d.gain * 100).toFixed(0) + '%';
+        els.gateHold.textContent = d.holdMs > 0
+          ? d.holdMs.toFixed(0) + 'ms'
+          : d.echoHoldMs > 0 ? 'echo ' + d.echoHoldMs.toFixed(0) + 'ms' : '—';
+        // Adaptive floor
+        els.noiseFloor.textContent = d.noiseFloor.toFixed(4);
+        els.effThresh.textContent = d.threshold.toFixed(4);
+        els.threshSrc.textContent = d.threshold > d.paramThreshold ? 'adaptive' : 'param (' + d.paramThreshold.toFixed(3) + ')';
+        // Log gate transitions
+        const isOpen = !d.gated;
+        if (isOpen !== gateWasOpen) {
+          debugLog(isOpen
+            ? `Gate OPENED (gain=${(d.gain*100).toFixed(0)}%)`
+            : `Gate CLOSED (mic=${d.micRms.toFixed(4)} > thresh=${d.threshold.toFixed(4)})`);
+          gateWasOpen = isOpen;
+        }
+      };
+      gate.port.addEventListener('message', gateHandler);
+      gate.port.start();
+      debugLog('Worklet diagnostics enabled');
+    } else {
+      debugLog('No AudioWorklet — using fallback pipeline');
+    }
+
+    // Update context state periodically
+    const ctxInterval = setInterval(() => {
+      if (connect._audioCtx) {
+        els.ctxState.textContent = connect._audioCtx.state;
+      }
+    }, 2000);
+
+    debugLog('Debug panel started');
+
+    _debugCleanup = () => {
+      if (micRAF) cancelAnimationFrame(micRAF);
+      if (gate?.port && gateHandler) {
+        try { gate.port.postMessage({ type: 'disable-diag' }); } catch {}
+        gate.port.removeEventListener('message', gateHandler);
+      }
+      clearInterval(ctxInterval);
+      debugLog('Debug panel stopped');
     };
   }
-  function stopDiag() {
-    if (_diagListenerCleanup) { _diagListenerCleanup(); _diagListenerCleanup = null; }
+
+  function stopDebug() {
+    if (_debugCleanup) { _debugCleanup(); _debugCleanup = null; }
   }
 
   // Media container for video streams
@@ -447,7 +608,7 @@ function openChat(sheetId, displayName, signal) {
   const remoteVideo = el('video', { className: 'social-remote-video', autoplay: true, playsInline: true });
   // remoteAudio lives OUTSIDE mediaContainer so it's never hidden by display:none
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
-  mediaContainer.append(remoteVideo, localVideo, diagOverlay);
+  mediaContainer.append(remoteVideo, localVideo);
 
   // Cleanup handle for the Web Audio remote playback filter
   let _remoteFilterCleanup = null;
@@ -462,6 +623,7 @@ function openChat(sheetId, displayName, signal) {
       camToggleBtn.classList.remove('hidden');
       mediaContainer.classList.remove('hidden');
     }
+    debugBtn.classList.remove('hidden');
     _chatPanel.classList.add('social-chat-in-call');
   }
 
@@ -477,7 +639,10 @@ function openChat(sheetId, displayName, signal) {
       _remoteFilterCleanup = null;
     }
     remoteAudio.srcObject = null;
-    stopDiag();
+    stopDebug();
+    debugBtn.classList.add('hidden');
+    debugPanel.classList.add('hidden');
+    debugBtn.classList.remove('social-debug-btn-active');
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
     hangupBtn.classList.add('hidden');
@@ -615,7 +780,7 @@ function openChat(sheetId, displayName, signal) {
     }
   });
 
-  _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, inputBar);
+  _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, debugPanel, inputBar);
   document.body.append(_chatPanel);
 
   // --- Render a chat message ---
@@ -769,7 +934,7 @@ function openChat(sheetId, displayName, signal) {
             // Play processed audio through <audio> element so Chrome's AEC
             // can reference it. Direct ctx.destination bypasses AEC on Linux.
             remoteAudio.srcObject = result.outputStream || null;
-            startDiag(connect);
+            startDebug(connect);
           } else {
             result.cleanup();
           }
