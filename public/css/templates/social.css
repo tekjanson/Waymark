@@ -642,6 +642,23 @@
   object-fit: cover;
 }
 
+/* Audio diagnostic overlay */
+.social-audio-diag {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(0,0,0,0.75);
+  color: #ccc;
+  font: 11px/1.4 monospace;
+  padding: 4px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 10;
+}
+.social-audio-diag.hidden { display: none; }
+.social-diag-row { white-space: nowrap; }
+.social-diag-row span:first-child { display: inline-block; width: 52px; color: #999; }
+
 /* Expand panel when in a video call */
 .social-chat-panel.social-chat-in-call {
   max-height: 780px;

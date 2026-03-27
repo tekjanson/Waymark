@@ -325,9 +325,9 @@ export class WaymarkConnect {
    * @param {MediaStream} remoteStream — the remote peer's MediaStream
    * @param {Object} [opts]
    * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
-   * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
-   * @param {number} [opts.duckThreshold=0.03]   — mic RMS above this triggers ducking
-   * @param {number} [opts.holdMs=3000]           — base hold after speech ends (auto-extends on echo detection)
+   * @param {number} [opts.echoSuppression=0.90] — 0 = off, 1 = full mute while speaking
+   * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking (adaptive floor may raise it)
+   * @param {number} [opts.holdMs=800]            — base hold after speech ends (auto-extends on echo detection)
    * @returns {Promise<{ cleanup: Function, outputStream: MediaStream|null }>}
    */
   async createRemoteAudioPipeline(remoteStream, opts = {}) {
@@ -392,9 +392,9 @@ export class WaymarkConnect {
       numberOfInputs: 2,
       numberOfOutputs: 1,
       parameterData: {
-        suppression: opts.echoSuppression ?? 0.95,
-        threshold: opts.duckThreshold ?? 0.03,
-        holdMs: opts.holdMs ?? 3000,
+        suppression: opts.echoSuppression ?? 0.90,
+        threshold: opts.duckThreshold ?? 0.012,
+        holdMs: opts.holdMs ?? 800,
       },
     });
 
@@ -452,10 +452,10 @@ export class WaymarkConnect {
       hp.connect(duckGain);
       duckGain.connect(dest);
 
-      const suppression = opts.echoSuppression ?? 0.95;
+      const suppression = opts.echoSuppression ?? 0.90;
       const gainWhenDucked = Math.max(0, 1 - suppression);
-      const duckThreshold = opts.duckThreshold ?? 0.03;
-      const holdMs = opts.holdMs ?? 3000;
+      const duckThreshold = opts.duckThreshold ?? 0.012;
+      const holdMs = opts.holdMs ?? 800;
       const analyser = this._micAnalyser;
 
       if (analyser && suppression > 0) {

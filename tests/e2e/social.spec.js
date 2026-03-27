@@ -564,9 +564,9 @@ test('echo-gate-processor.js is loadable and has correct parameter descriptors',
         hasSuppression: text.includes("name: 'suppression'"),
         hasThreshold: text.includes("name: 'threshold'"),
         hasHoldMs: text.includes("name: 'holdMs'"),
-        hasDefaultThreshold003: text.includes('defaultValue: 0.03'),
-        hasDefaultHold3000: text.includes('defaultValue: 3000'),
-        hasDefaultSuppression095: text.includes('defaultValue: 0.95'),
+        hasDefaultThreshold012: text.includes('defaultValue: 0.012'),
+        hasDefaultHold800: text.includes('defaultValue: 800'),
+        hasDefaultSuppression090: text.includes('defaultValue: 0.90'),
       };
     } catch (e) {
       return { error: e.message };
@@ -579,9 +579,9 @@ test('echo-gate-processor.js is loadable and has correct parameter descriptors',
   expect(response.hasSuppression).toBe(true);
   expect(response.hasThreshold).toBe(true);
   expect(response.hasHoldMs).toBe(true);
-  expect(response.hasDefaultThreshold003).toBe(true);
-  expect(response.hasDefaultHold3000).toBe(true);
-  expect(response.hasDefaultSuppression095).toBe(true);
+  expect(response.hasDefaultThreshold012).toBe(true);
+  expect(response.hasDefaultHold800).toBe(true);
+  expect(response.hasDefaultSuppression090).toBe(true);
 });
 
 test('webrtc.js exports WaymarkConnect class', async ({ page }) => {

@@ -572,9 +572,9 @@ await testAsync('worklet pipeline uses default opts when none provided', async (
   await wc.createRemoteAudioPipeline(remoteStream);
 
   const gate = wc._echoGateNode;
-  assert(gate.parameterData.suppression === 0.95, `Default suppression should be 0.95, got ${gate.parameterData.suppression}`);
-  assert(gate.parameterData.threshold === 0.03, `Default threshold should be 0.03, got ${gate.parameterData.threshold}`);
-  assert(gate.parameterData.holdMs === 3000, `Default holdMs should be 3000, got ${gate.parameterData.holdMs}`);
+  assert(gate.parameterData.suppression === 0.90, `Default suppression should be 0.90, got ${gate.parameterData.suppression}`);
+  assert(gate.parameterData.threshold === 0.012, `Default threshold should be 0.012, got ${gate.parameterData.threshold}`);
+  assert(gate.parameterData.holdMs === 800, `Default holdMs should be 800, got ${gate.parameterData.holdMs}`);
 
   const ctx = wc._audioCtx;
   const filters = ctx._nodesCreated.filter(n => n._type === 'BiquadFilter');

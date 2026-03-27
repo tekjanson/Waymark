@@ -10,31 +10,32 @@
  *   Input 1: remote audio (gated and sent to output)
  *   Output 0: echo-suppressed remote audio → speakers
  *
- * Two-layer echo suppression:
+ * Three-layer echo suppression:
  *
- * 1. Voice-activity gate — When mic is active (RMS > threshold), remote audio
- *    is hard-muted instantly (gain = 0 on the very first sample). A base hold
- *    timer (default 3000ms) keeps the gate closed after speech ends, covering
- *    typical WebRTC roundtrip delays.
+ * 1. Adaptive noise floor — Continuously tracks ambient mic noise level using
+ *    a dual-speed exponential tracker. The effective voice-activity threshold
+ *    is max(paramThreshold, noiseFloor × 4). This prevents constant ambient
+ *    noise from keeping the gate permanently closed.
  *
- * 2. Echo fingerprinting (safety net) — After the base hold expires, if remote
- *    audio is still present, the worklet cross-correlates the remote RMS envelope
- *    against mic history. If a match is found (NCC > threshold over a long
- *    pattern), the hold is extended. This catches unusually long delays that
- *    exceed the base hold. Uses 200-block patterns (~533ms) for near-zero
- *    false-positive rate.
+ * 2. Voice-activity gate — When mic is active (RMS > adaptive threshold),
+ *    remote audio is hard-muted instantly. A hold timer keeps the gate closed
+ *    after speech ends, covering typical WebRTC roundtrip delays.
+ *
+ * 3. Echo fingerprinting (safety net) — After the hold expires, cross-
+ *    correlates remote RMS envelope against mic history to catch echo at
+ *    delays beyond the base hold time.
  *
  * AudioParams:
- *   suppression (0–1): 0 = off, 1 = full mute while echo detected. Default 0.95.
- *   threshold (0–1): mic RMS above this triggers gating. Default 0.012.
- *   holdMs (0–8000): base hold after speech ends. Default 3000.
+ *   suppression (0–1): 0 = off, 1 = full mute while echo detected. Default 0.90.
+ *   threshold (0–1): minimum mic RMS for gating (adaptive floor may raise it). Default 0.012.
+ *   holdMs (0–8000): base hold after speech ends. Default 800.
  */
 class EchoGateProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'suppression', defaultValue: 0.95, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'threshold', defaultValue: 0.03, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'holdMs', defaultValue: 3000, minValue: 0, maxValue: 8000, automationRate: 'k-rate' },
+      { name: 'suppression', defaultValue: 0.90, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'threshold', defaultValue: 0.012, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'holdMs', defaultValue: 800, minValue: 0, maxValue: 8000, automationRate: 'k-rate' },
     ];
   }
 
@@ -42,6 +43,16 @@ class EchoGateProcessor extends AudioWorkletProcessor {
     super();
     this._gain = 1.0;
     this._holdSamples = 0;
+
+    // Adaptive noise floor tracking — uses a sliding-window minimum of
+    // mic RMS. Speech has natural pauses that dip toward the noise floor,
+    // while constant ambient noise stays level. The minimum over ~1 second
+    // is a robust estimate of the ambient noise level.
+    this._noiseFloor = 0.005;       // smoothed noise floor estimate
+    this._minWindow = new Float32Array(375); // ~1s ring buffer
+    this._minWindow.fill(1.0);              // start high so it converges down
+    this._minW = 0;
+    this._minFill = 0;
 
     // Mic RMS history: ~5s at 128-sample blocks (1900 blocks)
     this._micHist = new Float32Array(1900);
@@ -59,6 +70,14 @@ class EchoGateProcessor extends AudioWorkletProcessor {
     this._echoHoldSamples = 0;
     this._checkCooldown = 0;
     this._consecutiveRemoteSpeech = 0;
+
+    // Diagnostics: report state to main thread ~4×/sec
+    this._diagInterval = 0;
+    this._diagEnabled = false;
+    this.port.onmessage = (e) => {
+      if (e.data?.type === 'enable-diag') this._diagEnabled = true;
+      if (e.data?.type === 'disable-diag') this._diagEnabled = false;
+    };
   }
 
   process(inputs, outputs, parameters) {
@@ -99,14 +118,36 @@ class EchoGateProcessor extends AudioWorkletProcessor {
       this._consecutiveRemoteSpeech = 0;
     }
 
-    // ── Layer 1: Voice-activity hold ─────────────────────
-    if (micRms > threshold) {
+    // ── Layer 1: Adaptive noise floor ────────────────────
+    // Track the minimum mic RMS over a ~1-second sliding window.
+    // Speech contains natural pauses that dip to the noise floor;
+    // constant ambient noise doesn't dip. The window minimum is a
+    // robust estimate of ambient level without being pulled up by speech.
+    this._minWindow[this._minW] = micRms;
+    this._minW = (this._minW + 1) % this._minWindow.length;
+    if (this._minFill < this._minWindow.length) this._minFill++;
+
+    let windowMin = 1.0;
+    for (let i = 0; i < this._minFill; i++) {
+      if (this._minWindow[i] < windowMin) windowMin = this._minWindow[i];
+    }
+    // Smooth the noise floor toward the window minimum (avoids jitter)
+    this._noiseFloor += (windowMin - this._noiseFloor) * 0.05;
+    this._noiseFloor = Math.max(0.001, Math.min(0.15, this._noiseFloor));
+
+    // Effective threshold: proportional + fixed offset above noise floor.
+    // This ensures the gap between noise and threshold doesn't vanish at
+    // high noise levels while staying responsive at low noise levels.
+    const effectiveThreshold = Math.max(threshold, this._noiseFloor * 1.5 + 0.02);
+
+    // ── Layer 2: Voice-activity hold ─────────────────────
+    if (micRms > effectiveThreshold) {
       this._holdSamples = baseHoldSamples;
     } else {
       this._holdSamples = Math.max(0, this._holdSamples - N);
     }
 
-    // ── Layer 2: Echo fingerprinting (safety net) ────────
+    // ── Layer 3: Echo fingerprinting (safety net) ────────
     // ONLY runs after base hold has expired — the base hold covers typical
     // delays. This layer catches unusually long delays (> holdMs).
     if (this._checkCooldown > 0) this._checkCooldown--;
@@ -123,17 +164,39 @@ class EchoGateProcessor extends AudioWorkletProcessor {
     const gated = suppression > 0 && (this._holdSamples > 0 || this._echoHoldSamples > 0);
     const target = gated ? gainTarget : 1.0;
 
-    // Instant attack, slow release for click-free audio.
+    // Instant attack, smooth release for click-free audio.
     for (let ch = 0; ch < out.length; ch++) {
       const src = remote?.[ch] ?? remote?.[0];
       for (let i = 0; i < out[ch].length; i++) {
         if (target < this._gain) {
           this._gain = target;
         } else {
-          this._gain += (target - this._gain) * 0.0008;
+          this._gain += (target - this._gain) * 0.005;
           if (this._gain > target - 0.001) this._gain = target;
         }
         out[ch][i] = (src?.[i] ?? 0) * this._gain;
+      }
+    }
+
+    // Diagnostic reporting (~4×/sec → every ~94 blocks at 48kHz)
+    if (this._diagEnabled) {
+      this._diagInterval++;
+      if (this._diagInterval >= 94) {
+        this._diagInterval = 0;
+        this.port.postMessage({
+          type: 'diag',
+          micRms,
+          remRms,
+          gain: this._gain,
+          gated,
+          holdMs: (this._holdSamples / sampleRate) * 1000,
+          echoHoldMs: (this._echoHoldSamples / sampleRate) * 1000,
+          echoDelay: this._echoDelay,
+          echoConf: this._echoConfidence,
+          threshold: effectiveThreshold,
+          noiseFloor: this._noiseFloor,
+          paramThreshold: threshold,
+        });
       }
     }
 

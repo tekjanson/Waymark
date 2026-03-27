@@ -391,13 +391,63 @@ function openChat(sheetId, displayName, signal) {
 
   callBar.append(callBtn, videoCallBtn, hangupBtn, muteBtn, camToggleBtn);
 
+  // --- Audio Diagnostic Overlay (shown during calls) ---
+  const diagOverlay = el('div', { className: 'social-audio-diag hidden' });
+  diagOverlay.innerHTML = `<div class="social-diag-row"><span>Mic:</span> <span class="sd-mic">—</span></div>
+<div class="social-diag-row"><span>Remote:</span> <span class="sd-rem">—</span></div>
+<div class="social-diag-row"><span>Gate:</span> <span class="sd-gate">—</span></div>
+<div class="social-diag-row"><span>Gain:</span> <span class="sd-gain">—</span></div>
+<div class="social-diag-row"><span>Hold:</span> <span class="sd-hold">—</span></div>
+<div class="social-diag-row"><span>Floor:</span> <span class="sd-floor">—</span></div>
+<div class="social-diag-row"><span>Thresh:</span> <span class="sd-thresh">—</span></div>
+<div class="social-diag-row"><span>AEC:</span> <span class="sd-aec">—</span></div>`;
+  let _diagListenerCleanup = null;
+  function startDiag(connect) {
+    stopDiag();
+    const gate = connect?._echoGateNode;
+    if (!gate?.port) return;
+    gate.port.postMessage({ type: 'enable-diag' });
+    const sdMic = diagOverlay.querySelector('.sd-mic');
+    const sdRem = diagOverlay.querySelector('.sd-rem');
+    const sdGate = diagOverlay.querySelector('.sd-gate');
+    const sdGain = diagOverlay.querySelector('.sd-gain');
+    const sdHold = diagOverlay.querySelector('.sd-hold');
+    const sdFloor = diagOverlay.querySelector('.sd-floor');
+    const sdThresh = diagOverlay.querySelector('.sd-thresh');
+    const sdAec = diagOverlay.querySelector('.sd-aec');
+    const handler = (e) => {
+      if (e.data?.type !== 'diag') return;
+      const d = e.data;
+      sdMic.textContent = d.micRms.toFixed(4);
+      sdMic.style.color = d.micRms > d.threshold ? '#f55' : '#5f5';
+      sdRem.textContent = d.remRms.toFixed(4);
+      sdGate.textContent = d.gated ? '🔴 CLOSED' : '🟢 OPEN';
+      sdGain.textContent = (d.gain * 100).toFixed(0) + '%';
+      sdHold.textContent = d.holdMs > 0 ? d.holdMs.toFixed(0) + 'ms' : d.echoHoldMs > 0 ? 'echo ' + d.echoHoldMs.toFixed(0) + 'ms' : '—';
+      sdFloor.textContent = d.noiseFloor.toFixed(4);
+      sdThresh.textContent = d.threshold.toFixed(4) + (d.threshold > d.paramThreshold ? ' (adaptive)' : ' (param)');
+      sdAec.textContent = d.micRms > d.threshold && d.remRms > 0.01 ? '⚠️ weak' : '✓';
+    };
+    gate.port.addEventListener('message', handler);
+    gate.port.start();
+    diagOverlay.classList.remove('hidden');
+    _diagListenerCleanup = () => {
+      try { gate.port.postMessage({ type: 'disable-diag' }); } catch {}
+      gate.port.removeEventListener('message', handler);
+      diagOverlay.classList.add('hidden');
+    };
+  }
+  function stopDiag() {
+    if (_diagListenerCleanup) { _diagListenerCleanup(); _diagListenerCleanup = null; }
+  }
+
   // Media container for video streams
   const mediaContainer = el('div', { className: 'social-media-container hidden' });
   const localVideo = el('video', { className: 'social-local-video', muted: true, autoplay: true, playsInline: true });
   const remoteVideo = el('video', { className: 'social-remote-video', autoplay: true, playsInline: true });
   // remoteAudio lives OUTSIDE mediaContainer so it's never hidden by display:none
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
-  mediaContainer.append(remoteVideo, localVideo);
+  mediaContainer.append(remoteVideo, localVideo, diagOverlay);
 
   // Cleanup handle for the Web Audio remote playback filter
   let _remoteFilterCleanup = null;
@@ -427,6 +477,7 @@ function openChat(sheetId, displayName, signal) {
       _remoteFilterCleanup = null;
     }
     remoteAudio.srcObject = null;
+    stopDiag();
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
     hangupBtn.classList.add('hidden');
@@ -710,6 +761,7 @@ function openChat(sheetId, displayName, signal) {
         connect.createRemoteAudioPipeline(stream, {
           highPassFreq: getHighPassFreq(),
           echoSuppression: getEchoSuppression(),
+          duckThreshold: getNoiseGateThreshold(),
         }).then(result => {
           // Only store cleanup if this is still the active connection
           if (_activeConnect === connect) {
@@ -717,6 +769,7 @@ function openChat(sheetId, displayName, signal) {
             // Play processed audio through <audio> element so Chrome's AEC
             // can reference it. Direct ctx.destination bypasses AEC on Linux.
             remoteAudio.srcObject = result.outputStream || null;
+            startDiag(connect);
           } else {
             result.cleanup();
           }
