@@ -17,6 +17,7 @@ import {
   getAutoGainControl, setAutoGainControl,
   getNoiseGateThreshold, setNoiseGateThreshold,
   getHighPassFreq, setHighPassFreq,
+  getDuckLevel, setDuckLevel,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -47,6 +48,7 @@ function buildAudioProcessing() {
   return {
     highPassFreq: getHighPassFreq(),
     gateThreshold: getNoiseGateThreshold(),
+    duckLevel: getDuckLevel(),
   };
 }
 
@@ -255,6 +257,18 @@ function openChat(sheetId, displayName, signal) {
       hpLabel.textContent = `${v} Hz`;
     } },
   });
+  const duckLabel = el('span', { className: 'social-settings-range-value' }, [`${getDuckLevel()}`]);
+  const duckSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '0', max: '1', step: '0.05',
+    value: String(getDuckLevel()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setDuckLevel(v);
+      duckLabel.textContent = `${v}`;
+    } },
+  });
   settingsPanel.append(
     el('div', { className: 'social-settings-title' }, ['Chat Settings']),
     el('label', { className: 'social-settings-row' }, [
@@ -289,9 +303,16 @@ function openChat(sheetId, displayName, signal) {
       hpSlider,
       hpLabel,
     ]),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['Echo duck level']),
+      duckSlider,
+      duckLabel,
+    ]),
     el('div', { className: 'social-settings-hint' }, [
       'Raise the noise gate to cut more echo (may clip quiet speech). '
-      + 'Raise high-pass to cut more room rumble. Settings apply on next call.',
+      + 'Raise high-pass to cut more room rumble. '
+      + 'Duck level controls how much remote audio is lowered while you speak. '
+      + 'Settings apply on next call.',
     ]),
   );
   settingsBtn.addEventListener('click', () => {
@@ -671,15 +692,22 @@ function openChat(sheetId, displayName, signal) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
         remoteVideo.srcObject = stream;
-        remoteAudio.srcObject = null; // prevent double audio
+        remoteVideo.muted = true; // mute video element — audio goes through ducking pipeline
+        remoteAudio.srcObject = null;
         mediaContainer.classList.remove('hidden');
         remoteVideo.play().catch(() => {});
       } else {
-        // Route remote audio through high-pass filter to reduce echo recapture
-        if (_remoteFilterCleanup) _remoteFilterCleanup();
-        const result = WaymarkConnect.filterRemoteAudio(remoteAudio, stream, getHighPassFreq());
-        _remoteFilterCleanup = result.cleanup;
         remoteVideo.srcObject = null;
+        remoteAudio.srcObject = null;
+      }
+      // Route ALL remote audio through the ducking pipeline (audio-only AND video)
+      if (_remoteFilterCleanup) _remoteFilterCleanup();
+      if (stream.getAudioTracks().length > 0 && _activeConnect) {
+        const result = _activeConnect.createRemoteAudioPipeline(stream, {
+          highPassFreq: getHighPassFreq(),
+          duckLevel: getDuckLevel(),
+        });
+        _remoteFilterCleanup = result.cleanup;
       }
       // If we're already in a call (user initiated), just update UI
       if (_activeConnect?.inCall) {

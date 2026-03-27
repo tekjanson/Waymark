@@ -371,7 +371,7 @@ test('noise gate slider defaults to -50 dB and persists changes', async ({ page 
 
   // Noise gate slider should exist with default value
   const sliders = page.locator('.social-settings-range');
-  expect(await sliders.count()).toBe(2);
+  expect(await sliders.count()).toBe(3);
   const gateSlider = sliders.first();
   await expect(gateSlider).toHaveValue('-50');
 
@@ -410,4 +410,27 @@ test('high-pass slider defaults to 80 Hz and persists changes', async ({ page })
 
   const hpLabel = page.locator('.social-settings-range-value').nth(1);
   await expect(hpLabel).toContainText('120 Hz');
+});
+
+test('duck level slider defaults to 0.05 and persists changes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  const sliders = page.locator('.social-settings-range');
+  const duckSlider = sliders.nth(2);
+  await expect(duckSlider).toHaveValue('0.05');
+
+  await duckSlider.fill('0.3');
+  await duckSlider.dispatchEvent('input');
+
+  const val = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_duck_level')),
+  );
+  expect(val).toBe(0.3);
+
+  const duckLabel = page.locator('.social-settings-range-value').nth(2);
+  await expect(duckLabel).toContainText('0.3');
 });

@@ -537,3 +537,13 @@ export function getHighPassFreq() {
 export function setHighPassFreq(hz) {
   set('audio_highpass_freq', Number(hz));
 }
+
+/** @returns {number} Echo duck level (gain when user is speaking). 0 = full mute, 1 = no ducking. Default 0.05 */
+export function getDuckLevel() {
+  return get('audio_duck_level') ?? 0.05;
+}
+
+/** @param {number} level — 0 to 1 */
+export function setDuckLevel(level) {
+  set('audio_duck_level', Number(level));
+}

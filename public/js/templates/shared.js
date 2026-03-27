@@ -1054,4 +1054,6 @@ export {
   setNoiseGateThreshold,
   getHighPassFreq,
   setHighPassFreq,
+  getDuckLevel,
+  setDuckLevel,
 } from '../storage.js';

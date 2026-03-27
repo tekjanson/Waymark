@@ -82,6 +82,9 @@ export class WaymarkConnect {
     this._audioCtx = null;
     this._processedStream = null;   // MediaStream sent to peer connections
     this._rawStream = null;         // original getUserMedia stream
+    this._micAnalyser = null;       // AnalyserNode for echo ducking
+    this._remoteCtx = null;         // AudioContext for remote playback pipeline
+    this._duckingRAF = null;        // requestAnimationFrame ID for ducking loop
 
     this._localStream = null;
     this._inCall = false;
@@ -222,6 +225,7 @@ export class WaymarkConnect {
   /**
    * Route mic audio through a processing chain to suppress echo and noise.
    * Chain: Source → HighPass → NoiseGate (compressor) → Destination
+   * Also creates a mic-level AnalyserNode used for echo ducking.
    * Video tracks pass through unchanged.
    *
    * @param {MediaStream} raw — getUserMedia stream
@@ -238,29 +242,34 @@ export class WaymarkConnect {
       const source = ctx.createMediaStreamSource(raw);
 
       // 1. High-pass filter: cut low-frequency room reverb & rumble
-      //    Default 80 Hz — removes the bass reflections that AEC handles worst
       const highPass = ctx.createBiquadFilter();
       highPass.type = 'highpass';
       highPass.frequency.value = opts.highPassFreq ?? 80;
-      highPass.Q.value = 0.7; // Butterworth-flat response
+      highPass.Q.value = 0.7;
 
       // 2. Noise gate via DynamicsCompressor
-      //    Aggressively compresses (gates) signals below threshold so quiet
-      //    echo reflections get crushed to near-silence. Speech stays through.
       const gate = ctx.createDynamicsCompressor();
-      gate.threshold.value = opts.gateThreshold ?? -50; // dB — signals below get gated
-      gate.knee.value = 2;        // nearly hard-knee for gate behavior
-      gate.ratio.value = 20;      // heavy compression below threshold
-      gate.attack.value = 0.002;  // 2ms — fast open so speech isn't clipped
-      gate.release.value = 0.05;  // 50ms — fast close to kill echo tail quickly
+      gate.threshold.value = opts.gateThreshold ?? -50;
+      gate.knee.value = 2;
+      gate.ratio.value = 20;
+      gate.attack.value = 0.002;
+      gate.release.value = 0.05;
 
-      // 3. Output destination — produces a new MediaStream
+      // 3. AnalyserNode — tapped AFTER processing for echo ducking reference.
+      //    Remote playback pipeline reads this to know when the user is speaking.
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      this._micAnalyser = analyser;
+
+      // 4. Output destination — produces a new MediaStream
       const dest = ctx.createMediaStreamDestination();
 
-      // Wire: source → highPass → gate → dest
+      // Wire: source → highPass → gate → analyser → dest
       source.connect(highPass);
       highPass.connect(gate);
-      gate.connect(dest);
+      gate.connect(analyser);
+      analyser.connect(dest);
 
       // Combine processed audio with original video tracks
       const processed = new MediaStream();
@@ -270,31 +279,138 @@ export class WaymarkConnect {
       this._processedStream = processed;
       return processed;
     } catch {
-      // Web Audio not available — fall back to raw stream
       return raw;
     }
   }
 
-  /** Clean up Web Audio context and processed stream. */
+  /** Clean up outgoing audio context and processed stream. */
   _teardownAudio() {
+    if (this._duckingRAF) {
+      cancelAnimationFrame(this._duckingRAF);
+      this._duckingRAF = null;
+    }
     if (this._audioCtx) {
       this._audioCtx.close().catch(() => {});
       this._audioCtx = null;
     }
+    if (this._remoteCtx) {
+      this._remoteCtx.close().catch(() => {});
+      this._remoteCtx = null;
+    }
     this._processedStream = null;
+    this._micAnalyser = null;
   }
 
   /**
-   * Apply a high-pass filter to a remote audio MediaStream before playback.
-   * Reduces low-frequency energy coming out of the speakers, which helps
-   * prevent the local mic from recapturing bass echo.
+   * Create a remote audio playback pipeline with echo ducking.
    *
-   * @param {HTMLAudioElement} audioEl — the <audio> element for remote playback
-   * @param {MediaStream} stream — the remote media stream
-   * @param {number} [freq=120] — high-pass cutoff in Hz
-   * @returns {{ ctx: AudioContext, cleanup: Function }} — call cleanup() on hangup
+   * Extracts audio tracks from a remote MediaStream, routes through:
+   *   Source → HighPass → DuckingGain → speakers (ctx.destination)
+   *
+   * The DuckingGain is driven by a rAF loop that reads the local mic
+   * AnalyserNode. When the user is speaking (mic RMS above threshold),
+   * remote gain is reduced to near-silence so the user doesn't hear
+   * their own delayed voice bounced back by the remote peer.
+   *
+   * @param {MediaStream} remoteStream — the remote peer's MediaStream
+   * @param {Object} [opts]
+   * @param {number} [opts.highPassFreq=120] — HPF cutoff for remote playback
+   * @param {number} [opts.duckLevel=0.05]   — gain when ducked (0 = mute, 1 = full)
+   * @param {number} [opts.duckThreshold=0.01] — mic RMS above this triggers ducking
+   * @returns {{ cleanup: Function }} — call cleanup() on hangup
+   */
+  createRemoteAudioPipeline(remoteStream, opts = {}) {
+    // Clean up previous remote context if any
+    if (this._remoteCtx) {
+      this._remoteCtx.close().catch(() => {});
+      this._remoteCtx = null;
+    }
+    if (this._duckingRAF) {
+      cancelAnimationFrame(this._duckingRAF);
+      this._duckingRAF = null;
+    }
+
+    const audioTracks = remoteStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      return { cleanup() {} };
+    }
+
+    try {
+      const ctx = new AudioContext();
+      this._remoteCtx = ctx;
+
+      // Source from remote stream
+      const source = ctx.createMediaStreamSource(
+        new MediaStream(audioTracks),
+      );
+
+      // 1. High-pass filter on remote playback
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = opts.highPassFreq ?? 120;
+      hp.Q.value = 0.7;
+
+      // 2. Ducking gain node — attenuated when local mic detects speech
+      const duckGain = ctx.createGain();
+      duckGain.gain.value = 1.0;
+
+      // Wire: source → hp → duckGain → speakers
+      source.connect(hp);
+      hp.connect(duckGain);
+      duckGain.connect(ctx.destination);
+
+      // 3. Echo ducking loop — read local mic level, duck remote when speaking
+      const duckLevel = opts.duckLevel ?? 0.05;
+      const duckThreshold = opts.duckThreshold ?? 0.01;
+      const analyser = this._micAnalyser;
+
+      if (analyser) {
+        const buf = new Float32Array(analyser.fftSize);
+        const smooth = { gain: 1.0 };
+
+        const duckLoop = () => {
+          if (!this._remoteCtx || ctx.state === 'closed') return;
+          analyser.getFloatTimeDomainData(buf);
+
+          // Calculate RMS (root mean square) of mic signal
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+
+          // Determine target gain: duck when mic is active
+          const target = rms > duckThreshold ? duckLevel : 1.0;
+
+          // Smooth transition to avoid clicks (exponential decay)
+          smooth.gain += (target - smooth.gain) * (target < smooth.gain ? 0.3 : 0.08);
+          duckGain.gain.value = smooth.gain;
+
+          this._duckingRAF = requestAnimationFrame(duckLoop);
+        };
+        this._duckingRAF = requestAnimationFrame(duckLoop);
+      }
+
+      const self = this;
+      return {
+        cleanup() {
+          if (self._duckingRAF) {
+            cancelAnimationFrame(self._duckingRAF);
+            self._duckingRAF = null;
+          }
+          ctx.close().catch(() => {});
+          if (self._remoteCtx === ctx) self._remoteCtx = null;
+        },
+      };
+    } catch {
+      return { cleanup() {} };
+    }
+  }
+
+  /**
+   * @deprecated Use createRemoteAudioPipeline instead.
+   * Kept for backward compatibility — redirects to the new pipeline.
    */
   static filterRemoteAudio(audioEl, stream, freq = 120) {
+    // Static method can't access instance ducking — basic filter only
     try {
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
@@ -304,16 +420,12 @@ export class WaymarkConnect {
       hp.Q.value = 0.7;
       source.connect(hp);
       hp.connect(ctx.destination);
-
-      // Don't let the <audio> element play the raw stream directly
       audioEl.srcObject = null;
-
       return {
         ctx,
         cleanup() { ctx.close().catch(() => {}); },
       };
     } catch {
-      // Fallback: just play normally
       audioEl.srcObject = stream;
       return { ctx: null, cleanup() {} };
     }
