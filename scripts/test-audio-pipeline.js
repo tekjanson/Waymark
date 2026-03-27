@@ -613,8 +613,9 @@ await testAsync('falls back to rAF pipeline when worklet unavailable', async () 
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   const { cleanup } = await wc.createRemoteAudioPipeline(remoteStream);
 
-  // Fallback creates a separate AudioContext
-  assert(wc._remoteCtx, 'Fallback should create a separate AudioContext');
+  // Fallback uses existing _audioCtx (not a new context) to avoid
+  // Chrome's suspended AudioContext policy (no user gesture)
+  assert(!wc._remoteCtx, 'Should reuse _audioCtx, not create _remoteCtx');
   assert(wc._echoGateNode === null, 'No worklet node in fallback path');
 
   cleanup();
@@ -629,13 +630,17 @@ await testAsync('fallback pipeline wires source → hp → gain → MediaStreamD
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   const result = await wc.createRemoteAudioPipeline(remoteStream);
 
-  const ctx = wc._remoteCtx;
-  assert(ctx, 'Fallback AudioContext should exist');
+  // Fallback reuses existing _audioCtx (created from _processAudio)
+  const ctx = wc._audioCtx;
+  assert(ctx, 'Existing AudioContext should be used');
 
-  const source = ctx._nodesCreated.find(n => n._type === 'MediaStreamSource');
-  assert(source, 'Remote source should exist');
+  // Find the remote source (not the mic source) — it's the one connected
+  // to a BiquadFilter directly
+  const sources = ctx._nodesCreated.filter(n => n._type === 'MediaStreamSource');
+  const remoteSource = sources.find(s => s._connections.some(c => c.target._type === 'BiquadFilter'));
+  assert(remoteSource, 'Remote source should exist');
 
-  const path = tracePath(source);
+  const path = tracePath(remoteSource);
   const expected = ['MediaStreamSource', 'BiquadFilter', 'Gain', 'MediaStreamDestination'];
   assert(
     JSON.stringify(path) === JSON.stringify(expected),
@@ -742,17 +747,19 @@ test('analyser has no downstream output (read-only sidechain tap)', () => {
 console.log('\n━━ 10. Race condition: answerer pipeline timing');
 // ─────────────────────────────────────────────────────────────
 
-await testAsync('remote audio plays via fallback when _micAnalyser is null (answerer scenario)', async () => {
+await testAsync('remote audio plays via raw passthrough when _micAnalyser is null (answerer scenario)', async () => {
   const wc = createInstance();
   // DO NOT call _processAudio — simulates the answerer before accepting
 
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   const result = await wc.createRemoteAudioPipeline(remoteStream);
 
-  // Fallback pipeline should be created — audio plays without echo ducking
-  assert(wc._remoteCtx, 'Fallback AudioContext should be created for passthrough audio');
+  // Should return raw audio stream directly — no Web Audio pipeline needed.
+  // This avoids Chrome's suspended AudioContext policy (no user gesture).
+  assert(!wc._remoteCtx, 'No fallback AudioContext should be created');
   assert(!wc._echoGateNode, 'No worklet node should be created without _micAnalyser');
-  assert(result.outputStream, 'outputStream should exist so <audio> element can play');
+  assert(result.outputStream, 'outputStream should be the raw audio stream');
+  assert(result.outputStream.getAudioTracks().length > 0, 'outputStream should have audio tracks');
 
   result.cleanup();
 });
@@ -801,16 +808,16 @@ await testAsync('startCall re-emits onRemoteStream for stored remote streams', a
   assert(lastStreamArg === remoteStream, 'Should re-emit with the stored remote stream');
 });
 
-await testAsync('full answerer flow: fallback → accept → rebuild with worklet', async () => {
+await testAsync('full answerer flow: passthrough → accept → rebuild with worklet', async () => {
   const wc = createInstance();
 
   // Phase 1: Remote stream arrives BEFORE call accepted.
-  // _micAnalyser is null → createRemoteAudioPipeline creates fallback (no ducking).
+  // _micAnalyser is null → raw passthrough (no Web Audio, no suspension issues).
   const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
   const result1 = await wc.createRemoteAudioPipeline(remoteStream);
   assert(!wc._echoGateNode, 'Phase 1: No worklet node should exist');
-  assert(wc._remoteCtx, 'Phase 1: Fallback context should exist for passthrough audio');
-  assert(result1.outputStream, 'Phase 1: outputStream should exist (audio plays without ducking)');
+  assert(!wc._remoteCtx, 'Phase 1: No fallback context needed (raw passthrough)');
+  assert(result1.outputStream, 'Phase 1: outputStream should be raw audio stream');
   result1.cleanup();
 
   // Phase 2: User accepts call → _processAudio sets up _micAnalyser.

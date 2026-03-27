@@ -359,9 +359,13 @@ export class WaymarkConnect {
     if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
 
     // If mic processing isn't ready yet (answerer hasn't accepted the call),
-    // play remote audio without echo gating. No echo risk since the user
-    // isn't sending audio yet. Pipeline will be rebuilt with gating when
-    // startCall sets up _micAnalyser.
+    // return the raw audio stream for direct <audio> playback — no Web Audio
+    // needed, no AudioContext suspension issues, no echo risk since the user
+    // isn't sending audio. Pipeline rebuilt with gating when startCall runs.
+    if (!this._micAnalyser) {
+      const raw = new MediaStream(audioTracks);
+      return { outputStream: raw, cleanup() {} };
+    }
 
     // Resume AudioContext if suspended (required on mobile after tab switch)
     if (this._audioCtx?.state === 'suspended') {
@@ -376,7 +380,10 @@ export class WaymarkConnect {
       } catch { /* fall through to rAF fallback */ }
     }
 
-    // Fallback: separate AudioContext with rAF-driven gating
+    // Fallback: rAF-driven gating using the EXISTING _audioCtx.
+    // Creating a new AudioContext here would start suspended (no user gesture
+    // on the call stack — onRemoteStream fires from an ICE callback) and
+    // resume() would fail silently, producing total silence.
     return this._createFallbackPipeline(audioTracks, opts);
   }
 
@@ -434,14 +441,23 @@ export class WaymarkConnect {
   }
 
   /**
-   * Fallback path — separate AudioContext with requestAnimationFrame gating.
+   * Fallback path — rAF-driven gating using the existing _audioCtx.
    * Used when AudioWorklet is unavailable (older browsers, addModule failure).
+   * MUST use the existing _audioCtx (created during user gesture in startCall)
+   * because creating a new AudioContext here would start suspended — Chrome
+   * requires a user gesture to resume, and onRemoteStream fires from an ICE
+   * callback with no gesture on the stack.
    */
   _createFallbackPipeline(audioTracks, opts) {
     try {
-      const ctx = new AudioContext();
-      this._remoteCtx = ctx;
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      // Use existing mic AudioContext (created during user gesture).
+      // Only create a new one as absolute last resort.
+      const useExisting = !!this._audioCtx;
+      const ctx = this._audioCtx || new AudioContext();
+      if (!useExisting) {
+        this._remoteCtx = ctx;
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      }
 
       const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
@@ -495,6 +511,7 @@ export class WaymarkConnect {
       }
 
       const self = this;
+      const ownCtx = !useExisting;
       return {
         outputStream: dest.stream,
         cleanup() {
@@ -502,8 +519,14 @@ export class WaymarkConnect {
             cancelAnimationFrame(self._duckingRAF);
             self._duckingRAF = null;
           }
-          ctx.close().catch(() => {});
-          if (self._remoteCtx === ctx) self._remoteCtx = null;
+          source.disconnect();
+          hp.disconnect();
+          duckGain.disconnect();
+          // Only close the context if we created it (don't close _audioCtx)
+          if (ownCtx) {
+            ctx.close().catch(() => {});
+            if (self._remoteCtx === ctx) self._remoteCtx = null;
+          }
         },
       };
     } catch {

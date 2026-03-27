@@ -977,7 +977,9 @@ function openChat(sheetId, displayName, signal) {
       // Route ALL remote audio through the echo suppression pipeline.
       // Use a generation counter so only the latest pipeline result is applied
       // (onRemoteStream may fire multiple times from ontrack / renegotiation).
-      if (stream.getAudioTracks().length > 0 && _activeConnect) {
+      const nAudioTracks = stream.getAudioTracks().length;
+      if (nAudioTracks > 0 && _activeConnect) {
+        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}`);
         const connect = _activeConnect;
         const gen = ++_pipelineGen;
         // Keep old pipeline running until new one is ready
@@ -990,6 +992,7 @@ function openChat(sheetId, displayName, signal) {
         }).then(result => {
           // Discard if superseded by a newer onRemoteStream call
           if (_activeConnect !== connect || _pipelineGen !== gen) {
+            debugLog(`Pipeline gen=${gen} superseded by gen=${_pipelineGen} — discarded`);
             result.cleanup();
             if (oldCleanup) oldCleanup();
             return;
@@ -1003,7 +1006,13 @@ function openChat(sheetId, displayName, signal) {
           if (result.outputStream && remoteAudio.paused) {
             remoteAudio.play().catch(() => {});
           }
+          const ptype = connect._echoGateNode ? 'worklet' : connect._duckingRAF ? 'rAF fallback' : 'direct';
+          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}`);
+        }).catch(err => {
+          debugLog(`Pipeline error: ${err.message}`);
         });
+      } else if (nAudioTracks === 0) {
+        debugLog('Remote stream has no audio tracks');
       }
       // If we're already in a call (user initiated), just update UI
       if (_activeConnect?.inCall) {
