@@ -512,6 +512,12 @@ function openChat(sheetId, displayName, signal) {
     els.sampleRate.textContent = ctx?.sampleRate ? `${ctx.sampleRate} Hz` : '—';
     els.pipelineType.textContent = connect._echoGateNode ? 'AudioWorklet' : connect._duckingRAF ? 'rAF fallback' : 'none';
 
+    // Log ICE connection state for each peer
+    for (const [peerId, r] of connect._rtc || []) {
+      const ice = r?.pc?.iceConnectionState || '?';
+      debugLog(`ICE[${peerId.slice(0, 6)}]: ${ice}`);
+    }
+
     // Read browser constraints from the actual mic track
     const micTrack = connect._rawStream?.getAudioTracks()?.[0];
     if (micTrack) {
@@ -990,7 +996,12 @@ function openChat(sheetId, displayName, signal) {
       if (nAudioTracks > 0 && _activeConnect) {
         const tracks = stream.getAudioTracks();
         const t0 = tracks[0];
-        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}, track=${t0?.readyState}/${t0?.enabled ? 'en' : 'dis'}/${t0?.muted ? 'muted' : 'live'}`);
+        // Show ICE state at time of track arrival for connectivity diagnostics
+        let iceInfo = '';
+        for (const [pid, r] of _activeConnect._rtc || []) {
+          iceInfo += ` ICE[${pid.slice(0, 6)}]=${r?.pc?.iceConnectionState || '?'}`;
+        }
+        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}, track=${t0?.readyState}/${t0?.enabled ? 'en' : 'dis'}/${t0?.muted ? 'muted' : 'live'}${iceInfo}`);
         const connect = _activeConnect;
         const gen = ++_pipelineGen;
         // Keep old pipeline running until new one is ready

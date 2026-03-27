@@ -621,6 +621,24 @@ await testAsync('falls back to rAF pipeline when worklet unavailable', async () 
   cleanup();
 });
 
+await testAsync('falls back to rAF when addModule fails (Promise resolves null)', async () => {
+  const wc = createInstance();
+  const raw = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  wc._processAudio(raw);
+  // Simulate addModule failure: _workletReady is a Promise resolving to null
+  // (this is what the real catch handler returns)
+  wc._workletReady = Promise.resolve(null);
+
+  const remoteStream = new MockMediaStream([new MockMediaStreamTrack('audio')]);
+  const { cleanup } = await wc.createRemoteAudioPipeline(remoteStream);
+
+  // Should skip worklet path entirely (no AudioWorkletNode creation attempt)
+  assert(!wc._remoteCtx, 'Should reuse _audioCtx, not create _remoteCtx');
+  assert(wc._echoGateNode === null, 'No worklet node when addModule failed');
+
+  cleanup();
+});
+
 await testAsync('fallback pipeline wires source → hp → gain → MediaStreamDestination', async () => {
   const wc = createInstance();
   const raw = new MockMediaStream([new MockMediaStreamTrack('audio')]);

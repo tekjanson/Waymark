@@ -293,8 +293,9 @@ export class WaymarkConnect {
 
       // Register AudioWorklet for sample-accurate echo gating on remote audio.
       if (ctx.audioWorklet) {
+        const base = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
         this._workletReady = ctx.audioWorklet
-          .addModule('/js/echo-gate-processor.js')
+          .addModule(base + '/js/echo-gate-processor.js')
           .catch((err) => {
             console.warn('[webrtc] AudioWorklet addModule failed:', err?.message || err);
             return null;
@@ -387,11 +388,18 @@ export class WaymarkConnect {
       await this._audioCtx.resume().catch(() => {});
     }
 
-    // Try AudioWorklet path: sample-accurate gating on the audio thread
+    // Try AudioWorklet path: sample-accurate gating on the audio thread.
+    // addModule().catch returns null on failure so _workletReady resolves to
+    // null when the processor couldn't be registered. Skip the worklet path
+    // entirely in that case — avoids creating an AudioWorkletNode that would
+    // throw (leaking a MediaStreamSource node in the process).
     if (this._audioCtx && this._workletReady && this._micAnalyser) {
       try {
-        await this._workletReady;
-        return this._createWorkletPipeline(audioTracks, opts);
+        const loaded = await this._workletReady;
+        if (loaded !== null) {
+          return this._createWorkletPipeline(audioTracks, opts);
+        }
+        // addModule failed — skip worklet, fall through to rAF fallback
       } catch { /* fall through to rAF fallback */ }
     }
 
@@ -544,9 +552,10 @@ export class WaymarkConnect {
           }
         },
       };
-    } catch {
+    } catch (err) {
       // Pipeline node creation failed (e.g. context closed mid-setup).
       // Fall back to raw passthrough — silence-free degradation.
+      console.warn('[webrtc] fallback pipeline failed, using raw passthrough:', err?.message || err);
       const raw = new MediaStream(audioTracks);
       return { outputStream: raw, cleanup() {} };
     }
@@ -858,12 +867,26 @@ export class WaymarkConnect {
       if (e.streams?.[0]) {
         this._remoteStreams.set(remotePeerId, e.streams[0]);
         this.onRemoteStream(e.streams[0], remotePeerId);
+
+        // Listen for unmute — remote tracks start muted until media
+        // packets arrive. When unmuted, re-emit so the pipeline can
+        // rebuild with live data.
+        for (const t of e.streams[0].getAudioTracks()) {
+          if (t.muted) {
+            t.addEventListener('unmute', () => {
+              console.log('[webrtc] remote audio track unmuted for', remotePeerId);
+              const stream = this._remoteStreams.get(remotePeerId);
+              if (stream) this.onRemoteStream(stream, remotePeerId);
+            }, { once: true });
+          }
+        }
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
       const s = pc.iceConnectionState;
+      console.log('[webrtc] ICE state:', s, 'for peer', remotePeerId);
       if (s === 'failed' || s === 'closed') {
         this._closeOne(remotePeerId);
         if (this._peers.get(remotePeerId)?.channel === 'rtc') {
