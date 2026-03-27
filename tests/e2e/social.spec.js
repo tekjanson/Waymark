@@ -412,7 +412,7 @@ test('high-pass slider defaults to 80 Hz and persists changes', async ({ page })
   await expect(hpLabel).toContainText('120 Hz');
 });
 
-test('duck level slider defaults to 0.05 and persists changes', async ({ page }) => {
+test('echo suppression slider defaults to 95% and persists changes', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-030');
   await page.click('.social-connect-btn');
@@ -420,17 +420,17 @@ test('duck level slider defaults to 0.05 and persists changes', async ({ page })
   await page.click('.social-chat-settings-btn');
 
   const sliders = page.locator('.social-settings-range');
-  const duckSlider = sliders.nth(2);
-  await expect(duckSlider).toHaveValue('0.05');
+  const suppressSlider = sliders.nth(2);
+  await expect(suppressSlider).toHaveValue('0.95');
 
-  await duckSlider.fill('0.3');
-  await duckSlider.dispatchEvent('input');
+  await suppressSlider.fill('0.5');
+  await suppressSlider.dispatchEvent('input');
 
   const val = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('waymark_audio_duck_level')),
+    JSON.parse(localStorage.getItem('waymark_audio_echo_suppression')),
   );
-  expect(val).toBe(0.3);
+  expect(val).toBe(0.5);
 
-  const duckLabel = page.locator('.social-settings-range-value').nth(2);
-  await expect(duckLabel).toContainText('0.3');
+  const suppressLabel = page.locator('.social-settings-range-value').nth(2);
+  await expect(suppressLabel).toContainText('50%');
 });

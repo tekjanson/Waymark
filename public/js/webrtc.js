@@ -302,7 +302,7 @@ export class WaymarkConnect {
   }
 
   /**
-   * Create a remote audio playback pipeline with echo ducking.
+   * Create a remote audio playback pipeline with echo suppression.
    *
    * Extracts audio tracks from a remote MediaStream, routes through:
    *   Source → HighPass → DuckingGain → speakers (ctx.destination)
@@ -314,9 +314,10 @@ export class WaymarkConnect {
    *
    * @param {MediaStream} remoteStream — the remote peer's MediaStream
    * @param {Object} [opts]
-   * @param {number} [opts.highPassFreq=120] — HPF cutoff for remote playback
-   * @param {number} [opts.duckLevel=0.05]   — gain when ducked (0 = mute, 1 = full)
-   * @param {number} [opts.duckThreshold=0.01] — mic RMS above this triggers ducking
+   * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
+   * @param {number} [opts.echoSuppression=0.95] — 0 = off, 1 = full mute while speaking
+   * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
+   * @param {number} [opts.holdMs=400]           — ms to stay ducked after speech ends
    * @returns {{ cleanup: Function }} — call cleanup() on hangup
    */
   createRemoteAudioPipeline(remoteStream, opts = {}) {
@@ -359,14 +360,18 @@ export class WaymarkConnect {
       hp.connect(duckGain);
       duckGain.connect(ctx.destination);
 
-      // 3. Echo ducking loop — read local mic level, duck remote when speaking
-      const duckLevel = opts.duckLevel ?? 0.05;
-      const duckThreshold = opts.duckThreshold ?? 0.01;
+      // 3. Echo suppression loop — read local mic level, duck remote when speaking
+      //    echoSuppression: 0 = off (gain stays 1.0), 1 = full mute while speaking
+      const suppression = opts.echoSuppression ?? 0.95;
+      const gainWhenDucked = Math.max(0, 1 - suppression);
+      const duckThreshold = opts.duckThreshold ?? 0.012;
+      const holdMs = opts.holdMs ?? 400;
       const analyser = this._micAnalyser;
 
-      if (analyser) {
+      if (analyser && suppression > 0) {
         const buf = new Float32Array(analyser.fftSize);
         const smooth = { gain: 1.0 };
+        let holdUntil = 0;
 
         const duckLoop = () => {
           if (!this._remoteCtx || ctx.state === 'closed') return;
@@ -377,11 +382,20 @@ export class WaymarkConnect {
           for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
           const rms = Math.sqrt(sum / buf.length);
 
-          // Determine target gain: duck when mic is active
-          const target = rms > duckThreshold ? duckLevel : 1.0;
+          const now = performance.now();
 
-          // Smooth transition to avoid clicks (exponential decay)
-          smooth.gain += (target - smooth.gain) * (target < smooth.gain ? 0.3 : 0.08);
+          // Extend hold window whenever speech is detected
+          if (rms > duckThreshold) holdUntil = now + holdMs;
+
+          // Stay ducked through hold period to cover pauses between words
+          const target = now < holdUntil ? gainWhenDucked : 1.0;
+
+          // Fast attack (0.7), slow release (0.04) to avoid clicks
+          const rate = target < smooth.gain ? 0.7 : 0.04;
+          smooth.gain += (target - smooth.gain) * rate;
+
+          // Snap to target when very close to avoid asymptotic crawl
+          if (Math.abs(smooth.gain - target) < 0.005) smooth.gain = target;
           duckGain.gain.value = smooth.gain;
 
           this._duckingRAF = requestAnimationFrame(duckLoop);

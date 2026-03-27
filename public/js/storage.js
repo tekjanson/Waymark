@@ -538,12 +538,12 @@ export function setHighPassFreq(hz) {
   set('audio_highpass_freq', Number(hz));
 }
 
-/** @returns {number} Echo duck level (gain when user is speaking). 0 = full mute, 1 = no ducking. Default 0.05 */
-export function getDuckLevel() {
-  return get('audio_duck_level') ?? 0.05;
+/** @returns {number} Echo suppression strength. 0 = off, 1 = full mute while speaking. Default 0.95 */
+export function getEchoSuppression() {
+  return get('audio_echo_suppression') ?? 0.95;
 }
 
 /** @param {number} level — 0 to 1 */
-export function setDuckLevel(level) {
-  set('audio_duck_level', Number(level));
+export function setEchoSuppression(level) {
+  set('audio_echo_suppression', Number(level));
 }

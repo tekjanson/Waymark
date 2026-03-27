@@ -17,7 +17,7 @@ import {
   getAutoGainControl, setAutoGainControl,
   getNoiseGateThreshold, setNoiseGateThreshold,
   getHighPassFreq, setHighPassFreq,
-  getDuckLevel, setDuckLevel,
+  getEchoSuppression, setEchoSuppression,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -48,7 +48,7 @@ function buildAudioProcessing() {
   return {
     highPassFreq: getHighPassFreq(),
     gateThreshold: getNoiseGateThreshold(),
-    duckLevel: getDuckLevel(),
+    echoSuppression: getEchoSuppression(),
   };
 }
 
@@ -257,16 +257,16 @@ function openChat(sheetId, displayName, signal) {
       hpLabel.textContent = `${v} Hz`;
     } },
   });
-  const duckLabel = el('span', { className: 'social-settings-range-value' }, [`${getDuckLevel()}`]);
-  const duckSlider = el('input', {
+  const suppressLabel = el('span', { className: 'social-settings-range-value' }, [`${Math.round(getEchoSuppression() * 100)}%`]);
+  const suppressSlider = el('input', {
     type: 'range',
     className: 'social-settings-range',
     min: '0', max: '1', step: '0.05',
-    value: String(getDuckLevel()),
+    value: String(getEchoSuppression()),
     on: { input(e) {
       const v = Number(e.target.value);
-      setDuckLevel(v);
-      duckLabel.textContent = `${v}`;
+      setEchoSuppression(v);
+      suppressLabel.textContent = `${Math.round(v * 100)}%`;
     } },
   });
   settingsPanel.append(
@@ -304,14 +304,13 @@ function openChat(sheetId, displayName, signal) {
       hpLabel,
     ]),
     el('div', { className: 'social-settings-row social-settings-slider-row' }, [
-      el('span', {}, ['Echo duck level']),
-      duckSlider,
-      duckLabel,
+      el('span', {}, ['Echo suppression']),
+      suppressSlider,
+      suppressLabel,
     ]),
     el('div', { className: 'social-settings-hint' }, [
-      'Raise the noise gate to cut more echo (may clip quiet speech). '
-      + 'Raise high-pass to cut more room rumble. '
-      + 'Duck level controls how much remote audio is lowered while you speak. '
+      'Echo suppression mutes remote audio while you speak to prevent '
+      + 'hearing your own voice back. 100% = full mute. '
       + 'Settings apply on next call.',
     ]),
   );
@@ -705,7 +704,7 @@ function openChat(sheetId, displayName, signal) {
       if (stream.getAudioTracks().length > 0 && _activeConnect) {
         const result = _activeConnect.createRemoteAudioPipeline(stream, {
           highPassFreq: getHighPassFreq(),
-          duckLevel: getDuckLevel(),
+          echoSuppression: getEchoSuppression(),
         });
         _remoteFilterCleanup = result.cleanup;
       }
