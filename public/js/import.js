@@ -213,6 +213,17 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  'mesh.taskId':    'Task ID',
+  'mesh.type':      'Task type (echo, importSheet, generateReport, …)',
+  'mesh.status':    'Status (pending, running, done, failed, cancelled)',
+  'mesh.priority':  'Priority (high, normal, low)',
+  'mesh.workerId':  'Worker ID (set by the worker when claiming)',
+  'mesh.created':   'Created timestamp (YYYY-MM-DD HH:MM:SS)',
+  'mesh.started':   'Started timestamp',
+  'mesh.completed': 'Completed timestamp',
+  'mesh.input':     'Input JSON (task parameters)',
+  'mesh.output':    'Output JSON (task result)',
+  'mesh.error':     'Error message (if failed)',
 };
 
 /**
@@ -318,6 +329,12 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Mesh Queue
+  'mesh.taskId': 'Task ID', 'mesh.type': 'Type',
+  'mesh.status': 'Status', 'mesh.priority': 'Priority',
+  'mesh.workerId': 'Worker ID', 'mesh.created': 'Created',
+  'mesh.started': 'Started', 'mesh.completed': 'Completed',
+  'mesh.input': 'Input', 'mesh.output': 'Output', 'mesh.error': 'Error',
 };
 
 /**

@@ -1,9 +1,13 @@
 {
-  "activeProject": "waymark",
+  "activeProject": "browser-mesh",
   "projects": {
     "waymark": {
       "spreadsheetId": "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4",
       "range": "Sheet1!A:I"
+    },
+    "browser-mesh": {
+      "spreadsheetId": "1GkFtoe8mL-WZqkbb9AaixnJRkVNrEl11DqUydYPdzGY",
+      "range": "Sheet1!A:J"
     }
   }
 }

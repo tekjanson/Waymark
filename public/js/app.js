@@ -19,6 +19,8 @@ import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
+import * as mesh from './mesh.js';
+import { buildMeshSettingsSection, syncMeshSettings } from './mesh-config.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -195,6 +197,7 @@ async function boot() {
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   notifications.init(document.querySelector('.top-bar-right'));
+  mesh.init({ displayName: '' }); // Peer name set after auth
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());
@@ -273,6 +276,10 @@ async function boot() {
   // Wire settings modal
   initSettingsModal();
 
+  // Build mesh settings section (dynamic DOM)
+  const meshAnchor = document.getElementById('settings-mesh-anchor');
+  if (meshAnchor) meshAnchor.append(buildMeshSettingsSection());
+
   // Wire theme toggle
   initTheme();
 
@@ -315,6 +322,10 @@ async function showApp(user) {
     userAvatarEl.alt = user.name || '';
     userAvatarEl.classList.remove('hidden');
   }
+
+  // Reinitialise mesh with the authenticated user's name
+  mesh.destroy();
+  mesh.init({ displayName: _userName });
 
   // Initialize Drive-backed user data (pins, prefs, Waymark folder)
   try {
@@ -2293,6 +2304,9 @@ function openSettingsModal() {
     // Fetch available info from backend (best-effort)
     fetchSourceInfo();
   }
+
+  // Sync mesh settings panel
+  syncMeshSettings();
 
   settingsModal.classList.remove('hidden');
 }

@@ -866,4 +866,17 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Mesh Queue examples ---- */
+  'Waymark Task Queue': {
+    folder: 'Operations',
+    headers: ['Task ID', 'Type', 'Status', 'Priority', 'Worker ID', 'Created', 'Started', 'Completed', 'Input', 'Output', 'Error'],
+    rows: [
+      ['task-abc123-def4', 'echo',           'done',    'normal', 'w-a1b2c3', '2026-03-26 10:00:00', '2026-03-26 10:00:01', '2026-03-26 10:00:01', '{"message":"Hello"}', '{"echoed":{"message":"Hello"}}', ''],
+      ['task-bcd234-ef56', 'importSheet',    'running', 'high',   'w-d4e5f6', '2026-03-26 10:01:00', '2026-03-26 10:01:05', '',                    '{"url":"https://docs.google.com/spreadsheets/d/example"}', '', ''],
+      ['task-cde345-fg67', 'generateReport', 'pending', 'normal', '',          '2026-03-26 10:02:00', '',                    '',                    '{"folder":"Reports","format":"sheet"}', '', ''],
+      ['task-def456-gh78', 'echo',           'failed',  'low',    'w-g7h8i9', '2026-03-26 10:03:00', '2026-03-26 10:03:02', '2026-03-26 10:03:02', '{"message":"Test"}', '', 'Handler threw: TypeError'],
+      ['task-efg567-hi89', 'importSheet',    'pending', 'high',   '',          '2026-03-26 10:04:00', '',                    '',                    '{"url":"https://docs.google.com/spreadsheets/d/another"}', '', ''],
+    ],
+  },
 };

@@ -7,6 +7,8 @@
 
 import { el, showToast } from '../ui.js';
 export { WaymarkConnect } from '../webrtc.js';
+export { MeshQueue } from '../mesh-queue.js';
+export { MeshWorker } from '../mesh-worker.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 

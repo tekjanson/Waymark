@@ -485,3 +485,109 @@ export function getChatSoundEnabled() {
 export function setChatSoundEnabled(enabled) {
   set('chat_sound_enabled', !!enabled);
 }
+
+/* ---------- Browser Mesh ---------- */
+
+/** Whether the global mesh is enabled. Default: false (opted out). */
+export function getMeshEnabled() {
+  return !!get('mesh_enabled');
+}
+
+export function setMeshEnabled(enabled) {
+  set('mesh_enabled', !!enabled);
+}
+
+/** Persistent peer ID for this browser. Generated once on first use. */
+export function getMeshPeerId() {
+  let id = get('mesh_peer_id');
+  if (!id) {
+    id = crypto.randomUUID().slice(0, 12);
+    set('mesh_peer_id', id);
+  }
+  return id;
+}
+
+/** Custom STUN/TURN servers (array of {urls, username?, credential?}). */
+export function getMeshIceServers() {
+  return get('mesh_ice_servers') || [];
+}
+
+export function setMeshIceServers(servers) {
+  set('mesh_ice_servers', Array.isArray(servers) ? servers : []);
+}
+
+/** Maximum number of peers allowed in the mesh. Default: 10. */
+export function getMeshMaxPeers() {
+  const v = get('mesh_max_peers');
+  return (typeof v === 'number' && v > 0) ? v : 10;
+}
+
+export function setMeshMaxPeers(n) {
+  set('mesh_max_peers', Math.max(1, Math.min(50, typeof n === 'number' ? n : 10)));
+}
+
+/** Connection timeout in ms for WebRTC handshake. Default: 30000. */
+export function getMeshTimeout() {
+  const v = get('mesh_timeout');
+  return (typeof v === 'number' && v > 0) ? v : 30000;
+}
+
+export function setMeshTimeout(ms) {
+  set('mesh_timeout', Math.max(5000, ms || 30000));
+}
+
+/** Heartbeat interval in ms. Default: 15000. */
+export function getMeshHeartbeat() {
+  const v = get('mesh_heartbeat');
+  return (typeof v === 'number' && v > 0) ? v : 15000;
+}
+
+export function setMeshHeartbeat(ms) {
+  set('mesh_heartbeat', Math.max(5000, ms || 15000));
+}
+
+/** Whether to enable the distributed task queue. Default: false. */
+export function getMeshTaskQueueEnabled() {
+  return !!get('mesh_task_queue');
+}
+
+export function setMeshTaskQueueEnabled(enabled) {
+  set('mesh_task_queue', !!enabled);
+}
+
+/** Whether to enable CRDT collaborative editing. Default: false. */
+export function getMeshCrdtEnabled() {
+  return !!get('mesh_crdt');
+}
+
+export function setMeshCrdtEnabled(enabled) {
+  set('mesh_crdt', !!enabled);
+}
+
+/** Whether to enable the distributed eval farm. Default: false. */
+export function getMeshEvalFarmEnabled() {
+  return !!get('mesh_eval_farm');
+}
+
+export function setMeshEvalFarmEnabled(enabled) {
+  set('mesh_eval_farm', !!enabled);
+}
+
+/** Whether to accept headless worker connections. Default: false. */
+export function getMeshSwarmEnabled() {
+  return !!get('mesh_swarm');
+}
+
+export function setMeshSwarmEnabled(enabled) {
+  set('mesh_swarm', !!enabled);
+}
+
+/** Maximum concurrent tasks for the local worker. Default: 3. */
+export function getMeshWorkerConcurrency() {
+  const v = get('mesh_worker_concurrency');
+  return (typeof v === 'number' && v > 0) ? v : 3;
+}
+
+export function setMeshWorkerConcurrency(n) {
+  set('mesh_worker_concurrency', Math.max(1, Math.min(20, n || 3)));
+}
