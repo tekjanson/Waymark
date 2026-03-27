@@ -15,6 +15,8 @@ import {
   getEchoCancellation, setEchoCancellation,
   getNoiseSuppression, setNoiseSuppression,
   getAutoGainControl, setAutoGainControl,
+  getNoiseGateThreshold, setNoiseGateThreshold,
+  getHighPassFreq, setHighPassFreq,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
@@ -33,6 +35,18 @@ function buildAudioConstraints() {
     echoCancellation: getEchoCancellation(),
     noiseSuppression: getNoiseSuppression(),
     autoGainControl: getAutoGainControl(),
+  };
+}
+
+/**
+ * Build the audioProcessing options bag passed to WaymarkConnect.startCall().
+ * These control the Web Audio processing pipeline (high-pass + noise gate).
+ * @returns {Object}
+ */
+function buildAudioProcessing() {
+  return {
+    highPassFreq: getHighPassFreq(),
+    gateThreshold: getNoiseGateThreshold(),
   };
 }
 
@@ -217,6 +231,30 @@ function openChat(sheetId, displayName, signal) {
     checked: getAutoGainControl(),
     on: { change(e) { setAutoGainControl(e.target.checked); } },
   });
+  const gateLabel = el('span', { className: 'social-settings-range-value' }, [`${getNoiseGateThreshold()} dB`]);
+  const gateSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '-80', max: '-20', step: '5',
+    value: String(getNoiseGateThreshold()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setNoiseGateThreshold(v);
+      gateLabel.textContent = `${v} dB`;
+    } },
+  });
+  const hpLabel = el('span', { className: 'social-settings-range-value' }, [`${getHighPassFreq()} Hz`]);
+  const hpSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '40', max: '200', step: '10',
+    value: String(getHighPassFreq()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setHighPassFreq(v);
+      hpLabel.textContent = `${v} Hz`;
+    } },
+  });
   settingsPanel.append(
     el('div', { className: 'social-settings-title' }, ['Chat Settings']),
     el('label', { className: 'social-settings-row' }, [
@@ -240,8 +278,20 @@ function openChat(sheetId, displayName, signal) {
       gainCheckbox,
       el('span', {}, ['Auto gain control']),
     ]),
+    el('div', { className: 'social-settings-title social-settings-divider' }, ['Advanced']),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['Noise gate']),
+      gateSlider,
+      gateLabel,
+    ]),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['High-pass filter']),
+      hpSlider,
+      hpLabel,
+    ]),
     el('div', { className: 'social-settings-hint' }, [
-      'Audio settings apply to your next call. Changes mid-call require hanging up and redialling.',
+      'Raise the noise gate to cut more echo (may clip quiet speech). '
+      + 'Raise high-pass to cut more room rumble. Settings apply on next call.',
     ]),
   );
   settingsBtn.addEventListener('click', () => {
@@ -329,6 +379,9 @@ function openChat(sheetId, displayName, signal) {
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
   mediaContainer.append(remoteVideo, localVideo);
 
+  // Cleanup handle for the Web Audio remote playback filter
+  let _remoteFilterCleanup = null;
+
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
     callBtn.classList.add('hidden');
@@ -347,6 +400,11 @@ function openChat(sheetId, displayName, signal) {
     // Stop local tracks to release camera/mic hardware
     if (_activeConnect?.localStream) {
       for (const t of _activeConnect.localStream.getTracks()) t.stop();
+    }
+    // Tear down remote audio filter
+    if (_remoteFilterCleanup) {
+      _remoteFilterCleanup();
+      _remoteFilterCleanup = null;
     }
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
@@ -407,7 +465,7 @@ function openChat(sheetId, displayName, signal) {
     if (!_activeConnect || _activeConnect.inCall) return;
     appendMessage('System', 'Joining call…', Date.now(), false);
     try {
-      const stream = await _activeConnect.startCall({ audio: buildAudioConstraints(), video: withVideo });
+      const stream = await _activeConnect.startCall({ audio: buildAudioConstraints(), video: withVideo, audioProcessing: buildAudioProcessing() });
       if (stream?._listenOnly) {
         appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
       } else {
@@ -423,8 +481,8 @@ function openChat(sheetId, displayName, signal) {
     }
   }
 
-  callBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: false }));
-  videoCallBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: true }));
+  callBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: false, audioProcessing: buildAudioProcessing() }));
+  videoCallBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: true, audioProcessing: buildAudioProcessing() }));
 
   hangupBtn.addEventListener('click', () => {
     if (_activeConnect) _activeConnect.endCall();
@@ -617,9 +675,11 @@ function openChat(sheetId, displayName, signal) {
         mediaContainer.classList.remove('hidden');
         remoteVideo.play().catch(() => {});
       } else {
-        remoteAudio.srcObject = stream;
+        // Route remote audio through high-pass filter to reduce echo recapture
+        if (_remoteFilterCleanup) _remoteFilterCleanup();
+        const result = WaymarkConnect.filterRemoteAudio(remoteAudio, stream, getHighPassFreq());
+        _remoteFilterCleanup = result.cleanup;
         remoteVideo.srcObject = null;
-        remoteAudio.play().catch(() => {});
       }
       // If we're already in a call (user initiated), just update UI
       if (_activeConnect?.inCall) {

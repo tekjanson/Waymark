@@ -517,3 +517,23 @@ export function getAutoGainControl() {
 export function setAutoGainControl(enabled) {
   set('audio_auto_gain', !!enabled);
 }
+
+/** @returns {number} Noise gate threshold in dB (default -50) */
+export function getNoiseGateThreshold() {
+  return get('audio_gate_threshold') ?? -50;
+}
+
+/** @param {number} dB */
+export function setNoiseGateThreshold(dB) {
+  set('audio_gate_threshold', Number(dB));
+}
+
+/** @returns {number} High-pass filter cutoff in Hz (default 80) */
+export function getHighPassFreq() {
+  return get('audio_highpass_freq') ?? 80;
+}
+
+/** @param {number} hz */
+export function setHighPassFreq(hz) {
+  set('audio_highpass_freq', Number(hz));
+}

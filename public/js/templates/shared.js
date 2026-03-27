@@ -1050,4 +1050,8 @@ export {
   setNoiseSuppression,
   getAutoGainControl,
   setAutoGainControl,
+  getNoiseGateThreshold,
+  setNoiseGateThreshold,
+  getHighPassFreq,
+  setHighPassFreq,
 } from '../storage.js';

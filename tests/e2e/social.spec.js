@@ -284,12 +284,13 @@ test('settings panel shows audio processing checkboxes', async ({ page }) => {
   await page.click('.social-chat-settings-btn');
   await expect(page.locator('.social-chat-settings-panel')).toBeVisible();
 
-  // Audio processing section should be visible
+  // Audio processing and Advanced sections should be visible
   const titles = page.locator('.social-settings-title');
   const count = await titles.count();
   const texts = [];
   for (let i = 0; i < count; i++) texts.push(await titles.nth(i).textContent());
   expect(texts).toContain('Audio Processing');
+  expect(texts).toContain('Advanced');
 
   // All three audio checkboxes should be present and checked by default
   const rows = page.locator('.social-settings-row');
@@ -299,6 +300,8 @@ test('settings panel shows audio processing checkboxes', async ({ page }) => {
   expect(labels.some(l => l.includes('Echo cancellation'))).toBe(true);
   expect(labels.some(l => l.includes('Noise suppression'))).toBe(true);
   expect(labels.some(l => l.includes('Auto gain control'))).toBe(true);
+  expect(labels.some(l => l.includes('Noise gate'))).toBe(true);
+  expect(labels.some(l => l.includes('High-pass filter'))).toBe(true);
 });
 
 test('audio settings default to enabled', async ({ page }) => {
@@ -357,4 +360,54 @@ test('audio settings hint text is shown', async ({ page }) => {
 
   await expect(page.locator('.social-settings-hint')).toBeVisible();
   await expect(page.locator('.social-settings-hint')).toContainText('next call');
+});
+
+test('noise gate slider defaults to -50 dB and persists changes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  // Noise gate slider should exist with default value
+  const sliders = page.locator('.social-settings-range');
+  expect(await sliders.count()).toBe(2);
+  const gateSlider = sliders.first();
+  await expect(gateSlider).toHaveValue('-50');
+
+  // Change it
+  await gateSlider.fill('-35');
+  await gateSlider.dispatchEvent('input');
+
+  const val = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_gate_threshold')),
+  );
+  expect(val).toBe(-35);
+
+  // Label should update
+  const gateLabel = page.locator('.social-settings-range-value').first();
+  await expect(gateLabel).toContainText('-35 dB');
+});
+
+test('high-pass slider defaults to 80 Hz and persists changes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.click('.social-connect-btn');
+  await page.waitForSelector('.social-chat-panel', { timeout: 3_000 });
+  await page.click('.social-chat-settings-btn');
+
+  const sliders = page.locator('.social-settings-range');
+  const hpSlider = sliders.nth(1);
+  await expect(hpSlider).toHaveValue('80');
+
+  await hpSlider.fill('120');
+  await hpSlider.dispatchEvent('input');
+
+  const val = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_audio_highpass_freq')),
+  );
+  expect(val).toBe(120);
+
+  const hpLabel = page.locator('.social-settings-range-value').nth(1);
+  await expect(hpLabel).toContainText('120 Hz');
 });

@@ -78,6 +78,11 @@ export class WaymarkConnect {
     this._heartTimer = null;
     this._polling = false;
 
+    // Web Audio processing state
+    this._audioCtx = null;
+    this._processedStream = null;   // MediaStream sent to peer connections
+    this._rawStream = null;         // original getUserMedia stream
+
     this._localStream = null;
     this._inCall = false;
 
@@ -124,13 +129,14 @@ export class WaymarkConnect {
       }
       this._localStream = null;
     }
+    this._teardownAudio();
 
     // Try to get user media. If getUserMedia fails with a device error,
     // join in listen-only mode so the user can still hear the other side.
     let listenOnly = false;
     let deviceError = null;
     try {
-      this._localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this._rawStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
       // NotAllowedError = user explicitly denied or permission is blocked.
       // Re-throw so the UI can guide them to fix it.
@@ -139,7 +145,7 @@ export class WaymarkConnect {
       // OverconstrainedError with video — retry audio-only before giving up
       if (e.name === 'OverconstrainedError' && constraints.video) {
         try {
-          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
+          this._rawStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
         } catch (e2) {
           if (e2.name === 'NotAllowedError') throw e2;
           listenOnly = true;
@@ -148,7 +154,7 @@ export class WaymarkConnect {
       } else if (constraints.video && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
         // Camera failed — retry audio-only
         try {
-          this._localStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
+          this._rawStream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
         } catch (e2) {
           if (e2.name === 'NotAllowedError') throw e2;
           listenOnly = true;
@@ -159,6 +165,12 @@ export class WaymarkConnect {
         listenOnly = true;
         deviceError = e;
       }
+    }
+
+    // Process audio through Web Audio API pipeline, pass video through
+    if (this._rawStream) {
+      const audioProcessing = constraints.audioProcessing || {};
+      this._localStream = this._processAudio(this._rawStream, audioProcessing);
     }
 
     // Add local tracks to all peer connections
@@ -184,10 +196,15 @@ export class WaymarkConnect {
 
   /** End an active call, stopping all local media tracks. */
   endCall() {
+    if (this._rawStream) {
+      for (const t of this._rawStream.getTracks()) t.stop();
+      this._rawStream = null;
+    }
     if (this._localStream) {
       for (const t of this._localStream.getTracks()) t.stop();
       this._localStream = null;
     }
+    this._teardownAudio();
     for (const [, r] of this._rtc) {
       for (const s of r.pc.getSenders()) { if (s.track) r.pc.removeTrack(s); }
     }
@@ -199,6 +216,108 @@ export class WaymarkConnect {
 
   get inCall() { return this._inCall; }
   get localStream() { return this._localStream; }
+
+  /* ---------- Web Audio processing pipeline ---------- */
+
+  /**
+   * Route mic audio through a processing chain to suppress echo and noise.
+   * Chain: Source → HighPass → NoiseGate (compressor) → Destination
+   * Video tracks pass through unchanged.
+   *
+   * @param {MediaStream} raw — getUserMedia stream
+   * @param {Object} opts — { highPassFreq, gateThreshold }
+   * @returns {MediaStream} processed stream for peer connections
+   */
+  _processAudio(raw, opts = {}) {
+    const audioTracks = raw.getAudioTracks();
+    if (audioTracks.length === 0) return raw; // no audio to process
+
+    try {
+      const ctx = new AudioContext();
+      this._audioCtx = ctx;
+      const source = ctx.createMediaStreamSource(raw);
+
+      // 1. High-pass filter: cut low-frequency room reverb & rumble
+      //    Default 80 Hz — removes the bass reflections that AEC handles worst
+      const highPass = ctx.createBiquadFilter();
+      highPass.type = 'highpass';
+      highPass.frequency.value = opts.highPassFreq ?? 80;
+      highPass.Q.value = 0.7; // Butterworth-flat response
+
+      // 2. Noise gate via DynamicsCompressor
+      //    Aggressively compresses (gates) signals below threshold so quiet
+      //    echo reflections get crushed to near-silence. Speech stays through.
+      const gate = ctx.createDynamicsCompressor();
+      gate.threshold.value = opts.gateThreshold ?? -50; // dB — signals below get gated
+      gate.knee.value = 2;        // nearly hard-knee for gate behavior
+      gate.ratio.value = 20;      // heavy compression below threshold
+      gate.attack.value = 0.002;  // 2ms — fast open so speech isn't clipped
+      gate.release.value = 0.05;  // 50ms — fast close to kill echo tail quickly
+
+      // 3. Output destination — produces a new MediaStream
+      const dest = ctx.createMediaStreamDestination();
+
+      // Wire: source → highPass → gate → dest
+      source.connect(highPass);
+      highPass.connect(gate);
+      gate.connect(dest);
+
+      // Combine processed audio with original video tracks
+      const processed = new MediaStream();
+      for (const t of dest.stream.getAudioTracks()) processed.addTrack(t);
+      for (const t of raw.getVideoTracks()) processed.addTrack(t);
+
+      this._processedStream = processed;
+      return processed;
+    } catch {
+      // Web Audio not available — fall back to raw stream
+      return raw;
+    }
+  }
+
+  /** Clean up Web Audio context and processed stream. */
+  _teardownAudio() {
+    if (this._audioCtx) {
+      this._audioCtx.close().catch(() => {});
+      this._audioCtx = null;
+    }
+    this._processedStream = null;
+  }
+
+  /**
+   * Apply a high-pass filter to a remote audio MediaStream before playback.
+   * Reduces low-frequency energy coming out of the speakers, which helps
+   * prevent the local mic from recapturing bass echo.
+   *
+   * @param {HTMLAudioElement} audioEl — the <audio> element for remote playback
+   * @param {MediaStream} stream — the remote media stream
+   * @param {number} [freq=120] — high-pass cutoff in Hz
+   * @returns {{ ctx: AudioContext, cleanup: Function }} — call cleanup() on hangup
+   */
+  static filterRemoteAudio(audioEl, stream, freq = 120) {
+    try {
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = freq;
+      hp.Q.value = 0.7;
+      source.connect(hp);
+      hp.connect(ctx.destination);
+
+      // Don't let the <audio> element play the raw stream directly
+      audioEl.srcObject = null;
+
+      return {
+        ctx,
+        cleanup() { ctx.close().catch(() => {}); },
+      };
+    } catch {
+      // Fallback: just play normally
+      audioEl.srcObject = stream;
+      return { ctx: null, cleanup() {} };
+    }
+  }
 
   destroy() {
     this._destroyed = true;
