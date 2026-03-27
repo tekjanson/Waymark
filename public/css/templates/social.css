@@ -644,18 +644,13 @@
 
 /* ---------- Audio Debug Panel ---------- */
 .social-debug-panel {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  max-height: 420px;
+  max-height: 320px;
   overflow-y: auto;
+  flex-shrink: 0;
   background: rgba(15, 15, 20, 0.96);
   color: #d4d4d8;
   font: 11.5px/1.45 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  border-radius: 10px 10px 0 0;
-  box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
-  z-index: 50;
+  border-top: 1px solid rgba(255,255,255,0.1);
   padding: 0;
   scrollbar-width: thin;
   scrollbar-color: #444 transparent;

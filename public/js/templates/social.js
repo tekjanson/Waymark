@@ -47,7 +47,7 @@ function buildAudioConstraints() {
 function buildAudioProcessing() {
   return {
     highPassFreq: getHighPassFreq(),
-    gateThreshold: getNoiseGateThreshold(),
+    gateThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
     echoSuppression: getEchoSuppression(),
   };
 }
@@ -926,7 +926,7 @@ function openChat(sheetId, displayName, signal) {
         connect.createRemoteAudioPipeline(stream, {
           highPassFreq: getHighPassFreq(),
           echoSuppression: getEchoSuppression(),
-          duckThreshold: getNoiseGateThreshold(),
+          duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
         }).then(result => {
           // Only store cleanup if this is still the active connection
           if (_activeConnect === connect) {
