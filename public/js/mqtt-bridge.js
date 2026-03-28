@@ -1,0 +1,326 @@
+/* ============================================================
+   mqtt-bridge.js — Waymark MQTT Debug Bridge (browser side)
+   Captures console logs, JS errors, network failures, and
+   responds to commands from the MCP agent via MQTT.
+
+   Activation: URL param ?mqtt=1 OR localStorage.__WAYMARK_MQTT
+   ============================================================ */
+
+import { MqttClient } from './mqtt-client.js';
+
+/* ---------- Session & Config ---------- */
+
+const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36);
+const MAX_BUFFER = 500;
+
+function brokerUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const base = window.__WAYMARK_BASE || '';
+  return `${proto}//${location.host}${base}/mqtt`;
+}
+
+function topic(suffix) {
+  return `waymark/${SESSION_ID}/${suffix}`;
+}
+
+/* ---------- State ---------- */
+
+let client = null;
+const logs = [];
+const errors = [];
+const networkErrors = [];
+const originalConsole = {};
+
+/* ---------- Console capture ---------- */
+
+function patchConsole() {
+  for (const level of ['log', 'warn', 'error', 'info', 'debug']) {
+    originalConsole[level] = console[level];
+    console[level] = (...args) => {
+      // Call original
+      originalConsole[level].apply(console, args);
+      // Capture
+      const entry = {
+        level,
+        message: args.map(stringify).join(' '),
+        timestamp: Date.now(),
+      };
+      logs.push(entry);
+      if (logs.length > MAX_BUFFER) logs.shift();
+      // Publish
+      publish('logs', entry);
+    };
+  }
+}
+
+function restoreConsole() {
+  for (const [level, fn] of Object.entries(originalConsole)) {
+    console[level] = fn;
+  }
+}
+
+/* ---------- Error capture ---------- */
+
+function captureErrors() {
+  window.addEventListener('error', (e) => {
+    const entry = {
+      type: 'error',
+      message: e.message,
+      filename: e.filename,
+      lineno: e.lineno,
+      colno: e.colno,
+      stack: e.error?.stack || '',
+      timestamp: Date.now(),
+    };
+    errors.push(entry);
+    if (errors.length > MAX_BUFFER) errors.shift();
+    publish('errors', entry);
+  });
+
+  window.addEventListener('unhandledrejection', (e) => {
+    const entry = {
+      type: 'unhandledrejection',
+      message: String(e.reason),
+      stack: e.reason?.stack || '',
+      timestamp: Date.now(),
+    };
+    errors.push(entry);
+    if (errors.length > MAX_BUFFER) errors.shift();
+    publish('errors', entry);
+  });
+}
+
+/* ---------- Network capture ---------- */
+
+function captureNetwork() {
+  const origFetch = window.fetch;
+  window.fetch = async function (...args) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+    const method = args[1]?.method || 'GET';
+    try {
+      const res = await origFetch.apply(this, args);
+      if (!res.ok) {
+        const entry = {
+          type: 'fetch',
+          method,
+          url: url.slice(0, 500),
+          status: res.status,
+          statusText: res.statusText,
+          timestamp: Date.now(),
+        };
+        networkErrors.push(entry);
+        if (networkErrors.length > MAX_BUFFER) networkErrors.shift();
+        publish('network', entry);
+      }
+      return res;
+    } catch (err) {
+      const entry = {
+        type: 'fetch',
+        method,
+        url: url.slice(0, 500),
+        error: err.message,
+        timestamp: Date.now(),
+      };
+      networkErrors.push(entry);
+      if (networkErrors.length > MAX_BUFFER) networkErrors.shift();
+      publish('network', entry);
+      throw err;
+    }
+  };
+}
+
+/* ---------- Command handler ---------- */
+
+function onMessage({ topic: t, payload }) {
+  if (!t.endsWith('/cmd/request')) return;
+
+  let cmd;
+  try { cmd = JSON.parse(payload); } catch { return; }
+
+  const { commandId, command, args } = cmd;
+  if (!commandId || !command) return;
+
+  let result, error;
+  try {
+    switch (command) {
+      case 'ping':
+        result = { pong: true, sessionId: SESSION_ID, url: location.href, timestamp: Date.now() };
+        break;
+
+      case 'get_console_logs':
+        result = logs.slice(-(args?.count || 100));
+        break;
+
+      case 'get_errors':
+        result = errors.slice(-(args?.count || 100));
+        break;
+
+      case 'get_network_errors':
+        result = networkErrors.slice(-(args?.count || 100));
+        break;
+
+      case 'get_dom_snapshot': {
+        const selector = args?.selector || 'body';
+        const el = document.querySelector(selector);
+        if (!el) {
+          result = { error: `No element matching "${selector}"` };
+        } else {
+          const html = el.outerHTML;
+          // Truncate to avoid huge payloads
+          const maxLen = args?.maxLength || 50000;
+          result = {
+            selector,
+            tagName: el.tagName,
+            childCount: el.children.length,
+            html: html.length > maxLen ? html.slice(0, maxLen) + '…[truncated]' : html,
+          };
+        }
+        break;
+      }
+
+      case 'get_app_state':
+        result = {
+          url: location.href,
+          hash: location.hash,
+          title: document.title,
+          theme: document.documentElement.getAttribute('data-theme'),
+          screenVisible: document.querySelector('.screen:not(.hidden)')?.id || null,
+          timestamp: Date.now(),
+        };
+        break;
+
+      case 'execute_js': {
+        if (!args?.code) {
+          result = { error: 'No code provided' };
+        } else {
+          // Execute in page context and capture result
+          const fn = new Function(args.code);        // eslint-disable-line no-new-func
+          const execResult = fn();
+          result = { value: stringify(execResult) };
+        }
+        break;
+      }
+
+      case 'get_performance':
+        result = {
+          timing: performance.timing ? {
+            domContentLoaded: performance.timing.domContentLoadedEventEnd - performance.timing.navigationStart,
+            load: performance.timing.loadEventEnd - performance.timing.navigationStart,
+          } : null,
+          memory: performance.memory ? {
+            usedJSHeapSize: performance.memory.usedJSHeapSize,
+            totalJSHeapSize: performance.memory.totalJSHeapSize,
+          } : null,
+          entries: performance.getEntriesByType('resource').slice(-20).map(e => ({
+            name: e.name.slice(0, 200),
+            duration: Math.round(e.duration),
+            type: e.initiatorType,
+          })),
+        };
+        break;
+
+      default:
+        error = `Unknown command: ${command}`;
+    }
+  } catch (err) {
+    error = err.message;
+  }
+
+  publish('cmd/response', {
+    commandId,
+    result: error ? undefined : result,
+    error: error || undefined,
+  });
+}
+
+/* ---------- Helpers ---------- */
+
+function publish(suffix, data) {
+  if (!client?.connected) return;
+  try {
+    client.publish(topic(suffix), JSON.stringify(data));
+  } catch { /* swallow publish errors */ }
+}
+
+function stringify(val) {
+  if (val === undefined) return 'undefined';
+  if (val === null) return 'null';
+  if (val instanceof Error) return `${val.name}: ${val.message}`;
+  if (typeof val === 'object') {
+    try { return JSON.stringify(val); } catch { return String(val); }
+  }
+  return String(val);
+}
+
+/* ---------- Heartbeat ---------- */
+
+let heartbeatTimer = null;
+
+function startHeartbeat() {
+  heartbeatTimer = setInterval(() => {
+    publish('heartbeat', {
+      sessionId: SESSION_ID,
+      url: location.href,
+      timestamp: Date.now(),
+    });
+  }, 10_000);
+}
+
+/* ---------- Lifecycle ---------- */
+
+export async function startBridge() {
+  if (client?.connected) return SESSION_ID;
+
+  client = new MqttClient(brokerUrl(), {
+    clientId: `wm_browser_${SESSION_ID.slice(0, 8)}`,
+  });
+
+  await client.connect();
+
+  // Subscribe to command channel
+  client.subscribe(topic('cmd/request'));
+  client.addEventListener('message', (e) => onMessage(e.detail));
+
+  // Install captures
+  patchConsole();
+  captureErrors();
+  captureNetwork();
+  startHeartbeat();
+
+  // Announce session
+  publish('session/start', {
+    sessionId: SESSION_ID,
+    url: location.href,
+    userAgent: navigator.userAgent,
+    timestamp: Date.now(),
+  });
+
+  originalConsole.log?.(`[MQTT Bridge] Connected — session ${SESSION_ID}`);
+  return SESSION_ID;
+}
+
+export function stopBridge() {
+  clearInterval(heartbeatTimer);
+  restoreConsole();
+  if (client?.connected) {
+    publish('session/end', { sessionId: SESSION_ID, timestamp: Date.now() });
+    client.disconnect();
+  }
+  client = null;
+}
+
+export function getSessionId() { return SESSION_ID; }
+
+/* ---------- Auto-start if feature flag is set ---------- */
+
+function shouldActivate() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('mqtt') === '1') return true;
+  try { return localStorage.getItem('__WAYMARK_MQTT') === 'true'; } catch { return false; }
+}
+
+if (shouldActivate()) {
+  startBridge().catch((err) => {
+    (originalConsole.error || console.error)('[MQTT Bridge] Failed to start:', err.message);
+  });
+}
