@@ -291,7 +291,7 @@ export function renderNodeGroup(node) {
   const text = svg('text', {
     x: node.w / 2, y: node.h / 2 + 1,
     'text-anchor': 'middle', 'dominant-baseline': 'central',
-    class: 'flow-node-label', fill: '#1e293b',
+    class: 'flow-node-label',
   });
   text.textContent = displayLabel;
   g.append(text);
@@ -350,13 +350,13 @@ export function renderEdge(edge, markerId) {
   if (Math.abs(x1 - x2) < 5) {
     path = svg('line', {
       x1, y1, x2, y2,
-      stroke: '#94a3b8', 'stroke-width': 2,
+      class: 'flow-edge-path', 'stroke-width': 2,
       'marker-end': `url(#${markerId})`,
     });
   } else {
     const d = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
     path = svg('path', {
-      d, fill: 'none', stroke: '#94a3b8', 'stroke-width': 2,
+      d, fill: 'none', class: 'flow-edge-path', 'stroke-width': 2,
       'marker-end': `url(#${markerId})`,
     });
   }
@@ -367,10 +367,10 @@ export function renderEdge(edge, markerId) {
     const ly = midY - 4;
     g.append(svg('rect', {
       x: lx - 2, y: ly - 10, width: edge.label.length * 7 + 8, height: 16,
-      rx: 3, ry: 3, fill: '#fff', stroke: '#e2e8f0', 'stroke-width': 1,
+      rx: 3, ry: 3, class: 'flow-edge-label-bg',
     }));
     const label = svg('text', {
-      x: lx + 2, y: ly + 2, class: 'flow-edge-label', fill: '#64748b',
+      x: lx + 2, y: ly + 2, class: 'flow-edge-label',
     });
     label.textContent = edge.label;
     g.append(label);

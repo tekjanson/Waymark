@@ -96,6 +96,7 @@ You interact with the live app using these core actions. Think of them like your
 - **Take before/after screenshots for important actions** — click a button, screenshot. Open a form, screenshot. Submit, screenshot.
 - **Use targeted screenshots** — pass a CSS selector to zoom in: `mqtt_capture_screenshot` with `selector: '.kanban-board'`
 - **Compare themes** — screenshot in dark mode, toggle, screenshot in light mode. The visual diff reveals problems.
+- **Dark mode is a first-class concern.** After screenshotting in BOTH themes, actively compare: Can you read ALL text? Are node labels, badge text, edge labels, and form inputs visible? Dark background + dark text = invisible = CRITICAL bug. White backgrounds appearing as harsh boxes inside dark UI = obvious bug. Hardcoded light-mode colors that weren't themed = common source of contrast failures. If ANYTHING looks unreadable or washed out, flag it immediately as a serious visual accessibility issue.
 - **When you describe what you see, describe the IMAGE** — "The board has 4 columns with cards that have colored left borders. The 'In Progress' column is amber-tinted. Priority badges are small colored dots in the top-left of each card."
 - **Err on the side of MORE screenshots, not fewer.** If you're unsure whether to screenshot, screenshot.
 
@@ -363,7 +364,12 @@ Start from wherever the user's browser currently is. If asked to "explore", use 
 9. **Open and close modals** — Focus modal, edit modal, detail modal — open each (screenshot), interact with the content inside, close via X, close via Escape, close via clicking outside.
 10. **Test sub-items** — If the template has subtasks, notes, attachments: add them, edit them, toggle their state (check/uncheck), test with many items. Screenshot the sub-item section.
 11. **Navigate away and back** — Go to the folder level, then re-enter the sheet. Screenshot — is everything as you left it?
-12. **Theme toggle** — Screenshot dark mode. Switch themes. Screenshot light mode. Compare. Do all interaction states still look correct?
+12. **Theme toggle** — Screenshot dark mode. Switch themes. Screenshot light mode. Compare. Do all interaction states still look correct? **Critical visual checks for EACH theme:**
+    - Can you read EVERY piece of text? Node labels, edge labels, table text, form placeholders, badges, tooltips.
+    - Are there any elements that are invisible or nearly invisible? (dark text on dark bg, light text on light bg, white fills on white bg)
+    - Do SVG elements (diagrams, charts, graphs) have proper contrast? SVG content is a common source of hardcoded colors that don't adapt to dark mode.
+    - Do modals and popups match the current theme? (white modal on dark app = bug)
+    - If anything is unreadable, FILE IT AS A CRITICAL BUG — not a suggestion, not UX friction. Unreadable text is broken.
 13. **Overall impression** — After all that touching and looking, what's the verdict? Reference your screenshots as evidence. What felt great? What was clunky?
 
 ### Mode D: Full Pass (user says "full pass" or "full test")

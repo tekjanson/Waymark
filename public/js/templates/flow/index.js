@@ -189,7 +189,7 @@ const definition = {
         refX: 9, refY: 5, markerWidth: 6, markerHeight: 6,
         orient: 'auto-start-reverse',
       });
-      marker.append(svg('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: '#94a3b8' }));
+      marker.append(svg('path', { d: 'M 0 0 L 10 5 L 0 10 z', class: 'flow-arrow-fill' }));
       defs.append(marker);
 
       const markerDash = svg('marker', {
@@ -203,7 +203,7 @@ const definition = {
       /* Grid background */
       const gridId = markerId + '-grid';
       const gridPat = svg('pattern', { id: gridId, width: 20, height: 20, patternUnits: 'userSpaceOnUse' });
-      gridPat.append(svg('path', { d: 'M 20 0 L 0 0 0 20', fill: 'none', stroke: '#e5e7eb', 'stroke-width': 0.5 }));
+      gridPat.append(svg('path', { d: 'M 20 0 L 0 0 0 20', fill: 'none', class: 'flow-grid-line', 'stroke-width': 0.5 }));
       defs.append(gridPat);
 
       svgEl.append(defs);
@@ -649,7 +649,7 @@ const definition = {
           const ty = edge.to.y;
           mmSvg.append(svg('line', {
             x1: fx, y1: fy, x2: tx, y2: ty,
-            stroke: '#94a3b8', 'stroke-width': 3,
+            class: 'flow-minimap-edge', 'stroke-width': 3,
           }));
         }
 

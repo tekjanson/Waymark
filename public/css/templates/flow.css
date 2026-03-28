@@ -118,6 +118,38 @@
   pointer-events: none;
 }
 
+/* ---------- SVG fill/stroke tokens (theme-aware) ---------- */
+
+.flow-node-label {
+  fill: #1e293b;
+}
+
+.flow-edge-path {
+  stroke: #94a3b8;
+}
+
+.flow-edge-label {
+  fill: #64748b;
+}
+
+.flow-edge-label-bg {
+  fill: #fff;
+  stroke: #e2e8f0;
+  stroke-width: 1;
+}
+
+.flow-arrow-fill {
+  fill: #94a3b8;
+}
+
+.flow-grid-line {
+  stroke: #e5e7eb;
+}
+
+.flow-minimap-edge {
+  stroke: #94a3b8;
+}
+
 /* ---------- Connection Ports ---------- */
 
 .flow-port {
@@ -705,7 +737,14 @@
 /* --- Dark Theme --- */
 [data-theme="dark"] .flow-canvas { background: var(--color-bg); }
 [data-theme="dark"] .flow-diagram-wrap { background: var(--color-bg); }
-[data-theme="dark"] .flow-node { filter: brightness(0.85); }
+[data-theme="dark"] .flow-grid-line { stroke: #334155; }
+[data-theme="dark"] .flow-node-label { fill: #f1f5f9; }
+[data-theme="dark"] .flow-node-type-badge { fill: currentColor; }
+[data-theme="dark"] .flow-edge-path { stroke: #64748b; }
+[data-theme="dark"] .flow-edge-label { fill: #cbd5e1; }
+[data-theme="dark"] .flow-edge-label-bg { fill: #1e293b; stroke: #475569; }
+[data-theme="dark"] .flow-arrow-fill { fill: #64748b; }
+[data-theme="dark"] .flow-minimap-edge { stroke: #64748b; }
 [data-theme="dark"] .flow-tooltip { background: var(--color-bg); color: #e2e8f0; border-color: #475569; }
 [data-theme="dark"] .flow-tooltip a { color: #a5b4fc; }
 [data-theme="dark"] .flow-tooltip-meta { color: #64748b; }
