@@ -491,7 +491,6 @@ function openChat(sheetId, displayName, signal) {
   function downloadDebugSnapshot() {
     const connect = _activeConnect;
     const ctx = connect?._audioCtx;
-    const remCtx = connect?._remoteCtx;
     const snap = {
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
@@ -513,22 +512,18 @@ function openChat(sheetId, displayName, signal) {
           numberOfOutputs: ctx.destination.numberOfOutputs,
         },
       } : null,
-      remoteCtx: remCtx ? {
-        state: remCtx.state,
-        sampleRate: remCtx.sampleRate,
-        baseLatency: remCtx.baseLatency,
-        outputLatency: remCtx.outputLatency,
-        currentTime: remCtx.currentTime,
-      } : null,
-
       // --- Pipeline state ---
       pipeline: {
-        type: connect?._echoGateNode ? 'worklet' : connect?._duckingRAF ? 'rAF-fallback' : 'none',
-        hasEchoGateNode: !!connect?._echoGateNode,
+        type: connect?._duckingRAF ? 'volume-ducking' : 'direct',
         hasDuckingRAF: !!connect?._duckingRAF,
-        hasWorkletReady: !!connect?._workletReady,
         hasMicAnalyser: !!connect?._micAnalyser,
         hasProcessedStream: !!connect?._processedStream,
+        duckState: connect?._duckState ? {
+          volume: connect._duckState.volume,
+          suppression: connect._duckState.suppression,
+          gainWhenDucked: connect._duckState.gainWhenDucked,
+          duckThreshold: connect._duckState.duckThreshold,
+        } : null,
       },
 
       // --- Mic (outgoing) tracks ---
@@ -844,7 +839,7 @@ function openChat(sheetId, displayName, signal) {
     const ctx = connect._audioCtx;
     els.ctxState.textContent = ctx?.state || 'none';
     els.sampleRate.textContent = ctx?.sampleRate ? `${ctx.sampleRate} Hz` : '—';
-    els.pipelineType.textContent = connect._echoGateNode ? 'AudioWorklet' : connect._duckingRAF ? 'rAF fallback' : 'none';
+    els.pipelineType.textContent = connect._duckingRAF ? 'Volume ducking' : 'direct';
 
     // Log ICE connection state for each peer
     for (const [peerId, r] of connect._rtc || []) {
@@ -868,10 +863,7 @@ function openChat(sheetId, displayName, signal) {
     // Live mic level via AnalyserNode (independent of worklet)
     const analyser = connect._micAnalyser;
     let micRAF = 0;
-    // Audio out monitoring (what actually reaches speakers)
-    let outAnalyser = null;
-    let outSource = null;
-    let outBuf = null;
+    // Audio out level: show duck state volume (no Web Audio on remote stream!)
 
     if (analyser) {
       const buf = new Float32Array(analyser.fftSize);
@@ -887,37 +879,17 @@ function openChat(sheetId, displayName, signal) {
         els.micMeter.style.background = rmsVal > 0.05 ? '#5f5' : rmsVal > 0.02 ? '#ff5' : '#555';
         els.micVal.textContent = rmsVal.toFixed(4);
 
-        // Audio out level — reconnect if srcObject changed
-        let monitoredSrc = outAnalyser ? outAnalyser._wm_src : null;
-        if (outAnalyser && monitoredSrc !== remoteAudio.srcObject) {
-          // srcObject changed — tear down old monitor
-          try { outSource?.disconnect(); } catch {}
-          outAnalyser = null;
-          outSource = null;
-          outBuf = null;
-        }
-        if (outAnalyser && outBuf) {
-          outAnalyser.getFloatTimeDomainData(outBuf);
-          let oSum = 0;
-          for (let i = 0; i < outBuf.length; i++) oSum += outBuf[i] * outBuf[i];
-          const outRms = Math.sqrt(oSum / outBuf.length);
-          const oPct = Math.min(100, outRms * 500);
+        // Audio out level — show duck volume (no Web Audio on remote stream!)
+        const ds = connect._duckState;
+        if (ds) {
+          const oPct = ds.volume * 100;
           els.outMeter.style.width = oPct + '%';
-          els.outMeter.style.background = outRms > 0.05 ? '#f55' : outRms > 0.01 ? '#f80' : '#555';
-          els.outVal.textContent = outRms.toFixed(4);
-        } else if (remoteAudio.srcObject) {
-          // Output stream appeared — attach analyser
-          try {
-            const outCtx = connect._audioCtx;
-            outSource = outCtx.createMediaStreamSource(remoteAudio.srcObject);
-            outAnalyser = outCtx.createAnalyser();
-            outAnalyser.fftSize = 256;
-            outAnalyser.smoothingTimeConstant = 0.5;
-            outSource.connect(outAnalyser);
-            outAnalyser._wm_src = remoteAudio.srcObject;
-            outBuf = new Float32Array(outAnalyser.fftSize);
-            debugLog('Audio out monitoring attached');
-          } catch { /* output stream may not be ready yet */ }
+          els.outMeter.style.background = ds.volume < 0.5 ? '#f55' : ds.volume < 0.9 ? '#f80' : '#5f5';
+          els.outVal.textContent = (ds.volume * 100).toFixed(0) + '%';
+          // Show duck state in gate fields
+          els.gateState.textContent = ds.volume < 0.5 ? '🔴 DUCKED' : '🟢 FULL';
+          els.gateState.style.color = ds.volume < 0.5 ? '#f55' : '#5f5';
+          els.gateGain.textContent = (ds.volume * 100).toFixed(0) + '%';
         }
 
         micRAF = requestAnimationFrame(updateMeters);
@@ -936,44 +908,11 @@ function openChat(sheetId, displayName, signal) {
       debugLog('⚠️ REMOTE VIDEO HAS AUDIO TRACKS — possible unprocessed audio leak!');
     }
 
-    // Worklet diagnostic messages
-    let gateHandler = null;
-    const gate = connect._echoGateNode;
-    if (gate?.port) {
-      gate.port.postMessage({ type: 'enable-diag' });
-      let gateWasOpen = true;
-      gateHandler = (e) => {
-        if (e.data?.type !== 'diag') return;
-        const d = e.data;
-        // Remote level meter
-        const remPct = Math.min(100, d.remRms * 500);
-        els.remMeter.style.width = remPct + '%';
-        els.remVal.textContent = d.remRms.toFixed(4);
-        // Gate state
-        els.gateState.textContent = d.gated ? '🔴 CLOSED' : '🟢 OPEN';
-        els.gateState.style.color = d.gated ? '#f55' : '#5f5';
-        els.gateGain.textContent = (d.gain * 100).toFixed(0) + '%';
-        els.gateHold.textContent = d.holdMs > 0
-          ? d.holdMs.toFixed(0) + 'ms'
-          : d.echoHoldMs > 0 ? 'echo ' + d.echoHoldMs.toFixed(0) + 'ms' : '—';
-        // Adaptive floor
-        els.noiseFloor.textContent = d.noiseFloor.toFixed(4);
-        els.effThresh.textContent = d.threshold.toFixed(4);
-        els.threshSrc.textContent = d.threshold > d.paramThreshold ? 'adaptive' : 'param (' + d.paramThreshold.toFixed(3) + ')';
-        // Log gate transitions
-        const isOpen = !d.gated;
-        if (isOpen !== gateWasOpen) {
-          debugLog(isOpen
-            ? `Gate OPENED (gain=${(d.gain*100).toFixed(0)}%)`
-            : `Gate CLOSED (mic=${d.micRms.toFixed(4)} > thresh=${d.threshold.toFixed(4)})`);
-          gateWasOpen = isOpen;
-        }
-      };
-      gate.port.addEventListener('message', gateHandler);
-      gate.port.start();
-      debugLog('Worklet diagnostics enabled');
+    // Volume ducking diagnostic logging
+    if (connect._duckingRAF) {
+      debugLog('Volume ducking active (rAF + mic analyser)');
     } else {
-      debugLog('No AudioWorklet — using fallback pipeline');
+      debugLog('Direct audio — no echo suppression');
     }
 
     // Update context state and pipeline info periodically
@@ -981,18 +920,13 @@ function openChat(sheetId, displayName, signal) {
       if (connect._audioCtx) {
         els.ctxState.textContent = connect._audioCtx.state;
       }
-      els.pipelineType.textContent = connect._echoGateNode ? 'AudioWorklet' : connect._duckingRAF ? 'rAF fallback' : 'none';
+      els.pipelineType.textContent = connect._duckingRAF ? 'Volume ducking' : 'direct';
     }, 2000);
 
     debugLog('Debug panel started');
 
     _debugCleanup = () => {
       if (micRAF) cancelAnimationFrame(micRAF);
-      if (outSource) { try { outSource.disconnect(); } catch {} }
-      if (gate?.port && gateHandler) {
-        try { gate.port.postMessage({ type: 'disable-diag' }); } catch {}
-        gate.port.removeEventListener('message', gateHandler);
-      }
       clearInterval(ctxInterval);
       debugLog('Debug panel stopped');
     };
@@ -1013,6 +947,7 @@ function openChat(sheetId, displayName, signal) {
   // Cleanup handle for the Web Audio remote playback filter
   let _remoteFilterCleanup = null;
   let _pipelineGen = 0;
+  let _duckVolumeRAF = null;
 
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
@@ -1037,6 +972,10 @@ function openChat(sheetId, displayName, signal) {
       for (const t of _activeConnect.localStream.getTracks()) t.stop();
     }
     // Tear down remote audio filter and stop audio element
+    if (_duckVolumeRAF) {
+      cancelAnimationFrame(_duckVolumeRAF);
+      _duckVolumeRAF = null;
+    }
     if (_remoteFilterCleanup) {
       _remoteFilterCleanup();
       _remoteFilterCleanup = null;
@@ -1356,18 +1295,28 @@ function openChat(sheetId, displayName, signal) {
           // Swap: tear down old, install new
           if (oldCleanup) oldCleanup();
           _remoteFilterCleanup = result.cleanup;
-          // Set <audio> element as SECONDARY output for Chrome AEC reference.
-          // Primary audio plays through ctx.destination in the pipeline itself.
+          // Raw remote stream goes directly on <audio> element — proven working
+          // pattern. No Web Audio routing (Chrome/Linux discards packets).
           remoteAudio.srcObject = result.outputStream || null;
-          // Always call play() — autoplay attribute may not trigger after
-          // srcObject change, and checking .paused misses edge cases.
           if (result.outputStream) {
             remoteAudio.play().catch(() => {});
           }
-          const ptype = connect._echoGateNode ? 'worklet' : connect._duckingRAF ? 'rAF fallback' : 'direct';
+          // Wire up volume-based echo ducking: rAF loop reads _duckState.volume
+          // computed by webrtc.js and applies it to the <audio> element.
+          if (connect._duckState) {
+            const ds = connect._duckState;
+            const applyVolume = () => {
+              if (!connect._duckState || connect._duckState !== ds) return;
+              remoteAudio.volume = ds.volume;
+              _duckVolumeRAF = requestAnimationFrame(applyVolume);
+            };
+            if (_duckVolumeRAF) cancelAnimationFrame(_duckVolumeRAF);
+            _duckVolumeRAF = requestAnimationFrame(applyVolume);
+          }
+          const ptype = connect._duckingRAF ? 'volume ducking' : 'direct';
           const outTracks = result.outputStream?.getAudioTracks() || [];
           const ot = outTracks[0];
-          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, remoteCtx=${connect._remoteCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
+          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
         }).catch(err => {
           debugLog(`Pipeline error: ${err.message}`);
         });

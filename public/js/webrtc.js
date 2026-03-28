@@ -83,10 +83,8 @@ export class WaymarkConnect {
     this._processedStream = null;   // MediaStream sent to peer connections
     this._rawStream = null;         // original getUserMedia stream
     this._micAnalyser = null;       // AnalyserNode for echo ducking
-    this._remoteCtx = null;         // AudioContext for remote playback (fallback)
-    this._duckingRAF = null;        // requestAnimationFrame ID (fallback)
-    this._workletReady = null;      // Promise: AudioWorklet registration
-    this._echoGateNode = null;      // AudioWorkletNode for echo gating
+    this._duckingRAF = null;        // requestAnimationFrame ID (volume ducking)
+    this._duckState = null;         // { volume, smooth, holdUntil, ... }
 
     this._localStream = null;
     this._inCall = false;
@@ -291,17 +289,6 @@ export class WaymarkConnect {
       // downstream plays audio — the raw stream goes to peers untouched.
       source.connect(analyser);
 
-      // Register AudioWorklet for sample-accurate echo gating on remote audio.
-      if (ctx.audioWorklet) {
-        const base = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
-        this._workletReady = ctx.audioWorklet
-          .addModule(base + '/js/echo-gate-processor.js')
-          .catch((err) => {
-            console.warn('[webrtc] AudioWorklet addModule failed:', err?.message || err);
-            return null;
-          });
-      }
-
       // Return the ORIGINAL stream — browser AEC/NS/AGC are preserved.
       this._processedStream = raw;
       return raw;
@@ -316,55 +303,46 @@ export class WaymarkConnect {
       cancelAnimationFrame(this._duckingRAF);
       this._duckingRAF = null;
     }
-    if (this._echoGateNode) {
-      this._echoGateNode.disconnect();
-      this._echoGateNode = null;
-    }
+    this._duckState = null;
     if (this._audioCtx) {
       this._audioCtx.close().catch(() => {});
       this._audioCtx = null;
     }
-    if (this._remoteCtx) {
-      this._remoteCtx.close().catch(() => {});
-      this._remoteCtx = null;
-    }
     this._processedStream = null;
     this._micAnalyser = null;
-    this._workletReady = null;
   }
 
   /**
    * Create a remote audio playback pipeline with echo suppression.
    *
    * Preferred path: AudioWorklet (sample-accurate ~0.13ms gating on audio thread).
-   * Fallback path: rAF + GainNode (~16ms gating on main thread).
+   * Fallback path: rAF + volume ducking on the <audio> element (~16ms on main thread).
    *
-   * The AudioWorklet runs in the SAME AudioContext as the mic processing so it
-   * can sidechain the local mic signal. The worklet monitors mic RMS and gates
-   * the remote audio in real time — no main-thread involvement.
+   * IMPORTANT: Remote WebRTC audio must NOT be routed through Web Audio API
+   * (MediaStreamSource → nodes → destination). On Chrome/Linux, doing so
+   * causes the WebRTC receiver to discard all packets (totalSamplesReceived=0)
+   * resulting in total silence. Instead, the raw stream goes directly on the
+   * <audio> element (proven working pattern from main branch), and echo
+   * suppression is applied by controlling audioElement.volume via rAF.
+   *
+   * The mic AnalyserNode (_micAnalyser) is a read-only tap on the outgoing
+   * stream and is safe to use for level detection without interfering with
+   * the remote audio path.
    *
    * @param {MediaStream} remoteStream — the remote peer's MediaStream
    * @param {Object} [opts]
-   * @param {number} [opts.highPassFreq=120]    — HPF cutoff for remote playback
    * @param {number} [opts.echoSuppression=0.90] — 0 = off, 1 = full mute while speaking
-   * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking (adaptive floor may raise it)
-   * @param {number} [opts.holdMs=800]            — base hold after speech ends (auto-extends on echo detection)
-   * @returns {Promise<{ cleanup: Function, outputStream: MediaStream|null }>}
+   * @param {number} [opts.duckThreshold=0.012]  — mic RMS above this triggers ducking
+   * @param {number} [opts.holdMs=800]            — hold after speech ends
+   * @returns {Promise<{ cleanup: Function, outputStream: MediaStream }>}
    */
   async createRemoteAudioPipeline(remoteStream, opts = {}) {
     // Clean up previous pipeline
-    if (this._echoGateNode) {
-      this._echoGateNode.disconnect();
-      this._echoGateNode = null;
-    }
     if (this._duckingRAF) {
       cancelAnimationFrame(this._duckingRAF);
       this._duckingRAF = null;
     }
-    if (this._remoteCtx) {
-      this._remoteCtx.close().catch(() => {});
-      this._remoteCtx = null;
-    }
+    this._duckState = null;
 
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
@@ -374,209 +352,77 @@ export class WaymarkConnect {
       !!this._micAnalyser, this._audioCtx?.state || 'none', audioTracks.length,
       t0?.readyState, t0?.enabled ? 'en' : 'dis', t0?.muted ? 'muted' : 'live');
 
-    // If mic processing isn't ready yet (answerer hasn't accepted the call),
-    // return the raw audio stream for direct <audio> playback — no Web Audio
-    // needed, no AudioContext suspension issues, no echo risk since the user
-    // isn't sending audio. Pipeline rebuilt with gating when startCall runs.
-    if (!this._micAnalyser) {
-      const raw = new MediaStream(audioTracks);
-      return { outputStream: raw, cleanup() {} };
-    }
+    // Return the RAW remote stream for the <audio> element.
+    // Echo suppression is applied by the caller manipulating audioElement.volume
+    // via rAF + _micAnalyser level detection. No Web Audio routing of remote
+    // audio — Chrome/Linux discards WebRTC packets routed through MediaStreamSource.
+    const raw = new MediaStream(audioTracks);
 
-    // Resume AudioContext if suspended (required on mobile after tab switch)
-    if (this._audioCtx?.state === 'suspended') {
-      await this._audioCtx.resume().catch(() => {});
-    }
-
-    // Try AudioWorklet path: sample-accurate gating on the audio thread.
-    // addModule().catch returns null on failure so _workletReady resolves to
-    // null when the processor couldn't be registered. Skip the worklet path
-    // entirely in that case — avoids creating an AudioWorkletNode that would
-    // throw (leaking a MediaStreamSource node in the process).
-    if (this._audioCtx && this._workletReady && this._micAnalyser) {
-      try {
-        const loaded = await this._workletReady;
-        if (loaded !== null) {
-          return this._createWorkletPipeline(audioTracks, opts);
-        }
-        // addModule failed — skip worklet, fall through to rAF fallback
-      } catch { /* fall through to rAF fallback */ }
-    }
-
-    // Fallback: rAF-driven gating on the EXISTING _audioCtx (created during
-    // user gesture in startCall). Routes to BOTH ctx.destination (speakers,
-    // bypasses autoplay) AND MediaStreamDestination (<audio> AEC reference).
-    return this._createFallbackPipeline(audioTracks, opts);
-  }
-
-  /**
-   * AudioWorklet path — echo gating on the audio rendering thread.
-   * Uses the SAME AudioContext as mic processing so the worklet can
-   * sidechain the mic analyser output.
-   *
-   * Audio output: gate → ctx.destination (speakers) for reliable playback,
-   * PLUS gate → MediaStreamDestination for <audio> element AEC reference.
-   */
-  _createWorkletPipeline(audioTracks, opts) {
-    const ctx = this._audioCtx;
-    const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-
-    // High-pass filter on remote playback
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = opts.highPassFreq ?? 120;
-    hp.Q.value = 0.7;
-
-    // Echo gate worklet: input 0 = mic sidechain, input 1 = remote audio
-    const gate = new AudioWorkletNode(ctx, 'echo-gate', {
-      numberOfInputs: 2,
-      numberOfOutputs: 1,
-      parameterData: {
-        suppression: opts.echoSuppression ?? 0.90,
-        threshold: opts.duckThreshold ?? 0.012,
-        holdMs: opts.holdMs ?? 800,
-      },
-    });
-
-    // Wire: mic analyser → gate input 0 (sidechain for level detection)
-    this._micAnalyser.connect(gate, 0, 0);
-    // Wire: remote → hp → gate input 1
-    source.connect(hp);
-    hp.connect(gate, 0, 1);
-
-    // PRIMARY: gate → ctx.destination (speakers) — always works, no autoplay
-    // issues since AudioContext was resumed during startCall (user gesture).
-    gate.connect(ctx.destination);
-    // SECONDARY: gate → MediaStreamDestination for <audio> AEC reference.
-    const dest = ctx.createMediaStreamDestination();
-    gate.connect(dest);
-
-    this._echoGateNode = gate;
-
-    const self = this;
-    return {
-      outputStream: dest.stream,
-      cleanup() {
-        source.disconnect();
-        hp.disconnect();
-        gate.disconnect();
-        try { self._micAnalyser?.disconnect(gate); } catch {}
-        if (self._echoGateNode === gate) self._echoGateNode = null;
-      },
-    };
-  }
-
-  /**
-   * Fallback path — rAF-driven echo ducking on the EXISTING _audioCtx.
-   * Used when AudioWorklet is unavailable (older browsers, addModule failure).
-   *
-   * MUST use the existing _audioCtx (created during startCall user gesture)
-   * because creating a new AudioContext from an ICE callback starts it
-   * SUSPENDED — Chrome requires a user gesture to resume, and a suspended
-   * context processes zero audio through ALL nodes (destination AND
-   * MediaStreamDestination both go silent).
-   *
-   * Audio is routed to BOTH destinations:
-   *   1. ctx.destination — direct to speakers, bypasses <audio> autoplay policy
-   *   2. MediaStreamDestination — output stream for <audio> AEC reference
-   */
-  _createFallbackPipeline(audioTracks, opts) {
-    try {
-      // Reuse mic AudioContext (created during user gesture, already running).
-      // Only create a new one as absolute last resort — it will likely be
-      // suspended but we try resume() and the <audio> element may still work.
-      const useExisting = !!this._audioCtx;
-      const ctx = this._audioCtx || new AudioContext();
-      if (!useExisting) {
-        this._remoteCtx = ctx;
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      }
-
-      const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = opts.highPassFreq ?? 120;
-      hp.Q.value = 0.7;
-
-      const duckGain = ctx.createGain();
-      duckGain.gain.value = 1.0;
-
-      source.connect(hp);
-      hp.connect(duckGain);
-
-      // PRIMARY: route to ctx.destination (speakers). Since _audioCtx was
-      // created during startCall (user gesture), it's already running —
-      // audio plays immediately with no autoplay restrictions.
-      duckGain.connect(ctx.destination);
-
-      // SECONDARY: also route to MediaStreamDestination so the caller can
-      // set remoteAudio.srcObject. This gives Chrome's AEC a reference
-      // signal and serves as backup playback via the <audio> element.
-      const dest = ctx.createMediaStreamDestination();
-      duckGain.connect(dest);
-
+    // Set up volume-based echo ducking if mic analyser is available
+    if (this._micAnalyser && (opts.echoSuppression ?? 0.90) > 0) {
       const suppression = opts.echoSuppression ?? 0.90;
       const gainWhenDucked = Math.max(0, 1 - suppression);
       const duckThreshold = opts.duckThreshold ?? 0.012;
       const holdMs = opts.holdMs ?? 800;
       const analyser = this._micAnalyser;
 
-      if (analyser && suppression > 0) {
-        const buf = new Float32Array(analyser.fftSize);
-        const smooth = { gain: 1.0 };
-        let holdUntil = 0;
-
-        const duckLoop = () => {
-          if (ctx.state === 'closed') return;
-          analyser.getFloatTimeDomainData(buf);
-          let sum = 0;
-          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-          const rms = Math.sqrt(sum / buf.length);
-          const now = performance.now();
-          if (rms > duckThreshold) holdUntil = now + holdMs;
-          const target = now < holdUntil ? gainWhenDucked : 1.0;
-          if (target < smooth.gain) {
-            smooth.gain = target;
-          } else {
-            smooth.gain += (target - smooth.gain) * 0.04;
-            if (Math.abs(smooth.gain - target) < 0.005) smooth.gain = target;
-          }
-          duckGain.gain.value = smooth.gain;
-          this._duckingRAF = requestAnimationFrame(duckLoop);
-        };
-        this._duckingRAF = requestAnimationFrame(duckLoop);
-      }
-
-      const self = this;
-      const ownCtx = !useExisting;
-      return {
-        outputStream: dest.stream,
-        cleanup() {
-          if (self._duckingRAF) {
-            cancelAnimationFrame(self._duckingRAF);
-            self._duckingRAF = null;
-          }
-          source.disconnect();
-          hp.disconnect();
-          duckGain.disconnect();
-          // Only close the context if we created it — don't close shared _audioCtx
-          if (ownCtx) {
-            ctx.close().catch(() => {});
-            if (self._remoteCtx === ctx) self._remoteCtx = null;
-          }
-        },
+      // Store ducking state on the instance so the caller (social.js) can
+      // apply the computed volume to the <audio> element each frame.
+      this._duckState = {
+        volume: 1.0,
+        smooth: 1.0,
+        holdUntil: 0,
+        suppression,
+        gainWhenDucked,
+        duckThreshold,
+        holdMs,
       };
-    } catch (err) {
-      console.warn('[webrtc] fallback pipeline failed, using raw passthrough:', err?.message || err);
-      const raw = new MediaStream(audioTracks);
-      return { outputStream: raw, cleanup() {} };
+
+      const buf = new Float32Array(analyser.fftSize);
+      const state = this._duckState;
+
+      const duckLoop = () => {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        const now = performance.now();
+        if (rms > duckThreshold) state.holdUntil = now + holdMs;
+        const target = now < state.holdUntil ? gainWhenDucked : 1.0;
+        // Instant attack, smooth release
+        if (target < state.smooth) {
+          state.smooth = target;
+        } else {
+          state.smooth += (target - state.smooth) * 0.04;
+          if (Math.abs(state.smooth - target) < 0.005) state.smooth = target;
+        }
+        state.volume = state.smooth;
+        this._duckingRAF = requestAnimationFrame(duckLoop);
+      };
+      this._duckingRAF = requestAnimationFrame(duckLoop);
+    } else {
+      this._duckState = { volume: 1.0 };
     }
+
+    const self = this;
+    return {
+      outputStream: raw,
+      cleanup() {
+        if (self._duckingRAF) {
+          cancelAnimationFrame(self._duckingRAF);
+          self._duckingRAF = null;
+        }
+        self._duckState = null;
+      },
+    };
   }
 
   /**
-   * @deprecated Use createRemoteAudioPipeline instead.
-   * Kept for backward compatibility — redirects to the new pipeline.
+   * @deprecated AudioWorklet and fallback Web Audio pipelines removed.
+   * Chrome/Linux discards WebRTC audio packets routed through MediaStreamSource
+   * (totalSamplesReceived=0). Remote audio now goes directly to <audio> element
+   * with volume-based echo ducking via rAF + _micAnalyser.
+   * Kept for backward compatibility — applies a basic high-pass filter only.
    */
   static filterRemoteAudio(audioEl, stream, freq = 120) {
     // Static method can't access instance ducking — basic filter only

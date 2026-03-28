@@ -596,8 +596,7 @@ test('webrtc.js exports WaymarkConnect class', async ({ page }) => {
         hasProcessAudio: typeof mod.WaymarkConnect.prototype._processAudio === 'function',
         hasCreateRemotePipeline: typeof mod.WaymarkConnect.prototype.createRemoteAudioPipeline === 'function',
         hasTeardownAudio: typeof mod.WaymarkConnect.prototype._teardownAudio === 'function',
-        hasCreateWorkletPipeline: typeof mod.WaymarkConnect.prototype._createWorkletPipeline === 'function',
-        hasCreateFallbackPipeline: typeof mod.WaymarkConnect.prototype._createFallbackPipeline === 'function',
+        hasFilterRemoteAudio: typeof mod.WaymarkConnect.filterRemoteAudio === 'function',
       };
     } catch (e) {
       return { error: e.message };
@@ -608,8 +607,7 @@ test('webrtc.js exports WaymarkConnect class', async ({ page }) => {
   expect(result.hasProcessAudio).toBe(true);
   expect(result.hasCreateRemotePipeline).toBe(true);
   expect(result.hasTeardownAudio).toBe(true);
-  expect(result.hasCreateWorkletPipeline).toBe(true);
-  expect(result.hasCreateFallbackPipeline).toBe(true);
+  expect(result.hasFilterRemoteAudio).toBe(true);
 });
 
 test('audio settings survive page reload', async ({ page }) => {
