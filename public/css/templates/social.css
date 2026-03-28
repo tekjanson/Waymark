@@ -343,6 +343,7 @@
   flex-shrink: 0;
 }
 .social-chat-status-listening { background: #fbbf24; }
+.social-chat-status-pairing { background: #f97316; }
 .social-chat-status-connected { background: #22c55e; }
 .social-chat-status-disconnected { background: #ef4444; }
 
@@ -642,6 +643,155 @@
   object-fit: cover;
 }
 
+/* ---------- Audio Debug Panel ---------- */
+.social-debug-panel {
+  max-height: 320px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  background: rgba(15, 15, 20, 0.96);
+  color: #d4d4d8;
+  font: 11.5px/1.45 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #444 transparent;
+}
+.social-debug-panel.hidden { display: none; }
+
+.social-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  background: rgba(15, 15, 20, 0.98);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  z-index: 1;
+}
+
+.social-debug-close {
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #aaa;
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.social-debug-close:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+.social-debug-section {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.social-debug-section:last-child { border-bottom: none; }
+
+.social-debug-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Level meters */
+.social-debug-meter {
+  position: relative;
+  height: 16px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.social-debug-meter-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 0%;
+  background: #22c55e;
+  border-radius: 4px;
+  transition: width 0.08s linear;
+}
+.social-debug-meter-val {
+  position: absolute;
+  top: 0; right: 6px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.7);
+  z-index: 1;
+}
+
+/* 2-col key/value grid */
+.social-debug-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  font-size: 11px;
+}
+.social-debug-grid > span:nth-child(odd) { color: #888; }
+.social-debug-grid > span:nth-child(even) { color: #e4e4e7; text-align: right; }
+
+/* Debug toggle button in call bar */
+.social-debug-btn.social-debug-btn-active {
+  background: rgba(139, 92, 246, 0.2);
+  border-color: #8b5cf6;
+  color: #c4b5fd;
+}
+
+/* Event log */
+.social-debug-log-section .social-debug-label { margin-bottom: 2px; }
+.social-debug-clear-log {
+  border: none;
+  background: rgba(255,255,255,0.08);
+  color: #888;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.social-debug-clear-log:hover { color: #ccc; background: rgba(255,255,255,0.14); }
+.social-debug-log {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #a1a1aa;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.social-debug-log > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.social-debug-download {
+  width: 100%;
+  padding: 8px 0;
+  border: 1px solid rgba(99,102,241,0.5);
+  border-radius: 6px;
+  background: rgba(99,102,241,0.15);
+  color: #a5b4fc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.social-debug-download:hover {
+  background: rgba(99,102,241,0.3);
+  border-color: rgba(99,102,241,0.8);
+  color: #c7d2fe;
+}
+
 /* Expand panel when in a video call */
 .social-chat-panel.social-chat-in-call {
   max-height: 780px;
@@ -715,6 +865,40 @@
   width: 16px;
   height: 16px;
   accent-color: #6366f1;
+}
+
+.social-settings-divider {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.social-settings-hint {
+  font-size: 0.72rem;
+  opacity: 0.55;
+  margin-top: 6px;
+  line-height: 1.3;
+}
+
+.social-settings-slider-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.social-settings-range {
+  flex: 1;
+  min-width: 80px;
+  height: 4px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.social-settings-range-value {
+  font-size: 0.72rem;
+  min-width: 48px;
+  text-align: right;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Incoming Call Modal ---------- */
