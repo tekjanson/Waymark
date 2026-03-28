@@ -441,6 +441,9 @@ function openChat(sheetId, displayName, signal) {
     <div class="social-debug-section social-debug-log-section">
       <div class="social-debug-label">Event Log <button class="social-debug-clear-log" title="Clear">clear</button></div>
       <div class="social-debug-log sd-event-log"></div>
+    </div>
+    <div class="social-debug-section">
+      <button class="social-debug-download">📥 Download Debug Snapshot</button>
     </div>`;
 
   // Wire close button
@@ -450,6 +453,9 @@ function openChat(sheetId, displayName, signal) {
   });
   debugPanel.querySelector('.social-debug-clear-log').addEventListener('click', () => {
     debugPanel.querySelector('.sd-event-log').textContent = '';
+  });
+  debugPanel.querySelector('.social-debug-download').addEventListener('click', () => {
+    downloadDebugSnapshot();
   });
 
   // Debug toggle button — added to call bar when in a call
@@ -480,6 +486,311 @@ function openChat(sheetId, displayName, signal) {
     if (_debugLogLines > 200) { log.firstChild?.remove(); _debugLogLines--; }
     log.scrollTop = log.scrollHeight;
   }
+
+  /** Collect every piece of audio/WebRTC diagnostic state and download as JSON. */
+  function downloadDebugSnapshot() {
+    const connect = _activeConnect;
+    const ctx = connect?._audioCtx;
+    const remCtx = connect?._remoteCtx;
+    const snap = {
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      url: location.href,
+      secure: location.protocol === 'https:',
+
+      // --- AudioContext state ---
+      audioCtx: ctx ? {
+        state: ctx.state,
+        sampleRate: ctx.sampleRate,
+        baseLatency: ctx.baseLatency,
+        outputLatency: ctx.outputLatency,
+        currentTime: ctx.currentTime,
+        destination: {
+          channelCount: ctx.destination.channelCount,
+          maxChannelCount: ctx.destination.maxChannelCount,
+          numberOfInputs: ctx.destination.numberOfInputs,
+          numberOfOutputs: ctx.destination.numberOfOutputs,
+        },
+      } : null,
+      remoteCtx: remCtx ? {
+        state: remCtx.state,
+        sampleRate: remCtx.sampleRate,
+        baseLatency: remCtx.baseLatency,
+        outputLatency: remCtx.outputLatency,
+        currentTime: remCtx.currentTime,
+      } : null,
+
+      // --- Pipeline state ---
+      pipeline: {
+        type: connect?._echoGateNode ? 'worklet' : connect?._duckingRAF ? 'rAF-fallback' : 'none',
+        hasEchoGateNode: !!connect?._echoGateNode,
+        hasDuckingRAF: !!connect?._duckingRAF,
+        hasWorkletReady: !!connect?._workletReady,
+        hasMicAnalyser: !!connect?._micAnalyser,
+        hasProcessedStream: !!connect?._processedStream,
+      },
+
+      // --- Mic (outgoing) tracks ---
+      rawStream: describeStream(connect?._rawStream, 'rawStream'),
+      localStream: describeStream(connect?._localStream, 'localStream'),
+      processedStream: describeStream(connect?._processedStream, 'processedStream'),
+
+      // --- Remote audio element ---
+      remoteAudioElement: {
+        srcObject: remoteAudio.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(remoteAudio.srcObject, 'remoteAudio.srcObject'),
+        paused: remoteAudio.paused,
+        ended: remoteAudio.ended,
+        muted: remoteAudio.muted,
+        volume: remoteAudio.volume,
+        readyState: remoteAudio.readyState,
+        networkState: remoteAudio.networkState,
+        currentTime: remoteAudio.currentTime,
+        autoplay: remoteAudio.autoplay,
+        error: remoteAudio.error ? {
+          code: remoteAudio.error.code,
+          message: remoteAudio.error.message,
+        } : null,
+      },
+
+      // --- Remote video element ---
+      remoteVideoElement: {
+        srcObject: remoteVideo.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(remoteVideo.srcObject, 'remoteVideo.srcObject'),
+        paused: remoteVideo.paused,
+        readyState: remoteVideo.readyState,
+      },
+
+      // --- Local video element ---
+      localVideoElement: {
+        srcObject: localVideo.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(localVideo.srcObject, 'localVideo.srcObject'),
+        muted: localVideo.muted,
+      },
+
+      // --- User audio settings (localStorage) ---
+      audioSettings: {
+        echoCancellation: getEchoCancellation(),
+        noiseSuppression: getNoiseSuppression(),
+        autoGainControl: getAutoGainControl(),
+        noiseGateThreshold: getNoiseGateThreshold(),
+        highPassFreq: getHighPassFreq(),
+        echoSuppression: getEchoSuppression(),
+      },
+
+      // --- WebRTC peer connections ---
+      peerConnections: [],
+
+      // --- Remote streams cache ---
+      remoteStreamsCache: [],
+
+      // --- Event log (full text) ---
+      eventLog: debugPanel.querySelector('.sd-event-log')?.textContent || '',
+
+      // --- Console errors (if available) ---
+      consoleErrors: _capturedErrors.slice(-50),
+    };
+
+    // Peer connections detail
+    if (connect?._rtc) {
+      for (const [peerId, r] of connect._rtc) {
+        const pc = r?.pc;
+        if (!pc) continue;
+        const pcSnap = {
+          peerId,
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          iceGatheringState: pc.iceGatheringState,
+          signalingState: pc.signalingState,
+          localDescription: pc.localDescription ? {
+            type: pc.localDescription.type,
+            sdpLength: pc.localDescription.sdp?.length,
+            sdpAudioLines: extractSdpAudioInfo(pc.localDescription.sdp),
+          } : null,
+          remoteDescription: pc.remoteDescription ? {
+            type: pc.remoteDescription.type,
+            sdpLength: pc.remoteDescription.sdp?.length,
+            sdpAudioLines: extractSdpAudioInfo(pc.remoteDescription.sdp),
+          } : null,
+          senders: [],
+          receivers: [],
+          dataChannel: r.dc ? {
+            label: r.dc.label,
+            readyState: r.dc.readyState,
+          } : null,
+        };
+
+        // Senders
+        for (const sender of pc.getSenders()) {
+          const t = sender.track;
+          pcSnap.senders.push({
+            kind: t?.kind || 'none',
+            id: t?.id?.slice(0, 12),
+            readyState: t?.readyState,
+            enabled: t?.enabled,
+            muted: t?.muted,
+            label: t?.label,
+            settings: safeGetSettings(t),
+          });
+        }
+
+        // Receivers
+        for (const receiver of pc.getReceivers()) {
+          const t = receiver.track;
+          const contrib = receiver.getSynchronizationSources?.() || [];
+          pcSnap.receivers.push({
+            kind: t?.kind || 'none',
+            id: t?.id?.slice(0, 12),
+            readyState: t?.readyState,
+            enabled: t?.enabled,
+            muted: t?.muted,
+            label: t?.label,
+            synchronizationSources: contrib.map(s => ({
+              source: s.source,
+              audioLevel: s.audioLevel,
+              timestamp: s.timestamp,
+            })),
+          });
+        }
+
+        // getStats (async — we'll add it after)
+        snap.peerConnections.push(pcSnap);
+      }
+    }
+
+    // Remote streams cache
+    if (connect?._remoteStreams) {
+      for (const [peerId, stream] of connect._remoteStreams) {
+        snap.remoteStreamsCache.push({
+          peerId,
+          ...describeStream(stream, 'cached'),
+        });
+      }
+    }
+
+    // Gather async stats from all peer connections, then download
+    const statsPromises = [];
+    if (connect?._rtc) {
+      for (const [peerId, r] of connect._rtc) {
+        if (r?.pc?.getStats) {
+          statsPromises.push(
+            r.pc.getStats().then(stats => {
+              const filtered = {};
+              stats.forEach(report => {
+                // Keep only audio-relevant and connection-relevant stats
+                if (/inbound-rtp|outbound-rtp|remote-inbound|remote-outbound|candidate-pair|transport|codec/i.test(report.type)) {
+                  if (report.kind === 'video' && !/candidate|transport|codec/.test(report.type)) return;
+                  filtered[report.id] = Object.fromEntries(
+                    Object.entries(report).filter(([k]) => typeof report[k] !== 'object')
+                  );
+                }
+              });
+              return { peerId, stats: filtered };
+            }).catch(() => ({ peerId, stats: 'getStats failed' }))
+          );
+        }
+      }
+    }
+
+    Promise.all(statsPromises).then(allStats => {
+      snap.rtcStats = allStats;
+
+      const json = JSON.stringify(snap, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `waymark-audio-debug-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      debugLog('Debug snapshot downloaded');
+    });
+  }
+
+  /** Describe a MediaStream's tracks for the snapshot. */
+  function describeStream(stream, label) {
+    if (!stream) return { label, active: false, tracks: [] };
+    return {
+      label,
+      id: stream.id?.slice(0, 12),
+      active: stream.active,
+      tracks: stream.getTracks().map(t => ({
+        kind: t.kind,
+        id: t.id?.slice(0, 12),
+        readyState: t.readyState,
+        enabled: t.enabled,
+        muted: t.muted,
+        label: t.label,
+        settings: safeGetSettings(t),
+        constraints: safeGetConstraints(t),
+      })),
+    };
+  }
+
+  /** Safely call track.getSettings(). */
+  function safeGetSettings(track) {
+    if (!track?.getSettings) return null;
+    try {
+      const s = track.getSettings();
+      // Include all audio-relevant settings
+      return {
+        deviceId: s.deviceId?.slice(0, 16),
+        groupId: s.groupId?.slice(0, 16),
+        sampleRate: s.sampleRate,
+        sampleSize: s.sampleSize,
+        channelCount: s.channelCount,
+        echoCancellation: s.echoCancellation,
+        noiseSuppression: s.noiseSuppression,
+        autoGainControl: s.autoGainControl,
+        latency: s.latency,
+        width: s.width,
+        height: s.height,
+        frameRate: s.frameRate,
+      };
+    } catch { return null; }
+  }
+
+  /** Safely call track.getConstraints(). */
+  function safeGetConstraints(track) {
+    if (!track?.getConstraints) return null;
+    try { return track.getConstraints(); } catch { return null; }
+  }
+
+  /** Extract audio-relevant lines from SDP. */
+  function extractSdpAudioInfo(sdp) {
+    if (!sdp) return null;
+    const lines = sdp.split('\\n');
+    const audioLines = [];
+    let inAudio = false;
+    for (const line of lines) {
+      if (line.startsWith('m=audio')) { inAudio = true; }
+      else if (line.startsWith('m=')) { inAudio = false; }
+      if (inAudio) audioLines.push(line.trim());
+    }
+    return audioLines.length > 0 ? audioLines : null;
+  }
+
+  // Capture console errors for the debug snapshot
+  const _capturedErrors = [];
+  const _origConsoleError = console.error;
+  const _origConsoleWarn = console.warn;
+  console.error = function(...args) {
+    _capturedErrors.push({ level: 'error', ts: new Date().toISOString(), msg: args.map(String).join(' ') });
+    if (_capturedErrors.length > 100) _capturedErrors.shift();
+    _origConsoleError.apply(console, args);
+  };
+  console.warn = function(...args) {
+    _capturedErrors.push({ level: 'warn', ts: new Date().toISOString(), msg: args.map(String).join(' ') });
+    if (_capturedErrors.length > 100) _capturedErrors.shift();
+    _origConsoleWarn.apply(console, args);
+  };
+  window.addEventListener('error', (e) => {
+    _capturedErrors.push({ level: 'uncaught', ts: new Date().toISOString(), msg: `${e.message} at ${e.filename}:${e.lineno}` });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    _capturedErrors.push({ level: 'rejection', ts: new Date().toISOString(), msg: String(e.reason) });
+  });
 
   function startDebug(connect) {
     stopDebug();
