@@ -14,7 +14,10 @@ import { MqttClient } from './mqtt-client.js';
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36);
 const MAX_BUFFER = 500;
 
+let _customBrokerUrl = null;
+
 function brokerUrl() {
+  if (_customBrokerUrl) return _customBrokerUrl;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const base = window.__WAYMARK_BASE || '';
   return `${proto}//${location.host}${base}/mqtt`;
@@ -269,8 +272,9 @@ function startHeartbeat() {
 
 /* ---------- Lifecycle ---------- */
 
-export async function startBridge() {
+export async function startBridge(customUrl) {
   if (client?.connected) return SESSION_ID;
+  _customBrokerUrl = customUrl || null;
 
   client = new MqttClient(brokerUrl(), {
     clientId: `wm_browser_${SESSION_ID.slice(0, 8)}`,

@@ -352,6 +352,15 @@
           <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle">
         </label>
         <p class="settings-hint" style="margin:-0.5rem 0 0.5rem;font-size:0.8rem;color:var(--text-muted);">Connects to an AI dev agent for live debugging via MQTT.</p>
+
+        <div class="settings-row">
+          <span class="settings-label">MQTT broker endpoint</span>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex:1;">
+            <input type="text" id="settings-mqtt-url" class="settings-ref-input" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false" style="flex:1;">
+            <button id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
+          </div>
+        </div>
+        <p class="settings-hint" style="margin:-0.5rem 0 0.5rem;font-size:0.8rem;color:var(--text-muted);">Leave empty to auto-detect from current host. Requires reconnect.</p>
       </div>
 
       <!-- Version Pinning (only visible when GitHub source is active) -->

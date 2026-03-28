@@ -59,6 +59,8 @@ const settingsModalClose  = document.getElementById('settings-modal-close');
 const settingsDoneBtn     = document.getElementById('settings-done-btn');
 const settingsAutoRefresh = document.getElementById('settings-auto-refresh');
 const settingsMqttBridge  = document.getElementById('settings-mqtt-bridge');
+const settingsMqttUrl    = document.getElementById('settings-mqtt-url');
+const settingsMqttUrlApply = document.getElementById('settings-mqtt-url-apply');
 const settingsSortOrder   = document.getElementById('settings-sort-order');
 const settingsImportFolder = document.getElementById('settings-import-folder');
 const settingsChooseFolder = document.getElementById('settings-choose-folder');
@@ -326,7 +328,8 @@ async function showApp(user) {
 
   // Start MQTT bridge if the user enabled it in settings
   if (userData.getMqttBridge()) {
-    import('./mqtt-bridge.js').then(m => m.startBridge()).catch(err => {
+    const mqttUrl = userData.getMqttBrokerUrl() || undefined;
+    import('./mqtt-bridge.js').then(m => m.startBridge(mqttUrl)).catch(err => {
       console.warn('[MQTT Bridge] Failed to start:', err.message);
     });
   }
@@ -2273,6 +2276,7 @@ function openSettingsModal() {
   // Populate current preferences
   settingsAutoRefresh.checked = userData.getAutoRefresh();
   settingsMqttBridge.checked = userData.getMqttBridge();
+  settingsMqttUrl.value = userData.getMqttBrokerUrl();
   settingsSortOrder.value = userData.getSortOrder();
 
   // Sync theme buttons
@@ -2446,10 +2450,28 @@ function initSettingsModal() {
     const enabled = settingsMqttBridge.checked;
     userData.setMqttBridge(enabled);
     if (enabled) {
-      import('./mqtt-bridge.js').then(m => m.startBridge()).catch(() => {});
+      const url = userData.getMqttBrokerUrl() || undefined;
+      import('./mqtt-bridge.js').then(m => m.startBridge(url)).catch(() => {});
     } else {
       import('./mqtt-bridge.js').then(m => m.stopBridge()).catch(() => {});
     }
+  });
+
+  // MQTT broker URL
+  settingsMqttUrlApply.addEventListener('click', async () => {
+    const url = settingsMqttUrl.value.trim();
+    await userData.setMqttBrokerUrl(url);
+    // Reconnect if bridge is active
+    if (userData.getMqttBridge()) {
+      import('./mqtt-bridge.js').then(m => {
+        m.stopBridge();
+        m.startBridge(url || undefined);
+      }).catch(() => {});
+    }
+    showToast(url ? `Broker set to ${url}` : 'Broker set to auto-detect', 'success');
+  });
+  settingsMqttUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') settingsMqttUrlApply.click();
   });
 
   // Sort order select
