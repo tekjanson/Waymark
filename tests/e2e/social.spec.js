@@ -548,42 +548,6 @@ test('onRemoteStream assigns only video tracks to video element', async ({ page 
   }
 });
 
-test('echo-gate-processor.js is loadable and has correct parameter descriptors', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-030');
-
-  // Verify the processor file is served and parseable
-  const response = await page.evaluate(async () => {
-    try {
-      const resp = await fetch('/js/echo-gate-processor.js');
-      const text = await resp.text();
-      return {
-        status: resp.status,
-        hasClass: text.includes('class EchoGateProcessor'),
-        hasRegister: text.includes("registerProcessor('echo-gate'"),
-        hasSuppression: text.includes("name: 'suppression'"),
-        hasThreshold: text.includes("name: 'threshold'"),
-        hasHoldMs: text.includes("name: 'holdMs'"),
-        hasDefaultThreshold012: text.includes('defaultValue: 0.012'),
-        hasDefaultHold800: text.includes('defaultValue: 800'),
-        hasDefaultSuppression090: text.includes('defaultValue: 0.90'),
-      };
-    } catch (e) {
-      return { error: e.message };
-    }
-  });
-
-  expect(response.status).toBe(200);
-  expect(response.hasClass).toBe(true);
-  expect(response.hasRegister).toBe(true);
-  expect(response.hasSuppression).toBe(true);
-  expect(response.hasThreshold).toBe(true);
-  expect(response.hasHoldMs).toBe(true);
-  expect(response.hasDefaultThreshold012).toBe(true);
-  expect(response.hasDefaultHold800).toBe(true);
-  expect(response.hasDefaultSuppression090).toBe(true);
-});
-
 test('webrtc.js exports WaymarkConnect class', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-030');
@@ -596,7 +560,6 @@ test('webrtc.js exports WaymarkConnect class', async ({ page }) => {
         hasProcessAudio: typeof mod.WaymarkConnect.prototype._processAudio === 'function',
         hasCreateRemotePipeline: typeof mod.WaymarkConnect.prototype.createRemoteAudioPipeline === 'function',
         hasTeardownAudio: typeof mod.WaymarkConnect.prototype._teardownAudio === 'function',
-        hasFilterRemoteAudio: typeof mod.WaymarkConnect.filterRemoteAudio === 'function',
       };
     } catch (e) {
       return { error: e.message };
@@ -607,7 +570,6 @@ test('webrtc.js exports WaymarkConnect class', async ({ page }) => {
   expect(result.hasProcessAudio).toBe(true);
   expect(result.hasCreateRemotePipeline).toBe(true);
   expect(result.hasTeardownAudio).toBe(true);
-  expect(result.hasFilterRemoteAudio).toBe(true);
 });
 
 test('audio settings survive page reload', async ({ page }) => {

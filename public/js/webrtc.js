@@ -347,11 +347,6 @@ export class WaymarkConnect {
     const audioTracks = remoteStream.getAudioTracks();
     if (audioTracks.length === 0) return { cleanup() {}, outputStream: null };
 
-    const t0 = audioTracks[0];
-    console.log('[webrtc] createRemoteAudioPipeline: micAnalyser=%s, ctx=%s, tracks=%d, track0=%s/%s/%s',
-      !!this._micAnalyser, this._audioCtx?.state || 'none', audioTracks.length,
-      t0?.readyState, t0?.enabled ? 'en' : 'dis', t0?.muted ? 'muted' : 'live');
-
     // Return the RAW remote stream for the <audio> element.
     // Echo suppression is applied by the caller manipulating audioElement.volume
     // via rAF + _micAnalyser level detection. No Web Audio routing of remote
@@ -415,35 +410,6 @@ export class WaymarkConnect {
         self._duckState = null;
       },
     };
-  }
-
-  /**
-   * @deprecated AudioWorklet and fallback Web Audio pipelines removed.
-   * Chrome/Linux discards WebRTC audio packets routed through MediaStreamSource
-   * (totalSamplesReceived=0). Remote audio now goes directly to <audio> element
-   * with volume-based echo ducking via rAF + _micAnalyser.
-   * Kept for backward compatibility — applies a basic high-pass filter only.
-   */
-  static filterRemoteAudio(audioEl, stream, freq = 120) {
-    // Static method can't access instance ducking — basic filter only
-    try {
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = freq;
-      hp.Q.value = 0.7;
-      source.connect(hp);
-      hp.connect(ctx.destination);
-      audioEl.srcObject = null;
-      return {
-        ctx,
-        cleanup() { ctx.close().catch(() => {}); },
-      };
-    } catch {
-      audioEl.srcObject = stream;
-      return { ctx: null, cleanup() {} };
-    }
   }
 
   destroy() {
@@ -735,7 +701,6 @@ export class WaymarkConnect {
         for (const t of e.streams[0].getAudioTracks()) {
           if (t.muted) {
             t.addEventListener('unmute', () => {
-              console.log('[webrtc] remote audio track unmuted for', remotePeerId);
               const stream = this._remoteStreams.get(remotePeerId);
               if (stream) this.onRemoteStream(stream, remotePeerId);
             }, { once: true });
@@ -747,7 +712,6 @@ export class WaymarkConnect {
     pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
       const s = pc.iceConnectionState;
-      console.log('[webrtc] ICE state:', s, 'for peer', remotePeerId);
       if (s === 'failed' || s === 'closed') {
         this._closeOne(remotePeerId);
         if (this._peers.get(remotePeerId)?.channel === 'rtc') {
