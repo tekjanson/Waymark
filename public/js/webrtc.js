@@ -667,7 +667,9 @@ export class WaymarkConnect {
       case 'typing':
         this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
         break;
-      case 'call-start': break;
+      case 'call-start':
+        this.onCallActive(d.peerId, d.name);
+        break;
       case 'call-end':
         this.onCallEnded(d.peerId);
         break;

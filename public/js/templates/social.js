@@ -585,6 +585,29 @@ function openChat(sheetId, displayName, signal) {
       // --- Remote streams cache ---
       remoteStreamsCache: [],
 
+      // --- Signaling state ---
+      signaling: {
+        hasSignal: !!connect?.signal,
+        block: connect?._block ?? -1,
+        polling: connect?._polling ?? false,
+        destroyed: connect?._destroyed ?? false,
+        hasBroadcastChannel: !!connect?._bc,
+        inCall: connect?._inCall ?? false,
+        peerId: connect?.peerId || null,
+        peers: connect?._peers ? Array.from(connect._peers.entries()).map(([id, p]) => ({
+          peerId: id,
+          name: p.name,
+          channel: p.channel,
+        })) : [],
+        rtcEntries: connect?._rtc ? Array.from(connect._rtc.entries()).map(([id, r]) => ({
+          peerId: id,
+          state: r?.state,
+          pcState: r?.pc?.connectionState,
+          iceState: r?.pc?.iceConnectionState,
+          dcState: r?.dc?.readyState,
+        })) : [],
+      },
+
       // --- Event log (full text) ---
       eventLog: debugPanel.querySelector('.sd-event-log')?.textContent || '',
 
