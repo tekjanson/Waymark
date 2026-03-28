@@ -12,12 +12,45 @@ import {
   buildDirSyncBtn, WaymarkConnect,
   getChatSaveHistory, setChatSaveHistory,
   getChatSoundEnabled, setChatSoundEnabled,
+  getEchoCancellation, setEchoCancellation,
+  getNoiseSuppression, setNoiseSuppression,
+  getAutoGainControl, setAutoGainControl,
+  getNoiseGateThreshold, setNoiseGateThreshold,
+  getHighPassFreq, setHighPassFreq,
+  getEchoSuppression, setEchoSuppression,
 } from './shared.js';
 
 /* ---------- Constants ---------- */
 
 /** Column reserved for WebRTC signaling (must match webrtc.js SIG_COL). */
 const SIG_COL = 20;
+
+/**
+ * Build getUserMedia audio constraints from saved preferences.
+ * Returns a detailed constraints object with echo cancellation,
+ * noise suppression, and auto gain control settings.
+ * @returns {Object} Audio constraints for getUserMedia
+ */
+function buildAudioConstraints() {
+  return {
+    echoCancellation: { ideal: getEchoCancellation() },
+    noiseSuppression: { ideal: getNoiseSuppression() },
+    autoGainControl: { ideal: getAutoGainControl() },
+  };
+}
+
+/**
+ * Build the audioProcessing options bag passed to WaymarkConnect.startCall().
+ * These control the Web Audio processing pipeline (high-pass + noise gate).
+ * @returns {Object}
+ */
+function buildAudioProcessing() {
+  return {
+    highPassFreq: getHighPassFreq(),
+    gateThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
+    echoSuppression: getEchoSuppression(),
+  };
+}
 
 const MOOD_MAP = {
   happy: '😊', sad: '😢', excited: '🎉', angry: '😤',
@@ -185,6 +218,57 @@ function openChat(sheetId, displayName, signal) {
     checked: getChatSoundEnabled(),
     on: { change(e) { setChatSoundEnabled(e.target.checked); } },
   });
+  const echoCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getEchoCancellation(),
+    on: { change(e) { setEchoCancellation(e.target.checked); } },
+  });
+  const noiseCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getNoiseSuppression(),
+    on: { change(e) { setNoiseSuppression(e.target.checked); } },
+  });
+  const gainCheckbox = el('input', {
+    type: 'checkbox',
+    checked: getAutoGainControl(),
+    on: { change(e) { setAutoGainControl(e.target.checked); } },
+  });
+  const gateLabel = el('span', { className: 'social-settings-range-value' }, [`${getNoiseGateThreshold()} dB`]);
+  const gateSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '-80', max: '-20', step: '5',
+    value: String(getNoiseGateThreshold()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setNoiseGateThreshold(v);
+      gateLabel.textContent = `${v} dB`;
+    } },
+  });
+  const hpLabel = el('span', { className: 'social-settings-range-value' }, [`${getHighPassFreq()} Hz`]);
+  const hpSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '40', max: '200', step: '10',
+    value: String(getHighPassFreq()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setHighPassFreq(v);
+      hpLabel.textContent = `${v} Hz`;
+    } },
+  });
+  const suppressLabel = el('span', { className: 'social-settings-range-value' }, [`${Math.round(getEchoSuppression() * 100)}%`]);
+  const suppressSlider = el('input', {
+    type: 'range',
+    className: 'social-settings-range',
+    min: '0', max: '1', step: '0.05',
+    value: String(getEchoSuppression()),
+    on: { input(e) {
+      const v = Number(e.target.value);
+      setEchoSuppression(v);
+      suppressLabel.textContent = `${Math.round(v * 100)}%`;
+    } },
+  });
   settingsPanel.append(
     el('div', { className: 'social-settings-title' }, ['Chat Settings']),
     el('label', { className: 'social-settings-row' }, [
@@ -194,6 +278,40 @@ function openChat(sheetId, displayName, signal) {
     el('label', { className: 'social-settings-row' }, [
       soundCheckbox,
       el('span', {}, ['Incoming call sound']),
+    ]),
+    el('div', { className: 'social-settings-title social-settings-divider' }, ['Audio Processing']),
+    el('label', { className: 'social-settings-row' }, [
+      echoCheckbox,
+      el('span', {}, ['Echo cancellation']),
+    ]),
+    el('label', { className: 'social-settings-row' }, [
+      noiseCheckbox,
+      el('span', {}, ['Noise suppression']),
+    ]),
+    el('label', { className: 'social-settings-row' }, [
+      gainCheckbox,
+      el('span', {}, ['Auto gain control']),
+    ]),
+    el('div', { className: 'social-settings-title social-settings-divider' }, ['Advanced']),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['Noise gate']),
+      gateSlider,
+      gateLabel,
+    ]),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['High-pass filter']),
+      hpSlider,
+      hpLabel,
+    ]),
+    el('div', { className: 'social-settings-row social-settings-slider-row' }, [
+      el('span', {}, ['Echo suppression']),
+      suppressSlider,
+      suppressLabel,
+    ]),
+    el('div', { className: 'social-settings-hint' }, [
+      'Echo suppression mutes remote audio while you speak to prevent '
+      + 'hearing your own voice back. 100% = full mute. '
+      + 'Settings apply on next call.',
     ]),
   );
   settingsBtn.addEventListener('click', () => {
@@ -273,6 +391,551 @@ function openChat(sheetId, displayName, signal) {
 
   callBar.append(callBtn, videoCallBtn, hangupBtn, muteBtn, camToggleBtn);
 
+  // --- Audio Debug Panel (toggled during calls) ---
+  const debugPanel = el('div', { className: 'social-debug-panel hidden' });
+  debugPanel.innerHTML = `
+    <div class="social-debug-header">
+      <span>🔊 Audio Debug</span>
+      <button class="social-debug-close" title="Close">✕</button>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Mic Level</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-mic-meter"></div><span class="social-debug-meter-val sd-mic-val">—</span></div>
+      <div class="social-debug-label">Remote Level</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-rem-meter" style="background:#5bf"></div><span class="social-debug-meter-val sd-rem-val">—</span></div>
+      <div class="social-debug-label">Audio Out (speakers)</div>
+      <div class="social-debug-meter"><div class="social-debug-meter-fill sd-out-meter" style="background:#f80"></div><span class="social-debug-meter-val sd-out-val">—</span></div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Echo Gate</div>
+      <div class="social-debug-grid">
+        <span>State</span><span class="sd-gate-state">—</span>
+        <span>Output</span><span class="sd-gate-gain">—</span>
+        <span>Hold</span><span class="sd-gate-hold">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Adaptive Floor</div>
+      <div class="social-debug-grid">
+        <span>Noise floor</span><span class="sd-noise-floor">—</span>
+        <span>Threshold</span><span class="sd-eff-thresh">—</span>
+        <span>Source</span><span class="sd-thresh-src">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Browser AEC</div>
+      <div class="social-debug-grid">
+        <span>Echo cancel</span><span class="sd-aec">—</span>
+        <span>Noise supp</span><span class="sd-ns">—</span>
+        <span>Auto gain</span><span class="sd-agc">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section">
+      <div class="social-debug-label">Pipeline</div>
+      <div class="social-debug-grid">
+        <span>AudioCtx</span><span class="sd-ctx-state">—</span>
+        <span>Path</span><span class="sd-pipeline-type">—</span>
+        <span>Sample rate</span><span class="sd-sample-rate">—</span>
+      </div>
+    </div>
+    <div class="social-debug-section social-debug-log-section">
+      <div class="social-debug-label">Event Log <button class="social-debug-clear-log" title="Clear">clear</button></div>
+      <div class="social-debug-log sd-event-log"></div>
+    </div>
+    <div class="social-debug-section">
+      <button class="social-debug-download">📥 Download Debug Snapshot</button>
+    </div>`;
+
+  // Wire close button
+  debugPanel.querySelector('.social-debug-close').addEventListener('click', () => {
+    debugPanel.classList.add('hidden');
+    debugBtn.classList.remove('social-debug-btn-active');
+  });
+  debugPanel.querySelector('.social-debug-clear-log').addEventListener('click', () => {
+    debugPanel.querySelector('.sd-event-log').textContent = '';
+  });
+  debugPanel.querySelector('.social-debug-download').addEventListener('click', () => {
+    downloadDebugSnapshot();
+  });
+
+  // Debug toggle button — added to call bar when in a call
+  const debugBtn = el('button', {
+    className: 'social-call-btn social-debug-btn hidden',
+    title: 'Audio debug panel',
+  }, ['🐛 Debug']);
+  debugBtn.addEventListener('click', () => {
+    debugPanel.classList.toggle('hidden');
+    debugBtn.classList.toggle('social-debug-btn-active');
+    if (!debugPanel.classList.contains('hidden') && _activeConnect && !_debugCleanup) {
+      startDebug(_activeConnect);
+    }
+  });
+  callBar.append(debugBtn);
+
+  let _debugCleanup = null;
+  let _debugLogLines = 0;
+
+  function debugLog(msg) {
+    const log = debugPanel.querySelector('.sd-event-log');
+    if (!log) return;
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const line = document.createElement('div');
+    line.textContent = `[${ts}] ${msg}`;
+    log.append(line);
+    _debugLogLines++;
+    if (_debugLogLines > 200) { log.firstChild?.remove(); _debugLogLines--; }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  /** Collect every piece of audio/WebRTC diagnostic state and download as JSON. */
+  function downloadDebugSnapshot() {
+    const connect = _activeConnect;
+    const ctx = connect?._audioCtx;
+    const snap = {
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      url: location.href,
+      secure: location.protocol === 'https:',
+
+      // --- AudioContext state ---
+      audioCtx: ctx ? {
+        state: ctx.state,
+        sampleRate: ctx.sampleRate,
+        baseLatency: ctx.baseLatency,
+        outputLatency: ctx.outputLatency,
+        currentTime: ctx.currentTime,
+        destination: {
+          channelCount: ctx.destination.channelCount,
+          maxChannelCount: ctx.destination.maxChannelCount,
+          numberOfInputs: ctx.destination.numberOfInputs,
+          numberOfOutputs: ctx.destination.numberOfOutputs,
+        },
+      } : null,
+      // --- Pipeline state ---
+      pipeline: {
+        type: connect?._duckingRAF ? 'volume-ducking' : 'direct',
+        hasDuckingRAF: !!connect?._duckingRAF,
+        hasMicAnalyser: !!connect?._micAnalyser,
+        hasProcessedStream: !!connect?._processedStream,
+        duckState: connect?._duckState ? {
+          volume: connect._duckState.volume,
+          suppression: connect._duckState.suppression,
+          gainWhenDucked: connect._duckState.gainWhenDucked,
+          duckThreshold: connect._duckState.duckThreshold,
+        } : null,
+      },
+
+      // --- Mic (outgoing) tracks ---
+      rawStream: describeStream(connect?._rawStream, 'rawStream'),
+      localStream: describeStream(connect?._localStream, 'localStream'),
+      processedStream: describeStream(connect?._processedStream, 'processedStream'),
+
+      // --- Remote audio element ---
+      remoteAudioElement: {
+        srcObject: remoteAudio.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(remoteAudio.srcObject, 'remoteAudio.srcObject'),
+        paused: remoteAudio.paused,
+        ended: remoteAudio.ended,
+        muted: remoteAudio.muted,
+        volume: remoteAudio.volume,
+        readyState: remoteAudio.readyState,
+        networkState: remoteAudio.networkState,
+        currentTime: remoteAudio.currentTime,
+        autoplay: remoteAudio.autoplay,
+        error: remoteAudio.error ? {
+          code: remoteAudio.error.code,
+          message: remoteAudio.error.message,
+        } : null,
+      },
+
+      // --- Remote video element ---
+      remoteVideoElement: {
+        srcObject: remoteVideo.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(remoteVideo.srcObject, 'remoteVideo.srcObject'),
+        paused: remoteVideo.paused,
+        readyState: remoteVideo.readyState,
+      },
+
+      // --- Local video element ---
+      localVideoElement: {
+        srcObject: localVideo.srcObject ? 'set' : 'null',
+        srcObjectTracks: describeStream(localVideo.srcObject, 'localVideo.srcObject'),
+        muted: localVideo.muted,
+      },
+
+      // --- User audio settings (localStorage) ---
+      audioSettings: {
+        echoCancellation: getEchoCancellation(),
+        noiseSuppression: getNoiseSuppression(),
+        autoGainControl: getAutoGainControl(),
+        noiseGateThreshold: getNoiseGateThreshold(),
+        highPassFreq: getHighPassFreq(),
+        echoSuppression: getEchoSuppression(),
+      },
+
+      // --- WebRTC peer connections ---
+      peerConnections: [],
+
+      // --- Remote streams cache ---
+      remoteStreamsCache: [],
+
+      // --- Signaling state ---
+      signaling: {
+        hasSignal: !!connect?.signal,
+        block: connect?._block ?? -1,
+        polling: connect?._polling ?? false,
+        destroyed: connect?._destroyed ?? false,
+        hasBroadcastChannel: !!connect?._bc,
+        inCall: connect?._inCall ?? false,
+        peerId: connect?.peerId || null,
+        peers: connect?._peers ? Array.from(connect._peers.entries()).map(([id, p]) => ({
+          peerId: id,
+          name: p.name,
+          channel: p.channel,
+        })) : [],
+        rtcEntries: connect?._rtc ? Array.from(connect._rtc.entries()).map(([id, r]) => ({
+          peerId: id,
+          state: r?.state,
+          pcState: r?.pc?.connectionState,
+          iceState: r?.pc?.iceConnectionState,
+          dcState: r?.dc?.readyState,
+        })) : [],
+      },
+
+      // --- Event log (full text) ---
+      eventLog: debugPanel.querySelector('.sd-event-log')?.textContent || '',
+
+      // --- Console errors (if available) ---
+      consoleErrors: _capturedErrors.slice(-50),
+    };
+
+    // Peer connections detail
+    if (connect?._rtc) {
+      for (const [peerId, r] of connect._rtc) {
+        const pc = r?.pc;
+        if (!pc) continue;
+        const pcSnap = {
+          peerId,
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          iceGatheringState: pc.iceGatheringState,
+          signalingState: pc.signalingState,
+          localDescription: pc.localDescription ? {
+            type: pc.localDescription.type,
+            sdpLength: pc.localDescription.sdp?.length,
+            sdpAudioLines: extractSdpAudioInfo(pc.localDescription.sdp),
+          } : null,
+          remoteDescription: pc.remoteDescription ? {
+            type: pc.remoteDescription.type,
+            sdpLength: pc.remoteDescription.sdp?.length,
+            sdpAudioLines: extractSdpAudioInfo(pc.remoteDescription.sdp),
+          } : null,
+          senders: [],
+          receivers: [],
+          dataChannel: r.dc ? {
+            label: r.dc.label,
+            readyState: r.dc.readyState,
+          } : null,
+        };
+
+        // Senders
+        for (const sender of pc.getSenders()) {
+          const t = sender.track;
+          pcSnap.senders.push({
+            kind: t?.kind || 'none',
+            id: t?.id?.slice(0, 12),
+            readyState: t?.readyState,
+            enabled: t?.enabled,
+            muted: t?.muted,
+            label: t?.label,
+            settings: safeGetSettings(t),
+          });
+        }
+
+        // Receivers
+        for (const receiver of pc.getReceivers()) {
+          const t = receiver.track;
+          const contrib = receiver.getSynchronizationSources?.() || [];
+          pcSnap.receivers.push({
+            kind: t?.kind || 'none',
+            id: t?.id?.slice(0, 12),
+            readyState: t?.readyState,
+            enabled: t?.enabled,
+            muted: t?.muted,
+            label: t?.label,
+            synchronizationSources: contrib.map(s => ({
+              source: s.source,
+              audioLevel: s.audioLevel,
+              timestamp: s.timestamp,
+            })),
+          });
+        }
+
+        // getStats (async — we'll add it after)
+        snap.peerConnections.push(pcSnap);
+      }
+    }
+
+    // Remote streams cache
+    if (connect?._remoteStreams) {
+      for (const [peerId, stream] of connect._remoteStreams) {
+        snap.remoteStreamsCache.push({
+          peerId,
+          ...describeStream(stream, 'cached'),
+        });
+      }
+    }
+
+    // Gather async stats from all peer connections, then download
+    const statsPromises = [];
+    if (connect?._rtc) {
+      for (const [peerId, r] of connect._rtc) {
+        if (r?.pc?.getStats) {
+          statsPromises.push(
+            r.pc.getStats().then(stats => {
+              const filtered = {};
+              stats.forEach(report => {
+                // Keep only audio-relevant and connection-relevant stats
+                if (/inbound-rtp|outbound-rtp|remote-inbound|remote-outbound|candidate-pair|transport|codec/i.test(report.type)) {
+                  if (report.kind === 'video' && !/candidate|transport|codec/.test(report.type)) return;
+                  filtered[report.id] = Object.fromEntries(
+                    Object.entries(report).filter(([k]) => typeof report[k] !== 'object')
+                  );
+                }
+              });
+              return { peerId, stats: filtered };
+            }).catch(() => ({ peerId, stats: 'getStats failed' }))
+          );
+        }
+      }
+    }
+
+    Promise.all(statsPromises).then(allStats => {
+      snap.rtcStats = allStats;
+
+      const json = JSON.stringify(snap, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `waymark-audio-debug-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      debugLog('Debug snapshot downloaded');
+    });
+  }
+
+  /** Describe a MediaStream's tracks for the snapshot. */
+  function describeStream(stream, label) {
+    if (!stream) return { label, active: false, tracks: [] };
+    return {
+      label,
+      id: stream.id?.slice(0, 12),
+      active: stream.active,
+      tracks: stream.getTracks().map(t => ({
+        kind: t.kind,
+        id: t.id?.slice(0, 12),
+        readyState: t.readyState,
+        enabled: t.enabled,
+        muted: t.muted,
+        label: t.label,
+        settings: safeGetSettings(t),
+        constraints: safeGetConstraints(t),
+      })),
+    };
+  }
+
+  /** Safely call track.getSettings(). */
+  function safeGetSettings(track) {
+    if (!track?.getSettings) return null;
+    try {
+      const s = track.getSettings();
+      // Include all audio-relevant settings
+      return {
+        deviceId: s.deviceId?.slice(0, 16),
+        groupId: s.groupId?.slice(0, 16),
+        sampleRate: s.sampleRate,
+        sampleSize: s.sampleSize,
+        channelCount: s.channelCount,
+        echoCancellation: s.echoCancellation,
+        noiseSuppression: s.noiseSuppression,
+        autoGainControl: s.autoGainControl,
+        latency: s.latency,
+        width: s.width,
+        height: s.height,
+        frameRate: s.frameRate,
+      };
+    } catch { return null; }
+  }
+
+  /** Safely call track.getConstraints(). */
+  function safeGetConstraints(track) {
+    if (!track?.getConstraints) return null;
+    try { return track.getConstraints(); } catch { return null; }
+  }
+
+  /** Extract audio-relevant lines from SDP. */
+  function extractSdpAudioInfo(sdp) {
+    if (!sdp) return null;
+    const lines = sdp.split('\\n');
+    const audioLines = [];
+    let inAudio = false;
+    for (const line of lines) {
+      if (line.startsWith('m=audio')) { inAudio = true; }
+      else if (line.startsWith('m=')) { inAudio = false; }
+      if (inAudio) audioLines.push(line.trim());
+    }
+    return audioLines.length > 0 ? audioLines : null;
+  }
+
+  // Capture console errors for the debug snapshot
+  const _capturedErrors = [];
+  const _origConsoleError = console.error;
+  const _origConsoleWarn = console.warn;
+  console.error = function(...args) {
+    _capturedErrors.push({ level: 'error', ts: new Date().toISOString(), msg: args.map(String).join(' ') });
+    if (_capturedErrors.length > 100) _capturedErrors.shift();
+    _origConsoleError.apply(console, args);
+  };
+  console.warn = function(...args) {
+    _capturedErrors.push({ level: 'warn', ts: new Date().toISOString(), msg: args.map(String).join(' ') });
+    if (_capturedErrors.length > 100) _capturedErrors.shift();
+    _origConsoleWarn.apply(console, args);
+  };
+  window.addEventListener('error', (e) => {
+    _capturedErrors.push({ level: 'uncaught', ts: new Date().toISOString(), msg: `${e.message} at ${e.filename}:${e.lineno}` });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    _capturedErrors.push({ level: 'rejection', ts: new Date().toISOString(), msg: String(e.reason) });
+  });
+
+  function startDebug(connect) {
+    stopDebug();
+    if (!connect) return;
+
+    const els = {
+      micMeter: debugPanel.querySelector('.sd-mic-meter'),
+      micVal: debugPanel.querySelector('.sd-mic-val'),
+      remMeter: debugPanel.querySelector('.sd-rem-meter'),
+      remVal: debugPanel.querySelector('.sd-rem-val'),
+      outMeter: debugPanel.querySelector('.sd-out-meter'),
+      outVal: debugPanel.querySelector('.sd-out-val'),
+      gateState: debugPanel.querySelector('.sd-gate-state'),
+      gateGain: debugPanel.querySelector('.sd-gate-gain'),
+      gateHold: debugPanel.querySelector('.sd-gate-hold'),
+      noiseFloor: debugPanel.querySelector('.sd-noise-floor'),
+      effThresh: debugPanel.querySelector('.sd-eff-thresh'),
+      threshSrc: debugPanel.querySelector('.sd-thresh-src'),
+      aec: debugPanel.querySelector('.sd-aec'),
+      ns: debugPanel.querySelector('.sd-ns'),
+      agc: debugPanel.querySelector('.sd-agc'),
+      ctxState: debugPanel.querySelector('.sd-ctx-state'),
+      pipelineType: debugPanel.querySelector('.sd-pipeline-type'),
+      sampleRate: debugPanel.querySelector('.sd-sample-rate'),
+    };
+
+    // Populate one-time info
+    const ctx = connect._audioCtx;
+    els.ctxState.textContent = ctx?.state || 'none';
+    els.sampleRate.textContent = ctx?.sampleRate ? `${ctx.sampleRate} Hz` : '—';
+    els.pipelineType.textContent = connect._duckingRAF ? 'Volume ducking' : 'direct';
+
+    // Log ICE connection state for each peer
+    for (const [peerId, r] of connect._rtc || []) {
+      const ice = r?.pc?.iceConnectionState || '?';
+      debugLog(`ICE[${peerId.slice(0, 6)}]: ${ice}`);
+    }
+
+    // Read browser constraints from the actual mic track
+    const micTrack = connect._rawStream?.getAudioTracks()?.[0];
+    if (micTrack) {
+      try {
+        const settings = micTrack.getSettings();
+        els.aec.textContent = settings.echoCancellation ? '✅ on' : '❌ off';
+        els.ns.textContent = settings.noiseSuppression ? '✅ on' : '❌ off';
+        els.agc.textContent = settings.autoGainControl ? '✅ on' : '❌ off';
+        debugLog(`Mic: ${micTrack.label}`);
+        debugLog(`AEC=${settings.echoCancellation} NS=${settings.noiseSuppression} AGC=${settings.autoGainControl}`);
+      } catch { /* some browsers don't support getSettings */ }
+    }
+
+    // Live mic level via AnalyserNode (independent of worklet)
+    const analyser = connect._micAnalyser;
+    let micRAF = 0;
+    // Audio out level: show duck state volume (no Web Audio on remote stream!)
+
+    if (analyser) {
+      const buf = new Float32Array(analyser.fftSize);
+      const updateMeters = () => {
+        if (!connect._audioCtx) return;
+        // Mic level
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rmsVal = Math.sqrt(sum / buf.length);
+        const pct = Math.min(100, rmsVal * 500);
+        els.micMeter.style.width = pct + '%';
+        els.micMeter.style.background = rmsVal > 0.05 ? '#5f5' : rmsVal > 0.02 ? '#ff5' : '#555';
+        els.micVal.textContent = rmsVal.toFixed(4);
+
+        // Audio out level — show duck volume (no Web Audio on remote stream!)
+        const ds = connect._duckState;
+        if (ds) {
+          const oPct = ds.volume * 100;
+          els.outMeter.style.width = oPct + '%';
+          els.outMeter.style.background = ds.volume < 0.5 ? '#f55' : ds.volume < 0.9 ? '#f80' : '#5f5';
+          els.outVal.textContent = (ds.volume * 100).toFixed(0) + '%';
+          // Show duck state in gate fields
+          els.gateState.textContent = ds.volume < 0.5 ? '🔴 DUCKED' : '🟢 FULL';
+          els.gateState.style.color = ds.volume < 0.5 ? '#f55' : '#5f5';
+          els.gateGain.textContent = (ds.volume * 100).toFixed(0) + '%';
+        }
+
+        micRAF = requestAnimationFrame(updateMeters);
+      };
+      micRAF = requestAnimationFrame(updateMeters);
+    }
+
+    // Detect audio leak: warn if localVideo has audio tracks
+    const lvTracks = localVideo.srcObject?.getAudioTracks?.() || [];
+    if (lvTracks.length > 0) {
+      debugLog('⚠️ LOCAL VIDEO HAS AUDIO TRACKS — possible feedback loop!');
+    }
+    // Also check remoteVideo
+    const rvTracks = remoteVideo.srcObject?.getAudioTracks?.() || [];
+    if (rvTracks.length > 0) {
+      debugLog('⚠️ REMOTE VIDEO HAS AUDIO TRACKS — possible unprocessed audio leak!');
+    }
+
+    // Volume ducking diagnostic logging
+    if (connect._duckingRAF) {
+      debugLog('Volume ducking active (rAF + mic analyser)');
+    } else {
+      debugLog('Direct audio — no echo suppression');
+    }
+
+    // Update context state and pipeline info periodically
+    const ctxInterval = setInterval(() => {
+      if (connect._audioCtx) {
+        els.ctxState.textContent = connect._audioCtx.state;
+      }
+      els.pipelineType.textContent = connect._duckingRAF ? 'Volume ducking' : 'direct';
+    }, 2000);
+
+    debugLog('Debug panel started');
+
+    _debugCleanup = () => {
+      if (micRAF) cancelAnimationFrame(micRAF);
+      clearInterval(ctxInterval);
+      debugLog('Debug panel stopped');
+    };
+  }
+
+  function stopDebug() {
+    if (_debugCleanup) { _debugCleanup(); _debugCleanup = null; }
+  }
+
   // Media container for video streams
   const mediaContainer = el('div', { className: 'social-media-container hidden' });
   const localVideo = el('video', { className: 'social-local-video', muted: true, autoplay: true, playsInline: true });
@@ -280,6 +943,11 @@ function openChat(sheetId, displayName, signal) {
   // remoteAudio lives OUTSIDE mediaContainer so it's never hidden by display:none
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
   mediaContainer.append(remoteVideo, localVideo);
+
+  // Cleanup handle for the Web Audio remote playback filter
+  let _remoteFilterCleanup = null;
+  let _pipelineGen = 0;
+  let _duckVolumeRAF = null;
 
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
@@ -291,7 +959,10 @@ function openChat(sheetId, displayName, signal) {
       camToggleBtn.classList.remove('hidden');
       mediaContainer.classList.remove('hidden');
     }
+    debugBtn.classList.remove('hidden');
     _chatPanel.classList.add('social-chat-in-call');
+    // Only start debug if not already running (prevents start/stop spam)
+    if (_activeConnect && !_debugCleanup) startDebug(_activeConnect);
   }
 
   /** Leave the "in call" visual state and release all media devices */
@@ -300,6 +971,20 @@ function openChat(sheetId, displayName, signal) {
     if (_activeConnect?.localStream) {
       for (const t of _activeConnect.localStream.getTracks()) t.stop();
     }
+    // Tear down remote audio filter and stop audio element
+    if (_duckVolumeRAF) {
+      cancelAnimationFrame(_duckVolumeRAF);
+      _duckVolumeRAF = null;
+    }
+    if (_remoteFilterCleanup) {
+      _remoteFilterCleanup();
+      _remoteFilterCleanup = null;
+    }
+    remoteAudio.srcObject = null;
+    stopDebug();
+    debugBtn.classList.add('hidden');
+    debugPanel.classList.add('hidden');
+    debugBtn.classList.remove('social-debug-btn-active');
     callBtn.classList.remove('hidden');
     videoCallBtn.classList.remove('hidden');
     hangupBtn.classList.add('hidden');
@@ -335,7 +1020,8 @@ function openChat(sheetId, displayName, signal) {
             Date.now(), false);
         }
       } else {
-        localVideo.srcObject = stream;
+        localVideo.srcObject = stream.getVideoTracks().length
+          ? new MediaStream(stream.getVideoTracks()) : null;
         enterCallUI(constraints.video);
       }
     } catch (err) {
@@ -359,11 +1045,12 @@ function openChat(sheetId, displayName, signal) {
     if (!_activeConnect || _activeConnect.inCall) return;
     appendMessage('System', 'Joining call…', Date.now(), false);
     try {
-      const stream = await _activeConnect.startCall({ audio: true, video: withVideo });
+      const stream = await _activeConnect.startCall({ audio: buildAudioConstraints(), video: withVideo, audioProcessing: buildAudioProcessing() });
       if (stream?._listenOnly) {
         appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
       } else {
-        localVideo.srcObject = stream;
+        localVideo.srcObject = stream.getVideoTracks().length
+          ? new MediaStream(stream.getVideoTracks()) : null;
       }
       enterCallUI(withVideo && !stream?._listenOnly);
     } catch (err) {
@@ -375,8 +1062,8 @@ function openChat(sheetId, displayName, signal) {
     }
   }
 
-  callBtn.addEventListener('click', () => startCall({ audio: true, video: false }));
-  videoCallBtn.addEventListener('click', () => startCall({ audio: true, video: true }));
+  callBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: false, audioProcessing: buildAudioProcessing() }));
+  videoCallBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: true, audioProcessing: buildAudioProcessing() }));
 
   hangupBtn.addEventListener('click', () => {
     if (_activeConnect) _activeConnect.endCall();
@@ -437,7 +1124,7 @@ function openChat(sheetId, displayName, signal) {
     }
   });
 
-  _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, inputBar);
+  _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, debugPanel, inputBar);
   document.body.append(_chatPanel);
 
   // --- Render a chat message ---
@@ -558,20 +1245,83 @@ function openChat(sheetId, displayName, signal) {
     },
     onStatusChanged(status) {
       statusDot.className = `social-chat-status social-chat-status-${status}`;
-      statusLabel.textContent = status === 'connected' ? 'Connected' : status === 'listening' ? 'Listening…' : 'Disconnected';
+      const labels = { connected: 'Connected', listening: 'Listening…', pairing: 'Pairing…', disconnected: 'Disconnected' };
+      statusLabel.textContent = labels[status] || status;
       if (status === 'disconnected') saveChatHistory();
     },
     onRemoteStream(stream) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
-        remoteVideo.srcObject = stream;
-        remoteAudio.srcObject = null; // prevent double audio
+        // Attach ONLY video tracks — audio goes exclusively through the echo
+        // suppression pipeline. This prevents any unprocessed audio leaking
+        // through the <video> element (muted attr is unreliable across platforms).
+        const videoOnly = new MediaStream(stream.getVideoTracks());
+        remoteVideo.srcObject = videoOnly;
         mediaContainer.classList.remove('hidden');
         remoteVideo.play().catch(() => {});
       } else {
-        remoteAudio.srcObject = stream;
         remoteVideo.srcObject = null;
-        remoteAudio.play().catch(() => {});
+      }
+      // Route ALL remote audio through the echo suppression pipeline.
+      // Use a generation counter so only the latest pipeline result is applied
+      // (onRemoteStream may fire multiple times from ontrack / renegotiation).
+      const nAudioTracks = stream.getAudioTracks().length;
+      if (nAudioTracks > 0 && _activeConnect) {
+        const tracks = stream.getAudioTracks();
+        const t0 = tracks[0];
+        // Show ICE state at time of track arrival for connectivity diagnostics
+        let iceInfo = '';
+        for (const [pid, r] of _activeConnect._rtc || []) {
+          iceInfo += ` ICE[${pid.slice(0, 6)}]=${r?.pc?.iceConnectionState || '?'}`;
+        }
+        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}, track=${t0?.readyState}/${t0?.enabled ? 'en' : 'dis'}/${t0?.muted ? 'muted' : 'live'}${iceInfo}`);
+        const connect = _activeConnect;
+        const gen = ++_pipelineGen;
+        // Keep old pipeline running until new one is ready
+        const oldCleanup = _remoteFilterCleanup;
+        _remoteFilterCleanup = null;
+        connect.createRemoteAudioPipeline(stream, {
+          highPassFreq: getHighPassFreq(),
+          echoSuppression: getEchoSuppression(),
+          duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
+        }).then(result => {
+          // Discard if superseded by a newer onRemoteStream call
+          if (_activeConnect !== connect || _pipelineGen !== gen) {
+            debugLog(`Pipeline gen=${gen} superseded by gen=${_pipelineGen} — discarded`);
+            result.cleanup();
+            if (oldCleanup) oldCleanup();
+            return;
+          }
+          // Swap: tear down old, install new
+          if (oldCleanup) oldCleanup();
+          _remoteFilterCleanup = result.cleanup;
+          // Raw remote stream goes directly on <audio> element — proven working
+          // pattern. No Web Audio routing (Chrome/Linux discards packets).
+          remoteAudio.srcObject = result.outputStream || null;
+          if (result.outputStream) {
+            remoteAudio.play().catch(() => {});
+          }
+          // Wire up volume-based echo ducking: rAF loop reads _duckState.volume
+          // computed by webrtc.js and applies it to the <audio> element.
+          if (connect._duckState) {
+            const ds = connect._duckState;
+            const applyVolume = () => {
+              if (!connect._duckState || connect._duckState !== ds) return;
+              remoteAudio.volume = ds.volume;
+              _duckVolumeRAF = requestAnimationFrame(applyVolume);
+            };
+            if (_duckVolumeRAF) cancelAnimationFrame(_duckVolumeRAF);
+            _duckVolumeRAF = requestAnimationFrame(applyVolume);
+          }
+          const ptype = connect._duckingRAF ? 'volume ducking' : 'direct';
+          const outTracks = result.outputStream?.getAudioTracks() || [];
+          const ot = outTracks[0];
+          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
+        }).catch(err => {
+          debugLog(`Pipeline error: ${err.message}`);
+        });
+      } else if (nAudioTracks === 0) {
+        debugLog('Remote stream has no audio tracks');
       }
       // If we're already in a call (user initiated), just update UI
       if (_activeConnect?.inCall) {
@@ -586,7 +1336,9 @@ function openChat(sheetId, displayName, signal) {
     },
     onCallEnded() {
       hideIncomingCall();
-      if (_activeConnect) _activeConnect.endCall();
+      // Deduplicate: call-end arrives via both BroadcastChannel and DataChannel
+      if (!_activeConnect?.inCall) return;
+      _activeConnect.endCall();
       exitCallUI();
       appendMessage('System', 'Peer ended the call.', Date.now(), false);
     },

@@ -485,3 +485,65 @@ export function getChatSoundEnabled() {
 export function setChatSoundEnabled(enabled) {
   set('chat_sound_enabled', !!enabled);
 }
+
+/* ---------- Audio Processing ---------- */
+
+/** @returns {boolean} Echo cancellation enabled (default true) */
+export function getEchoCancellation() {
+  return get('audio_echo_cancellation') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setEchoCancellation(enabled) {
+  set('audio_echo_cancellation', !!enabled);
+}
+
+/** @returns {boolean} Noise suppression enabled (default true) */
+export function getNoiseSuppression() {
+  return get('audio_noise_suppression') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setNoiseSuppression(enabled) {
+  set('audio_noise_suppression', !!enabled);
+}
+
+/** @returns {boolean} Auto gain control enabled (default true) */
+export function getAutoGainControl() {
+  return get('audio_auto_gain') ?? true;
+}
+
+/** @param {boolean} enabled */
+export function setAutoGainControl(enabled) {
+  set('audio_auto_gain', !!enabled);
+}
+
+/** @returns {number} Noise gate threshold in dB (default -50) */
+export function getNoiseGateThreshold() {
+  return get('audio_gate_threshold') ?? -50;
+}
+
+/** @param {number} dB */
+export function setNoiseGateThreshold(dB) {
+  set('audio_gate_threshold', Number(dB));
+}
+
+/** @returns {number} High-pass filter cutoff in Hz (default 80) */
+export function getHighPassFreq() {
+  return get('audio_highpass_freq') ?? 80;
+}
+
+/** @param {number} hz */
+export function setHighPassFreq(hz) {
+  set('audio_highpass_freq', Number(hz));
+}
+
+/** @returns {number} Echo suppression strength. 0 = off, 1 = full mute while speaking. Default 0.95 */
+export function getEchoSuppression() {
+  return get('audio_echo_suppression') ?? 0.95;
+}
+
+/** @param {number} level — 0 to 1 */
+export function setEchoSuppression(level) {
+  set('audio_echo_suppression', Number(level));
+}
