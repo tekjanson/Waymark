@@ -299,6 +299,189 @@ const TOOLS = [
       required: ["sessionId"],
     },
   },
+  /* ---------- Browser control tools ---------- */
+  {
+    name: "mqtt_navigate",
+    description:
+      "Navigate the browser to a route. Use 'home' for the home screen, 'explorer' for Drive explorer, 'agent' for AI agent, or any hash route like '#/sheet/{id}' or '#/folder/{id}/Name'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        target: { type: "string", description: "Route target: 'home', 'explorer', 'agent', or a hash route like '#/sheet/abc123'" },
+      },
+      required: ["sessionId", "target"],
+    },
+  },
+  {
+    name: "mqtt_open_sheet",
+    description:
+      "Open a Google Sheet in Waymark by its sheet ID. Navigates to the sheet view and waits for it to load.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        sheetId: { type: "string", description: "The Google Sheets spreadsheet ID" },
+      },
+      required: ["sessionId", "sheetId"],
+    },
+  },
+  {
+    name: "mqtt_open_folder",
+    description:
+      "Open a Google Drive folder in Waymark by its folder ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        folderId: { type: "string", description: "The Google Drive folder ID" },
+        folderName: { type: "string", description: "Display name for the folder (optional, defaults to 'Folder')" },
+      },
+      required: ["sessionId", "folderId"],
+    },
+  },
+  {
+    name: "mqtt_click",
+    description:
+      "Click an element in the browser by CSS selector. Returns the element's tag and text content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector of the element to click" },
+      },
+      required: ["sessionId", "selector"],
+    },
+  },
+  {
+    name: "mqtt_type",
+    description:
+      "Type text into an input field in the browser. Sets the value and dispatches input/change events.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector of the input element" },
+        text: { type: "string", description: "Text to type into the field" },
+      },
+      required: ["sessionId", "selector", "text"],
+    },
+  },
+  {
+    name: "mqtt_submit_form",
+    description:
+      "Submit a form in the browser by dispatching a submit event.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector of the form element" },
+      },
+      required: ["sessionId", "selector"],
+    },
+  },
+  {
+    name: "mqtt_list_visible_items",
+    description:
+      "List all visible interactive items on the current screen: sheets, folders, and clickable buttons/links with their selectors.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "mqtt_wait_for",
+    description:
+      "Wait for an element matching a CSS selector to appear in the DOM (up to 10 seconds). Useful after navigation or actions that load content asynchronously.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector to wait for" },
+        timeout: { type: "number", description: "Max wait time in ms (default 5000, max 10000)" },
+      },
+      required: ["sessionId", "selector"],
+    },
+  },
+  {
+    name: "mqtt_scroll_to",
+    description:
+      "Scroll an element into view in the browser.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector of the element to scroll to" },
+      },
+      required: ["sessionId", "selector"],
+    },
+  },
+  {
+    name: "mqtt_get_sidebar",
+    description:
+      "Get the sidebar state and menu items (open/closed, which item is active).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "mqtt_toggle_sidebar",
+    description:
+      "Open, close, or toggle the sidebar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        open: { type: "boolean", description: "true to open, false to close, omit to toggle" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "mqtt_search",
+    description:
+      "Search for sheets by keyword in Waymark. Navigates to search results and returns matching sheets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        query: { type: "string", description: "Search query text" },
+      },
+      required: ["sessionId", "query"],
+    },
+  },
+  {
+    name: "mqtt_go_back",
+    description:
+      "Navigate back in browser history (like pressing the back button).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "mqtt_get_element_info",
+    description:
+      "Get detailed info about a DOM element: tag, text, value, visibility, bounding rect, attributes, child count.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: { type: "string", description: "CSS selector of the element" },
+      },
+      required: ["sessionId", "selector"],
+    },
+  },
 ];
 
 /* ---------- Tool handlers ---------- */
@@ -381,6 +564,92 @@ async function handleTool(name, args) {
       } catch (err) {
         return `Ping failed: ${err.message}`;
       }
+    }
+
+    /* ---------- Browser control handlers ---------- */
+
+    case "mqtt_navigate": {
+      const resp = await sendCommand(args.sessionId, "navigate", { target: args.target });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_open_sheet": {
+      const resp = await sendCommand(args.sessionId, "open_sheet", { sheetId: args.sheetId });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_open_folder": {
+      const resp = await sendCommand(args.sessionId, "open_folder", { folderId: args.folderId, folderName: args.folderName });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_click": {
+      const resp = await sendCommand(args.sessionId, "click", { selector: args.selector });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_type": {
+      const resp = await sendCommand(args.sessionId, "type", { selector: args.selector, text: args.text });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_submit_form": {
+      const resp = await sendCommand(args.sessionId, "submit_form", { selector: args.selector });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_list_visible_items": {
+      const resp = await sendCommand(args.sessionId, "list_visible_items");
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_wait_for": {
+      const resp = await sendCommand(args.sessionId, "wait_for", { selector: args.selector, timeout: args.timeout });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_scroll_to": {
+      const resp = await sendCommand(args.sessionId, "scroll_to", { selector: args.selector });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_get_sidebar": {
+      const resp = await sendCommand(args.sessionId, "get_sidebar");
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_toggle_sidebar": {
+      const resp = await sendCommand(args.sessionId, "toggle_sidebar", { open: args.open });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_search": {
+      const resp = await sendCommand(args.sessionId, "search", { query: args.query });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_go_back": {
+      const resp = await sendCommand(args.sessionId, "go_back");
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
+    }
+
+    case "mqtt_get_element_info": {
+      const resp = await sendCommand(args.sessionId, "get_element_info", { selector: args.selector });
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
     }
 
     default:

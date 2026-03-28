@@ -243,6 +243,201 @@ async function onMessage({ topic: t, payload }) {
         };
         break;
 
+      /* -------- Browser control commands -------- */
+
+      case 'navigate': {
+        const target = args?.target;
+        if (!target) { error = 'No target provided'; break; }
+        if (target === 'home') window.location.hash = '#/';
+        else if (target === 'explorer') window.location.hash = '#/explorer';
+        else if (target === 'agent') window.location.hash = '#/agent';
+        else if (target.startsWith('#')) window.location.hash = target;
+        else window.location.hash = target;
+        // Wait a tick for route handler to fire
+        await new Promise(r => setTimeout(r, 300));
+        result = { navigated: true, hash: location.hash, url: location.href };
+        break;
+      }
+
+      case 'open_sheet': {
+        const sheetId = args?.sheetId;
+        if (!sheetId) { error = 'No sheetId provided'; break; }
+        window.location.hash = `#/sheet/${sheetId}`;
+        await new Promise(r => setTimeout(r, 500));
+        result = { opened: true, hash: location.hash, title: document.title };
+        break;
+      }
+
+      case 'open_folder': {
+        const folderId = args?.folderId;
+        const folderName = args?.folderName || 'Folder';
+        if (!folderId) { error = 'No folderId provided'; break; }
+        window.location.hash = `#/folder/${folderId}/${encodeURIComponent(folderName)}`;
+        await new Promise(r => setTimeout(r, 500));
+        result = { opened: true, hash: location.hash };
+        break;
+      }
+
+      case 'click': {
+        const selector = args?.selector;
+        if (!selector) { error = 'No selector provided'; break; }
+        const el = document.querySelector(selector);
+        if (!el) { error = `No element matching "${selector}"`; break; }
+        el.click();
+        await new Promise(r => setTimeout(r, 200));
+        result = { clicked: true, selector, tagName: el.tagName, text: el.textContent?.trim().slice(0, 100) };
+        break;
+      }
+
+      case 'type': {
+        const selector = args?.selector;
+        const text = args?.text;
+        if (!selector || text == null) { error = 'selector and text required'; break; }
+        const el = document.querySelector(selector);
+        if (!el) { error = `No element matching "${selector}"`; break; }
+        el.focus();
+        el.value = text;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        result = { typed: true, selector, value: el.value };
+        break;
+      }
+
+      case 'submit_form': {
+        const selector = args?.selector;
+        if (!selector) { error = 'No selector provided'; break; }
+        const form = document.querySelector(selector);
+        if (!form) { error = `No form matching "${selector}"`; break; }
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await new Promise(r => setTimeout(r, 300));
+        result = { submitted: true, selector };
+        break;
+      }
+
+      case 'list_visible_items': {
+        const items = [];
+        // Sheets & folders in main content area
+        document.querySelectorAll('[data-sheet-id]').forEach(el => {
+          items.push({ type: 'sheet', id: el.dataset.sheetId, text: el.textContent?.trim().slice(0, 100), selector: `[data-sheet-id="${el.dataset.sheetId}"]` });
+        });
+        document.querySelectorAll('[data-folder-id]').forEach(el => {
+          items.push({ type: 'folder', id: el.dataset.folderId, text: el.textContent?.trim().slice(0, 100), selector: `[data-folder-id="${el.dataset.folderId}"]` });
+        });
+        // Clickable buttons/links in visible area
+        const screen = document.querySelector('.screen:not(.hidden)');
+        if (screen) {
+          screen.querySelectorAll('button:not([disabled]), a[href], [role="button"]').forEach(el => {
+            const id = el.id;
+            const text = el.textContent?.trim().slice(0, 80);
+            if (text || id) {
+              items.push({ type: 'button', id: id || null, text, selector: id ? `#${id}` : null, tagName: el.tagName });
+            }
+          });
+        }
+        result = { count: items.length, items };
+        break;
+      }
+
+      case 'wait_for': {
+        const selector = args?.selector;
+        const timeoutMs = Math.min(args?.timeout || 5000, 10000);
+        if (!selector) { error = 'No selector provided'; break; }
+        const found = await new Promise(resolve => {
+          if (document.querySelector(selector)) { resolve(true); return; }
+          const obs = new MutationObserver(() => {
+            if (document.querySelector(selector)) { obs.disconnect(); resolve(true); }
+          });
+          obs.observe(document.body, { childList: true, subtree: true });
+          setTimeout(() => { obs.disconnect(); resolve(false); }, timeoutMs);
+        });
+        const el = document.querySelector(selector);
+        result = { found, selector, tagName: el?.tagName || null, text: el?.textContent?.trim().slice(0, 100) || null };
+        break;
+      }
+
+      case 'scroll_to': {
+        const selector = args?.selector;
+        if (!selector) { error = 'No selector provided'; break; }
+        const el = document.querySelector(selector);
+        if (!el) { error = `No element matching "${selector}"`; break; }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        result = { scrolled: true, selector };
+        break;
+      }
+
+      case 'get_sidebar': {
+        const sidebar = document.querySelector('#sidebar');
+        const isOpen = sidebar?.classList.contains('sidebar-open') || false;
+        const menuItems = [];
+        sidebar?.querySelectorAll('.sidebar-nav-item').forEach(el => {
+          menuItems.push({
+            id: el.querySelector('button')?.id || null,
+            text: el.textContent?.trim(),
+            active: el.classList.contains('active'),
+            dataMenu: el.querySelector('button')?.dataset.menu || null,
+          });
+        });
+        result = { isOpen, menuItems };
+        break;
+      }
+
+      case 'toggle_sidebar': {
+        const sidebar = document.querySelector('#sidebar');
+        if (sidebar) {
+          const wasOpen = sidebar.classList.contains('sidebar-open');
+          if (args?.open === true) sidebar.classList.add('sidebar-open');
+          else if (args?.open === false) sidebar.classList.remove('sidebar-open');
+          else sidebar.classList.toggle('sidebar-open');
+          result = { toggled: true, isOpen: sidebar.classList.contains('sidebar-open'), wasOpen };
+        } else {
+          error = 'Sidebar not found';
+        }
+        break;
+      }
+
+      case 'search': {
+        const query = args?.query;
+        if (!query) { error = 'No query provided'; break; }
+        window.location.hash = `#/search?q=${encodeURIComponent(query)}`;
+        await new Promise(r => setTimeout(r, 500));
+        // Gather results
+        const resultEls = document.querySelectorAll('.sheet-list-item, [data-sheet-id]');
+        const results = [];
+        resultEls.forEach(el => {
+          results.push({ text: el.textContent?.trim().slice(0, 100), sheetId: el.dataset?.sheetId || null });
+        });
+        result = { query, hash: location.hash, resultCount: results.length, results: results.slice(0, 30) };
+        break;
+      }
+
+      case 'go_back': {
+        window.history.back();
+        await new Promise(r => setTimeout(r, 300));
+        result = { hash: location.hash, url: location.href };
+        break;
+      }
+
+      case 'get_element_info': {
+        const selector = args?.selector;
+        if (!selector) { error = 'No selector provided'; break; }
+        const el = document.querySelector(selector);
+        if (!el) { error = `No element matching "${selector}"`; break; }
+        const rect = el.getBoundingClientRect();
+        result = {
+          tagName: el.tagName,
+          id: el.id || null,
+          className: el.className || null,
+          text: el.textContent?.trim().slice(0, 200),
+          value: el.value ?? null,
+          visible: rect.width > 0 && rect.height > 0,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+          disabled: el.disabled ?? false,
+          childCount: el.children.length,
+          attributes: Object.fromEntries(Array.from(el.attributes).map(a => [a.name, a.value]).slice(0, 20)),
+        };
+        break;
+      }
+
       default:
         error = `Unknown command: ${command}`;
     }
