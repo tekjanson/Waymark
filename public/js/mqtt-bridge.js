@@ -445,9 +445,10 @@ async function onMessage({ topic: t, payload }) {
 
         // Lazy-load html2canvas from same-origin vendor file (CSP-safe)
         if (!window.html2canvas) {
+          const base = window.__WAYMARK_BASE || '';
           await new Promise((resolve, reject) => {
             const s = document.createElement('script');
-            s.src = '/js/vendor/html2canvas.min.js';
+            s.src = base + '/js/vendor/html2canvas.min.js';
             s.onload = resolve;
             s.onerror = () => reject(new Error('Failed to load html2canvas'));
             document.head.appendChild(s);
