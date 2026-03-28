@@ -568,6 +568,17 @@ const definition = {
         const tag = document.activeElement?.tagName;
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
+        /* Escape — close detail modal / deselect node */
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (!detailModal.classList.contains('hidden')) {
+            detailModal.classList.add('hidden');
+          } else {
+            deselectNode();
+          }
+          return;
+        }
+
         /* Delete — remove selected node's connections */
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode) {
           e.preventDefault();
