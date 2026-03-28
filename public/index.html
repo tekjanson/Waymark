@@ -343,6 +343,17 @@
         <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
       </div>
 
+      <!-- Developer Tools -->
+      <div class="settings-section">
+        <h4 class="settings-section-title">Developer</h4>
+
+        <label class="settings-row">
+          <span class="settings-label">MQTT debug bridge</span>
+          <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle">
+        </label>
+        <p class="settings-hint" style="margin:-0.5rem 0 0.5rem;font-size:0.8rem;color:var(--text-muted);">Connects to an AI dev agent for live debugging via MQTT.</p>
+      </div>
+
       <!-- Version Pinning (only visible when GitHub source is active) -->
       <div id="settings-version-section" class="settings-section hidden">
         <h4 class="settings-section-title">App Version</h4>
@@ -566,8 +577,5 @@
 
   <!-- App entry point -->
   <script type="module" src="js/app.js"></script>
-
-  <!-- MQTT debug bridge (activates with ?mqtt=1 or localStorage.__WAYMARK_MQTT) -->
-  <script type="module" src="js/mqtt-bridge.js"></script>
 </body>
 </html>

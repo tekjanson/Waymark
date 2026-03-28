@@ -3,7 +3,8 @@
    Captures console logs, JS errors, network failures, and
    responds to commands from the MCP agent via MQTT.
 
-   Activation: URL param ?mqtt=1 OR localStorage.__WAYMARK_MQTT
+   Activation: Settings panel → Developer → MQTT debug bridge
+   Persisted to Google Drive via user-data.js.
    ============================================================ */
 
 import { MqttClient } from './mqtt-client.js';
@@ -310,17 +311,3 @@ export function stopBridge() {
 }
 
 export function getSessionId() { return SESSION_ID; }
-
-/* ---------- Auto-start if feature flag is set ---------- */
-
-function shouldActivate() {
-  const params = new URLSearchParams(location.search);
-  if (params.get('mqtt') === '1') return true;
-  try { return localStorage.getItem('__WAYMARK_MQTT') === 'true'; } catch { return false; }
-}
-
-if (shouldActivate()) {
-  startBridge().catch((err) => {
-    (originalConsole.error || console.error)('[MQTT Bridge] Failed to start:', err.message);
-  });
-}
