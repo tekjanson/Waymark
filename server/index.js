@@ -51,7 +51,7 @@ app.use((_req, res, next) => {
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://apis.google.com",
-        "connect-src 'self' https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com",
+        "connect-src 'self' wss: ws: https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com",
         "frame-src https://docs.google.com",
         "img-src 'self' https://*.googleusercontent.com data:",
         "style-src 'self' 'unsafe-inline'",
