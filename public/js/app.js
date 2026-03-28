@@ -58,6 +58,9 @@ const settingsModal       = document.getElementById('settings-modal');
 const settingsModalClose  = document.getElementById('settings-modal-close');
 const settingsDoneBtn     = document.getElementById('settings-done-btn');
 const settingsAutoRefresh = document.getElementById('settings-auto-refresh');
+const settingsMqttBridge  = document.getElementById('settings-mqtt-bridge');
+const settingsMqttUrl    = document.getElementById('settings-mqtt-url');
+const settingsMqttUrlApply = document.getElementById('settings-mqtt-url-apply');
 const settingsSortOrder   = document.getElementById('settings-sort-order');
 const settingsImportFolder = document.getElementById('settings-import-folder');
 const settingsChooseFolder = document.getElementById('settings-choose-folder');
@@ -321,6 +324,14 @@ async function showApp(user) {
     await userData.init();
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
+  }
+
+  // Start MQTT bridge if the user enabled it in settings
+  if (userData.getMqttBridge()) {
+    const mqttUrl = userData.getMqttBrokerUrl() || undefined;
+    import('./mqtt-bridge.js').then(m => m.startBridge(mqttUrl)).catch(err => {
+      console.warn('[MQTT Bridge] Failed to start:', err.message);
+    });
   }
 
   // Ensure the notification sheet exists in the Waymark directory.
@@ -2264,6 +2275,8 @@ function openSettingsModal() {
 
   // Populate current preferences
   settingsAutoRefresh.checked = userData.getAutoRefresh();
+  settingsMqttBridge.checked = userData.getMqttBridge();
+  settingsMqttUrl.value = userData.getMqttBrokerUrl();
   settingsSortOrder.value = userData.getSortOrder();
 
   // Sync theme buttons
@@ -2430,6 +2443,35 @@ function initSettingsModal() {
   // Auto-refresh toggle
   settingsAutoRefresh.addEventListener('change', () => {
     userData.setAutoRefresh(settingsAutoRefresh.checked);
+  });
+
+  // MQTT debug bridge toggle
+  settingsMqttBridge.addEventListener('change', () => {
+    const enabled = settingsMqttBridge.checked;
+    userData.setMqttBridge(enabled);
+    if (enabled) {
+      const url = userData.getMqttBrokerUrl() || undefined;
+      import('./mqtt-bridge.js').then(m => m.startBridge(url)).catch(() => {});
+    } else {
+      import('./mqtt-bridge.js').then(m => m.stopBridge()).catch(() => {});
+    }
+  });
+
+  // MQTT broker URL
+  settingsMqttUrlApply.addEventListener('click', async () => {
+    const url = settingsMqttUrl.value.trim();
+    await userData.setMqttBrokerUrl(url);
+    // Reconnect if bridge is active
+    if (userData.getMqttBridge()) {
+      import('./mqtt-bridge.js').then(m => {
+        m.stopBridge();
+        m.startBridge(url || undefined);
+      }).catch(() => {});
+    }
+    showToast(url ? `Broker set to ${url}` : 'Broker set to auto-detect', 'success');
+  });
+  settingsMqttUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') settingsMqttUrlApply.click();
   });
 
   // Sort order select

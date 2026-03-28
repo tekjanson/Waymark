@@ -1,11 +1,12 @@
 {
-  "name": "waymark-google-sheets-mcp",
+  "name": "waymark-mcp-servers",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local MCP server for Google Sheets (avoids Zod schema bugs in published packages)",
+  "description": "Local MCP servers for Waymark (Google Sheets + MQTT debug bridge)",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "google-auth-library": "^9.14.0"
+    "google-auth-library": "^9.14.0",
+    "mqtt": "^5.10.0"
   }
 }

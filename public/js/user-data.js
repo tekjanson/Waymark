@@ -46,6 +46,8 @@ function defaultUserData() {
       importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
       importFolderName: null,   // display name of custom import folder
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
+      mqttBridge: false,          // MQTT debug bridge enabled
+      mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
     },
 
     /* ── Tutorial ── */
@@ -556,6 +558,26 @@ export async function setGithubRef(ref) {
   await save({ preferences: prefs });
 }
 
+/* ---------- MQTT Debug Bridge ---------- */
+
+export function getMqttBridge() {
+  return !!_userData?.preferences?.mqttBridge;
+}
+
+export async function setMqttBridge(enabled) {
+  const prefs = { ...(_userData?.preferences || {}), mqttBridge: !!enabled };
+  await save({ preferences: prefs });
+}
+
+export function getMqttBrokerUrl() {
+  return _userData?.preferences?.mqttBrokerUrl || '';
+}
+
+export async function setMqttBrokerUrl(url) {
+  const prefs = { ...(_userData?.preferences || {}), mqttBrokerUrl: url || '' };
+  await save({ preferences: prefs });
+}
+
 /* ---------- Agent Conversations ---------- */
 
 /**
@@ -627,6 +649,8 @@ function migrateFromLocalStorage() {
       importFolderId: storage.getImportFolderId?.() || null,
       importFolderName: storage.getImportFolderName?.() || null,
       githubRef: storage.getGithubRef?.() || 'main',
+      mqttBridge: false,
+      mqttBrokerUrl: '',
     },
     tutorialCompleted: storage.getTutorialCompleted(),
     tutorialStep: storage.getTutorialStep?.() || 0,
@@ -666,6 +690,8 @@ function syncToLocalStorage(data) {
     if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
     if (storage.setImportFolderName) storage.setImportFolderName(data.preferences?.importFolderName || null);
     if (storage.setGithubRef) storage.setGithubRef(data.preferences?.githubRef || 'main');
+    if (storage.setMqttBridge) storage.setMqttBridge(data.preferences?.mqttBridge || false);
+    if (storage.setMqttBrokerUrl) storage.setMqttBrokerUrl(data.preferences?.mqttBrokerUrl || '');
   } catch { /* localStorage quota / private mode */ }
 }
 
