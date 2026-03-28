@@ -175,3 +175,231 @@ Since adding a subtask already writes to the sheet (toast confirms), the modal s
 | 😕 UX — Low | 1 | #8 inconsistent toast feedback |
 | ✅ Works Well | 11 | #10–#20 |
 | 💡 Suggestion | 3 | #21–#23 |
+
+---
+---
+
+# Flow Diagram Template — Manual QA & UX Test Report
+
+**Sheet:** Order Processing  
+**Template:** Flow Diagram (🔀)  
+**URL:** `https://swiftirons.com/waymark/#/sheet/1y90vonjEZ3BbVuJ_F5BOVzoCDhhvjQJJ1Q-0iD1ur14`  
+**Viewport:** 1920 × 1047  
+**Themes tested:** Dark (primary), Light (verified round-trip)  
+**Session:** `c5c26f37-9adb-49ad-a369-fe1bf16f2b43`  
+**Date:** 2025-06-26
+
+---
+
+## Summary
+
+The Flow Diagram template renders a beautiful SVG-based flowchart with 8 distinct node types, interactive drag-to-reposition, click-to-inspect, port-to-connect, and double-click-for-details. The visual design is strong — nodes have unique shapes (diamonds for decisions, parallelograms for I/O, rounded rects for start/end) with distinct colors. Layout auto-alignment, canvas zoom, and the hint bar are all excellent.
+
+However, the template has **two critical data-corruption bugs** that can silently destroy the Type column across ALL rows. The inspector panel's interaction with auto-refresh creates a dangerous race condition. These are data-loss bugs that require immediate attention.
+
+**14 nodes tested** (13 original + 1 added). Inspector editing, type changes, add form, table toggle, node dragging, auto-align, detail modal, theme toggle, and navigation round-trip all exercised.
+
+---
+
+## Findings
+
+### 🐛 Bug — CRITICAL: Inspector Type Change Corrupts All Node Types (#F1)
+
+**What I did:** Selected "Check Inventory" (process node) via mousedown+mouseup. The inspector opened. Changed the Type dropdown from its displayed value to "decision".
+
+**What happened:** The select showed `before: "start"` even though the node is class `flow-node-process`. After the change, the page re-rendered and ALL 14 nodes became `flow-node-process`. Every node — Start, Decision, End, Delay, Sub-process, Output — all turned into identical blue Process rectangles. The entire visual diversity of the flowchart was destroyed.
+
+**Evidence:** Step table confirmed all 14 rows show "⬜ Process" for Type. SVG inspection showed all nodes use identical `rect rx=6 fill=#2563eb18`. Zero JS errors or network errors — the corruption was completely silent.
+
+**Root cause:** The inspector's `_cur` reference can become stale during auto-refresh cycles. When the DOM is rebuilt by a refresh, blur events from the old DOM fire `commit()` or the type select handler against a desynchronized `_cur.rowIdx`. The null guard fix (`if (!_cur.node) return`) prevents header row corruption but doesn't prevent cross-row type overwriting.
+
+**Severity:** CRITICAL — silent data loss affecting all rows
+
+---
+
+### 🐛 Bug — HIGH: Add Step Form Missing Type Field (#F2)
+
+**What I did:** Clicked "+ Add Step", which opened a form with 4 fields: Step, Next, Condition, Notes.
+
+**What happened:** The Type field is defined in `addRowFields()` as a select with 8 node type options, but it does not appear in the rendered form. New nodes default to "process" type with no way for the user to choose.
+
+**Evidence:** The `addRowFields()` method at line 64 of `flow/index.js` returns a Type field with `type: 'select', options: Object.keys(NODE_SHAPES)`. The `buildAddRowForm()` in `shared.js` filters fields by `f.colIndex >= 0` — so either `cols.type` is -1 (Type column not detected) or the field is being filtered out. The rendered form showed only 4 `input[type=text]` elements, no `<select>`.
+
+**Impact:** Users cannot set node type when adding new steps. All new nodes are generic Process rectangles.
+
+**Severity:** HIGH — feature gap, users can't create properly typed nodes
+
+---
+
+### 🐛 Bug — MEDIUM: Newly Added Node Has Empty Inspector Fields (#F3)
+
+**What I did:** Added "Generate Invoice" via the Add Step form (all 4 fields filled with realistic data). Then selected the new node.
+
+**What happened:** The inspector opened showing the node title "Generate Invoice" in the header, but ALL field inputs were empty — Step Name, Next, Condition, Notes all blank. Original nodes like "Ship Order" showed correct data when selected.
+
+**Evidence:** Inspector fields for "Generate Invoice": `{stepName: "", next: "", condition: "", notes: ""}`. In contrast, "Ship Order" fields: `{stepName: "Ship Order", next: "Send Confirmation", notes: "Generate shipping label"}`. The step table correctly showed "Generate Invoice" data in all columns.
+
+**Possible cause:** The `node.idx` property for the newly appended row may not align with the data row index. The inspector reads data from `_cur.node` properties (e.g., `node.step`, `node.next`) rather than from the DOM, so if the node object was created with empty properties during auto-refresh desync, the fields show blank.
+
+**Severity:** MEDIUM — data exists but inspector can't display or edit it
+
+---
+
+### 😕 UX Friction — HIGH: Empty Add Step Form Submits Silently (#F4)
+
+**What I did:** Opened the Add Step form and clicked "Add Step" with all fields empty.
+
+**What happened:** Nothing happened. No validation error, no toast notification, no field highlighting, no visual feedback of any kind. The form stayed open. A user would repeatedly click the button wondering why it's not working.
+
+**Expected:** Required field highlighting on the Step field, or a toast saying "Step name is required", or the Step field defined with `required: true` (it IS marked required in `addRowFields()` but the rendered form apparently didn't enforce it).
+
+**Severity:** HIGH — confusing UX with no feedback
+
+---
+
+### 😕 UX Friction — MEDIUM: Detail Modal Not Closable via Escape (#F5)
+
+**What I did:** Double-clicked "Receive Order" to open the detail modal. Pressed Escape.
+
+**What happened:** The modal stayed open. Had to click the ✕ button to close it.
+
+**Expected:** Escape should dismiss the modal, matching standard UI conventions. The inspector panel's text fields DO handle Escape (they cancel edits), so the expectation is set.
+
+**Severity:** MEDIUM — minor friction, inconsistent keyboard handling
+
+---
+
+### 😕 UX Friction — MEDIUM: Click vs Double-Click Interaction Confusion (#F6)
+
+**What I did:** Explored the two click-based interactions on nodes.
+
+**Observation:** Single-click opens the inspector (editable panel at bottom). Double-click opens the detail modal (read-only overlay). This is counterintuitive — most applications use double-click for "open/edit" and single-click for "select/preview". Here it's reversed: single-click = edit, double-click = view-only. The detail modal has zero editable elements.
+
+**Suggestion:** Consider making the detail modal editable (replacing or supplementing the inspector), or removing the detail modal and using only the inspector for all node interactions.
+
+**Severity:** MEDIUM — confusing interaction pattern
+
+---
+
+### 😕 UX Friction — LOW: Step Table Is Read-Only (#F7)
+
+**What I did:** Expanded the step table via "▸ Show Step Table" toggle. Examined all cells.
+
+**What happened:** All cells are non-editable (`editable: false`). The table is view-only — a reference view of the underlying data.
+
+**Expected:** For a flow diagramming tool, inline table editing would be a much faster workflow for bulk changes than clicking individual nodes and waiting for the inspector panel. The table has the data structure (Step, Type, Next, Condition, Notes) — making cells editable would add significant utility.
+
+**Severity:** LOW — missing feature, not a bug
+
+---
+
+### ✅ Works Well: SVG Node Rendering (#F8)
+
+**Observation:** The flow diagram renders 8 distinct node types with unique SVG shapes and colors:
+- **Start** (▶): green #16a34a, rounded rect rx=28
+- **End** (⏹): red #dc2626, rounded rect rx=28
+- **Process** (⬜): blue #2563eb, rect rx=6
+- **Decision** (◆): amber #d97706, diamond polygon
+- **Input/Output** (▱): cyan #0891b2, parallelogram polygon
+- **Delay** (⏳): slate #94a3b8, flat rect
+- **Sub-process** (⊞): indigo #4f46e5, rect rx=4
+
+Each type is immediately visually distinguishable. The color palette works well in both dark and light themes.
+
+---
+
+### ✅ Works Well: Canvas Hint Bar (#F9)
+
+**Observation:** A hint bar at the bottom of the canvas reads: "Drag nodes to reposition • Click to inspect • Drag from ● port to connect • Double-click for details". This concisely explains all 4 interaction patterns. Excellent onboarding for new users.
+
+---
+
+### ✅ Works Well: Node Dragging & Auto-Align (#F10)
+
+**What I did:** Dragged "Backorder" node 110px to the right. Then clicked "⭐ Auto-Align".
+
+**What happened:** The drag moved the node in real-time. Auto-Align snapped it back into the layout grid, re-centering it (x:1057 → x:947) and adjusting the entire tree's vertical spacing. Response was instant.
+
+---
+
+### ✅ Works Well: Add Step Form — Happy Path (#F11)
+
+**What I did:** Filled Add Step form with realistic data: Step="Generate Invoice", Next="Send Confirmation", Condition="Payment verified", Notes="Create PDF invoice with order details and payment receipt". Submitted.
+
+**What happened:** Toast said "Step added". The new node appeared in the diagram. Form collapsed and fields cleared. 14th node was properly integrated into the layout.
+
+---
+
+### ✅ Works Well: Inspector Panel Design (#F12)
+
+**Observation:** The inspector panel (1575×315px) at the bottom of the page is well-designed. It shows a type badge with icon and color, the node title, and 5 clearly labeled fields (Step Name, Type, Next, Condition, Notes). The Next field has a combo dropdown listing other step names. Close button (✕) works. The visual design matches the template's indigo accent.
+
+---
+
+### ✅ Works Well: Theme Toggle Round-Trip (#F13)
+
+**What I did:** Toggled Dark → Light → Dark.
+
+**What happened:** Canvas background changed correctly (dark: rgb(15,23,42), light: rgb(250,251,252)). Node labels switched color appropriately. Edge colors remained consistent. All 14 nodes survived the round-trip. No errors.
+
+---
+
+### ✅ Works Well: Navigation Round-Trip (#F14)
+
+**What I did:** Navigated Home → reopened the Order Processing sheet.
+
+**What happened:** Flow diagram reloaded with all 14 nodes, 16 edges, correct template badge "🔀 Flow Diagram". Data persisted.
+
+---
+
+### ✅ Works Well: Canvas Zoom (#F15)
+
+**Observation:** Scroll wheel zooms the canvas (viewBox changes from "0 0 780 1098" to "0 0 680 1234" on scroll in). The zoom is smooth and centered.
+
+---
+
+### ✅ Works Well: Edge Labels & Connections (#F16)
+
+**Observation:** Condition-based edges display labels ("Valid", "Invalid", "Yes", "No", "Payment verified") along the edge paths. The labels use slate color (#64748b) which is readable but doesn't compete with node labels. 16 connections render as smooth bezier curves with proper arrowheads.
+
+---
+
+### ✅ Works Well: Output Ports (#F17)
+
+**Observation:** Each node has an indigo (#6366f1) output port circle (r=6) at the bottom, with crosshair cursor indicating it's draggable for creating new connections. The port interaction is discoverable via the canvas hint text.
+
+---
+
+### 💡 Suggestion: Add Type Selector to Add Step Form (#F18)
+
+The `addRowFields()` method defines the Type field but it's not rendering. Once the rendering bug is fixed, new nodes should support all 8 types: Start, End, Process, Decision, Input, Output, Delay, Sub-process.
+
+---
+
+### 💡 Suggestion: Make Step Table Editable (#F19)
+
+The step table view (toggled via "▸ Show Step Table") currently shows a read-only grid. Making cells inline-editable (like the Kanban template's editable cells) would provide a much faster workflow for bulk editing — especially useful for renaming steps, changing types, or re-routing connections.
+
+---
+
+### 💡 Suggestion: Improve Inspector Resilience During Auto-Refresh (#F20)
+
+The inspector panel interacts dangerously with the app's auto-refresh cycle. When the DOM is rebuilt, the inspector's `_cur` reference goes stale. Solutions:
+1. Close the inspector before re-render and re-open it afterwards with fresh data
+2. Use a stable row identifier (not DOM index) to match the current node across re-renders
+3. Mark the inspector as "dirty" during re-render and skip commits
+
+---
+
+## Severity Summary
+
+| Severity | Count | Items |
+|----------|-------|-------|
+| 🐛 Bug — CRITICAL | 1 | #F1 inspector type change corrupts all types |
+| 🐛 Bug — HIGH | 1 | #F2 add form missing Type field |
+| 🐛 Bug — MEDIUM | 1 | #F3 new node empty inspector fields |
+| 😕 UX — HIGH | 1 | #F4 empty form silent submit |
+| 😕 UX — MEDIUM | 2 | #F5 Escape doesn't close modal, #F6 click vs dblclick confusion |
+| 😕 UX — LOW | 1 | #F7 step table read-only |
+| ✅ Works Well | 10 | #F8–#F17 |
+| 💡 Suggestion | 3 | #F18–#F20 |

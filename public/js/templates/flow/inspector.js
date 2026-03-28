@@ -191,8 +191,9 @@ export function initInspector(inspector, ctx) {
     /* Commit logic — reads from _cur so it always targets the current node */
     function commit() {
       if (dropdown) dropdown.classList.add('hidden');
+      if (!_cur.node) return;
       const v = input.value.trim();
-      const orig = (_cur.node && fieldValue()) || '';
+      const orig = fieldValue();
       if (v !== orig) emitEdit(_cur.rowIdx, colFn(), v);
     }
 
@@ -257,6 +258,7 @@ export function initInspector(inspector, ctx) {
     field.append(typeSelect);
 
     delegateEvent(field, 'change', 'select', () => {
+      if (!_cur.node) return;
       emitEdit(_cur.rowIdx, cols.type, typeSelect.value);
     });
 
