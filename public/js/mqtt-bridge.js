@@ -18,9 +18,7 @@ let _customBrokerUrl = null;
 
 function brokerUrl() {
   if (_customBrokerUrl) return _customBrokerUrl;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const base = window.__WAYMARK_BASE || '';
-  return `${proto}//${location.host}${base}/mqtt`;
+  return 'ws://localhost:9001';
 }
 
 function topic(suffix) {
