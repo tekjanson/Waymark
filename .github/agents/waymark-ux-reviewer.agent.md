@@ -62,6 +62,15 @@ Before testing anything, you need a browser session.
 2. **Verify it's alive** — Call `mqtt_ping` with the session ID. If it doesn't respond, the browser tab may have been closed.
 3. **Get your bearings** — Call `mqtt_get_app_state` to see where the browser currently is (URL, route, theme, screen). This is your starting position.
 4. **Check for pre-existing problems** — Call `mqtt_get_errors` and `mqtt_get_console_logs` to see if the app already has errors before you start testing. Note them as baseline.
+5. **Clear blocking overlays** — Run `mqtt_execute_js` to dismiss any tutorial popups, onboarding modals, or other blocking overlays that would interfere with testing. Use this snippet:
+   ```javascript
+   const tut = document.querySelector('.tutorial-overlay');
+   if (tut && tut.getBoundingClientRect().height > 0) {
+     const skip = [...tut.querySelectorAll('button, span, a')].find(b => /skip/i.test(b.textContent));
+     if (skip) skip.click(); else tut.style.display = 'none';
+   }
+   ```
+   Also dismiss any other visible overlays that aren't part of the app's core UI (e.g. cookie banners, update notices). **Do this on EVERY navigation and screen arrival** — not just once at startup.
 
 You now have a live browser to drive. Everything below happens through the MQTT tools.
 
@@ -435,6 +444,7 @@ To test effectively, you need to know what Waymark IS. Read these on first run:
    - `#theme-toggle-btn` — Light/dark mode toggle
    - `#search-btn` — Opens search
    - `.dir-sync-btn` — Sync button in directory views
+   - `.tutorial-overlay` — First-run tutorial popup. **Always auto-dismiss** (click "Skip tutorial") before testing. It blocks interaction with elements underneath.
 
 ---
 
@@ -470,3 +480,5 @@ To test effectively, you need to know what Waymark IS. Read these on first run:
     - Opened a form? Submit or dismiss.
     - Navigated somewhere? Orient yourself before clicking randomly.
     - If the app is in a weird state, clean it up first: close stale modals, exit abandoned edit modes, dismiss leftover toasts. A tidy screen is a testable screen.
+
+14. **Auto-dismiss blocking overlays — EVERY time.** Before interacting with any screen, check for and dismiss tutorial popups (`.tutorial-overlay`), onboarding modals, or any other overlay that blocks the UI underneath. Run the dismiss snippet from Section 1 Step 5 after every `mqtt_navigate`, every `mqtt_open_sheet`, and any time you arrive at a new view. Never wait for the user to point out that a tutorial is covering the screen — that's YOUR job to handle automatically.
