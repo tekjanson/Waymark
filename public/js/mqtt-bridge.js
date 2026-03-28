@@ -131,9 +131,33 @@ function captureNetwork() {
   };
 }
 
+/* ---------- Inline script execution (CSP-safe, no eval) ---------- */
+
+function execInlineScript(code) {
+  return new Promise((resolve) => {
+    const cbName = '_mqttExec_' + Math.random().toString(36).slice(2, 10);
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      resolve({ error: 'Script timed out (5 s)' });
+    }, 5000);
+
+    window[cbName] = (val) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      resolve({ value: stringify(val) });
+    };
+
+    const script = document.createElement('script');
+    // 'unsafe-inline' is allowed by CSP, so inline script text works
+    script.textContent = `try { window['${cbName}']((() => { ${code} })()); } catch(e) { window['${cbName}']('ERROR: ' + e.message); }`;
+    document.head.appendChild(script);
+    document.head.removeChild(script);
+  });
+}
+
 /* ---------- Command handler ---------- */
 
-function onMessage({ topic: t, payload }) {
+async function onMessage({ topic: t, payload }) {
   if (!t.endsWith('/cmd/request')) return;
 
   let cmd;
@@ -195,10 +219,8 @@ function onMessage({ topic: t, payload }) {
         if (!args?.code) {
           result = { error: 'No code provided' };
         } else {
-          // Execute in page context and capture result
-          const fn = new Function(args.code);        // eslint-disable-line no-new-func
-          const execResult = fn();
-          result = { value: stringify(execResult) };
+          // Use inline script element (runs under 'unsafe-inline' CSP, no eval needed)
+          result = await execInlineScript(args.code);
         }
         break;
       }
