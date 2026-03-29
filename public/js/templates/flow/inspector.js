@@ -258,9 +258,12 @@ export function initInspector(inspector, ctx) {
     field.append(typeSelect);
 
     delegateEvent(field, 'change', 'select', () => {
-      if (!_cur.node) return;
+      if (!_cur.node || cols.type < 0) return;
       emitEdit(_cur.rowIdx, cols.type, typeSelect.value);
     });
+
+    /* When the sheet has no Type column, disable the dropdown */
+    if (cols.type < 0) typeSelect.disabled = true;
 
     return {
       el: field,

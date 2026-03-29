@@ -488,6 +488,7 @@
   min-width: 24px;
   max-width: 24px;
   flex-shrink: 0;
+  cursor: grab;
 }
 
 .flow-drag-handle {
