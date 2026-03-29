@@ -729,6 +729,18 @@ const definition = {
             check.textContent = isDone ? '' : '✓';
             stRow.classList.toggle('completed');
             emitEdit(stRowIdx, cols.stage, newStage);
+
+            /* Update subtask progress counter and bar */
+            const section = check.closest('.kanban-detail-section');
+            if (section) {
+              const allChecks = section.querySelectorAll('.kanban-subtask-check');
+              const done = section.querySelectorAll('.kanban-subtask-check.checked').length;
+              const total = allChecks.length;
+              const progText = section.querySelector('.kanban-subtask-progress-text');
+              if (progText) progText.textContent = ` ${done}/${total}`;
+              const progBar = section.querySelector('.kanban-subtask-progress-bar');
+              if (progBar) progBar.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
+            }
           });
 
           stList.append(stRow);
@@ -954,9 +966,10 @@ const definition = {
         if (e.target === overlay) overlay.remove();
       });
 
-      // Close on Escape
+      // Close on Escape (but not while editing an input/textarea)
       function onKey(e) {
         if (e.key === 'Escape') {
+          if (e.target.matches('input, textarea')) return;
           overlay.remove();
           document.removeEventListener('keydown', onKey);
         }

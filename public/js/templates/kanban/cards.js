@@ -295,6 +295,18 @@ export function buildCardDetail(group, ctx) {
         check.textContent = isDone ? '' : '✓';
         stRow.classList.toggle('completed');
         emitEdit(stRowIdx, cols.stage, newStage);
+
+        /* Update subtask progress counter and bar */
+        const section = check.closest('.kanban-detail-section');
+        if (section) {
+          const allChecks = section.querySelectorAll('.kanban-subtask-check');
+          const done = section.querySelectorAll('.kanban-subtask-check.checked').length;
+          const total = allChecks.length;
+          const progText = section.querySelector('.kanban-subtask-progress-text');
+          if (progText) progText.textContent = ` ${done}/${total}`;
+          const progBar = section.querySelector('.kanban-subtask-progress-bar');
+          if (progBar) progBar.style.width = `${total > 0 ? Math.round((done / total) * 100) : 0}%`;
+        }
       });
 
       stList.append(stRow);

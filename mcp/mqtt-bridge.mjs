@@ -506,6 +506,26 @@ const TOOLS = [
       required: ["sessionId"],
     },
   },
+  {
+    name: "mqtt_switch_host",
+    description:
+      "Switch the browser to a different Waymark deployment (host/port). Use this to jump between branches — e.g. from localhost:3000 (main) to localhost:3001 (feature). Preserves the current hash route by default. The MQTT bridge connection will reconnect automatically if the new page has the bridge enabled.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        url: {
+          type: "string",
+          description: "New origin URL, e.g. 'http://localhost:3001'. Can also be a full URL with hash.",
+        },
+        preserveHash: {
+          type: "boolean",
+          description: "Keep the current hash route when switching hosts (default: true)",
+        },
+      },
+      required: ["sessionId", "url"],
+    },
+  },
 ];
 
 /* ---------- Tool handlers ---------- */
@@ -697,6 +717,18 @@ async function handleTool(name, args) {
         mimeType: r.mimeType || "image/jpeg",
         text: `Screenshot captured: ${r.width}×${r.height}px${r.selector !== "body" ? ` (selector: ${r.selector})` : " (full page)"}${r.originalWidth !== r.width ? ` — scaled from ${r.originalWidth}×${r.originalHeight}` : ""}`,
       };
+    }
+
+    case "mqtt_switch_host": {
+      const preserveHash = args.preserveHash !== false;
+      const resp = await sendCommand(
+        args.sessionId,
+        "switch_host",
+        { url: args.url, preserveHash },
+        20_000,
+      );
+      if (resp.error) return `Error: ${resp.error}`;
+      return JSON.stringify(resp.result, null, 2);
     }
 
     default:
