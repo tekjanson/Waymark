@@ -511,6 +511,8 @@ async function onMessage({ topic: t, payload }) {
         if (preserveHash && currentHash) {
           target.hash = currentHash;
         }
+        // Ensure MQTT bridge activates on the target page
+        target.searchParams.set('mqtt', '1');
         // Respond before navigating since the page will unload
         publish('cmd/response', {
           commandId,

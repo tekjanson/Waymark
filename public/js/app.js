@@ -288,6 +288,14 @@ async function boot() {
   // Restore sidebar state
   toggleSidebar(userData.getSidebarOpen());
 
+  // Start MQTT bridge early if forced via ?mqtt=1 or on localhost (dev convenience)
+  const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (new URLSearchParams(location.search).has('mqtt') || isLocalDev) {
+    import('./mqtt-bridge.js').then(m => m.startBridge()).catch(err => {
+      console.warn('[MQTT Bridge] Failed to start (forced):', err.message);
+    });
+  }
+
   // Attempt auth
   const user = await api.auth.init();
   hideLoading();
@@ -326,8 +334,9 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
-  // Start MQTT bridge if the user enabled it in settings
-  if (userData.getMqttBridge()) {
+  // Start MQTT bridge if enabled in settings OR via ?mqtt=1 URL param
+  const mqttForced = new URLSearchParams(location.search).has('mqtt');
+  if (userData.getMqttBridge() || mqttForced) {
     const mqttUrl = userData.getMqttBrokerUrl() || undefined;
     import('./mqtt-bridge.js').then(m => m.startBridge(mqttUrl)).catch(err => {
       console.warn('[MQTT Bridge] Failed to start:', err.message);
