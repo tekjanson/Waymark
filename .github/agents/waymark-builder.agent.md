@@ -136,7 +136,9 @@ LOOP:
    - Whether they want to keep the same branch or need a new one
    - Any links, examples, or references they provided
 
-2. **DO NOT re-mark as QA** — You cannot re-submit the same work. You must actually fix the issues the human identified.
+2. **CHECK FOR QA VERDICTS** — If the QA patrol agent has reviewed this item, there may be a note starting with `QA VERDICT:` in the sub-rows, and a detailed verdict report at `generated/qa-verdicts/{task-key}-verdict.md`. Read these — they contain structured pass/fail checklists, specific findings with evidence, and a list of what needs fixing. This saves you from guessing what's wrong.
+
+3. **DO NOT re-mark as QA** — You cannot re-submit the same work. You must actually fix the issues the human identified.
 
 3. **DO NOT treat it as a new task** — This is a continuation. The human has context and expectations from the previous submission.
 

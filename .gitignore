@@ -15,6 +15,7 @@ blob-report/
 # Test reports
 generated/test-report/
 generated/agent-evals/
+generated/qa-verdicts/
 
 # Design audit
 design-audit-screenshots/

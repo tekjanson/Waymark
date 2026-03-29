@@ -22,9 +22,15 @@
                       - In Progress shows: only tasks assigned to this agent
                       - QA rejection detects notes from this agent (not just 'AI')
                       Without --agent, all tasks are shown (backward compatible).
+     --qa-details     Include full QA item details with sub-row notes in output.
+                      Instead of just a count, the `qa` field becomes an array of
+                      items with row, task, priority, assignee, notes, branch, and
+                      testingInstructions. Used by the QA patrol agent.
 
    Output (stdout, single line JSON):
      {"todo":[],"inProgress":[],"qa":0,"done":73}
+     With --qa-details:
+     {"todo":[],"inProgress":[],"qa":[{row,task,notes,...}],"done":73}
 
    Exit codes:
      0 = success (JSON printed)
@@ -47,9 +53,13 @@ const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const rawArgs = process.argv.slice(2);
 let AGENT_NAME = null; // null = show everything (backward compat)
+let QA_DETAILS = false; // when true, return full QA items instead of count
 const agentIdx = rawArgs.indexOf('--agent');
 if (agentIdx !== -1 && rawArgs[agentIdx + 1]) {
   AGENT_NAME = rawArgs[agentIdx + 1];
+}
+if (rawArgs.includes('--qa-details')) {
+  QA_DETAILS = true;
 }
 
 /* ---------- Auth ---------- */
@@ -96,6 +106,7 @@ const auth = new GoogleAuth({
     const PRIORITY_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
     const todo = [];
     const inProgress = [];
+    const qaItems = [];     // full QA items when --qa-details
     let qaCount = 0;
     let doneCount = 0;
 
@@ -156,7 +167,37 @@ const auth = new GoogleAuth({
         if (AGENT_NAME && assignee !== AGENT_NAME) continue;
         inProgress.push(item);
       }
-      else if (stage === 'QA') qaCount++;
+      else if (stage === 'QA') {
+        qaCount++;
+        if (QA_DETAILS) {
+          // Collect sub-row notes for QA items (branch info, testing instructions, etc.)
+          const nextTaskIdx = t + 1 < taskIndices.length ? taskIndices[t + 1] : rows.length;
+          const notes = [];
+          let branch = '';
+          let testingInstructions = '';
+          let testReportUrl = '';
+          for (let j = i + 1; j < nextTaskIdx; j++) {
+            const note = (rows[j][8] || '').trim();
+            const noteAuthor = (rows[j][4] || '').trim();
+            if (note) {
+              notes.push({ row: j + 1, author: noteAuthor, text: note });
+              // Extract branch from completion notes
+              const branchMatch = note.match(/Branch:\s*(feature\/[^\s|]+)/);
+              if (branchMatch) branch = branchMatch[1];
+              // Extract test report URL
+              const urlMatch = note.match(/Test report:\s*(https:\/\/[^\s]+)/);
+              if (urlMatch) testReportUrl = urlMatch[1];
+              // Detect QA testing instructions
+              if (note.startsWith('QA:')) testingInstructions = note;
+            }
+          }
+          const qaItem = { ...item, notes };
+          if (branch) qaItem.branch = branch;
+          if (testingInstructions) qaItem.testingInstructions = testingInstructions;
+          if (testReportUrl) qaItem.testReportUrl = testReportUrl;
+          qaItems.push(qaItem);
+        }
+      }
       else if (stage === 'Done') doneCount++;
     }
 
@@ -165,7 +206,8 @@ const auth = new GoogleAuth({
     inProgress.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
     // Single-line JSON to stdout — agent parses this directly
-    console.log(JSON.stringify({ todo, inProgress, qa: qaCount, done: doneCount }));
+    const qaOutput = QA_DETAILS ? qaItems : qaCount;
+    console.log(JSON.stringify({ todo, inProgress, qa: qaOutput, done: doneCount }));
 
   } catch (err) {
     console.error(`check-workboard error: ${err.message}`);

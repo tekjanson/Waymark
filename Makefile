@@ -4,16 +4,20 @@
 #
 # Quick start:
 #   make start          Start the agent container (default: @waymark-builder)
+#   make qa-patrol      Start the QA patrol agent (reviews workboard QA items)
 #   make stop           Stop the agent container
 #   make logs           Tail live agent logs
 #   make status         Show container + workboard status
+#   make qa-status      Show pending QA items with verdict status
 #   make test           Run diagnostic test suite
 #   make help           Show all available commands
 #
 # Multi-agent:
 #   make start AGENT_NAME=alpha
-#   make start AGENT_NAME=beta AGENT_COMMAND="@waymark-builder-sub-board start"
-#
+#   make start AGENT_NAME=beta AGENT_COMMAND="@waymark-builder-sub-board start"#
+#   QA patrol:
+#   make qa-patrol                              # Start QA patrol agent
+#   make qa-status                              # Show QA items with verdicts#
 # ═══════════════════════════════════════════════════════════════════════
 
 COMPOSE   := docker compose -f dev-worker/docker-compose.yml
@@ -29,7 +33,7 @@ AGENT_MODEL   ?= copilot/claude-sonnet-4.6
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
-.PHONY: help run start stop restart build logs status vnc test auth workboard clean
+.PHONY: help run start stop restart build logs status vnc test auth workboard qa-patrol qa-status clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -47,9 +51,11 @@ help: ## Show this help
 	@echo "    AGENT_MODEL     LLM model (default: copilot/claude-sonnet-4.6)"
 	@echo ""
 	@echo "  Examples:"
-	@echo "    make start                                          # Default agent"
+	@echo "    make start                                          # Default builder agent"
+	@echo "    make qa-patrol                                      # QA patrol agent"
 	@echo "    make start AGENT_NAME=alpha                         # Named agent"
 	@echo "    make start AGENT_COMMAND='@waymark-builder-sub-board start'"
+	@echo "    make qa-status                                      # Show QA verdicts"
 	@echo "    make logs                                           # Tail live output"
 	@echo ""
 
@@ -62,6 +68,18 @@ start: ## Start the agent container
 	@echo "  ✓ Agent started"
 	@echo "    Desktop: http://localhost:6080/vnc.html"
 	@echo "    Logs:    make logs"
+	@echo ""
+
+qa-patrol: ## Start the QA patrol agent (reviews workboard QA items)
+	AGENT_COMMAND="@waymark-manual-qa qa patrol" \
+	AGENT_NAME="QA" \
+	AGENT_MODEL="$(AGENT_MODEL)" \
+	$(COMPOSE) up -d --build
+	@echo ""
+	@echo "  ✓ QA Patrol agent started"
+	@echo "    Desktop: http://localhost:6080/vnc.html"
+	@echo "    Logs:    make logs"
+	@echo "    Status:  make qa-status"
 	@echo ""
 
 run: ## Start the agent + restart it every 4 hours
@@ -113,7 +131,19 @@ status: ## Show container status and workboard summary
 	@echo ""
 	@echo "── Workboard ──"
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
-		node scripts/check-workboard.js 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "  (unavailable)"
+		node scripts/check-workboard.js --qa-details 2>/dev/null | \
+		node -e " \
+			const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
+			const qa=Array.isArray(d.qa)?d.qa:[]; \
+			const reviewed=qa.filter(i=>(i.notes||[]).some(n=>n.text.startsWith('QA VERDICT:'))).length; \
+			console.log('  To Do:        '+d.todo.length); \
+			console.log('  In Progress:  '+d.inProgress.length); \
+			console.log('  QA:           '+qa.length+' ('+reviewed+' reviewed, '+(qa.length-reviewed)+' pending)'); \
+			console.log('  Done:         '+d.done); \
+		" 2>/dev/null || echo "  (unavailable)"
+	@echo ""
+	@echo "── QA Verdicts ──"
+	@ls -1 generated/qa-verdicts/*.md 2>/dev/null | wc -l | xargs -I{} echo "  {} local verdict reports" || echo "  None yet"
 
 vnc: ## Open the VNC desktop in your browser
 	xdg-open http://localhost:6080/vnc.html 2>/dev/null || open http://localhost:6080/vnc.html 2>/dev/null || echo "Open http://localhost:6080/vnc.html"
@@ -131,6 +161,26 @@ auth: ## Run GitHub Copilot auth setup for the container
 workboard: ## Show current workboard state (todo/in-progress counts)
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
 		node scripts/check-workboard.js
+
+qa-status: ## Show QA items with verdict status (pass/fail/pending)
+	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
+		node scripts/check-workboard.js --qa-details 2>/dev/null | \
+		node -e " \
+			const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
+			const qa=Array.isArray(d.qa)?d.qa:[]; \
+			if(!qa.length){console.log('  No items in QA');process.exit(0)} \
+			console.log('  ── QA Items (' + qa.length + ') ──'); \
+			console.log(''); \
+			qa.forEach(i=>{ \
+				const v=(i.notes||[]).find(n=>n.text.startsWith('QA VERDICT:')); \
+				const icon=v?(v.text.includes('PASS')?'✅':v.text.includes('FAIL')?'❌':'⚠️'):'⏳'; \
+				const verdict=v?v.text.replace('QA VERDICT: ','').substring(0,80):'Pending review'; \
+				console.log('  '+icon+' Row '+i.row+': '+i.task); \
+				console.log('    Branch: '+(i.branch||'N/A')); \
+				console.log('    Verdict: '+verdict); \
+				console.log(''); \
+			}); \
+		" 2>/dev/null || echo "  (unavailable — check GOOGLE_APPLICATION_CREDENTIALS)"
 
 # ── Cleanup ───────────────────────────────────────────────────────────
 
