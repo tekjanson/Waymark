@@ -95,7 +95,40 @@ const definition = {
         ]),
         el('div', { className: 'poll-bar-wrap' }, barChildren),
         el('div', { className: 'poll-row-stats' }, [
-          editableCell('span', { className: 'poll-votes-count' }, String(votes), rowIdx, cols.votes),
+          editableCell('span', { className: 'poll-votes-count' }, String(votes), rowIdx, cols.votes, {
+            onCommit() {
+              /* Recalculate all totals and update every row */
+              let newTotal = 0, newMax = 0;
+              const allRows = container.querySelectorAll('.poll-row');
+              const voteCounts = [];
+              allRows.forEach(r => {
+                const v = parseInt(r.querySelector('.poll-votes-count')?.textContent) || 0;
+                voteCounts.push(v);
+                newTotal += v;
+                if (v > newMax) newMax = v;
+              });
+              allRows.forEach((r, idx) => {
+                const v = voteCounts[idx];
+                const p = newTotal > 0 ? Math.round((v / newTotal) * 100) : 0;
+                const bw = newMax > 0 ? Math.round((v / newMax) * 100) : 0;
+                const pctEl = r.querySelector('.poll-pct');
+                if (pctEl) pctEl.textContent = `${p}%`;
+                const bar = r.querySelector('.poll-bar');
+                if (bar) {
+                  bar.style.width = `${bw}%`;
+                  const lbl = bar.querySelector('.poll-bar-label');
+                  if (bw > 15) {
+                    if (lbl) lbl.textContent = `${p}%`;
+                    else bar.append(el('span', { className: 'poll-bar-label' }, [`${p}%`]));
+                  } else if (lbl) {
+                    lbl.remove();
+                  }
+                }
+              });
+              const totalEl = container.querySelector('.poll-total');
+              if (totalEl) totalEl.textContent = `${newTotal} total votes`;
+            },
+          }),
           el('span', { className: 'poll-pct' }, [`${pct}%`]),
         ]),
       ]));

@@ -332,9 +332,9 @@ function createGitHubSource(opts) {
     res.setHeader('X-Served-From', 'github-source');
 
     if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
-      // No browser caching for code files — ensures ref switches
-      // serve fresh content immediately after page reload.
-      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      // no-store prevents browsers from caching ES modules across ref switches.
+      // no-cache was insufficient — Chrome's module cache ignores revalidation.
+      res.setHeader('Cache-Control', 'no-store');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=3600');
     }

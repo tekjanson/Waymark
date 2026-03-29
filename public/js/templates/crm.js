@@ -225,7 +225,17 @@ const definition = {
       const cardEl = el('div', { className: `crm-card crm-card-${cls}${stale ? ' crm-card-stale' : ''}` }, [
         el('div', { className: 'crm-card-header' }, [
           editableCell('span', { className: 'crm-card-company' }, company, rowIdx, cols.company),
-          cols.value >= 0 ? editableCell('span', { className: 'crm-card-value' }, value, rowIdx, cols.value) : null,
+          cols.value >= 0 ? editableCell('span', { className: 'crm-card-value' }, fmtDollars(parseValue(value)), rowIdx, cols.value, {
+            onCommit(newVal, wrapper) {
+              const n = parseValue(newVal);
+              wrapper.textContent = fmtDollars(n);
+              /* Recalculate pipeline total */
+              const oldVal = parseValue(value);
+              totalValue += n - oldVal;
+              const totalEl = container.querySelector('.crm-summary-total');
+              if (totalEl) totalEl.textContent = `Pipeline: $${totalValue.toLocaleString()}`;
+            },
+          }) : null,
         ]),
         el('div', { className: 'crm-card-body' }, [
           stageBadge,
