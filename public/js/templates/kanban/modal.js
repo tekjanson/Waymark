@@ -207,9 +207,9 @@ export function openCardModal(group, ctx) {
     if (e.target === overlay) closeFromUI();
   });
 
-  // Close on Escape
+  // Close on Escape (skip if user is editing an input or textarea)
   function onKey(e) {
-    if (e.key === 'Escape') closeFromUI();
+    if (e.key === 'Escape' && !e.target.matches('input, textarea')) closeFromUI();
   }
   document.addEventListener('keydown', onKey);
 
