@@ -438,6 +438,64 @@ async function onMessage({ topic: t, payload }) {
         break;
       }
 
+      case 'capture_screenshot': {
+        const selector = args?.selector || null;
+        const quality = Math.min(Math.max(args?.quality || 0.8, 0.1), 1);
+        const maxWidth = args?.maxWidth || 1280;
+
+        // Lazy-load html2canvas from same-origin vendor file (CSP-safe)
+        if (!window.html2canvas) {
+          const base = window.__WAYMARK_BASE || '';
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = base + '/js/vendor/html2canvas.min.js';
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('Failed to load html2canvas'));
+            document.head.appendChild(s);
+          });
+        }
+        if (!window.html2canvas) {
+          error = 'html2canvas not available';
+          break;
+        }
+
+        const target = selector ? document.querySelector(selector) : document.body;
+        if (!target) { error = `No element matching "${selector}"`; break; }
+
+        const canvas = await window.html2canvas(target, {
+          useCORS: true,
+          scale: 1,
+          logging: false,
+          windowWidth: document.documentElement.scrollWidth,
+          windowHeight: document.documentElement.scrollHeight,
+        });
+
+        // Resize if wider than maxWidth
+        let finalCanvas = canvas;
+        if (canvas.width > maxWidth) {
+          const ratio = maxWidth / canvas.width;
+          finalCanvas = document.createElement('canvas');
+          finalCanvas.width = maxWidth;
+          finalCanvas.height = Math.round(canvas.height * ratio);
+          const ctx = finalCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
+        }
+
+        const dataUrl = finalCanvas.toDataURL('image/jpeg', quality);
+        const base64 = dataUrl.split(',')[1];
+
+        result = {
+          image: base64,
+          mimeType: 'image/jpeg',
+          width: finalCanvas.width,
+          height: finalCanvas.height,
+          originalWidth: canvas.width,
+          originalHeight: canvas.height,
+          selector: selector || 'body',
+        };
+        break;
+      }
+
       default:
         error = `Unknown command: ${command}`;
     }

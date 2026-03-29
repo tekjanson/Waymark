@@ -450,6 +450,12 @@ async function loadSheet(sheetId) {
 /* ---------- Template-aware rendering ---------- */
 
 function renderWithTemplate(values) {
+  /* Blur any focused element inside the container before tearing down the DOM.
+     This prevents stale inspector blur-handlers from firing commits against
+     an already-destroyed node reference during auto-refresh (see F1). */
+  if (document.activeElement && itemsEl.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
   itemsEl.innerHTML = '';
 
   if (values.length === 0) {
