@@ -2,6 +2,7 @@
 # Usage:
 #   docker compose -f dev-worker/docker-compose.yml up -d
 #   AGENT_COMMAND="@waymark-builder-sub-board start" docker compose -f dev-worker/docker-compose.yml up -d
+#   AGENT_COMMAND="@waymark-manual-qa qa patrol" docker compose -f dev-worker/docker-compose.yml up -d
 #   AGENT_NAME=alpha docker compose -f dev-worker/docker-compose.yml up -d
 #   VNC_PASSWORD=mysecret AGENT_COMMAND="@waymark-builder pick next" docker compose ...
 #
