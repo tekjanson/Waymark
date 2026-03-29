@@ -496,6 +496,36 @@ async function onMessage({ topic: t, payload }) {
         break;
       }
 
+      case 'switch_host': {
+        const newUrl = args?.url;
+        if (!newUrl) { error = 'No url provided'; break; }
+        const preserveHash = args?.preserveHash !== false;
+        const currentHash = location.hash;
+        let target;
+        try {
+          target = new URL(newUrl);
+        } catch {
+          error = `Invalid URL: ${newUrl}`;
+          break;
+        }
+        if (preserveHash && currentHash) {
+          target.hash = currentHash;
+        }
+        // Respond before navigating since the page will unload
+        publish('cmd/response', {
+          commandId,
+          result: {
+            navigatingTo: target.href,
+            previousUrl: location.href,
+            preservedHash: preserveHash ? currentHash : null,
+          },
+        });
+        // Small delay to let the MQTT message flush
+        await new Promise(r => setTimeout(r, 200));
+        window.location.href = target.href;
+        return; // skip the normal response — we already sent it
+      }
+
       default:
         error = `Unknown command: ${command}`;
     }
