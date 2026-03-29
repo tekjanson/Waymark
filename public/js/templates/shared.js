@@ -935,6 +935,9 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
 
   function validate() {
     let valid = true;
+    /* Remove existing highlights first so the shake animation re-triggers */
+    form.querySelectorAll('.add-row-required').forEach(e => e.classList.remove('add-row-required'));
+
     for (const field of fields) {
       if (!field.required || field.hidden) continue;
       if (field.type === 'list') {
@@ -945,17 +948,14 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
         });
         if (!hasItems) {
           valid = false;
-          if (info) info.container.classList.add('add-row-required');
-        } else {
-          if (info) info.container.classList.remove('add-row-required');
+          if (info) requestAnimationFrame(() => info.container.classList.add('add-row-required'));
         }
       } else if (inputMap[field.role]) {
         const val = (inputMap[field.role].value || '').trim();
         if (!val) {
           valid = false;
-          inputMap[field.role].classList.add('add-row-required');
-        } else {
-          inputMap[field.role].classList.remove('add-row-required');
+          const inp = inputMap[field.role];
+          requestAnimationFrame(() => inp.classList.add('add-row-required'));
         }
       }
     }

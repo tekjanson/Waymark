@@ -84,13 +84,13 @@ function pushBuffer(arr, item) {
 /** @type {Map<string, { resolve: Function, timer: ReturnType<typeof setTimeout> }>} */
 const pendingCommands = new Map();
 
-function sendCommand(sessionId, command, args = {}) {
+function sendCommand(sessionId, command, args = {}, timeoutMs = COMMAND_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const commandId = randomUUID();
     const timer = setTimeout(() => {
       pendingCommands.delete(commandId);
-      reject(new Error(`Command "${command}" timed out after ${COMMAND_TIMEOUT_MS}ms`));
-    }, COMMAND_TIMEOUT_MS);
+      reject(new Error(`Command "${command}" timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
     pendingCommands.set(commandId, { resolve, timer });
     mqttClient.publish(
@@ -482,6 +482,30 @@ const TOOLS = [
       required: ["sessionId", "selector"],
     },
   },
+  {
+    name: "mqtt_capture_screenshot",
+    description:
+      "Capture a visual screenshot of the current browser view or a specific element. Returns an inline image. Use this to SEE what the page actually looks like — layout, colors, spacing, hierarchy. Essential for visual QA testing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "The browser session ID" },
+        selector: {
+          type: "string",
+          description: "CSS selector of the element to capture (default: full page body)",
+        },
+        quality: {
+          type: "number",
+          description: "JPEG quality 0.1-1.0 (default: 0.8). Lower = smaller image, less detail.",
+        },
+        maxWidth: {
+          type: "number",
+          description: "Maximum image width in pixels (default: 1280). Images wider than this are scaled down.",
+        },
+      },
+      required: ["sessionId"],
+    },
+  },
 ];
 
 /* ---------- Tool handlers ---------- */
@@ -652,6 +676,29 @@ async function handleTool(name, args) {
       return JSON.stringify(resp.result, null, 2);
     }
 
+    case "mqtt_capture_screenshot": {
+      const resp = await sendCommand(
+        args.sessionId,
+        "capture_screenshot",
+        {
+          selector: args.selector,
+          quality: args.quality,
+          maxWidth: args.maxWidth,
+        },
+        30_000, // longer timeout — html2canvas rendering can take a few seconds
+      );
+      if (resp.error) return `Error: ${resp.error}`;
+      const r = resp.result;
+      if (!r?.image) return "Error: No image data received from browser";
+      // Return structured content with image
+      return {
+        _imageContent: true,
+        data: r.image,
+        mimeType: r.mimeType || "image/jpeg",
+        text: `Screenshot captured: ${r.width}×${r.height}px${r.selector !== "body" ? ` (selector: ${r.selector})` : " (full page)"}${r.originalWidth !== r.width ? ` — scaled from ${r.originalWidth}×${r.originalHeight}` : ""}`,
+      };
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -672,6 +719,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   try {
     const result = await handleTool(name, args);
+    // Support image content responses (e.g. screenshots)
+    if (result && typeof result === "object" && result._imageContent) {
+      return {
+        content: [
+          { type: "image", data: result.data, mimeType: result.mimeType },
+          { type: "text", text: result.text },
+        ],
+      };
+    }
     return { content: [{ type: "text", text: result }] };
   } catch (err) {
     return {
