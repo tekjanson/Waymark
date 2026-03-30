@@ -265,6 +265,7 @@ function openEncryptModal() {
     modalTitle.textContent = 'Unlock Encrypted Columns';
     unlockBtn.classList.remove('hidden');
     lockSheetBtn.classList.add('hidden');
+    if (decryptBtn) decryptBtn.classList.remove('hidden');
     setupBtn.classList.add('hidden');
     passwordInput.parentElement.parentElement.classList.remove('hidden');
     colConfig.classList.add('hidden');
@@ -348,19 +349,48 @@ function openEncryptModal() {
   if (decryptBtn) {
     decryptBtn.onclick = async () => {
       if (!confirm('Remove encryption permanently? All encrypted values will be written back as plaintext. This cannot be undone.')) return;
+
+      // If the sheet is locked, require the password first to unlock
+      if (!encryption.isUnlocked(sheetId)) {
+        const pw = passwordInput.value;
+        if (!pw) { statusEl.textContent = 'Enter the password to remove encryption'; return; }
+        decryptBtn.disabled = true;
+        statusEl.textContent = 'Verifying password…';
+
+        let sample = null;
+        if (currentValues) {
+          for (let r = 1; r < currentValues.length && !sample; r++) {
+            for (const c of encCols) {
+              if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+                sample = currentValues[r][c]; break;
+              }
+            }
+          }
+        }
+        const ok = await encryption.unlock(pw, sheetId, sample);
+        if (!ok) {
+          statusEl.textContent = 'Wrong password — could not decrypt';
+          decryptBtn.disabled = false;
+          return;
+        }
+      }
+
       decryptBtn.disabled = true;
-      lockSheetBtn.disabled = true;
+      if (lockSheetBtn) lockSheetBtn.disabled = true;
       statusEl.textContent = 'Decrypting all values…';
 
       try {
-        if (currentValues && currentSheetTitle) {
-          for (let r = 1; r < currentValues.length; r++) {
-            for (const c of encCols) {
-              if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
-                const plain = await encryption.decrypt(sheetId, currentValues[r][c]);
-                if (plain !== null) {
-                  await api.sheets.updateCell(sheetId, currentSheetTitle, r, c, plain);
-                }
+        // Re-fetch fresh data to decrypt from the canonical encrypted values
+        const freshData = await api.sheets.getSpreadsheet(sheetId);
+        const freshValues = freshData.values || [];
+        const freshTitle = freshData.sheetTitle || currentSheetTitle;
+
+        for (let r = 1; r < freshValues.length; r++) {
+          for (const c of encCols) {
+            if (c < freshValues[r].length && encryption.isEncrypted(freshValues[r][c])) {
+              const plain = await encryption.decrypt(sheetId, freshValues[r][c]);
+              if (plain !== null) {
+                await api.sheets.updateCell(sheetId, freshTitle, r, c, plain);
               }
             }
           }
@@ -375,7 +405,7 @@ function openEncryptModal() {
         showToast(`Decryption error: ${err.message}`, 'error');
       } finally {
         decryptBtn.disabled = false;
-        lockSheetBtn.disabled = false;
+        if (lockSheetBtn) lockSheetBtn.disabled = false;
       }
     };
   }
@@ -664,8 +694,16 @@ async function loadSheet(sheetId) {
     currentSheetTitle = data.sheetTitle || 'Sheet1';
     currentValues = data.values || [];
 
+    // Auto-detect encrypted columns from actual cell data and sync to localStorage
+    let encCols = encryption.getEncryptedColumns(sheetId);
+    const detectedCols = encryption.detectEncryptedColumns(currentValues);
+    if (detectedCols.size > 0 && encCols.size === 0) {
+      // Encrypted data found in cells but not tracked in localStorage — sync it
+      encryption.setEncryptedColumns(sheetId, detectedCols);
+      encCols = detectedCols;
+    }
+
     // Decrypt encrypted columns if the sheet is unlocked
-    const encCols = encryption.getEncryptedColumns(sheetId);
     if (encCols.size > 0 && encryption.isUnlocked(sheetId)) {
       await encryption.decryptSheet(sheetId, currentValues, encCols);
     }
@@ -673,6 +711,11 @@ async function loadSheet(sheetId) {
     renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();
+
+    // Auto-prompt for password if sheet has encrypted data but is locked
+    if (encCols.size > 0 && !encryption.isUnlocked(sheetId)) {
+      openEncryptModal();
+    }
 
     // Expose current user name so templates can auto-fill author fields
     const user = api.auth.getUser();
