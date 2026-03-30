@@ -234,6 +234,7 @@ function openEncryptModal() {
   const cancelBtn = document.getElementById('encrypt-cancel-btn');
   const closeBtn = document.getElementById('encrypt-modal-close');
   const toggleVisBtn = document.getElementById('encrypt-toggle-vis');
+  const decryptBtn = document.getElementById('encrypt-decrypt-btn');
   if (!modal || !passwordInput) return;
 
   const sheetId = currentSheetId;
@@ -247,11 +248,14 @@ function openEncryptModal() {
   passwordInput.type = 'password';
   statusEl.textContent = '';
 
+  if (decryptBtn) decryptBtn.classList.add('hidden');
+
   if (isUnlocked) {
     // Sheet is already unlocked — show column config and lock option
     modalTitle.textContent = 'Encryption Settings';
     unlockBtn.classList.add('hidden');
     lockSheetBtn.classList.remove('hidden');
+    if (decryptBtn) decryptBtn.classList.remove('hidden');
     setupBtn.classList.add('hidden');
     passwordInput.parentElement.parentElement.classList.add('hidden');
     colConfig.classList.remove('hidden');
@@ -339,6 +343,42 @@ function openEncryptModal() {
   passwordInput.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); (unlockBtn.classList.contains('hidden') ? setupBtn : unlockBtn).click(); }
   };
+
+  // Decrypt button — permanently remove encryption
+  if (decryptBtn) {
+    decryptBtn.onclick = async () => {
+      if (!confirm('Remove encryption permanently? All encrypted values will be written back as plaintext. This cannot be undone.')) return;
+      decryptBtn.disabled = true;
+      lockSheetBtn.disabled = true;
+      statusEl.textContent = 'Decrypting all values…';
+
+      try {
+        if (currentValues && currentSheetTitle) {
+          for (let r = 1; r < currentValues.length; r++) {
+            for (const c of encCols) {
+              if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+                const plain = await encryption.decrypt(sheetId, currentValues[r][c]);
+                if (plain !== null) {
+                  await api.sheets.updateCell(sheetId, currentSheetTitle, r, c, plain);
+                }
+              }
+            }
+          }
+        }
+        encryption.setEncryptedColumns(sheetId, new Set());
+        encryption.lock(sheetId);
+        close();
+        showToast('Encryption removed — all values are now plaintext', 'success');
+        await loadSheet(sheetId);
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        showToast(`Decryption error: ${err.message}`, 'error');
+      } finally {
+        decryptBtn.disabled = false;
+        lockSheetBtn.disabled = false;
+      }
+    };
+  }
 
   // Setup button — set password and enable encryption
   setupBtn.onclick = async () => {
