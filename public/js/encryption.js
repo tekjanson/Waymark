@@ -197,6 +197,24 @@ export async function decrypt(sheetId, encoded) {
 }
 
 /**
+ * Scan sheet values for cells beginning with the ENC_PREFIX marker,
+ * returning the set of column indices that contain encrypted data.
+ * Useful for auto-detecting encryption when localStorage metadata is missing
+ * (e.g. new browser / cleared storage).
+ * @param {string[][]} values — full sheet data (row 0 = headers)
+ * @returns {Set<number>}
+ */
+export function detectEncryptedColumns(values) {
+  const cols = new Set();
+  for (let r = 1; r < values.length; r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      if (isEncrypted(values[r][c])) cols.add(c);
+    }
+  }
+  return cols;
+}
+
+/**
  * Decrypt all encrypted columns in a 2D values array (in place).
  * Returns the mutated array for convenience.
  * @param {string} sheetId
