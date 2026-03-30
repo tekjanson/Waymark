@@ -144,6 +144,15 @@ async function navigateToSheet(page, sheetId) {
   await page.waitForSelector('#checklist-view:not(.hidden)');
 }
 
+async function navigateToDashboard(page, dashboardId) {
+  if (dashboardId) {
+    await page.evaluate((id) => { window.location.hash = `#/dashboard/${id}`; }, dashboardId);
+  } else {
+    await page.evaluate(() => { window.location.hash = '#/dashboard'; });
+  }
+  await page.waitForSelector('#dashboard-view:not(.hidden)');
+}
+
 /* ────────── Assertion helpers ────────── */
 
 async function getCreatedRecords(page) {
@@ -189,6 +198,7 @@ module.exports = {
   loginViaUI,
   navigateToHome,
   navigateToSheet,
+  navigateToDashboard,
   getCreatedRecords,
   waitForChecklistRows,
   getChecklistTexts,

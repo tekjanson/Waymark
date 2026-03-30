@@ -19,6 +19,7 @@ import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
+import * as dashboard from './dashboard.js';
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -40,6 +41,7 @@ const menuCreateBtn    = document.getElementById('menu-create-btn');
 const menuImportBtn    = document.getElementById('menu-import-btn');
 const menuExamplesBtn  = document.getElementById('menu-examples-btn');
 const menuAgentBtn     = document.getElementById('menu-agent-btn');
+const menuDashboardBtn = document.getElementById('menu-dashboard-btn');
 const explorerRefreshBtn = document.getElementById('explorer-refresh-btn');
 
 /* ---------- Example Modal refs ---------- */
@@ -198,6 +200,7 @@ async function boot() {
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   notifications.init(document.querySelector('.top-bar-right'));
+  dashboard.init(document.getElementById('dashboard-view'));
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());
@@ -257,6 +260,13 @@ async function boot() {
   if (menuAgentBtn) {
     menuAgentBtn.addEventListener('click', () => {
       window.location.hash = '#/agent';
+      autoCloseSidebarMobile();
+    });
+  }
+  if (menuDashboardBtn) {
+    menuDashboardBtn.addEventListener('click', () => {
+      window.location.hash = '#/dashboard';
+      updateMenuActive('dashboard');
       autoCloseSidebarMobile();
     });
   }
@@ -451,6 +461,7 @@ function handleRoute() {
 
   checklist.hide(); // stop any running timer
   agent.hide();
+  dashboard.hide();
 
   // Auto-close sidebar on narrow screens when navigating to a detail view
   if (window.innerWidth <= 768 && isSidebarOpen()) {
@@ -486,6 +497,16 @@ function handleRoute() {
     agent.show(document.getElementById('agent-view'));
     updateMenuActive('agent');
     userData.setLastView(hash);
+  } else if (hash.startsWith('#/dashboard')) {
+    showView('dashboard');
+    updateMenuActive('dashboard');
+    userData.setLastView(hash);
+    const dashboardMatch = hash.match(/^#\/dashboard\/(.+)/);
+    if (dashboardMatch) {
+      dashboard.showDashboard(dashboardMatch[1]);
+    } else {
+      dashboard.showHome();
+    }
   } else {
     // Home
     showView('home');
