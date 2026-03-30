@@ -93,12 +93,12 @@
           </button>
           <button id="menu-explorer-btn" class="sidebar-nav-item" data-menu="explorer">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>Browse Drive</span>
+            <span>Browse Files</span>
           </button>
           <div class="sidebar-nav-divider"></div>
           <button id="menu-create-btn" class="sidebar-nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-            <span>Create New Sheet</span>
+            <span>Create New Waymark</span>
           </button>
           <button id="menu-import-btn" class="sidebar-nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -132,7 +132,7 @@
           <div class="home-quick-actions">
             <button id="home-action-create" class="home-action-card">
               <span class="home-action-icon">📝</span>
-              <span class="home-action-label">New Sheet</span>
+              <span class="home-action-label">New Waymark</span>
             </button>
             <button id="home-action-import" class="home-action-card">
               <span class="home-action-icon">📥</span>
@@ -226,6 +226,10 @@
                   <span class="overflow-item-emoji">🔓</span>
                   <span>Lock editing</span>
                 </button>
+                <button id="encrypt-btn" class="overflow-item overflow-item-encrypt" aria-label="Column encryption">
+                  <span class="overflow-item-emoji">🔐</span>
+                  <span>Column encryption</span>
+                </button>
                 <button id="template-help-btn" class="overflow-item hidden" aria-label="Template guide">
                   <span class="overflow-item-emoji">❓</span>
                   <span>Template guide</span>
@@ -255,7 +259,7 @@
             <button id="folder-pin-btn" class="btn-pin" aria-label="Pin folder" title="Pin folder">📌</button>
             <button id="dir-help-btn" class="btn-template-help hidden" aria-label="Directory view guide" title="Directory view guide">❓</button>
             <button id="folder-refresh-btn" class="btn-refresh hidden" aria-label="Sync shared content" title="Sync shared content">🔄</button>
-            <button id="open-in-drive-btn" class="btn btn-drive" aria-label="Open in Google Drive" title="Open in Google Drive">
+            <button id="open-in-drive-btn" class="btn btn-drive" aria-label="Open in Drive" title="Open in Drive">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               Open in Drive
             </button>
@@ -400,19 +404,56 @@
     </div>
   </div>
 
-  <!-- Create New Sheet Modal -->
+  <!-- Encryption Password Modal -->
+  <div id="encrypt-modal" class="modal-overlay hidden">
+    <div class="modal encrypt-modal">
+      <div class="modal-header">
+        <h3 id="encrypt-modal-title">Unlock Encrypted Columns</h3>
+        <button id="encrypt-modal-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p class="modal-description encrypt-modal-desc">Enter the password for this Waymark. The password is used to encrypt and decrypt selected columns locally — it never leaves your browser.</p>
+      <div class="encrypt-warning">
+        <strong>⚠️ Important:</strong> Waymark does not store your password. If you forget it, encrypted data cannot be recovered.
+      </div>
+      <div class="encrypt-form">
+        <label class="encrypt-label" for="encrypt-password">Password</label>
+        <div class="encrypt-password-row">
+          <input type="password" id="encrypt-password" class="encrypt-input" placeholder="Enter password" autocomplete="off">
+          <button id="encrypt-toggle-vis" class="btn-icon" type="button" aria-label="Show password" title="Show password">👁️</button>
+        </div>
+      </div>
+      <div id="encrypt-col-config" class="encrypt-col-config hidden">
+        <label class="encrypt-label">Select columns to encrypt</label>
+        <div id="encrypt-col-list" class="encrypt-col-list"></div>
+      </div>
+      <div class="modal-footer">
+        <span id="encrypt-status" class="text-muted"></span>
+        <div class="modal-footer-actions">
+          <button id="encrypt-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button id="encrypt-unlock-btn" class="btn btn-primary">🔓 Unlock</button>
+          <button id="encrypt-lock-btn" class="btn btn-secondary hidden">🔒 Lock</button>
+          <button id="encrypt-decrypt-btn" class="btn btn-danger hidden">🔓 Remove Encryption</button>
+          <button id="encrypt-setup-btn" class="btn btn-primary hidden">🔐 Set Up Encryption</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create New Waymark Modal -->
   <div id="create-sheet-modal" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <h3>Create New Sheet</h3>
+        <h3>Create New Waymark</h3>
         <button id="create-sheet-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <p class="modal-description">Choose a template type and name your new sheet. It will be created in your Google Drive with the correct headers.</p>
+      <p class="modal-description">Choose a template and name your new Waymark. It will be created with the correct headers and ready to use.</p>
       <div class="create-sheet-form">
         <label class="create-sheet-label" for="create-sheet-name">Sheet Name</label>
-        <input type="text" id="create-sheet-name" class="create-sheet-input" placeholder="My New Sheet" autocomplete="off">
+        <input type="text" id="create-sheet-name" class="create-sheet-input" placeholder="My New Waymark" autocomplete="off">
       </div>
       <div class="create-sheet-location">
         <label class="create-sheet-label">Location</label>
@@ -426,7 +467,7 @@
         <span id="create-sheet-status" class="text-muted"></span>
         <div class="modal-footer-actions">
           <button id="create-sheet-cancel-btn" class="btn btn-secondary">Cancel</button>
-          <button id="create-sheet-create-btn" class="btn btn-primary" disabled>Create Sheet</button>
+          <button id="create-sheet-create-btn" class="btn btn-primary" disabled>Create Waymark</button>
         </div>
       </div>
       <div id="create-sheet-progress" class="generate-progress hidden"></div>
@@ -442,7 +483,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <p class="modal-description">Choose which example sheets to generate in your Google Drive. Each category creates a folder with sample spreadsheets.</p>
+      <p class="modal-description">Choose which example Waymarks to generate. Each category creates a folder with sample data you can explore.</p>
       <div class="modal-actions-top">
         <button id="examples-select-all" class="btn-text">Select All</button>
         <button id="examples-select-none" class="btn-text">Select None</button>
@@ -471,7 +512,7 @@
 
       <!-- Step 1: Pick a sheet -->
       <div id="import-step-pick" class="import-step">
-        <p class="modal-description">Select a Google Sheet or Doc from your Drive to import into WayMark, or import a recipe from a URL.</p>
+        <p class="modal-description">Select a file from your Drive to import into Waymark, or import a recipe from a URL.</p>
 
         <!-- Recipe URL Import -->
         <div class="recipe-import-url-section">

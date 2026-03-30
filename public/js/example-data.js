@@ -866,4 +866,28 @@ export const EXAMPLE_SHEETS = {
       ['Line Pressure', '101.3', 'kPa', '2026-06-15T10:19:20Z', '95', '105', 'Normal'],
     ],
   },
+
+  /* ---- Password Manager examples ---- */
+  'Personal Vault': {
+    folder: 'Security',
+    headers: ['Site', 'Username', 'Password', 'URL', 'Category', 'Notes'],
+    rows: [
+      ['GitHub', 'devuser', 'myP@ssword1', 'https://github.com', 'Development', 'Main dev account'],
+      ['Gmail', 'jane.doe@gmail.com', 'mailPass!2026', 'https://mail.google.com', 'Personal', 'Personal email'],
+      ['Netflix', 'jane.doe@gmail.com', 'netflixWatch!', 'https://netflix.com', 'Entertainment', 'Family plan'],
+      ['AWS Console', 'admin@company.com', 'CloudSecure#1', 'https://console.aws.amazon.com', 'Work', 'Production account'],
+      ['Spotify', 'janedoe', 'musicLover!', 'https://spotify.com', 'Entertainment', ''],
+      ['Bank of America', 'jane_banking', 'Banking2026$', 'https://bankofamerica.com', 'Finance', 'Checking and savings'],
+    ],
+  },
+  'Work Credentials': {
+    folder: 'Security',
+    headers: ['Site', 'Username', 'Password', 'URL', 'Category', 'Notes'],
+    rows: [
+      ['Slack', 'jane@company.com', 'slackTeam!', 'https://company.slack.com', 'Communication', 'Company workspace'],
+      ['Jira', 'jane@company.com', 'jiraProject!', 'https://company.atlassian.net', 'Project Management', 'Engineering board'],
+      ['Figma', 'jane@company.com', 'figmaDesign!', 'https://figma.com', 'Design', 'Team workspace'],
+      ['Datadog', 'jane@company.com', 'monitorPass!', 'https://app.datadoghq.com', 'Monitoring', 'Production dashboards'],
+    ],
+  },
 };

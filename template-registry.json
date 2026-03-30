@@ -1092,10 +1092,31 @@
         "gantt-campaign",
         "gantt-sprint"
       ]
+    },
+    {
+      "key": "passwords",
+      "name": "Password Manager",
+      "icon": "🔑",
+      "color": "#7c3aed",
+      "priority": 22,
+      "category": "Security",
+      "detectSignals": ["password", "passwd", "secret", "credential", "site", "service", "username", "login"],
+      "columnRoles": ["site", "username", "password", "url", "category", "notes"],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "hasDirectoryView": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-057"
+      ],
+      "fixtureFiles": [
+        "passwords-personal"
+      ]
     }
   ],
-  "nextSheetId": "sheet-057",
-  "totalTemplates": 27,
+  "nextSheetId": "sheet-058",
+  "totalTemplates": 28,
   "categories": [
     "Productivity",
     "Engineering",
