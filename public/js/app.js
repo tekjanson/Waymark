@@ -1367,22 +1367,45 @@ function closeExamplesModal() {
   examplesModal.classList.add('hidden');
 }
 
+function getCategoryIcon(categoryName) {
+  // Build a lookup: lowercase template name → icon (from live TEMPLATES)
+  const tpls = Object.values(TEMPLATES);
+  const byName = {};
+  for (const t of tpls) byName[t.name.toLowerCase()] = t.icon;
+
+  // Map category folder names to their template names
+  const CATEGORY_TO_TEMPLATE = {
+    'Checklists': 'checklist', 'Trackers': 'progress tracker',
+    'Schedules': 'schedule', 'Inventories': 'inventory',
+    'Contacts': 'contacts', 'Logs': 'activity log',
+    'Test Cases': 'test cases', 'Budgets': 'budget',
+    'Kanban': 'kanban board', 'Habits': 'habit tracker',
+    'Gradebook': 'gradebook', 'Timesheets': 'timesheet',
+    'Polls': 'poll / survey', 'Changelogs': 'changelog',
+    'CRM': 'crm', 'Meal Plans': 'meal planner',
+    'Travel': 'travel itinerary', 'Rosters': 'roster',
+    'Recipes': 'recipe', 'Flows': 'flow diagram',
+    'Social': 'social feed', 'Automation': 'automation',
+    'Guides': 'instruction guide', 'Knowledge': 'knowledge base',
+    'Notifications': 'notifications', 'Monitoring': 'iot sensor log',
+    'Projects': 'kanban board', 'Strategy': 'okr / goals',
+    'Security': 'password manager',
+  };
+
+  const mapped = CATEGORY_TO_TEMPLATE[categoryName];
+  if (mapped && byName[mapped]) return byName[mapped];
+  // Direct match (e.g. "CRM", "Gradebook")
+  if (byName[categoryName.toLowerCase()]) return byName[categoryName.toLowerCase()];
+  return '📋';
+}
+
 function renderCategoryCheckboxes() {
   const categories = getExampleCategories();
   examplesCategories.innerHTML = '';
 
-  const CATEGORY_ICONS = {
-    'Checklists': '✅', 'Trackers': '📊', 'Schedules': '📅',
-    'Inventories': '📦', 'Contacts': '👥', 'Logs': '📝',
-    'Test Cases': '🧪', 'Budgets': '💰', 'Kanban': '📋',
-    'Habits': '🔄', 'Gradebook': '🎓', 'Timesheets': '⏱️',
-    'Polls': '🗳️', 'Changelogs': '📜', 'CRM': '🤝',
-    'Meal Plans': '🍽️', 'Travel': '✈️', 'Rosters': '👨‍👩‍👧‍👦',
-  };
-
   for (const cat of categories) {
     const isChecked = selectedCategories.has(cat.name);
-    const icon = CATEGORY_ICONS[cat.name] || '📁';
+    const icon = getCategoryIcon(cat.name);
 
     const card = el('label', { className: `example-category-card${isChecked ? ' selected' : ''}` }, [
       el('input', {
