@@ -13,6 +13,7 @@ import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMi
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks } from './storage.js';
+import * as encryption from './encryption.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -23,7 +24,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, printBtn;
-let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn;
+let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
 
@@ -48,6 +49,7 @@ export function init() {
   overflowMenu      = document.querySelector('.header-overflow-menu');
   notifRulesBtn     = document.getElementById('notif-rules-btn');
   templateAiBtn     = document.getElementById('template-ai-btn');
+  encryptBtn        = document.getElementById('encrypt-btn');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -141,6 +143,13 @@ export function init() {
     });
   }
 
+  if (encryptBtn) {
+    encryptBtn.addEventListener('click', () => {
+      if (!currentSheetId) return;
+      openEncryptModal();
+    });
+  }
+
   if (sheetPinBtn) {
     sheetPinBtn.addEventListener('click', () => {
       if (!currentSheetId) return;
@@ -172,7 +181,13 @@ export function init() {
   onEdit(async (rowIndex, colIndex, newValue) => {
     if (!currentSheetId || !currentSheetTitle) return;
     try {
-      await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, newValue);
+      // Encrypt value if this column is in the encrypted set
+      let valueToWrite = newValue;
+      const encCols = encryption.getEncryptedColumns(currentSheetId);
+      if (encCols.has(colIndex) && encryption.isUnlocked(currentSheetId) && newValue) {
+        valueToWrite = await encryption.encrypt(currentSheetId, newValue);
+      }
+      await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, valueToWrite);
     } catch (err) {
       showToast(`Failed to save: ${err.message}`, 'error');
     }
@@ -202,6 +217,209 @@ function applyLockState(locked) {
   if (itemsEl) {
     itemsEl.classList.toggle('sheet-locked', locked);
   }
+}
+
+/* ---------- Encryption Modal ---------- */
+
+function openEncryptModal() {
+  const modal = document.getElementById('encrypt-modal');
+  const modalTitle = document.getElementById('encrypt-modal-title');
+  const passwordInput = document.getElementById('encrypt-password');
+  const colConfig = document.getElementById('encrypt-col-config');
+  const colList = document.getElementById('encrypt-col-list');
+  const statusEl = document.getElementById('encrypt-status');
+  const unlockBtn = document.getElementById('encrypt-unlock-btn');
+  const lockSheetBtn = document.getElementById('encrypt-lock-btn');
+  const setupBtn = document.getElementById('encrypt-setup-btn');
+  const cancelBtn = document.getElementById('encrypt-cancel-btn');
+  const closeBtn = document.getElementById('encrypt-modal-close');
+  const toggleVisBtn = document.getElementById('encrypt-toggle-vis');
+  if (!modal || !passwordInput) return;
+
+  const sheetId = currentSheetId;
+  const headers = currentHeaders || [];
+  const encCols = encryption.getEncryptedColumns(sheetId);
+  const isUnlocked = encryption.isUnlocked(sheetId);
+  const hasEncryption = encCols.size > 0;
+
+  // Reset state
+  passwordInput.value = '';
+  passwordInput.type = 'password';
+  statusEl.textContent = '';
+
+  if (isUnlocked) {
+    // Sheet is already unlocked — show column config and lock option
+    modalTitle.textContent = 'Encryption Settings';
+    unlockBtn.classList.add('hidden');
+    lockSheetBtn.classList.remove('hidden');
+    setupBtn.classList.add('hidden');
+    passwordInput.parentElement.parentElement.classList.add('hidden');
+    colConfig.classList.remove('hidden');
+    renderColCheckboxes(colList, headers, encCols);
+  } else if (hasEncryption) {
+    // Sheet has encrypted columns but is locked — show password prompt
+    modalTitle.textContent = 'Unlock Encrypted Columns';
+    unlockBtn.classList.remove('hidden');
+    lockSheetBtn.classList.add('hidden');
+    setupBtn.classList.add('hidden');
+    passwordInput.parentElement.parentElement.classList.remove('hidden');
+    colConfig.classList.add('hidden');
+  } else {
+    // No encryption set up yet — show setup flow
+    modalTitle.textContent = 'Set Up Column Encryption';
+    unlockBtn.classList.add('hidden');
+    lockSheetBtn.classList.add('hidden');
+    setupBtn.classList.remove('hidden');
+    passwordInput.parentElement.parentElement.classList.remove('hidden');
+    colConfig.classList.remove('hidden');
+    renderColCheckboxes(colList, headers, encCols);
+  }
+
+  // Show modal
+  modal.classList.remove('hidden');
+  if (!passwordInput.parentElement.parentElement.classList.contains('hidden')) {
+    passwordInput.focus();
+  }
+
+  // Close handlers
+  const close = () => modal.classList.add('hidden');
+  closeBtn.onclick = close;
+  cancelBtn.onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+
+  // Password visibility toggle
+  toggleVisBtn.onclick = () => {
+    const isHidden = passwordInput.type === 'password';
+    passwordInput.type = isHidden ? 'text' : 'password';
+    toggleVisBtn.textContent = isHidden ? '🙈' : '👁️';
+    toggleVisBtn.title = isHidden ? 'Hide password' : 'Show password';
+  };
+
+  // Unlock button — derive key and reload
+  unlockBtn.onclick = async () => {
+    const pw = passwordInput.value;
+    if (!pw) { statusEl.textContent = 'Please enter a password'; return; }
+    unlockBtn.disabled = true;
+    statusEl.textContent = 'Deriving key…';
+
+    // Find a sample encrypted value to verify the password
+    let sample = null;
+    if (currentValues) {
+      for (let r = 1; r < currentValues.length && !sample; r++) {
+        for (const c of encCols) {
+          if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+            sample = currentValues[r][c]; break;
+          }
+        }
+      }
+    }
+
+    const ok = await encryption.unlock(pw, sheetId, sample);
+    unlockBtn.disabled = false;
+    if (ok) {
+      close();
+      showToast('Columns decrypted', 'success');
+      await loadSheet(sheetId);
+    } else {
+      statusEl.textContent = 'Wrong password — could not decrypt';
+    }
+  };
+
+  // Lock button — clear key and reload
+  lockSheetBtn.onclick = async () => {
+    // Save any column config changes first
+    saveColCheckboxes(colList, sheetId);
+    encryption.lock(sheetId);
+    close();
+    showToast('Encryption locked', 'success');
+    await loadSheet(sheetId);
+  };
+
+  // Enter key on password input
+  passwordInput.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); (unlockBtn.classList.contains('hidden') ? setupBtn : unlockBtn).click(); }
+  };
+
+  // Setup button — set password and enable encryption
+  setupBtn.onclick = async () => {
+    const pw = passwordInput.value;
+    if (!pw) { statusEl.textContent = 'Please enter a password'; return; }
+    if (pw.length < 4) { statusEl.textContent = 'Password must be at least 4 characters'; return; }
+
+    // Collect selected columns
+    saveColCheckboxes(colList, sheetId);
+    const newEncCols = encryption.getEncryptedColumns(sheetId);
+    if (newEncCols.size === 0) {
+      statusEl.textContent = 'Select at least one column to encrypt';
+      return;
+    }
+
+    setupBtn.disabled = true;
+    statusEl.textContent = 'Setting up encryption…';
+
+    // Derive key and cache it
+    await encryption.unlock(pw, sheetId);
+
+    // Encrypt existing values in the selected columns
+    if (currentValues && currentSheetTitle) {
+      try {
+        for (let r = 1; r < currentValues.length; r++) {
+          for (const c of newEncCols) {
+            const val = (c < currentValues[r].length) ? currentValues[r][c] : '';
+            if (val && !encryption.isEncrypted(val)) {
+              const enc = await encryption.encrypt(sheetId, val);
+              await api.sheets.updateCell(sheetId, currentSheetTitle, r, c, enc);
+            }
+          }
+        }
+      } catch (err) {
+        showToast(`Encryption error: ${err.message}`, 'error');
+      }
+    }
+
+    setupBtn.disabled = false;
+    close();
+    showToast('Encryption enabled — columns are now protected', 'success');
+    await loadSheet(sheetId);
+  };
+}
+
+/**
+ * Render column checkboxes for the encryption config panel.
+ * @param {HTMLElement} container
+ * @param {string[]} headers
+ * @param {Set<number>} encCols
+ */
+function renderColCheckboxes(container, headers, encCols) {
+  container.innerHTML = '';
+  headers.forEach((header, idx) => {
+    if (!header) return;
+    const id = `enc-col-${idx}`;
+    const label = el('label', { className: 'encrypt-col-item' }, [
+      el('input', {
+        type: 'checkbox',
+        id,
+        dataset: { colIdx: String(idx) },
+        checked: encCols.has(idx) ? true : undefined,
+      }),
+      el('span', {}, [header]),
+    ]);
+    if (encCols.has(idx)) label.querySelector('input').checked = true;
+    container.append(label);
+  });
+}
+
+/**
+ * Read column checkboxes and save to localStorage.
+ * @param {HTMLElement} container
+ * @param {string} sheetId
+ */
+function saveColCheckboxes(container, sheetId) {
+  const cols = new Set();
+  for (const cb of container.querySelectorAll('input[type="checkbox"]')) {
+    if (cb.checked) cols.add(Number(cb.dataset.colIdx));
+  }
+  encryption.setEncryptedColumns(sheetId, cols);
 }
 
 /**
@@ -405,6 +623,13 @@ async function loadSheet(sheetId) {
     currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
     currentValues = data.values || [];
+
+    // Decrypt encrypted columns if the sheet is unlocked
+    const encCols = encryption.getEncryptedColumns(sheetId);
+    if (encCols.size > 0 && encryption.isUnlocked(sheetId)) {
+      await encryption.decryptSheet(sheetId, currentValues, encCols);
+    }
+
     renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();

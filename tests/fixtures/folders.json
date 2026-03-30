@@ -726,6 +726,19 @@
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
+    },
+    {
+      "id": "f-passwords",
+      "name": "Security",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-057",
+          "name": "Personal Vault",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
     }
   ]
 }

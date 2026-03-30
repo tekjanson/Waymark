@@ -1743,6 +1743,70 @@ ul { list-style: none; }
 .create-sheet-folder-row { display: flex; align-items: center; gap: 10px; }
 .create-sheet-folder-name { font-size: 0.85rem; color: var(--color-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- Encryption Modal ---------- */
+.encrypt-modal { max-width: 480px; }
+.encrypt-modal-desc { font-size: 0.85rem; color: var(--color-text-secondary); margin: 0 24px 12px; }
+.encrypt-warning {
+  margin: 0 24px 16px;
+  padding: 10px 14px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #92400e;
+}
+[data-theme="dark"] .encrypt-warning { background: #451a03; border-color: #92400e; color: #fef3c7; }
+.encrypt-form { padding: 0 24px 12px; }
+.encrypt-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+.encrypt-password-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.encrypt-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.encrypt-input:focus { border-color: var(--color-primary); outline: none; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.encrypt-col-config { padding: 0 24px 12px; }
+.encrypt-col-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.encrypt-col-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.encrypt-col-item:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
+.encrypt-col-item input[type="checkbox"] { margin: 0; }
+
+/* Encrypted cell indicator shown in templates */
+.encrypted-cell { opacity: 0.5; font-style: italic; }
+.encrypted-cell::before { content: '\ud83d\udd12 '; font-style: normal; }
+
 /* ---------- Tutorial Overlay ---------- */
 .tutorial-overlay {
   position: fixed; inset: 0; z-index: 600;

@@ -213,6 +213,13 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  // Password Manager
+  'passwords.site': 'Site / Service name',
+  'passwords.username': 'Username / Login',
+  'passwords.password': 'Password / Secret',
+  'passwords.url': 'URL / Web address',
+  'passwords.category': 'Category grouping',
+  'passwords.notes': 'Notes',
 };
 
 /**
@@ -318,6 +325,10 @@ const CANONICAL_HEADERS = {
   'gantt.text': 'Task', 'gantt.start': 'Start Date',
   'gantt.end': 'End Date', 'gantt.progress': 'Progress',
   'gantt.dependencies': 'Dependencies', 'gantt.assignee': 'Assignee',
+  // Password Manager
+  'passwords.site': 'Site', 'passwords.username': 'Username',
+  'passwords.password': 'Password', 'passwords.url': 'URL',
+  'passwords.category': 'Category', 'passwords.notes': 'Notes',
 };
 
 /**

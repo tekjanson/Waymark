@@ -1504,7 +1504,7 @@ function openCreateSheetModal() {
   createSheetNameInput.value = '';
   createSheetStatus.textContent = '';
   createSheetCreateBtn.disabled = true;
-  createSheetCreateBtn.textContent = 'Create Sheet';
+  createSheetCreateBtn.textContent = 'Create Waymark';
   createSheetProgress.classList.add('hidden');
   if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = 'Waymark (default)';
   renderCreateSheetGrid();
@@ -1617,7 +1617,7 @@ async function handleCreateSheet() {
     createSheetProgress.textContent = `Error: ${err.message}`;
   } finally {
     createSheetCreateBtn.disabled = false;
-    createSheetCreateBtn.textContent = 'Create Sheet';
+    createSheetCreateBtn.textContent = 'Create Waymark';
     createSheetCancelBtn.disabled = false;
   }
 }
@@ -1706,7 +1706,7 @@ async function openImportModal() {
           pickerBtn.textContent = 'Opening Picker…';
           const files = await api.picker.pickFilesForImport();
           pickerBtn.disabled = false;
-          pickerBtn.textContent = '📂 Pick from Google Drive';
+          pickerBtn.textContent = '📂 Pick from Drive';
           if (!files || files.length === 0) return;
 
           // Use first selected file
@@ -1722,18 +1722,18 @@ async function openImportModal() {
             ]),
             el('div', { className: 'import-sheet-item-info' }, [
               el('div', { className: 'import-sheet-item-name' }, [files[0].name]),
-              el('div', { className: 'import-sheet-item-meta' }, ['Selected via Google Picker']),
+              el('div', { className: 'import-sheet-item-meta' }, ['Selected via file picker']),
             ]),
           ]);
           importSheetList.append(selectedEl);
         } catch (err) {
           pickerBtn.disabled = false;
-          pickerBtn.textContent = '📂 Pick from Google Drive';
+          pickerBtn.textContent = '📂 Pick from Drive';
           showToast(`Picker error: ${err.message}`, 'error');
         }
       },
     },
-  }, ['📂 Pick from Google Drive']);
+  }, ['📂 Pick from Drive']);
 
   importSheetList.append(
     el('p', { className: 'text-muted' }, ['Select a spreadsheet or document to import.']),
