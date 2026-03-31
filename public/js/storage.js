@@ -186,6 +186,16 @@ export function setHiddenItems(items) {
   set('hidden_items', items);
 }
 
+/* --- Dashboards --- */
+
+export function getDashboards() {
+  return get('dashboards') || [];
+}
+
+export function setDashboards(dashboards) {
+  set('dashboards', dashboards);
+}
+
 /* --- Sort Order --- */
 
 export function getSortOrder() {

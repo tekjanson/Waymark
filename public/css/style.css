@@ -47,3 +47,6 @@
 
 /* AI overlay for template views */
 @import url('./template-ai.css');
+
+/* Multi-sheet dashboard view */
+@import url('./templates/dashboard.css');
