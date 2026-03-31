@@ -179,3 +179,59 @@ test('share modal public link has copy button', async ({ page }) => {
   const copyBtns = page.locator('.share-copy-btn');
   await expect(copyBtns).toHaveCount(3);
 });
+
+test('public view hides the add-row form', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items *', { timeout: 5000 });
+  // The add-row-root should exist in DOM but be hidden via CSS
+  const addRowRoots = page.locator('.add-row-root');
+  const count = await addRowRoots.count();
+  if (count > 0) {
+    for (let i = 0; i < count; i++) {
+      await expect(addRowRoots.nth(i)).not.toBeVisible();
+    }
+  }
+});
+
+test('public kanban view hides the add-row form in lanes', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  const addRowRoots = page.locator('.add-row-root');
+  const count = await addRowRoots.count();
+  if (count > 0) {
+    for (let i = 0; i < count; i++) {
+      await expect(addRowRoots.nth(i)).not.toBeVisible();
+    }
+  }
+});
+
+test('public kanban view blocks stage button clicks', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  // Clear any records from initial render
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+  // Try clicking a stage button on a kanban card
+  const stageBtns = page.locator('.kanban-stage-btn');
+  const count = await stageBtns.count();
+  expect(count).toBeGreaterThan(0);
+  await stageBtns.first().click();
+  // The stage dropdown should NOT appear (edit is locked)
+  await page.waitForTimeout(300);
+  const dropdowns = await page.locator('.kanban-stage-dropdown').count();
+  expect(dropdowns).toBe(0);
+  // No edit records should have been created
+  const records = await getCreatedRecords(page);
+  const cellUpdates = records.filter(r => r.type === 'cell-update');
+  expect(cellUpdates).toHaveLength(0);
+});
+
+test('public view hides the notification bell', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items *', { timeout: 5000 });
+  // The notification bell should not be visible in public mode
+  const bell = page.locator('.notif-bell');
+  const count = await bell.count();
+  if (count > 0) {
+    await expect(bell.first()).not.toBeVisible();
+  }
+});

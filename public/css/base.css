@@ -2403,6 +2403,8 @@ ul { list-style: none; }
 .waymark-public #tutorial-btn { display: none; }
 .waymark-public .sidebar-overlay { display: none; }
 .waymark-public #sidebar-toggle { display: none; }
+.waymark-public .add-row-root { display: none; }
+.waymark-public .notif-bell { display: none; }
 
 /* Share modal public link hint */
 .share-hint {

@@ -12,7 +12,7 @@
 import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
-  buildDirSyncBtn,
+  buildDirSyncBtn, isEditLocked,
 } from '../shared.js';
 import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
@@ -595,6 +595,7 @@ const definition = {
 
       // Stage badge dropdown — shows available stages to pick from
       delegateEvent(lane, 'click', '.kanban-stage-btn', (e, btn) => {
+        if (isEditLocked()) return;
         const card = btn.closest('.kanban-card');
         if (!card) return;
         e.stopPropagation();
