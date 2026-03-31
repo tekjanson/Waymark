@@ -565,6 +565,7 @@ const definition = {
       lane.addEventListener('drop', (e) => {
         e.preventDefault();
         lane.classList.remove('kanban-lane-dragover');
+        if (isEditLocked()) return;
         if (_dragRowIdx && cols.stage >= 0) {
           const stageValue = LANE_LABELS[laneKey] || laneKey;
           // Capture previous stage from badge before updating
@@ -644,6 +645,7 @@ const definition = {
       const priStates = ['P0', 'P1', 'P2', 'P3'];
       const priClassify = v => (v || '').toLowerCase().trim();
       delegateEvent(lane, 'click', '.kanban-pri-dot', (e, dot) => {
+        if (isEditLocked()) return;
         const card = dot.closest('.kanban-card');
         if (!card) return;
         e.stopPropagation();
@@ -657,6 +659,7 @@ const definition = {
       // Archive button
       delegateEvent(lane, 'click', '.kanban-archive-btn', (e, btn) => {
         e.stopPropagation();
+        if (isEditLocked()) return;
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
@@ -670,6 +673,7 @@ const definition = {
       // Unarchive / Restore button
       delegateEvent(lane, 'click', '.kanban-unarchive-btn', (e, btn) => {
         e.stopPropagation();
+        if (isEditLocked()) return;
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
@@ -684,6 +688,7 @@ const definition = {
       // Reject button
       delegateEvent(lane, 'click', '.kanban-reject-btn', (e, btn) => {
         e.stopPropagation();
+        if (isEditLocked()) return;
         const card = btn.closest('.kanban-card');
         const rowIdx = Number(card.dataset.rowIdx);
         if (!rowIdx) return;
@@ -731,6 +736,7 @@ const definition = {
 
       /* ---- Delegated drag handlers on lane (dragstart / dragend bubble) ---- */
       delegateEvent(lane, 'dragstart', '.kanban-card', (e, card) => {
+        if (isEditLocked()) { e.preventDefault(); return; }
         _dragCard = card;
         _dragRowIdx = Number(card.dataset.rowIdx);
         card.classList.add('kanban-card-dragging');
@@ -780,6 +786,7 @@ const definition = {
 
     // Long-press on a card starts touch drag (500ms threshold to distinguish from scroll)
     boardEl.addEventListener('touchstart', (e) => {
+      if (isEditLocked()) return;
       const card = e.target.closest('.kanban-card');
       if (!card) return;
       clearTimeout(_touchLongPressTimer);

@@ -225,6 +225,86 @@ test('public kanban view blocks stage button clicks', async ({ page }) => {
   expect(cellUpdates).toHaveLength(0);
 });
 
+test('public kanban view blocks reject button clicks', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  // Count cards before attempting reject
+  const cardsBefore = await page.locator('.kanban-card').count();
+  expect(cardsBefore).toBeGreaterThan(0);
+  // Clear records
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+  // Try clicking a reject button — should do nothing in public mode
+  const rejectBtns = page.locator('.kanban-reject-btn');
+  const rejectCount = await rejectBtns.count();
+  if (rejectCount > 0) {
+    await rejectBtns.first().click();
+    await page.waitForTimeout(500);
+    // Card count should NOT have decreased — card should not be removed
+    const cardsAfter = await page.locator('.kanban-card').count();
+    expect(cardsAfter).toBe(cardsBefore);
+    // No edit records
+    const records = await getCreatedRecords(page);
+    expect(records.filter(r => r.type === 'cell-update')).toHaveLength(0);
+  }
+});
+
+test('public kanban view blocks drag-and-drop', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  // Clear records
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+  const card = page.locator('.kanban-card').first();
+  await expect(card).toBeVisible();
+  // Attempt drag — dragstart should be prevented so no drag class is added
+  const dragStartPrevented = await card.evaluate((el) => {
+    const evt = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+    return !el.dispatchEvent(evt); // returns true if preventDefault() was called
+  });
+  expect(dragStartPrevented).toBe(true);
+  // Card should NOT have the dragging class
+  await expect(card).not.toHaveClass(/kanban-card-dragging/);
+  // No edit records
+  const records = await getCreatedRecords(page);
+  expect(records.filter(r => r.type === 'cell-update')).toHaveLength(0);
+});
+
+test('public kanban view blocks archive button clicks', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  const cardsBefore = await page.locator('.kanban-card').count();
+  expect(cardsBefore).toBeGreaterThan(0);
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+  const archiveBtns = page.locator('.kanban-archive-btn');
+  const archiveCount = await archiveBtns.count();
+  if (archiveCount > 0) {
+    await archiveBtns.first().click();
+    await page.waitForTimeout(500);
+    const cardsAfter = await page.locator('.kanban-card').count();
+    expect(cardsAfter).toBe(cardsBefore);
+    const records = await getCreatedRecords(page);
+    expect(records.filter(r => r.type === 'cell-update')).toHaveLength(0);
+  }
+});
+
+test('public kanban view blocks priority dot clicks', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-017');
+  await page.waitForSelector('.kanban-board', { timeout: 5000 });
+  await page.evaluate(() => { window.__WAYMARK_RECORDS.length = 0; });
+  const priDots = page.locator('.kanban-pri-dot');
+  const priCount = await priDots.count();
+  if (priCount > 0) {
+    // Capture initial text/class
+    const classBefore = await priDots.first().getAttribute('class');
+    await priDots.first().click();
+    await page.waitForTimeout(300);
+    // Class should not change — priority should not have cycled
+    const classAfter = await priDots.first().getAttribute('class');
+    expect(classAfter).toBe(classBefore);
+    const records = await getCreatedRecords(page);
+    expect(records.filter(r => r.type === 'cell-update')).toHaveLength(0);
+  }
+});
+
 test('public view hides the notification bell', async ({ page }) => {
   await setupPublicApp(page, 'sheet-001');
   await page.waitForSelector('#checklist-items *', { timeout: 5000 });

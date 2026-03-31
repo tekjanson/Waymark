@@ -135,6 +135,7 @@ export function openCardModal(group, ctx) {
     const priClassify = v => (v || '').toLowerCase().trim();
     priDot.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (isEditLocked()) return;
       const next = cycleStatus(priDot, priStates, priClassify, 'kanban-pri-dot kanban-pri-');
       priDot.title = `Priority: ${next} (click to change)`;
       emitEdit(rowIdx, cols.priority, next);
