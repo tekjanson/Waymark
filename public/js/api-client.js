@@ -658,6 +658,24 @@ export const api = {
     },
 
     /**
+     * Read a publicly shared spreadsheet without OAuth.
+     * Uses an API key for sheets shared as "Anyone with the link can view".
+     * @param {string} spreadsheetId
+     * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+     */
+    async getPublicSpreadsheet(spreadsheetId) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const data = await loadMockSheet(spreadsheetId);
+        if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
+        return data;
+      }
+      const apiKey = window.__WAYMARK_API_KEY;
+      if (!apiKey) throw new Error('Public sharing is not configured — missing API key');
+      return sheetsApi.getPublicSpreadsheet(apiKey, spreadsheetId);
+    },
+
+    /**
      * Get only the header + first data row (for template detection and directory views).
      * Much cheaper than getSpreadsheet — single API call, minimal data.
      * @param {string} spreadsheetId

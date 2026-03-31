@@ -132,6 +132,27 @@ async function loginViaUI(page) {
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
 }
 
+/**
+ * Boot the app in public mode — NO auth cookies, NO login.
+ * Navigates directly to a #/public/{sheetId} URL and waits
+ * for the checklist view to appear with the public banner.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {string} sheetId  sheet fixture ID (e.g. 'sheet-001')
+ */
+async function setupPublicApp(page, sheetId) {
+  /* No auth cookie — simulate an anonymous visitor */
+
+  /* Suppress tutorial auto-start (no localStorage in public mode by default) */
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+
+  await page.goto(`/#/public/${sheetId}`);
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10_000 });
+}
+
 /* ────────── Navigation helpers ────────── */
 
 async function navigateToHome(page) {
@@ -195,6 +216,7 @@ async function openOverflowMenu(page) {
 
 module.exports = {
   setupApp,
+  setupPublicApp,
   loginViaUI,
   navigateToHome,
   navigateToSheet,

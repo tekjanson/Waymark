@@ -78,16 +78,21 @@ test('share button opens share modal with links', async ({ page }) => {
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
 
-  // Should show two share link inputs (Waymark + Google)
+  // Should show three share link inputs (Waymark + Public + Google)
   const inputs = page.locator('.share-link-input');
-  expect(await inputs.count()).toBe(2);
+  expect(await inputs.count()).toBe(3);
 
   // Waymark link should contain sheet ID
   const waymarkLink = await inputs.nth(0).inputValue();
   expect(waymarkLink).toContain('sheet-001');
 
+  // Public link should contain /public/ path
+  const publicLink = await inputs.nth(1).inputValue();
+  expect(publicLink).toContain('/public/');
+  expect(publicLink).toContain('sheet-001');
+
   // Google link should point to docs.google.com
-  const googleLink = await inputs.nth(1).inputValue();
+  const googleLink = await inputs.nth(2).inputValue();
   expect(googleLink).toContain('docs.google.com');
   expect(googleLink).toContain('sheet-001');
 });
@@ -102,7 +107,7 @@ test('share modal has copy buttons', async ({ page }) => {
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
   const copyBtns = page.locator('.share-copy-btn');
-  expect(await copyBtns.count()).toBe(2);
+  expect(await copyBtns.count()).toBe(3);
   await expect(copyBtns.first()).toContainText('Copy');
 });
 

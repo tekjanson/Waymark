@@ -306,6 +306,14 @@ async function boot() {
     });
   }
 
+  // Public route: skip auth entirely and show sheet in read-only mode
+  const bootHash = window.location.hash || '#/';
+  if (bootHash.startsWith('#/public/')) {
+    hideLoading();
+    enterPublicMode(bootHash);
+    return;
+  }
+
   // Attempt auth
   const user = await api.auth.init();
   hideLoading();
@@ -322,6 +330,37 @@ async function boot() {
 function showLogin() {
   loginScreen.classList.remove('hidden');
   appScreen.classList.add('hidden');
+}
+
+/* ---------- Public Mode ---------- */
+
+/**
+ * Enter public viewing mode — no auth, no sidebar, read-only.
+ * @param {string} hash  current hash like '#/public/{sheetId}'
+ */
+function enterPublicMode(hash) {
+  document.body.classList.add('waymark-public');
+  loginScreen.classList.add('hidden');
+  appScreen.classList.remove('hidden');
+
+  const sheetId = hash.replace('#/public/', '');
+  showView('checklist');
+  checklist.showPublic(sheetId);
+
+  // Handle hash changes while in public mode
+  window.addEventListener('hashchange', () => {
+    const newHash = window.location.hash || '#/';
+    if (newHash.startsWith('#/public/')) {
+      const newId = newHash.replace('#/public/', '');
+      checklist.hide();
+      showView('checklist');
+      checklist.showPublic(newId);
+    } else {
+      // Leaving public mode — full reload to go through normal auth flow
+      document.body.classList.remove('waymark-public');
+      window.location.reload();
+    }
+  });
 }
 
 async function showApp(user) {
@@ -474,6 +513,12 @@ function handleRoute() {
     showView('checklist');
     checklist.show(sheetId);
     userData.setLastView(hash);
+    updateMenuActive('');
+  } else if (hash.startsWith('#/public/')) {
+    const sheetId = hash.replace('#/public/', '');
+    document.body.classList.add('waymark-public');
+    showView('checklist');
+    checklist.showPublic(sheetId);
     updateMenuActive('');
   } else if (hash.startsWith('#/folder/')) {
     const parts = hash.replace('#/folder/', '').split('/');

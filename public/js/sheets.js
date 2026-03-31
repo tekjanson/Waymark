@@ -19,6 +19,7 @@ function sheetsError(label, res) {
   if (res.status === 401) msg = 'Session expired — please sign in again';
   else if (res.status === 403) msg = 'Permission denied — open this sheet via the Drive picker to grant access';
   else if (res.status === 404) msg = 'Sheet not found — it may have been deleted or moved';
+  else if (res.status === 429) msg = 'Rate limit reached — sign in for uninterrupted access';
   const err = new Error(msg);
   err.status = res.status;
   return err;
@@ -159,6 +160,35 @@ export async function getSpreadsheetSummary(token, spreadsheetId) {
   const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
 
   // Extract values from the grid data format into a simple 2D array
+  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
+  const values = rowData.map(row =>
+    (row.values || []).map(cell => {
+      const v = cell?.userEnteredValue;
+      if (!v) return '';
+      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
+    })
+  );
+
+  return { id: spreadsheetId, title, sheetTitle, values };
+}
+
+/**
+ * Read a publicly shared spreadsheet using an API key (no OAuth).
+ * The spreadsheet must be shared as "Anyone with the link can view"
+ * in Google Sheets sharing settings.
+ * @param {string} apiKey         Google Cloud API key
+ * @param {string} spreadsheetId
+ * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+ */
+export async function getPublicSpreadsheet(apiKey, spreadsheetId) {
+  const url = `${BASE}/${encodeURIComponent(spreadsheetId)}?key=${encodeURIComponent(apiKey)}&fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`;
+  const res = await fetchWithRetry(url, {});
+  if (!res.ok) throw sheetsError('Public sheet read', res);
+  const body = await res.json();
+
+  const title = body.properties?.title || 'Untitled';
+  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
+
   const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
   const values = rowData.map(row =>
     (row.values || []).map(cell => {

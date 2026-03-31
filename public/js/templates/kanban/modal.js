@@ -7,7 +7,7 @@
    closes the modal instead of navigating away.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, cycleStatus, getUserName } from '../shared.js';
+import { el, cell, editableCell, emitEdit, cycleStatus, getUserName, isEditLocked } from '../shared.js';
 import { projectColor, dueBadgeClass, formatDue, STATUS_PREFIX, nowTimestamp } from './helpers.js';
 import { buildCardDetail } from './cards.js';
 
@@ -70,6 +70,7 @@ export function openCardModal(group, ctx) {
   }, [stage || 'Backlog']);
   stageBadge.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (isEditLocked()) return;
     // If a dropdown already exists, close it
     const existingDD = headerMeta.querySelector('.kanban-stage-dropdown');
     if (existingDD) { existingDD.remove(); return; }
@@ -134,6 +135,7 @@ export function openCardModal(group, ctx) {
     const priClassify = v => (v || '').toLowerCase().trim();
     priDot.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (isEditLocked()) return;
       const next = cycleStatus(priDot, priStates, priClassify, 'kanban-pri-dot kanban-pri-');
       priDot.title = `Priority: ${next} (click to change)`;
       emitEdit(rowIdx, cols.priority, next);

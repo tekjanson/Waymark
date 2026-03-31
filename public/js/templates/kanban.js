@@ -9,7 +9,7 @@
    delegated event handling for scaling to thousands of items.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm, getUserName, comboCell, textareaCell } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, buildAddRowForm, getUserName, comboCell, textareaCell, isEditLocked } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -355,6 +355,7 @@ const definition = {
 
           // Stage badge cycling
           if (target.classList.contains('kanban-stage-btn') && target.closest('.kanban-card')) {
+            if (isEditLocked()) return;
             e.stopPropagation();
             const card = target.closest('.kanban-card');
             const rowIdx = Number(card.dataset.rowIdx);

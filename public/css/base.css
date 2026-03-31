@@ -2357,3 +2357,82 @@ ul { list-style: none; }
   /* Page setup */
   @page { margin: 15mm; size: A4; }
 }
+
+/* ---------- Public View Mode ---------- */
+
+.public-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--tint-blue-bg);
+  border: 1px solid var(--color-primary-light);
+  border-radius: var(--radius);
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.public-banner-icon {
+  font-size: 1.2em;
+}
+
+.public-banner-text {
+  font-weight: 600;
+}
+
+.public-banner-login {
+  margin-left: auto;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.public-banner-login:hover {
+  text-decoration: underline;
+}
+
+/* When body has .waymark-public, hide sidebar & auth chrome */
+.waymark-public #sidebar { display: none; }
+.waymark-public #main-layout { grid-template-columns: 1fr; }
+.waymark-public #user-name,
+.waymark-public #user-avatar,
+.waymark-public #logout-btn,
+.waymark-public #search-form,
+.waymark-public #tutorial-btn { display: none; }
+.waymark-public .sidebar-overlay { display: none; }
+.waymark-public #sidebar-toggle { display: none; }
+.waymark-public .add-row-root { display: none; }
+.waymark-public .notif-bell { display: none; }
+
+/* Rate-limit block shown in public view on 429 */
+.rate-limit-block {
+  text-align: center;
+  padding: 48px 24px;
+  max-width: 420px;
+  margin: 40px auto;
+}
+.rate-limit-heading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.rate-limit-block p {
+  color: var(--color-text-muted);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+.rate-limit-cta {
+  display: inline-block;
+  padding: 10px 24px;
+  font-size: 1rem;
+}
+
+/* Share modal public link hint */
+.share-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
