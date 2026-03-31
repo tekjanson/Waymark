@@ -45,7 +45,7 @@ test('formatISO produces YYYY-MM-DD string', async ({ page }) => {
   await setupApp(page);
   const result = await page.evaluate(async () => {
     const { formatISO } = await import('/js/templates/gantt/helpers.js');
-    return formatISO(new Date('2026-06-01'));
+    return formatISO(new Date(2026, 5, 1)); // June 1 in local time
   });
   expect(result).toBe('2026-06-01');
 });
@@ -54,7 +54,7 @@ test('formatISO pads month and day with zeros', async ({ page }) => {
   await setupApp(page);
   const result = await page.evaluate(async () => {
     const { formatISO } = await import('/js/templates/gantt/helpers.js');
-    return formatISO(new Date('2026-01-05'));
+    return formatISO(new Date(2026, 0, 5)); // Jan 5 in local time
   });
   expect(result).toMatch(/^\d{4}-01-05$/);
 });
