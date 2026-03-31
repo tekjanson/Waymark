@@ -19,6 +19,7 @@ function sheetsError(label, res) {
   if (res.status === 401) msg = 'Session expired — please sign in again';
   else if (res.status === 403) msg = 'Permission denied — open this sheet via the Drive picker to grant access';
   else if (res.status === 404) msg = 'Sheet not found — it may have been deleted or moved';
+  else if (res.status === 429) msg = 'Rate limit reached — sign in for uninterrupted access';
   const err = new Error(msg);
   err.status = res.status;
   return err;

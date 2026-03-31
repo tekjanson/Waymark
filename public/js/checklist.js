@@ -546,7 +546,16 @@ export async function showPublic(sheetId) {
     updateTimestamp();
   } catch (err) {
     const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
-    if (is403) {
+    const is429 = err.status === 429 || (err.message && err.message.includes('Rate limit'));
+    if (is429) {
+      const base = window.__WAYMARK_BASE || '';
+      itemsEl.innerHTML =
+        '<div class="rate-limit-block">' +
+          '<p class="rate-limit-heading">⏳ Rate limit reached</p>' +
+          '<p>Public links share a limited pool of requests. Sign in with a free account for uninterrupted access to this sheet.</p>' +
+          `<a class="btn btn-primary rate-limit-cta" href="${base}/#/">Sign in / Create account</a>` +
+        '</div>';
+    } else if (is403) {
       itemsEl.innerHTML = '<p class="empty-state">This sheet is not publicly shared. The owner needs to share it with "Anyone with the link" in Google Sheets.</p>';
     } else {
       showToast(`Failed to load public sheet: ${err.message}`, 'error');

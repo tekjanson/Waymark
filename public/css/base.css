@@ -2406,6 +2406,29 @@ ul { list-style: none; }
 .waymark-public .add-row-root { display: none; }
 .waymark-public .notif-bell { display: none; }
 
+/* Rate-limit block shown in public view on 429 */
+.rate-limit-block {
+  text-align: center;
+  padding: 48px 24px;
+  max-width: 420px;
+  margin: 40px auto;
+}
+.rate-limit-heading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.rate-limit-block p {
+  color: var(--color-text-muted);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+.rate-limit-cta {
+  display: inline-block;
+  padding: 10px 24px;
+  font-size: 1rem;
+}
+
 /* Share modal public link hint */
 .share-hint {
   font-size: 0.8rem;
