@@ -77,6 +77,9 @@ function defaultUserData() {
     agentConversations: [],     // { id, title, messages[], createdAt, updatedAt }[] (max 10)
     agentSettings: null,        // { apiKey, model, keys? } — null = opt-out (use localStorage only)
 
+    /* ── Dashboards ── */
+    dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
+
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
   };
@@ -631,6 +634,33 @@ export async function saveAgentSettings(settings) {
   await save({ agentSettings: settings });
 }
 
+/* ---------- Dashboards ---------- */
+
+/**
+ * Get all stored dashboards.
+ * @returns {Array<{id:string, name:string, layout:string, panels:Array}>}
+ */
+export function getDashboards() {
+  return _userData?.dashboards || [];
+}
+
+/**
+ * Save or update a dashboard definition.
+ * @param {{ id: string, name: string, layout: string, panels: Array }} dashboard
+ */
+export async function saveDashboard(dashboard) {
+  const rest = getDashboards().filter(d => d.id !== dashboard.id);
+  await save({ dashboards: [dashboard, ...rest] });
+}
+
+/**
+ * Delete a dashboard by ID.
+ * @param {string} dashboardId
+ */
+export async function deleteDashboard(dashboardId) {
+  await save({ dashboards: getDashboards().filter(d => d.id !== dashboardId) });
+}
+
 /* ---------- localStorage migration / fallback ---------- */
 
 /**
@@ -662,6 +692,7 @@ function migrateFromLocalStorage() {
     importHistory: storage.getImportHistory?.() || [],
     dismissedItems: storage.getDismissedItems?.() || [],
     hiddenItems: storage.getHiddenItems?.() || [],
+    dashboards: storage.getDashboards?.() || [],
   };
 }
 
@@ -685,6 +716,7 @@ function syncToLocalStorage(data) {
     if (storage.setImportHistory) storage.setImportHistory(data.importHistory || []);
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
+    if (storage.setDashboards) storage.setDashboards(data.dashboards || []);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
     if (storage.setTheme) storage.setTheme(data.preferences?.theme || 'light');
     if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
