@@ -4,7 +4,7 @@
    all fields editable, delegated events
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, groupByColumn, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
+import { el, cell, editableCell, emitEdit, isEditLocked, groupByColumn, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -98,6 +98,7 @@ const definition = {
     /* Delegated checkbox toggle — single listener for all rows */
     delegateEvent(container, 'click', '.checklist-checkbox', (e, checkbox) => {
       e.stopPropagation();
+      if (isEditLocked()) return;
       const rowEl = checkbox.closest('.checklist-row');
       if (!rowEl) return;
       const nowComplete = !rowEl.classList.contains('completed');
@@ -113,6 +114,7 @@ const definition = {
 
     /* Delegated bulk check/uncheck buttons */
     delegateEvent(container, 'click', '.checklist-bulk-btn', (e, btn) => {
+      if (isEditLocked()) return;
       const groupEl = btn.closest('.checklist-group-header')?.nextElementSibling;
       if (!groupEl) return;
       const setDone = btn.dataset.action === 'check';

@@ -509,11 +509,62 @@ export async function show(sheetId, sheetName) {
   resetTimer();
 }
 
+/**
+ * Show a publicly shared sheet in read-only mode (no auth required).
+ * Uses api.sheets.getPublicSpreadsheet which reads via API key.
+ * @param {string} sheetId
+ */
+export async function showPublic(sheetId) {
+  currentSheetId = sheetId;
+  titleEl.textContent = 'Loading…';
+  itemsEl.innerHTML = '';
+  lastUpdatedEl.textContent = '';
+
+  // Lock edits — public view is always read-only
+  applyLockState(true);
+
+  // Show public banner
+  const banner = document.getElementById('public-banner');
+  if (banner) banner.classList.remove('hidden');
+
+  // Hide edit-related controls
+  const hideEls = [openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, moreActionsBtn, printBtn, encryptBtn, templateAiBtn, notifRulesBtn];
+  for (const el of hideEls) {
+    if (el) el.classList.add('hidden');
+  }
+  // Hide add-row form area and auto-refresh toggle
+  if (autoToggle) autoToggle.parentElement.classList.add('hidden');
+
+  try {
+    const data = await api.sheets.getPublicSpreadsheet(sheetId);
+    titleEl.textContent = data.title;
+    currentDataTitle = data.title;
+    currentSheetTitle = data.sheetTitle || 'Sheet1';
+    currentValues = data.values || [];
+    renderWithTemplate(currentValues);
+    lastFetchTime = new Date();
+    updateTimestamp();
+  } catch (err) {
+    const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
+    if (is403) {
+      itemsEl.innerHTML = '<p class="empty-state">This sheet is not publicly shared. The owner needs to share it with "Anyone with the link" in Google Sheets.</p>';
+    } else {
+      showToast(`Failed to load public sheet: ${err.message}`, 'error');
+      itemsEl.innerHTML = '<p class="empty-state">Could not load this sheet. It may not be publicly available.</p>';
+    }
+    if (templateBadge) templateBadge.classList.add('hidden');
+  }
+}
+
 /** Stop auto-refresh (called when navigating away). */
 export function hide() {
   // Notify templates BEFORE clearing state — async cleanup closures
   // still reference currentSheetId and need it to be non-null.
   window.dispatchEvent(new CustomEvent('waymark:sheet-hidden'));
+
+  // Remove public banner if visible
+  const banner = document.getElementById('public-banner');
+  if (banner) banner.classList.add('hidden');
 
   currentSheetId = null;
   currentValues = null;
@@ -1097,6 +1148,7 @@ function openShareModal(sheetId, sheetName) {
 
   const base = window.__WAYMARK_BASE || '';
   const waymarkLink = `${window.location.origin}${base}/#/sheet/${sheetId}`;
+  const publicLink = `${window.location.origin}${base}/#/public/${sheetId}`;
   const googleEditLink = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing`;
 
   const modal = el('div', {
@@ -1126,6 +1178,23 @@ function openShareModal(sheetId, sheetName) {
               className: 'btn btn-primary share-copy-btn',
               type: 'button',
               dataset: { link: waymarkLink },
+            }, ['📋 Copy']),
+          ]),
+        ]),
+        el('div', { className: 'share-section' }, [
+          el('label', { className: 'share-label' }, ['🌐 Public Link (no sign-in required)']),
+          el('p', { className: 'share-hint' }, ['Anyone with this link can view the sheet — make sure the Google Sheet is shared as "Anyone with the link" first.']),
+          el('div', { className: 'share-link-row' }, [
+            el('input', {
+              className: 'share-link-input share-public-link',
+              type: 'text',
+              value: publicLink,
+              readOnly: true,
+            }),
+            el('button', {
+              className: 'btn btn-primary share-copy-btn',
+              type: 'button',
+              dataset: { link: publicLink },
             }, ['📋 Copy']),
           ]),
         ]),

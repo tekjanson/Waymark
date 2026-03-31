@@ -57,6 +57,7 @@ export function onEdit(fn) { _onCellEdit = fn; }
  * @param {string} newValue
  */
 export function emitEdit(rowIndex, colIndex, newValue) {
+  if (_editLocked) return;
   if (_onCellEdit) _onCellEdit(rowIndex, colIndex, newValue);
 }
 
