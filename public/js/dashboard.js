@@ -9,7 +9,7 @@
 import { api }            from './api-client.js';
 import { el, showToast }  from './ui.js';
 import * as userData      from './user-data.js';
-import { detectTemplate } from './templates/index.js';
+import { detectTemplate, TEMPLATES } from './templates/index.js';
 
 /* ---------- Layout definitions ---------- */
 
@@ -119,7 +119,7 @@ function renderDashboardHome() {
  */
 function renderDashboardCard(db) {
   const layoutDef = LAYOUTS[db.layout] || LAYOUTS['2x2'];
-  const panelCount = (db.panels || []).filter(p => p.sheetId).length;
+  const panelCount = (db.panels || []).filter(p => p && p.sheetId).length;
 
   return el('div', { className: 'dashboard-card' }, [
     el('div', { className: 'dashboard-card-body', on: {
@@ -361,7 +361,7 @@ function openPanelPicker(panelIndex, db) {
         className: 'dashboard-picker-item',
         on: { click: () => selectPanelSheet(panelIndex, sheet.id, sheet.name, db, overlay) },
       }, [
-        el('span', { className: 'dashboard-picker-icon' }, [sheet.templateKey === 'kanban' ? '📋' : '📊']),
+        el('span', { className: 'dashboard-picker-icon' }, [TEMPLATES[sheet.templateKey]?.icon || '📊']),
         el('span', { className: 'dashboard-picker-name' }, [sheet.name || sheet.id]),
       ]))
     : [el('p', { className: 'dashboard-picker-empty' }, [
