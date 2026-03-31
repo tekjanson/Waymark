@@ -134,6 +134,9 @@ function serveIndex(_req, res) {
   if (gcpProject) {
     injections.push(`window.__WAYMARK_GCP_PROJECT=${safeJsString(gcpProject)};`);
   }
+  if (config.GOOGLE_API_KEY) {
+    injections.push(`window.__WAYMARK_API_KEY=${safeJsString(config.GOOGLE_API_KEY)};`);
+  }
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }

@@ -12,6 +12,10 @@ const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   WAYMARK_LOCAL: process.env.WAYMARK_LOCAL === 'true',
 
+  // Public sheets — API key for reading publicly shared Google Sheets
+  // without OAuth. Generate one in Cloud Console → APIs & Services → Credentials.
+  GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+
   // GitHub source — frontend files are served from GitHub by default,
   // falling back to local public/ if a fetch fails.  The ref starts at
   // 'main' and is overridden at runtime when the user has a pinned ref.
