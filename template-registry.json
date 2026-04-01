@@ -1113,10 +1113,49 @@
       "fixtureFiles": [
         "passwords-personal"
       ]
+    },
+    {
+      "key": "linker",
+      "name": "Community Linker",
+      "icon": "\uD83D\uDD17",
+      "color": "#7c3aed",
+      "priority": 22,
+      "category": "Social",
+      "detectSignals": [
+        "link",
+        "url",
+        "sheet",
+        "waymark link",
+        "sheet id",
+        "public link",
+        "type",
+        "kind",
+        "entry type",
+        "name",
+        "title",
+        "community"
+      ],
+      "columnRoles": [
+        "name",
+        "description",
+        "link",
+        "type",
+        "tags",
+        "icon"
+      ],
+      "interactive": true,
+      "interactionType": "navigation",
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-058"
+      ],
+      "fixtureFiles": [
+        "linker-community"
+      ]
     }
   ],
-  "nextSheetId": "sheet-058",
-  "totalTemplates": 28,
+  "nextSheetId": "sheet-059",
+  "totalTemplates": 29,
   "categories": [
     "Productivity",
     "Engineering",
