@@ -15,6 +15,7 @@
     ["Budget Templates", "Personal and family budgeting resources curated by the community", "sheet-061", "linker", "finance, budgeting", "💰"],
     ["Study Groups", "Shared study materials, grading templates, and class schedules", "sheet-062", "linker", "education, study", "📚"],
     ["Social Hub", "Waymark social linked via full URL", "https://swiftirons.com/waymark/#/sheet/15ETvvXtYwe1ESwOLJQHt34nh4BHLL2JZvfBjImu8Boo", "waymark", "social, public, webRTC", "💬"],
+    ["Knowledge Folder", "A linked folder with documentation and guides", "#/folder/1SUmmTO4n2Hyuat_oHbt7nrv_6U-FoniC/Knowledge", "folder", "knowledge, docs", "📁"],
     ["External Blog", "This is an external link that should be rejected", "https://example.com/blog", "waymark", "external", "🌐"],
     ["Sneaky Script", "Attempted script injection link", "javascript:alert(1)", "waymark", "malicious", "💀"]
   ]

@@ -18,12 +18,12 @@ test('linker detected from Name/Link/Type headers', async ({ page }) => {
 
 /* ---------- Card Rendering ---------- */
 
-test('linker renders all 13 entries as cards', async ({ page }) => {
+test('linker renders all 14 entries as cards', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-058');
   await page.waitForSelector('.linker-card', { timeout: 5_000 });
   const cards = page.locator('.linker-card');
-  expect(await cards.count()).toBe(13);
+  expect(await cards.count()).toBe(14);
 });
 
 test('linker card shows name and description', async ({ page }) => {
@@ -129,7 +129,7 @@ test('linker search clears filter when input emptied', async ({ page }) => {
   await search.fill('Mimi');
   expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(1);
   await search.fill('');
-  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(13);
+  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(14);
 });
 
 /* ---------- Card Click Navigation ---------- */
@@ -214,4 +214,24 @@ test('linker invalid card click does not navigate', async ({ page }) => {
   await page.waitForTimeout(300);
   // URL should not change
   expect(page.url()).toBe(currentUrl);
+});
+
+/* ---------- Folder Links ---------- */
+
+test('linker accepts folder hash route and shows no warning', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  const folderCard = page.locator('.linker-card', { hasText: 'Knowledge Folder' });
+  await expect(folderCard.locator('.linker-card-warning')).toHaveCount(0);
+  await expect(folderCard).not.toHaveClass(/linker-card-invalid/);
+});
+
+test('linker folder card click navigates to #/folder/{id}', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  await page.locator('.linker-card', { hasText: 'Knowledge Folder' }).locator('.linker-card-header').click();
+  await page.waitForTimeout(300);
+  expect(page.url()).toContain('#/folder/1SUmmTO4n2Hyuat_oHbt7nrv_6U-FoniC');
 });
