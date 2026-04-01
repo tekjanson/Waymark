@@ -220,12 +220,13 @@ const definition = {
       const id   = card.dataset.sheetId;
       const kind = card.dataset.linkKind;
       if (!id) return;
-      if (kind === 'folder') {
+      if (document.body.classList.contains('waymark-public')) {
+        // Public mode — always stay in public view to avoid forcing login
+        window.location.hash = `#/public/${id}`;
+      } else if (kind === 'folder') {
         // Navigate to folder view
         const name = card.dataset.entryName || '';
         window.location.hash = name ? `#/folder/${id}/${encodeURIComponent(name)}` : `#/folder/${id}`;
-      } else if (document.body.classList.contains('waymark-public')) {
-        window.location.hash = `#/public/${id}`;
       } else {
         window.location.hash = `#/sheet/${id}`;
       }
