@@ -1,0 +1,18 @@
+{
+  "id": "sheet-058",
+  "title": "Waymark Community Hub",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Name", "Description", "Link", "Type", "Tags", "Icon"],
+    ["Cooking & Recipes", "A community hub for home cooks — share recipes, meal plans, and kitchen tips", "sheet-059", "linker", "cooking, food, recipes", "🍳"],
+    ["Open Source Trackers", "Project boards and kanban trackers for open source projects", "sheet-060", "linker", "tech, open source", "💻"],
+    ["Mimi's Kitchen", "Gluten-free & dairy-free recipes for the whole family", "sheet-027", "waymark", "cooking, gluten-free, dairy-free", "👩‍🍳"],
+    ["Waymark Dev Board", "Development kanban for the Waymark project", "sheet-028", "waymark", "tech, development, kanban", "📋"],
+    ["Weekly Meal Plan", "Plan your meals for the week with this template", "sheet-024", "waymark", "cooking, meal-prep, planning", "🥗"],
+    ["Fitness Tracker", "Track your workouts, calories, and progress over time", "sheet-010", "waymark", "health, fitness", "💪"],
+    ["D&D Campaign Tracker", "Track your tabletop RPG campaigns, characters, and adventures", "sheet-015", "waymark", "gaming, tabletop, dnd", "🎲"],
+    ["Travel Planning", "Community travel guides and itinerary templates", "sheet-025", "waymark", "travel, planning", "✈️"],
+    ["Budget Templates", "Personal and family budgeting resources curated by the community", "sheet-061", "linker", "finance, budgeting", "💰"],
+    ["Study Groups", "Shared study materials, grading templates, and class schedules", "sheet-062", "linker", "education, study", "📚"]
+  ]
+}
