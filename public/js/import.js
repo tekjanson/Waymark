@@ -108,6 +108,18 @@ const ROLE_LABELS = {
   'crm.stage': 'Deal Stage / Pipeline',
   'crm.value': 'Deal Value ($)',
   'crm.notes': 'Notes / Next Steps',
+  // Content Workbench
+  'marketing.post': 'Post / Content',
+  'marketing.platform': 'Platform (Twitter, Reddit...)',
+  'marketing.status': 'Status (Idea → Analyzing)',
+  'marketing.topic': 'Topic / Theme',
+  'marketing.date': 'Posted Date',
+  'marketing.likes': 'Likes / Hearts',
+  'marketing.shares': 'Shares / Reposts',
+  'marketing.comments': 'Comments / Replies',
+  'marketing.views': 'Views / Impressions',
+  'marketing.link': 'Link / URL',
+  'marketing.takeaway': 'Takeaway / Lesson',
   // Meal
   'meal.meal': 'Meal Type (breakfast, lunch, dinner)',
   'meal.recipe': 'Recipe / Dish Name',
@@ -284,6 +296,13 @@ const CANONICAL_HEADERS = {
   // CRM
   'crm.company': 'Company', 'crm.contact': 'Contact',
   'crm.stage': 'Deal Stage', 'crm.value': 'Value', 'crm.notes': 'Notes',
+  // Content Workbench
+  'marketing.post': 'Post', 'marketing.platform': 'Platform',
+  'marketing.status': 'Status', 'marketing.topic': 'Topic',
+  'marketing.date': 'Posted Date', 'marketing.likes': 'Likes',
+  'marketing.shares': 'Shares', 'marketing.comments': 'Comments',
+  'marketing.views': 'Views', 'marketing.link': 'Link',
+  'marketing.takeaway': 'Takeaway',
   // Meal
   'meal.meal': 'Meal', 'meal.day': 'Day',
   'meal.recipe': 'Recipe', 'meal.calories': 'Calories', 'meal.protein': 'Protein',

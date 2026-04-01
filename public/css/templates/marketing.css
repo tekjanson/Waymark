@@ -1,0 +1,131 @@
+/* Content Workbench Template */
+
+/* Scoreboard */
+.marketing-scoreboard {
+  display: flex; align-items: stretch; justify-content: space-around; flex-wrap: wrap; gap: 8px;
+  padding: 14px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.marketing-score-item { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 70px; }
+.marketing-score-num { font-size: 1.3rem; font-weight: 800; color: var(--color-text); }
+.marketing-score-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); font-weight: 600; }
+
+/* Section titles */
+.marketing-section-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+
+/* What's Working */
+.marketing-whats-working {
+  padding: 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.marketing-top-posts { display: flex; flex-direction: column; gap: 10px; }
+.marketing-top-post {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; background: var(--color-bg); border-radius: var(--radius-sm);
+}
+.marketing-top-rank { font-weight: 800; font-size: 1.1rem; color: #e11d48; min-width: 28px; }
+.marketing-top-platform { font-size: 1.2rem; min-width: 24px; }
+.marketing-top-content { flex: 1; min-width: 0; }
+.marketing-top-text { font-size: 0.85rem; color: var(--color-text); line-height: 1.4; margin-bottom: 4px; }
+.marketing-top-stats { display: flex; gap: 10px; font-size: 0.75rem; color: var(--color-text-muted); }
+.marketing-top-takeaway { font-size: 0.75rem; color: #059669; margin-top: 4px; font-style: italic; }
+
+/* Platform breakdown */
+.marketing-platforms {
+  padding: 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.marketing-platform-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.marketing-plat-card {
+  padding: 10px 12px; background: var(--color-bg); border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.marketing-plat-best { border-color: #e11d48; background: #fff1f3; }
+.marketing-plat-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.marketing-plat-emoji { font-size: 1.1rem; }
+.marketing-plat-name { font-weight: 700; font-size: 0.85rem; }
+.marketing-plat-badge { font-size: 0.65rem; font-weight: 700; color: #e11d48; }
+.marketing-plat-stats { display: flex; gap: 8px; font-size: 0.72rem; color: var(--color-text-muted); }
+.marketing-plat-rate { font-size: 0.7rem; color: #7c3aed; font-weight: 600; margin-top: 4px; }
+
+/* Topics */
+.marketing-topics {
+  padding: 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.marketing-topic-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.marketing-topic-chip {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 6px 12px; background: var(--color-bg); border-radius: 16px;
+  border: 1px solid var(--color-border);
+}
+.marketing-topic-name { font-weight: 700; font-size: 0.8rem; }
+.marketing-topic-stat { font-size: 0.65rem; color: var(--color-text-muted); }
+
+/* Post cards */
+.marketing-card-list { display: flex; flex-direction: column; gap: 6px; }
+.marketing-card {
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  border-left: 4px solid var(--color-border);
+  transition: border-color var(--transition), background var(--transition);
+}
+.marketing-card-idea      { border-left-color: #94a3b8; }
+.marketing-card-drafting  { border-left-color: #3b82f6; }
+.marketing-card-ready     { border-left-color: #f59e0b; }
+.marketing-card-posted    { border-left-color: #16a34a; }
+.marketing-card-analyzing { border-left-color: #e11d48; background: #fffbfb; }
+
+.marketing-card-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.marketing-card-platform {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 10px;
+}
+.marketing-card-topic {
+  font-size: 0.7rem; font-weight: 600; color: #7c3aed;
+  background: #ede9fe; padding: 1px 8px; border-radius: 10px;
+}
+.marketing-card-body { font-size: 0.9rem; line-height: 1.5; color: var(--color-text); margin-bottom: 6px; white-space: pre-wrap; }
+.marketing-card-meta { display: flex; gap: 12px; font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 4px; }
+.marketing-card-wc { }
+.marketing-card-date { }
+.marketing-card-link { color: #2563eb; text-decoration: none; }
+.marketing-card-link:hover { text-decoration: underline; }
+
+/* Engagement bar */
+.marketing-card-eng { display: flex; gap: 10px; font-size: 0.8rem; color: var(--color-text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--color-border); }
+.marketing-eng-stat { display: inline-flex; align-items: center; gap: 2px; }
+.marketing-eng-rate { font-weight: 700; color: #e11d48; background: #fff1f3; padding: 1px 6px; border-radius: 8px; font-size: 0.72rem; }
+
+/* Takeaway */
+.marketing-card-takeaway { font-size: 0.8rem; color: #059669; margin-top: 4px; font-style: italic; min-height: 1.2em; }
+
+/* Stage badges */
+.marketing-stage-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 10px; border-radius: 10px; border: none;
+  font-size: 0.7rem; font-weight: 700; cursor: pointer;
+  text-transform: uppercase; transition: all var(--transition);
+}
+.marketing-stage-idea      { background: #f1f5f9; color: #64748b; }
+.marketing-stage-drafting  { background: #dbeafe; color: #1d4ed8; }
+.marketing-stage-ready     { background: #fef3c7; color: #92400e; }
+.marketing-stage-posted    { background: #dcfce7; color: #15803d; }
+.marketing-stage-analyzing { background: #fce7f3; color: #be185d; }
+.marketing-stage-btn:hover { opacity: 0.85; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .marketing-scoreboard { gap: 12px; }
+  .marketing-platform-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .marketing-score-num { font-size: 1rem; }
+  .marketing-platform-grid { grid-template-columns: 1fr; }
+  .marketing-top-post { flex-direction: column; }
+}

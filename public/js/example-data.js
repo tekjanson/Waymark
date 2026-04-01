@@ -903,4 +903,31 @@ export const EXAMPLE_SHEETS = {
       ['Book Club', 'Reading lists and discussion notes', '', 'waymark', 'books, reading', '📖'],
     ],
   },
+
+  /* ---- Marketing examples ---- */
+  'Waymark Launch Campaign': {
+    folder: 'Marketing',
+    headers: ['Campaign', 'Channel', 'Stage', 'Reach', 'Clicks', 'Leads', 'Conversions', 'Spend', 'Start Date', 'Notes'],
+    rows: [
+      ['Product Hunt Launch',       'Social',    'Complete',  '45000', '3200', '480', '120', '$500',  '2026-01-15', 'Featured on front page'],
+      ['Google Sheets Blog Post',   'Blog',      'Published', '12000', '1800', '220', '45',  '$200',  '2026-02-01', 'SEO-optimized tutorial'],
+      ['Twitter/X Thread Series',   'Social',    'Promoting', '28000', '1400', '95',  '22',  '$0',    '2026-02-10', 'Weekly tips thread'],
+      ['Email Drip Sequence',       'Email',     'Promoting', '5000',  '800',  '120', '35',  '$50',   '2026-02-15', '4-email onboarding'],
+      ['Google Ads - Templates',    'Paid Ads',  'Promoting', '85000', '2100', '180', '40',  '$1200', '2026-02-20', 'Targeting spreadsheet kws'],
+      ['SEO Landing Pages',         'SEO',       'Published', '32000', '4500', '350', '85',  '$300',  '2026-01-20', 'Template-specific pages'],
+      ['Reddit AMA r/productivity', 'Social',    'Measuring', '18000', '950',  '65',  '18',  '$0',    '2026-03-05', 'Cross-posted subs'],
+      ['YouTube Demo Video',        'Video',     'Creating',  '0',     '0',    '0',   '0',   '$150',  '2026-03-01', '3-min walkthrough'],
+    ],
+  },
+
+  'Content Marketing Calendar': {
+    folder: 'Marketing',
+    headers: ['Campaign', 'Channel', 'Stage', 'Reach', 'Clicks', 'Leads', 'Conversions', 'Spend', 'Start Date', 'Notes'],
+    rows: [
+      ['Monthly Newsletter',       'Email',   'Published', '8000',  '1200', '90', '20',  '$30',  '2026-01-01', 'Sent 1st of month'],
+      ['Case Study: Budget Users',  'Blog',    'Planning',  '0',     '0',    '0',  '0',   '$0',   '',           'Interview 3 users'],
+      ['LinkedIn Thought Leadership','Social',  'Promoting', '15000', '400',  '30', '8',   '$0',   '2026-02-18', 'Weekly posts'],
+      ['Webinar: Sheets → Waymark', 'Video',   'Idea',      '0',     '0',    '0',  '0',   '$0',   '',           'Live demo event'],
+    ],
+  },
 };
