@@ -890,4 +890,17 @@ export const EXAMPLE_SHEETS = {
       ['Datadog', 'jane@company.com', 'monitorPass!', 'https://app.datadoghq.com', 'Monitoring', 'Production dashboards'],
     ],
   },
+
+  /* ---- Linker examples ---- */
+  'Community Hub': {
+    folder: 'Community',
+    headers: ['Name', 'Description', 'Link', 'Type', 'Tags', 'Icon'],
+    rows: [
+      ['Cooking & Recipes', 'Share recipes, meal plans, and kitchen tips', '', 'linker', 'cooking, food', '🍳'],
+      ['Open Source Projects', 'Track and discover open source project boards', '', 'linker', 'tech, oss', '💻'],
+      ['My Meal Plan', 'Weekly meal planning template', '', 'waymark', 'cooking, planning', '🥗'],
+      ['Workout Log', 'Track workouts and fitness progress', '', 'waymark', 'health, fitness', '💪'],
+      ['Book Club', 'Reading lists and discussion notes', '', 'waymark', 'books, reading', '📖'],
+    ],
+  },
 };

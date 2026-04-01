@@ -220,6 +220,13 @@ const ROLE_LABELS = {
   'passwords.url': 'URL / Web address',
   'passwords.category': 'Category grouping',
   'passwords.notes': 'Notes',
+  // Linker
+  'linker.name': 'Entry Name / Community',
+  'linker.description': 'Description / About',
+  'linker.link': 'Sheet ID / URL',
+  'linker.type': 'Entry Type (waymark or linker)',
+  'linker.tags': 'Tags / Topics',
+  'linker.icon': 'Icon / Emoji',
 };
 
 /**
@@ -329,6 +336,10 @@ const CANONICAL_HEADERS = {
   'passwords.site': 'Site', 'passwords.username': 'Username',
   'passwords.password': 'Password', 'passwords.url': 'URL',
   'passwords.category': 'Category', 'passwords.notes': 'Notes',
+  // Linker
+  'linker.name': 'Name', 'linker.description': 'Description',
+  'linker.link': 'Link', 'linker.type': 'Type',
+  'linker.tags': 'Tags', 'linker.icon': 'Icon',
 };
 
 /**
