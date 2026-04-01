@@ -15,21 +15,33 @@ const SHEET_ID_RE = /^[a-zA-Z0-9_-]{20,60}$/;
 const SHORT_ID_RE = /^sheet-\d{1,5}$/;
 
 /**
- * Extract a Google Sheets ID from a cell value.
- * Accepts raw IDs (long or short), full URLs, or Waymark public/sheet URLs.
+ * Extract a Waymark sheet ID from a cell value.
+ *
+ * SECURITY: Only accepts Waymark-internal references:
+ *   - Raw Google Sheets IDs (20-60 alphanumeric chars)
+ *   - Short fixture IDs (sheet-NNN)
+ *   - Waymark hash URLs (#/public/{id} or #/sheet/{id})
+ *
+ * Rejects external URLs, Google Sheets URLs, javascript: URIs,
+ * and any other non-Waymark link. If users want to link to
+ * external resources, they should use a different template.
+ *
  * @param {string} raw
  * @returns {string|null}
  */
 function extractSheetId(raw) {
   if (!raw) return null;
   const trimmed = raw.trim();
+
+  // Block dangerous schemes and any URL with a protocol
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+
+  // Accept short Waymark fixture IDs
   if (SHORT_ID_RE.test(trimmed)) return trimmed;
+  // Accept raw Google Sheets IDs (bare ID string, no URL wrapper)
   if (SHEET_ID_RE.test(trimmed)) return trimmed;
-  // Try to extract from Google Sheets URL
-  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,60})/);
-  if (match) return match[1];
-  // Try Waymark URL: #/public/{id} or #/sheet/{id}
-  const wmMatch = trimmed.match(/#\/(?:public|sheet)\/([a-zA-Z0-9_-]+)/);
+  // Accept Waymark hash-route references only
+  const wmMatch = trimmed.match(/^#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})$/);
   if (wmMatch) return wmMatch[1];
   return null;
 }
@@ -79,7 +91,7 @@ const definition = {
     return [
       { role: 'name',        label: 'Name',        colIndex: cols.name,        type: 'text', placeholder: 'Community or sheet name', required: true },
       { role: 'description', label: 'Description',  colIndex: cols.description, type: 'text', placeholder: 'What is this about?' },
-      { role: 'link',        label: 'Link',         colIndex: cols.link,        type: 'text', placeholder: 'Sheet ID or URL', required: true },
+      { role: 'link',        label: 'Link',         colIndex: cols.link,        type: 'text', placeholder: 'Waymark sheet ID (e.g. sheet-058)', required: true },
       { role: 'type',        label: 'Type',         colIndex: cols.type,        type: 'text', placeholder: 'waymark or linker', defaultValue: 'waymark' },
       { role: 'tags',        label: 'Tags',         colIndex: cols.tags,        type: 'text', placeholder: 'cooking, recipes, ...' },
       { role: 'icon',        label: 'Icon',         colIndex: cols.icon,        type: 'text', placeholder: '📄 or 📁' },
@@ -150,9 +162,9 @@ const definition = {
         ));
       }
 
-      // Invalid link warning
+      // Invalid link warning — only Waymark references are accepted
       if (!sheetId && rawLink) {
-        cardChildren.push(el('div', { className: 'linker-card-warning' }, ['⚠ Invalid link']));
+        cardChildren.push(el('div', { className: 'linker-card-warning' }, ['⚠ Not a valid Waymark link']));
       }
 
       const card = el('div', {

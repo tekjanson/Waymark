@@ -18,12 +18,12 @@ test('linker detected from Name/Link/Type headers', async ({ page }) => {
 
 /* ---------- Card Rendering ---------- */
 
-test('linker renders all 10 entries as cards', async ({ page }) => {
+test('linker renders all 12 entries as cards', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-058');
   await page.waitForSelector('.linker-card', { timeout: 5_000 });
   const cards = page.locator('.linker-card');
-  expect(await cards.count()).toBe(10);
+  expect(await cards.count()).toBe(12);
 });
 
 test('linker card shows name and description', async ({ page }) => {
@@ -129,7 +129,7 @@ test('linker search clears filter when input emptied', async ({ page }) => {
   await search.fill('Mimi');
   expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(1);
   await search.fill('');
-  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(10);
+  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(12);
 });
 
 /* ---------- Card Click Navigation ---------- */
@@ -168,4 +168,38 @@ test('linker directoryView renders folder cards', async ({ page }) => {
   await page.evaluate(() => { window.location.hash = '#/folder/f-linker/Waymark%20Community%20Hub'; });
   await page.waitForSelector('.linker-directory', { timeout: 8_000 });
   await expect(page.locator('.linker-dir-title')).toContainText('Community Linkers');
+});
+
+/* ---------- Security ---------- */
+
+test('linker rejects external URLs and shows warning', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  // "External Blog" card has https://example.com/blog — should show invalid warning
+  const blogCard = page.locator('.linker-card', { hasText: 'External Blog' });
+  await expect(blogCard.locator('.linker-card-warning')).toContainText('Not a valid Waymark link');
+  await expect(blogCard).toHaveClass(/linker-card-invalid/);
+});
+
+test('linker rejects javascript: URI and shows warning', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  // "Sneaky Script" card has javascript:alert(1) — must be blocked
+  const malCard = page.locator('.linker-card', { hasText: 'Sneaky Script' });
+  await expect(malCard.locator('.linker-card-warning')).toContainText('Not a valid Waymark link');
+  await expect(malCard).toHaveClass(/linker-card-invalid/);
+});
+
+test('linker invalid card click does not navigate', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  const currentUrl = page.url();
+  // Click the invalid "External Blog" card
+  await page.locator('.linker-card', { hasText: 'External Blog' }).click();
+  await page.waitForTimeout(300);
+  // URL should not change
+  expect(page.url()).toBe(currentUrl);
 });
