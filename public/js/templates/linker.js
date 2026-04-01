@@ -20,11 +20,11 @@ const SHORT_ID_RE = /^sheet-\d{1,5}$/;
  * SECURITY: Only accepts Waymark-internal references:
  *   - Raw Google Sheets IDs (20-60 alphanumeric chars)
  *   - Short fixture IDs (sheet-NNN)
- *   - Waymark hash URLs (#/public/{id} or #/sheet/{id})
+ *   - Waymark hash routes (#/public/{id} or #/sheet/{id})
+ *   - Full Waymark URLs (https://…/#/sheet/{id} or #/public/{id})
  *
- * Rejects external URLs, Google Sheets URLs, javascript: URIs,
- * and any other non-Waymark link. If users want to link to
- * external resources, they should use a different template.
+ * Rejects external URLs without a Waymark hash route,
+ * javascript: / data: URIs, and Google Sheets URLs.
  *
  * @param {string} raw
  * @returns {string|null}
@@ -33,16 +33,19 @@ function extractSheetId(raw) {
   if (!raw) return null;
   const trimmed = raw.trim();
 
-  // Block dangerous schemes and any URL with a protocol
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
-
   // Accept short Waymark fixture IDs
   if (SHORT_ID_RE.test(trimmed)) return trimmed;
   // Accept raw Google Sheets IDs (bare ID string, no URL wrapper)
   if (SHEET_ID_RE.test(trimmed)) return trimmed;
-  // Accept Waymark hash-route references only
-  const wmMatch = trimmed.match(/^#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})$/);
-  if (wmMatch) return wmMatch[1];
+  // Accept bare Waymark hash-route references
+  const bareMatch = trimmed.match(/^#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})$/);
+  if (bareMatch) return bareMatch[1];
+  // Accept full Waymark URLs that contain a hash route (e.g.
+  // https://swiftirons.com/waymark/#/sheet/{id}) — only allow http(s):
+  if (/^https?:\/\//i.test(trimmed)) {
+    const hashMatch = trimmed.match(/#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})(?:[?#]|$)/);
+    if (hashMatch) return hashMatch[1];
+  }
   return null;
 }
 

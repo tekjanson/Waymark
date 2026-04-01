@@ -18,12 +18,12 @@ test('linker detected from Name/Link/Type headers', async ({ page }) => {
 
 /* ---------- Card Rendering ---------- */
 
-test('linker renders all 12 entries as cards', async ({ page }) => {
+test('linker renders all 13 entries as cards', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-058');
   await page.waitForSelector('.linker-card', { timeout: 5_000 });
   const cards = page.locator('.linker-card');
-  expect(await cards.count()).toBe(12);
+  expect(await cards.count()).toBe(13);
 });
 
 test('linker card shows name and description', async ({ page }) => {
@@ -129,7 +129,7 @@ test('linker search clears filter when input emptied', async ({ page }) => {
   await search.fill('Mimi');
   expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(1);
   await search.fill('');
-  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(12);
+  expect(await page.locator('.linker-card:not(.hidden)').count()).toBe(13);
 });
 
 /* ---------- Card Click Navigation ---------- */
@@ -190,6 +190,18 @@ test('linker rejects javascript: URI and shows warning', async ({ page }) => {
   const malCard = page.locator('.linker-card', { hasText: 'Sneaky Script' });
   await expect(malCard.locator('.linker-card-warning')).toContainText('Not a valid Waymark link');
   await expect(malCard).toHaveClass(/linker-card-invalid/);
+});
+
+test('linker accepts full Waymark URL and extracts sheet ID', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  // "Social Hub" has full URL https://swiftirons.com/waymark/#/sheet/{id}
+  const socialCard = page.locator('.linker-card', { hasText: 'Social Hub' });
+  // Should NOT show invalid warning — the Waymark URL is valid
+  await expect(socialCard.locator('.linker-card-warning')).toHaveCount(0);
+  // Should not have the invalid class
+  await expect(socialCard).not.toHaveClass(/linker-card-invalid/);
 });
 
 test('linker invalid card click does not navigate', async ({ page }) => {
