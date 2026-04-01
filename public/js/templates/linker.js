@@ -8,44 +8,47 @@ import { el, cell, editableCell, registerTemplate, delegateEvent, isEditLocked, 
 
 /* ---------- Helpers ---------- */
 
-/** Google Sheets ID pattern — 20-60 chars of alphanumeric, hyphen, underscore */
-const SHEET_ID_RE = /^[a-zA-Z0-9_-]{20,60}$/;
+/** Google Sheets/Drive ID pattern — 20-60 chars of alphanumeric, hyphen, underscore */
+const GOOG_ID_RE = /^[a-zA-Z0-9_-]{20,60}$/;
 
 /** Short Waymark-style ID (e.g. sheet-058) */
 const SHORT_ID_RE = /^sheet-\d{1,5}$/;
 
 /**
- * Extract a Waymark sheet ID from a cell value.
+ * Extract a Waymark link from a cell value.
  *
  * SECURITY: Only accepts Waymark-internal references:
- *   - Raw Google Sheets IDs (20-60 alphanumeric chars)
+ *   - Raw Google IDs (20-60 alphanumeric chars)
  *   - Short fixture IDs (sheet-NNN)
- *   - Waymark hash routes (#/public/{id} or #/sheet/{id})
- *   - Full Waymark URLs (https://…/#/sheet/{id} or #/public/{id})
+ *   - Waymark hash routes (#/sheet/{id}, #/public/{id}, #/folder/{id}, #/folder/{id}/{name})
+ *   - Full Waymark URLs with the above hash routes
  *
  * Rejects external URLs without a Waymark hash route,
  * javascript: / data: URIs, and Google Sheets URLs.
  *
  * @param {string} raw
- * @returns {string|null}
+ * @returns {{ id: string, kind: 'sheet'|'folder' }|null}
  */
-function extractSheetId(raw) {
+function extractLink(raw) {
   if (!raw) return null;
   const trimmed = raw.trim();
 
-  // Accept short Waymark fixture IDs
-  if (SHORT_ID_RE.test(trimmed)) return trimmed;
-  // Accept raw Google Sheets IDs (bare ID string, no URL wrapper)
-  if (SHEET_ID_RE.test(trimmed)) return trimmed;
-  // Accept bare Waymark hash-route references
-  const bareMatch = trimmed.match(/^#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})$/);
-  if (bareMatch) return bareMatch[1];
-  // Accept full Waymark URLs that contain a hash route (e.g.
-  // https://swiftirons.com/waymark/#/sheet/{id}) — only allow http(s):
+  // Accept short Waymark fixture IDs (always sheets)
+  if (SHORT_ID_RE.test(trimmed)) return { id: trimmed, kind: 'sheet' };
+  // Accept bare Waymark hash-route references — detect kind from the route
+  const bareSheet = trimmed.match(/^#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})$/);
+  if (bareSheet) return { id: bareSheet[1], kind: 'sheet' };
+  const bareFolder = trimmed.match(/^#\/folder\/([a-zA-Z0-9_-]{3,60})(?:\/.*)?$/);
+  if (bareFolder) return { id: bareFolder[1], kind: 'folder' };
+  // Accept full Waymark URLs that contain a hash route — only allow http(s):
   if (/^https?:\/\//i.test(trimmed)) {
-    const hashMatch = trimmed.match(/#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})(?:[?#]|$)/);
-    if (hashMatch) return hashMatch[1];
+    const hashSheet = trimmed.match(/#\/(?:public|sheet)\/([a-zA-Z0-9_-]{3,60})(?:[?#]|$)/);
+    if (hashSheet) return { id: hashSheet[1], kind: 'sheet' };
+    const hashFolder = trimmed.match(/#\/folder\/([a-zA-Z0-9_-]{3,60})(?:\/[^?#]*)?(?:[?#]|$)/);
+    if (hashFolder) return { id: hashFolder[1], kind: 'folder' };
   }
+  // Accept raw Google IDs (kind is ambiguous — caller uses the type column)
+  if (GOOG_ID_RE.test(trimmed)) return { id: trimmed, kind: 'auto' };
   return null;
 }
 
@@ -94,8 +97,8 @@ const definition = {
     return [
       { role: 'name',        label: 'Name',        colIndex: cols.name,        type: 'text', placeholder: 'Community or sheet name', required: true },
       { role: 'description', label: 'Description',  colIndex: cols.description, type: 'text', placeholder: 'What is this about?' },
-      { role: 'link',        label: 'Link',         colIndex: cols.link,        type: 'text', placeholder: 'Waymark sheet ID (e.g. sheet-058)', required: true },
-      { role: 'type',        label: 'Type',         colIndex: cols.type,        type: 'text', placeholder: 'waymark or linker', defaultValue: 'waymark' },
+      { role: 'link',        label: 'Link',         colIndex: cols.link,        type: 'text', placeholder: 'Sheet ID, folder ID, or Waymark URL', required: true },
+      { role: 'type',        label: 'Type',         colIndex: cols.type,        type: 'text', placeholder: 'waymark, folder, or linker', defaultValue: 'waymark' },
       { role: 'tags',        label: 'Tags',         colIndex: cols.tags,        type: 'text', placeholder: 'cooking, recipes, ...' },
       { role: 'icon',        label: 'Icon',         colIndex: cols.icon,        type: 'text', placeholder: '📄 or 📁' },
     ];
@@ -122,12 +125,15 @@ const definition = {
       if (!name) continue; // skip blank rows
 
       const rawLink     = cell(row, cols.link);
-      const sheetId     = extractSheetId(rawLink);
+      const link        = extractLink(rawLink);
       const type        = cell(row, cols.type);
       const description = cell(row, cols.description);
       const tags        = cell(row, cols.tags);
       const iconVal     = cell(row, cols.icon);
       const isLinker    = isLinkerType(type);
+      // Resolve link kind: explicit from URL wins, otherwise infer from type column
+      const linkId      = link ? link.id : '';
+      const linkKind    = link ? (link.kind === 'auto' ? (isLinker ? 'folder' : 'sheet') : link.kind) : '';
       const icon        = iconVal || (isLinker ? DEFAULT_LINKER_ICON : DEFAULT_WAYMARK_ICON);
       const rowIdx      = i + 1; // 1-based for editing
 
@@ -166,13 +172,13 @@ const definition = {
       }
 
       // Invalid link warning — only Waymark references are accepted
-      if (!sheetId && rawLink) {
+      if (!linkId && rawLink) {
         cardChildren.push(el('div', { className: 'linker-card-warning' }, ['⚠ Not a valid Waymark link']));
       }
 
       const card = el('div', {
-        className: `linker-card${!sheetId ? ' linker-card-invalid' : ''}`,
-        dataset: { sheetId: sheetId || '', isLinker: isLinker ? '1' : '0', entryName: name },
+        className: `linker-card${!linkId ? ' linker-card-invalid' : ''}`,
+        dataset: { sheetId: linkId, linkKind, isLinker: isLinker ? '1' : '0', entryName: name },
       }, cardChildren);
 
       grid.append(card);
@@ -211,13 +217,17 @@ const definition = {
     delegateEvent(grid, 'click', '.linker-card', (e, card) => {
       // Don't navigate if user clicked an editable cell
       if (e.target.closest('[contenteditable]')) return;
-      const sheetId = card.dataset.sheetId;
-      if (!sheetId) return;
-      // Navigate to the linked sheet (hash is relative to page — no base prefix)
-      if (document.body.classList.contains('waymark-public')) {
-        window.location.hash = `#/public/${sheetId}`;
+      const id   = card.dataset.sheetId;
+      const kind = card.dataset.linkKind;
+      if (!id) return;
+      if (kind === 'folder') {
+        // Navigate to folder view
+        const name = card.dataset.entryName || '';
+        window.location.hash = name ? `#/folder/${id}/${encodeURIComponent(name)}` : `#/folder/${id}`;
+      } else if (document.body.classList.contains('waymark-public')) {
+        window.location.hash = `#/public/${id}`;
       } else {
-        window.location.hash = `#/sheet/${sheetId}`;
+        window.location.hash = `#/sheet/${id}`;
       }
     });
   },
