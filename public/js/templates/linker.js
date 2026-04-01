@@ -198,12 +198,11 @@ const definition = {
       if (e.target.closest('[contenteditable]')) return;
       const sheetId = card.dataset.sheetId;
       if (!sheetId) return;
-      // Navigate to the linked sheet
-      const base = window.__WAYMARK_BASE || '';
+      // Navigate to the linked sheet (hash is relative to page — no base prefix)
       if (document.body.classList.contains('waymark-public')) {
-        window.location.hash = `${base}#/public/${sheetId}`;
+        window.location.hash = `#/public/${sheetId}`;
       } else {
-        window.location.hash = `${base}#/sheet/${sheetId}`;
+        window.location.hash = `#/sheet/${sheetId}`;
       }
     });
   },
