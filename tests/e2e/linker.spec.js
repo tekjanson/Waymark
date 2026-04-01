@@ -235,3 +235,11 @@ test('linker folder card click navigates to #/folder/{id}', async ({ page }) => 
   await page.waitForTimeout(300);
   expect(page.url()).toContain('#/folder/1SUmmTO4n2Hyuat_oHbt7nrv_6U-FoniC');
 });
+
+test('linker folder card click uses #/public/ in public mode', async ({ page }) => {
+  await setupPublicApp(page, 'sheet-058');
+  await page.waitForSelector('.linker-card', { timeout: 5_000 });
+  await page.locator('.linker-card', { hasText: 'Knowledge Folder' }).click();
+  await page.waitForTimeout(300);
+  expect(page.url()).toContain('#/public/1SUmmTO4n2Hyuat_oHbt7nrv_6U-FoniC');
+});
