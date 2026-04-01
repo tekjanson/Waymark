@@ -1058,3 +1058,79 @@ export {
   getEchoSuppression,
   setEchoSuppression,
 } from '../storage.js';
+
+/* ---------- AI text generation ---------- */
+
+import {
+  geminiUrl,
+  geminiHeaders,
+  DEFAULT_MODEL,
+} from '../agent/config.js';
+import {
+  getAgentKeys,
+  getAgentModel,
+  recordKeyUsage,
+  recordKeyError,
+} from '../storage.js';
+
+/**
+ * Pick the best available Gemini API key (agent keys first, then server key).
+ * @returns {{ key: string, idx: number } | null}
+ */
+function _pickApiKey() {
+  const keys = getAgentKeys();
+  if (keys.length > 0) {
+    const now = Date.now();
+    const available = keys
+      .map((k, i) => ({ ...k, idx: i }))
+      .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
+    const pool = available.length ? available : keys.map((k, i) => ({ ...k, idx: i }));
+    pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+    return { key: pool[0].key, idx: pool[0].idx };
+  }
+  const serverKey = window.__WAYMARK_API_KEY;
+  if (serverKey) return { key: serverKey, idx: -1 };
+  return null;
+}
+
+/**
+ * Call the Gemini API and return the text response.
+ * Templates use this for AI-powered features (§1.5-compliant).
+ * @param {string} systemPrompt
+ * @param {string} userMessage
+ * @param {{ temperature?: number, maxTokens?: number }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateText(systemPrompt, userMessage, opts = {}) {
+  const keyEntry = _pickApiKey();
+  if (!keyEntry) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
+
+  const model = getAgentModel() || DEFAULT_MODEL;
+  const url = geminiUrl(model, 'generateContent');
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: opts.temperature ?? 0.7,
+      maxOutputTokens: opts.maxTokens ?? 1024,
+    },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: geminiHeaders(keyEntry.key),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Gemini API error ${res.status}`);
+  }
+
+  if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  if (!text) throw new Error('No response from AI. Try again.');
+  return text;
+}

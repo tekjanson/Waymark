@@ -3,7 +3,7 @@
    track what resonates, find your voice, grow your audience
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn, generateText, showToast } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -66,6 +66,214 @@ function truncate(text, maxLen) {
 }
 
 const STATUSES = ['Idea', 'Drafting', 'Ready', 'Posted', 'Analyzing'];
+
+const PLATFORM_GUIDANCE = {
+  twitter: { limit: '280 characters', style: 'Punchy, conversational. Use line breaks for readability. Hashtags optional.' },
+  reddit: { limit: 'Title + body', style: 'Authentic, helpful. Lead with value. No self-promo feel.' },
+  linkedin: { limit: '~1300 characters', style: 'Story-driven, professional but human. Use line breaks. Hook in the first line.' },
+  youtube: { limit: 'Title + description', style: 'Searchable title. Description with timestamps and links.' },
+  blog: { limit: 'No hard limit', style: 'Informative, scannable. Use headers and short paragraphs.' },
+  hn: { limit: 'Title only for Show HN', style: 'Technical, concise. Show HN: prefix for launches.' },
+  ph: { limit: 'Tagline + description', style: 'Benefit-driven tagline. Clear description of what it does.' },
+  email: { limit: 'Subject + body', style: 'Clear subject line. Conversational body. One CTA.' },
+  other: { limit: 'Varies', style: 'Adapt to the platform.' },
+};
+
+/* ---------- AI Writer ---------- */
+
+/**
+ * Build the AI writer composer panel.
+ * Uses top-performing posts and takeaways as voice reference.
+ */
+function _buildWriter(rows, cols, topPosts, topicStats, template) {
+  const section = el('div', { className: 'marketing-writer' });
+
+  const header = el('div', { className: 'marketing-writer-header' }, [
+    el('span', {}, ['✨ Write a Post']),
+    el('button', {
+      className: 'marketing-writer-toggle',
+      title: 'Toggle writer',
+    }, ['▾']),
+  ]);
+
+  const body = el('div', { className: 'marketing-writer-body' });
+
+  // Platform selector
+  const platformSelect = el('select', { className: 'marketing-writer-platform' }, [
+    el('option', { value: 'twitter' }, ['X / Twitter']),
+    el('option', { value: 'reddit' }, ['Reddit']),
+    el('option', { value: 'linkedin' }, ['LinkedIn']),
+    el('option', { value: 'blog' }, ['Blog']),
+    el('option', { value: 'hn' }, ['Hacker News']),
+    el('option', { value: 'ph' }, ['Product Hunt']),
+    el('option', { value: 'email' }, ['Email']),
+    el('option', { value: 'other' }, ['Other']),
+  ]);
+
+  // Idea input
+  const ideaInput = el('textarea', {
+    className: 'marketing-writer-idea',
+    placeholder: 'What do you want to talk about? (e.g. "How Waymark helps organize messy spreadsheets" or "Announce the new recipe template")',
+    rows: 3,
+  });
+
+  // Generate button
+  const genBtn = el('button', { className: 'marketing-writer-gen-btn' }, ['Generate Draft']);
+
+  // Draft output area (hidden initially)
+  const draftArea = el('div', { className: 'marketing-writer-draft hidden' });
+  const draftText = el('textarea', {
+    className: 'marketing-writer-draft-text',
+    rows: 6,
+    placeholder: 'Your AI-generated draft will appear here…',
+  });
+  const draftActions = el('div', { className: 'marketing-writer-draft-actions' }, [
+    el('button', { className: 'marketing-writer-use-btn' }, ['Add to Sheet']),
+    el('button', { className: 'marketing-writer-regen-btn' }, ['↻ Try Again']),
+  ]);
+  draftArea.append(draftText, draftActions);
+
+  // Error/status area
+  const statusEl = el('div', { className: 'marketing-writer-status' });
+
+  body.append(
+    el('div', { className: 'marketing-writer-row' }, [
+      el('label', { className: 'marketing-writer-label' }, ['Platform']),
+      platformSelect,
+    ]),
+    el('div', { className: 'marketing-writer-row' }, [
+      el('label', { className: 'marketing-writer-label' }, ['Your idea']),
+      ideaInput,
+    ]),
+    genBtn,
+    statusEl,
+    draftArea,
+  );
+
+  // Toggle collapse
+  let expanded = true;
+  header.addEventListener('click', () => {
+    expanded = !expanded;
+    body.classList.toggle('hidden', !expanded);
+    header.querySelector('.marketing-writer-toggle').textContent = expanded ? '▾' : '▸';
+  });
+
+  // Build voice context from top posts
+  function _buildSystemPrompt(plat) {
+    const guide = PLATFORM_GUIDANCE[plat] || PLATFORM_GUIDANCE.other;
+    const parts = [
+      'You are a social media content writer helping the user draft posts.',
+      'Your job is to match THEIR voice — learn from what has worked and write more like that.',
+      '',
+      `Target platform: ${(PLATFORM_META[plat] || PLATFORM_META.other).label}`,
+      `Format: ${guide.limit}`,
+      `Style notes: ${guide.style}`,
+    ];
+
+    // Add top-performing posts as voice reference
+    const postedPosts = topPosts.slice(0, 5);
+    if (postedPosts.length > 0) {
+      parts.push('', '--- VOICE REFERENCE (their best-performing posts) ---');
+      for (const tp of postedPosts) {
+        const row = rows[tp.idx];
+        const text = cell(row, cols.post) || '';
+        const platform = cell(row, cols.platform) || '';
+        const takeaway = cell(row, cols.takeaway) || '';
+        parts.push(`[${platform}] ${text}`);
+        if (takeaway) parts.push(`  Lesson: ${takeaway}`);
+        parts.push(`  Engagement: ${tp.likes} likes, ${tp.shares} shares, ${tp.comments} comments`);
+      }
+    }
+
+    // Add topic insights
+    const sortedTopics = Object.keys(topicStats).sort((a, b) => topicStats[b].engagement - topicStats[a].engagement);
+    if (sortedTopics.length > 0) {
+      parts.push('', '--- TOPICS THAT RESONATE ---');
+      parts.push(sortedTopics.slice(0, 5).join(', '));
+    }
+
+    parts.push(
+      '',
+      '--- RULES ---',
+      '- Write ONLY the post text. No commentary, no "Here\'s a draft:", no options.',
+      '- Match the voice and energy of their top posts.',
+      '- Keep it natural, not corporate or salesy.',
+      '- If they have takeaways/lessons, incorporate those insights.',
+      '- One post only. Ready to copy-paste.',
+    );
+
+    return parts.join('\n');
+  }
+
+  // Generate handler
+  async function _generate() {
+    const idea = ideaInput.value.trim();
+    if (!idea) {
+      showToast('Enter an idea first', 'error');
+      ideaInput.focus();
+      return;
+    }
+
+    const plat = platformSelect.value;
+    genBtn.disabled = true;
+    genBtn.textContent = 'Generating…';
+    statusEl.textContent = '';
+    draftArea.classList.add('hidden');
+
+    try {
+      const systemPrompt = _buildSystemPrompt(plat);
+      const result = await generateText(systemPrompt, idea, { temperature: 0.8 });
+      draftText.value = result;
+      draftArea.classList.remove('hidden');
+      draftText.focus();
+    } catch (err) {
+      statusEl.textContent = err.message;
+      statusEl.className = 'marketing-writer-status marketing-writer-error';
+    } finally {
+      genBtn.disabled = false;
+      genBtn.textContent = 'Generate Draft';
+    }
+  }
+
+  genBtn.addEventListener('click', _generate);
+  ideaInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      _generate();
+    }
+  });
+
+  // "Try Again" — re-generate
+  draftActions.querySelector('.marketing-writer-regen-btn').addEventListener('click', _generate);
+
+  // "Add to Sheet" — emit a new row
+  draftActions.querySelector('.marketing-writer-use-btn').addEventListener('click', () => {
+    const draft = draftText.value.trim();
+    if (!draft) return;
+
+    const plat = platformSelect.value;
+    const platLabel = (PLATFORM_META[plat] || PLATFORM_META.other).label;
+    const topic = ideaInput.value.trim().slice(0, 80);
+    const newRowIdx = rows.length + 1; // 1-based, after all existing rows
+
+    // Emit edits for each column in the new row
+    if (cols.post >= 0)     emitEdit(newRowIdx, cols.post, draft);
+    if (cols.platform >= 0) emitEdit(newRowIdx, cols.platform, platLabel);
+    if (cols.status >= 0)   emitEdit(newRowIdx, cols.status, 'Idea');
+    if (cols.topic >= 0)    emitEdit(newRowIdx, cols.topic, topic);
+
+    showToast('Post added as Idea ✓', 'success');
+
+    // Reset the writer
+    draftArea.classList.add('hidden');
+    draftText.value = '';
+    ideaInput.value = '';
+    statusEl.textContent = '';
+  });
+
+  section.append(header, body);
+  return section;
+}
 
 const definition = {
   name: 'Content Workbench',
@@ -204,6 +412,10 @@ const definition = {
       ]),
     ]);
     container.append(scoreboard);
+
+    /* ---------- AI Writer ---------- */
+    const writerSection = _buildWriter(rows, cols, topPosts, topicStats, template);
+    container.append(writerSection);
 
     /* ---------- What's Working section ---------- */
     if (topPosts.length >= 2) {

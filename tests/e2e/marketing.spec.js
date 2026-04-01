@@ -110,3 +110,101 @@ test('marketing post body is editable via inline edit', async ({ page }) => {
   const records = await getCreatedRecords(page);
   expect(records.some(r => r.type === 'cell-update' && r.value === 'Updated post content')).toBe(true);
 });
+
+test('marketing AI writer panel is visible with form elements', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  await expect(page.locator('.marketing-writer')).toBeVisible();
+  await expect(page.locator('.marketing-writer-platform')).toBeVisible();
+  await expect(page.locator('.marketing-writer-idea')).toBeVisible();
+  await expect(page.locator('.marketing-writer-gen-btn')).toBeVisible();
+});
+
+test('marketing AI writer collapses and expands on header click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  await expect(page.locator('.marketing-writer-body')).toBeVisible();
+  await page.click('.marketing-writer-header');
+  await expect(page.locator('.marketing-writer-body')).toBeHidden();
+  await page.click('.marketing-writer-header');
+  await expect(page.locator('.marketing-writer-body')).toBeVisible();
+});
+
+test('marketing AI writer generates draft via Gemini API', async ({ page }) => {
+  await setupApp(page);
+
+  // Mock generateContent endpoint
+  await page.route(/generateContent/, async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{ text: 'Just shipped a new feature in Waymark that makes spreadsheets actually useful. No more staring at rows of data — now it turns into something you can work with. Try it out.' }],
+          },
+        }],
+      }),
+    });
+  });
+
+  // Set an API key so generateText can find one
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-key-123', nickname: 'Test', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+  });
+
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  await page.selectOption('.marketing-writer-platform', 'twitter');
+  await page.fill('.marketing-writer-idea', 'Announce the new template feature in Waymark');
+  await page.click('.marketing-writer-gen-btn');
+
+  await expect(page.locator('.marketing-writer-draft')).toBeVisible({ timeout: 10_000 });
+  const draftText = await page.locator('.marketing-writer-draft-text').inputValue();
+  expect(draftText.length).toBeGreaterThan(10);
+});
+
+test('marketing AI writer adds draft to sheet on "Add to Sheet"', async ({ page }) => {
+  await setupApp(page);
+
+  await page.route(/generateContent/, async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidates: [{
+          content: {
+            parts: [{ text: 'AI generated test post content' }],
+          },
+        }],
+      }),
+    });
+  });
+
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-key-456', nickname: 'Test', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+  });
+
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  await page.selectOption('.marketing-writer-platform', 'linkedin');
+  await page.fill('.marketing-writer-idea', 'Test idea for adding to sheet');
+  await page.click('.marketing-writer-gen-btn');
+
+  await expect(page.locator('.marketing-writer-draft')).toBeVisible({ timeout: 10_000 });
+  await page.click('.marketing-writer-use-btn');
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.length).toBeGreaterThanOrEqual(1);
+});
