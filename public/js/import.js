@@ -239,6 +239,13 @@ const ROLE_LABELS = {
   'linker.type': 'Entry Type (waymark or linker)',
   'linker.tags': 'Tags / Topics',
   'linker.icon': 'Icon / Emoji',
+  // Arcade
+  'arcade.game': 'Game Name',
+  'arcade.player1': 'Player 1 / White / Home',
+  'arcade.player2': 'Player 2 / Black / Away',
+  'arcade.score': 'Score / Result',
+  'arcade.status': 'Match Status / Outcome',
+  'arcade.date': 'Date Played',
 };
 
 /**
@@ -359,6 +366,10 @@ const CANONICAL_HEADERS = {
   'linker.name': 'Name', 'linker.description': 'Description',
   'linker.link': 'Link', 'linker.type': 'Type',
   'linker.tags': 'Tags', 'linker.icon': 'Icon',
+  // Arcade
+  'arcade.game': 'Game', 'arcade.player1': 'Player 1',
+  'arcade.player2': 'Player 2', 'arcade.score': 'Score',
+  'arcade.status': 'Status', 'arcade.date': 'Date',
 };
 
 /**

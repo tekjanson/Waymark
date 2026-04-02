@@ -1207,10 +1207,42 @@
       "fixtureFiles": [
         "marketing-waymark"
       ]
+    },
+    {
+      "key": "arcade",
+      "name": "Arcade",
+      "icon": "🎮",
+      "color": "#7c3aed",
+      "priority": 20,
+      "category": "Social",
+      "detectSignals": [
+        "arcade",
+        "game lobby",
+        "game room",
+        "multiplayer"
+      ],
+      "columnRoles": [
+        "game",
+        "player1",
+        "player2",
+        "score",
+        "status",
+        "date"
+      ],
+      "interactive": true,
+      "interactionType": "game-modal",
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-060"
+      ],
+      "fixtureFiles": [
+        "arcade-lobby"
+      ]
     }
   ],
-  "nextSheetId": "sheet-060",
-  "totalTemplates": 30,
+  "nextSheetId": "sheet-061",
+  "totalTemplates": 31,
   "categories": [
     "Productivity",
     "Engineering",

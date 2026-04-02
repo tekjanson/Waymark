@@ -67,6 +67,7 @@ export class WaymarkConnect {
     this.onRemoteStream = opts.onRemoteStream || (() => {});
     this.onCallEnded = opts.onCallEnded || (() => {});
     this.onCallActive = opts.onCallActive || (() => {});
+    this.onArcadeMessage = opts.onArcadeMessage || null;
 
     this._bc = null;
     this._peers = new Map();        // peerId → { name, channel }
@@ -116,6 +117,23 @@ export class WaymarkConnect {
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
+  }
+
+  /** Send a JSON message to a specific peer's DataChannel (or BroadcastChannel fallback). */
+  sendToPeer(peerId, msg) {
+    const entry = this._rtc.get(peerId);
+    if (entry?.dc?.readyState === 'open') {
+      console.log(`[WC] sendToPeer → ${peerId} via DataChannel:`, msg.type);
+      entry.dc.send(JSON.stringify(msg));
+      return;
+    }
+    // Fallback: BroadcastChannel for same-browser peers without an open DC
+    if (this._bc) {
+      console.log(`[WC] sendToPeer → ${peerId} via BroadcastChannel (no open DC):`, msg.type);
+      this._bc.postMessage({ ...msg, _to: peerId });
+      return;
+    }
+    console.warn(`[WC] sendToPeer DROPPED — no DC and no BC for peer ${peerId}:`, msg.type);
   }
 
   /** Start an audio/video call — adds tracks to ALL peer connections. */
@@ -453,8 +471,11 @@ export class WaymarkConnect {
     if (this._peers.size === 0) {
       this.onStatusChanged('listening');
     } else {
+      const dcStates = Array.from(this._rtc.entries()).map(([id, r]) => `${id}:${r.dc?.readyState || 'no-dc'}`);
       const hasOpenDC = Array.from(this._rtc.values()).some(r => r.dc?.readyState === 'open');
-      this.onStatusChanged(hasOpenDC || this._bc ? 'connected' : 'pairing');
+      const status = hasOpenDC ? 'connected' : 'pairing';
+      console.log(`[WC] status → ${status} | peers=${this._peers.size} | DC states: [${dcStates.join(', ')}]`);
+      this.onStatusChanged(status);
     }
   }
 
@@ -489,6 +510,16 @@ export class WaymarkConnect {
         this._peers.delete(d.peerId);
         this._emitPeers();
         break;
+      default:
+        // Forward targeted arcade messages (invite/accept/decline)
+        if (d._to && d._to !== this.peerId) return;
+        if (this.onArcadeMessage) {
+          console.log(`[WC] BC arcade msg from ${d.peerId}:`, d.type);
+          this.onArcadeMessage(d.peerId, d);
+        } else {
+          console.warn(`[WC] BC arcade msg from ${d.peerId} DROPPED — no onArcadeMessage handler:`, d.type);
+        }
+        break;
     }
   }
 
@@ -498,11 +529,17 @@ export class WaymarkConnect {
     try {
       const vals = await this.signal.readAll();
       this._block = this._findSlot(vals);
-      if (this._block < 0) return;
+      if (this._block < 0) {
+        console.warn('[WC] _join — no free signal slot (all', MAX_SLOTS, 'occupied)');
+        return;
+      }
+      console.log(`[WC] _join — claimed slot row ${this._block}, peerId=${this.peerId}`);
       await this._heartbeat();
       this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
       this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
-    } catch {}
+    } catch (err) {
+      console.error('[WC] _join failed:', err);
+    }
   }
 
   _findSlot(vals) {
@@ -519,7 +556,9 @@ export class WaymarkConnect {
     try {
       await this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL,
         JSON.stringify({ peerId: this.peerId, name: this.displayName, ts: Date.now() }));
-    } catch {}
+    } catch (err) {
+      console.warn('[WC] heartbeat write failed:', err.message || err);
+    }
   }
 
   /** Main signaling loop — runs every POLL_MS, discovers + negotiates with ALL live peers. */
@@ -587,21 +626,29 @@ export class WaymarkConnect {
           // === INITIATOR: we create offer, wait for answer ===
           if (!r) {
             try {
+              console.log(`[WC] _poll — building offer to ${remote.peerId}`);
               const entry = await this._buildOffer(remote.peerId);
               myOffers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
               offDirty = true;
-            } catch { this._closeOne(remote.peerId); }
+            } catch (err) {
+              console.error(`[WC] _poll — buildOffer to ${remote.peerId} failed:`, err);
+              this._closeOne(remote.peerId);
+            }
           } else {
             // Check if remote wrote answer to their ANSWERS row keyed by our peerId
             const remoteAns = _json(vals[remote.block + OFF_ANSWERS]?.[SIG_COL]) || {};
             const ans = remoteAns[this.peerId];
             if (ans) {
               try {
+                console.log(`[WC] _poll — applying answer from ${remote.peerId}`);
                 await r.pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
                 r.state = 'connected';
                 delete myOffers[remote.peerId];
                 offDirty = true;
-              } catch { this._closeOne(remote.peerId); }
+              } catch (err) {
+                console.error(`[WC] _poll — setRemoteDescription(answer) for ${remote.peerId} failed:`, err);
+                this._closeOne(remote.peerId);
+              }
             }
           }
         } else {
@@ -611,10 +658,14 @@ export class WaymarkConnect {
             const offer = remoteOff[this.peerId];
             if (offer) {
               try {
+                console.log(`[WC] _poll — building answer for ${remote.peerId}`);
                 const entry = await this._buildAnswer(remote.peerId, offer.sdp);
                 myAnswers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
                 ansDirty = true;
-              } catch { this._closeOne(remote.peerId); }
+              } catch (err) {
+                console.error(`[WC] _poll — buildAnswer for ${remote.peerId} failed:`, err);
+                this._closeOne(remote.peerId);
+              }
             }
           }
         }
@@ -629,7 +680,9 @@ export class WaymarkConnect {
         const v = Object.keys(myAnswers).length ? JSON.stringify(myAnswers) : '';
         await this.signal.writeCell(this._block + OFF_ANSWERS, SIG_COL, v);
       }
-    } catch {} finally {
+    } catch (err) {
+      console.error('[WC] _poll outer error:', err);
+    } finally {
       this._polling = false;
     }
   }
@@ -712,6 +765,7 @@ export class WaymarkConnect {
     pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
       const s = pc.iceConnectionState;
+      console.log(`[WC] ICE ${remotePeerId} → ${s}`);
       if (s === 'failed' || s === 'closed') {
         this._closeOne(remotePeerId);
         if (this._peers.get(remotePeerId)?.channel === 'rtc') {
@@ -725,7 +779,10 @@ export class WaymarkConnect {
     pc.onnegotiationneeded = async () => {
       if (this._destroyed) return;
       const r = this._rtc.get(remotePeerId);
-      if (!r?.dc || r.dc.readyState !== 'open') return;
+      if (!r?.dc || r.dc.readyState !== 'open') {
+        console.warn(`[WC] renegotiation needed for ${remotePeerId} but DC not open (state: ${r?.dc?.readyState || 'none'})`);
+        return;
+      }
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -733,12 +790,15 @@ export class WaymarkConnect {
         r.dc.send(JSON.stringify({
           type: 'renego-offer', peerId: this.peerId, sdp: pc.localDescription.sdp,
         }));
-      } catch {}
+      } catch (err) {
+        console.error(`[WC] renegotiation with ${remotePeerId} failed:`, err);
+      };
     };
   }
 
   _wireDC(remotePeerId, dc) {
     dc.onopen = () => {
+      console.log(`[WC] DataChannel OPEN with ${remotePeerId} (label: ${dc.label})`);
       dc.send(JSON.stringify({ type: 'announce', peerId: this.peerId, name: this.displayName }));
       this._peers.set(remotePeerId, {
         name: this._peers.get(remotePeerId)?.name || 'Peer',
@@ -778,11 +838,22 @@ export class WaymarkConnect {
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
             break;
+          default:
+            if (this.onArcadeMessage) {
+              console.log(`[WC] DC arcade msg from ${remotePeerId}:`, m.type);
+              this.onArcadeMessage(remotePeerId, m);
+            } else {
+              console.warn(`[WC] DC arcade msg from ${remotePeerId} DROPPED — no onArcadeMessage handler:`, m.type);
+            }
+            break;
         }
-      } catch {}
+      } catch (err) {
+        console.error(`[WC] DC onmessage parse/dispatch error from ${remotePeerId}:`, err);
+      };
     };
 
     dc.onclose = () => {
+      console.log(`[WC] DataChannel CLOSED with ${remotePeerId}`);
       const p = this._peers.get(remotePeerId);
       if (p?.channel === 'rtc') {
         this._peers.set(remotePeerId, { name: p.name, channel: 'sig' });
