@@ -103,6 +103,26 @@ const CASES = [
       platformFit: 'twitter',
     },
   },
+  {
+    id: 'youtube-demo-walkthrough',
+    platform: 'youtube',
+    idea: 'Script a short video showing how to open a messy Google Sheet in Waymark and watch it transform into a clean interactive view in seconds',
+    checks: {
+      minChars: 300,
+      mustNotInclude: ['here\'s a draft', 'option 1'],
+      platformFit: 'youtube',
+    },
+  },
+  {
+    id: 'tiktok-before-after',
+    platform: 'tiktok',
+    idea: 'Quick before/after showing an ugly spreadsheet turning into a beautiful Waymark view — hook people with the transformation',
+    checks: {
+      minChars: 50,
+      mustNotInclude: ['here\'s a draft', 'option 1'],
+      platformFit: 'tiktok',
+    },
+  },
 ];
 
 /* ---------- Helpers ---------- */
@@ -168,7 +188,7 @@ Respond ONLY with valid JSON in this exact format:
 
 The "overall" score should be the average of the 5 scores, rounded to 1 decimal place.`;
 
-async function judgePost(apiKey, platform, idea, generatedPost) {
+async function judgePost(apiKey, platform, idea, generatedPost, allKeys) {
   const userMsg = [
     `Platform: ${platform}`,
     `User's idea: ${idea}`,
@@ -176,30 +196,42 @@ async function judgePost(apiKey, platform, idea, generatedPost) {
     generatedPost,
   ].join('\n');
 
-  const url = `${GEMINI_BASE}/${encodeURIComponent(EVAL_MODEL)}:generateContent`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-goog-api-key': apiKey },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: userMsg }] }],
-      systemInstruction: { parts: [{ text: JUDGE_PROMPT }] },
-      generationConfig: { temperature: 0.1, maxOutputTokens: 256 },
-    }),
-  });
+  // Retry with key rotation on rate limits
+  const keysToTry = allKeys ? [apiKey, ...allKeys.map(k => k.key).filter(k => k !== apiKey)] : [apiKey];
+  let lastErr = null;
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Judge API error ${res.status}`);
+  for (const key of keysToTry) {
+    const url = `${GEMINI_BASE}/${encodeURIComponent(EVAL_MODEL)}:generateContent`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: userMsg }] }],
+        systemInstruction: { parts: [{ text: JUDGE_PROMPT }] },
+        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      lastErr = err?.error?.message || `Judge API error ${res.status}`;
+      if (res.status === 429 || (lastErr && lastErr.includes('high demand'))) {
+        await sleep(3000);
+        continue; // try next key
+      }
+      throw new Error(lastErr);
+    }
+
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+    if (!text) throw new Error('Empty judge response');
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(`Judge did not return JSON: ${text.slice(0, 200)}`);
+    return JSON.parse(jsonMatch[0]);
   }
 
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-  if (!text) throw new Error('Empty judge response');
-
-  // Extract JSON from response (may have markdown fences)
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`Judge did not return JSON: ${text.slice(0, 200)}`);
-  return JSON.parse(jsonMatch[0]);
+  throw new Error(lastErr || 'All keys rate-limited');
 }
 
 /* ---------- Deterministic checks ---------- */
@@ -272,12 +304,18 @@ async function runCase(browser, keys, testCase) {
     await page.fill('.marketing-writer-idea', testCase.idea);
     await page.click('.marketing-writer-gen-btn');
 
-    // Wait for draft to appear (real LLM call, may take time)
+    // Wait for generation to complete: button re-enables when done
     await page.waitForFunction(() => {
+      const btn = document.querySelector('.marketing-writer-gen-btn');
       const draft = document.querySelector('.marketing-writer-draft');
       const text = document.querySelector('.marketing-writer-draft-text');
-      return draft && !draft.classList.contains('hidden') && text && text.value.trim().length > 5;
-    }, { timeout: 60000 });
+      const errEl = document.querySelector('.marketing-writer-error');
+      // Done when button is re-enabled AND (draft visible with text OR error shown)
+      return btn && !btn.disabled && (
+        (draft && !draft.classList.contains('hidden') && text && text.value.trim().length > 5) ||
+        (errEl && errEl.textContent.trim().length > 0)
+      );
+    }, undefined, { timeout: 90000 });
 
     generatedPost = await page.locator('.marketing-writer-draft-text').inputValue();
   } catch (err) {
@@ -295,7 +333,7 @@ async function runCase(browser, keys, testCase) {
   if (generatedPost && !runtimeError) {
     try {
       const judgeKey = keys[Math.floor(Math.random() * keys.length)].key;
-      judgeScores = await judgePost(judgeKey, testCase.platform, testCase.idea, generatedPost);
+      judgeScores = await judgePost(judgeKey, testCase.platform, testCase.idea, generatedPost, keys);
     } catch (err) {
       judgeError = err.message;
     }

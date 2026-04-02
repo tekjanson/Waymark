@@ -32,6 +32,7 @@ const PLATFORM_META = {
   reddit:   { emoji: '🤖', color: '#ff4500', bg: '#fff4f0', label: 'Reddit' },
   linkedin: { emoji: '💼', color: '#0a66c2', bg: '#eef3ff', label: 'LinkedIn' },
   youtube:  { emoji: '▶️', color: '#ff0000', bg: '#fff0f0', label: 'YouTube' },
+  tiktok:   { emoji: '🎵', color: '#010101', bg: '#f0f0f0', label: 'TikTok / Reels' },
   blog:     { emoji: '✍️', color: '#059669', bg: '#f0fdf4', label: 'Blog' },
   hn:       { emoji: '🟧', color: '#ff6600', bg: '#fff8f0', label: 'Hacker News' },
   ph:       { emoji: '🚀', color: '#da552f', bg: '#fdf3f0', label: 'Product Hunt' },
@@ -46,6 +47,7 @@ function platformKey(raw) {
   if (/reddit/.test(v)) return 'reddit';
   if (/linkedin/.test(v)) return 'linkedin';
   if (/youtube|yt/.test(v)) return 'youtube';
+  if (/tiktok|reels|shorts/.test(v)) return 'tiktok';
   if (/blog|post|article|medium|substack|dev\.to/.test(v)) return 'blog';
   if (/hacker.?news|hn/.test(v)) return 'hn';
   if (/product.?hunt|ph/.test(v)) return 'ph';
@@ -71,7 +73,8 @@ const PLATFORM_GUIDANCE = {
   twitter: { limit: '280 characters', style: 'Punchy, conversational. Use line breaks for readability. Hashtags optional.' },
   reddit: { limit: 'Title + body', style: 'Authentic, helpful. Lead with value. No self-promo feel.' },
   linkedin: { limit: '~1300 characters', style: 'Story-driven, professional but human. Use line breaks. Hook in the first line.' },
-  youtube: { limit: 'Title + description', style: 'Searchable title. Description with timestamps and links.' },
+  youtube: { limit: 'Title + script', style: 'Write a video script with HOOK (first 3 seconds), BODY (main content), and CTA (what to do next). Include a searchable title on the first line. Keep it conversational — written for speaking out loud, not reading.' },
+  tiktok: { limit: '15-60 second script', style: 'Write a short-form video script. Open with an irresistible hook in the first 2 seconds. Keep it fast-paced, direct-to-camera, and punchy. No filler. Every line earns the next second of attention.' },
   blog: { limit: 'No hard limit', style: 'Informative, scannable. Use headers and short paragraphs.' },
   hn: { limit: 'Title only for Show HN', style: 'Technical, concise. Show HN: prefix for launches.' },
   ph: { limit: 'Tagline + description', style: 'Benefit-driven tagline. Clear description of what it does.' },
@@ -96,8 +99,8 @@ let _writerState = {
 function _buildWriterPrompt(plat, rows, cols, topPosts, topicStats) {
   const guide = PLATFORM_GUIDANCE[plat] || PLATFORM_GUIDANCE.other;
   const parts = [
-    'You are a social media content writer helping the user draft posts to grow their product, Waymark.',
-    'Your job is to match THEIR voice — learn from what has worked and write more like that.',
+    'You are a sharp, authentic social media writer. You write like a real founder — not a marketing department.',
+    'Your job is to draft ONE ready-to-publish post that matches the user\'s voice. Study their existing posts below to learn their tone, rhythm, and what resonates.',
     '',
     `Target platform: ${(PLATFORM_META[plat] || PLATFORM_META.other).label}`,
     `Format: ${guide.limit}`,
@@ -188,13 +191,20 @@ function _buildWriterPrompt(plat, rows, cols, topPosts, topicStats) {
   parts.push(
     '',
     '=== RULES ===',
-    '- Write ONLY the post text. No commentary, no "Here\'s a draft:", no options, no alternatives.',
+    '- Write ONLY the post text. No preamble, no "Here\'s a draft:", no "Option 1:", no alternatives, no sign-off like "Best," or "[Your Name]".',
+    '- The post MUST be complete. Never end mid-sentence or trail off. Every sentence must be finished. The reader should feel closure.',
     '- Match the voice, tone, and energy of their existing posts — especially the top performers.',
     '- Use their actual patterns: sentence length, punctuation style, emoji usage (or lack of), how they start posts.',
-    '- Keep it natural, not corporate or salesy.',
+    '- Keep it natural, not corporate or salesy. Avoid AI clichés: "game-changer", "revolutionize", "leverage", "delve", "seamlessly", "In today\'s fast-paced world", "unlock the power".',
     '- Apply the lessons they\'ve learned (from the takeaway notes).',
-    '- One post only. Ready to copy-paste.',
-    `- Strictly follow ${(PLATFORM_META[plat] || PLATFORM_META.other).label} format constraints: ${guide.limit}`,
+    '- ONE post only. Ready to copy-paste and publish right now.',
+    `- Strictly follow ${(PLATFORM_META[plat] || PLATFORM_META.other).label} format constraints: ${guide.limit}.`,
+    `- For Twitter/X: MUST be ≤280 characters total. Count carefully. Shorter is better.`,
+    `- For LinkedIn: Use line breaks between paragraphs. Hook the reader in the first line. End with a clear thought, not a trailing ellipsis.`,
+    `- For Reddit: Write a clear title on the first line, then a blank line, then the body. Sound like a genuine community member, not a marketer.`,
+    `- For HN: Write "Show HN: [concise title]" on the first line, then a blank line, then 2-3 sentences explaining what it does and why.`,
+    `- For YouTube: Write a searchable title on the FIRST line, then a blank line, then the video script. Format the script with [HOOK] (attention-grabbing opening, 3-5 seconds), [BODY] (main content, organized as talking points), and [CTA] (clear call to action). Write for speaking — short sentences, natural rhythm, contractions.`,
+    `- For TikTok/Reels: Write a short-form video script (15-60 seconds when spoken). First line is the hook — must stop the scroll in 2 seconds. Use direct-to-camera energy. Keep sentences punchy. End with a strong closer or CTA. No fluff.`,
   );
 
   return parts.join('\n');
@@ -222,6 +232,8 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     el('option', { value: 'twitter' }, ['X / Twitter']),
     el('option', { value: 'reddit' }, ['Reddit']),
     el('option', { value: 'linkedin' }, ['LinkedIn']),
+    el('option', { value: 'youtube' }, ['YouTube']),
+    el('option', { value: 'tiktok' }, ['TikTok / Reels']),
     el('option', { value: 'blog' }, ['Blog']),
     el('option', { value: 'hn' }, ['Hacker News']),
     el('option', { value: 'ph' }, ['Product Hunt']),
@@ -302,7 +314,11 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
 
     try {
       const systemPrompt = _buildWriterPrompt(plat, rows, cols, topPosts, topicStats);
-      const result = await generateText(systemPrompt, idea, { temperature: 0.8 });
+      const longForm = ['linkedin', 'reddit', 'blog', 'hn', 'youtube'].includes(plat);
+      const result = await generateText(systemPrompt, idea, {
+        temperature: 0.8,
+        maxTokens: longForm ? 2048 : 1024,
+      });
       draftText.value = result;
       _writerState.draft = result;
       _writerState.hasDraft = true;
@@ -409,7 +425,7 @@ const definition = {
   addRowFields(cols) {
     return [
       { role: 'post',     label: 'Post',      colIndex: cols.post,     type: 'text', placeholder: 'Write your post content...', required: true },
-      { role: 'platform', label: 'Platform',   colIndex: cols.platform, type: 'select', options: ['Twitter', 'Reddit', 'LinkedIn', 'YouTube', 'Blog', 'HN', 'Email', 'Other'], defaultValue: 'Twitter' },
+      { role: 'platform', label: 'Platform',   colIndex: cols.platform, type: 'select', options: ['Twitter', 'Reddit', 'LinkedIn', 'YouTube', 'TikTok', 'Blog', 'HN', 'Email', 'Other'], defaultValue: 'Twitter' },
       { role: 'status',   label: 'Status',     colIndex: cols.status,   type: 'select', options: STATUSES, defaultValue: 'Idea' },
       { role: 'topic',    label: 'Topic',      colIndex: cols.topic,    type: 'text', placeholder: 'What is this about?' },
       { role: 'link',     label: 'Link',       colIndex: cols.link,     type: 'text', placeholder: 'https://...' },
