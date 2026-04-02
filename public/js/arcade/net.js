@@ -303,6 +303,7 @@ export class ArcadeNet {
     }
     ch.onopen = () => {
       this._openCount++;
+      console.log(`[ArcadeNet] channel '${ch.label}' (${kind}) OPEN — openCount=${this._openCount}`);
       if (this._openCount >= 2 && this.onOpen) this.onOpen();
       if (kind === 'fast' && !this._pingTimer) {
         this._pingTimer = setInterval(() => this._sendPing(), 250);
@@ -310,6 +311,7 @@ export class ArcadeNet {
     };
     ch.onclose = () => {
       this._openCount--;
+      console.log(`[ArcadeNet] channel '${ch.label}' (${kind}) CLOSED — openCount=${this._openCount}`);
       if (this.onClose) this.onClose();
     };
     ch.onmessage = (e) => {
@@ -355,6 +357,8 @@ export class ArcadeNet {
   sendReliable(buf) {
     if (this.reliable && this.reliable.readyState === 'open') {
       this.reliable.send(buf);
+    } else {
+      console.warn(`[ArcadeNet] sendReliable DROPPED — channel state: ${this.reliable?.readyState || 'null'}`);
     }
   }
 
@@ -368,6 +372,8 @@ export class ArcadeNet {
       // Drop if buffer already has >16KB queued — data would arrive stale
       if (this.fast.bufferedAmount > 16384) return;
       this.fast.send(buf);
+    } else {
+      console.warn(`[ArcadeNet] sendFast DROPPED — channel state: ${this.fast?.readyState || 'null'}`);
     }
   }
 
@@ -413,9 +419,13 @@ export class ArcadeNet {
  */
 export function createArcadeNet(waymarkConnect, remotePeerId) {
   const entry = waymarkConnect._rtc.get(remotePeerId);
-  if (!entry || !entry.pc) return null;
+  if (!entry || !entry.pc) {
+    const reason = !entry ? 'no RTC entry' : 'no PeerConnection';
+    console.error(`[ArcadeNet] createArcadeNet failed for peer ${remotePeerId}: ${reason}. RTC map has: [${[...waymarkConnect._rtc.keys()].join(', ')}]`);
+    return null;
+  }
 
-  // Initiator = whichever peer has the lower peerId (same logic as WebRTC offer/answer)
   const isInitiator = waymarkConnect.peerId < remotePeerId;
+  console.log(`[ArcadeNet] creating ArcadeNet for peer ${remotePeerId} (initiator=${isInitiator}, pcState=${entry.pc.connectionState})`);
   return new ArcadeNet(entry.pc, isInitiator);
 }

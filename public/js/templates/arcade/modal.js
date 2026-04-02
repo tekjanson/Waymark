@@ -99,11 +99,17 @@ export function openGameModal(opts) {
     // Set up arcade network channels
     const arcadeNet = createArcadeNet(waymarkConnect, remotePeerId);
     if (arcadeNet) {
+      console.log(`[Arcade] ArcadeNet created for peer ${remotePeerId} (localPlayer=${_ctx.localPlayerId})`);
       _ctx.net = arcadeNet;
       _ctx.netReady = false;
 
       arcadeNet.onOpen = () => {
+        console.log(`[Arcade] ArcadeNet READY — both channels open for peer ${remotePeerId}`);
         _ctx.netReady = true;
+      };
+
+      arcadeNet.onClose = () => {
+        console.warn(`[Arcade] ArcadeNet channel CLOSED for peer ${remotePeerId}`);
       };
 
       if (game.netModel === 'rollback') {
@@ -111,6 +117,8 @@ export function openGameModal(opts) {
       } else {
         setupLockstepGame(_ctx, game, arcadeNet);
       }
+    } else {
+      console.error(`[Arcade] createArcadeNet returned null for peer ${remotePeerId} — no RTCPeerConnection exists. Game will run in solo mode.`);
     }
   } else {
     // Local / solo mode — player 0, no network
