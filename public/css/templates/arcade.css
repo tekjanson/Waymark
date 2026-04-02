@@ -1,0 +1,315 @@
+/* ============================================================
+   arcade.css — Game Arcade template styles
+   All classes prefixed .arcade-
+   ============================================================ */
+
+/* ---------- Lobby Layout ---------- */
+
+.arcade-lobby {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-md) var(--space-sm);
+}
+
+.arcade-header {
+  text-align: center;
+  margin-bottom: var(--space-lg);
+}
+
+.arcade-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.arcade-title-icon {
+  font-size: 1.8rem;
+}
+
+.arcade-subtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-top: var(--space-xs);
+}
+
+.arcade-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.arcade-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--space-sm) 0;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---------- Game Grid ---------- */
+
+.arcade-game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-sm);
+}
+
+.arcade-game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-sm);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.arcade-game-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.arcade-game-card-selected {
+  border-color: var(--accent);
+  background: var(--accent-bg, rgba(124, 58, 237, 0.06));
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.arcade-game-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.arcade-game-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  text-align: center;
+}
+
+.arcade-game-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.arcade-game-meta {
+  display: flex;
+  gap: var(--space-xs);
+  margin-top: auto;
+}
+
+.arcade-game-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--badge-bg, rgba(0, 0, 0, 0.06));
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- Peer List ---------- */
+
+.arcade-peer-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.arcade-peer-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.arcade-peer-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.arcade-peer-name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arcade-invite-btn {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.arcade-invite-btn:hover {
+  opacity: 0.85;
+}
+
+.arcade-no-peers {
+  padding: var(--space-md);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+/* ---------- Match History ---------- */
+
+.arcade-history {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--space-sm);
+  font-size: 0.85rem;
+}
+
+.arcade-history th {
+  text-align: left;
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 2px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.arcade-history td {
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.arcade-history tr:last-child td {
+  border-bottom: none;
+}
+
+.arcade-history-section {
+  margin-top: var(--space-lg);
+}
+
+/* ---------- Game Modal ---------- */
+
+.arcade-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: arcade-fadeIn 0.2s ease;
+}
+
+.arcade-modal {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.arcade-modal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.arcade-modal-title {
+  font-weight: 600;
+}
+
+.arcade-modal-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+
+.arcade-modal-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.arcade-canvas-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.arcade-canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ---------- Animations ---------- */
+
+@keyframes arcade-fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 700px) {
+  .arcade-body {
+    grid-template-columns: 1fr;
+  }
+
+  .arcade-game-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  .arcade-modal {
+    max-width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+}

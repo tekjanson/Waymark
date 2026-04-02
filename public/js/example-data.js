@@ -930,4 +930,18 @@ export const EXAMPLE_SHEETS = {
       ['Webinar: Sheets → Waymark', 'Video',   'Idea',      '0',     '0',    '0',  '0',   '$0',   '',           'Live demo event'],
     ],
   },
+
+  /* ---- Arcade examples ---- */
+  'Game Arcade Lobby': {
+    folder: 'Games',
+    headers: ['Game', 'Player 1', 'Player 2', 'Score', 'Status', 'Date'],
+    rows: [
+      ['Chess',          'Alice',  'Bob',     '1-0',   'Complete',    '2026-03-10'],
+      ['Checkers',       'Bob',    'Charlie', '2-1',   'Complete',    '2026-03-11'],
+      ['Slime Volley',   'Alice',  'Charlie', '7-3',   'Complete',    '2026-03-12'],
+      ['Slime Soccer',   'Charlie','Alice',   '5-4',   'Complete',    '2026-03-12'],
+      ['Chess',          'Bob',    'Alice',   '0-1',   'Complete',    '2026-03-13'],
+      ['Slime Volley',   'Alice',  'Bob',     '7-5',   'In Progress', '2026-03-14'],
+    ],
+  },
 };
