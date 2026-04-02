@@ -42,6 +42,7 @@ import './okr/index.js';
 import './gantt/index.js';
 import './passwords.js';
 import './linker.js';
+import './marketing.js';
 
 /* ---------- Detection ---------- */
 

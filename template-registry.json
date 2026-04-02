@@ -1152,10 +1152,65 @@
       "fixtureFiles": [
         "linker-community"
       ]
+    },
+    {
+      "key": "marketing",
+      "name": "Content Workbench",
+      "icon": "\ud83d\udce3",
+      "color": "#e11d48",
+      "priority": 24,
+      "category": "Marketing",
+      "detectSignals": [
+        "post",
+        "content",
+        "draft",
+        "caption",
+        "tweet",
+        "platform",
+        "channel",
+        "likes",
+        "shares",
+        "comments",
+        "views",
+        "impressions",
+        "engagement",
+        "takeaway",
+        "lesson"
+      ],
+      "columnRoles": [
+        "post",
+        "platform",
+        "status",
+        "topic",
+        "date",
+        "likes",
+        "shares",
+        "comments",
+        "views",
+        "link",
+        "takeaway"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Idea",
+        "Drafting",
+        "Ready",
+        "Posted",
+        "Analyzing"
+      ],
+      "hasDirectoryView": true,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-059"
+      ],
+      "fixtureFiles": [
+        "marketing-waymark"
+      ]
     }
   ],
-  "nextSheetId": "sheet-059",
-  "totalTemplates": 29,
+  "nextSheetId": "sheet-060",
+  "totalTemplates": 30,
   "categories": [
     "Productivity",
     "Engineering",
@@ -1176,6 +1231,7 @@
     "Operations",
     "Social",
     "Documentation",
-    "Monitoring"
+    "Monitoring",
+    "Marketing"
   ]
 }
