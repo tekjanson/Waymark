@@ -231,9 +231,8 @@ export function decodeMessage(buffer) {
 export class ArcadeNet {
   /**
    * @param {RTCPeerConnection} pc — existing peer connection
-   * @param {boolean} isInitiator — true if we created the offer (create channels)
    */
-  constructor(pc, isInitiator) {
+  constructor(pc) {
     /** @type {RTCPeerConnection} */
     this.pc = pc;
     /** @type {RTCDataChannel|null} */
@@ -257,42 +256,28 @@ export class ArcadeNet {
     this._openCount = 0;
     this._destroyed = false;
 
-    if (isInitiator) {
-      this._createChannels();
-    } else {
-      this._listenForChannels();
-    }
+    // Both sides create channels with negotiated: true + matching IDs.
+    // This avoids triggering onnegotiationneeded / SDP renegotiation,
+    // which was killing the channels after ~14s on established PCs.
+    this._createNegotiatedChannels();
   }
 
   /* ---------- Channel Setup ---------- */
 
-  _createChannels() {
+  _createNegotiatedChannels() {
     this.reliable = this.pc.createDataChannel('arcade', {
       ordered: true,
+      negotiated: true,
+      id: 100,
     });
     this.fast = this.pc.createDataChannel('arcade-fast', {
       ordered: false,
       maxRetransmits: 0,
+      negotiated: true,
+      id: 101,
     });
     this._wireChannel(this.reliable, 'reliable');
     this._wireChannel(this.fast, 'fast');
-  }
-
-  _listenForChannels() {
-    const prev = this.pc.ondatachannel;
-    this.pc.ondatachannel = (e) => {
-      const ch = e.channel;
-      if (ch.label === 'arcade') {
-        this.reliable = ch;
-        this._wireChannel(ch, 'reliable');
-      } else if (ch.label === 'arcade-fast') {
-        this.fast = ch;
-        this._wireChannel(ch, 'fast');
-      } else if (prev) {
-        // Pass non-arcade channels to existing handler
-        prev(e);
-      }
-    };
   }
 
   _wireChannel(ch, kind) {
@@ -425,7 +410,6 @@ export function createArcadeNet(waymarkConnect, remotePeerId) {
     return null;
   }
 
-  const isInitiator = waymarkConnect.peerId < remotePeerId;
-  console.log(`[ArcadeNet] creating ArcadeNet for peer ${remotePeerId} (initiator=${isInitiator}, pcState=${entry.pc.connectionState})`);
-  return new ArcadeNet(entry.pc, isInitiator);
+  console.log(`[ArcadeNet] creating ArcadeNet for peer ${remotePeerId} (pcState=${entry.pc.connectionState})`);
+  return new ArcadeNet(entry.pc);
 }

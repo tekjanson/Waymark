@@ -49,12 +49,21 @@ export function openGameModal(opts) {
   ]);
   const wrapper = el('div', { className: 'arcade-canvas-wrap' }, [_canvas]);
 
-  _modal = el('div', { className: 'arcade-modal-overlay' }, [
-    el('div', { className: 'arcade-modal' }, [
-      el('div', { className: 'arcade-modal-bar' }, [gameLabel, closeBtn]),
-      wrapper,
-    ]),
+  // Connecting overlay — shown while waiting for DataChannels
+  const connectingOverlay = remotePeerId
+    ? el('div', { className: 'arcade-connecting-overlay', id: 'arcade-connecting' }, [
+        el('div', { className: 'arcade-connecting-spinner' }),
+        el('div', { className: 'arcade-connecting-text' }, ['Connecting to opponent…']),
+      ])
+    : null;
+
+  const modalBody = el('div', { className: 'arcade-modal' }, [
+    el('div', { className: 'arcade-modal-bar' }, [gameLabel, closeBtn]),
+    wrapper,
   ]);
+  if (connectingOverlay) wrapper.append(connectingOverlay);
+
+  _modal = el('div', { className: 'arcade-modal-overlay' }, [modalBody]);
 
   // Close on overlay click
   _modal.addEventListener('click', (e) => {
@@ -106,10 +115,22 @@ export function openGameModal(opts) {
       arcadeNet.onOpen = () => {
         console.log(`[Arcade] ArcadeNet READY — both channels open for peer ${remotePeerId}`);
         _ctx.netReady = true;
+        // Dismiss connecting overlay
+        const overlay = document.getElementById('arcade-connecting');
+        if (overlay) overlay.remove();
       };
 
       arcadeNet.onClose = () => {
         console.warn(`[Arcade] ArcadeNet channel CLOSED for peer ${remotePeerId}`);
+        _ctx.netReady = false;
+        // Show disconnected overlay
+        const wrap = _modal && _modal.querySelector('.arcade-canvas-wrap');
+        if (wrap && !document.getElementById('arcade-disconnected')) {
+          const dcOverlay = el('div', { className: 'arcade-connecting-overlay', id: 'arcade-disconnected' }, [
+            el('div', { className: 'arcade-connecting-text' }, ['Connection lost']),
+          ]);
+          wrap.append(dcOverlay);
+        }
       };
 
       if (game.netModel === 'rollback') {

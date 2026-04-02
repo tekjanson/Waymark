@@ -427,6 +427,39 @@
   touch-action: none;
 }
 
+/* ---------- Connecting Overlay ---------- */
+
+.arcade-connecting-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.arcade-connecting-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: arcade-spin 0.7s linear infinite;
+}
+
+.arcade-connecting-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+@keyframes arcade-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ---------- Animations ---------- */
 
 @keyframes arcade-fadeIn {
