@@ -134,6 +134,29 @@ test('marketing AI writer collapses and expands on header click', async ({ page 
   await expect(page.locator('.marketing-writer-body')).toBeVisible();
 });
 
+test('marketing AI writer preserves state across re-render', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  // Type an idea and select a platform
+  await page.selectOption('.marketing-writer-platform', 'reddit');
+  await page.fill('.marketing-writer-idea', 'My test idea that should survive');
+
+  // Simulate an auto-refresh (click the refresh button which reloads the sheet)
+  await page.evaluate(() => {
+    const btn = document.querySelector('#refresh-btn');
+    if (btn) btn.click();
+  });
+
+  // Wait for re-render to complete
+  await page.waitForSelector('.marketing-writer', { timeout: 5_000 });
+
+  // Verify state was preserved
+  expect(await page.locator('.marketing-writer-idea').inputValue()).toBe('My test idea that should survive');
+  expect(await page.locator('.marketing-writer-platform').inputValue()).toBe('reddit');
+});
+
 test('marketing AI writer generates draft via Gemini API', async ({ page }) => {
   await setupApp(page);
 
@@ -204,7 +227,14 @@ test('marketing AI writer adds draft to sheet on "Add to Sheet"', async ({ page 
   await expect(page.locator('.marketing-writer-draft')).toBeVisible({ timeout: 10_000 });
   await page.click('.marketing-writer-use-btn');
 
+  // _onAddRow uses appendRows which creates row-append records
   const records = await getCreatedRecords(page);
-  const updates = records.filter(r => r.type === 'cell-update');
-  expect(updates.length).toBeGreaterThanOrEqual(1);
+  const appends = records.filter(r => r.type === 'row-append');
+  expect(appends.length).toBeGreaterThanOrEqual(1);
+  // Verify the appended row contains the AI-generated content
+  const lastAppend = appends[appends.length - 1];
+  const appendedRow = lastAppend.rows[0];
+  expect(appendedRow.some(v => v.includes('AI generated test post content'))).toBe(true);
+  expect(appendedRow.some(v => v === 'LinkedIn')).toBe(true);
+  expect(appendedRow.some(v => v === 'Idea')).toBe(true);
 });

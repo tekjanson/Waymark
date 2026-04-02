@@ -79,11 +79,130 @@ const PLATFORM_GUIDANCE = {
   other: { limit: 'Varies', style: 'Adapt to the platform.' },
 };
 
-/* ---------- AI Writer ---------- */
+/* ---------- AI Writer (module-scoped state survives re-render) ---------- */
+
+let _writerState = {
+  idea: '',
+  platform: 'twitter',
+  draft: '',
+  expanded: true,
+  hasDraft: false,
+};
+
+/**
+ * Build the system prompt with full sheet context.
+ * Includes ALL posts grouped by platform, engagement data, takeaways, and topic analysis.
+ */
+function _buildWriterPrompt(plat, rows, cols, topPosts, topicStats) {
+  const guide = PLATFORM_GUIDANCE[plat] || PLATFORM_GUIDANCE.other;
+  const parts = [
+    'You are a social media content writer helping the user draft posts to grow their product, Waymark.',
+    'Your job is to match THEIR voice — learn from what has worked and write more like that.',
+    '',
+    `Target platform: ${(PLATFORM_META[plat] || PLATFORM_META.other).label}`,
+    `Format: ${guide.limit}`,
+    `Style notes: ${guide.style}`,
+  ];
+
+  // --- Full post history, grouped by platform ---
+  const byPlatform = {};
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const pk = platformKey(cell(row, cols.platform));
+    if (!byPlatform[pk]) byPlatform[pk] = [];
+    const status = cell(row, cols.status) || '';
+    const text = cell(row, cols.post) || '';
+    const takeaway = cell(row, cols.takeaway) || '';
+    const likes = parseNum(cell(row, cols.likes));
+    const shares = parseNum(cell(row, cols.shares));
+    const comments = parseNum(cell(row, cols.comments));
+    const views = parseNum(cell(row, cols.views));
+    const eng = likes + shares + comments;
+    byPlatform[pk].push({ text, status, takeaway, likes, shares, comments, views, eng, idx: i });
+  }
+
+  parts.push('', '=== FULL POST HISTORY ===');
+  for (const [pk, posts] of Object.entries(byPlatform)) {
+    const meta = PLATFORM_META[pk] || PLATFORM_META.other;
+    parts.push(``, `--- ${meta.label} (${posts.length} posts) ---`);
+    // Sort by engagement descending within each platform
+    const sorted = [...posts].sort((a, b) => b.eng - a.eng);
+    for (const p of sorted) {
+      const engStr = p.eng > 0 ? ` [${p.likes}❤ ${p.shares}🔄 ${p.comments}💬${p.views ? ` ${p.views}👁` : ''}]` : '';
+      const statusStr = p.status ? ` (${p.status})` : '';
+      parts.push(`${p.text}${statusStr}${engStr}`);
+      if (p.takeaway) parts.push(`  💡 Lesson: ${p.takeaway}`);
+    }
+  }
+
+  // --- Top performers highlight ---
+  if (topPosts.length > 0) {
+    parts.push('', '=== TOP PERFORMING POSTS (by total engagement) ===');
+    for (const tp of topPosts.slice(0, 5)) {
+      const row = rows[tp.idx];
+      const text = cell(row, cols.post) || '';
+      const platform = cell(row, cols.platform) || '';
+      const takeaway = cell(row, cols.takeaway) || '';
+      parts.push(`#${topPosts.indexOf(tp) + 1} [${platform}] ${text}`);
+      parts.push(`  Engagement: ${tp.likes}❤ ${tp.shares}🔄 ${tp.comments}💬${tp.views ? ` ${tp.views}👁` : ''}`);
+      if (takeaway) parts.push(`  Key lesson: ${takeaway}`);
+    }
+  }
+
+  // --- Takeaway/lesson compilation ---
+  const allTakeaways = [];
+  for (const row of rows) {
+    const t = cell(row, cols.takeaway);
+    if (t) allTakeaways.push(t);
+  }
+  if (allTakeaways.length > 0) {
+    parts.push('', '=== LESSONS LEARNED (from all posts) ===');
+    for (const t of allTakeaways) parts.push(`• ${t}`);
+  }
+
+  // --- Topic analysis ---
+  const sortedTopics = Object.keys(topicStats).sort((a, b) => topicStats[b].engagement - topicStats[a].engagement);
+  if (sortedTopics.length > 0) {
+    parts.push('', '=== TOPICS THAT RESONATE (ranked by engagement) ===');
+    for (const tk of sortedTopics.slice(0, 8)) {
+      const d = topicStats[tk];
+      const avg = d.posts > 0 ? Math.round(d.engagement / d.posts) : 0;
+      parts.push(`• ${tk}: ${d.posts} posts, ${d.engagement} total eng, ${avg} avg`);
+    }
+  }
+
+  // --- Platform-specific patterns ---
+  const targetPlat = byPlatform[plat];
+  if (targetPlat && targetPlat.length > 0) {
+    const posted = targetPlat.filter(p => p.eng > 0);
+    if (posted.length > 0) {
+      const avgEng = Math.round(posted.reduce((s, p) => s + p.eng, 0) / posted.length);
+      const bestPost = posted.sort((a, b) => b.eng - a.eng)[0];
+      parts.push('', `=== ${(PLATFORM_META[plat] || PLATFORM_META.other).label} PERFORMANCE ===`);
+      parts.push(`Average engagement: ${avgEng}`);
+      parts.push(`Best post: "${bestPost.text.slice(0, 120)}…" (${bestPost.eng} eng)`);
+      if (bestPost.takeaway) parts.push(`Best post lesson: ${bestPost.takeaway}`);
+    }
+  }
+
+  parts.push(
+    '',
+    '=== RULES ===',
+    '- Write ONLY the post text. No commentary, no "Here\'s a draft:", no options, no alternatives.',
+    '- Match the voice, tone, and energy of their existing posts — especially the top performers.',
+    '- Use their actual patterns: sentence length, punctuation style, emoji usage (or lack of), how they start posts.',
+    '- Keep it natural, not corporate or salesy.',
+    '- Apply the lessons they\'ve learned (from the takeaway notes).',
+    '- One post only. Ready to copy-paste.',
+    `- Strictly follow ${(PLATFORM_META[plat] || PLATFORM_META.other).label} format constraints: ${guide.limit}`,
+  );
+
+  return parts.join('\n');
+}
 
 /**
  * Build the AI writer composer panel.
- * Uses top-performing posts and takeaways as voice reference.
+ * State persists across auto-refresh re-renders.
  */
 function _buildWriter(rows, cols, topPosts, topicStats, template) {
   const section = el('div', { className: 'marketing-writer' });
@@ -93,10 +212,10 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     el('button', {
       className: 'marketing-writer-toggle',
       title: 'Toggle writer',
-    }, ['▾']),
+    }, [_writerState.expanded ? '▾' : '▸']),
   ]);
 
-  const body = el('div', { className: 'marketing-writer-body' });
+  const body = el('div', { className: `marketing-writer-body${_writerState.expanded ? '' : ' hidden'}` });
 
   // Platform selector
   const platformSelect = el('select', { className: 'marketing-writer-platform' }, [
@@ -109,24 +228,27 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     el('option', { value: 'email' }, ['Email']),
     el('option', { value: 'other' }, ['Other']),
   ]);
+  platformSelect.value = _writerState.platform;
 
-  // Idea input
+  // Idea input — restore saved state
   const ideaInput = el('textarea', {
     className: 'marketing-writer-idea',
     placeholder: 'What do you want to talk about? (e.g. "How Waymark helps organize messy spreadsheets" or "Announce the new recipe template")',
     rows: 3,
   });
+  ideaInput.value = _writerState.idea;
 
   // Generate button
   const genBtn = el('button', { className: 'marketing-writer-gen-btn' }, ['Generate Draft']);
 
-  // Draft output area (hidden initially)
-  const draftArea = el('div', { className: 'marketing-writer-draft hidden' });
+  // Draft output area — restore if there was a draft
+  const draftArea = el('div', { className: `marketing-writer-draft${_writerState.hasDraft ? '' : ' hidden'}` });
   const draftText = el('textarea', {
     className: 'marketing-writer-draft-text',
     rows: 6,
     placeholder: 'Your AI-generated draft will appear here…',
   });
+  draftText.value = _writerState.draft;
   const draftActions = el('div', { className: 'marketing-writer-draft-actions' }, [
     el('button', { className: 'marketing-writer-use-btn' }, ['Add to Sheet']),
     el('button', { className: 'marketing-writer-regen-btn' }, ['↻ Try Again']),
@@ -150,60 +272,17 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     draftArea,
   );
 
+  // Persist form state on every change so auto-refresh can restore it
+  platformSelect.addEventListener('change', () => { _writerState.platform = platformSelect.value; });
+  ideaInput.addEventListener('input', () => { _writerState.idea = ideaInput.value; });
+  draftText.addEventListener('input', () => { _writerState.draft = draftText.value; });
+
   // Toggle collapse
-  let expanded = true;
   header.addEventListener('click', () => {
-    expanded = !expanded;
-    body.classList.toggle('hidden', !expanded);
-    header.querySelector('.marketing-writer-toggle').textContent = expanded ? '▾' : '▸';
+    _writerState.expanded = !_writerState.expanded;
+    body.classList.toggle('hidden', !_writerState.expanded);
+    header.querySelector('.marketing-writer-toggle').textContent = _writerState.expanded ? '▾' : '▸';
   });
-
-  // Build voice context from top posts
-  function _buildSystemPrompt(plat) {
-    const guide = PLATFORM_GUIDANCE[plat] || PLATFORM_GUIDANCE.other;
-    const parts = [
-      'You are a social media content writer helping the user draft posts.',
-      'Your job is to match THEIR voice — learn from what has worked and write more like that.',
-      '',
-      `Target platform: ${(PLATFORM_META[plat] || PLATFORM_META.other).label}`,
-      `Format: ${guide.limit}`,
-      `Style notes: ${guide.style}`,
-    ];
-
-    // Add top-performing posts as voice reference
-    const postedPosts = topPosts.slice(0, 5);
-    if (postedPosts.length > 0) {
-      parts.push('', '--- VOICE REFERENCE (their best-performing posts) ---');
-      for (const tp of postedPosts) {
-        const row = rows[tp.idx];
-        const text = cell(row, cols.post) || '';
-        const platform = cell(row, cols.platform) || '';
-        const takeaway = cell(row, cols.takeaway) || '';
-        parts.push(`[${platform}] ${text}`);
-        if (takeaway) parts.push(`  Lesson: ${takeaway}`);
-        parts.push(`  Engagement: ${tp.likes} likes, ${tp.shares} shares, ${tp.comments} comments`);
-      }
-    }
-
-    // Add topic insights
-    const sortedTopics = Object.keys(topicStats).sort((a, b) => topicStats[b].engagement - topicStats[a].engagement);
-    if (sortedTopics.length > 0) {
-      parts.push('', '--- TOPICS THAT RESONATE ---');
-      parts.push(sortedTopics.slice(0, 5).join(', '));
-    }
-
-    parts.push(
-      '',
-      '--- RULES ---',
-      '- Write ONLY the post text. No commentary, no "Here\'s a draft:", no options.',
-      '- Match the voice and energy of their top posts.',
-      '- Keep it natural, not corporate or salesy.',
-      '- If they have takeaways/lessons, incorporate those insights.',
-      '- One post only. Ready to copy-paste.',
-    );
-
-    return parts.join('\n');
-  }
 
   // Generate handler
   async function _generate() {
@@ -219,11 +298,14 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     genBtn.textContent = 'Generating…';
     statusEl.textContent = '';
     draftArea.classList.add('hidden');
+    _writerState.hasDraft = false;
 
     try {
-      const systemPrompt = _buildSystemPrompt(plat);
+      const systemPrompt = _buildWriterPrompt(plat, rows, cols, topPosts, topicStats);
       const result = await generateText(systemPrompt, idea, { temperature: 0.8 });
       draftText.value = result;
+      _writerState.draft = result;
+      _writerState.hasDraft = true;
       draftArea.classList.remove('hidden');
       draftText.focus();
     } catch (err) {
@@ -246,7 +328,7 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
   // "Try Again" — re-generate
   draftActions.querySelector('.marketing-writer-regen-btn').addEventListener('click', _generate);
 
-  // "Add to Sheet" — emit a new row
+  // "Add to Sheet" — use _onAddRow (appendRows) for proper persistence
   draftActions.querySelector('.marketing-writer-use-btn').addEventListener('click', () => {
     const draft = draftText.value.trim();
     if (!draft) return;
@@ -254,17 +336,31 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
     const plat = platformSelect.value;
     const platLabel = (PLATFORM_META[plat] || PLATFORM_META.other).label;
     const topic = ideaInput.value.trim().slice(0, 80);
-    const newRowIdx = rows.length + 1; // 1-based, after all existing rows
 
-    // Emit edits for each column in the new row
-    if (cols.post >= 0)     emitEdit(newRowIdx, cols.post, draft);
-    if (cols.platform >= 0) emitEdit(newRowIdx, cols.platform, platLabel);
-    if (cols.status >= 0)   emitEdit(newRowIdx, cols.status, 'Idea');
-    if (cols.topic >= 0)    emitEdit(newRowIdx, cols.topic, topic);
+    // Build a complete row array matching the header columns
+    const totalCols = template._totalColumns || (template.defaultHeaders || []).length;
+    const newRow = new Array(totalCols).fill('');
+    if (cols.post >= 0)     newRow[cols.post] = draft;
+    if (cols.platform >= 0) newRow[cols.platform] = platLabel;
+    if (cols.status >= 0)   newRow[cols.status] = 'Idea';
+    if (cols.topic >= 0)    newRow[cols.topic] = topic;
 
-    showToast('Post added as Idea ✓', 'success');
+    if (typeof template._onAddRow === 'function') {
+      template._onAddRow([newRow]);
+    } else {
+      // Fallback: emit individual cell edits
+      const newRowIdx = rows.length + 1;
+      if (cols.post >= 0)     emitEdit(newRowIdx, cols.post, draft);
+      if (cols.platform >= 0) emitEdit(newRowIdx, cols.platform, platLabel);
+      if (cols.status >= 0)   emitEdit(newRowIdx, cols.status, 'Idea');
+      if (cols.topic >= 0)    emitEdit(newRowIdx, cols.topic, topic);
+      showToast('Post added as Idea ✓', 'success');
+    }
 
-    // Reset the writer
+    // Reset the writer state
+    _writerState.hasDraft = false;
+    _writerState.draft = '';
+    _writerState.idea = '';
     draftArea.classList.add('hidden');
     draftText.value = '';
     ideaInput.value = '';
