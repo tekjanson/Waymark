@@ -19,6 +19,7 @@
     "design-review": "npm run screenshots && npm run design-audit",
     "build-info": "node scripts/build-info.js",
     "test:agent:live": "WAYMARK_LOCAL=true node scripts/run-agent-evals.js",
+    "test:writer:eval": "WAYMARK_LOCAL=true node scripts/run-writer-evals.js",
     "test:report": "WAYMARK_LOCAL=true node scripts/generate-test-report.js",
     "test:report:upload": "WAYMARK_LOCAL=true node scripts/generate-test-report.js --upload"
   },
