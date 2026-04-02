@@ -1074,27 +1074,32 @@ import {
 } from '../storage.js';
 
 /**
- * Pick the best available Gemini API key (agent keys first, then server key).
- * @returns {{ key: string, idx: number } | null}
+ * Return all available API keys sorted by least-used first.
+ * @returns {Array<{ key: string, idx: number }>}
  */
-function _pickApiKey() {
+function _allApiKeys() {
   const keys = getAgentKeys();
+  const entries = [];
   if (keys.length > 0) {
     const now = Date.now();
-    const available = keys
+    const sorted = keys
       .map((k, i) => ({ ...k, idx: i }))
-      .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
-    const pool = available.length ? available : keys.map((k, i) => ({ ...k, idx: i }));
-    pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
-    return { key: pool[0].key, idx: pool[0].idx };
+      .sort((a, b) => {
+        const aErr = a.lastError && (now - new Date(a.lastError).getTime()) < 60000;
+        const bErr = b.lastError && (now - new Date(b.lastError).getTime()) < 60000;
+        if (aErr !== bErr) return aErr ? 1 : -1;
+        return (a.requestsToday || 0) - (b.requestsToday || 0);
+      });
+    for (const k of sorted) entries.push({ key: k.key, idx: k.idx });
   }
   const serverKey = window.__WAYMARK_API_KEY;
-  if (serverKey) return { key: serverKey, idx: -1 };
-  return null;
+  if (serverKey) entries.push({ key: serverKey, idx: -1 });
+  return entries;
 }
 
 /**
  * Call the Gemini API and return the text response.
+ * Retries with the next available key on 429/503 errors.
  * Templates use this for AI-powered features (§1.5-compliant).
  * @param {string} systemPrompt
  * @param {string} userMessage
@@ -1102,8 +1107,8 @@ function _pickApiKey() {
  * @returns {Promise<string>}
  */
 export async function generateText(systemPrompt, userMessage, opts = {}) {
-  const keyEntry = _pickApiKey();
-  if (!keyEntry) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
+  const keys = _allApiKeys();
+  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
 
   const model = getAgentModel() || DEFAULT_MODEL;
   const url = geminiUrl(model, 'generateContent');
@@ -1116,21 +1121,28 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
     },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: geminiHeaders(keyEntry.key),
-    body: JSON.stringify(body),
-  });
+  let lastErr;
+  for (const keyEntry of keys) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: geminiHeaders(keyEntry.key),
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Gemini API error ${res.status}`);
+    if (!res.ok) {
+      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+      const errBody = await res.json().catch(() => ({}));
+      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
+      if (res.status === 429 || res.status === 503) continue;
+      throw lastErr;
+    }
+
+    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+    if (!text) throw new Error('No response from AI. Try again.');
+    return text;
   }
 
-  if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-  if (!text) throw new Error('No response from AI. Try again.');
-  return text;
+  throw lastErr || new Error('All API keys exhausted. Try again later.');
 }

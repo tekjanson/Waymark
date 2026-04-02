@@ -314,7 +314,7 @@ function _buildWriter(rows, cols, topPosts, topicStats, template) {
 
     try {
       const systemPrompt = _buildWriterPrompt(plat, rows, cols, topPosts, topicStats);
-      const longForm = ['linkedin', 'reddit', 'blog', 'hn', 'youtube'].includes(plat);
+      const longForm = ['linkedin', 'reddit', 'blog', 'hn', 'youtube', 'tiktok'].includes(plat);
       const result = await generateText(systemPrompt, idea, {
         temperature: 0.8,
         maxTokens: longForm ? 2048 : 1024,
