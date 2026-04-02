@@ -44,14 +44,14 @@ export function openGameModal(opts) {
     className: 'arcade-modal-close',
     on: { click: closeGameModal },
   }, ['✕']);
-  const gameLabel = el('div', { className: 'arcade-modal-label' }, [
+  const gameLabel = el('div', { className: 'arcade-modal-title' }, [
     `${game.icon} ${game.name}`,
   ]);
   const wrapper = el('div', { className: 'arcade-canvas-wrap' }, [_canvas]);
 
   _modal = el('div', { className: 'arcade-modal-overlay' }, [
     el('div', { className: 'arcade-modal' }, [
-      el('div', { className: 'arcade-modal-header' }, [gameLabel, closeBtn]),
+      el('div', { className: 'arcade-modal-bar' }, [gameLabel, closeBtn]),
       wrapper,
     ]),
   ]);
@@ -110,7 +110,11 @@ export function openGameModal(opts) {
       if (_ctx.rollback) {
         _ctx.rollback.advance(_ctx);
       } else {
-        game.update(_ctx);
+        // Solo / lockstep: sample local input and pass it.
+        // Board games (chess/checkers) ignore these args, but
+        // action games (slime-volley/soccer) need them.
+        const input = sampleAll();
+        game.update(_ctx, _ctx.frame, input, 0);
       }
     },
     render(ctx, alpha) {
