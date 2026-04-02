@@ -62,10 +62,7 @@ export function createRollback(opts) {
         ctx.paused = true;
         // Keep sending input while paused so remote can catch up
         if (net) {
-          const pkt = encodeInput(currentFrame - 1, localInputs, lastAckedFrame);
-          net.sendFast(pkt);
-          // Also send on reliable channel to guarantee delivery when stalled
-          net.sendReliable(pkt);
+          net.sendFast(encodeInput(currentFrame - 1, localInputs, lastAckedFrame));
         }
         return;
       }
@@ -98,13 +95,7 @@ export function createRollback(opts) {
       // Send our input to remote with generous redundancy
       // Always send at least 16 frames of history even if all acked
       if (net) {
-        const inputPkt = encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 16));
-        net.sendFast(inputPkt);
-        // Every 3rd frame, also send on reliable channel for guaranteed delivery
-        // Handles burst packet loss on the fast (unreliable) channel
-        if (currentFrame % 3 === 0) {
-          net.sendReliable(inputPkt);
-        }
+        net.sendFast(encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 16)));
       }
 
       // Periodic state sync for resync recovery
@@ -156,14 +147,9 @@ export function createRollback(opts) {
         confirmedFrame++;
       }
 
-      // Send ack on both channels — lost acks cause the remote to stall
+      // Send ack
       if (net) {
-        const ackPkt = encodeInputAck(lastRemoteFrame);
-        net.sendFast(ackPkt);
-        // Reliable ack every 4th confirmed frame prevents ack-loss stalls
-        if (lastRemoteFrame % 4 === 0) {
-          net.sendReliable(ackPkt);
-        }
+        net.sendFast(encodeInputAck(lastRemoteFrame));
       }
 
       // Rollback if misprediction detected
