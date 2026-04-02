@@ -10,8 +10,8 @@ import { sampleAll } from './input.js';
 const MAX_PREDICTION = 15;      // max frames to run ahead of confirmed input
 const HISTORY_SIZE = 256;       // ring buffer size (must be power of 2)
 const HISTORY_MASK = HISTORY_SIZE - 1;
-const INPUT_DELAY = 2;          // frames of local input delay (reduces rollbacks)
-const SYNC_INTERVAL = 120;      // send state snapshot every N frames (2s @ 60Hz)
+const SYNC_INTERVAL = 60;       // send state snapshot every N frames (1s @ 60Hz)
+const ACK_INTERVAL = 30;        // send unsolicited ack every N frames (~0.5s)
 
 /* ---------- Rollback State ---------- */
 
@@ -31,8 +31,11 @@ export function createRollback(opts) {
   // Input history ring buffers (indexed by frame & HISTORY_MASK)
   const localInputs = new Uint8Array(HISTORY_SIZE);
   const remoteInputs = new Uint8Array(HISTORY_SIZE);
-  const remotePredicted = new Uint8Array(HISTORY_SIZE);
-  const remoteConfirmed = new Uint8Array(HISTORY_SIZE);  // 1 = confirmed, 0 = predicted
+
+  // Track which frame each ring buffer slot was confirmed for.
+  // Prevents stale confirmations from previous cycle (256 frames ago)
+  // bleeding into the current frame.
+  const remoteConfirmedAt = new Int32Array(HISTORY_SIZE).fill(-1);
 
   // State snapshot ring buffer
   const stateHistory = new Array(HISTORY_SIZE).fill(null);
@@ -68,14 +71,15 @@ export function createRollback(opts) {
       }
       ctx.paused = false;
 
-      // Sample local input (buffered with delay for smoother play)
+      // Sample local input
       const localBits = sampleAll();
       const idx = currentFrame & HISTORY_MASK;
       localInputs[idx] = localBits;
 
-      // Predict remote input (repeat last known)
-      if (!remoteConfirmed[idx]) {
-        remotePredicted[idx] = 1;
+      // Predict remote input if not already confirmed for THIS frame.
+      // Check the frame number, not just the slot, to prevent using
+      // stale confirmations from 256 frames ago.
+      if (remoteConfirmedAt[idx] !== currentFrame) {
         remoteInputs[idx] = lastRemoteFrame >= 0
           ? remoteInputs[lastRemoteFrame & HISTORY_MASK]
           : 0;
@@ -84,18 +88,20 @@ export function createRollback(opts) {
       // Save state snapshot before simulating
       stateHistory[idx] = serialize(ctx);
 
-      // Use delayed local input for simulation but current for sending
-      const delayedLocal = INPUT_DELAY > 0 && currentFrame >= INPUT_DELAY
-        ? localInputs[(currentFrame - INPUT_DELAY) & HISTORY_MASK]
-        : localBits;
-
-      // Simulate
-      simulate(ctx, currentFrame, delayedLocal, remoteInputs[idx]);
+      // Simulate — both advance() and rollback() use localInputs[f]
+      // directly so they always agree on the same input for each frame.
+      simulate(ctx, currentFrame, localBits, remoteInputs[idx]);
 
       // Send our input to remote with generous redundancy
       // Always send at least 16 frames of history even if all acked
       if (net) {
         net.sendFast(encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 16)));
+      }
+
+      // Periodic unsolicited ack — prevents ack starvation if inbound
+      // packets are lost for an extended period
+      if (net && currentFrame % ACK_INTERVAL === 0 && lastRemoteFrame >= 0) {
+        net.sendFast(encodeInputAck(lastRemoteFrame));
       }
 
       // Periodic state sync for resync recovery
@@ -118,8 +124,10 @@ export function createRollback(opts) {
 
       const { frame, count, inputs } = msg;
 
-      // Apply all inputs from the packet (redundant history)
-      let misprediction = false;
+      // Apply all inputs from the packet (redundant history).
+      // Track the earliest frame where our prediction was wrong
+      // so rollback starts from the correct snapshot.
+      let earliestMisprediction = -1;
       for (let i = 0; i < count; i++) {
         const f = frame - count + 1 + i;
         if (f < 0) continue;
@@ -127,23 +135,36 @@ export function createRollback(opts) {
 
         // Only process frames we haven't confirmed yet
         if (f <= confirmedFrame) continue;
+        // Skip frames beyond what we've simulated (future)
+        if (f >= currentFrame) {
+          // Pre-confirm: store for when advance() reaches this frame
+          remoteInputs[fi] = inputs[i];
+          remoteConfirmedAt[fi] = f;
+          if (f > lastRemoteFrame) lastRemoteFrame = f;
+          continue;
+        }
 
         const actualInput = inputs[i];
 
-        if (remotePredicted[fi] && remoteInputs[fi] !== actualInput) {
-          misprediction = true;
+        // Detect misprediction — slot was predicted (not confirmed for
+        // this exact frame) and the predicted value was wrong.
+        if (remoteConfirmedAt[fi] !== f && remoteInputs[fi] !== actualInput) {
+          if (earliestMisprediction < 0 || f < earliestMisprediction) {
+            earliestMisprediction = f;
+          }
         }
 
         remoteInputs[fi] = actualInput;
-        remoteConfirmed[fi] = 1;
-        remotePredicted[fi] = 0;
+        remoteConfirmedAt[fi] = f;
 
         if (f > lastRemoteFrame) lastRemoteFrame = f;
       }
 
-      // Advance confirmed frame
-      while (confirmedFrame + 1 < currentFrame &&
-             remoteConfirmed[(confirmedFrame + 1) & HISTORY_MASK]) {
+      // Advance confirmed frame — walk forward from last confirmed
+      // checking that each slot is confirmed for the correct frame
+      while (confirmedFrame + 1 < currentFrame) {
+        const nextFrame = confirmedFrame + 1;
+        if (remoteConfirmedAt[nextFrame & HISTORY_MASK] !== nextFrame) break;
         confirmedFrame++;
       }
 
@@ -153,8 +174,8 @@ export function createRollback(opts) {
       }
 
       // Rollback if misprediction detected
-      if (misprediction) {
-        this.rollback(ctx);
+      if (earliestMisprediction >= 0) {
+        this.rollback(ctx, earliestMisprediction);
       }
     },
 
@@ -200,16 +221,17 @@ export function createRollback(opts) {
      * Perform a rollback: restore state and replay from the earliest
      * corrected frame to the present.
      * @param {Object} ctx — engine context
+     * @param {number} [fromFrame] — earliest mispredicted frame
      */
-    rollback(ctx) {
+    rollback(ctx, fromFrame) {
       rollbackCount++;
 
-      // Find the earliest frame that needs correction
-      let replayFrom = confirmedFrame + 1;
+      // Start from the mispredicted frame, falling back to confirmedFrame + 1
+      let replayFrom = fromFrame != null ? fromFrame : confirmedFrame + 1;
       if (replayFrom < 0) replayFrom = 0;
       if (replayFrom >= currentFrame) return;  // nothing to replay
 
-      // Restore state at replayFrom
+      // Restore state at replayFrom (snapshot saved BEFORE that frame ran)
       const snap = stateHistory[replayFrom & HISTORY_MASK];
       if (!snap) return;
       deserialize(ctx, snap);
@@ -235,8 +257,7 @@ export function createRollback(opts) {
     reset() {
       localInputs.fill(0);
       remoteInputs.fill(0);
-      remotePredicted.fill(0);
-      remoteConfirmed.fill(0);
+      remoteConfirmedAt.fill(-1);
       stateHistory.fill(null);
       confirmedFrame = -1;
       currentFrame = 0;
