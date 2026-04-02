@@ -60,7 +60,7 @@ export function buildPeerList(peers, onInvite) {
 
   const list = el('div', { className: 'arcade-peer-list' }, []);
   for (const [peerId, info] of peers) {
-    const peerCard = el('div', { className: 'arcade-peer-card' }, [
+    const peerCard = el('div', { className: 'arcade-peer-card', dataset: { peerId } }, [
       el('span', { className: 'arcade-peer-name' }, [info.name || 'Peer']),
       el('span', { className: 'arcade-peer-channel' }, [
         info.channel === 'rtc' ? '🟢' : '🟡',

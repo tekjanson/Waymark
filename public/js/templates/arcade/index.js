@@ -23,6 +23,8 @@ let _cols = {};
 let _statusDot = null;
 let _statusLabel = null;
 let _peerCountEl = null;
+let _pendingInvite = null;       // { peerId, gameKey } — outgoing invite waiting for response
+let _inviteNotification = null;  // DOM element for incoming invite banner
 
 /* ---------- Cleanup ---------- */
 
@@ -36,6 +38,8 @@ function destroyConnect() {
   _statusDot = null;
   _statusLabel = null;
   _peerCountEl = null;
+  _pendingInvite = null;
+  dismissInviteNotification();
 }
 
 // Tear down when navigating away from the sheet
@@ -95,6 +99,9 @@ function startConnect(template) {
     onRemoteStream() { /* arcade doesn't use audio/video */ },
     onCallEnded() {},
     onCallActive() {},
+    onArcadeMessage(fromPeerId, msg) {
+      handleArcadeMessage(fromPeerId, msg);
+    },
   });
 
   _waymarkConnect.start();
@@ -189,15 +196,183 @@ function onInvite(peerId) {
     showToast('A game is already in progress', 'error');
     return;
   }
+  if (_pendingInvite) {
+    showToast('Already waiting for a response…', 'error');
+    return;
+  }
 
-  openGameModal({
+  const games = getGameList();
+  const game = games.find(g => g.key === _selectedGame);
+  const gameName = game ? game.name : _selectedGame;
+
+  // Send invite via the waymark DataChannel
+  _waymarkConnect.sendToPeer(peerId, {
+    type: 'arcade-invite',
     gameKey: _selectedGame,
-    waymarkConnect: _waymarkConnect,
-    remotePeerId: peerId,
-    onClose() {
-      // Could record result to sheet here
-    },
+    gameName,
+    peerId: _waymarkConnect.peerId,
+    name: _waymarkConnect.displayName,
   });
+
+  _pendingInvite = { peerId, gameKey: _selectedGame };
+
+  // Update UI — show waiting state on the invite button
+  showWaitingState(peerId);
+  showToast(`Invite sent! Waiting for response…`, 'info');
+}
+
+/* ---------- Arcade Message Dispatch ---------- */
+
+function handleArcadeMessage(fromPeerId, msg) {
+  switch (msg.type) {
+    case 'arcade-invite':
+      handleIncomingInvite(fromPeerId, msg);
+      break;
+    case 'arcade-accept':
+      handleAccept(fromPeerId, msg);
+      break;
+    case 'arcade-decline':
+      handleDecline(fromPeerId, msg);
+      break;
+  }
+}
+
+function handleIncomingInvite(fromPeerId, msg) {
+  if (isGameActive()) {
+    // Auto-decline if already in a game
+    _waymarkConnect.sendToPeer(fromPeerId, {
+      type: 'arcade-decline',
+      reason: 'busy',
+      peerId: _waymarkConnect.peerId,
+    });
+    return;
+  }
+
+  // Dismiss any previous invite notification
+  dismissInviteNotification();
+
+  // Show incoming invite notification
+  const peerName = msg.name || 'A player';
+  const gameName = msg.gameName || msg.gameKey;
+
+  _inviteNotification = el('div', { className: 'arcade-invite-notification' }, [
+    el('div', { className: 'arcade-invite-text' }, [
+      el('span', { className: 'arcade-invite-icon' }, ['🎮']),
+      el('span', {}, [`${peerName} wants to play `]),
+      el('strong', {}, [gameName]),
+    ]),
+    el('div', { className: 'arcade-invite-actions' }, [
+      el('button', {
+        className: 'arcade-invite-accept',
+        on: {
+          click: () => {
+            acceptInvite(fromPeerId, msg.gameKey);
+          },
+        },
+      }, ['Accept']),
+      el('button', {
+        className: 'arcade-invite-decline',
+        on: {
+          click: () => {
+            declineInvite(fromPeerId);
+          },
+        },
+      }, ['Decline']),
+    ]),
+  ]);
+
+  // Insert at top of lobby
+  if (_container) {
+    const lobby = _container.querySelector('.arcade-lobby');
+    if (lobby) {
+      lobby.prepend(_inviteNotification);
+    }
+  }
+}
+
+function acceptInvite(fromPeerId, gameKey) {
+  dismissInviteNotification();
+
+  // Open the game modal FIRST so ArcadeNet listener is ready before channels arrive
+  openGameModal({
+    gameKey,
+    waymarkConnect: _waymarkConnect,
+    remotePeerId: fromPeerId,
+    onClose() { clearWaitingState(); },
+  });
+
+  // THEN send accept — inviter's ArcadeNet will create channels after this
+  _waymarkConnect.sendToPeer(fromPeerId, {
+    type: 'arcade-accept',
+    gameKey,
+    peerId: _waymarkConnect.peerId,
+    name: _waymarkConnect.displayName,
+  });
+}
+
+function declineInvite(fromPeerId) {
+  dismissInviteNotification();
+  _waymarkConnect.sendToPeer(fromPeerId, {
+    type: 'arcade-decline',
+    peerId: _waymarkConnect.peerId,
+  });
+}
+
+function handleAccept(fromPeerId, msg) {
+  if (!_pendingInvite || _pendingInvite.peerId !== fromPeerId) return;
+  const gameKey = _pendingInvite.gameKey;
+  _pendingInvite = null;
+  clearWaitingState();
+
+  // Open game modal — the acceptor already has ArcadeNet listening
+  openGameModal({
+    gameKey,
+    waymarkConnect: _waymarkConnect,
+    remotePeerId: fromPeerId,
+    onClose() {},
+  });
+}
+
+function handleDecline(fromPeerId, msg) {
+  if (!_pendingInvite || _pendingInvite.peerId !== fromPeerId) return;
+  _pendingInvite = null;
+  clearWaitingState();
+  const reason = msg.reason === 'busy' ? 'They are already in a game' : 'Invite declined';
+  showToast(reason, 'error');
+}
+
+function dismissInviteNotification() {
+  if (_inviteNotification) {
+    _inviteNotification.remove();
+    _inviteNotification = null;
+  }
+}
+
+function showWaitingState(peerId) {
+  if (!_container) return;
+  const btns = _container.querySelectorAll('.arcade-invite-btn');
+  for (const btn of btns) {
+    const card = btn.closest('.arcade-peer-card');
+    if (!card) continue;
+    // Disable all invite buttons while waiting
+    btn.disabled = true;
+    // Show waiting text on the invited peer's button
+    if (card.dataset.peerId === peerId) {
+      btn.textContent = 'Waiting…';
+      btn.classList.add('arcade-invite-btn-waiting');
+    }
+  }
+}
+
+function clearWaitingState() {
+  _pendingInvite = null;
+  if (!_container) return;
+  const btns = _container.querySelectorAll('.arcade-invite-btn');
+  for (const btn of btns) {
+    btn.disabled = false;
+    btn.textContent = 'Invite';
+    btn.classList.remove('arcade-invite-btn-waiting');
+  }
 }
 
 /* ---------- Template Definition ---------- */

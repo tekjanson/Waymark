@@ -67,6 +67,7 @@ export class WaymarkConnect {
     this.onRemoteStream = opts.onRemoteStream || (() => {});
     this.onCallEnded = opts.onCallEnded || (() => {});
     this.onCallActive = opts.onCallActive || (() => {});
+    this.onArcadeMessage = opts.onArcadeMessage || null;
 
     this._bc = null;
     this._peers = new Map();        // peerId → { name, channel }
@@ -116,6 +117,14 @@ export class WaymarkConnect {
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
+  }
+
+  /** Send a JSON message to a specific peer's DataChannel. */
+  sendToPeer(peerId, msg) {
+    const entry = this._rtc.get(peerId);
+    if (entry?.dc?.readyState === 'open') {
+      entry.dc.send(JSON.stringify(msg));
+    }
   }
 
   /** Start an audio/video call — adds tracks to ALL peer connections. */
@@ -777,6 +786,9 @@ export class WaymarkConnect {
             break;
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
+            break;
+          default:
+            if (this.onArcadeMessage) this.onArcadeMessage(remotePeerId, m);
             break;
         }
       } catch {}

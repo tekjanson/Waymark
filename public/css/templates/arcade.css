@@ -235,6 +235,79 @@
   opacity: 0.85;
 }
 
+.arcade-invite-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.arcade-invite-btn-waiting {
+  background: var(--text-muted);
+}
+
+/* ---------- Invite Notification ---------- */
+
+.arcade-invite-notification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  animation: arcade-invite-slide 0.3s ease;
+  flex-wrap: wrap;
+}
+
+@keyframes arcade-invite-slide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.arcade-invite-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.arcade-invite-icon {
+  font-size: 1.2rem;
+}
+
+.arcade-invite-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.arcade-invite-accept,
+.arcade-invite-decline {
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.arcade-invite-accept {
+  background: #fff;
+  color: var(--accent);
+}
+
+.arcade-invite-decline {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+.arcade-invite-accept:hover,
+.arcade-invite-decline:hover {
+  opacity: 0.85;
+}
+
 .arcade-no-peers {
   padding: var(--space-md);
   text-align: center;
