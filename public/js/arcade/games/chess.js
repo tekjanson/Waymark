@@ -341,7 +341,8 @@ const CHECK_COLOR = 'rgba(220, 50, 50, 0.5)';
 function renderBoard(ctx, alpha) {
   const gs = ctx.state;
   const board = gs.board;
-  const flipped = ctx.localPlayerId === 1;
+  const solo = !ctx.net;
+  const flipped = !solo && ctx.localPlayerId === 1;
 
   clear('#2c2c2c');
 
@@ -437,7 +438,7 @@ function renderBoard(ctx, alpha) {
     });
   } else {
     const turnStr = gs.turn === 0 ? 'White' : 'Black';
-    const youStr = gs.turn === ctx.localPlayerId ? ' (your turn)' : '';
+    const youStr = solo ? '' : (gs.turn === ctx.localPlayerId ? ' (your turn)' : '');
     drawText(`${turnStr} to move${youStr}`, VIRTUAL_W / 2, statusY, {
       size: 12, align: 'center', color: '#ccc',
     });
@@ -456,7 +457,9 @@ function renderBoard(ctx, alpha) {
 
 function renderPromoDialog(ctx) {
   const gs = ctx.state;
-  const color = ctx.localPlayerId === 0 ? 0 : 0x80;
+  const solo = !ctx.net;
+  const promoColor = solo ? gs.turn : ctx.localPlayerId;
+  const color = promoColor === 0 ? 0 : 0x80;
   const pieces = [
     { type: 'q', code: color | 5 },
     { type: 'r', code: color | 4 },
@@ -484,11 +487,12 @@ function handleClick(ctx) {
   if (!consumeClick()) return;
   const gs = ctx.state;
   if (gs.status !== 'playing' && gs.status !== 'check') return;
-  if (gs.turn !== ctx.localPlayerId) return;
+  const solo = !ctx.net;
+  if (!solo && gs.turn !== ctx.localPlayerId) return;
   if (gs.waitingForAck) return;
 
   const mouse = getMousePos();
-  const flipped = ctx.localPlayerId === 1;
+  const flipped = !solo && ctx.localPlayerId === 1;
 
   // Promotion dialog click
   if (gs.promoSquare >= 0) {
@@ -535,7 +539,7 @@ function handleClick(ctx) {
 
   // Select a piece
   const p = gs.board[clickSq];
-  if (p !== EMPTY && pieceColor(p) === ctx.localPlayerId) {
+  if (p !== EMPTY && (solo ? pieceColor(p) === gs.turn : pieceColor(p) === ctx.localPlayerId)) {
     gs.selected = clickSq;
     gs.legalMoves = generateMoves(gs.board, gs.turn, gs).filter(m => m.from === clickSq);
   } else {

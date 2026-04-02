@@ -191,7 +191,7 @@ export function stopMouseInput(canvas) {
 }
 
 function _onMouseMove(e) {
-  if (_pageToVirtual) _mousePos = _pageToVirtual(e.pageX, e.pageY);
+  if (_pageToVirtual) _mousePos = _pageToVirtual(e.clientX, e.clientY);
 }
 
 function _onMouseDown() {
@@ -204,7 +204,7 @@ function _onMouseUp() {
 
 function _onClick(e) {
   if (_pageToVirtual) {
-    _mousePos = _pageToVirtual(e.pageX, e.pageY);
+    _mousePos = _pageToVirtual(e.clientX, e.clientY);
   }
   _mouseClicked = true;
 }
@@ -212,14 +212,14 @@ function _onClick(e) {
 function _onTouchStart(e) {
   e.preventDefault();
   const t = e.touches[0];
-  if (_pageToVirtual && t) _mousePos = _pageToVirtual(t.pageX, t.pageY);
+  if (_pageToVirtual && t) _mousePos = _pageToVirtual(t.clientX, t.clientY);
   _mouseDown = true;
 }
 
 function _onTouchMove(e) {
   e.preventDefault();
   const t = e.touches[0];
-  if (_pageToVirtual && t) _mousePos = _pageToVirtual(t.pageX, t.pageY);
+  if (_pageToVirtual && t) _mousePos = _pageToVirtual(t.clientX, t.clientY);
 }
 
 function _onTouchEnd() {

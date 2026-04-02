@@ -11,7 +11,7 @@ import {
 } from '../../arcade/engine.js';
 import { createArcadeNet, MSG, decodeMessage, encodeControl } from '../../arcade/net.js';
 import { createRollback } from '../../arcade/rollback.js';
-import { sampleAll } from '../../arcade/input.js';
+import { sampleAll, sampleInput, P1_KEYS, P2_KEYS } from '../../arcade/input.js';
 
 /* ---------- State ---------- */
 
@@ -114,7 +114,9 @@ export function openGameModal(opts) {
         // Board games (chess/checkers) ignore these args, but
         // action games (slime-volley/soccer) need them.
         const input = sampleAll();
-        game.update(_ctx, _ctx.frame, input, 0);
+        // In solo mode, let a second local player use WASD.
+        const p2input = _ctx.net ? 0 : sampleInput(P2_KEYS);
+        game.update(_ctx, _ctx.frame, input, p2input);
       }
     },
     render(ctx, alpha) {

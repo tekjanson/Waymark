@@ -232,7 +232,8 @@ const LAST_MOVE_COLOR = 'rgba(155, 199, 0, 0.3)';
 
 function renderBoard(ctx, alpha) {
   const gs = ctx.state;
-  const flipped = ctx.localPlayerId === 1;
+  const solo = !ctx.net;
+  const flipped = !solo && ctx.localPlayerId === 1;
 
   clear('#2c2c2c');
 
@@ -321,7 +322,7 @@ function renderBoard(ctx, alpha) {
     });
   } else {
     const turnStr = gs.turn === 0 ? 'White' : 'Black';
-    const youStr = gs.turn === ctx.localPlayerId ? ' (your turn)' : '';
+    const youStr = solo ? '' : (gs.turn === ctx.localPlayerId ? ' (your turn)' : '');
     drawText(`${turnStr} to move${youStr}`, VIRTUAL_W / 2, statusY, {
       size: 12, align: 'center', color: '#ccc',
     });
@@ -334,10 +335,11 @@ function handleClick(ctx) {
   if (!consumeClick()) return;
   const gs = ctx.state;
   if (gs.status !== 'playing') return;
-  if (gs.turn !== ctx.localPlayerId) return;
+  const solo = !ctx.net;
+  if (!solo && gs.turn !== ctx.localPlayerId) return;
 
   const mouse = getMousePos();
-  const flipped = ctx.localPlayerId === 1;
+  const flipped = !solo && ctx.localPlayerId === 1;
 
   const boardCol = Math.floor((mouse.x - BOARD_X) / SQ);
   const boardRow = Math.floor((mouse.y - BOARD_Y) / SQ);
@@ -370,7 +372,7 @@ function handleClick(ctx) {
 
   // Select piece
   const p = gs.board[clickSq];
-  if (p !== EMPTY && pieceColor(p) === ctx.localPlayerId) {
+  if (p !== EMPTY && (solo ? pieceColor(p) === gs.turn : pieceColor(p) === ctx.localPlayerId)) {
     gs.selected = clickSq;
     // Check for multi-jumps first
     const chains = getMultiJumps(gs.board, clickSq, gs.turn);
