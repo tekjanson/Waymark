@@ -468,7 +468,7 @@ export class WaymarkConnect {
       this.onStatusChanged('listening');
     } else {
       const hasOpenDC = Array.from(this._rtc.values()).some(r => r.dc?.readyState === 'open');
-      this.onStatusChanged(hasOpenDC || this._bc ? 'connected' : 'pairing');
+      this.onStatusChanged(hasOpenDC ? 'connected' : 'pairing');
     }
   }
 

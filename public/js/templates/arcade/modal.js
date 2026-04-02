@@ -100,6 +100,11 @@ export function openGameModal(opts) {
     const arcadeNet = createArcadeNet(waymarkConnect, remotePeerId);
     if (arcadeNet) {
       _ctx.net = arcadeNet;
+      _ctx.netReady = false;
+
+      arcadeNet.onOpen = () => {
+        _ctx.netReady = true;
+      };
 
       if (game.netModel === 'rollback') {
         setupRollbackGame(_ctx, game, arcadeNet);
@@ -118,6 +123,9 @@ export function openGameModal(opts) {
       game.init(_ctx);
     },
     update() {
+      // Wait for network channels to be ready before processing game logic
+      if (_ctx.net && !_ctx.netReady) return;
+
       if (_ctx.rollback) {
         _ctx.rollback.advance(_ctx);
       } else {
