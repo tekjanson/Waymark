@@ -119,11 +119,16 @@ export class WaymarkConnect {
     return msg;
   }
 
-  /** Send a JSON message to a specific peer's DataChannel. */
+  /** Send a JSON message to a specific peer's DataChannel (or BroadcastChannel fallback). */
   sendToPeer(peerId, msg) {
     const entry = this._rtc.get(peerId);
     if (entry?.dc?.readyState === 'open') {
       entry.dc.send(JSON.stringify(msg));
+      return;
+    }
+    // Fallback: BroadcastChannel for same-browser peers without an open DC
+    if (this._bc) {
+      this._bc.postMessage({ ...msg, _to: peerId });
     }
   }
 
@@ -497,6 +502,11 @@ export class WaymarkConnect {
       case 'leave':
         this._peers.delete(d.peerId);
         this._emitPeers();
+        break;
+      default:
+        // Forward targeted arcade messages (invite/accept/decline)
+        if (d._to && d._to !== this.peerId) return;
+        if (this.onArcadeMessage) this.onArcadeMessage(d.peerId, d);
         break;
     }
   }

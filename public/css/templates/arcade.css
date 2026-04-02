@@ -61,6 +61,7 @@
 }
 
 .arcade-game-card {
+  touch-action: manipulation;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -229,6 +230,7 @@
   cursor: pointer;
   transition: opacity 0.15s;
   white-space: nowrap;
+  touch-action: manipulation;
 }
 
 .arcade-invite-btn:hover {
@@ -291,6 +293,7 @@
   border-radius: var(--radius);
   cursor: pointer;
   transition: opacity 0.15s;
+  touch-action: manipulation;
 }
 
 .arcade-invite-accept {
@@ -414,12 +417,14 @@
   width: 100%;
   aspect-ratio: 640 / 360;
   overflow: hidden;
+  touch-action: none;
 }
 
 .arcade-canvas {
   display: block;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  touch-action: none;
 }
 
 /* ---------- Animations ---------- */
