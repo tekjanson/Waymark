@@ -356,6 +356,82 @@
   to   { opacity: 1; }
 }
 
+/* ---------- Virtual Touch Controls ---------- */
+
+.arcade-touch-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 12px 16px;
+}
+
+.arcade-touch-dpad,
+.arcade-touch-actions {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.arcade-touch-actions {
+  flex-direction: row-reverse;
+  gap: 10px;
+}
+
+.arcade-touch-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  cursor: pointer;
+  transition: background 0.08s, transform 0.08s;
+}
+
+.arcade-touch-btn.active {
+  background: rgba(255, 255, 255, 0.30);
+  transform: scale(0.92);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.arcade-touch-jump {
+  width: 64px;
+  height: 64px;
+  font-size: 1.4rem;
+  margin-bottom: 4px;
+}
+
+.arcade-touch-kick {
+  width: 52px;
+  height: 52px;
+  font-size: 1rem;
+  background: rgba(230, 80, 80, 0.15);
+  border-color: rgba(230, 80, 80, 0.45);
+  color: rgba(255, 150, 150, 0.8);
+}
+
+.arcade-touch-kick.active {
+  background: rgba(230, 80, 80, 0.4);
+  border-color: rgba(230, 80, 80, 0.7);
+}
+
+/* Hide touch controls on non-touch devices */
+@media (pointer: fine) and (min-width: 900px) {
+  .arcade-touch-overlay { display: none; }
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 700px) {

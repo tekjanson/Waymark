@@ -250,6 +250,8 @@ export class ArcadeNet {
     this.onClose = null;
     /** @type {number} */
     this.rtt = 100;
+    /** @type {number} */
+    this.jitter = 0;
 
     this._pingTimer = null;
     this._openCount = 0;
@@ -295,11 +297,15 @@ export class ArcadeNet {
 
   _wireChannel(ch, kind) {
     ch.binaryType = 'arraybuffer';
+    // Reduce buffering for lower latency on the fast channel
+    if (kind === 'fast' && ch.bufferedAmountLowThreshold !== undefined) {
+      ch.bufferedAmountLowThreshold = 0;
+    }
     ch.onopen = () => {
       this._openCount++;
       if (this._openCount >= 2 && this.onOpen) this.onOpen();
       if (kind === 'fast' && !this._pingTimer) {
-        this._pingTimer = setInterval(() => this._sendPing(), 500);
+        this._pingTimer = setInterval(() => this._sendPing(), 250);
       }
     };
     ch.onclose = () => {
@@ -319,7 +325,10 @@ export class ArcadeNet {
       }
       if (type === MSG.PONG) {
         const ts = view.getFloat64(1, true);
-        this.rtt = this.rtt * 0.8 + (performance.now() - ts) * 0.2;
+        const sample = performance.now() - ts;
+        // Exponential moving average + jitter tracking
+        this.rtt = this.rtt * 0.7 + sample * 0.3;
+        this.jitter = this.jitter * 0.7 + Math.abs(sample - this.rtt) * 0.3;
         return;
       }
 
@@ -351,10 +360,13 @@ export class ArcadeNet {
 
   /**
    * Send on unreliable fast channel (real-time input/state).
+   * Drops packets if the send buffer is backing up (prevents stale data).
    * @param {ArrayBuffer} buf
    */
   sendFast(buf) {
     if (this.fast && this.fast.readyState === 'open') {
+      // Drop if buffer already has >16KB queued — data would arrive stale
+      if (this.fast.bufferedAmount > 16384) return;
       this.fast.send(buf);
     }
   }

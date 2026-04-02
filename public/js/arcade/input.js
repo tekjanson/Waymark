@@ -258,10 +258,140 @@ export function consumeClick() {
 /* ---------- Combined Input ---------- */
 
 /**
- * Sample all input sources (keyboard + gamepad) as a combined byte.
+ * Sample all input sources (keyboard + gamepad + touch) as a combined byte.
  * @param {KeyMap} [keyMap]
  * @returns {number}
  */
 export function sampleAll(keyMap = P1_KEYS) {
-  return sampleInput(keyMap) | sampleGamepad();
+  return sampleInput(keyMap) | sampleGamepad() | _touchBits;
+}
+
+/* ============================================================
+   Virtual Touch Controls — on-screen d-pad + action buttons
+   for mobile / touch-only devices.
+   ============================================================ */
+
+let _touchBits = 0;
+let _touchOverlay = null;
+let _touchActive = false;
+
+/**
+ * Is the device likely touch-primary?
+ * (Has touch AND small screen, or has no fine pointer.)
+ */
+function isTouchDevice() {
+  if (!('ontouchstart' in window)) return false;
+  return matchMedia('(pointer: coarse)').matches ||
+         matchMedia('(max-width: 900px)').matches;
+}
+
+/**
+ * Create and attach the virtual touch control overlay.
+ * Should be called when opening a game that uses directional input.
+ * @param {HTMLElement} parent — the modal element to attach to
+ * @param {Object} [opts]
+ * @param {boolean} [opts.showKick] — show the kick (Z) button
+ */
+export function createTouchControls(parent, opts = {}) {
+  if (_touchActive) destroyTouchControls();
+  if (!isTouchDevice()) return;
+
+  _touchBits = 0;
+  _touchActive = true;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'arcade-touch-overlay';
+
+  // --- D-Pad (left side) ---
+  const dpad = document.createElement('div');
+  dpad.className = 'arcade-touch-dpad';
+
+  const btnLeft = _touchBtn('arcade-touch-btn arcade-touch-left', '◀', INPUT.LEFT);
+  const btnRight = _touchBtn('arcade-touch-btn arcade-touch-right', '▶', INPUT.RIGHT);
+  dpad.append(btnLeft, btnRight);
+
+  // --- Action buttons (right side) ---
+  const actions = document.createElement('div');
+  actions.className = 'arcade-touch-actions';
+
+  const btnJump = _touchBtn('arcade-touch-btn arcade-touch-jump', '▲', INPUT.UP);
+  actions.append(btnJump);
+
+  if (opts.showKick) {
+    const btnKick = _touchBtn('arcade-touch-btn arcade-touch-kick', 'Z', INPUT.ACTION1);
+    actions.append(btnKick);
+  }
+
+  overlay.append(dpad, actions);
+  parent.append(overlay);
+  _touchOverlay = overlay;
+
+  // Prevent any touch on the overlay from propagating to the canvas
+  overlay.addEventListener('touchstart', _eatEvent, { passive: false });
+  overlay.addEventListener('touchmove', _eatEvent, { passive: false });
+  overlay.addEventListener('touchend', _eatEvent, { passive: false });
+}
+
+/**
+ * Remove the virtual touch controls.
+ */
+export function destroyTouchControls() {
+  _touchBits = 0;
+  _touchActive = false;
+  if (_touchOverlay) {
+    _touchOverlay.removeEventListener('touchstart', _eatEvent);
+    _touchOverlay.removeEventListener('touchmove', _eatEvent);
+    _touchOverlay.removeEventListener('touchend', _eatEvent);
+    _touchOverlay.remove();
+    _touchOverlay = null;
+  }
+}
+
+function _eatEvent(e) { e.preventDefault(); e.stopPropagation(); }
+
+/**
+ * Create a single touch button element.
+ * Uses multi-touch–friendly touchstart/touchend (not click).
+ */
+function _touchBtn(className, label, bit) {
+  const btn = document.createElement('button');
+  btn.className = className;
+  btn.textContent = label;
+  btn.setAttribute('data-bit', bit);
+
+  // Track per-button presses using touch events for multi-touch
+  btn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    _touchBits |= bit;
+    btn.classList.add('active');
+  }, { passive: false });
+
+  btn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    _touchBits &= ~bit;
+    btn.classList.remove('active');
+  }, { passive: false });
+
+  // Also clear on touchcancel
+  btn.addEventListener('touchcancel', () => {
+    _touchBits &= ~bit;
+    btn.classList.remove('active');
+  });
+
+  // Mouse fallback for testing on desktop
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    _touchBits |= bit;
+    btn.classList.add('active');
+  });
+  btn.addEventListener('mouseup', () => {
+    _touchBits &= ~bit;
+    btn.classList.remove('active');
+  });
+  btn.addEventListener('mouseleave', () => {
+    _touchBits &= ~bit;
+    btn.classList.remove('active');
+  });
+
+  return btn;
 }

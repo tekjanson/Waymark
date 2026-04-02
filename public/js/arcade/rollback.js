@@ -2,14 +2,16 @@
    arcade/rollback.js — Rollback / GGPO-style netcode
    ============================================================ */
 
-import { MSG, encodeInput, encodeInputAck, decodeMessage } from './net.js';
+import { MSG, encodeInput, encodeInputAck, encodeStateSnap, decodeMessage } from './net.js';
 import { sampleAll } from './input.js';
 
 /* ---------- Constants ---------- */
 
-const MAX_PREDICTION = 8;       // max frames to run ahead of confirmed input
+const MAX_PREDICTION = 15;      // max frames to run ahead of confirmed input
 const HISTORY_SIZE = 256;       // ring buffer size (must be power of 2)
 const HISTORY_MASK = HISTORY_SIZE - 1;
+const INPUT_DELAY = 2;          // frames of local input delay (reduces rollbacks)
+const SYNC_INTERVAL = 120;      // send state snapshot every N frames (2s @ 60Hz)
 
 /* ---------- Rollback State ---------- */
 
@@ -58,11 +60,15 @@ export function createRollback(opts) {
       // Check if we're too far ahead — pause if so
       if (currentFrame - confirmedFrame > MAX_PREDICTION) {
         ctx.paused = true;
+        // Keep sending input while paused so remote can catch up
+        if (net) {
+          net.sendFast(encodeInput(currentFrame - 1, localInputs, lastAckedFrame));
+        }
         return;
       }
       ctx.paused = false;
 
-      // Sample local input
+      // Sample local input (buffered with delay for smoother play)
       const localBits = sampleAll();
       const idx = currentFrame & HISTORY_MASK;
       localInputs[idx] = localBits;
@@ -78,12 +84,24 @@ export function createRollback(opts) {
       // Save state snapshot before simulating
       stateHistory[idx] = serialize(ctx);
 
-      // Simulate
-      simulate(ctx, currentFrame, localBits, remoteInputs[idx]);
+      // Use delayed local input for simulation but current for sending
+      const delayedLocal = INPUT_DELAY > 0 && currentFrame >= INPUT_DELAY
+        ? localInputs[(currentFrame - INPUT_DELAY) & HISTORY_MASK]
+        : localBits;
 
-      // Send our input to remote (with redundancy)
+      // Simulate
+      simulate(ctx, currentFrame, delayedLocal, remoteInputs[idx]);
+
+      // Send our input to remote with generous redundancy
+      // Always send at least 8 frames of history even if all acked
       if (net) {
-        net.sendFast(encodeInput(currentFrame, localInputs, lastAckedFrame));
+        net.sendFast(encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 8)));
+      }
+
+      // Periodic state sync for resync recovery
+      if (net && currentFrame > 0 && currentFrame % SYNC_INTERVAL === 0 && confirmedFrame >= currentFrame - 5) {
+        const snap = serialize(ctx);
+        net.sendReliable(encodeStateSnap(currentFrame, snap));
       }
 
       currentFrame++;
@@ -149,6 +167,32 @@ export function createRollback(opts) {
       if (msg.type !== MSG.INPUT_ACK) return;
       if (msg.frame > lastAckedFrame) {
         lastAckedFrame = msg.frame;
+      }
+    },
+
+    /**
+     * Handle an incoming state snapshot from remote for resync.
+     * Only applies if the snapshot frame is within our history window
+     * and both peers have confirmed inputs up to that point.
+     * @param {Object} ctx — engine context
+     * @param {ArrayBuffer} buffer
+     */
+    onStateSnap(ctx, buffer) {
+      const msg = decodeMessage(buffer);
+      if (msg.type !== MSG.STATE_SNAP) return;
+      const snapFrame = msg.frame;
+      // Only apply if we have confirmed that frame and it's not ancient
+      if (snapFrame > confirmedFrame || snapFrame < currentFrame - HISTORY_SIZE / 2) return;
+      // Overwrite our saved state at that frame and replay forward
+      stateHistory[snapFrame & HISTORY_MASK] = msg.data;
+      deserialize(ctx, msg.data);
+      // Replay from snapFrame to currentFrame
+      for (let f = snapFrame; f < currentFrame; f++) {
+        const fi = f & HISTORY_MASK;
+        simulate(ctx, f, localInputs[fi], remoteInputs[fi]);
+        if (f + 1 < currentFrame) {
+          stateHistory[(f + 1) & HISTORY_MASK] = serialize(ctx);
+        }
       }
     },
 

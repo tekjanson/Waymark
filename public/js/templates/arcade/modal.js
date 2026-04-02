@@ -11,7 +11,7 @@ import {
 } from '../../arcade/engine.js';
 import { createArcadeNet, MSG, decodeMessage, encodeControl } from '../../arcade/net.js';
 import { createRollback } from '../../arcade/rollback.js';
-import { sampleAll, sampleInput, P1_KEYS, P2_KEYS } from '../../arcade/input.js';
+import { sampleAll, sampleInput, P1_KEYS, P2_KEYS, createTouchControls, destroyTouchControls } from '../../arcade/input.js';
 
 /* ---------- State ---------- */
 
@@ -73,6 +73,17 @@ export function openGameModal(opts) {
   initRenderer(_canvas);
   startInput();
   startMouseInput(_canvas, pageToVirtual);
+
+  // Create virtual touch controls for action games on touch devices
+  const needsDpad = game.inputSchema && (
+    game.inputSchema.includes('left') || game.inputSchema.includes('up')
+  );
+  if (needsDpad) {
+    const canvasWrap = _modal.querySelector('.arcade-canvas-wrap');
+    createTouchControls(canvasWrap, {
+      showKick: game.inputSchema.includes('action1'),
+    });
+  }
 
   // Create engine context
   _ctx = createContext();
@@ -145,6 +156,7 @@ export function closeGameModal() {
   }
 
   stopInput();
+  destroyTouchControls();
   if (_canvas) {
     stopMouseInput(_canvas);
   }
@@ -193,6 +205,8 @@ function setupRollbackGame(ctx, game, arcadeNet) {
     const msg = decodeMessage(buffer);
     if (msg.type === MSG.GAME_END) {
       ctx.ended = true;
+    } else if (msg.type === MSG.STATE_SNAP) {
+      rollback.onStateSnap(ctx, buffer);
     }
   };
 }
