@@ -20,6 +20,26 @@ let _waymarkConnect = null;
 let _peers = new Map();
 let _selectedGame = '';
 let _cols = {};
+let _statusDot = null;
+let _statusLabel = null;
+let _peerCountEl = null;
+
+/* ---------- Cleanup ---------- */
+
+function destroyConnect() {
+  if (_waymarkConnect) {
+    _waymarkConnect.destroy();
+    _waymarkConnect = null;
+  }
+  _peers = new Map();
+  _container = null;
+  _statusDot = null;
+  _statusLabel = null;
+  _peerCountEl = null;
+}
+
+// Tear down when navigating away from the sheet
+window.addEventListener('waymark:sheet-hidden', destroyConnect);
 
 /* ---------- Column Detection ---------- */
 
@@ -34,9 +54,58 @@ function columns(lower) {
   return cols;
 }
 
+/* ---------- Start WebRTC Connection ---------- */
+
+/** Create and start WaymarkConnect for automatic peer discovery. */
+function startConnect(template) {
+  // Don't double-connect
+  if (_waymarkConnect) return;
+
+  const sheetId = template._rtcSheetId;
+  const signal = template._rtcSignal;
+  const displayName = template._rtcUserName || 'Anonymous';
+
+  if (!sheetId) return; // no sheet context, can't signal
+
+  _waymarkConnect = new WaymarkConnect(sheetId, {
+    displayName,
+    signal: signal || null,
+    onMessage() { /* arcade doesn't use chat messages */ },
+    onPeersChanged(peers) {
+      _peers = peers;
+      refreshPeerList();
+      if (_peerCountEl) {
+        _peerCountEl.textContent = `${peers.size} player${peers.size !== 1 ? 's' : ''}`;
+      }
+    },
+    onStatusChanged(status) {
+      if (_statusDot) {
+        _statusDot.className = `arcade-status-dot arcade-status-${status}`;
+      }
+      if (_statusLabel) {
+        const labels = {
+          connected: 'Connected',
+          listening: 'Searching for players…',
+          pairing: 'Found a player…',
+          disconnected: 'Disconnected',
+        };
+        _statusLabel.textContent = labels[status] || status;
+      }
+    },
+    onRemoteStream() { /* arcade doesn't use audio/video */ },
+    onCallEnded() {},
+    onCallActive() {},
+  });
+
+  _waymarkConnect.start();
+}
+
 /* ---------- Render ---------- */
 
-function render(container, rows, cols) {
+function render(container, rows, cols, template) {
+  // Clean up any previous connection before re-rendering
+  destroyConnect();
+
   container.innerHTML = '';
   _container = container;
   _cols = cols;
@@ -66,9 +135,18 @@ function render(container, rows, cols) {
   ]);
   body.append(gamesSection);
 
-  // Peers section
+  // Peers section — with connection status
+  _statusDot = el('span', { className: 'arcade-status-dot arcade-status-listening' });
+  _statusLabel = el('span', { className: 'arcade-status-label' }, ['Searching for players…']);
+  _peerCountEl = el('span', { className: 'arcade-peer-count-label' }, ['0 players']);
+
   const peersSection = el('div', { className: 'arcade-section arcade-peers-section' }, [
     el('h3', { className: 'arcade-section-title' }, ['Players Online']),
+    el('div', { className: 'arcade-connection-bar' }, [
+      _statusDot,
+      _statusLabel,
+      _peerCountEl,
+    ]),
     buildPeerList(_peers, onInvite),
   ]);
   body.append(peersSection);
@@ -85,6 +163,9 @@ function render(container, rows, cols) {
   }
 
   container.append(lobby);
+
+  // Automatically start peer discovery
+  startConnect(template);
 }
 
 /* ---------- Interaction Handlers ---------- */
@@ -109,7 +190,6 @@ function onInvite(peerId) {
     return;
   }
 
-  // Start the game immediately for now (in the future, send invite and wait for accept)
   openGameModal({
     gameKey: _selectedGame,
     waymarkConnect: _waymarkConnect,
@@ -140,23 +220,7 @@ const definition = {
   columns,
 
   render(container, rows, cols, template) {
-    render(container, rows, cols);
-  },
-
-  /**
-   * Called by the social/webrtc layer when peers change.
-   * @param {Object} wc — WaymarkConnect instance
-   */
-  setConnect(wc) {
-    _waymarkConnect = wc;
-    if (wc) {
-      const origCb = wc.onPeersChanged;
-      wc.onPeersChanged = (peers) => {
-        _peers = peers;
-        refreshPeerList();
-        if (origCb) origCb(peers);
-      };
-    }
+    render(container, rows, cols, template);
   },
 };
 
@@ -164,7 +228,7 @@ function refreshPeerList() {
   if (!_container) return;
   const section = _container.querySelector('.arcade-peers-section');
   if (!section) return;
-  // Replace peer list content
+  // Replace peer list content (keep connection bar, replace only the peer list element)
   const existingList = section.querySelector('.arcade-peer-list, .arcade-no-peers');
   const newList = buildPeerList(_peers, onInvite);
   if (existingList) {
