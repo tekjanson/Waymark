@@ -31,15 +31,17 @@ export const MSG = {
  */
 export function encodeInput(frame, inputHistory, lastAckedFrame) {
   const unacked = frame - lastAckedFrame;
-  const count = Math.min(Math.max(unacked, 1), 30);
+  const count = Math.min(Math.max(unacked, 1), 32);
   const buf = new ArrayBuffer(6 + count);
   const view = new DataView(buf);
   view.setUint8(0, MSG.INPUT);
   view.setUint32(1, frame, true);
   view.setUint8(5, count);
+  // inputHistory is a ring buffer — index with bitmask, not raw frame
+  const mask = inputHistory.length - 1;
   for (let i = 0; i < count; i++) {
     const f = frame - count + 1 + i;
-    view.setUint8(6 + i, f >= 0 && f < inputHistory.length ? inputHistory[f] : 0);
+    view.setUint8(6 + i, f >= 0 ? inputHistory[f & mask] : 0);
   }
   return buf;
 }
