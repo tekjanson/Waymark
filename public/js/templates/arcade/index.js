@@ -110,12 +110,14 @@ function startConnect(template) {
 /* ---------- Render ---------- */
 
 function render(container, rows, cols, template) {
-  // Clean up any previous connection before re-rendering
-  destroyConnect();
-
+  // Rebuild the DOM but preserve the existing WaymarkConnect across auto-refreshes.
+  // Only tear it down when the sheet actually changes (handled by waymark:sheet-hidden).
   container.innerHTML = '';
   _container = container;
   _cols = cols;
+
+  // Re-select previously selected game after re-render
+  const prevSelected = _selectedGame;
 
   // Lobby wrapper
   const lobby = el('div', { className: 'arcade-lobby' }, []);
@@ -171,8 +173,25 @@ function render(container, rows, cols, template) {
 
   container.append(lobby);
 
-  // Automatically start peer discovery
+  // Automatically start peer discovery (no-ops if already connected)
   startConnect(template);
+
+  // Re-apply previous game selection highlight after DOM rebuild
+  if (prevSelected) {
+    _selectedGame = prevSelected;
+    const cards = _container.querySelectorAll('.arcade-game-card');
+    for (const card of cards) {
+      card.classList.toggle('arcade-game-card-selected', card.dataset.game === prevSelected);
+    }
+  }
+
+  // If connection is already live, push the latest peer count into the new DOM elements
+  if (_waymarkConnect && _peers.size > 0) {
+    refreshPeerList();
+    if (_peerCountEl) {
+      _peerCountEl.textContent = `${_peers.size} player${_peers.size !== 1 ? 's' : ''}`;
+    }
+  }
 }
 
 /* ---------- Interaction Handlers ---------- */
