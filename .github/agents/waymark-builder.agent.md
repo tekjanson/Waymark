@@ -55,7 +55,15 @@ To swap projects, set `WAYMARK_PROJECT` before running the builder, or change
    {"todo":[{"row":42,"task":"...","priority":"P1",...}],"inProgress":[],"qa":3,"done":68}
    ```
    Parse the JSON. The `todo` array contains actionable To Do items sorted by priority.
-3. **Select first task** — Pick the first item from the `todo` array (already sorted P0 > P1 > P2 > P3). If `todo` is empty, enter the SLEEP→POLL loop immediately.
+3. **Resume in-progress work first** — Check the `inProgress` array BEFORE picking from `todo`.
+   - If `inProgress` is non-empty (items already assigned to this agent): **resume the first one.**
+     - Read the `branch` field from the item.
+     - Run `git fetch origin && git checkout {branch}` (or `git checkout -b {branch}` if the branch is local-only).
+     - Read the task row's sub-row notes to understand where work left off.
+     - Continue work from that state — no new branch, no new workboard status update needed.
+     - Do **NOT** pick a new `todo` item.
+   - If `inProgress` is empty: fall through to step 4.
+4. **Select first todo** — Pick the first item from the `todo` array (already sorted P0 > P1 > P2 > P3). If both `inProgress` and `todo` are empty, enter the SLEEP→POLL loop immediately.
 
 **No background watcher process is needed.** The agent queries Google Sheets directly each cycle, guaranteeing fresh data with zero stale-marker risk.
 
@@ -76,7 +84,15 @@ LOOP:
      → Parse the single-line JSON output.
      → If $AGENT_NAME is set, only tasks assigned to you (or unassigned) are returned.
 
-  3. IF todo array is non-empty:
+  3. IF inProgress array is non-empty (items already assigned to this agent were returned by --agent flag):
+     → Take the first in-progress item
+     → Read its `branch` field (extracted from prior completion notes)
+     → Run `git fetch origin && git checkout {branch}` to return to the branch
+     → Read sub-row notes to understand where work left off, then continue
+     → Do NOT pick a new todo item this cycle — finish the in-progress work first
+     → After completing, go back to step 1.
+
+  4. IF todo array is non-empty:
      → Pick the first item (highest priority)
      → **CHECK FOR QA REJECTION** (§0.3 — MANDATORY before any work):
        - If item has `rejected: true` or has sub-row notes with "⟳ QA → To Do":
@@ -91,10 +107,10 @@ LOOP:
      → For AI-facing tasks (agent, prompting, tool use, eval harness, or agentic workflow changes): execute the LLM EVAL IMPROVEMENT LOOP (§5.1) before marking QA
      → After completing, go back to step 1.
 
-  4. IF todo array is empty:
+  5. IF both inProgress and todo arrays are empty:
      → Go back to step 1. (Sleep again.)
 
-  5. IF check-workboard.js fails (exit code 1):
+  6. IF check-workboard.js fails (exit code 1):
      → Error message is on stderr. Log it, go back to step 1. (Retry next cycle.)
 ```
 

@@ -1,4 +1,6 @@
 {
+    "security.workspace.trust.enabled": false,
+    "security.workspace.trust.startupPrompt": "never",
     "github.copilot.chat.claudeAgent.enabled": true,
     "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true,
     "github.copilot.chat.askAgent.model": "Claude Sonnet 4.6 (copilot)",

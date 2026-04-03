@@ -29,7 +29,9 @@ if [[ -d /host-vscode-user ]]; then
     # populated only by VS Code auth done via the host browser (BROWSER= flow).
     for item in /host-vscode-user/*; do
         name="$(basename "$item")"
-        [[ "$name" == "globalStorage" ]] && continue  # never copy encrypted tokens
+        [[ "$name" == "globalStorage" ]]   && continue  # never copy encrypted tokens
+        [[ "$name" == "workspaceStorage" ]] && continue  # can be gigabytes — not needed
+        [[ "$name" == "History" ]]          && continue  # large edit history — not needed
         dest="/root/.config/Code/User/$name"
         if [[ ! -e "$dest" ]]; then
             cp -r "$item" "$dest" 2>/dev/null || true
@@ -96,12 +98,14 @@ log "Git identity: ${GIT_NAME} <${GIT_EMAIL}>"
 # so we write the dynamic vars to a file that all scripts source at runtime.
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 AGENT_NAME="${AGENT_NAME:-}"
+WAYMARK_WORKBOARD_URL="${WAYMARK_WORKBOARD_URL:-}"
 cat > /etc/agent-env.sh <<EOF
 # Written by entrypoint.sh — sourced by watchdog and inject scripts
 export AGENT_COMMAND="${AGENT_COMMAND}"
 export AGENT_NAME="${AGENT_NAME}"
 export CONTAINER_NAME="${CONTAINER_NAME:-waymark-dev-worker}"
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/credentials/gsa-key.json}"
+export WAYMARK_WORKBOARD_URL="${WAYMARK_WORKBOARD_URL}"
 export DISPLAY=":1"
 export HOME="/root"
 # BROWSER= (empty) prevents VS Code from opening a browser inside the container.
@@ -110,7 +114,7 @@ export HOME="/root"
 export BROWSER=""
 EOF
 chmod 644 /etc/agent-env.sh
-log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}, AGENT_NAME=${AGENT_NAME:-<unset>}, CONTAINER_NAME=${CONTAINER_NAME:-waymark-dev-worker}"
+log "Agent env written: AGENT_COMMAND=${AGENT_COMMAND}, AGENT_NAME=${AGENT_NAME:-<unset>}, CONTAINER_NAME=${CONTAINER_NAME:-waymark-dev-worker}, WAYMARK_WORKBOARD_URL=${WAYMARK_WORKBOARD_URL:-<unset>}"
 
 # ── 5b. Symlink Google credential for MCP server + agent terminal commands ────
 # Two paths reference the service-account key:
@@ -126,6 +130,20 @@ if [[ -f /credentials/gsa-key.json ]]; then
     mkdir -p /home/tekjanson/.config/gcloud
     ln -sf /credentials/gsa-key.json /home/tekjanson/.config/gcloud/waymark-service-account-key.json
     log "Google SA credential symlinked → /root/.config/gcloud/ + /home/tekjanson/.config/gcloud/"
+fi
+
+# ── 5d. Symlink OAuth user token for Drive uploads ───────────────────────────
+# generate-test-report.js --upload and generate-examples.js use a user OAuth
+# token (not the SA key) because service accounts have no Drive quota.
+# The token is mounted read-only at /root/.config/gcloud/waymark-oauth-token.json
+# but the script resolves HOME dynamically — also symlink the tekjanson path.
+if [[ -f /root/.config/gcloud/waymark-oauth-token.json ]]; then
+    mkdir -p /home/tekjanson/.config/gcloud
+    ln -sf /root/.config/gcloud/waymark-oauth-token.json \
+        /home/tekjanson/.config/gcloud/waymark-oauth-token.json
+    log "OAuth user token symlinked → /home/tekjanson/.config/gcloud/waymark-oauth-token.json"
+else
+    log "WARN: waymark-oauth-token.json not mounted — Drive uploads will fail. Run: node scripts/get-oauth-token.js"
 fi
 
 # ── 6. SSH key permissions ────────────────────────────────────────────────────

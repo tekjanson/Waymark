@@ -32,6 +32,11 @@ services:
       #   @waymark-builder pick next           (single task then stops)
       - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
 
+      # ── Kanban board URL (Google Sheets) ──────────────────────────────────
+      # When set, overrides the default spreadsheet ID in workboard scripts.
+      # Pass via: make run BOARD_URL="https://docs.google.com/spreadsheets/d/..."
+      - WAYMARK_WORKBOARD_URL=${WAYMARK_WORKBOARD_URL:-}
+
       # ── Named agent identity for multi-agent setups ────────────────────────
       # When set, the agent uses this name for task claiming and notes.
       # Each container MUST have a unique AGENT_NAME when running multiple agents.
@@ -87,6 +92,12 @@ services:
       # ── Google service-account key ─────────────────────────────────────────
       # Needed by check-workboard.js, update-workboard.js, etc.
       - /home/tekjanson/.config/gcloud/waymark-service-account-key.json:/credentials/gsa-key.json:ro
+
+      # ── Google OAuth user token ────────────────────────────────────────────
+      # Needed by generate-test-report.js --upload and generate-examples.js.
+      # Service accounts have no Drive quota; uploads use this user OAuth token.
+      # Generated once on the host with: node scripts/get-oauth-token.js
+      - /home/tekjanson/.config/gcloud/waymark-oauth-token.json:/root/.config/gcloud/waymark-oauth-token.json:ro
 
       # ── SSH keys ───────────────────────────────────────────────────────────
       # Needed for git push / pull over SSH

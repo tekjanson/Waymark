@@ -32,6 +32,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Load .env so WAYMARK_WORKBOARD_ID persisted there survives git branch changes
+const envPath = path.resolve(__dirname, '../.env');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].trim();
+  }
+}
+
 const DEFAULT_CONFIG_PATH = path.resolve(__dirname, '../generated/workboard-config.json');
 
 /**

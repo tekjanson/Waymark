@@ -29,11 +29,22 @@ PIDFILE   := .agent-cycle.pid
 AGENT_COMMAND ?= @waymark-builder start
 AGENT_NAME    ?=
 AGENT_MODEL   ?= copilot/claude-sonnet-4.6
+BOARD_URL     ?=
+
+# Allow passing a URL as a positional argument, e.g.: make run https://...
+# Extract any http(s):// goal and treat it as BOARD_URL if not already set
+_URL_GOAL := $(filter https://%,$(MAKECMDGOALS))$(filter http://%,$(MAKECMDGOALS))
+ifneq ($(_URL_GOAL),)
+  override BOARD_URL := $(_URL_GOAL)
+endif
+
+# Suppress "No rule to make target" for URL arguments (and any other non-target args)
+.DEFAULT: ; @true
 
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
-.PHONY: help run start stop restart build logs status vnc test auth workboard qa-patrol qa-status clean
+.PHONY: help run start stop restart build logs status vnc test auth ensure-auth workboard qa-patrol qa-status clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -49,6 +60,7 @@ help: ## Show this help
 	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-builder start)"
 	@echo "    AGENT_NAME      Named agent identity for multi-agent (default: unset)"
 	@echo "    AGENT_MODEL     LLM model (default: copilot/claude-sonnet-4.6)"
+	@echo "    BOARD_URL       Google Sheets URL for the kanban board (overrides default)"
 	@echo ""
 	@echo "  Examples:"
 	@echo "    make start                                          # Default builder agent"
@@ -59,10 +71,28 @@ help: ## Show this help
 	@echo "    make logs                                           # Tail live output"
 	@echo ""
 
-start: ## Start the agent container
+ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
+	@AUTH_VOLUME_DATA="/home/$(USER)/.local/share/docker/volumes/dev-worker_waymark-vscode-auth/_data"; \
+	AUTH_DIR="$$AUTH_VOLUME_DATA/vscode.github-authentication"; \
+	VSCDB="$$AUTH_VOLUME_DATA/state.vscdb"; \
+	AUTH_OK=false; \
+	[ -d "$$AUTH_DIR" ] && AUTH_OK=true; \
+	if [ -f "$$VSCDB" ] && command -v sqlite3 >/dev/null 2>&1; then \
+		ROWS=$$(sqlite3 "$$VSCDB" "SELECT count(*) FROM ItemTable WHERE key LIKE 'secret://%github%';" 2>/dev/null || echo 0); \
+		[ "$$ROWS" -gt 0 ] && AUTH_OK=true; \
+	fi; \
+	if $$AUTH_OK; then \
+		echo "  ✓ Copilot auth tokens present — skipping setup"; \
+	else \
+		echo "  ⚠ No Copilot auth tokens found — running setup-auth.sh..."; \
+		bash dev-worker/setup-auth.sh; \
+	fi
+
+start: ensure-auth ## Start the agent container
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
 	@echo ""
 	@echo "  ✓ Agent started"
@@ -70,10 +100,11 @@ start: ## Start the agent container
 	@echo "    Logs:    make logs"
 	@echo ""
 
-qa-patrol: ## Start the QA patrol agent (reviews workboard QA items)
+qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
 	AGENT_COMMAND="@waymark-manual-qa qa patrol" \
 	AGENT_NAME="QA" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
 	@echo ""
 	@echo "  ✓ QA Patrol agent started"
@@ -82,7 +113,7 @@ qa-patrol: ## Start the QA patrol agent (reviews workboard QA items)
 	@echo "    Status:  make qa-status"
 	@echo ""
 
-run: ## Start the agent + restart it every 4 hours
+run: ensure-auth ## Start the agent + restart it every 4 hours
 	@# Kill any existing cycle loop
 	@if [ -f $(PIDFILE) ] && kill -0 $$(cat $(PIDFILE)) 2>/dev/null; then \
 		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
@@ -90,11 +121,12 @@ run: ## Start the agent + restart it every 4 hours
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
 	@# Background loop: sleep CYCLE_HOURS then rebuild+restart
 	@nohup bash -c 'while true; do sleep $$(($(CYCLE_HOURS) * 3600)); \
 		echo "[cycle $$(date)] Restarting agent ($(CYCLE_HOURS)h cycle)..."; \
-		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" \
+		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 		$(COMPOSE) up -d --build; \
 	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
 	@echo ""

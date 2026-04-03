@@ -6,6 +6,7 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+.agent-cycle.pid
 
 # Playwright
 test-results/
