@@ -27,6 +27,12 @@ let _pendingInvite = null;       // { peerId, gameKey } — outgoing invite wait
 let _inviteNotification = null;  // DOM element for incoming invite banner
 let _sessionPassword = '';       // Optional session password for encrypted handshakes
 let _template = null;            // Cached template ref for reconnect after password change
+let _inviteTimeout = null;       // setTimeout ID for outgoing invite auto-cancel
+
+/* ---------- Constants ---------- */
+
+const INVITE_TIMEOUT_MS = 30_000;
+const INVITE_COUNTDOWN_STEP = 1000;
 
 /* ---------- Cleanup ---------- */
 
@@ -261,6 +267,22 @@ function onInvite(peerId) {
   // Update UI — show waiting state on the invite button
   showWaitingState(peerId);
   showToast(`Invite sent! Waiting for response…`, 'info');
+
+  // Auto-cancel invite after timeout
+  let remaining = Math.round(INVITE_TIMEOUT_MS / 1000);
+  _updateInviteCountdown(peerId, remaining);
+  _inviteTimeout = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(_inviteTimeout);
+      _inviteTimeout = null;
+      _pendingInvite = null;
+      clearWaitingState();
+      showToast('Invite timed out — no response received', 'error');
+    } else {
+      _updateInviteCountdown(peerId, remaining);
+    }
+  }, INVITE_COUNTDOWN_STEP);
 }
 
 /* ---------- Arcade Message Dispatch ---------- */
@@ -422,12 +444,32 @@ function showWaitingState(peerId) {
 
 function clearWaitingState() {
   _pendingInvite = null;
+  if (_inviteTimeout) {
+    clearInterval(_inviteTimeout);
+    _inviteTimeout = null;
+  }
   if (!_container) return;
   const btns = _container.querySelectorAll('.arcade-invite-btn');
   for (const btn of btns) {
     btn.disabled = false;
     btn.textContent = 'Invite';
     btn.classList.remove('arcade-invite-btn-waiting');
+  }
+}
+
+/**
+ * Update the countdown text on the waiting invite button.
+ * @param {string} peerId
+ * @param {number} seconds
+ */
+function _updateInviteCountdown(peerId, seconds) {
+  if (!_container) return;
+  const cards = _container.querySelectorAll('.arcade-peer-card');
+  for (const card of cards) {
+    if (card.dataset.peerId !== peerId) continue;
+    const btn = card.querySelector('.arcade-invite-btn');
+    if (btn) btn.textContent = `Waiting… ${seconds}s`;
+    break;
   }
 }
 

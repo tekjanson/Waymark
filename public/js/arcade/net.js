@@ -249,6 +249,8 @@ export class ArcadeNet {
     this.onOpen = null;
     /** @type {function|null} */
     this.onClose = null;
+    /** @type {function|null} — called with (rtt: number, jitter: number) after each PONG */
+    this.onRttUpdate = null;
     /** @type {number} */
     this.rtt = 100;
     /** @type {number} */
@@ -318,6 +320,7 @@ export class ArcadeNet {
         // Exponential moving average + jitter tracking
         this.rtt = this.rtt * 0.7 + sample * 0.3;
         this.jitter = this.jitter * 0.7 + Math.abs(sample - this.rtt) * 0.3;
+        if (this.onRttUpdate) this.onRttUpdate(this.rtt, this.jitter);
         return;
       }
 

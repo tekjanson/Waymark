@@ -393,6 +393,19 @@
   font-weight: 600;
 }
 
+/* RTT latency badge in the game modal header bar */
+.arcade-rtt {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  min-width: 54px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .arcade-modal-close {
   background: none;
   border: none;
@@ -454,6 +467,36 @@
   color: rgba(255, 255, 255, 0.85);
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+/* Disconnect overlay specific styles */
+.arcade-disconnect-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.arcade-disconnect-icon {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.arcade-disconnect-btn {
+  margin-top: var(--space-xs);
+  padding: 8px 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.95);
+  color: #1e293b;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  touch-action: manipulation;
+}
+
+.arcade-disconnect-btn:hover {
+  opacity: 0.85;
 }
 
 @keyframes arcade-spin {
