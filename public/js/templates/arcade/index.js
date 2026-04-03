@@ -2,7 +2,7 @@
    templates/arcade/index.js — Arcade template barrel
    ============================================================ */
 
-import { el, registerTemplate, cell, WaymarkConnect, showToast } from '../shared.js';
+import { el, registerTemplate, cell, WaymarkConnect, showToast, buildHandshakePasswordRow } from '../shared.js';
 import { getGameList, netModelLabel } from './helpers.js';
 import { buildGameGrid, buildPeerList, buildMatchHistory } from './cards.js';
 import { openGameModal, closeGameModal, isGameActive } from './modal.js';
@@ -159,20 +159,14 @@ function render(container, rows, cols, template) {
   _statusLabel = el('span', { className: 'arcade-status-label' }, ['Searching for players…']);
   _peerCountEl = el('span', { className: 'arcade-peer-count-label' }, ['0 players']);
 
-  // Session password input for encrypted handshakes
-  const pwInput = el('input', {
-    type: 'password',
-    className: 'arcade-password-input',
-    placeholder: 'Optional — share to protect this session',
-    value: _sessionPassword,
-    autocomplete: 'off',
-  });
-  pwInput.addEventListener('change', (e) => {
-    const newPw = e.target.value;
-    _sessionPassword = newPw;
-    if (_waymarkConnect) {
-      _waymarkConnect.setPassword(newPw);
-    }
+  // Session password input — uses reusable handshake-auth helper
+  const { row: pwRow, getPassword: getPw } = buildHandshakePasswordRow({
+    prefix: 'arcade',
+    initialValue: _sessionPassword,
+    onPasswordChange(newPw) {
+      _sessionPassword = newPw || '';
+      if (_waymarkConnect) _waymarkConnect.setPassword(newPw);
+    },
   });
 
   const peersSection = el('div', { className: 'arcade-section arcade-peers-section' }, [
@@ -182,10 +176,7 @@ function render(container, rows, cols, template) {
       _statusLabel,
       _peerCountEl,
     ]),
-    el('div', { className: 'arcade-password-row' }, [
-      el('label', { className: 'arcade-password-label' }, ['🔒 Session password:']),
-      pwInput,
-    ]),
+    pwRow,
     buildPeerList(_peers, onInvite),
   ]);
   body.append(peersSection);

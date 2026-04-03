@@ -9,7 +9,7 @@
 import {
   el, cell, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, editableCell,
-  buildDirSyncBtn, WaymarkConnect,
+  buildDirSyncBtn, WaymarkConnect, buildHandshakePasswordRow,
   getChatSaveHistory, setChatSaveHistory,
   getChatSoundEnabled, setChatSoundEnabled,
   getEchoCancellation, setEchoCancellation,
@@ -92,6 +92,7 @@ function timeAgo(dateStr) {
 let _activeConnect = null;
 let _activeSheetId = null;
 let _chatPanel = null;
+let _socialPassword = '';   // Optional session password for encrypted handshakes
 
 /* --- Ringtone via Web Audio API --- */
 let _ringCtx = null;
@@ -1232,6 +1233,7 @@ function openChat(sheetId, displayName, signal) {
   // --- Create connection ---
   _activeConnect = new WaymarkConnect(sheetId, {
     displayName,
+    password: _socialPassword || null,
     signal,
     onMessage(msg) {
       if (msg.text === null && msg.type === 'typing') {
@@ -1603,6 +1605,16 @@ const definition = {
       on: { click() { openChat(template._rtcSheetId, template._rtcUserName, template._rtcSignal); } },
     }, ['📡 Connect']);
 
+    // Session password for encrypted handshakes
+    const { row: pwRow } = buildHandshakePasswordRow({
+      prefix: 'social',
+      initialValue: _socialPassword,
+      onPasswordChange(newPw) {
+        _socialPassword = newPw || '';
+        if (_activeConnect) _activeConnect.setPassword(newPw);
+      },
+    });
+
     profileHeader.append(
       el('div', {
         className: 'social-avatar social-avatar-lg',
@@ -1617,6 +1629,7 @@ const definition = {
       connectBtn,
     );
     container.append(profileHeader);
+    container.append(pwRow);
 
     /* ---- Add row form ---- */
     if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {

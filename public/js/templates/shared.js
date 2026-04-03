@@ -7,6 +7,7 @@
 
 import { el, showToast } from '../ui.js';
 export { WaymarkConnect } from '../webrtc.js';
+export { buildHandshakePasswordRow } from '../handshake-auth.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 

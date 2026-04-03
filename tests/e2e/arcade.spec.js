@@ -53,7 +53,7 @@ test('arcade shows session password input field', async ({ page }) => {
 
   await expect(page.locator('.arcade-password-row')).toBeVisible();
   await expect(page.locator('.arcade-password-input')).toBeVisible();
-  await expect(page.locator('.arcade-password-label')).toContainText('Session password');
+  await expect(page.locator('.arcade-password-label')).toContainText('Password');
 });
 
 test('arcade password input uses password type for masking', async ({ page }) => {

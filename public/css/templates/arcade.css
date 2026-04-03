@@ -598,6 +598,23 @@
   border-color: var(--color-primary);
 }
 
+.arcade-password-toggle {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.arcade-password-toggle:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
 .arcade-peer-lock {
   font-size: 0.85rem;
   margin-right: 2px;
@@ -605,6 +622,11 @@
 }
 
 .arcade-peer-protected {
-  border-color: var(--color-warning-border, #f59e0b);
-  background: var(--color-warning-bg, #fffbeb);
+  border-color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+[data-theme="dark"] .arcade-peer-protected {
+  border-color: var(--color-warning);
+  background: rgba(251, 191, 36, 0.12);
 }
