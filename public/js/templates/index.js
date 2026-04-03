@@ -44,6 +44,7 @@ import './passwords.js';
 import './linker.js';
 import './marketing.js';
 import './arcade/index.js';
+import './worker.js';
 
 /* ---------- Detection ---------- */
 

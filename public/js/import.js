@@ -175,6 +175,14 @@ const ROLE_LABELS = {
   'automation.target': 'Target (CSS selector, URL, or element)',
   'automation.value': 'Value / Input data',
   'automation.status': 'Status (pending, running, done, failed, skipped)',
+  // Worker Jobs
+  'worker.job': 'Job Name / Worker task name',
+  'worker.handler': 'Handler / Runner type (poll, sync, notify, webhook, script)',
+  'worker.config': 'Config / JSON params or URL',
+  'worker.status': 'Status (pending, running, done, failed, scheduled)',
+  'worker.schedule': 'Schedule / Cron expression (e.g. */5 * * * *)',
+  'worker.lastRun': 'Last Run / Executed timestamp',
+  'worker.result': 'Result / Output message or log line',
   // Instruction Guide
   'guide.guide': 'Guide / Task name',
   'guide.slide': 'Slide / Step headline',
@@ -370,6 +378,11 @@ const CANONICAL_HEADERS = {
   'arcade.game': 'Game', 'arcade.player1': 'Player 1',
   'arcade.player2': 'Player 2', 'arcade.score': 'Score',
   'arcade.status': 'Status', 'arcade.date': 'Date',
+  // Worker Jobs
+  'worker.job': 'Job', 'worker.handler': 'Handler',
+  'worker.config': 'Config', 'worker.status': 'Status',
+  'worker.schedule': 'Schedule', 'worker.lastRun': 'Last Run',
+  'worker.result': 'Result',
 };
 
 /**

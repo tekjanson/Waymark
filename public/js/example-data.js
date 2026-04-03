@@ -944,4 +944,18 @@ export const EXAMPLE_SHEETS = {
       ['Slime Volley',   'Alice',  'Bob',     '7-5',   'In Progress', '2026-03-14'],
     ],
   },
+
+  /* ---- Worker Jobs examples ---- */
+  'Worker Jobs': {
+    folder: 'Automation',
+    headers: ['Job', 'Handler', 'Config', 'Status', 'Schedule', 'Last Run', 'Result'],
+    rows: [
+      ['Sync CRM contacts',    'sync',    '{"source":"https://api.example.com/contacts"}', 'done',      '0 */6 * * *', '2026-03-14T08:00:00Z', 'Synced 142 records'],
+      ['Poll inventory',       'poll',    '{"sheetId":"xyz789","column":"B"}',              'running',   '*/5 * * * *', '2026-03-14T09:55:00Z', 'Watching for changes…'],
+      ['Send weekly digest',   'notify',  '{"recipients":"team@example.com"}',              'scheduled', '0 9 * * 1',   '',                     ''],
+      ['Load sales forecast',  'sync',    '{"source":"https://api.example.com/forecast"}',  'failed',    '0 7 * * *',   '2026-03-13T07:00:00Z', 'Error: 401 Unauthorized'],
+      ['Webhook ingest orders','webhook', '{"endpoint":"/hooks/orders"}',                   'pending',   '',            '',                     ''],
+      ['Daily backup export',  'script',  '{"script":"export-backup.js"}',                  'done',      '0 2 * * *',   '2026-03-14T02:00:00Z', 'Exported 1.2 MB'],
+    ],
+  },
 };
