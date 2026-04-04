@@ -1172,3 +1172,15 @@ export async function getSheetData(sheetId) {
 export async function appendSheetRows(sheetId, sheetTitle, rows) {
   return api.sheets.appendRows(sheetId, sheetTitle, rows);
 }
+
+/**
+ * Create a new Google Spreadsheet.
+ * Used by templates to auto-create sub-sheets (e.g. per-article comment threads).
+ * @param {string}      title     Spreadsheet title
+ * @param {string[][]}  rows      Initial rows (header + optional seed data)
+ * @param {string}      [parentId] Drive folder to place the file in
+ * @returns {Promise<{spreadsheetId: string}>}
+ */
+export async function createSpreadsheet(title, rows, parentId) {
+  return api.sheets.createSpreadsheet(title, rows, parentId);
+}

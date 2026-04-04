@@ -9,7 +9,7 @@
 import {
   el, cell, emitEdit, registerTemplate, editableCell,
   parseGroups, delegateEvent, getUserName,
-  buildDirSyncBtn, getSheetData, appendSheetRows,
+  buildDirSyncBtn, getSheetData, appendSheetRows, createSpreadsheet,
 } from '../shared.js';
 import {
   classifyStatus, STATUS_COLORS, STATUS_LABELS,
@@ -45,6 +45,18 @@ async function _loadComments(sheetId) {
     _commentsLoading.delete(sheetId);
     if (_refreshFn) _refreshFn();
   }
+}
+
+/**
+ * Auto-create a per-article comments spreadsheet.
+ * Returns the newly created spreadsheetId.
+ * @param {string} articleTitle
+ * @returns {Promise<string>}
+ */
+async function _createCommentsSheet(articleTitle) {
+  const title = `Comments – ${articleTitle}`;
+  const result = await createSpreadsheet(title, [['Author', 'Comment', 'Date']]);
+  return result.spreadsheetId;
 }
 
 /**
@@ -598,6 +610,44 @@ const definition = {
                 );
                 _loadComments(commentsSheetId);
               }
+            } else if (cols.comments >= 0) {
+              /* Comments Sheet column exists but no sheet ID yet — offer auto-create */
+              const createBtn = el('button', {
+                className: 'knowledge-create-comments-btn',
+                dataset: { rowIdx: String(rowIdx) },
+              }, ['🗂 Create Comments Sheet']);
+
+              const createStatus = el('div', { className: 'knowledge-create-comments-status hidden' }, [
+                'Creating…',
+              ]);
+
+              createBtn.addEventListener('click', async () => {
+                if (createBtn.disabled) return;
+                createBtn.disabled = true;
+                createStatus.classList.remove('hidden');
+                createStatus.textContent = 'Creating…';
+                try {
+                  const newId = await _createCommentsSheet(titleText);
+                  /* Persist the new sheet ID into the row */
+                  emitEdit(rowIdx, cols.comments, newId);
+                  /* Update local cache so re-render shows the empty-but-ready sheet */
+                  const emptyData = {
+                    id: newId,
+                    title: `Comments – ${titleText}`,
+                    sheetTitle: 'Sheet1',
+                    values: [['Author', 'Comment', 'Date']],
+                  };
+                  _commentsCache.set(newId, emptyData);
+                  /* Update the in-memory row so the re-render picks up the new ID */
+                  if (cols.comments >= 0) group.row[cols.comments] = newId;
+                  if (_refreshFn) _refreshFn();
+                } catch {
+                  createStatus.textContent = 'Failed to create — check permissions.';
+                  createBtn.disabled = false;
+                }
+              });
+
+              commentsSection.append(createBtn, createStatus);
             } else {
               /* Inline comments (same sheet sub-rows) */
               if ((group.comments || []).length > 0) {

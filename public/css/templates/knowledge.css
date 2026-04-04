@@ -635,3 +635,33 @@
   font-size: 0.85rem;
   font-style: italic;
 }
+
+/* ---------- Auto-create comments sheet ---------- */
+.knowledge-create-comments-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.knowledge-create-comments-btn:hover:not(:disabled) {
+  background: var(--color-bg);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.knowledge-create-comments-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.knowledge-create-comments-status {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}

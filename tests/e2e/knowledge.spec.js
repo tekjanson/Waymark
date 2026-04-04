@@ -732,3 +732,96 @@ test('knowledge template detects Comments Sheet column', async ({ page }) => {
   expect(await cards.count()).toBeGreaterThanOrEqual(2);
 });
 
+/* ---------- Auto-create comments sheet ---------- */
+
+test('article with Comments Sheet column but no ID shows create button on expand', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-063');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  // Expand the first article (sheet-063 has Comments Sheet column but empty values)
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 5000 });
+
+  // Should show the auto-create button, not a loader
+  const createBtn = page.locator('.knowledge-create-comments-btn');
+  await expect(createBtn).toBeVisible();
+  const loader = page.locator('.knowledge-comments-loader');
+  expect(await loader.count()).toBe(0);
+});
+
+test('auto-create comments button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-063');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-create-comments-btn', { timeout: 5000 });
+
+  await expect(page.locator('.knowledge-create-comments-btn').first()).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking create comments button creates a spreadsheet and records the ID', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-063');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  // Expand the first article
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-create-comments-btn', { timeout: 5000 });
+
+  // Click the create button
+  await page.locator('.knowledge-create-comments-btn').first().click();
+
+  // After creation, the button should be gone and comment form should appear (or empty-comments state)
+  await page.waitForFunction(
+    () => !document.querySelector('.knowledge-create-comments-btn'),
+    { timeout: 6000 },
+  );
+
+  // A spreadsheet creation should have been recorded
+  const records = await getCreatedRecords(page);
+  const creation = records.find(r => r.spreadsheetId && r.title && /comments/i.test(r.title));
+  expect(creation).toBeTruthy();
+  expect(creation.title).toMatch(/Getting Started/i);
+});
+
+test('after auto-create, emitEdit saves the new sheet ID to the Comments Sheet cell', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-063');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-create-comments-btn', { timeout: 5000 });
+  await page.locator('.knowledge-create-comments-btn').first().click();
+
+  // Wait for auto-create to finish
+  await page.waitForFunction(
+    () => !document.querySelector('.knowledge-create-comments-btn'),
+    { timeout: 6000 },
+  );
+
+  // The cell-update record should carry the new spreadsheetId (not empty string)
+  const records = await getCreatedRecords(page);
+  const editRecord = records.find(r => r.type === 'cell-update' && r.value);
+  expect(editRecord).toBeTruthy();
+  expect(editRecord.value).toMatch(/^created-sheet-/);
+});
+
+test('article without Comments Sheet column still uses inline comments', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-044');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 5000 });
+
+  // No create button should appear (column doesn't exist)
+  const createBtn = page.locator('.knowledge-create-comments-btn');
+  expect(await createBtn.count()).toBe(0);
+  // No loader either (inline mode)
+  const loader = page.locator('.knowledge-comments-loader');
+  expect(await loader.count()).toBe(0);
+});
+
+
