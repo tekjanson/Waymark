@@ -1,0 +1,11 @@
+{
+  "id": "sheet-062",
+  "title": "Comments – Waymark Architecture Overview",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Author", "Comment", "Date"],
+    ["Jamie", "Great overview! Very helpful for onboarding.", "2026-03-12"],
+    ["Alex", "Worth mentioning that the server also handles CORS.", "2026-03-13"],
+    ["Sam", "The hash-based routing section could use more detail.", "2026-03-14"]
+  ]
+}

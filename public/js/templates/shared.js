@@ -1147,3 +1147,28 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
 
   throw lastErr || new Error('All API keys exhausted. Try again later.');
 }
+
+/* ---------- Sheet data helpers (for lazy-loaded sub-sheets) ---------- */
+
+import { api } from '../api-client.js';
+
+/**
+ * Fetch all rows from a Google Sheet by ID.
+ * Used by templates to lazy-load sub-sheets (e.g. per-article comment sheets).
+ * @param {string} sheetId
+ * @returns {Promise<{id: string, title: string, sheetTitle: string, values: string[][]}>}
+ */
+export async function getSheetData(sheetId) {
+  return api.sheets.getSpreadsheet(sheetId);
+}
+
+/**
+ * Append rows to a Google Sheet.
+ * Used by templates to post new rows to a sub-sheet (e.g. adding a comment).
+ * @param {string} sheetId
+ * @param {string} sheetTitle  e.g. 'Sheet1'
+ * @param {string[][]} rows    2-D array of cell values
+ */
+export async function appendSheetRows(sheetId, sheetTitle, rows) {
+  return api.sheets.appendRows(sheetId, sheetTitle, rows);
+}

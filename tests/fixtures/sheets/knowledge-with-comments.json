@@ -1,0 +1,15 @@
+{
+  "id": "sheet-061",
+  "title": "Waymark Knowledge Base (with Comments)",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Title", "Category", "Content", "Tags", "Author", "Updated", "Status", "Source", "Comments Sheet"],
+
+    ["Waymark Architecture Overview", "Architecture", "Waymark is a zero-framework, zero-build-step single-page application.", "architecture, overview", "Jamie", "2026-03-10", "Published", "", "sheet-062"],
+    ["", "", "All business logic runs entirely in the browser.", "", "", "", "", "", ""],
+    ["", "", "ES Modules are loaded directly without bundling.", "", "", "", "", "", ""],
+
+    ["Frontend-Only Design Principle", "Architecture", "Waymark is built on a strict no-backend-logic principle.", "architecture, design", "Jamie", "2026-03-01", "Published", "", ""],
+    ["", "", "The server stores no state and processes no business logic.", "", "", "", "", "", ""]
+  ]
+}

@@ -9,7 +9,7 @@
 import {
   el, cell, emitEdit, registerTemplate, editableCell,
   parseGroups, delegateEvent, getUserName,
-  buildDirSyncBtn,
+  buildDirSyncBtn, getSheetData, appendSheetRows,
 } from '../shared.js';
 import {
   classifyStatus, STATUS_COLORS, STATUS_LABELS,
@@ -24,6 +24,122 @@ let _activeTag = null;
 let _searchQuery = '';
 let _expandedArticles = new Set();
 
+/* ---------- Lazy-loaded comments state ---------- */
+
+/** Cache: sheetId → {values, sheetTitle} | null (failed) */
+const _commentsCache = new Map();
+/** Set of sheetIds currently being fetched */
+const _commentsLoading = new Set();
+/** Called after a comments fetch completes to trigger re-render */
+let _refreshFn = null;
+
+async function _loadComments(sheetId) {
+  if (_commentsCache.has(sheetId) || _commentsLoading.has(sheetId)) return;
+  _commentsLoading.add(sheetId);
+  try {
+    const data = await getSheetData(sheetId);
+    _commentsCache.set(sheetId, data);
+  } catch {
+    _commentsCache.set(sheetId, null);
+  } finally {
+    _commentsLoading.delete(sheetId);
+    if (_refreshFn) _refreshFn();
+  }
+}
+
+/**
+ * Extract a bare Google Sheet ID from a URL or raw ID string.
+ * Handles: full Sheets URLs, Waymark viewer URLs (#/sheet/{id}), and raw IDs.
+ */
+function extractSheetId(val) {
+  if (!val || typeof val !== 'string') return null;
+  const clean = val.trim();
+  const urlMatch = clean.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (urlMatch) return urlMatch[1];
+  const viewerMatch = clean.match(/[#?/]sheet[/=]([a-zA-Z0-9_-]{4,})/);
+  if (viewerMatch) return viewerMatch[1];
+  if (/^[a-zA-Z0-9_-]{4,}$/.test(clean)) return clean;
+  return null;
+}
+
+/* ---------- External comments renderer ---------- */
+
+/**
+ * Render comments loaded from a separate Google Sheet into `container`.
+ * @param {Element} container
+ * @param {{values: string[][], sheetTitle: string}} sheetData
+ * @param {string} sheetId  — used for the "post comment" flow
+ */
+function _renderExternalComments(container, sheetData, sheetId) {
+  const values = sheetData.values || [];
+  if (values.length < 2) {
+    container.append(el('div', { className: 'knowledge-no-comments' }, ['No comments yet.']));
+    buildExternalCommentForm(container, sheetData, sheetId);
+    return;
+  }
+
+  const headerRow = values[0].map(h => (h || '').toLowerCase().trim());
+  const authorIdx = headerRow.findIndex(h => /^(author|name|by|user)/.test(h));
+  const textIdx   = headerRow.findIndex(h => /^(comment|text|content|message|body)/.test(h));
+  const dateIdx   = headerRow.findIndex(h => /^(date|time|created|when|timestamp)/.test(h));
+
+  const rows = values.slice(1).filter(r => r.some(c => (c || '').trim()));
+
+  for (const row of rows) {
+    const author = authorIdx >= 0 ? (row[authorIdx] || '').trim() : '';
+    const text   = textIdx   >= 0 ? (row[textIdx]   || '').trim() : '';
+    const date   = dateIdx   >= 0 ? (row[dateIdx]   || '').trim() : '';
+    if (!text) continue;
+
+    const commentEl = el('div', { className: 'knowledge-comment' });
+    commentEl.append(
+      el('div', { className: 'knowledge-comment-header' }, [
+        ...(author ? [el('span', { className: 'knowledge-comment-author' }, [author])] : []),
+        ...(date   ? [el('span', { className: 'knowledge-comment-date' }, [formatDate(date)])] : []),
+      ]),
+      el('div', { className: 'knowledge-comment-text' }, [text]),
+    );
+    container.append(commentEl);
+  }
+
+  buildExternalCommentForm(container, sheetData, sheetId);
+}
+
+function buildExternalCommentForm(container, sheetData, sheetId) {
+  const addCommentTrigger = el('button', { className: 'knowledge-add-comment-trigger' }, ['+ Comment']);
+  const addCommentForm = el('div', { className: 'knowledge-add-comment-form hidden' });
+  const commentInput = el('input', {
+    type: 'text', className: 'knowledge-add-comment-input', placeholder: 'Add a comment…',
+  });
+  const commentName = el('input', {
+    type: 'text', className: 'knowledge-add-comment-name', placeholder: 'Your name',
+    value: getUserName(),
+  });
+  const commentSubmit = el('button', { className: 'knowledge-add-comment-btn' }, ['Post']);
+  addCommentForm.append(commentInput, commentName, commentSubmit);
+
+  addCommentTrigger.addEventListener('click', () => {
+    addCommentForm.classList.toggle('hidden');
+    if (!addCommentForm.classList.contains('hidden')) commentInput.focus();
+  });
+
+  async function submitExternalComment() {
+    const text = commentInput.value.trim();
+    const name = (commentName.value.trim()) || 'Anonymous';
+    if (!text) return;
+    try {
+      await appendSheetRows(sheetId, sheetData.sheetTitle || 'Sheet1', [[name, text, nowTimestamp()]]);
+      commentInput.value = '';
+      _commentsCache.delete(sheetId);
+      _loadComments(sheetId);
+    } catch { /* silent — form stays open */ }
+  }
+  commentSubmit.addEventListener('click', submitExternalComment);
+  commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitExternalComment(); });
+
+  container.append(addCommentTrigger, addCommentForm);
+}
+
 /* ---------- Template Definition ---------- */
 
 const definition = {
@@ -33,6 +149,10 @@ const definition = {
   priority: 18,
   itemNoun: 'Article',
   defaultHeaders: ['Title', 'Category', 'Content', 'Tags', 'Author', 'Updated', 'Status', 'Source'],
+
+  migrations: [
+    { role: 'comments', header: 'Comments Sheet', description: 'Google Sheet ID for per-article comments (separate sharing)' },
+  ],
 
   detect(lower) {
     const hasKnowledge = lower.some(h =>
@@ -57,7 +177,7 @@ const definition = {
   columns(lower) {
     const cols = {
       title: -1, category: -1, content: -1, tags: -1,
-      author: -1, updated: -1, status: -1, source: -1,
+      author: -1, updated: -1, status: -1, source: -1, comments: -1,
     };
     const used = () => Object.values(cols).filter(v => v >= 0);
 
@@ -70,6 +190,7 @@ const definition = {
     cols.updated  = lower.findIndex((h, i) => !used().includes(i) && /^(updated|modified|date|last.?edit|changed)/.test(h));
     cols.status   = lower.findIndex((h, i) => !used().includes(i) && /^(status|state|publish|stage)/.test(h));
     cols.source   = lower.findIndex((h, i) => !used().includes(i) && /^(source|url|link|reference|ref)/.test(h));
+    cols.comments = lower.findIndex((h, i) => !used().includes(i) && /^(comments?[_\s]?sheet|thread[_\s]?id|discussion[_\s]?sheet|replies[_\s]?sheet|feedback[_\s]?sheet)/.test(h));
 
     return cols;
   },
@@ -82,8 +203,9 @@ const definition = {
       { role: 'tags',     label: 'Tags',     colIndex: cols.tags,     type: 'text', placeholder: 'tag1, tag2, …' },
       { role: 'author',   label: 'Author',   colIndex: cols.author,   type: 'combo', placeholder: 'Author name' },
       { role: 'status',   label: 'Status',   colIndex: cols.status,   type: 'select', options: ['Draft', 'Published', 'In Review', 'Archived'], defaultValue: 'Draft' },
-      { role: 'source',   label: 'Source',    colIndex: cols.source,   type: 'text', placeholder: 'URL or reference' },
-    ];
+      { role: 'source',   label: 'Source',   colIndex: cols.source,   type: 'text', placeholder: 'URL or reference' },
+      { role: 'comments', label: 'Comments Sheet', colIndex: cols.comments, type: 'text', placeholder: 'Google Sheet ID for comments (optional)' },
+    ].filter(f => f.colIndex >= 0 || ['title', 'category', 'content', 'tags', 'author', 'status', 'source'].includes(f.role));
   },
 
   /* ---------- Directory View ---------- */
@@ -177,6 +299,9 @@ const definition = {
 
   render(container, rows, cols, template) {
     const groups = parseGroups(rows, cols.title);
+
+    /* Expose updateView to the lazy-load callback */
+    _refreshFn = () => updateView();
 
     /* Split each group's children into contentLines, comments, and reactions */
     for (const group of groups) {
@@ -446,63 +571,90 @@ const definition = {
             }
             card.append(reactionsBar);
 
-            /* Comments section */
+            /* Comments section — lazy-loaded from external sheet or inline */
+            const commentsSheetId = cols.comments >= 0
+              ? extractSheetId(cell(group.row, cols.comments))
+              : null;
             const commentsSection = el('div', { className: 'knowledge-comments-section' });
 
-            if ((group.comments || []).length > 0) {
-              for (const comment of group.comments) {
-                const commentEl = el('div', { className: 'knowledge-comment' });
-                commentEl.append(
-                  el('div', { className: 'knowledge-comment-header' }, [
-                    el('span', { className: 'knowledge-comment-author' }, [comment.author]),
-                    el('span', { className: 'knowledge-comment-date' }, [
-                      cols.updated >= 0 ? formatDate(comment.row[cols.updated] || '') : '',
-                    ]),
-                  ]),
-                  el('div', { className: 'knowledge-comment-text' }, [comment.text]),
+            if (commentsSheetId) {
+              /* External sheet: lazy-load */
+              if (_commentsLoading.has(commentsSheetId)) {
+                commentsSection.append(
+                  el('div', { className: 'knowledge-comments-loader' }, ['Loading comments…']),
                 );
-                commentsSection.append(commentEl);
+              } else if (_commentsCache.has(commentsSheetId)) {
+                const cached = _commentsCache.get(commentsSheetId);
+                if (cached) {
+                  _renderExternalComments(commentsSection, cached, commentsSheetId);
+                } else {
+                  commentsSection.append(
+                    el('div', { className: 'knowledge-comments-error' }, ['Could not load comments.']),
+                  );
+                }
+              } else {
+                commentsSection.append(
+                  el('div', { className: 'knowledge-comments-loader' }, ['Loading comments…']),
+                );
+                _loadComments(commentsSheetId);
               }
-            }
-
-            if (typeof template._onInsertAfterRow === 'function') {
-              const addCommentTrigger = el('button', { className: 'knowledge-add-comment-trigger' }, ['+ Comment']);
-              const addCommentForm = el('div', { className: 'knowledge-add-comment-form hidden' });
-              const commentInput = el('input', {
-                type: 'text',
-                className: 'knowledge-add-comment-input',
-                placeholder: 'Add a comment…',
-              });
-              const commentName = el('input', {
-                type: 'text',
-                className: 'knowledge-add-comment-name',
-                placeholder: 'Your name',
-                value: getUserName(),
-              });
-              const commentSubmit = el('button', { className: 'knowledge-add-comment-btn' }, ['Post']);
-              addCommentForm.append(commentInput, commentName, commentSubmit);
-
-              addCommentTrigger.addEventListener('click', () => {
-                addCommentForm.classList.toggle('hidden');
-                if (!addCommentForm.classList.contains('hidden')) commentInput.focus();
-              });
-
-              function submitComment() {
-                const text = commentInput.value.trim();
-                const name = commentName.value.trim();
-                if (!text) return;
-                const allIdxs = [group.idx, ...group.children.map(c => c.idx)];
-                const lastIdx = Math.max(...allIdxs);
-                const newRow = new Array(template._totalColumns || 0).fill('');
-                if (cols.content >= 0) newRow[cols.content] = text;
-                if (cols.author >= 0) newRow[cols.author] = name;
-                if (cols.updated >= 0) newRow[cols.updated] = nowTimestamp();
-                template._onInsertAfterRow(lastIdx + 1, [newRow]);
+            } else {
+              /* Inline comments (same sheet sub-rows) */
+              if ((group.comments || []).length > 0) {
+                for (const comment of group.comments) {
+                  const commentEl = el('div', { className: 'knowledge-comment' });
+                  commentEl.append(
+                    el('div', { className: 'knowledge-comment-header' }, [
+                      el('span', { className: 'knowledge-comment-author' }, [comment.author]),
+                      el('span', { className: 'knowledge-comment-date' }, [
+                        cols.updated >= 0 ? formatDate(comment.row[cols.updated] || '') : '',
+                      ]),
+                    ]),
+                    el('div', { className: 'knowledge-comment-text' }, [comment.text]),
+                  );
+                  commentsSection.append(commentEl);
+                }
               }
-              commentSubmit.addEventListener('click', submitComment);
-              commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitComment(); });
 
-              commentsSection.append(addCommentTrigger, addCommentForm);
+              if (typeof template._onInsertAfterRow === 'function') {
+                const addCommentTrigger = el('button', { className: 'knowledge-add-comment-trigger' }, ['+ Comment']);
+                const addCommentForm = el('div', { className: 'knowledge-add-comment-form hidden' });
+                const commentInput = el('input', {
+                  type: 'text',
+                  className: 'knowledge-add-comment-input',
+                  placeholder: 'Add a comment…',
+                });
+                const commentName = el('input', {
+                  type: 'text',
+                  className: 'knowledge-add-comment-name',
+                  placeholder: 'Your name',
+                  value: getUserName(),
+                });
+                const commentSubmit = el('button', { className: 'knowledge-add-comment-btn' }, ['Post']);
+                addCommentForm.append(commentInput, commentName, commentSubmit);
+
+                addCommentTrigger.addEventListener('click', () => {
+                  addCommentForm.classList.toggle('hidden');
+                  if (!addCommentForm.classList.contains('hidden')) commentInput.focus();
+                });
+
+                function submitComment() {
+                  const text = commentInput.value.trim();
+                  const name = commentName.value.trim();
+                  if (!text) return;
+                  const allIdxs = [group.idx, ...group.children.map(c => c.idx)];
+                  const lastIdx = Math.max(...allIdxs);
+                  const newRow = new Array(template._totalColumns || 0).fill('');
+                  if (cols.content >= 0) newRow[cols.content] = text;
+                  if (cols.author >= 0) newRow[cols.author] = name;
+                  if (cols.updated >= 0) newRow[cols.updated] = nowTimestamp();
+                  template._onInsertAfterRow(lastIdx + 1, [newRow]);
+                }
+                commentSubmit.addEventListener('click', submitComment);
+                commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitComment(); });
+
+                commentsSection.append(addCommentTrigger, addCommentForm);
+              }
             }
 
             card.append(commentsSection);

@@ -115,6 +115,8 @@ async function loadMockSheet(sheetId) {
     'sheet-043': 'kanban-ai-status',
     'sheet-044': 'knowledge-devops',
     'sheet-045': 'knowledge-waymark',
+    'sheet-061': 'knowledge-with-comments',
+    'sheet-062': 'knowledge-article-comments',
     'sheet-046': 'notification-waymark',
     'sheet-049': 'guide-composting',
     'sheet-047': 'iot-sensor-dashboard',

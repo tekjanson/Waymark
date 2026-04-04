@@ -640,3 +640,95 @@ test('knowledge directoryView shows folder refresh button in header', async ({ p
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
 
+/* ---------- Lazy-loaded external comments ---------- */
+
+test('article with Comments Sheet column shows lazy-loaded comments on expand', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-061');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  // Expand the first article (which has a comments sheet)
+  await page.click('.knowledge-card .knowledge-expand-btn');
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 5000 });
+
+  // Wait for lazy-load to complete (loader disappears, comments appear)
+  await page.waitForFunction(
+    () => !document.querySelector('.knowledge-comments-loader'),
+    { timeout: 5000 },
+  );
+
+  await expect(page.locator('.knowledge-comment')).toBeTruthy();
+  const comments = page.locator('.knowledge-comment');
+  expect(await comments.count()).toBeGreaterThanOrEqual(1);
+});
+
+test('external comments show author names and dates', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-061');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  await page.click('.knowledge-card .knowledge-expand-btn');
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 5000 });
+  await page.waitForFunction(
+    () => !document.querySelector('.knowledge-comments-loader'),
+    { timeout: 5000 },
+  );
+
+  const authorEls = page.locator('.knowledge-comment-author');
+  expect(await authorEls.count()).toBeGreaterThanOrEqual(1);
+  const firstAuthor = await authorEls.first().textContent();
+  expect(firstAuthor.trim().length).toBeGreaterThan(0);
+
+  const dateEls = page.locator('.knowledge-comment-date');
+  expect(await dateEls.count()).toBeGreaterThanOrEqual(1);
+  const firstDate = await dateEls.first().textContent();
+  // Date should be formatted, not raw ISO
+  expect(firstDate.trim()).toMatch(/\w+ \d+, \d{4}/);
+});
+
+test('article without Comments Sheet column uses inline comments', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-044');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  // Click expand on any card (sheet-044 has no Comments Sheet column)
+  await page.locator('.knowledge-card').first().locator('.knowledge-expand-btn').click();
+  await page.waitForSelector('.knowledge-comments-section', { timeout: 5000 });
+
+  // For inline-comments articles, no lazy-load loader should appear
+  const loader = page.locator('.knowledge-comments-loader');
+  expect(await loader.count()).toBe(0);
+});
+
+test('expanding article with external comments shows add comment form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-061');
+  await page.waitForSelector('.knowledge-card', { timeout: 5000 });
+
+  await page.click('.knowledge-card .knowledge-expand-btn');
+  await page.waitForFunction(
+    () => !document.querySelector('.knowledge-comments-loader'),
+    { timeout: 5000 },
+  );
+
+  const trigger = page.locator('.knowledge-add-comment-trigger').first();
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+
+  await expect(page.locator('.knowledge-add-comment-input')).toBeVisible();
+  await expect(page.locator('.knowledge-add-comment-name')).toBeVisible();
+  await expect(page.locator('.knowledge-add-comment-btn')).toBeVisible();
+});
+
+test('knowledge template detects Comments Sheet column', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-061');
+  await page.waitForSelector('#template-badge', { timeout: 5000 });
+  await expect(page.locator('#template-badge')).toContainText('Knowledge Base');
+
+  // Verify the template has 2 article groups
+  await page.waitForSelector('.knowledge-section', { timeout: 5000 });
+  const cards = page.locator('.knowledge-card');
+  expect(await cards.count()).toBeGreaterThanOrEqual(2);
+});
+
