@@ -114,6 +114,7 @@ const createSheetCancelBtn      = document.getElementById('create-sheet-cancel-b
 const createSheetCreateBtn      = document.getElementById('create-sheet-create-btn');
 const createSheetNameInput      = document.getElementById('create-sheet-name');
 const createSheetGrid           = document.getElementById('create-sheet-templates');
+const createSheetSearchInput    = document.getElementById('create-sheet-search');
 const createSheetStatus         = document.getElementById('create-sheet-status');
 const createSheetProgress       = document.getElementById('create-sheet-progress');
 const createSheetFolderDisplay  = document.getElementById('create-sheet-folder-display');
@@ -1558,6 +1559,13 @@ function initCreateSheetModal() {
   // Name input enables/disables create button
   createSheetNameInput.addEventListener('input', updateCreateSheetButton);
 
+  // Template search — filter visible cards as the user types
+  if (createSheetSearchInput) {
+    createSheetSearchInput.addEventListener('input', () => {
+      renderCreateSheetGrid(createSheetSearchInput.value);
+    });
+  }
+
   // Choose Folder button — opens Google Picker to select destination
   if (createSheetChooseFolderBtn) {
     createSheetChooseFolderBtn.addEventListener('click', async () => {
@@ -1591,27 +1599,35 @@ function openCreateSheetModal() {
   createSheetParentId   = null;
   createSheetParentName = null;
   createSheetNameInput.value = '';
+  if (createSheetSearchInput) createSheetSearchInput.value = '';
   createSheetStatus.textContent = '';
   createSheetCreateBtn.disabled = true;
   createSheetCreateBtn.textContent = 'Create Waymark';
   createSheetProgress.classList.add('hidden');
   if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = 'Waymark (default)';
-  renderCreateSheetGrid();
+  renderCreateSheetGrid('');
   createSheetModal.classList.remove('hidden');
-  createSheetNameInput.focus();
+  // Focus search input so user can immediately type to filter
+  if (createSheetSearchInput) createSheetSearchInput.focus();
+  else createSheetNameInput.focus();
 }
 
 function closeCreateSheetModal() {
   createSheetModal.classList.add('hidden');
 }
 
-function renderCreateSheetGrid() {
+function renderCreateSheetGrid(query = '') {
   createSheetGrid.innerHTML = '';
+  const q = query.trim().toLowerCase();
 
-  // Sort templates alphabetically by name
+  // Sort templates alphabetically by name, then filter by search query
   const entries = Object.entries(TEMPLATES)
     .filter(([key, tpl]) => getTemplateHeaders(key, tpl).length > 0)
-    .sort((a, b) => a[1].name.localeCompare(b[1].name));
+    .sort((a, b) => a[1].name.localeCompare(b[1].name))
+    .filter(([key, tpl]) => {
+      if (!q) return true;
+      return tpl.name.toLowerCase().includes(q) || key.toLowerCase().includes(q);
+    });
 
   for (const [key, tpl] of entries) {
     const headers = getTemplateHeaders(key, tpl);
