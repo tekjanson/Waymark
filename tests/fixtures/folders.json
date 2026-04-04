@@ -260,6 +260,11 @@
               "id": "sheet-060",
               "name": "Game Arcade Lobby",
               "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-061",
+              "name": "Worker Jobs",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
             }
           ]
         },

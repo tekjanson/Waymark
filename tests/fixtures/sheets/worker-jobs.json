@@ -1,0 +1,14 @@
+{
+  "id": "sheet-061",
+  "title": "Worker Jobs",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Job", "Handler", "Config", "Status", "Schedule", "Last Run", "Result"],
+    ["Sync CRM contacts", "sync", "{\"source\":\"https://api.example.com/contacts\",\"sheetId\":\"abc123\"}", "done", "0 */6 * * *", "2026-06-14T08:00:00Z", "Synced 142 records"],
+    ["Poll inventory updates", "poll", "{\"sheetId\":\"xyz789\",\"column\":\"B\",\"threshold\":10}", "running", "*/5 * * * *", "2026-06-14T09:55:00Z", "Watching for changes…"],
+    ["Send weekly digest", "notify", "{\"recipients\":\"team@example.com\",\"template\":\"weekly-digest\"}", "scheduled", "0 9 * * 1", "", ""],
+    ["Load sales forecast", "sync", "{\"source\":\"https://api.example.com/forecast\",\"sheetId\":\"def456\"}", "failed", "0 7 * * *", "2026-06-13T07:00:00Z", "Error: 401 Unauthorized"],
+    ["Webhook ingest orders", "webhook", "{\"endpoint\":\"/hooks/orders\",\"sheetId\":\"ghi012\"}", "pending", "", "", ""],
+    ["Daily backup export", "script", "{\"script\":\"export-backup.js\",\"outputFolder\":\"Backups\"}", "done", "0 2 * * *", "2026-06-14T02:00:00Z", "Exported 1.2 MB"]
+  ]
+}

@@ -1239,10 +1239,43 @@
       "fixtureFiles": [
         "arcade-lobby"
       ]
+    },
+    {
+      "key": "worker",
+      "name": "Worker Jobs",
+      "icon": "⚙️",
+      "color": "#0369a1",
+      "priority": 20,
+      "category": "Operations",
+      "detectSignals": [
+        "job",
+        "worker",
+        "handler",
+        "backend worker",
+        "job runner"
+      ],
+      "columnRoles": [
+        "job",
+        "handler",
+        "config",
+        "status",
+        "schedule",
+        "lastRun",
+        "result"
+      ],
+      "interactive": false,
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-061"
+      ],
+      "fixtureFiles": [
+        "worker-jobs"
+      ]
     }
   ],
-  "nextSheetId": "sheet-061",
-  "totalTemplates": 31,
+  "nextSheetId": "sheet-062",
+  "totalTemplates": 32,
   "categories": [
     "Productivity",
     "Engineering",

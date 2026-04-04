@@ -1,0 +1,191 @@
+/* ============================================================
+   templates/worker.css — Worker Jobs template styles
+   ============================================================ */
+
+/* Stat summary bar */
+.worker-stat-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 0 14px;
+}
+
+.worker-stat {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.worker-stat-running   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.worker-stat-done      { background: #dcfce7; color: #166534; border-color: #86efac; }
+.worker-stat-failed    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.worker-stat-scheduled { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+
+/* Job grid */
+.worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+/* Job card base */
+.worker-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  cursor: default;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.worker-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+}
+
+/* Status-tinted left border */
+.worker-card-running   { border-left: 3px solid #3b82f6; }
+.worker-card-done      { border-left: 3px solid #22c55e; }
+.worker-card-failed    { border-left: 3px solid #ef4444; }
+.worker-card-scheduled { border-left: 3px solid #f59e0b; }
+.worker-card-pending   { border-left: 3px solid var(--color-border); }
+
+/* Card header */
+.worker-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.worker-card-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.worker-card-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status badge */
+.worker-status-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.worker-status-badge:hover { opacity: 0.85; }
+
+.worker-status-pending   { background: var(--color-surface-2); color: var(--color-text-muted); border-color: var(--color-border); }
+.worker-status-running   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.worker-status-done      { background: #dcfce7; color: #166534; border-color: #86efac; }
+.worker-status-failed    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.worker-status-scheduled { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+
+/* Handler badge & schedule */
+.worker-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.worker-handler-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+
+.worker-schedule {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+/* Config row */
+.worker-config {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: block;
+}
+
+.worker-config-label {
+  font-weight: 600;
+  font-family: inherit;
+}
+
+.worker-config-value {
+  font-family: monospace;
+  max-width: 100%;
+  overflow: hidden;
+  display: inline;
+}
+
+/* Card footer */
+.worker-card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.worker-last-run {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.worker-result {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .worker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .worker-stat-bar {
+    gap: 6px;
+  }
+}

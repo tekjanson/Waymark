@@ -128,6 +128,7 @@ async function loadMockSheet(sheetId) {
     'sheet-058': 'linker-community',
     'sheet-059': 'marketing-waymark',
     'sheet-060': 'arcade-lobby',
+    'sheet-061': 'worker-jobs',
   'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];
