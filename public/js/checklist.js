@@ -906,7 +906,15 @@ function renderWithTemplate(values) {
       values.splice(insertAt, 0, ...newRows);
       await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, values);
       showToast('Added', 'success');
-      await loadSheet(currentSheetId);
+      // Use the data we already fetched — avoid an extra round-trip to Sheets.
+      // Skip re-render if the user has an inline edit active; the next
+      // auto-refresh cycle will pick up the updated state.
+      currentValues = values;
+      lastFetchTime = new Date();
+      updateTimestamp();
+      if (!(itemsEl && document.activeElement && itemsEl.contains(document.activeElement))) {
+        renderWithTemplate(currentValues);
+      }
     } catch (err) {
       showToast(`Failed to add: ${err.message}`, 'error');
     }
@@ -1128,7 +1136,12 @@ function resetTimer() {
   const interval = customRefreshRate || 60_000;
   if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
     refreshTimer = setInterval(() => {
-      if (currentSheetId && !isAddRowOpen()) loadSheet(currentSheetId);
+      if (currentSheetId && !isAddRowOpen()) {
+        // Don't interrupt an active inline edit — silently skip this cycle;
+        // the next tick will pick up latest data once the user commits or blurs.
+        if (itemsEl && document.activeElement && itemsEl.contains(document.activeElement)) return;
+        loadSheet(currentSheetId);
+      }
     }, interval);
   }
 }
