@@ -2,7 +2,7 @@
    templates/arcade/index.js — Arcade template barrel
    ============================================================ */
 
-import { el, registerTemplate, cell, WaymarkConnect, showToast } from '../shared.js';
+import { el, registerTemplate, cell, WaymarkConnect, showToast, buildHandshakePasswordRow } from '../shared.js';
 import { getGameList, netModelLabel } from './helpers.js';
 import { buildGameGrid, buildPeerList, buildMatchHistory } from './cards.js';
 import { openGameModal, closeGameModal, isGameActive } from './modal.js';
@@ -25,6 +25,8 @@ let _statusLabel = null;
 let _peerCountEl = null;
 let _pendingInvite = null;       // { peerId, gameKey } — outgoing invite waiting for response
 let _inviteNotification = null;  // DOM element for incoming invite banner
+let _sessionPassword = '';       // Optional session password for encrypted handshakes
+let _template = null;            // Cached template ref for reconnect after password change
 
 /* ---------- Cleanup ---------- */
 
@@ -65,6 +67,8 @@ function startConnect(template) {
   // Don't double-connect
   if (_waymarkConnect) return;
 
+  _template = template; // Cache for reconnect after password change
+
   const sheetId = template._rtcSheetId;
   const signal = template._rtcSignal;
   const displayName = template._rtcUserName || 'Anonymous';
@@ -78,6 +82,7 @@ function startConnect(template) {
 
   _waymarkConnect = new WaymarkConnect(sheetId, {
     displayName,
+    password: _sessionPassword || null,
     signal: signal || null,
     onMessage() { /* arcade doesn't use chat messages */ },
     onPeersChanged(peers) {
@@ -154,6 +159,16 @@ function render(container, rows, cols, template) {
   _statusLabel = el('span', { className: 'arcade-status-label' }, ['Searching for players…']);
   _peerCountEl = el('span', { className: 'arcade-peer-count-label' }, ['0 players']);
 
+  // Session password input — uses reusable handshake-auth helper
+  const { row: pwRow, getPassword: getPw } = buildHandshakePasswordRow({
+    prefix: 'arcade',
+    initialValue: _sessionPassword,
+    onPasswordChange(newPw) {
+      _sessionPassword = newPw || '';
+      if (_waymarkConnect) _waymarkConnect.setPassword(newPw);
+    },
+  });
+
   const peersSection = el('div', { className: 'arcade-section arcade-peers-section' }, [
     el('h3', { className: 'arcade-section-title' }, ['Players Online']),
     el('div', { className: 'arcade-connection-bar' }, [
@@ -161,6 +176,7 @@ function render(container, rows, cols, template) {
       _statusLabel,
       _peerCountEl,
     ]),
+    pwRow,
     buildPeerList(_peers, onInvite),
   ]);
   body.append(peersSection);

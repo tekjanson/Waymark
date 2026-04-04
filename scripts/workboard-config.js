@@ -44,7 +44,10 @@ if (fs.existsSync(envPath)) {
 const DEFAULT_CONFIG_PATH = path.resolve(__dirname, '../generated/workboard-config.json');
 
 /**
- * Extract spreadsheet ID from a Google Sheets URL or return raw ID.
+ * Extract spreadsheet ID from a Google Sheets URL, a Waymark app URL, or return raw ID.
+ * Handles:
+ *   - Google Sheets: https://docs.google.com/spreadsheets/d/{id}/edit
+ *   - Waymark app:   https://example.com/waymark/#/sheet/{id}
  * @param {string} value
  * @returns {string}
  */
@@ -52,8 +55,18 @@ function parseSpreadsheetId(value) {
   const input = String(value || '').trim();
   if (!input) return '';
 
-  const fromUrl = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (fromUrl?.[1]) return fromUrl[1];
+  // Google Sheets URL: /spreadsheets/d/{id}
+  const fromSheetsUrl = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (fromSheetsUrl?.[1]) return fromSheetsUrl[1];
+
+  // Waymark app URL: #/sheet/{id} or /sheet/{id}
+  const fromWaymarkUrl = input.match(/[/#]sheet\/([a-zA-Z0-9-_]+)/);
+  if (fromWaymarkUrl?.[1]) return fromWaymarkUrl[1];
+
+  // Bare ID (no URL)
+  if (!input.includes('/') && !input.includes('?')) return input;
+
+  // Unknown URL shape — return as-is and let the caller fail gracefully
   return input;
 }
 

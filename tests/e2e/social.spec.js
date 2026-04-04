@@ -659,3 +659,82 @@ test('all audio storage keys use waymark_ prefix', async ({ page }) => {
   });
   expect(badKeys).toEqual([]);
 });
+
+/* ---- Handshake password row (session protection) ---- */
+
+test('social shows session password row below profile header', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.waitForSelector('.social-password-row', { timeout: 5000 });
+  await expect(page.locator('.social-password-row')).toBeVisible();
+  await expect(page.locator('.social-password-label')).toContainText('Password');
+  await expect(page.locator('.social-password-input')).toBeVisible();
+});
+
+test('social password input has type=password for masking', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.waitForSelector('.social-password-input', { timeout: 5000 });
+  const type = await page.locator('.social-password-input').getAttribute('type');
+  expect(type).toBe('password');
+});
+
+test('social password toggle button is visible and clickable', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.waitForSelector('.social-password-toggle', { timeout: 5000 });
+  const toggleBtn = page.locator('.social-password-toggle');
+  await expect(toggleBtn).toBeVisible();
+  // Click — should toggle to text type
+  await toggleBtn.click();
+  const type = await page.locator('.social-password-input').getAttribute('type');
+  expect(type).toBe('text');
+  // Click again — should toggle back to password type
+  await toggleBtn.click();
+  const typeBack = await page.locator('.social-password-input').getAttribute('type');
+  expect(typeBack).toBe('password');
+});
+
+test('social password input is empty by default', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-030');
+  await page.waitForSelector('.social-password-input', { timeout: 5000 });
+  const value = await page.locator('.social-password-input').inputValue();
+  expect(value).toBe('');
+});
+
+test('arcade password toggle button toggles visibility', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-060');
+  await page.waitForSelector('.arcade-password-toggle', { timeout: 5000 });
+  const toggleBtn = page.locator('.arcade-password-toggle');
+  await expect(toggleBtn).toBeVisible();
+  await toggleBtn.click();
+  const type = await page.locator('.arcade-password-input').getAttribute('type');
+  expect(type).toBe('text');
+  await toggleBtn.click();
+  const typeBack = await page.locator('.arcade-password-input').getAttribute('type');
+  expect(typeBack).toBe('password');
+});
+
+test('arcade peer-protected uses design-token border color (dark-mode safe)', async ({ page }) => {
+  // Verify .arcade-peer-protected uses var(--color-warning) not a hardcoded light color
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-060');
+  await page.waitForSelector('.arcade-lobby', { timeout: 5000 });
+  // Check that the CSS rule for .arcade-peer-protected no longer uses the buggy #fffbeb
+  const hasBuggyColor = await page.evaluate(() => {
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule.selectorText && rule.selectorText.includes('arcade-peer-protected')) {
+            const bg = rule.style && rule.style.background;
+            if (bg && bg.includes('fffbeb')) return true;
+          }
+        }
+      } catch { /* cross-origin */ }
+    }
+    return false;
+  });
+  expect(hasBuggyColor).toBe(false);
+});

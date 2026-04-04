@@ -387,7 +387,7 @@ function escapeHtml(str) {
 /* ---------- Google Drive upload ---------- */
 
 /** OAuth token file saved by scripts/get-oauth-token.js */
-const OAUTH_TOKEN_PATH = path.join(
+const OAUTH_TOKEN_PATH = process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(
   process.env.HOME || '/home/tekjanson',
   '.config', 'gcloud', 'waymark-oauth-token.json'
 );

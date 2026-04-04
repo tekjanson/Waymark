@@ -60,7 +60,10 @@ export function buildPeerList(peers, onInvite) {
 
   const list = el('div', { className: 'arcade-peer-list' }, []);
   for (const [peerId, info] of peers) {
-    const peerCard = el('div', { className: 'arcade-peer-card', dataset: { peerId } }, [
+    const lockEl = info.protected
+      ? el('span', { className: 'arcade-peer-lock', title: 'Password-protected session' }, ['🔒'])
+      : null;
+    const children = [
       el('span', { className: 'arcade-peer-name' }, [info.name || 'Peer']),
       el('span', { className: 'arcade-peer-channel' }, [
         info.channel === 'rtc' ? '🟢' : '🟡',
@@ -69,7 +72,12 @@ export function buildPeerList(peers, onInvite) {
         className: 'arcade-invite-btn',
         on: { click: () => onInvite(peerId) },
       }, ['Invite']),
-    ]);
+    ];
+    if (lockEl) children.unshift(lockEl);
+    const peerCard = el('div', {
+      className: `arcade-peer-card${info.protected ? ' arcade-peer-protected' : ''}`,
+      dataset: { peerId },
+    }, children);
     list.append(peerCard);
   }
   return list;

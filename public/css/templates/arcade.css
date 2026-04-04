@@ -561,3 +561,72 @@
     border-radius: 0;
   }
 }
+
+/* ---------- Password protection ---------- */
+
+.arcade-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.arcade-password-label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.arcade-password-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+}
+
+.arcade-password-input:focus {
+  border-color: var(--color-primary);
+}
+
+.arcade-password-toggle {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.arcade-password-toggle:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.arcade-peer-lock {
+  font-size: 0.85rem;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.arcade-peer-protected {
+  border-color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+[data-theme="dark"] .arcade-peer-protected {
+  border-color: var(--color-warning);
+  background: rgba(251, 191, 36, 0.12);
+}

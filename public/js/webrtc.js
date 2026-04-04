@@ -43,6 +43,14 @@ const HEART_MS  = 15000; // Heartbeat interval (15s reduces write pressure)
 const ALIVE_TTL = 50000; // Peer gone after 50s silence (>3× heartbeat)
 const ICE_WAIT  = 2000;  // ICE gathering timeout
 
+/* ---------- Handshake encryption ---------- */
+
+/** Prefix marker for encrypted signaling cells */
+const HANDSHAKE_ENC_PREFIX = '\u{1F510}HND:';
+
+/** PBKDF2 iterations for signal key — lighter than column encryption (ephemeral data) */
+const HANDSHAKE_PBKDF2_ITER = 10000;
+
 /* ---------- WaymarkConnect ---------- */
 
 /**
@@ -69,8 +77,12 @@ export class WaymarkConnect {
     this.onCallActive = opts.onCallActive || (() => {});
     this.onArcadeMessage = opts.onArcadeMessage || null;
 
+    // Session password for encrypting signaling data (optional)
+    this._password = opts.password || null;
+    this._handshakeKey = null; // Derived lazily from password + sheetId
+
     this._bc = null;
-    this._peers = new Map();        // peerId → { name, channel }
+    this._peers = new Map();        // peerId → { name, channel, protected? }
     this._rtc = new Map();          // peerId → { pc, dc, state }
     this._destroyed = false;
 
@@ -554,8 +566,10 @@ export class WaymarkConnect {
   async _heartbeat() {
     if (this._destroyed || this._block < 0) return;
     try {
+      const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now() };
+      if (this._password) presence.protected = true;
       await this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL,
-        JSON.stringify({ peerId: this.peerId, name: this.displayName, ts: Date.now() }));
+        JSON.stringify(presence));
     } catch (err) {
       console.warn('[WC] heartbeat write failed:', err.message || err);
     }
@@ -576,7 +590,7 @@ export class WaymarkConnect {
         const cur = this._peers.get(p.peerId);
         if (!cur || cur.channel === 'sig') {
           const ch = this._rtc.get(p.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'sig';
-          this._peers.set(p.peerId, { name: p.name, channel: ch });
+          this._peers.set(p.peerId, { name: p.name, channel: ch, protected: p.protected || false });
           peerChanged = true;
         }
       }
@@ -589,9 +603,9 @@ export class WaymarkConnect {
       }
       if (peerChanged) this._emitPeers();
 
-      // Read our current signal data from the cached vals
-      let myOffers  = _json(vals[this._block + OFF_OFFERS]?.[SIG_COL]) || {};
-      let myAnswers = _json(vals[this._block + OFF_ANSWERS]?.[SIG_COL]) || {};
+      // Read our current signal data from the cached vals (decrypt if password is set)
+      let myOffers  = _json(await this._decryptSignal(vals[this._block + OFF_OFFERS]?.[SIG_COL] || '')) || {};
+      let myAnswers = _json(await this._decryptSignal(vals[this._block + OFF_ANSWERS]?.[SIG_COL] || '')) || {};
       let offDirty = false;
       let ansDirty = false;
 
@@ -636,7 +650,7 @@ export class WaymarkConnect {
             }
           } else {
             // Check if remote wrote answer to their ANSWERS row keyed by our peerId
-            const remoteAns = _json(vals[remote.block + OFF_ANSWERS]?.[SIG_COL]) || {};
+            const remoteAns = _json(await this._decryptSignal(vals[remote.block + OFF_ANSWERS]?.[SIG_COL] || '')) || {};
             const ans = remoteAns[this.peerId];
             if (ans) {
               try {
@@ -654,7 +668,7 @@ export class WaymarkConnect {
         } else {
           // === ANSWERER: look for offer in remote's OFFERS row ===
           if (!r) {
-            const remoteOff = _json(vals[remote.block + OFF_OFFERS]?.[SIG_COL]) || {};
+            const remoteOff = _json(await this._decryptSignal(vals[remote.block + OFF_OFFERS]?.[SIG_COL] || '')) || {};
             const offer = remoteOff[this.peerId];
             if (offer) {
               try {
@@ -671,14 +685,14 @@ export class WaymarkConnect {
         }
       }
 
-      // Batch-write any changed signal rows
+      // Batch-write any changed signal rows (encrypt if password is set)
       if (offDirty) {
         const v = Object.keys(myOffers).length ? JSON.stringify(myOffers) : '';
-        await this.signal.writeCell(this._block + OFF_OFFERS, SIG_COL, v);
+        await this.signal.writeCell(this._block + OFF_OFFERS, SIG_COL, await this._encryptSignal(v));
       }
       if (ansDirty) {
         const v = Object.keys(myAnswers).length ? JSON.stringify(myAnswers) : '';
-        await this.signal.writeCell(this._block + OFF_ANSWERS, SIG_COL, v);
+        await this.signal.writeCell(this._block + OFF_ANSWERS, SIG_COL, await this._encryptSignal(v));
       }
     } catch (err) {
       console.error('[WC] _poll outer error:', err);
@@ -904,6 +918,85 @@ export class WaymarkConnect {
       await Promise.all(Array.from({ length: BLOCK_SIZE }, (_, i) =>
         this.signal.writeCell(this._block + i, SIG_COL, '')));
     } catch {}
+  }
+
+  /* ---------- Handshake encryption ---------- */
+
+  /**
+   * Update the session password. Clears the cached derived key so it is
+   * re-derived on the next signaling cycle.
+   * @param {string|null} password
+   */
+  setPassword(password) {
+    this._password = password || null;
+    this._handshakeKey = null;
+  }
+
+  /**
+   * Derive (and cache) an AES-GCM key from the session password.
+   * @returns {Promise<CryptoKey|null>}
+   */
+  async _deriveHandshakeKey() {
+    if (this._handshakeKey) return this._handshakeKey;
+    if (!this._password) return null;
+    const enc = new TextEncoder();
+    const mat = await crypto.subtle.importKey(
+      'raw', enc.encode(this._password), 'PBKDF2', false, ['deriveKey']
+    );
+    this._handshakeKey = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: enc.encode(`waymark-handshake-${this.sheetId}`),
+        iterations: HANDSHAKE_PBKDF2_ITER,
+        hash: 'SHA-256',
+      },
+      mat,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    return this._handshakeKey;
+  }
+
+  /**
+   * Encrypt a signaling value. Returns plaintext unchanged if no password is set.
+   * Empty strings are passed through.
+   * @param {string} plaintext
+   * @returns {Promise<string>}
+   */
+  async _encryptSignal(plaintext) {
+    if (!plaintext || !this._password) return plaintext;
+    const key = await this._deriveHandshakeKey();
+    if (!key) return plaintext;
+    const enc = new TextEncoder();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+    const combined = new Uint8Array(12 + buf.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(buf), 12);
+    return HANDSHAKE_ENC_PREFIX + btoa(String.fromCharCode(...combined));
+  }
+
+  /**
+   * Decrypt a signaling value. Returns the encoded string unchanged if it
+   * does not start with the encryption prefix (already plaintext).
+   * Returns null if password is set but decryption fails (wrong password).
+   * @param {string} encoded
+   * @returns {Promise<string|null>}
+   */
+  async _decryptSignal(encoded) {
+    if (!encoded || !encoded.startsWith(HANDSHAKE_ENC_PREFIX)) return encoded;
+    if (!this._password) return null; // Protected data but no password
+    const key = await this._deriveHandshakeKey();
+    if (!key) return null;
+    try {
+      const raw = Uint8Array.from(atob(encoded.slice(HANDSHAKE_ENC_PREFIX.length)), c => c.charCodeAt(0));
+      const iv = raw.slice(0, 12);
+      const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, raw.slice(12));
+      return new TextDecoder().decode(buf);
+    } catch {
+      return null; // Wrong password or corrupted cipher
+    }
   }
 }
 

@@ -1011,3 +1011,61 @@
 [data-theme="dark"] .social-incoming-call {
   background: linear-gradient(135deg, #0f0d2e, #1e1b4b);
 }
+
+/* ---------- Handshake session password ---------- */
+.social-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  max-width: 400px;
+}
+
+.social-password-label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.social-password-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+}
+
+.social-password-input:focus {
+  border-color: var(--color-primary);
+}
+
+.social-password-toggle {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.social-password-toggle:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .social-password-row {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
