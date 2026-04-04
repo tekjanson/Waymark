@@ -464,11 +464,16 @@ async function getOAuthToken() {
     throw new Error(`Token refresh failed ${res.status}: ${JSON.stringify(res.data)}`);
   }
 
-  // Update saved token file
+  // Update saved token file (best-effort — read-only overlay may prevent write)
   tokenData.access_token = res.data.access_token;
   tokenData.expiry_date = Date.now() + (res.data.expires_in * 1000);
-  fs.writeFileSync(OAUTH_TOKEN_PATH, JSON.stringify(tokenData, null, 2));
-  fs.chmodSync(OAUTH_TOKEN_PATH, 0o600);
+  try {
+    fs.writeFileSync(OAUTH_TOKEN_PATH, JSON.stringify(tokenData, null, 2));
+    fs.chmodSync(OAUTH_TOKEN_PATH, 0o600);
+  } catch (writeErr) {
+    // Non-fatal: token is refreshed in memory; write-back failed (e.g. read-only overlay)
+    process.stderr.write(`[warn] Could not persist token: ${writeErr.message}\n`);
+  }
 
   return tokenData.access_token;
 }
