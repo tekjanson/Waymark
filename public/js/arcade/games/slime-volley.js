@@ -272,8 +272,8 @@ const BALL_COLOR = '#f0e68c';
 const P1_EYE = '#fff';
 const P2_EYE = '#fff';
 
-function renderGame(ctx, alpha) {
-  const st = ctx.state;
+function renderGame(ctx, prev, curr, alpha) {
+  const st = curr || ctx.state;
 
   clear(SKY);
 
@@ -286,26 +286,79 @@ function renderGame(ctx, alpha) {
   const netH = toFloat(NET_H);
   drawRect(netX, netY, toFloat(NET_W), netH, NET_COLOR);
 
-  // Slime 1 (left)
-  const s1x = toFloat(st.s1x);
-  const s1y = toFloat(st.s1y);
+  // -- Helper: read a fixed-point value from the serialized prev buffer at byteOffset --
+  function prevFloat(byteOffset) {
+    if (!prev || alpha == null) return null;
+    const v = new DataView(prev.buffer, prev.byteOffset, prev.byteLength);
+    return toFloat(v.getInt32(byteOffset, true));
+  }
+
+  // Local vs remote rendering:
+  // Local player: alpha-interpolation for sub-frame smoothness.
+  // Remote player (networked): exponential visual smoothing to hide rollback corrections.
+  const isP1Local = ctx.localPlayerId === 0;
+  const hasNet = Boolean(ctx.net);
   const sr = toFloat(SLIME_R);
+
+  // Slime 1 positions (bytes 0/4 in serialized buffer)
+  const s1xCurr = toFloat(st.s1x);
+  const s1yCurr = toFloat(st.s1y);
+  let s1x, s1y;
+  if (isP1Local) {
+    const px0 = prevFloat(0) ?? s1xCurr;
+    const py0 = prevFloat(4) ?? s1yCurr;
+    s1x = px0 + (s1xCurr - px0) * (alpha ?? 1);
+    s1y = py0 + (s1yCurr - py0) * (alpha ?? 1);
+  } else if (hasNet) {
+    if (!ctx._vs) ctx._vs = { s1x: s1xCurr, s1y: s1yCurr };
+    if (ctx._vs.s1x == null) { ctx._vs.s1x = s1xCurr; ctx._vs.s1y = s1yCurr; }
+    ctx._vs.s1x += (s1xCurr - ctx._vs.s1x) * 0.5;
+    ctx._vs.s1y += (s1yCurr - ctx._vs.s1y) * 0.5;
+    s1x = ctx._vs.s1x;
+    s1y = ctx._vs.s1y;
+  } else {
+    s1x = s1xCurr; s1y = s1yCurr;
+  }
+
+  // Slime 2 positions (bytes 16/20)
+  const s2xCurr = toFloat(st.s2x);
+  const s2yCurr = toFloat(st.s2y);
+  let s2x, s2y;
+  if (!isP1Local) {
+    const px16 = prevFloat(16) ?? s2xCurr;
+    const py20 = prevFloat(20) ?? s2yCurr;
+    s2x = px16 + (s2xCurr - px16) * (alpha ?? 1);
+    s2y = py20 + (s2yCurr - py20) * (alpha ?? 1);
+  } else if (hasNet) {
+    if (!ctx._vs) ctx._vs = {};
+    if (ctx._vs.s2x == null) { ctx._vs.s2x = s2xCurr; ctx._vs.s2y = s2yCurr; }
+    ctx._vs.s2x += (s2xCurr - ctx._vs.s2x) * 0.5;
+    ctx._vs.s2y += (s2yCurr - ctx._vs.s2y) * 0.5;
+    s2x = ctx._vs.s2x;
+    s2y = ctx._vs.s2y;
+  } else {
+    s2x = s2xCurr; s2y = s2yCurr;
+  }
+
+  // Slime 1 (left)
   drawHalfCircle(s1x, s1y, sr, P1_COLOR);
   // Eye
   drawCircle(s1x + sr * 0.3, s1y - sr * 0.3, 4, P1_EYE);
   drawCircle(s1x + sr * 0.35, s1y - sr * 0.35, 2, '#111');
 
   // Slime 2 (right)
-  const s2x = toFloat(st.s2x);
-  const s2y = toFloat(st.s2y);
   drawHalfCircle(s2x, s2y, sr, P2_COLOR);
   // Eye (facing left)
   drawCircle(s2x - sr * 0.3, s2y - sr * 0.3, 4, P2_EYE);
   drawCircle(s2x - sr * 0.35, s2y - sr * 0.35, 2, '#111');
 
-  // Ball
-  const bx = toFloat(st.bx);
-  const by = toFloat(st.by);
+  // Ball — alpha-lerp between prev and curr for smooth arc
+  const bxCurr = toFloat(st.bx);
+  const byCurr = toFloat(st.by);
+  const bxPrev = prevFloat(32) ?? bxCurr;
+  const byPrev = prevFloat(36) ?? byCurr;
+  const bx = bxPrev + (bxCurr - bxPrev) * (alpha ?? 1);
+  const by = byPrev + (byCurr - byPrev) * (alpha ?? 1);
   const br = toFloat(BALL_R);
   drawCircle(bx, by, br, BALL_COLOR);
 
@@ -405,7 +458,7 @@ registerGame({
   },
 
   render(ctx, prev, curr, alpha) {
-    renderGame(ctx, alpha);
+    renderGame(ctx, prev, curr, alpha);
   },
 
   serialize: serializeState,

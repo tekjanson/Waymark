@@ -212,3 +212,102 @@ test('encodeStateSnap / decodeMessage preserves frame and data', async ({ page }
   expect(result.frame).toBe(99);
   expect(result.dataLen).toBe(5);
 });
+
+/* ---------- rollback.js — input decay prediction ---------- */
+
+test('rollback predicts zero-input after 8 same-input frames', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { createRollback } = await import('/js/arcade/rollback.js');
+    const { encodeInput } = await import('/js/arcade/net.js');
+
+    const states = [];
+    const ctx = { state: { x: 0 }, paused: false, net: null, localPlayerId: 0 };
+    const rb = createRollback({
+      serialize: () => new Uint8Array(4),
+      deserialize: () => {},
+      simulate: (c, frame, local, remote) => { states.push({ frame, remote }); },
+      net: null,
+      localPlayer: 0,
+    });
+
+    // Remote sends input 0b11 at frame 0 only — silent thereafter
+    const remoteHistory = new Uint8Array(256);
+    remoteHistory[0] = 0b11;
+    rb.onRemoteInput(ctx, encodeInput(0, remoteHistory, -1));
+
+    // Advance frames 1..9 (remote stays silent)
+    for (let i = 0; i < 9; i++) rb.advance(ctx);
+
+    return states.filter(s => s.frame > 0).map(s => ({ frame: s.frame, remote: s.remote }));
+  });
+  // Frames 1-7: prediction should replicate last known input (0b11) — decay not yet triggered
+  for (const s of result.filter(s => s.frame >= 1 && s.frame < 8)) {
+    expect(s.remote).toBe(0b11);
+  }
+  // Frames 8+: prediction decays to 0
+  for (const s of result.filter(s => s.frame >= 8)) {
+    expect(s.remote).toBe(0);
+  }
+});
+
+test('rollback MAX_PREDICTION is 8 (pauses at 9 frames ahead)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { createRollback } = await import('/js/arcade/rollback.js');
+
+    const ctx = { state: {}, paused: false, net: null, localPlayerId: 0 };
+    const rb = createRollback({
+      serialize: () => new Uint8Array(4),
+      deserialize: () => {},
+      simulate: () => {},
+      net: null,
+      localPlayer: 0,
+    });
+
+    // confirmedFrame=-1, pause when currentFrame - (-1) > MAX_PREDICTION=8  →  frame 9
+    let pausedAt = -1;
+    for (let i = 0; i < 20; i++) {
+      ctx.paused = false;
+      rb.advance(ctx);
+      if (ctx.paused && pausedAt < 0) pausedAt = rb.frame;
+    }
+    return pausedAt;
+  });
+  // Pause occurs when gap (currentFrame - confirmedFrame) > MAX_PREDICTION=8
+  // confirmedFrame=-1, currentFrame=8 → gap=9 > 8 → pause at currentFrame=8
+  expect(result).toBe(8);
+});
+
+test('rollback accrues 24 frames of input redundancy in each packet', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { decodeMessage } = await import('/js/arcade/net.js');
+    const { createRollback } = await import('/js/arcade/rollback.js');
+
+    const captured = [];
+    const mockNet = {
+      sendFast: (buf) => {
+        const ab = buf instanceof ArrayBuffer ? buf : buf.buffer;
+        const msg = decodeMessage(ab);
+        if (msg && msg.type === 0x01) captured.push(msg.count);
+      },
+      sendReliable: () => {},
+    };
+    const ctx = { state: {}, paused: false, net: mockNet, localPlayerId: 0 };
+    const rb = createRollback({
+      serialize: () => new Uint8Array(4),
+      deserialize: () => {},
+      simulate: () => {},
+      net: mockNet,
+      localPlayer: 0,
+    });
+
+    // Advance 30 frames with no remote acks (lastAckedFrame=-1, so full history sent)
+    for (let i = 0; i < 30 && !ctx.paused; i++) rb.advance(ctx);
+
+    // By frame 24+ each packet should carry at least 24 frames of history
+    return captured.filter(c => c >= 24).length;
+  });
+  expect(result).toBeGreaterThan(0);
+});

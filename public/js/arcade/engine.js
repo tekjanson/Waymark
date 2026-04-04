@@ -159,10 +159,11 @@ export function startLoop(ctx) {
       ctx._accumulator -= dt;
     }
 
-    // Render with interpolation alpha
+    // Render with interpolation alpha — pass prevState and current state
+    // so game renderers can interpolate entity positions between fixed steps.
     const alpha = ctx._accumulator / dt;
     if (_activeScene && _activeScene.render) {
-      _activeScene.render(ctx, alpha);
+      _activeScene.render(ctx, ctx.prevState, ctx.state, alpha);
     }
   }
 

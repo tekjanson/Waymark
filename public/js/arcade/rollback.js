@@ -7,11 +7,12 @@ import { sampleAll } from './input.js';
 
 /* ---------- Constants ---------- */
 
-const MAX_PREDICTION = 15;      // max frames to run ahead of confirmed input
+const MAX_PREDICTION = 8;       // max frames to run ahead of confirmed input
 const HISTORY_SIZE = 256;       // ring buffer size (must be power of 2)
 const HISTORY_MASK = HISTORY_SIZE - 1;
 const SYNC_INTERVAL = 60;       // send state snapshot every N frames (1s @ 60Hz)
-const ACK_INTERVAL = 30;        // send unsolicited ack every N frames (~0.5s)
+const ACK_INTERVAL = 6;         // send unsolicited ack every N frames (~100ms)
+const INPUT_DECAY_FRAMES = 8;   // predict zero-input after this many same-input frames
 
 /* ---------- Rollback State ---------- */
 
@@ -79,10 +80,15 @@ export function createRollback(opts) {
       // Predict remote input if not already confirmed for THIS frame.
       // Check the frame number, not just the slot, to prevent using
       // stale confirmations from 256 frames ago.
+      // Decay prediction to zero after INPUT_DECAY_FRAMES of the same input —
+      // humans rarely hold the exact same key for more than ~133ms, so
+      // predicting zero reduces misprediction magnitude during fast movement.
       if (remoteConfirmedAt[idx] !== currentFrame) {
-        remoteInputs[idx] = lastRemoteFrame >= 0
+        const lastInput = lastRemoteFrame >= 0
           ? remoteInputs[lastRemoteFrame & HISTORY_MASK]
           : 0;
+        const framesSinceLast = currentFrame - lastRemoteFrame;
+        remoteInputs[idx] = framesSinceLast < INPUT_DECAY_FRAMES ? lastInput : 0;
       }
 
       // Save state snapshot before simulating
@@ -95,7 +101,7 @@ export function createRollback(opts) {
       // Send our input to remote with generous redundancy
       // Always send at least 16 frames of history even if all acked
       if (net) {
-        net.sendFast(encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 16)));
+        net.sendFast(encodeInput(currentFrame, localInputs, Math.min(lastAckedFrame, currentFrame - 24)));
       }
 
       // Periodic unsolicited ack — prevents ack starvation if inbound
