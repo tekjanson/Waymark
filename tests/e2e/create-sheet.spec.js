@@ -385,3 +385,96 @@ test('choosing folder shows error message when picker throws', async ({ page }) 
   await expect(page.locator('#create-sheet-choose-folder-btn')).toBeEnabled();
   await expect(page.locator('#create-sheet-choose-folder-btn')).toContainText('Choose Folder');
 });
+
+/* ────────────────── Template search / filter ────────────────── */
+
+test('search input is visible when create-sheet modal opens', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+  await expect(page.locator('#create-sheet-search')).toBeVisible();
+});
+
+test('search input is focused on modal open', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+  // The search input should have focus immediately
+  await expect(page.locator('#create-sheet-search')).toBeFocused();
+});
+
+test('typing in search filters template cards to matching names', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+
+  const totalBefore = await page.locator('.create-sheet-card').count();
+  expect(totalBefore).toBeGreaterThan(5);
+
+  // Type "kan" — should match "Kanban Board" only
+  await page.locator('#create-sheet-search').fill('kan');
+  const filtered = page.locator('.create-sheet-card');
+  const countAfter = await filtered.count();
+  expect(countAfter).toBeGreaterThanOrEqual(1);
+  expect(countAfter).toBeLessThan(totalBefore);
+  await expect(filtered.first()).toContainText('Kanban');
+});
+
+test('search filter is case-insensitive', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+
+  await page.locator('#create-sheet-search').fill('BUDGET');
+  const filtered = page.locator('.create-sheet-card');
+  const count = await filtered.count();
+  expect(count).toBeGreaterThanOrEqual(1);
+  await expect(filtered.first()).toContainText('Budget');
+});
+
+test('clearing search restores all template cards', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+
+  const totalBefore = await page.locator('.create-sheet-card').count();
+
+  await page.locator('#create-sheet-search').fill('kan');
+  const filtered = await page.locator('.create-sheet-card').count();
+  expect(filtered).toBeLessThan(totalBefore);
+
+  // Clear the search
+  await page.locator('#create-sheet-search').fill('');
+  const totalAfter = await page.locator('.create-sheet-card').count();
+  expect(totalAfter).toBe(totalBefore);
+});
+
+test('search with no matching query shows zero template cards', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+
+  await page.locator('#create-sheet-search').fill('xyznonexistent');
+  const count = await page.locator('.create-sheet-card').count();
+  expect(count).toBe(0);
+});
+
+test('search is cleared when modal is re-opened', async ({ page }) => {
+  await setupApp(page);
+
+  // Open, search for something, close
+  await page.locator('#menu-create-btn').click();
+  await page.locator('#create-sheet-search').fill('kan');
+  await page.locator('#create-sheet-cancel-btn').click();
+
+  // Reopen: search field should be empty and all cards shown
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-search')).toHaveValue('');
+  const totalCards = await page.locator('.create-sheet-card').count();
+  expect(totalCards).toBeGreaterThan(5);
+});
+
+test('search pointer cursor is applied to search input', async ({ page }) => {
+  await setupApp(page);
+  await page.locator('#menu-create-btn').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+  // The search input should have a text cursor (default for text inputs)
+  await expect(page.locator('#create-sheet-search')).toHaveCSS('width', /\d+px/);
+});
+
