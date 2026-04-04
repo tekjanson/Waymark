@@ -440,8 +440,11 @@ async function onMessage({ topic: t, payload }) {
 
       case 'capture_screenshot': {
         const selector = args?.selector || null;
-        const quality = Math.min(Math.max(args?.quality || 0.8, 0.1), 1);
+        const quality = Math.min(Math.max(args?.quality || 0.85, 0.1), 1);
         const maxWidth = args?.maxWidth || 1280;
+        const fullPage = args?.fullPage === true;
+        // Stay safely under the 2 MB MQTT message_size_limit (base64 ~1.5 MB raw)
+        const MQTT_SAFE_B64 = 1_500_000;
 
         // Lazy-load html2canvas from same-origin vendor file (CSP-safe)
         if (!window.html2canvas) {
@@ -450,25 +453,84 @@ async function onMessage({ topic: t, payload }) {
             const s = document.createElement('script');
             s.src = base + '/js/vendor/html2canvas.min.js';
             s.onload = resolve;
-            s.onerror = () => reject(new Error('Failed to load html2canvas'));
+            s.onerror = () => reject(new Error('Failed to load html2canvas from ' + s.src));
             document.head.appendChild(s);
           });
         }
         if (!window.html2canvas) {
-          error = 'html2canvas not available';
+          error = 'html2canvas not available — ensure /js/vendor/html2canvas.min.js exists';
           break;
         }
 
         const target = selector ? document.querySelector(selector) : document.body;
         if (!target) { error = `No element matching "${selector}"`; break; }
 
-        const canvas = await window.html2canvas(target, {
+        // Collect all CSS custom properties from the live :root so html2canvas
+        // renders design tokens correctly (var(--color-*) etc.)
+        const rootStyle = getComputedStyle(document.documentElement);
+        const cssVarNames = [
+          '--color-primary', '--color-primary-dark', '--color-primary-light',
+          '--color-bg', '--color-surface', '--color-text',
+          '--color-text-secondary', '--color-text-muted', '--color-border',
+          '--color-success', '--color-success-light', '--color-error',
+          '--color-error-light', '--color-warning', '--color-shared',
+          '--color-shared-light', '--radius', '--radius-sm',
+          '--shadow', '--shadow-lg', '--transition',
+          '--tint-green-bg', '--tint-green-text', '--tint-red-bg', '--tint-red-text',
+          '--tint-amber-bg', '--tint-amber-text', '--tint-blue-bg', '--tint-blue-text',
+          '--tint-purple-bg', '--tint-purple-text', '--tint-indigo-bg', '--tint-indigo-text',
+          '--tint-gray-bg', '--tint-gray-text', '--tint-teal-bg', '--tint-teal-text',
+          '--sidebar-width', '--topbar-height',
+        ];
+        const inlinedVars = cssVarNames
+          .map(v => `${v}:${rootStyle.getPropertyValue(v)}`)
+          .join(';');
+
+        const viewportW = window.innerWidth;
+        const viewportH = window.innerHeight;
+        const bgColor = rootStyle.getPropertyValue('--color-bg').trim() || '#ffffff';
+
+        const h2cOpts = {
+          allowTaint: true,
           useCORS: true,
           scale: 1,
           logging: false,
-          windowWidth: document.documentElement.scrollWidth,
-          windowHeight: document.documentElement.scrollHeight,
-        });
+          backgroundColor: bgColor,
+          // Capture only the visible viewport unless fullPage == true
+          width: fullPage ? document.documentElement.scrollWidth : viewportW,
+          height: fullPage ? document.documentElement.scrollHeight : viewportH,
+          x: fullPage ? 0 : window.scrollX,
+          y: fullPage ? 0 : window.scrollY,
+          windowWidth: viewportW,
+          windowHeight: viewportH,
+          // Inline computed CSS custom properties into the cloned document
+          // so html2canvas resolves var() tokens to their actual color values
+          onclone(clonedDoc) {
+            clonedDoc.documentElement.style.cssText += ';' + inlinedVars;
+          },
+        };
+
+        let canvas;
+        try {
+          canvas = await window.html2canvas(target, h2cOpts);
+        } catch (firstErr) {
+          // Fallback: minimal options without custom-property inlining
+          try {
+            canvas = await window.html2canvas(document.body, {
+              allowTaint: false,
+              useCORS: false,
+              scale: 1,
+              logging: false,
+              width: viewportW,
+              height: viewportH,
+              x: window.scrollX,
+              y: window.scrollY,
+            });
+          } catch (fallbackErr) {
+            error = `Screenshot failed: ${firstErr.message} (fallback also failed: ${fallbackErr.message})`;
+            break;
+          }
+        }
 
         // Resize if wider than maxWidth
         let finalCanvas = canvas;
@@ -481,8 +543,18 @@ async function onMessage({ topic: t, payload }) {
           ctx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
         }
 
-        const dataUrl = finalCanvas.toDataURL('image/jpeg', quality);
-        const base64 = dataUrl.split(',')[1];
+        // Adaptive quality: reduce until base64 output fits under MQTT limit
+        let q = quality;
+        let base64, dataUrl;
+        do {
+          dataUrl = finalCanvas.toDataURL('image/jpeg', q);
+          base64 = dataUrl.split(',')[1];
+          if (base64.length > MQTT_SAFE_B64 && q > 0.3) {
+            q = Math.max(0.3, Math.round((q - 0.15) * 100) / 100);
+          } else {
+            break;
+          }
+        } while (true);
 
         result = {
           image: base64,
@@ -492,6 +564,8 @@ async function onMessage({ topic: t, payload }) {
           originalWidth: canvas.width,
           originalHeight: canvas.height,
           selector: selector || 'body',
+          quality: q,
+          fullPage,
         };
         break;
       }
