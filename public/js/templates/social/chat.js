@@ -1277,7 +1277,6 @@ function openChat(sheetId, displayName, signal) {
   _activeConnect.start();
 }
 
-<<<<<<< HEAD:public/js/templates/social.js
 /* ---------- Template Definition ---------- */
 
 const definition = {
