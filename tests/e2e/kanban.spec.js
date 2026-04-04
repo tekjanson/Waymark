@@ -1864,3 +1864,98 @@ test('kanban directoryView shows folder refresh button in header', async ({ page
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
 
+/* ——— QoL fixes: auto-refresh guard + _onInsertAfterRow optimisation ——— */
+
+test('auto-refresh guard: active card-title edit survives a fast refresh cycle', async ({ page }) => {
+  // autoRefresh defaults to true; we then set a very short interval to hit multiple cycles quickly
+  await setupApp(page, { autoRefresh: true });
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card-title', { timeout: 5_000 });
+
+  // Open card-title inline edit
+  const firstTitle = page.locator('.kanban-card-title').first();
+  await firstTitle.click();
+  await page.waitForSelector('.kanban-card-title .editable-cell-input', { timeout: 3_000 });
+  await page.locator('.kanban-card-title .editable-cell-input').first().fill('Guarded edit text');
+
+  // Speed the refresh timer to 100 ms so several cycles fire during the next 400 ms
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('waymark:set-refresh-rate', { detail: 100 }));
+  });
+
+  // Let multiple fast cycles pass — without the guard they'd wipe the input
+  await page.waitForTimeout(400);
+
+  // Input must still exist with our text (guard suppressed the re-render)
+  await expect(page.locator('.kanban-card-title .editable-cell-input').first()).toBeVisible();
+  await expect(page.locator('.kanban-card-title .editable-cell-input').first()).toHaveValue('Guarded edit text');
+});
+
+test('auto-refresh guard: board re-renders correctly after inline edit is committed', async ({ page }) => {
+  await setupApp(page, { autoRefresh: true });
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card-title', { timeout: 5_000 });
+
+  const firstTitle = page.locator('.kanban-card-title').first();
+  await firstTitle.click();
+  await page.waitForSelector('.kanban-card-title .editable-cell-input', { timeout: 3_000 });
+  const input = page.locator('.kanban-card-title .editable-cell-input').first();
+  await input.fill('Committed change');
+  await input.press('Enter');
+
+  // After commit the input should be gone and the title span updated
+  await expect(page.locator('.kanban-card-title .editable-cell-input').first()).toBeHidden();
+  await expect(page.locator('.kanban-card-title').first()).toContainText('Committed change');
+
+  // Edit record must have been created
+  const records = await getCreatedRecords(page);
+  const edit = records.find(r => r.type === 'cell-update' && r.value === 'Committed change');
+  expect(edit).toBeTruthy();
+});
+
+test('_onInsertAfterRow optimisation: stage change shows toast and board stays functional', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  // Pick the first card that is in Backlog and change it to To Do
+  const firstBacklogCard = page.locator('.kanban-lane-backlog .kanban-card').first();
+  const stageBadge = firstBacklogCard.locator('.kanban-stage-btn');
+  await stageBadge.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  // Choose To Do from the dropdown (triggers insertStageNote → _onInsertAfterRow)
+  await page.locator('.kanban-stage-dropdown-item').filter({ hasText: 'To Do' }).first().click();
+
+  // Toast should appear confirming the note was written via the optimised path
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+  await expect(page.locator('.toast')).toContainText('Added');
+
+  // Board should still be functional — lanes still visible
+  await expect(page.locator('.kanban-board')).toBeVisible();
+  const lanes = page.locator('.kanban-lane');
+  expect(await lanes.count()).toBeGreaterThanOrEqual(6);
+});
+
+test('_onInsertAfterRow optimisation: sheet-replace record created for stage note in mock mode', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-stage-btn', { timeout: 5_000 });
+
+  const firstCard = page.locator('.kanban-stage-btn').first();
+  await firstCard.click();
+  await page.waitForSelector('.kanban-stage-dropdown', { timeout: 3_000 });
+
+  // Pick any different stage
+  const items = page.locator('.kanban-stage-dropdown-item');
+  await items.nth(1).click();
+
+  // Wait for the toast that confirms _onInsertAfterRow completed
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+
+  // Verify the sheet-replace record was emitted (atomic note + stage write)
+  const records = await getCreatedRecords(page);
+  const replaced = records.find(r => r.type === 'sheet-replace');
+  expect(replaced).toBeTruthy();
+});
+
