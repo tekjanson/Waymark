@@ -32,7 +32,7 @@ import './travel.js';
 import './roster.js';
 import './recipe/index.js';
 import './flow/index.js';
-import './social.js';
+import './social/index.js';
 import './automation.js';
 import './guide/index.js';
 import './knowledge/index.js';
