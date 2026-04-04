@@ -413,6 +413,16 @@
           "id": "sheet-045",
           "name": "Waymark KB",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-061",
+          "name": "Waymark KB (Comments Demo)",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-063",
+          "name": "Waymark Docs (Upgrade Ready)",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     },

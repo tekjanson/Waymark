@@ -340,3 +340,56 @@ test('REACTION_EMOJIS is an array', async ({ page }) => {
   });
   expect(result).toBe(true);
 });
+
+/* ---------- formatDate: timezone / serial date fixes ---------- */
+
+test('formatDate: YYYY-MM-DD does not shift day due to UTC timezone', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { formatDate } = await import('/js/templates/knowledge/helpers.js');
+    // Even on UTC-12 machines, "2026-03-10" should show March 10, not March 9
+    return formatDate('2026-03-10');
+  });
+  expect(result).toMatch(/Mar.*10.*2026|10.*Mar.*2026/i);
+});
+
+test('formatDate: handles YYYY-MM-DD HH:mm format from nowTimestamp', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { formatDate } = await import('/js/templates/knowledge/helpers.js');
+    return formatDate('2026-06-15 14:30');
+  });
+  expect(result).toMatch(/Jun.*2026|2026.*Jun/i);
+  expect(result).toMatch(/15/);
+});
+
+test('formatDate: handles Google Sheets serial date integer', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { formatDate } = await import('/js/templates/knowledge/helpers.js');
+    // 44955 = 2023-01-01 in Google Sheets serial format
+    return formatDate('44955');
+  });
+  // Should produce a valid date string, not '44955'
+  expect(result).not.toBe('44955');
+  expect(result).toMatch(/\w+ \d+, \d{4}/);
+});
+
+test('formatDate: handles ISO datetime with time zone', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { formatDate } = await import('/js/templates/knowledge/helpers.js');
+    return formatDate('2026-01-20T10:00:00.000Z');
+  });
+  // Should produce a valid formatted date (exact month/day depends on local TZ)
+  expect(result).toMatch(/\w+ \d+, \d{4}/);
+});
+
+test('formatDate: returns empty string for whitespace-only input', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { formatDate } = await import('/js/templates/knowledge/helpers.js');
+    return formatDate('   ');
+  });
+  expect(result).toBe('');
+});

@@ -1,0 +1,13 @@
+{
+  "id": "sheet-063",
+  "title": "Waymark Docs (Upgrade Ready)",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Title", "Category", "Content", "Tags", "Author", "Updated", "Status", "Comments Sheet"],
+
+    ["Getting Started", "Setup", "Waymark requires no installation — open the app in a browser.", "setup, intro", "Jamie", "2026-03-15", "Published", ""],
+    ["", "", "Sign in with a Google account and you are ready to go.", "", "", "", "", ""],
+
+    ["Advanced Filtering", "Usage", "Use the tag pills to filter articles by topic.", "usage, filters", "Alex", "2026-03-20", "Published", ""]
+  ]
+}

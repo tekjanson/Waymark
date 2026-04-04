@@ -102,12 +102,32 @@ export function buildSnippet(children, contentIdx, maxLen = 120) {
 
 /**
  * Format a date string into a human-readable short form.
- * @param {string} raw — ISO date or partial date string
+ * Handles:
+ *   - YYYY-MM-DD           → forced local midnight (avoids UTC-offset day-off bug)
+ *   - YYYY-MM-DD HH:mm     → local datetime
+ *   - Google Sheets serial  → integer days since 1899-12-30
+ *   - Any other string       → passed to Date constructor
+ * @param {string} raw
  * @returns {string}
  */
 export function formatDate(raw) {
-  if (!raw) return '';
-  const d = new Date(raw);
+  if (!raw || typeof raw !== 'string') return '';
+  const clean = raw.trim();
+  if (!clean) return '';
+
+  // Google Sheets serial date: integer 40000–60000
+  if (/^\d{5}$/.test(clean)) {
+    const serial = parseInt(clean, 10);
+    const epoch = new Date(1899, 11, 30);
+    epoch.setDate(epoch.getDate() + serial);
+    return epoch.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  // Date-only "YYYY-MM-DD" — append T00:00:00 to force local midnight
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(clean)
+    ? new Date(clean + 'T00:00:00')
+    : new Date(clean);
+
   if (isNaN(d.getTime())) return raw;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
