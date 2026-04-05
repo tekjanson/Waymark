@@ -1272,10 +1272,41 @@
       "fixtureFiles": [
         "worker-jobs"
       ]
+    },
+    {
+      "key": "photos",
+      "name": "Photo Gallery",
+      "icon": "📷",
+      "color": "#ec4899",
+      "priority": 20,
+      "category": "Personal",
+      "detectSignals": [
+        "photo",
+        "image",
+        "picture",
+        "album",
+        "gallery"
+      ],
+      "columnRoles": [
+        "photo",
+        "title",
+        "date",
+        "album",
+        "description"
+      ],
+      "interactive": false,
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-064"
+      ],
+      "fixtureFiles": [
+        "photos-gallery"
+      ]
     }
   ],
-  "nextSheetId": "sheet-062",
-  "totalTemplates": 32,
+  "nextSheetId": "sheet-065",
+  "totalTemplates": 34,
   "categories": [
     "Productivity",
     "Engineering",

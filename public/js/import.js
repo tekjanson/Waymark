@@ -254,6 +254,12 @@ const ROLE_LABELS = {
   'arcade.score': 'Score / Result',
   'arcade.status': 'Match Status / Outcome',
   'arcade.date': 'Date Played',
+  // Photo Gallery
+  'photos.photo': 'Photo URL / Google Drive Link',
+  'photos.title': 'Title / Caption',
+  'photos.date': 'Date Taken',
+  'photos.album': 'Album / Category',
+  'photos.description': 'Description / Notes',
 };
 
 /**
@@ -383,6 +389,10 @@ const CANONICAL_HEADERS = {
   'worker.config': 'Config', 'worker.status': 'Status',
   'worker.schedule': 'Schedule', 'worker.lastRun': 'Last Run',
   'worker.result': 'Result',
+  // Photo Gallery
+  'photos.photo': 'Photo', 'photos.title': 'Title',
+  'photos.date': 'Date', 'photos.album': 'Album',
+  'photos.description': 'Description',
 };
 
 /**

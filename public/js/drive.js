@@ -309,6 +309,38 @@ export async function createTextFile(token, name, content, parents = []) {
 }
 
 /**
+ * Upload a binary image file to Google Drive.
+ * After upload, sets the file permission to publicly readable so that
+ * the drive.google.com/uc?export=view&id=... URL works without sign-in.
+ * @param {string} token         OAuth access token
+ * @param {File}   file          Browser File object (from <input type="file">)
+ * @param {string} [parentFolderId]  Drive folder ID to place the file in
+ * @returns {Promise<{id: string, webViewLink: string}>}  uploaded file metadata
+ */
+export async function uploadImageFile(token, file, parentFolderId) {
+  const meta = JSON.stringify({
+    name: file.name,
+    ...(parentFolderId ? { parents: [parentFolderId] } : {}),
+  });
+  const form = new FormData();
+  form.append('metadata', new Blob([meta], { type: 'application/json' }));
+  form.append('file', file);
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    },
+  );
+  if (!res.ok) throw driveError('Drive uploadImageFile', res);
+  // Return file metadata — no automatic permission changes. The file stays private
+  // (accessible to the uploader only). Callers can guide the user to share via Drive.
+  return res.json();
+}
+
+/**
  * Update plain text content of an existing Drive file.
  * @param {string} token
  * @param {string} fileId

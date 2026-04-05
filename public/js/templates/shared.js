@@ -1151,6 +1151,81 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
 }
 
 /**
+ * Upload an image File to Google Drive and return the sharing URL + permission status.
+ * @param {File}   file              Browser File object from <input type="file">
+ * @param {string} [parentFolderId]  Optional Drive folder ID
+ * @returns {Promise<string>}  Drive view URL for the uploaded file
+ */
+export async function uploadDriveFile(file, parentFolderId) {
+  const data = await api.drive.uploadFile(file, parentFolderId);
+  return `https://drive.google.com/file/d/${data.id}/view`;
+}
+
+/**
+ * Extract a Google Drive file ID from any Drive sharing URL.
+ * @param {string} url
+ * @returns {string|null}
+ */
+export function extractDriveFileId(url) {
+  if (!url) return null;
+  const trimmed = url.trim();
+  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return fileMatch[1];
+  try {
+    const u = new URL(trimmed);
+    if (u.hostname === 'drive.google.com' &&
+        (u.pathname === '/open' || u.pathname === '/uc')) {
+      return u.searchParams.get('id');
+    }
+  } catch { /* not a Drive URL */ }
+  return null;
+}
+
+/**
+ * Asynchronously load a private Google Drive file into an <img> element
+ * using the user's OAuth access token. The file stays private — no public
+ * sharing is required.
+ *
+ * Strategy:
+ *   1. Fetch the file's thumbnailLink from Drive metadata API. The thumbnailLink
+ *      is a lh3.googleusercontent.com URL with auth embedded — loads in <img>
+ *      without browser cookies (works cross-origin).
+ *   2. Fall back to full-file download (alt=media) for newly uploaded files
+ *      that don't yet have a thumbnail.
+ *
+ * @param {string}           fileId  — Google Drive file ID
+ * @param {HTMLImageElement} imgEl   — <img> element to populate
+ * @param {function}         [onError] — called (no args) on failure
+ * @returns {Promise<void>}
+ */
+export async function loadDriveImage(fileId, imgEl, onError) {
+  try {
+    const token = await api.auth.getToken();
+    // Step 1: thumbnailLink (small, auth embedded, no browser cookies needed)
+    const metaRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      if (meta.thumbnailLink) {
+        imgEl.src = meta.thumbnailLink;
+        return;
+      }
+    }
+    // Step 2: full-file download as blob (newly uploaded files may lack thumbnail)
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) throw new Error(`Drive ${res.status}`);
+    imgEl.src = URL.createObjectURL(await res.blob());
+  } catch {
+    if (typeof onError === 'function') onError();
+  }
+}
+
+/**
  * Create a new Google Spreadsheet.
  * Used by templates to auto-create sub-sheets (e.g. per-article comment threads).
  * @param {string}      title     Spreadsheet title
