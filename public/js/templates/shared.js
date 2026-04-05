@@ -1066,41 +1066,18 @@ import {
   geminiUrl,
   geminiHeaders,
   DEFAULT_MODEL,
+  pickBestKey,
 } from '../agent/config.js';
 import {
-  getAgentKeys,
   getAgentModel,
   recordKeyUsage,
   recordKeyError,
 } from '../storage.js';
 
 /**
- * Return all available API keys sorted by least-used first.
- * @returns {Array<{ key: string, idx: number }>}
- */
-function _allApiKeys() {
-  const keys = getAgentKeys();
-  const entries = [];
-  if (keys.length > 0) {
-    const now = Date.now();
-    const sorted = keys
-      .map((k, i) => ({ ...k, idx: i }))
-      .sort((a, b) => {
-        const aErr = a.lastError && (now - new Date(a.lastError).getTime()) < 60000;
-        const bErr = b.lastError && (now - new Date(b.lastError).getTime()) < 60000;
-        if (aErr !== bErr) return aErr ? 1 : -1;
-        return (a.requestsToday || 0) - (b.requestsToday || 0);
-      });
-    for (const k of sorted) entries.push({ key: k.key, idx: k.idx });
-  }
-  const serverKey = window.__WAYMARK_API_KEY;
-  if (serverKey) entries.push({ key: serverKey, idx: -1 });
-  return entries;
-}
-
-/**
  * Call the Gemini API and return the text response.
  * Retries with the next available key on 429/503 errors.
+ * Uses the same key rotation strategy as the main agent (via pickBestKey()).
  * Templates use this for AI-powered features (§1.5-compliant).
  * @param {string} systemPrompt
  * @param {string} userMessage
@@ -1108,7 +1085,7 @@ function _allApiKeys() {
  * @returns {Promise<string>}
  */
 export async function generateText(systemPrompt, userMessage, opts = {}) {
-  const keys = _allApiKeys();
+  const keys = pickBestKey();
   if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
 
   const model = getAgentModel() || DEFAULT_MODEL;
