@@ -294,3 +294,160 @@ test('formatPostDate formats ISO date to readable string', async ({ page }) => {
   expect(results.empty).toBe('');
   expect(results.invalid).toBe('not-a-date');
 });
+
+/* ---- New Post feature ---- */
+
+test('New Post button is visible in blog header', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+  await expect(page.locator('.blog-new-post-btn')).toBeVisible();
+  await expect(page.locator('.blog-new-post-btn')).toContainText('New Post');
+});
+
+test('New Post button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+  await expect(page.locator('.blog-new-post-btn')).toHaveCSS('cursor', 'pointer');
+});
+
+test('New Post button click shows inline creation form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  // Form starts hidden
+  await expect(page.locator('.blog-new-post-form')).toBeHidden();
+
+  await page.click('.blog-new-post-btn');
+  await expect(page.locator('.blog-new-post-form')).toBeVisible();
+  await expect(page.locator('.blog-new-post-input')).toBeVisible();
+  await expect(page.locator('.blog-new-post-category')).toBeVisible();
+  await expect(page.locator('.blog-new-post-submit')).toBeVisible();
+  await expect(page.locator('.blog-new-post-cancel')).toBeVisible();
+});
+
+test('New Post Create button is disabled when title is empty', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+
+  // Button should be disabled with empty title
+  await expect(page.locator('.blog-new-post-submit')).toBeDisabled();
+});
+
+test('New Post Create button enables when title is entered', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+
+  await page.locator('.blog-new-post-input').fill('My Test Post');
+  await expect(page.locator('.blog-new-post-submit')).not.toBeDisabled();
+});
+
+test('New Post Cancel dismisses form and restores button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+  await expect(page.locator('.blog-new-post-btn')).toBeHidden();
+
+  await page.click('.blog-new-post-cancel');
+  await expect(page.locator('.blog-new-post-form')).toBeHidden();
+  await expect(page.locator('.blog-new-post-btn')).toBeVisible();
+});
+
+test('New Post form creates Google Doc record with correct mimeType', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+
+  await page.locator('.blog-new-post-input').fill('Integration Test Post');
+  await page.locator('.blog-new-post-category').fill('Testing');
+  await expect(page.locator('.blog-new-post-submit')).not.toBeDisabled();
+
+  // Handle popup opened by window.open
+  const popupPromise = page.waitForEvent('popup', { timeout: 3000 }).catch(() => null);
+  await page.click('.blog-new-post-submit');
+  await popupPromise;
+
+  // Wait for Drive file creation record
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.mimeType === 'application/vnd.google-apps.document'),
+    { timeout: 5000 },
+  );
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  const docRecord = records.find(r => r.mimeType === 'application/vnd.google-apps.document');
+  expect(docRecord).toBeTruthy();
+  expect(docRecord.name).toBe('Integration Test Post');
+});
+
+test('New Post form adds row to sheet with Draft status', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-new-post-btn', { timeout: 5000 });
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+
+  await page.locator('.blog-new-post-input').fill('New Draft Post');
+  await expect(page.locator('.blog-new-post-submit')).not.toBeDisabled();
+
+  const popupPromise = page.waitForEvent('popup', { timeout: 3000 }).catch(() => null);
+  await page.click('.blog-new-post-submit');
+  await popupPromise;
+
+  // Wait for sheet-replace record (row was inserted)
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'sheet-replace'),
+    { timeout: 5000 },
+  );
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  const sheetRecord = records.find(r => r.type === 'sheet-replace');
+  expect(sheetRecord).toBeTruthy();
+
+  // The last data row should be the new post
+  const rows = sheetRecord.rows;
+  const newRow = rows[rows.length - 1];
+  expect(newRow[0]).toBe('New Draft Post'); // Title column (index 0)
+  expect(newRow[5]).toBe('Draft');           // Status column (index 5)
+});
+
+test('New Post form re-renders grid with new card after creation', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // Baseline: 5 cards
+  expect(await page.locator('.blog-card').count()).toBe(5);
+
+  await page.click('.blog-new-post-btn');
+  await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
+  await page.locator('.blog-new-post-input').fill('A Brand New Post');
+  await expect(page.locator('.blog-new-post-submit')).not.toBeDisabled();
+
+  const popupPromise = page.waitForEvent('popup', { timeout: 3000 }).catch(() => null);
+  await page.click('.blog-new-post-submit');
+  await popupPromise;
+
+  // After re-render, grid should show 6 cards (5 original + 1 new)
+  await page.waitForFunction(
+    () => document.querySelectorAll('.blog-card').length >= 6,
+    { timeout: 5000 },
+  );
+  expect(await page.locator('.blog-card').count()).toBe(6);
+});

@@ -5,7 +5,7 @@
    using the Google Docs publish URL in a sandboxed iframe.
    ============================================================ */
 
-import { el, cell, registerTemplate, delegateEvent } from './shared.js';
+import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -168,8 +168,97 @@ const definition = {
     return cols;
   },
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     container.innerHTML = '';
+
+    /* ---- New Post form ---- */
+    let creating = false;
+
+    const titleInput = el('input', {
+      className: 'blog-new-post-input',
+      type: 'text',
+      placeholder: 'Post title…',
+      'aria-label': 'New post title',
+    });
+
+    const categoryInput = el('input', {
+      className: 'blog-new-post-category',
+      type: 'text',
+      placeholder: 'Category (optional)',
+      'aria-label': 'Post category',
+    });
+
+    const submitBtn = el('button', { className: 'blog-new-post-submit' }, ['Create']);
+    submitBtn.disabled = true;
+
+    const cancelBtn = el('button', {
+      className: 'blog-new-post-cancel',
+      on: { click() { hideNewPostForm(); } },
+    }, ['Cancel']);
+
+    const newPostForm = el('div', { className: 'blog-new-post-form hidden' }, [
+      titleInput,
+      categoryInput,
+      el('div', { className: 'blog-new-post-actions' }, [submitBtn, cancelBtn]),
+    ]);
+
+    titleInput.addEventListener('input', () => {
+      submitBtn.disabled = titleInput.value.trim() === '';
+    });
+
+    const newPostBtn = el('button', {
+      className: 'blog-new-post-btn',
+      on: { click() { showNewPostForm(); } },
+    }, ['✍️ New Post']);
+
+    function showNewPostForm() {
+      newPostForm.classList.remove('hidden');
+      newPostBtn.classList.add('hidden');
+      titleInput.value = '';
+      categoryInput.value = '';
+      submitBtn.disabled = true;
+      titleInput.focus();
+    }
+
+    function hideNewPostForm() {
+      newPostForm.classList.add('hidden');
+      newPostBtn.classList.remove('hidden');
+      creating = false;
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      const titleVal = titleInput.value.trim();
+      if (!titleVal || creating) return;
+      creating = true;
+      submitBtn.textContent = 'Creating…';
+      submitBtn.disabled = true;
+      try {
+        const { url } = await createGoogleDoc(titleVal);
+        const today = new Date().toISOString().slice(0, 10);
+        const author = getUserName() || '';
+        const category = categoryInput.value.trim();
+        const numCols = (template && template._totalColumns)
+          ? template._totalColumns
+          : Math.max(6, ...Object.values(cols).filter(v => v >= 0).map(v => v + 1));
+        const newRow = Array(numCols).fill('');
+        if (cols.title >= 0) newRow[cols.title] = titleVal;
+        if (cols.doc >= 0) newRow[cols.doc] = url;
+        if (cols.date >= 0) newRow[cols.date] = today;
+        if (cols.author >= 0) newRow[cols.author] = author;
+        if (cols.category >= 0) newRow[cols.category] = category;
+        if (cols.status >= 0) newRow[cols.status] = 'Draft';
+        if (template && typeof template._onInsertAfterRow === 'function') {
+          await template._onInsertAfterRow(rows.length, [newRow]);
+        }
+        window.open(url, '_blank');
+        hideNewPostForm();
+      } catch (err) {
+        showToast(`Failed to create post: ${err.message}`, 'error');
+        creating = false;
+        submitBtn.textContent = 'Create';
+        submitBtn.disabled = false;
+      }
+    });
 
     /* ---- Toolbar ---- */
     const categories = [...new Set(
@@ -203,6 +292,7 @@ const definition = {
     const header = el('div', { className: 'blog-header' }, [
       el('span', { className: 'blog-post-count' }, [`${publishedCount} post${publishedCount !== 1 ? 's' : ''}`]),
       toolbar,
+      newPostBtn,
     ]);
 
     /* ---- Card grid ---- */
@@ -260,7 +350,7 @@ const definition = {
       });
     }
 
-    const wrap = el('div', { className: 'blog-container' }, [header, grid]);
+    const wrap = el('div', { className: 'blog-container' }, [header, newPostForm, grid]);
     container.appendChild(wrap);
   },
 };

@@ -1236,3 +1236,21 @@ export async function loadDriveImage(fileId, imgEl, onError) {
 export async function createSpreadsheet(title, rows, parentId) {
   return api.sheets.createSpreadsheet(title, rows, parentId);
 }
+
+/**
+ * Create a new Google Doc in Drive.
+ * @param {string}   title    Document title
+ * @param {string[]} [parents] Drive folder IDs for placement
+ * @returns {Promise<{id: string, url: string}>}
+ */
+export async function createGoogleDoc(title, parents = []) {
+  const data = await api.drive.createFile(
+    title,
+    'application/vnd.google-apps.document',
+    parents,
+  );
+  return {
+    id: data.id,
+    url: `https://docs.google.com/document/d/${data.id}/edit`,
+  };
+}
