@@ -19,6 +19,8 @@ let _modal = null;
 let _canvas = null;
 let _ctx = null;
 let _onClose = null;
+let _rttEl = null;
+let _disconnectTimer = null;
 
 /* ---------- Public API ---------- */
 
@@ -47,6 +49,9 @@ export function openGameModal(opts) {
   const gameLabel = el('div', { className: 'arcade-modal-title' }, [
     `${game.icon} ${game.name}`,
   ]);
+  _rttEl = remotePeerId
+    ? el('span', { className: 'arcade-rtt', title: 'Round-trip latency to opponent' }, ['--'])
+    : null;
   const wrapper = el('div', { className: 'arcade-canvas-wrap' }, [_canvas]);
 
   // Connecting overlay — shown while waiting for DataChannels
@@ -58,7 +63,11 @@ export function openGameModal(opts) {
     : null;
 
   const modalBody = el('div', { className: 'arcade-modal' }, [
-    el('div', { className: 'arcade-modal-bar' }, [gameLabel, closeBtn]),
+    el('div', { className: 'arcade-modal-bar' }, [
+      gameLabel,
+      _rttEl || el('span'),
+      closeBtn,
+    ]),
     wrapper,
   ]);
   if (connectingOverlay) wrapper.append(connectingOverlay);
@@ -120,17 +129,14 @@ export function openGameModal(opts) {
         if (overlay) overlay.remove();
       };
 
+      arcadeNet.onRttUpdate = (rtt) => {
+        if (_rttEl) _rttEl.textContent = `~${Math.round(rtt)}ms`;
+      };
+
       arcadeNet.onClose = () => {
         console.warn(`[Arcade] ArcadeNet channel CLOSED for peer ${remotePeerId}`);
         _ctx.netReady = false;
-        // Show disconnected overlay
-        const wrap = _modal && _modal.querySelector('.arcade-canvas-wrap');
-        if (wrap && !document.getElementById('arcade-disconnected')) {
-          const dcOverlay = el('div', { className: 'arcade-connecting-overlay', id: 'arcade-disconnected' }, [
-            el('div', { className: 'arcade-connecting-text' }, ['Connection lost']),
-          ]);
-          wrap.append(dcOverlay);
-        }
+        _showDisconnectOverlay();
       };
 
       if (game.netModel === 'rollback') {
@@ -167,8 +173,8 @@ export function openGameModal(opts) {
         game.update(_ctx, _ctx.frame, input, p2input);
       }
     },
-    render(ctx, alpha) {
-      game.render(_ctx, null, null, alpha);
+    render(ctx, prevState, currState, alpha) {
+      game.render(_ctx, prevState, currState, alpha);
     },
     cleanup() {
       if (game.cleanup) game.cleanup(_ctx);
@@ -182,10 +188,55 @@ export function openGameModal(opts) {
   requestAnimationFrame(() => resize());
 }
 
+/* ---------- Disconnect Overlay ---------- */
+
+const DISCONNECT_TIMEOUT_S = 10;
+
+/**
+ * Show the "Connection lost" overlay with a countdown and Return to Lobby button.
+ */
+function _showDisconnectOverlay() {
+  const wrap = _modal && _modal.querySelector('.arcade-canvas-wrap');
+  if (!wrap || document.getElementById('arcade-disconnected')) return;
+
+  let remaining = DISCONNECT_TIMEOUT_S;
+  const countdownEl = el('span', { className: 'arcade-connecting-text' }, [`Returning to lobby in ${remaining}s…`]);
+  const returnBtn = el('button', {
+    className: 'arcade-disconnect-btn',
+    on: { click: closeGameModal },
+  }, ['Return to Lobby']);
+
+  const dcOverlay = el('div', {
+    className: 'arcade-connecting-overlay',
+    id: 'arcade-disconnected',
+  }, [
+    el('div', { className: 'arcade-disconnect-icon' }, ['⚠️']),
+    el('div', { className: 'arcade-connecting-text arcade-disconnect-title' }, ['Connection lost']),
+    countdownEl,
+    returnBtn,
+  ]);
+  wrap.append(dcOverlay);
+
+  _disconnectTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(_disconnectTimer);
+      _disconnectTimer = null;
+      closeGameModal();
+    } else {
+      countdownEl.textContent = `Returning to lobby in ${remaining}s…`;
+    }
+  }, 1000);
+}
+
 /**
  * Close the game modal and clean up all resources.
  */
 export function closeGameModal() {
+  if (_disconnectTimer) {
+    clearInterval(_disconnectTimer);
+    _disconnectTimer = null;
+  }
   if (_ctx) {
     stopLoop(_ctx);
     if (_ctx.net) _ctx.net.destroy();
@@ -208,6 +259,7 @@ export function closeGameModal() {
   }
 
   _canvas = null;
+  _rttEl = null;
   if (_onClose) _onClose();
   _onClose = null;
 }

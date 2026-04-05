@@ -545,13 +545,48 @@ export class WaymarkConnect {
         console.warn('[WC] _join — no free signal slot (all', MAX_SLOTS, 'occupied)');
         return;
       }
-      console.log(`[WC] _join — claimed slot row ${this._block}, peerId=${this.peerId}`);
+      console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
       await this._heartbeat();
+
+      // Race-condition guard: two peers joining at the same time can both read
+      // the same free slot and both write to it. After writing, wait a short
+      // jittered delay (based on peerId hash for natural stagger), then re-read
+      // to verify we still own the slot. If another peer overwrote us, try the
+      // next free slot to avoid signaling collisions.
+      const jitter = this._peerIdJitter();
+      await new Promise(r => setTimeout(r, 300 + jitter));
+      if (this._destroyed) return;
+
+      const verify = await this.signal.readAll();
+      const claimed = _json(verify[this._block]?.[SIG_COL]);
+      if (!claimed || claimed.peerId !== this.peerId) {
+        // Slot was taken by another peer — find a different free slot
+        console.warn(`[WC] _join — slot ${this._block} collision detected (occupant: ${claimed?.peerId || 'none'}), re-claiming`);
+        this._block = this._findSlot(verify);
+        if (this._block < 0) {
+          console.warn('[WC] _join — no free slot after collision, giving up');
+          return;
+        }
+        await this._heartbeat();
+        console.log(`[WC] _join — re-claimed slot row ${this._block}, peerId=${this.peerId}`);
+      } else {
+        console.log(`[WC] _join — slot ${this._block} confirmed for peerId=${this.peerId}`);
+      }
+
       this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
       this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
     } catch (err) {
       console.error('[WC] _join failed:', err);
     }
+  }
+
+  /** Derive a 0–199ms jitter value from the peerId so different clients stagger naturally. */
+  _peerIdJitter() {
+    let hash = 0;
+    for (let i = 0; i < this.peerId.length; i++) {
+      hash = (hash * 31 + this.peerId.charCodeAt(i)) & 0xffff;
+    }
+    return hash % 200;
   }
 
   _findSlot(vals) {
