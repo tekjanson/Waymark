@@ -46,11 +46,11 @@ test('mcp/waymark.mjs file exists', () => {
   expect(fs.existsSync(MCP_PATH)).toBe(true);
 });
 
-test('mcp/waymark.mjs has 7 tool definitions', () => {
+test('mcp/waymark.mjs has 8 tool definitions', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
   const toolsSection = src.match(/const TOOLS = \[([\s\S]*?)\];/)?.[1] || '';
   const toolNamesInArray = [...toolsSection.matchAll(/name: "waymark_(\w+)"/g)].map(m => m[1]);
-  expect(toolNamesInArray.length).toBe(7);
+  expect(toolNamesInArray.length).toBe(8);
 });
 
 test('mcp/waymark.mjs exposes waymark_list_templates tool', () => {
@@ -166,15 +166,40 @@ test('browser detects testcases template when opening testcases fixture', async 
   expect(badge).toMatch(/test.?cases?/i);
 });
 
-test('mcp/waymark.mjs handles all 7 tool names in switch statement', () => {
+test('mcp/waymark.mjs handles all 8 tool names in switch statement', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
   const switchSection = src.match(/switch \(name\) \{([\s\S]*?)\}/)?.[1] || '';
   const handledTools = [...switchSection.matchAll(/case "waymark_(\w+)"/g)].map(m => m[1]);
-  expect(handledTools.length).toBe(7);
+  expect(handledTools.length).toBe(8);
 });
 
 test('mcp/waymark.mjs createSheet uses spreadsheets batch update for pre-populated headers', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
   // The create sheet function should use the Sheets batchUpdate approach or POST to /spreadsheets
   expect(src).toContain('userEnteredValue');
+});
+
+test('mcp/waymark.mjs exposes waymark_push_notification tool', () => {
+  const src = fs.readFileSync(MCP_PATH, 'utf8');
+  expect(src).toContain('"waymark_push_notification"');
+});
+
+test('mcp/waymark.mjs push notification tool requires message parameter', () => {
+  const src = fs.readFileSync(MCP_PATH, 'utf8');
+  const toolDef = src.match(/name: "waymark_push_notification"[\s\S]*?inputSchema: \{[\s\S]*?\},\n  \},/)?.[0] || '';
+  expect(toolDef).toContain('"message"');
+  expect(toolDef).toContain('required');
+});
+
+test('mcp/waymark.mjs push notification tool has ntfy config documentation', () => {
+  const src = fs.readFileSync(MCP_PATH, 'utf8');
+  expect(src).toContain('WAYMARK_NTFY_TOPIC');
+  expect(src).toContain('ntfy.sh');
+});
+
+test('mcp/waymark.mjs push notification uses fetch to POST to ntfy endpoint', () => {
+  const src = fs.readFileSync(MCP_PATH, 'utf8');
+  expect(src).toContain('method: "POST"');
+  expect(src).toContain('ntfyBase');
+  expect(src).toContain('X-Title');
 });

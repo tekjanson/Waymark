@@ -353,6 +353,42 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "waymark_push_notification",
+    description: "Push a notification to a phone or desktop via ntfy.sh. Requires WAYMARK_NTFY_TOPIC env var (a unique topic name like a UUID — keep it secret to avoid public visibility). Optionally override with the 'topic' argument. To receive notifications: install the ntfy app (Android/iOS/desktop) and subscribe to the same topic.",
+    inputSchema: {
+      type: "object",
+      required: ["message"],
+      properties: {
+        message: {
+          type: "string",
+          description: "The notification body text.",
+        },
+        title: {
+          type: "string",
+          description: "Notification title/heading (optional, defaults to 'Waymark').",
+        },
+        topic: {
+          type: "string",
+          description: "ntfy.sh topic name. Overrides the WAYMARK_NTFY_TOPIC env var. Use a unique hard-to-guess value for privacy.",
+        },
+        priority: {
+          type: "string",
+          enum: ["min", "low", "default", "high", "urgent"],
+          description: "Notification priority (optional, defaults to 'default').",
+        },
+        url: {
+          type: "string",
+          description: "A URL to open when the notification is clicked (optional).",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Emoji shortcodes or tag names for the notification, e.g. ['white_check_mark', 'waymark'] (optional).",
+        },
+      },
+    },
+  },
 ];
 
 /* ---------- Tool implementations ---------- */
@@ -603,6 +639,47 @@ async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, co
   };
 }
 
+/* ---------- Push notification ---------- */
+
+async function handleWaymarkPushNotification({ message, title, topic, priority, url, tags } = {}) {
+  const ntfyTopic = topic || process.env.WAYMARK_NTFY_TOPIC;
+  if (!ntfyTopic) {
+    throw new Error(
+      "No ntfy.sh topic configured. Set WAYMARK_NTFY_TOPIC env var to a unique topic name, " +
+      "or pass 'topic' in the tool arguments. Install the ntfy app and subscribe to that topic to receive notifications."
+    );
+  }
+
+  const ntfyBase = (process.env.WAYMARK_NTFY_URL || "https://ntfy.sh").replace(/\/$/, "");
+  const endpoint = `${ntfyBase}/${encodeURIComponent(ntfyTopic)}`;
+
+  const headers = { "Content-Type": "text/plain; charset=utf-8" };
+  if (title)                          headers["X-Title"]    = title;
+  if (priority && priority !== "default") headers["X-Priority"] = priority;
+  if (url)                            headers["X-Click"]    = url;
+  if (tags && tags.length > 0)        headers["X-Tags"]     = tags.join(",");
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: message,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`ntfy.sh responded with ${response.status}: ${text}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  return {
+    ok: true,
+    messageId: data.id || null,
+    topic: `${ntfyBase}/${ntfyTopic}`,
+    title: title || "Waymark",
+    message,
+  };
+}
+
 /* ---------- Utility ---------- */
 
 function colIndexToLetter(idx) {
@@ -637,6 +714,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_update_entry":      result = await handleWaymarkUpdateEntry(args); break;
       case "waymark_create_sheet":      result = await handleWaymarkCreateSheet(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
+      case "waymark_push_notification": result = await handleWaymarkPushNotification(args); break;
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -656,4 +734,4 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write("Waymark MCP server ready (7 tools)\n");
+process.stderr.write("Waymark MCP server ready (8 tools)\n");
