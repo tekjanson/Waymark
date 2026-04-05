@@ -1154,14 +1154,11 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
  * Upload an image File to Google Drive and return the sharing URL + permission status.
  * @param {File}   file              Browser File object from <input type="file">
  * @param {string} [parentFolderId]  Optional Drive folder ID
- * @returns {Promise<{url: string, permissionSet: boolean}>}  Drive URL + permission status
+ * @returns {Promise<string>}  Drive view URL for the uploaded file
  */
 export async function uploadDriveFile(file, parentFolderId) {
   const data = await api.drive.uploadFile(file, parentFolderId);
-  return {
-    url: `https://drive.google.com/file/d/${data.id}/view`,
-    permissionSet: data.permissionSet === true,
-  };
+  return `https://drive.google.com/file/d/${data.id}/view`;
 }
 
 /**

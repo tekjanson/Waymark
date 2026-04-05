@@ -199,7 +199,7 @@ test('photos template renders correctly at mobile width (375px)', async ({ page 
 
 /* ---------- Layer 5: Drive URL conversion (unit tests via page.evaluate) ---------- */
 
-test('driveToImgSrc converts drive.google.com/file/d/{id}/view to uc?export=view URL', async ({ page }) => {
+test('driveToImgSrc converts Drive sharing URLs to thumbnail src URLs', async ({ page }) => {
   await setupApp(page);
   await page.goto('/');
 
@@ -214,9 +214,9 @@ test('driveToImgSrc converts drive.google.com/file/d/{id}/view to uc?export=view
     };
   });
 
-  expect(result.fileUrl).toBe('https://drive.google.com/uc?export=view&id=abc123XYZ');
-  expect(result.openUrl).toBe('https://drive.google.com/uc?export=view&id=abc123XYZ');
-  expect(result.ucUrl).toBe('https://drive.google.com/uc?export=view&id=abc123XYZ');
+  expect(result.fileUrl).toBe('https://drive.google.com/thumbnail?id=abc123XYZ&sz=w1280');
+  expect(result.openUrl).toBe('https://drive.google.com/thumbnail?id=abc123XYZ&sz=w1280');
+  expect(result.ucUrl).toBe('https://drive.google.com/thumbnail?id=abc123XYZ&sz=w1280');
   expect(result.direct).toBe('https://images.unsplash.com/photo.jpg');
   expect(result.empty).toBe('');
 });
@@ -259,8 +259,8 @@ test('driveToImgSrc handles Drive URLs with extra query params', async ({ page }
     };
   });
 
-  expect(result.withUsp).toBe('https://drive.google.com/uc?export=view&id=XYZ456');
-  expect(result.withExtra).toBe('https://drive.google.com/uc?export=view&id=ABC789');
+  expect(result.withUsp).toBe('https://drive.google.com/thumbnail?id=XYZ456&sz=w1280');
+  expect(result.withExtra).toBe('https://drive.google.com/thumbnail?id=ABC789&sz=w1280');
 });
 
 test('photos template detects sheets with Photo header', async ({ page }) => {
@@ -352,14 +352,13 @@ test('upload input is hidden from layout', async ({ page }) => {
   expect(inputVisible).toBe(false);
 });
 
-/* ---------- Layer 7: Drive permission guide ---------- */
+/* ---------- Layer 7: Upload privacy toast ---------- */
 
-test('upload shows success toast when Drive permission is set', async ({ page }) => {
+test('upload shows privacy-aware toast after successful upload', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-064');
   await page.waitForSelector('.photos-upload-btn', { timeout: 5000 });
 
-  // Trigger file upload — mock returns permissionSet: true by default
   await page.evaluate(async () => {
     const input = document.querySelector('.photos-upload-input');
     const fakeFile = new File(['data'], 'success-photo.jpg', { type: 'image/jpeg' });
@@ -370,97 +369,9 @@ test('upload shows success toast when Drive permission is set', async ({ page })
   });
 
   await page.waitForSelector('.toast', { timeout: 5000 });
-  // With permissionSet: true, the toast should show success wording
-  await expect(page.locator('.toast').last()).toContainText(/uploaded/i);
-  // Should NOT show a permission banner
-  const bannerCount = await page.locator('.photos-permission-banner').count();
-  expect(bannerCount).toBe(0);
-});
-
-test('upload shows permission guide banner when Drive permission is not set', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-064');
-  await page.waitForSelector('.photos-upload-btn', { timeout: 5000 });
-
-  // Set flag so the local mock returns permissionSet: false for this upload
-  await page.evaluate(() => { window.__WAYMARK_FORCE_NO_PERMISSION = true; });
-
-  // Trigger file upload
-  await page.evaluate(async () => {
-    const input = document.querySelector('.photos-upload-input');
-    const fakeFile = new File(['data'], 'blocked-photo.jpg', { type: 'image/jpeg' });
-    const dt = new DataTransfer();
-    dt.items.add(fakeFile);
-    Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-
-  // Wait for the permission banner to appear
-  await page.waitForSelector('.photos-permission-banner', { timeout: 5000 });
-  await expect(page.locator('.photos-permission-banner')).toBeVisible();
-  await expect(page.locator('.photos-permission-banner')).toContainText(/sharing|permission/i);
-  // Banner must include a link to open in Drive
-  await expect(page.locator('.photos-permission-banner a').first()).toBeVisible();
-  await expect(page.locator('.photos-permission-banner a').first()).toContainText(/drive/i);
-
-  // Cleanup flag
-  await page.evaluate(() => { delete window.__WAYMARK_FORCE_NO_PERMISSION; });
-});
-
-test('permission banner shows step-by-step sharing instructions', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-064');
-  await page.waitForSelector('.photos-upload-btn', { timeout: 5000 });
-
-  // Use the no-permission flag to trigger a real banner
-  await page.evaluate(() => { window.__WAYMARK_FORCE_NO_PERMISSION = true; });
-  await page.evaluate(async () => {
-    const input = document.querySelector('.photos-upload-input');
-    const fakeFile = new File(['data'], 'steps-test.jpg', { type: 'image/jpeg' });
-    const dt = new DataTransfer();
-    dt.items.add(fakeFile);
-    Object.defineProperty(input, 'files', { value: dt.files, configurable: true });
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-
-  await page.waitForSelector('.photos-permission-banner', { timeout: 5000 });
-  const banner = page.locator('.photos-permission-banner');
-  await expect(banner).toContainText(/Share/i);
-  await expect(banner).toContainText(/Anyone with the link/i);
-  await expect(banner).toContainText(/Viewer/i);
-  // Should have at least 3 instruction steps
-  const stepCount = await banner.locator('.photos-permission-banner-steps li').count();
-  expect(stepCount).toBeGreaterThanOrEqual(3);
-
-  await page.evaluate(() => { delete window.__WAYMARK_FORCE_NO_PERMISSION; });
-});
-
-test('permission banner close button dismisses the banner', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-064');
-  await page.waitForSelector('.photos-upload-btn', { timeout: 5000 });
-
-  // Inject a test banner to verify dismissal
-  await page.evaluate(() => {
-    const bannerEl = document.createElement('div');
-    bannerEl.className = 'photos-permission-banner';
-    bannerEl.innerHTML = `
-      <div class="photos-permission-banner-header">
-        <button class="photos-permission-banner-close">✕</button>
-      </div>`;
-    // Use remove() on click
-    bannerEl.querySelector('.photos-permission-banner-close').addEventListener('click', () => {
-      bannerEl.remove();
-    });
-    document.querySelector('#checklist-view') ?
-      document.querySelector('#checklist-view').prepend(bannerEl) :
-      document.body.prepend(bannerEl);
-  });
-
-  await page.waitForSelector('.photos-permission-banner', { timeout: 3000 });
-  await page.click('.photos-permission-banner-close');
-  const count = await page.locator('.photos-permission-banner').count();
-  expect(count).toBe(0);
+  // Toast should mention Drive and guide user about sharing
+  await expect(page.locator('.toast').last()).toContainText(/Drive/i);
+  await expect(page.locator('.toast').last()).toContainText(/share/i);
 });
 
 test('broken Drive card shows permission guide with Drive link', async ({ page }) => {

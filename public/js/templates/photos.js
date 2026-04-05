@@ -10,10 +10,12 @@ import { el, cell, showToast, registerTemplate, uploadDriveFile } from './shared
 /* ---------- Drive URL helpers ---------- */
 
 /**
- * Convert any Google Drive sharing URL to a direct image src.
- * - drive.google.com/file/d/{id}/view   → uc?export=view&id={id}
- * - drive.google.com/open?id={id}        → uc?export=view&id={id}
- * - drive.google.com/uc?id={id}          → uc?export=view&id={id}
+ * Convert any Google Drive sharing URL to a thumbnail src suitable for <img>.
+ * Uses the Drive thumbnail endpoint (drive.google.com/thumbnail?id=&sz=w1280) which
+ * works for the authenticated session owner without requiring public permissions.
+ * - drive.google.com/file/d/{id}/view   → thumbnail?id={id}&sz=w1280
+ * - drive.google.com/open?id={id}        → thumbnail?id={id}&sz=w1280
+ * - drive.google.com/uc?id={id}          → thumbnail?id={id}&sz=w1280
  * Non-Drive URLs are returned unchanged.
  * @param {string} url
  * @returns {string}
@@ -23,14 +25,14 @@ export function driveToImgSrc(url) {
   const trimmed = url.trim();
   // Pattern 1: /file/d/{id}/...
   const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (fileMatch) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  if (fileMatch) return `https://drive.google.com/thumbnail?id=${fileMatch[1]}&sz=w1280`;
   // Pattern 2 & 3: /open?id= or /uc?id= — use URL API to handle any param ordering
   try {
     const u = new URL(trimmed);
     if (u.hostname === 'drive.google.com' &&
         (u.pathname === '/open' || u.pathname === '/uc')) {
       const id = u.searchParams.get('id');
-      if (id) return `https://drive.google.com/uc?export=view&id=${id}`;
+      if (id) return `https://drive.google.com/thumbnail?id=${id}&sz=w1280`;
     }
   } catch { /* not a valid URL — fall through */ }
   return trimmed;
@@ -100,58 +102,6 @@ function hideLightbox() {
   _lightbox.overlay.classList.add('hidden');
   _lightbox.img.src = '';
   document.body.style.overflow = '';
-}
-
-/* ---------- Drive permission guide ---------- */
-
-/**
- * Show a non-blocking permission guide banner below the upload toolbar.
- * Called when Drive reports that public sharing could not be set for a file.
- * @param {HTMLElement} container - The template root element
- * @param {string} driveUrl - The Drive file URL (view link)
- * @param {string} fileName - The uploaded file name for the label
- */
-function showPermissionGuide(container, driveUrl, fileName) {
-  // Remove any pre-existing guide
-  container.querySelector('.photos-permission-banner')?.remove();
-
-  const fileId = (driveUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || [])[1] || '';
-  const driveFileUrl = fileId
-    ? `https://drive.google.com/file/d/${fileId}/view`
-    : driveUrl;
-
-  const banner = el('div', { className: 'photos-permission-banner' }, [
-    el('div', { className: 'photos-permission-banner-header' }, [
-      el('span', { className: 'photos-permission-banner-icon' }, ['🔒']),
-      el('strong', {}, ['Photo sharing not enabled yet']),
-      el('button', {
-        className: 'photos-permission-banner-close',
-        title: 'Dismiss',
-        on: { click: () => banner.remove() },
-      }, ['✕']),
-    ]),
-    el('p', { className: 'photos-permission-banner-msg' }, [
-      `"${fileName}" was saved to Drive, but its sharing is restricted — it will appear as a broken image until you enable access.`,
-    ]),
-    el('ol', { className: 'photos-permission-banner-steps' }, [
-      el('li', {}, [
-        'Open ',
-        el('a', { href: driveFileUrl, target: '_blank', rel: 'noopener' }, ['the file in Google Drive']),
-        '.',
-      ]),
-      el('li', {}, ['Right-click the file → Share (or click the Share button in the toolbar).']),
-      el('li', {}, ['Under "General access", choose "Anyone with the link → Viewer".']),
-      el('li', {}, ['Click Done. The photo will load automatically once sharing is enabled.']),
-    ]),
-  ]);
-
-  // Insert after the toolbar (first child) if possible, otherwise prepend
-  const toolbar = container.querySelector('.photos-toolbar');
-  if (toolbar && toolbar.nextSibling) {
-    container.insertBefore(banner, toolbar.nextSibling);
-  } else {
-    container.prepend(banner);
-  }
 }
 
 /**
@@ -373,7 +323,7 @@ const definition = {
       uploadBtn.disabled = true;
       uploadBtn.textContent = 'Uploading…';
       try {
-        const { url: driveUrl, permissionSet } = await uploadDriveFile(file);
+        const driveUrl = await uploadDriveFile(file);
 
         // Build new row — place URL in the photo column, today's date in the date column
         const today = new Date().toISOString().split('T')[0];
@@ -387,13 +337,9 @@ const definition = {
           await template._onInsertAfterRow(rows.length, [newRow]);
         }
 
-        if (permissionSet) {
-          showToast('Photo uploaded — it may take a moment to appear', 'success');
-        } else {
-          // Drive sharing was blocked (e.g. Google Workspace policy).
-          // Show an actionable guide so the user can manually enable access.
-          showPermissionGuide(container, driveUrl, file.name);
-        }
+        // File stays private (owner access only). Guide the user to share from Drive
+        // if collaborators also need to see the photo.
+        showToast('📤 Photo saved to Drive. You can see it now. To share with others, open the file in Drive and add their access.', 'success');
       } catch (err) {
         showToast(`Upload failed: ${err.message}`, 'error');
       } finally {
