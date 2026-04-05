@@ -17,9 +17,9 @@ const REGISTRY_PATH = path.resolve(__dirname, '../../template-registry.json');
 
 /* ---------- Template registry verification (Node.js) ---------- */
 
-test('waymark MCP template registry has 32 templates', () => {
+test('waymark MCP template registry has 33 templates', () => {
   const data = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
-  expect(data.templates.length).toBe(32);
+  expect(data.templates.length).toBe(33);
 });
 
 test('waymark MCP template registry has expected template keys', () => {

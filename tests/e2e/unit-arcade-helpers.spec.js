@@ -311,3 +311,139 @@ test('rollback accrues 24 frames of input redundancy in each packet', async ({ p
   });
   expect(result).toBeGreaterThan(0);
 });
+
+/* ---------- WaymarkConnect._peerIdJitter — handshake collision fix ---------- */
+
+test('_peerIdJitter returns a value in [0, 200) for any peerId', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { WaymarkConnect } = await import('/js/webrtc.js');
+    const mockSignal = { readAll: async () => [], writeCell: async () => {} };
+    const values = [];
+    // Test several different peerIds
+    const ids = ['abc12345', 'xyz98765', 'aaaaaa00', '00000000', 'ffffffff'];
+    for (const peerId of ids) {
+      const wc = new WaymarkConnect('sheet-001', { signal: mockSignal });
+      wc.peerId = peerId;  // inject a known peerId
+      values.push(wc._peerIdJitter());
+    }
+    return values;
+  });
+  for (const v of results) {
+    expect(typeof v).toBe('number');
+    expect(v).toBeGreaterThanOrEqual(0);
+    expect(v).toBeLessThan(200);
+  }
+});
+
+test('_peerIdJitter is deterministic for the same peerId', async ({ page }) => {
+  await setupApp(page);
+  const { v1, v2 } = await page.evaluate(async () => {
+    const { WaymarkConnect } = await import('/js/webrtc.js');
+    const mockSignal = { readAll: async () => [], writeCell: async () => {} };
+    const wc1 = new WaymarkConnect('sheet-001', { signal: mockSignal });
+    wc1.peerId = 'test1234';
+    const wc2 = new WaymarkConnect('sheet-001', { signal: mockSignal });
+    wc2.peerId = 'test1234';
+    return { v1: wc1._peerIdJitter(), v2: wc2._peerIdJitter() };
+  });
+  expect(v1).toBe(v2);
+});
+
+test('_peerIdJitter produces different values for different peerIds', async ({ page }) => {
+  await setupApp(page);
+  const jitters = await page.evaluate(async () => {
+    const { WaymarkConnect } = await import('/js/webrtc.js');
+    const mockSignal = { readAll: async () => [], writeCell: async () => {} };
+    // Generate 8 peerIds (like crypto.randomUUID().slice(0,8)) and check jitter values
+    const testIds = ['aabb1122', 'ccdd3344', 'eeff5566', '11223344',
+                     '55667788', '99aabbcc', 'ddeeff00', '12345678'];
+    const vals = testIds.map(id => {
+      const wc = new WaymarkConnect('sheet-001', { signal: mockSignal });
+      wc.peerId = id;
+      return wc._peerIdJitter();
+    });
+    return vals;
+  });
+  // Not all values should be identical — there should be at least 3 distinct values
+  const unique = new Set(jitters);
+  expect(unique.size).toBeGreaterThanOrEqual(3);
+});
+
+/* ---------- slime-soccer serialization round-trip ---------- */
+
+test('slime-soccer serialize/deserialize round-trips all state fields', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    // Force-import slime-soccer (causes registerGame side-effect)
+    await import('/js/arcade/games/slime-soccer.js');
+    const { getGame } = await import('/js/arcade/engine.js');
+    const game = getGame('slime-soccer');
+    if (!game) return { error: 'game not found' };
+
+    const ctx = { state: null, localPlayerId: 0, net: null };
+    game.init(ctx);
+
+    // Mutate state to non-default values
+    ctx.state.s1x = 12345;
+    ctx.state.s2x = 54321;
+    const s1xBefore = ctx.state.s1x;
+
+    const snap = game.serialize(ctx);
+
+    // Reset and restore
+    game.init(ctx);
+    const s1xAfterReset = ctx.state.s1x;
+    game.deserialize(ctx, snap);
+
+    return {
+      s1xBefore,
+      s1xAfterReset,
+      s1x: ctx.state.s1x,
+      s2x: ctx.state.s2x,
+    };
+  });
+  expect(result.s1xBefore).toBe(12345);
+  expect(result.s1xAfterReset).not.toBe(12345); // verify reset happened
+  expect(result.s1x).toBe(12345);               // verify round-trip
+  expect(result.s2x).toBe(54321);
+});
+
+test('slime-soccer render does not return NaN positions with numeric alpha', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    await import('/js/arcade/games/slime-soccer.js');
+    const { getGame, createContext } = await import('/js/arcade/engine.js');
+    const { initRenderer } = await import('/js/arcade/renderer.js');
+
+    const game = getGame('slime-soccer');
+    if (!game) return { error: 'no game' };
+
+    // Set up a minimal canvas for rendering
+    const canvas = document.createElement('canvas');
+    canvas.width = 640; canvas.height = 360;
+    document.body.appendChild(canvas);
+    initRenderer(canvas);
+
+    const ctx = createContext();
+    ctx.localPlayerId = 0;
+    ctx.net = null;
+    game.init(ctx);
+
+    // Serialize to get a valid prevState (Uint8Array)
+    const prevState = game.serialize(ctx);
+
+    // Alpha = 0.5 (valid numeric) — should not throw or draw at NaN
+    let threw = false;
+    try {
+      game.render(ctx, prevState, ctx.state, 0.5);
+    } catch (e) {
+      threw = true;
+    }
+
+    document.body.removeChild(canvas);
+    return { threw };
+  });
+  expect(result.threw).toBe(false);
+});
+

@@ -173,8 +173,8 @@ export function openGameModal(opts) {
         game.update(_ctx, _ctx.frame, input, p2input);
       }
     },
-    render(ctx, alpha) {
-      game.render(_ctx, null, null, alpha);
+    render(ctx, prevState, currState, alpha) {
+      game.render(_ctx, prevState, currState, alpha);
     },
     cleanup() {
       if (game.cleanup) game.cleanup(_ctx);
