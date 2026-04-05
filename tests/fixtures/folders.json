@@ -253,7 +253,7 @@
             },
             {
               "id": "sheet-056",
-              "name": "Sprint 14 — Waymark Features",
+              "name": "Sprint 14 \u2014 Waymark Features",
               "mimeType": "application/vnd.google-apps.spreadsheet"
             },
             {
@@ -689,6 +689,19 @@
         {
           "id": "sheet-056",
           "name": "Sprint Timeline",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
+    },
+    {
+      "id": "f-blogs",
+      "name": "Blogs",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-062",
+          "name": "Team Blog",
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]

@@ -55,3 +55,6 @@
 
 /* Multi-sheet dashboard view */
 @import url('./templates/dashboard.css');
+
+/* Blog template */
+@import url('./templates/blog.css');

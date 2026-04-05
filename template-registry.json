@@ -1096,12 +1096,28 @@
     {
       "key": "passwords",
       "name": "Password Manager",
-      "icon": "🔑",
+      "icon": "\ud83d\udd11",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Security",
-      "detectSignals": ["password", "passwd", "secret", "credential", "site", "service", "username", "login"],
-      "columnRoles": ["site", "username", "password", "url", "category", "notes"],
+      "detectSignals": [
+        "password",
+        "passwd",
+        "secret",
+        "credential",
+        "site",
+        "service",
+        "username",
+        "login"
+      ],
+      "columnRoles": [
+        "site",
+        "username",
+        "password",
+        "url",
+        "category",
+        "notes"
+      ],
       "interactive": true,
       "interactionType": "inline-edit",
       "interactionStates": [],
@@ -1117,7 +1133,7 @@
     {
       "key": "linker",
       "name": "Community Linker",
-      "icon": "\uD83D\uDD17",
+      "icon": "\ud83d\udd17",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Social",
@@ -1211,7 +1227,7 @@
     {
       "key": "arcade",
       "name": "Arcade",
-      "icon": "🎮",
+      "icon": "\ud83c\udfae",
       "color": "#7c3aed",
       "priority": 20,
       "category": "Social",
@@ -1243,7 +1259,7 @@
     {
       "key": "worker",
       "name": "Worker Jobs",
-      "icon": "⚙️",
+      "icon": "\u2699\ufe0f",
       "color": "#0369a1",
       "priority": 20,
       "category": "Operations",
@@ -1303,10 +1319,44 @@
       "fixtureFiles": [
         "photos-gallery"
       ]
+    },
+    {
+      "key": "blog",
+      "name": "Blog",
+      "icon": "\u270d\ufe0f",
+      "color": "#0f766e",
+      "priority": 20,
+      "category": "Content",
+      "detectSignals": [
+        "blog",
+        "title",
+        "doc",
+        "google doc",
+        "article",
+        "author"
+      ],
+      "columnRoles": [
+        "title",
+        "doc",
+        "date",
+        "author",
+        "category",
+        "status"
+      ],
+      "interactive": true,
+      "hasDirectoryView": false,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-062"
+      ],
+      "fixtureFiles": [
+        "blog-posts"
+      ]
     }
+
   ],
   "nextSheetId": "sheet-065",
-  "totalTemplates": 34,
+  "totalTemplates": 35,
   "categories": [
     "Productivity",
     "Engineering",

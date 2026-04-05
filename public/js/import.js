@@ -183,6 +183,13 @@ const ROLE_LABELS = {
   'worker.schedule': 'Schedule / Cron expression (e.g. */5 * * * *)',
   'worker.lastRun': 'Last Run / Executed timestamp',
   'worker.result': 'Result / Output message or log line',
+  // Blog
+  'blog.title': 'Post Title',
+  'blog.doc': 'Google Doc URL or ID (the blog post document)',
+  'blog.date': 'Published Date',
+  'blog.author': 'Author Name',
+  'blog.category': 'Category / Topic',
+  'blog.status': 'Status (Published / Draft)',
   // Instruction Guide
   'guide.guide': 'Guide / Task name',
   'guide.slide': 'Slide / Step headline',
