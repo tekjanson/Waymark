@@ -102,6 +102,18 @@ export function isStatusNote(text) {
 }
 
 /**
+ * Extract a branch name from a note that follows the AI completion note format.
+ * Matches patterns like "Branch: feature/my-task" or "fix/my-fix".
+ * Returns null if no branch is found.
+ * @param {string} text
+ * @returns {string|null}
+ */
+export function parseBranchName(text) {
+  const m = (text || '').match(/\bBranch:\s*([\w./-]+(?:[\w.-])*)/);
+  return m ? m[1] : null;
+}
+
+/**
  * Current timestamp as a compact ISO string (YYYY-MM-DD HH:MM).
  * Uses a space separator instead of T for human readability in the sheet.
  * @returns {string}

@@ -46,7 +46,7 @@
      to save the refresh token.
    ============================================================ */
 
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -75,9 +75,17 @@ function getPlaywrightJSON(inputPath) {
     const raw = fs.readFileSync(path.resolve(inputPath), 'utf8');
     return JSON.parse(raw);
   }
-  // Run Playwright with JSON reporter
-  const cmd = 'WAYMARK_LOCAL=true npx playwright test --reporter=json';
-  const raw = execSync(cmd, { cwd: ROOT, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
+  // Run Playwright with JSON reporter — tolerate non-zero exit (pre-existing failures)
+  const result = spawnSync('npx', ['playwright', 'test', '--reporter=json'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 50 * 1024 * 1024,
+    env: { ...process.env, WAYMARK_LOCAL: 'true' },
+  });
+  const raw = result.stdout;
+  if (!raw || !raw.trim().startsWith('{')) {
+    throw new Error(result.stderr || 'Playwright produced no JSON output');
+  }
   return JSON.parse(raw);
 }
 

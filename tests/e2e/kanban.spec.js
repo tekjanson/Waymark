@@ -1001,9 +1001,9 @@ test('kanban Fix Search Bug card shows activity from status change', async ({ pa
   await card.locator('.kanban-card-expand').click();
   await page.waitForSelector('.kanban-activity-item', { timeout: 3_000 });
 
-  // 3 regular notes
+  // 4 regular notes (including the AI branch note added)
   const notes = card.locator('.kanban-note');
-  expect(await notes.count()).toBe(3);
+  expect(await notes.count()).toBe(4);
   await expect(notes.first()).toContainText('Found the regex issue');
 
   // 1 activity entry
@@ -1018,22 +1018,24 @@ test('kanban notes display in chronological order regardless of row order', asyn
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5_000 });
 
-  // "Fix Search Bug" has 3 notes in non-chronological row order:
-  //   row order: Bob 2026-03-05, Alice 2026-03-03, Alice 2026-03-04
-  //   expected display: Alice 2026-03-03, Alice 2026-03-04, Bob 2026-03-05 (chronological)
+  // "Fix Search Bug" has 4 notes including an AI branch note:
+  //   row order: Bob 2026-03-05, Alice 2026-03-03, Alice 2026-03-04, AI 2026-03-05 16:00
+  //   expected display: Alice 2026-03-03, Alice 2026-03-04, Bob 2026-03-05, AI 2026-03-05 16:00
   const card = page.locator('.kanban-card', { hasText: 'Fix Search Bug' });
   await card.locator('.kanban-card-expand').click();
   await page.waitForSelector('.kanban-note', { timeout: 3_000 });
 
   const notes = card.locator('.kanban-note');
-  expect(await notes.count()).toBe(3);
+  expect(await notes.count()).toBe(4);
 
   // First note should be the oldest (2026-03-03)
   await expect(notes.nth(0)).toContainText('Found the regex issue');
   // Second note (2026-03-04)
   await expect(notes.nth(1)).toContainText('Working on a fix');
-  // Third note should be the newest (2026-03-05)
+  // Third note should be Bob at 2026-03-05 10:00
   await expect(notes.nth(2)).toContainText('Confirmed');
+  // Fourth note: AI branch note at 2026-03-05 16:00
+  await expect(notes.nth(3)).toContainText('Branch:');
 });
 
 test('kanban card shows last-moved timestamp on card surface', async ({ page }) => {
@@ -1957,5 +1959,81 @@ test('_onInsertAfterRow optimisation: sheet-replace record created for stage not
   const records = await getCreatedRecords(page);
   const replaced = records.find(r => r.type === 'sheet-replace');
   expect(replaced).toBeTruthy();
+});
+
+/* ================================================================
+   Branch copy badge
+   ================================================================ */
+
+test('kanban branch copy badge appears when note contains Branch:', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  // Find and expand the "Fix Search Bug" card which has an AI branch note
+  const card = page.locator('.kanban-card').filter({ hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-branch-copy', { timeout: 5000 });
+  await expect(page.locator('.kanban-branch-copy')).toBeVisible();
+});
+
+test('kanban branch copy badge shows the branch name', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  const card = page.locator('.kanban-card').filter({ hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-branch-copy', { timeout: 5000 });
+  await expect(page.locator('.kanban-branch-copy')).toContainText('fix/search-highlight');
+});
+
+test('kanban branch copy badge has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  const card = page.locator('.kanban-card').filter({ hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-branch-copy', { timeout: 5000 });
+  await expect(page.locator('.kanban-branch-copy')).toHaveCSS('cursor', 'pointer');
+});
+
+test('kanban branch copy badge changes text to Copied on click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  const card = page.locator('.kanban-card').filter({ hasText: 'Fix Search Bug' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-branch-copy', { timeout: 5000 });
+
+  // Grant clipboard permissions
+  await page.context().grantPermissions(['clipboard-write', 'clipboard-read']);
+
+  const badge = page.locator('.kanban-branch-copy');
+  await badge.click();
+
+  // Badge should briefly show "✓ Copied"
+  await page.waitForFunction(
+    () => document.querySelector('.kanban-branch-copy')?.textContent?.includes('Copied'),
+    { timeout: 3000 },
+  );
+  await expect(badge).toContainText('Copied');
+});
+
+test('kanban branch copy badge not shown for regular notes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-card', { timeout: 5000 });
+
+  // "Kanban Board Redesign" has a note without a branch name
+  const card = page.locator('.kanban-card').filter({ hasText: 'Kanban Board Redesign' });
+  await card.locator('.kanban-card-expand').click();
+  await page.waitForSelector('.kanban-note-text', { timeout: 5000 });
+
+  // No branch badge should appear in this card's notes
+  const badgesInCard = card.locator('.kanban-branch-copy');
+  await expect(badgesInCard).toHaveCount(0);
 });
 

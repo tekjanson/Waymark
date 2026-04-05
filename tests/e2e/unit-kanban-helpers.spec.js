@@ -361,3 +361,61 @@ test('formatRelativeDate handles empty and invalid input', async ({ page }) => {
   expect(results.nullVal).toBe('');
   expect(results.invalid).toBe('garbage');
 });
+
+/* ================================================================
+   Section 10: parseBranchName
+   ================================================================ */
+
+test('parseBranchName extracts feature branch name', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName('Branch: feature/kanban-branch-copy | Files: x.js | +40 LOC');
+  });
+  expect(result).toBe('feature/kanban-branch-copy');
+});
+
+test('parseBranchName extracts fix branch name', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName('Branch: fix/search-highlight | Files: search.js');
+  });
+  expect(result).toBe('fix/search-highlight');
+});
+
+test('parseBranchName returns null for notes without a branch', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName('Just a regular note with no branch');
+  });
+  expect(result).toBeNull();
+});
+
+test('parseBranchName returns null for empty input', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName('');
+  });
+  expect(result).toBeNull();
+});
+
+test('parseBranchName returns null for null input', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName(null);
+  });
+  expect(result).toBeNull();
+});
+
+test('parseBranchName handles branches with dots and numbers', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { parseBranchName } = await import('/js/templates/kanban/helpers.js');
+    return parseBranchName('Branch: feature/v2.0-upgrade | Files: x.js');
+  });
+  expect(result).toBe('feature/v2.0-upgrade');
+});

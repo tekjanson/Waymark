@@ -537,6 +537,27 @@ button.kanban-pri-dot {
   background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 }
 
+.kanban-branch-copy {
+  display: inline-flex; align-items: center;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-family: monospace; font-size: 0.75rem;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius-sm);
+  cursor: pointer; transition: background var(--transition), color var(--transition);
+  user-select: none;
+}
+.kanban-branch-copy:hover {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+.kanban-branch-copy-done {
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+  color: #16a34a;
+  border-color: color-mix(in srgb, #22c55e 30%, transparent);
+}
+
 /* ---------- Activity / Status-Change Timeline ---------- */
 
 .kanban-activity-list {
