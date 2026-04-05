@@ -485,22 +485,26 @@ const TOOLS = [
   {
     name: "mqtt_capture_screenshot",
     description:
-      "Capture a visual screenshot of the current browser view or a specific element. Returns an inline image. Use this to SEE what the page actually looks like — layout, colors, spacing, hierarchy. Essential for visual QA testing.",
+      "Capture a visual screenshot of the current browser view or a specific element. Returns an inline image. Use this to SEE what the page actually looks like — layout, colors, spacing, hierarchy. Essential for visual QA testing. By default captures the visible viewport only (what the user sees). Set fullPage:true to capture the entire scrollable page.",
     inputSchema: {
       type: "object",
       properties: {
         sessionId: { type: "string", description: "The browser session ID" },
         selector: {
           type: "string",
-          description: "CSS selector of the element to capture (default: full page body)",
+          description: "CSS selector of the element to capture (default: visible viewport)",
         },
         quality: {
           type: "number",
-          description: "JPEG quality 0.1-1.0 (default: 0.8). Lower = smaller image, less detail.",
+          description: "JPEG quality 0.1-1.0 (default: 0.85). Automatically reduced if image exceeds MQTT size limit.",
         },
         maxWidth: {
           type: "number",
           description: "Maximum image width in pixels (default: 1280). Images wider than this are scaled down.",
+        },
+        fullPage: {
+          type: "boolean",
+          description: "Capture the full scrollable page instead of only the visible viewport (default: false). Use for pages that need vertical scrolling.",
         },
       },
       required: ["sessionId"],
@@ -704,8 +708,9 @@ async function handleTool(name, args) {
           selector: args.selector,
           quality: args.quality,
           maxWidth: args.maxWidth,
+          fullPage: args.fullPage,
         },
-        30_000, // longer timeout — html2canvas rendering can take a few seconds
+        60_000, // generous timeout — html2canvas on complex pages can take time
       );
       if (resp.error) return `Error: ${resp.error}`;
       const r = resp.result;
@@ -715,7 +720,7 @@ async function handleTool(name, args) {
         _imageContent: true,
         data: r.image,
         mimeType: r.mimeType || "image/jpeg",
-        text: `Screenshot captured: ${r.width}×${r.height}px${r.selector !== "body" ? ` (selector: ${r.selector})` : " (full page)"}${r.originalWidth !== r.width ? ` — scaled from ${r.originalWidth}×${r.originalHeight}` : ""}`,
+        text: `Screenshot captured: ${r.width}×${r.height}px${r.selector !== "body" ? ` (selector: ${r.selector})` : r.fullPage ? " (full page)" : " (viewport)"}${r.originalWidth !== r.width ? ` — scaled from ${r.originalWidth}×${r.originalHeight}` : ""}${r.quality < (args.quality || 0.85) ? ` — quality auto-reduced to ${r.quality} to fit MQTT limit` : ""}`,
       };
     }
 
