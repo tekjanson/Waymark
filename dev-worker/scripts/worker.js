@@ -129,6 +129,8 @@ async function runJob(jobName, handler, config, cols, rowIndex) {
       result = await require('./handlers/poll-watch').run(parsedConfig);
     } else if (handlerKey.startsWith('sync')) {
       result = await require('./handlers/data-sync').run(parsedConfig);
+    } else if (handlerKey === 'metrics' || handlerKey === 'content-metrics' || handlerKey.startsWith('metrics')) {
+      result = await require('./handlers/content-metrics').run(parsedConfig);
     } else if (handlerKey.startsWith('notify')) {
       result = `Notify handler not yet implemented`;
     } else if (handlerKey.startsWith('webhook')) {

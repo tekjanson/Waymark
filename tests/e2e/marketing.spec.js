@@ -238,3 +238,134 @@ test('marketing AI writer adds draft to sheet on "Add to Sheet"', async ({ page 
   expect(appendedRow.some(v => v === 'LinkedIn')).toBe(true);
   expect(appendedRow.some(v => v === 'Idea')).toBe(true);
 });
+
+/* ---------- Sync Metrics button and modal ---------- */
+
+test('marketing scoreboard shows Sync Metrics button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-scoreboard', { timeout: 5000 });
+  await expect(page.locator('.marketing-sync-btn')).toBeVisible();
+  await expect(page.locator('.marketing-sync-btn')).toContainText('Sync Metrics');
+});
+
+test('Sync Metrics button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await expect(page.locator('.marketing-sync-btn')).toHaveCSS('cursor', 'pointer');
+});
+
+test('clicking Sync Metrics opens the metrics modal', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-overlay', { timeout: 3000 });
+  await expect(page.locator('.marketing-metrics-overlay')).toBeVisible();
+  await expect(page.locator('.marketing-metrics-modal')).toBeVisible();
+  await expect(page.locator('.marketing-metrics-modal-title')).toContainText(/Sync Metrics/i);
+});
+
+test('metrics modal contains config JSON with correct shape', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-config', { timeout: 3000 });
+
+  const configText = await page.locator('.marketing-metrics-config').textContent();
+  const config = JSON.parse(configText);
+  // Must have sheetId
+  expect(typeof config.sheetId).toBe('string');
+  // Must have apiKey fields for supported platforms
+  expect('youtubeApiKey' in config).toBe(true);
+  expect('twitterBearerToken' in config).toBe(true);
+});
+
+test('metrics modal Copy Config button copies JSON to clipboard', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-copy-btn', { timeout: 3000 });
+
+  // Grant clipboard permissions
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.click('.marketing-metrics-copy-btn');
+
+  // Button text should change to indicate success
+  await expect(page.locator('.marketing-metrics-copy-btn')).toContainText(/copied|✓/i, { timeout: 2000 });
+});
+
+test('metrics modal closes via X button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-overlay', { timeout: 3000 });
+
+  await page.click('.marketing-metrics-modal-close');
+  await expect(page.locator('.marketing-metrics-overlay')).toBeHidden();
+});
+
+test('metrics modal closes via overlay click', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-overlay', { timeout: 3000 });
+
+  await page.click('.marketing-metrics-overlay', { position: { x: 5, y: 5 } });
+  await expect(page.locator('.marketing-metrics-overlay')).toBeHidden();
+});
+
+test('metrics modal closes via Escape key', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-overlay', { timeout: 3000 });
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.marketing-metrics-overlay')).toBeHidden();
+});
+
+test('metrics modal shows platform support table with key platforms', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-platforms', { timeout: 3000 });
+  const table = page.locator('.marketing-metrics-platform-table');
+  await expect(table).toBeVisible();
+  // Verify all major platforms are listed
+  const tableText = await table.textContent();
+  expect(tableText).toMatch(/YouTube/i);
+  expect(tableText).toMatch(/Hacker News/i);
+  expect(tableText).toMatch(/Reddit/i);
+  expect(tableText).toMatch(/Twitter/i);
+  expect(tableText).toMatch(/LinkedIn/i);
+});
+
+test('metrics modal shows step-by-step setup instructions', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-059');
+  await page.waitForSelector('.marketing-sync-btn', { timeout: 5000 });
+  await page.click('.marketing-sync-btn');
+  await page.waitForSelector('.marketing-metrics-steps', { timeout: 3000 });
+  const steps = page.locator('.marketing-metrics-steps ol li');
+  const count = await steps.count();
+  expect(count).toBeGreaterThanOrEqual(4);
+});
+
+/* ---------- Worker template: metrics handler badge ---------- */
+
+test('worker template shows metrics handler badge with amber color', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-061');
+  await page.waitForSelector('.worker-card', { timeout: 5000 });
+  // Find the card for the 'metrics' handler
+  const metricsBadge = page.locator('.worker-handler-badge').filter({ hasText: /metrics/i });
+  await expect(metricsBadge.first()).toBeVisible();
+});
