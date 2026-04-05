@@ -15,7 +15,7 @@ test('worker grid renders all job cards', async ({ page }) => {
   await navigateToSheet(page, 'sheet-061');
   await page.waitForSelector('.worker-card', { timeout: 5000 });
   const count = await page.locator('.worker-card').count();
-  expect(count).toBe(6);
+  expect(count).toBe(7);
 });
 
 test('stat bar is visible with correct labels', async ({ page }) => {
@@ -34,7 +34,7 @@ test('stat bar counts match fixture data', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-061');
   await page.waitForSelector('.worker-stat-bar', { timeout: 5000 });
-  await expect(page.locator('.worker-stat-done')).toContainText('2 done');
+  await expect(page.locator('.worker-stat-done')).toContainText('3 done');
   await expect(page.locator('.worker-stat-running')).toContainText('1 running');
   await expect(page.locator('.worker-stat-failed')).toContainText('1 failed');
   await expect(page.locator('.worker-stat-pending')).toContainText('1 pending');

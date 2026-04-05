@@ -262,3 +262,166 @@
   .marketing-top-post { flex-direction: column; }
   .marketing-writer-draft-actions { flex-direction: column; }
 }
+
+/* ---------- Sync Metrics button ---------- */
+
+.marketing-sync-btn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  white-space: nowrap;
+  align-self: center;
+}
+.marketing-sync-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-accent, #6366f1);
+  color: var(--color-accent, #6366f1);
+}
+
+/* ---------- Metrics modal ---------- */
+
+.marketing-metrics-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 16px;
+}
+.marketing-metrics-overlay.hidden { display: none !important; }
+
+.marketing-metrics-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  max-width: 620px;
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.marketing-metrics-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.marketing-metrics-modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.marketing-metrics-modal-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.marketing-metrics-modal-close:hover { background: var(--color-border); }
+
+.marketing-metrics-modal-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.marketing-metrics-desc {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.marketing-metrics-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.marketing-metrics-copy-btn {
+  background: var(--color-accent, #6366f1);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 12px;
+}
+.marketing-metrics-copy-btn:hover { opacity: 0.9; }
+
+.marketing-metrics-config {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+  white-space: pre;
+}
+
+.marketing-metrics-platforms-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.marketing-metrics-platform-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.marketing-metrics-platform-table th {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: 6px 10px;
+  text-align: left;
+}
+.marketing-metrics-platform-table td {
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 5px 10px;
+  vertical-align: top;
+}
+.marketing-metrics-platform-table tr:nth-child(even) td {
+  background: var(--color-bg);
+}
+
+.marketing-metrics-steps {
+  font-size: 0.875rem;
+}
+.marketing-metrics-steps ol {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--color-text);
+  line-height: 1.8;
+}

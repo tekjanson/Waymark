@@ -82,6 +82,110 @@ const PLATFORM_GUIDANCE = {
   other: { limit: 'Varies', style: 'Adapt to the platform.' },
 };
 
+/* ---------- Metrics modal (module-level singleton) ---------- */
+
+let _metricsOverlay = null;
+
+function _showMetricsModal(sheetId) {
+  if (_metricsOverlay) {
+    _metricsOverlay.classList.remove('hidden');
+    return;
+  }
+
+  const configObj = {
+    sheetId: sheetId || 'YOUR_CONTENT_WORKBENCH_SHEET_ID',
+    youtubeApiKey: '',
+    twitterBearerToken: '',
+  };
+
+  const configJson = JSON.stringify(configObj, null, 2);
+
+  const copyBtn = el('button', { className: 'marketing-metrics-copy-btn' }, ['Copy Config']);
+  const configArea = el('pre', { className: 'marketing-metrics-config' }, [configJson]);
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(configJson).then(() => {
+      copyBtn.textContent = '✓ Copied';
+      setTimeout(() => { copyBtn.textContent = 'Copy Config'; }, 2000);
+    }).catch(() => {
+      copyBtn.textContent = 'Copy failed';
+      setTimeout(() => { copyBtn.textContent = 'Copy Config'; }, 2000);
+    });
+  });
+
+  const modal = el('div', { className: 'marketing-metrics-modal' }, [
+    el('div', { className: 'marketing-metrics-modal-header' }, [
+      el('span', { className: 'marketing-metrics-modal-title' }, ['📊 Sync Metrics — Worker Config']),
+      el('button', {
+        className: 'marketing-metrics-modal-close',
+        title: 'Close',
+        on: { click: () => _metricsOverlay.classList.add('hidden') },
+      }, ['✕']),
+    ]),
+    el('div', { className: 'marketing-metrics-modal-body' }, [
+      el('p', { className: 'marketing-metrics-desc' }, [
+        'Add this config to a Worker Jobs sheet to automatically fetch engagement metrics (likes, views, comments) from your published posts and write them back to this sheet.',
+      ]),
+      el('div', { className: 'marketing-metrics-config-header' }, [
+        el('span', {}, ['Worker Config JSON']),
+        copyBtn,
+      ]),
+      configArea,
+      el('div', { className: 'marketing-metrics-platforms' }, [
+        el('div', { className: 'marketing-metrics-platforms-title' }, ['Supported Platforms']),
+        el('table', { className: 'marketing-metrics-platform-table' }, [
+          el('thead', {}, [
+            el('tr', {}, [
+              el('th', {}, ['Platform']),
+              el('th', {}, ['What\'s synced']),
+              el('th', {}, ['API key required?']),
+            ]),
+          ]),
+          el('tbody', {}, [
+            el('tr', {}, [el('td', {}, ['▶️ YouTube']),  el('td', {}, ['Views, Likes, Comments']),      el('td', {}, ['YouTube Data API v3 key → youtubeApiKey'])]),
+            el('tr', {}, [el('td', {}, ['🟧 Hacker News']), el('td', {}, ['Points (likes), Comments']),  el('td', {}, ['None — free public API'])]),
+            el('tr', {}, [el('td', {}, ['🤖 Reddit']),   el('td', {}, ['Upvotes, Comments']),           el('td', {}, ['None — public JSON API'])]),
+            el('tr', {}, [el('td', {}, ['𝕏 Twitter/X']), el('td', {}, ['Likes, Retweets, Replies, Views']), el('td', {}, ['Twitter API v2 Bearer token → twitterBearerToken'])]),
+            el('tr', {}, [el('td', {}, ['💼 LinkedIn']),  el('td', {}, ['N/A']),                        el('td', {}, ['Not supported (requires user OAuth)'])]),
+            el('tr', {}, [el('td', {}, ['🎵 TikTok']),   el('td', {}, ['N/A']),                        el('td', {}, ['Not supported (requires commercial API access)'])]),
+            el('tr', {}, [el('td', {}, ['✍️ Blog']),      el('td', {}, ['N/A']),                        el('td', {}, ['Not supported (no public API)'])]),
+            el('tr', {}, [el('td', {}, ['🚀 Product Hunt']), el('td', {}, ['N/A']),                    el('td', {}, ['Not supported'])]),
+          ]),
+        ]),
+      ]),
+      el('div', { className: 'marketing-metrics-steps' }, [
+        el('div', { className: 'marketing-metrics-platforms-title' }, ['How to set it up']),
+        el('ol', {}, [
+          el('li', {}, ['Copy the JSON config above.']),
+          el('li', {}, ['Open or create a Google Sheet with headers: Job, Handler, Config, Status, Schedule, Last Run, Result.']),
+          el('li', {}, ['Add a new row: Job = "Content Metrics", Handler = "metrics", Config = (paste JSON).']),
+          el('li', {}, ['Fill in API keys inside the Config JSON (youtubeApiKey, twitterBearerToken as needed).']),
+          el('li', {}, ['Run the Waymark worker: WORKER_SHEET_ID=<your-worker-sheet-id> node dev-worker/scripts/worker.js']),
+          el('li', {}, ['The worker will fetch metrics and update this sheet\'s Likes, Views, Comments columns automatically.']),
+        ]),
+      ]),
+    ]),
+  ]);
+
+  const overlay = el('div', {
+    className: 'marketing-metrics-overlay',
+    on: {
+      click(e) {
+        if (e.target === overlay) overlay.classList.add('hidden');
+      },
+    },
+  }, [modal]);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _metricsOverlay && !_metricsOverlay.classList.contains('hidden')) {
+      _metricsOverlay.classList.add('hidden');
+    }
+  });
+
+  document.body.appendChild(overlay);
+  _metricsOverlay = overlay;
+}
+
 /* ---------- AI Writer (module-scoped state survives re-render) ---------- */
 
 let _writerState = {
@@ -522,6 +626,11 @@ const definition = {
         el('span', { className: 'marketing-score-num' }, [overallEngRate === '—' ? '—' : `${overallEngRate}%`]),
         el('span', { className: 'marketing-score-label' }, ['Eng. Rate']),
       ]),
+      el('button', {
+        className: 'marketing-sync-btn',
+        title: 'Set up a Worker Job to auto-sync engagement metrics from YouTube, Reddit, HN, Twitter, and more',
+        on: { click: () => _showMetricsModal(template._rtcSheetId || '') },
+      }, ['📊 Sync Metrics']),
     ]);
     container.append(scoreboard);
 
