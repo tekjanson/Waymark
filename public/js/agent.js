@@ -24,6 +24,7 @@ import {
   MAX_RAW_CONVERSATION_TOKENS,
   MAX_USER_MESSAGE_CHARS,
   TOOL_DECLARATIONS,
+  buildAgentSystemPrompt,
   buildConversationSummary,
   buildPlannerBrief,
   buildRecentSheetHint,
@@ -34,6 +35,7 @@ import {
   geminiHeaders,
   geminiUrl,
   getRecentConversationSheets,
+  pickBestKey,
   shouldUsePlannerRound,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
@@ -66,9 +68,7 @@ let _cachedContext = '';
  * @returns {string}
  */
 function _getSystemPrompt() {
-  return _cachedContext
-    ? BASE_SYSTEM_PROMPT + '\n\n' + _cachedContext
-    : BASE_SYSTEM_PROMPT;
+  return buildAgentSystemPrompt(BASE_SYSTEM_PROMPT, _cachedContext);
 }
 
 function _geminiUrl(model, action, query = '') {
@@ -261,54 +261,17 @@ let _chatBody = null;
 let _contextBar = null;
 let _isStreaming = false;
 let _abortController = null;
-let _lastKeyResetDate = null;
 
 /* ---------- Key Rotation ---------- */
 
 /**
- * Pick the next key from the ring using least-recently-used strategy.
- * Billed keys are preferred for expensive models.
- * Returns { key, idx } or null if ring is empty.
+ * Pick the best available key using the shared LRU strategy from agent/config.js.
+ * Returns { key, idx } or null if no keys are configured.
  * @returns {{ key: string, idx: number } | null}
  */
 function _getNextKey() {
-  const keys = storage.getAgentKeys();
-  if (keys.length === 0) return null;
-
-  // Reset daily counters if new day
-  const today = new Date().toISOString().slice(0, 10);
-  if (_lastKeyResetDate !== today) {
-    storage.resetDailyKeyCounters();
-    _lastKeyResetDate = today;
-  }
-
-  const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const isExpensiveModel = /pro/i.test(model);
-
-  // Filter out keys that errored in the last 60 seconds
-  const now = Date.now();
-  const available = keys.map((k, i) => ({ ...k, idx: i }))
-    .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
-
-  if (available.length === 0) {
-    // All keys recently errored — return the one with oldest error
-    const all = keys.map((k, i) => ({ ...k, idx: i }));
-    all.sort((a, b) => new Date(a.lastError || 0).getTime() - new Date(b.lastError || 0).getTime());
-    return { key: all[0].key, idx: all[0].idx };
-  }
-
-  // For expensive models, prefer billed keys
-  if (isExpensiveModel) {
-    const billed = available.filter(k => k.isBilled);
-    if (billed.length > 0) {
-      billed.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
-      return { key: billed[0].key, idx: billed[0].idx };
-    }
-  }
-
-  // LRU: pick key with fewest requests today
-  available.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
-  return { key: available[0].key, idx: available[0].idx };
+  const keys = pickBestKey();
+  return keys.length > 0 ? keys[0] : null;
 }
 
 /* ---------- Public API ---------- */

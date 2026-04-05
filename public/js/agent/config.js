@@ -4,6 +4,11 @@
    ============================================================ */
 
 import { TEMPLATES } from '../templates/index.js';
+import {
+  getAgentKeys,
+  getAgentModel,
+  resetDailyKeyCounters,
+} from '../storage.js';
 
 /* ---------- Constants ---------- */
 
@@ -408,3 +413,94 @@ export const TOOL_DECLARATIONS = [{
     },
   }],
 }];
+
+/* ---------- Key Rotation (shared by agent.js and templates via shared.js) ---------- */
+
+/** Module-level date cache to detect day rollovers without importing Date every call. */
+let _lastKeyResetDate = null;
+
+/**
+ * Return available API keys sorted by preference using the LRU strategy.
+ * The server-injected key (window.__WAYMARK_API_KEY) is appended as a
+ * last-resort fallback with idx -1.
+ *
+ * Sort order:
+ *   1. Keys without recent errors (no error in last 60 s) come first.
+ *   2. For pro/expensive models, billed keys are preferred within group 1.
+ *   3. Within each group, LRU: key with fewest requests today comes first.
+ *   4. If ALL keys have recent errors, the one with the oldest error is returned
+ *      so callers always have something to try rather than getting an empty array.
+ *   5. Server key appended at end (no idx tracking needed).
+ *
+ * Daily counters are reset automatically when the calendar date changes.
+ *
+ * @param {{ model?: string }} [opts]
+ * @returns {Array<{ key: string, idx: number }>}
+ */
+export function pickBestKey(opts = {}) {
+  const keys = getAgentKeys();
+
+  // Reset daily counters if the calendar date has changed
+  const today = new Date().toISOString().slice(0, 10);
+  if (_lastKeyResetDate !== today) {
+    if (keys.length > 0) resetDailyKeyCounters();
+    _lastKeyResetDate = today;
+  }
+
+  const entries = [];
+
+  if (keys.length > 0) {
+    const model = opts.model || getAgentModel() || DEFAULT_MODEL;
+    const isExpensiveModel = /pro/i.test(model);
+    const now = Date.now();
+
+    const annotated = keys.map((k, i) => ({
+      ...k,
+      idx: i,
+      hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000),
+    }));
+
+    const available = annotated.filter(k => !k.hasRecentError);
+
+    if (available.length === 0) {
+      // All keys errored — return the one with the oldest error so the caller can still try
+      const fallback = [...annotated].sort(
+        (a, b) => new Date(a.lastError || 0).getTime() - new Date(b.lastError || 0).getTime()
+      );
+      entries.push({ key: fallback[0].key, idx: fallback[0].idx });
+    } else {
+      // Billed keys first for expensive models
+      if (isExpensiveModel) {
+        const billed = available.filter(k => k.isBilled)
+          .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+        const free = available.filter(k => !k.isBilled)
+          .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+        for (const k of [...billed, ...free]) entries.push({ key: k.key, idx: k.idx });
+      } else {
+        const sorted = [...available].sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+        for (const k of sorted) entries.push({ key: k.key, idx: k.idx });
+      }
+    }
+  }
+
+  // Server-injected key as last-resort fallback (no usage tracking)
+  const serverKey = window.__WAYMARK_API_KEY;
+  if (serverKey) entries.push({ key: serverKey, idx: -1 });
+
+  return entries;
+}
+
+/* ---------- System Prompt Builder (shared by agent.js and templates) ---------- */
+
+/**
+ * Compose a final system prompt from a base prompt and optional context addition.
+ * This is the standard way to build system prompts across all AI callers so
+ * context shaping stays consistent.
+ *
+ * @param {string} [basePrompt]    — base instructions (defaults to BASE_SYSTEM_PROMPT)
+ * @param {string} [contextBlock]  — additional context to append (e.g. today's date, user name)
+ * @returns {string}
+ */
+export function buildAgentSystemPrompt(basePrompt = BASE_SYSTEM_PROMPT, contextBlock = '') {
+  return contextBlock ? `${basePrompt}\n\n${contextBlock}` : basePrompt;
+}
