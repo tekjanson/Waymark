@@ -15,15 +15,15 @@ test('blog grid renders a card for each row', async ({ page }) => {
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
   const count = await page.locator('.blog-card').count();
-  expect(count).toBe(5);
+  expect(count).toBe(6);
 });
 
 test('blog header shows correct published post count', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-post-count', { timeout: 5000 });
-  // 4 published, 1 draft in fixture
-  await expect(page.locator('.blog-post-count')).toContainText('4 posts');
+  // 5 published, 1 draft in fixture
+  await expect(page.locator('.blog-post-count')).toContainText('5 posts');
 });
 
 test('blog card shows title, author, date, and category badge', async ({ page }) => {
@@ -70,13 +70,13 @@ test('clicking a category filter shows only posts in that category', async ({ pa
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-filter-btn', { timeout: 5000 });
 
-  // Click Engineering filter
+  // Click Engineering filter — now 2 posts (Kanban Template + weekend ship)
   await page.click('.blog-filter-btn[data-filter="Engineering"]');
 
   // Only Engineering cards visible
   const visibleCards = page.locator('.blog-card:not(.hidden)');
   const count = await visibleCards.count();
-  expect(count).toBe(1);
+  expect(count).toBe(2);
   await expect(visibleCards.first().locator('.blog-card-title')).toContainText('Kanban Template');
 });
 
@@ -91,7 +91,7 @@ test('clicking All restores all posts after filter', async ({ page }) => {
 
   const visibleCards = page.locator('.blog-card:not(.hidden)');
   const count = await visibleCards.count();
-  expect(count).toBe(5);
+  expect(count).toBe(6);
 });
 
 /* ---- Reader modal ---- */
@@ -432,8 +432,8 @@ test('New Post form re-renders grid with new card after creation', async ({ page
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
 
-  // Baseline: 5 cards
-  expect(await page.locator('.blog-card').count()).toBe(5);
+  // Baseline: 6 cards
+  expect(await page.locator('.blog-card').count()).toBe(6);
 
   await page.click('.blog-new-post-btn');
   await page.waitForSelector('.blog-new-post-form:not(.hidden)', { timeout: 3000 });
@@ -444,10 +444,28 @@ test('New Post form re-renders grid with new card after creation', async ({ page
   await page.click('.blog-new-post-submit');
   await popupPromise;
 
-  // After re-render, grid should show 6 cards (5 original + 1 new)
+  // After re-render, grid should show 7 cards (6 original + 1 new)
   await page.waitForFunction(
-    () => document.querySelectorAll('.blog-card').length >= 6,
+    () => document.querySelectorAll('.blog-card').length >= 7,
     { timeout: 5000 },
   );
-  expect(await page.locator('.blog-card').count()).toBe(6);
+  expect(await page.locator('.blog-card').count()).toBe(7);
+});
+
+test('blog grid includes weekend ship post as a published Engineering card', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // Verify the weekend ship post card exists with the correct title
+  const titles = await page.locator('.blog-card-title').allTextContents();
+  expect(titles.some(t => t.includes('What We Shipped This Weekend'))).toBe(true);
+
+  // Verify it shows as Published (not Draft)
+  const draftCards = await page.locator('.blog-card-draft').count();
+  expect(draftCards).toBe(1); // Only the Roadmap post is Draft
+
+  // Verify Engineering category badge is present somewhere
+  const badges = await page.locator('.blog-category-badge').allTextContents();
+  expect(badges.some(b => b.includes('Engineering'))).toBe(true);
 });
