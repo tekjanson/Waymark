@@ -551,6 +551,8 @@ export const api = {
     async uploadFile(file, parentFolderId) {
       if (isLocal) {
         const fakeId = `photo-${Date.now()}`;
+        // Allow tests to force permissionSet: false via a global flag
+        const permissionSet = window.__WAYMARK_FORCE_NO_PERMISSION !== true;
         const record = {
           id: fakeId,
           type: 'photo-upload',
@@ -558,6 +560,7 @@ export const api = {
           mimeType: file.type || 'image/jpeg',
           parentFolderId: parentFolderId || null,
           webViewLink: `https://drive.google.com/file/d/${fakeId}/view`,
+          permissionSet,
           createdAt: new Date().toISOString(),
         };
         window.__WAYMARK_RECORDS.push(record);

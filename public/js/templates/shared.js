@@ -1151,17 +1151,17 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
 }
 
 /**
- * Upload an image File to Google Drive and return the sharing URL.
- * The returned URL is in the form used by driveToImgSrc() in photos.js
- * (drive.google.com/file/d/{id}/view) so it's auto-converted to a viewable
- * image src when the sheet re-renders.
+ * Upload an image File to Google Drive and return the sharing URL + permission status.
  * @param {File}   file              Browser File object from <input type="file">
  * @param {string} [parentFolderId]  Optional Drive folder ID
- * @returns {Promise<string>}  Shareable Drive URL  (drive.google.com/file/d/{id}/view)
+ * @returns {Promise<{url: string, permissionSet: boolean}>}  Drive URL + permission status
  */
 export async function uploadDriveFile(file, parentFolderId) {
   const data = await api.drive.uploadFile(file, parentFolderId);
-  return `https://drive.google.com/file/d/${data.id}/view`;
+  return {
+    url: `https://drive.google.com/file/d/${data.id}/view`,
+    permissionSet: data.permissionSet === true,
+  };
 }
 
 /**
