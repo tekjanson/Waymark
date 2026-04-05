@@ -5,7 +5,7 @@
    album/category filtering, and a click-to-expand lightbox.
    ============================================================ */
 
-import { el, cell, showToast, registerTemplate, uploadDriveFile } from './shared.js';
+import { el, cell, showToast, registerTemplate, uploadDriveFile, extractDriveFileId, loadDriveImage } from './shared.js';
 
 /* ---------- Drive URL helpers ---------- */
 
@@ -211,7 +211,7 @@ const definition = {
       for (let i = 0; i < filtered.length; i++) {
         const row = filtered[i];
         const rawUrl    = cell(row, cols.photo);
-        const src      = driveToImgSrc(rawUrl);
+        const src       = driveToImgSrc(rawUrl);
         const titleText = cell(row, cols.title) || '';
         const dateText  = cell(row, cols.date) || '';
         const albumText = cell(row, cols.album) || '';
@@ -226,26 +226,36 @@ const definition = {
           alt: titleText || 'Photo',
           loading: 'lazy',
         });
-        // Set src after element creation to allow lazy loading
-        img.src = src;
-        img.addEventListener('error', () => {
-          const cardEl = img.closest('.photos-card');
-          if (!cardEl) return;
-          // For Drive-hosted images, replace the card with an actionable guide
-          if (/drive\.google\.com/.test(src)) {
-            showBrokenDriveCard(cardEl, src);
-          } else {
-            cardEl.classList.add('photos-card-broken');
-          }
-        });
+
+        const driveId = extractDriveFileId(rawUrl);
+
+        if (driveId) {
+          // Load via OAuth token — no public sharing required.
+          // Avoids SameSite cookie restrictions that block drive.google.com in <img> tags.
+          img.classList.add('photos-card-img-loading');
+          loadDriveImage(driveId, img, () => {
+            const cardEl = img.closest('.photos-card');
+            if (cardEl) showBrokenDriveCard(cardEl, rawUrl);
+          }).then(() => img.classList.remove('photos-card-img-loading'));
+        } else {
+          // Non-Drive URL (Unsplash, direct HTTPS, etc.) — set src directly.
+          img.src = src;
+          img.addEventListener('error', () => {
+            const cardEl = img.closest('.photos-card');
+            if (cardEl) cardEl.classList.add('photos-card-broken');
+          });
+        }
 
         const card = el('div', {
           className: 'photos-card',
           title: [titleText, metaParts].filter(Boolean).join('\n'),
           on: {
             click() {
+              // Use img.src (may be blob URL or thumbnailLink after async load)
+              const activeSrc = img.src || src;
+              if (!activeSrc) return;
               const metaText = [metaParts, desc].filter(Boolean).join(' — ');
-              showLightbox(src, titleText, metaText);
+              showLightbox(activeSrc, titleText, metaText);
             },
           },
         }, [

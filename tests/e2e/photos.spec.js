@@ -263,6 +263,27 @@ test('driveToImgSrc handles Drive URLs with extra query params', async ({ page }
   expect(result.withExtra).toBe('https://drive.google.com/thumbnail?id=ABC789&sz=w1280');
 });
 
+test('extractDriveFileId extracts file ID from Drive sharing URLs', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { extractDriveFileId } = await import('/js/templates/shared.js');
+    return {
+      fileUrl:  extractDriveFileId('https://drive.google.com/file/d/abc123XYZ/view'),
+      openUrl:  extractDriveFileId('https://drive.google.com/open?id=abc123XYZ'),
+      ucUrl:    extractDriveFileId('https://drive.google.com/uc?id=abc123XYZ'),
+      nonDrive: extractDriveFileId('https://images.unsplash.com/photo.jpg'),
+      empty:    extractDriveFileId(''),
+      nullVal:  extractDriveFileId(null),
+    };
+  });
+  expect(result.fileUrl).toBe('abc123XYZ');
+  expect(result.openUrl).toBe('abc123XYZ');
+  expect(result.ucUrl).toBe('abc123XYZ');
+  expect(result.nonDrive).toBeNull();
+  expect(result.empty).toBeNull();
+  expect(result.nullVal).toBeNull();
+});
+
 test('photos template detects sheets with Photo header', async ({ page }) => {
   await setupApp(page);
   await page.goto('/');

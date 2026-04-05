@@ -144,6 +144,16 @@
   transition: transform var(--transition);
 }
 
+.photos-card-img.photos-card-img-loading {
+  background: var(--color-border);
+  animation: photos-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes photos-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
 .photos-card:hover .photos-card-img {
   transform: scale(1.03);
 }
