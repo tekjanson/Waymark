@@ -19,6 +19,7 @@ import { GoogleAuth } from "google-auth-library";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import mqtt from "mqtt";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -196,6 +197,30 @@ async function getFirstSheetTitle(spreadsheetId) {
   return meta.sheets?.[0]?.properties?.title || "Sheet1";
 }
 
+/* ---------- MQTT helper for push notifications ---------- */
+
+const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || "mqtt://localhost:1883";
+const MQTT_USERNAME   = process.env.MQTT_USERNAME || "";
+const MQTT_PASSWORD   = process.env.MQTT_PASSWORD || "";
+
+/** Return a connected MQTT client. Resolves when ready or rejects after 8 s. */
+function getMqttClient() {
+  return new Promise((resolve, reject) => {
+    const client = mqtt.connect(MQTT_BROKER_URL, {
+      username: MQTT_USERNAME || undefined,
+      password: MQTT_PASSWORD || undefined,
+      connectTimeout: 8_000,
+      reconnectPeriod: 0,   // no auto-reconnect — single-use
+    });
+    client.once("connect", () => resolve(client));
+    client.once("error",   (err) => { client.end(true); reject(err); });
+    setTimeout(() => {
+      client.end(true);
+      reject(new Error(`MQTT connect timeout (${MQTT_BROKER_URL})`));
+    }, 8_000);
+  });
+}
+
 /* ---------- Tool definitions ---------- */
 
 const TOOLS = [
@@ -355,7 +380,7 @@ const TOOLS = [
   },
   {
     name: "waymark_push_notification",
-    description: "Push a notification to a phone or desktop via ntfy.sh. Requires WAYMARK_NTFY_TOPIC env var (a unique topic name like a UUID — keep it secret to avoid public visibility). Optionally override with the 'topic' argument. To receive notifications: install the ntfy app (Android/iOS/desktop) and subscribe to the same topic.",
+    description: "Push a notification to a phone or device via the self-hosted Waymark MQTT broker. Publishes a JSON message to topic WAYMARK_NOTIFICATION_TOPIC (default: 'waymark/notifications'). To receive notifications on Android/iOS: install any MQTT client app (e.g. 'MQTT Dash', 'IoT MQTT Panel', or 'Linear MQTT Dashboard') and subscribe to the same topic on the Waymark MQTT broker. No third-party service required — uses the same Mosquitto broker that powers the Waymark dev worker.",
     inputSchema: {
       type: "object",
       required: ["message"],
@@ -370,21 +395,21 @@ const TOOLS = [
         },
         topic: {
           type: "string",
-          description: "ntfy.sh topic name. Overrides the WAYMARK_NTFY_TOPIC env var. Use a unique hard-to-guess value for privacy.",
+          description: "MQTT topic to publish to. Overrides the WAYMARK_NOTIFICATION_TOPIC env var. Default: 'waymark/notifications'.",
         },
         priority: {
           type: "string",
           enum: ["min", "low", "default", "high", "urgent"],
-          description: "Notification priority (optional, defaults to 'default').",
+          description: "Notification priority (optional, stored in payload, defaults to 'default').",
         },
         url: {
           type: "string",
-          description: "A URL to open when the notification is clicked (optional).",
+          description: "A URL relevant to this notification (optional, included in payload).",
         },
         tags: {
           type: "array",
           items: { type: "string" },
-          description: "Emoji shortcodes or tag names for the notification, e.g. ['white_check_mark', 'waymark'] (optional).",
+          description: "Tag labels for the notification, e.g. ['waymark', 'alert'] (optional).",
         },
       },
     },
@@ -642,39 +667,29 @@ async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, co
 /* ---------- Push notification ---------- */
 
 async function handleWaymarkPushNotification({ message, title, topic, priority, url, tags } = {}) {
-  const ntfyTopic = topic || process.env.WAYMARK_NTFY_TOPIC;
-  if (!ntfyTopic) {
-    throw new Error(
-      "No ntfy.sh topic configured. Set WAYMARK_NTFY_TOPIC env var to a unique topic name, " +
-      "or pass 'topic' in the tool arguments. Install the ntfy app and subscribe to that topic to receive notifications."
-    );
-  }
+  const mqttTopic = topic || process.env.WAYMARK_NOTIFICATION_TOPIC || "waymark/notifications";
 
-  const ntfyBase = (process.env.WAYMARK_NTFY_URL || "https://ntfy.sh").replace(/\/$/, "");
-  const endpoint = `${ntfyBase}/${encodeURIComponent(ntfyTopic)}`;
-
-  const headers = { "Content-Type": "text/plain; charset=utf-8" };
-  if (title)                          headers["X-Title"]    = title;
-  if (priority && priority !== "default") headers["X-Priority"] = priority;
-  if (url)                            headers["X-Click"]    = url;
-  if (tags && tags.length > 0)        headers["X-Tags"]     = tags.join(",");
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: message,
+  const payload = JSON.stringify({
+    title:     title    || "Waymark",
+    message,
+    priority:  priority || "default",
+    url:       url      || null,
+    tags:      tags     || [],
+    timestamp: new Date().toISOString(),
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`ntfy.sh responded with ${response.status}: ${text}`);
-  }
+  const client = await getMqttClient();
+  await new Promise((resolve, reject) => {
+    client.publish(mqttTopic, payload, { qos: 1, retain: false }, (err) => {
+      client.end();
+      if (err) reject(err); else resolve();
+    });
+  });
 
-  const data = await response.json().catch(() => ({}));
   return {
     ok: true,
-    messageId: data.id || null,
-    topic: `${ntfyBase}/${ntfyTopic}`,
+    topic: mqttTopic,
+    broker: MQTT_BROKER_URL,
     title: title || "Waymark",
     message,
   };

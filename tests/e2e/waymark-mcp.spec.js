@@ -191,15 +191,16 @@ test('mcp/waymark.mjs push notification tool requires message parameter', () => 
   expect(toolDef).toContain('required');
 });
 
-test('mcp/waymark.mjs push notification tool has ntfy config documentation', () => {
+test('mcp/waymark.mjs push notification tool has MQTT config documentation', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
-  expect(src).toContain('WAYMARK_NTFY_TOPIC');
-  expect(src).toContain('ntfy.sh');
+  expect(src).toContain('WAYMARK_NOTIFICATION_TOPIC');
+  expect(src).toContain('MQTT_BROKER_URL');
+  expect(src).not.toContain('ntfy.sh');
 });
 
-test('mcp/waymark.mjs push notification uses fetch to POST to ntfy endpoint', () => {
+test('mcp/waymark.mjs push notification publishes via MQTT client', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
-  expect(src).toContain('method: "POST"');
-  expect(src).toContain('ntfyBase');
-  expect(src).toContain('X-Title');
+  expect(src).toContain('getMqttClient');
+  expect(src).toContain('client.publish');
+  expect(src).toContain('qos: 1');
 });
