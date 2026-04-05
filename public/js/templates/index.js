@@ -45,6 +45,7 @@ import './linker.js';
 import './marketing.js';
 import './arcade/index.js';
 import './worker.js';
+import './blog.js';
 import './photos.js';
 
 /* ---------- Detection ---------- */

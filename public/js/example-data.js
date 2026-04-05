@@ -959,6 +959,19 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Blog examples ---- */
+  'Team Blog': {
+    folder: 'Blogs',
+    headers: ['Title', 'Doc', 'Date', 'Author', 'Category', 'Status'],
+    rows: [
+      ['Getting Started with Waymark', 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/pub', '2026-01-15', 'Jamie Levine', 'Tutorial',    'Published'],
+      ['How We Built the Kanban Template', '1kFkFakeDocIdForKanbanBlogPostEntry001', '2026-02-03', 'Alex Chen',   'Engineering', 'Published'],
+      ['Waymark Community Guidelines',     '1x5PFakeDocIdForCommunityGuidelinesBlog', '2026-02-20', 'Jamie Levine', 'Community',   'Published'],
+      ['Upcoming Features Roadmap',        '1mNoPqrFakeDocIdForRoadmapBlogPostEntry', '2026-03-01', 'Alex Chen',   'Product',     'Draft'],
+      ['Dark Mode Design Principles',      '1AbCdEfFakeDocIdForDarkModeBlogPostEntry', '2026-03-14', 'Sam Rivera',  'Design',      'Published'],
+    ],
+  },
+
   /* ---- Photo Gallery examples ---- */
   'Family Summer 2026': {
     folder: 'Photos',

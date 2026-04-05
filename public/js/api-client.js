@@ -132,6 +132,7 @@ async function loadMockSheet(sheetId) {
     'sheet-059': 'marketing-waymark',
     'sheet-060': 'arcade-lobby',
     'sheet-061': 'worker-jobs',
+    'sheet-062': 'blog-posts',
     'sheet-064': 'photos-gallery',
   'sheet-iot-blank': 'iot-blank',
   };
