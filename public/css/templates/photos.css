@@ -299,3 +299,117 @@
     max-height: 95vh;
   }
 }
+
+/* ---------- Drive permission banner (post-upload warning) ---------- */
+
+.photos-permission-banner {
+  margin: 8px 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-left: 4px solid var(--color-warning, #f59e0b);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.photos-permission-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.photos-permission-banner-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.photos-permission-banner-header strong {
+  flex: 1;
+  font-weight: 600;
+}
+
+.photos-permission-banner-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.photos-permission-banner-close:hover {
+  background: var(--color-border);
+}
+
+.photos-permission-banner-msg {
+  margin: 0 0 8px 0;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.photos-permission-banner-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--color-text);
+  line-height: 1.8;
+}
+
+.photos-permission-banner-steps a {
+  color: var(--color-accent, #6366f1);
+}
+
+/* ---------- Broken Drive image card with permission guide ---------- */
+
+.photos-card.photos-card-permission {
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+/* Suppress the generic broken-image ::after when we show the guide */
+.photos-card.photos-card-permission::after {
+  content: none;
+}
+
+.photos-permission-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.photos-permission-card-icon {
+  font-size: 1.5rem;
+  opacity: 0.6;
+}
+
+.photos-permission-card-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.photos-permission-card-hint {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.photos-permission-card-link {
+  color: var(--color-accent, #6366f1);
+  text-decoration: underline;
+  cursor: pointer;
+}

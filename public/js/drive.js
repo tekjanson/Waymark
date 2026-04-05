@@ -337,17 +337,27 @@ export async function uploadImageFile(token, file, parentFolderId) {
   if (!res.ok) throw driveError('Drive uploadImageFile', res);
   const fileData = await res.json();
 
-  // Make the file world-readable so uc?export=view URLs work
-  await fetch(`https://www.googleapis.com/drive/v3/files/${fileData.id}/permissions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-  });
+  // Make the file world-readable so uc?export=view URLs work.
+  // Capture whether this succeeded — workspace policies may block external sharing.
+  let permissionSet = false;
+  try {
+    const permRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileData.id}/permissions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+      },
+    );
+    permissionSet = permRes.ok;
+  } catch {
+    permissionSet = false;
+  }
 
-  return fileData;
+  return { ...fileData, permissionSet };
 }
 
 /**

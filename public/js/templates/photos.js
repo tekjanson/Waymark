@@ -102,6 +102,95 @@ function hideLightbox() {
   document.body.style.overflow = '';
 }
 
+/* ---------- Drive permission guide ---------- */
+
+/**
+ * Show a non-blocking permission guide banner below the upload toolbar.
+ * Called when Drive reports that public sharing could not be set for a file.
+ * @param {HTMLElement} container - The template root element
+ * @param {string} driveUrl - The Drive file URL (view link)
+ * @param {string} fileName - The uploaded file name for the label
+ */
+function showPermissionGuide(container, driveUrl, fileName) {
+  // Remove any pre-existing guide
+  container.querySelector('.photos-permission-banner')?.remove();
+
+  const fileId = (driveUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || [])[1] || '';
+  const driveFileUrl = fileId
+    ? `https://drive.google.com/file/d/${fileId}/view`
+    : driveUrl;
+
+  const banner = el('div', { className: 'photos-permission-banner' }, [
+    el('div', { className: 'photos-permission-banner-header' }, [
+      el('span', { className: 'photos-permission-banner-icon' }, ['🔒']),
+      el('strong', {}, ['Photo sharing not enabled yet']),
+      el('button', {
+        className: 'photos-permission-banner-close',
+        title: 'Dismiss',
+        on: { click: () => banner.remove() },
+      }, ['✕']),
+    ]),
+    el('p', { className: 'photos-permission-banner-msg' }, [
+      `"${fileName}" was saved to Drive, but its sharing is restricted — it will appear as a broken image until you enable access.`,
+    ]),
+    el('ol', { className: 'photos-permission-banner-steps' }, [
+      el('li', {}, [
+        'Open ',
+        el('a', { href: driveFileUrl, target: '_blank', rel: 'noopener' }, ['the file in Google Drive']),
+        '.',
+      ]),
+      el('li', {}, ['Right-click the file → Share (or click the Share button in the toolbar).']),
+      el('li', {}, ['Under "General access", choose "Anyone with the link → Viewer".']),
+      el('li', {}, ['Click Done. The photo will load automatically once sharing is enabled.']),
+    ]),
+  ]);
+
+  // Insert after the toolbar (first child) if possible, otherwise prepend
+  const toolbar = container.querySelector('.photos-toolbar');
+  if (toolbar && toolbar.nextSibling) {
+    container.insertBefore(banner, toolbar.nextSibling);
+  } else {
+    container.prepend(banner);
+  }
+}
+
+/**
+ * Replace a broken Drive-hosted image card with an inline permission guide.
+ * @param {HTMLElement} cardEl - The .photos-card element
+ * @param {string} src         - The image src (uc?export=view form)
+ */
+function showBrokenDriveCard(cardEl, src) {
+  // Extract the file ID so we can build a proper View link
+  const idMatch = src.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  const fileId = idMatch ? idMatch[1] : null;
+  const driveUrl = fileId
+    ? `https://drive.google.com/file/d/${fileId}/view`
+    : 'https://drive.google.com';
+
+  cardEl.innerHTML = '';
+  cardEl.classList.add('photos-card-broken', 'photos-card-permission');
+  // Prevent the card's lightbox click from firing when the guide link is clicked
+  cardEl.onclick = null;
+
+  cardEl.appendChild(
+    el('div', { className: 'photos-permission-card' }, [
+      el('div', { className: 'photos-permission-card-icon' }, ['🔒']),
+      el('p', { className: 'photos-permission-card-title' }, ['Photo not visible']),
+      el('p', { className: 'photos-permission-card-hint' }, [
+        'Drive sharing is off. ',
+        el('a', {
+          href: driveUrl,
+          target: '_blank',
+          rel: 'noopener',
+          className: 'photos-permission-card-link',
+          on: { click: (e) => e.stopPropagation() },
+        }, ['Open in Drive']),
+        ' → Share → "Anyone with the link → Viewer".',
+      ]),
+    ]),
+  );
+}
+
 /* ---------- Template ---------- */
 
 const definition = {
@@ -184,7 +273,14 @@ const definition = {
         // Set src after element creation to allow lazy loading
         img.src = src;
         img.addEventListener('error', () => {
-          img.closest('.photos-card')?.classList.add('photos-card-broken');
+          const cardEl = img.closest('.photos-card');
+          if (!cardEl) return;
+          // For Drive-hosted images, replace the card with an actionable guide
+          if (/drive\.google\.com/.test(src)) {
+            showBrokenDriveCard(cardEl, src);
+          } else {
+            cardEl.classList.add('photos-card-broken');
+          }
         });
 
         const card = el('div', {
@@ -277,7 +373,7 @@ const definition = {
       uploadBtn.disabled = true;
       uploadBtn.textContent = 'Uploading…';
       try {
-        const driveUrl = await uploadDriveFile(file);
+        const { url: driveUrl, permissionSet } = await uploadDriveFile(file);
 
         // Build new row — place URL in the photo column, today's date in the date column
         const today = new Date().toISOString().split('T')[0];
@@ -290,7 +386,14 @@ const definition = {
         if (template && typeof template._onInsertAfterRow === 'function') {
           await template._onInsertAfterRow(rows.length, [newRow]);
         }
-        showToast('Photo uploaded', 'success');
+
+        if (permissionSet) {
+          showToast('Photo uploaded — it may take a moment to appear', 'success');
+        } else {
+          // Drive sharing was blocked (e.g. Google Workspace policy).
+          // Show an actionable guide so the user can manually enable access.
+          showPermissionGuide(container, driveUrl, file.name);
+        }
       } catch (err) {
         showToast(`Upload failed: ${err.message}`, 'error');
       } finally {
