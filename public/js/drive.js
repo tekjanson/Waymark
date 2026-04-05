@@ -168,6 +168,23 @@ export async function exportDoc(token, fileId) {
 }
 
 /**
+ * Export a Google Doc as HTML using the Drive API (OAuth-authenticated).
+ * Works for any document the token-holder has access to, including private docs
+ * that are not published to the web.
+ * @param {string} token
+ * @param {string} fileId
+ * @returns {Promise<string>}  the document content as HTML
+ */
+export async function exportDocAsHtml(token, fileId) {
+  const res = await fetch(
+    `${BASE}/files/${fileId}/export?mimeType=text/html`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw driveError('Drive export HTML', res);
+  return res.text();
+}
+
+/**
  * Get file metadata by ID.
  * @param {string} token
  * @param {string} fileId

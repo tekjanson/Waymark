@@ -154,17 +154,20 @@ test('reader modal closes on Escape key', async ({ page }) => {
   await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
 });
 
-test('reader iframe has embedded Google Docs URL as src', async ({ page }) => {
+test('reader iframe loads content via OAuth export (srcdoc) in local mode', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
 
   await page.click('.blog-card:first-child');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+  // Wait for async export to finish (loading class removed)
+  await page.waitForSelector('.blog-reader-body:not(.blog-reader-loading)', { timeout: 5000 });
 
-  const src = await page.locator('.blog-reader-iframe').getAttribute('src');
-  expect(src).toContain('docs.google.com/document/d/');
-  expect(src).toContain('embedded=true');
+  // In local mock mode exportDocAsHtml returns mock HTML → srcdoc is set
+  const srcdoc = await page.locator('.blog-reader-iframe').getAttribute('srcdoc');
+  expect(srcdoc).toBeTruthy();
+  expect(srcdoc.length).toBeGreaterThan(0);
 });
 
 /* ---- Style & Visual ---- */
@@ -247,13 +250,22 @@ test('extractDocId parses Google Doc share URL', async ({ page }) => {
   expect(result.fromEmpty).toBeNull();
 });
 
-test('docEmbedUrl constructs correct embedded URL', async ({ page }) => {
+test('docEmbedUrl constructs correct preview URL', async ({ page }) => {
   await setupApp(page);
   const url = await page.evaluate(async () => {
     const { docEmbedUrl } = await import('/js/templates/blog.js');
     return docEmbedUrl('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms');
   });
-  expect(url).toBe('https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/pub?embedded=true');
+  expect(url).toBe('https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/preview');
+});
+
+test('docOpenUrl constructs correct Google Docs edit URL', async ({ page }) => {
+  await setupApp(page);
+  const url = await page.evaluate(async () => {
+    const { docOpenUrl } = await import('/js/templates/blog.js');
+    return docOpenUrl('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms');
+  });
+  expect(url).toBe('https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/edit');
 });
 
 test('blogStatus classifies published values correctly', async ({ page }) => {
@@ -451,3 +463,62 @@ test('New Post form re-renders grid with new card after creation', async ({ page
   );
   expect(await page.locator('.blog-card').count()).toBe(6);
 });
+
+/* ---- OAuth reader (private doc support) ---- */
+
+test('reader header shows Open in Docs link when modal is open', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-open-link')).toBeVisible();
+});
+
+test('Open in Docs link has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-open-link')).toHaveCSS('cursor', 'pointer');
+});
+
+test('Open in Docs link points to correct Google Docs URL', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // Click the first card (Getting Started with Waymark)
+  await page.click('.blog-card >> text=Getting Started with Waymark');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const href = await page.locator('.blog-reader-open-link').getAttribute('href');
+  expect(href).toContain('docs.google.com/document/d/');
+  expect(href).toContain('/edit');
+});
+
+test('reader closes while async export is in flight without errors', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // Open reader
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  // Close immediately before async export can finish
+  await page.click('.blog-reader-close');
+  await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
+
+  // No JS errors should have been thrown
+  const errors = [];
+  page.on('pageerror', err => errors.push(err.message));
+  await page.waitForTimeout(200); // let any async callbacks settle
+  expect(errors).toHaveLength(0);
+});
+

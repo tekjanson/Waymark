@@ -5,7 +5,7 @@
    using the Google Docs publish URL in a sandboxed iframe.
    ============================================================ */
 
-import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc } from './shared.js';
+import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -33,12 +33,23 @@ export function extractDocId(raw) {
 }
 
 /**
- * Build the embedded Google Docs publish URL for an iframe.
+ * Build the preview URL for a Google Doc — works for published docs,
+ * link-shared docs, and private docs accessible via the user's browser session.
+ * This replaces the old /pub?embedded=true URL which required explicit web publishing.
  * @param {string} docId
  * @returns {string}
  */
 export function docEmbedUrl(docId) {
-  return `https://docs.google.com/document/d/${docId}/pub?embedded=true`;
+  return `https://docs.google.com/document/d/${docId}/preview`;
+}
+
+/**
+ * Build the direct Google Docs edit URL for the "Open in Google Docs" fallback.
+ * @param {string} docId
+ * @returns {string}
+ */
+export function docOpenUrl(docId) {
+  return `https://docs.google.com/document/d/${docId}/edit`;
 }
 
 /**
@@ -70,6 +81,7 @@ export function formatPostDate(v) {
 /* ---------- Reader modal ---------- */
 
 let _reader = null;
+let _showCount = 0; // incremented on each showReader/hideReader to cancel stale loads
 
 /** Build or retrieve the singleton reader overlay. */
 function getReader() {
@@ -83,6 +95,13 @@ function getReader() {
     const heading = el('h2', { className: 'blog-reader-title' });
     const meta    = el('div', { className: 'blog-reader-meta' });
 
+    const openLink = el('a', {
+      className: 'blog-reader-open-link',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      title: 'Open in Google Docs',
+    }, ['↗ Open in Docs']);
+
     const closeBtn = el('button', {
       className: 'blog-reader-close',
       'aria-label': 'Close reader',
@@ -91,6 +110,7 @@ function getReader() {
 
     const header = el('div', { className: 'blog-reader-header' }, [
       el('div', { className: 'blog-reader-heading' }, [heading, meta]),
+      openLink,
       closeBtn,
     ]);
 
@@ -111,24 +131,51 @@ function getReader() {
 
     document.body.appendChild(overlay);
     overlay.classList.add('hidden');
-    _reader = { overlay, iframe, heading, meta };
+    _reader = { overlay, iframe, heading, meta, openLink, body };
   }
   return _reader;
 }
 
-function showReader(docId, titleText, metaText) {
+async function showReader(docId, titleText, metaText) {
+  const myCount = ++_showCount;
   const r = getReader();
-  r.iframe.src = docEmbedUrl(docId);
   r.heading.textContent = titleText || '';
   r.meta.textContent    = metaText || '';
+  r.openLink.href = docOpenUrl(docId);
   r.overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+
+  // Reset iframe state and show loading
+  r.iframe.removeAttribute('srcdoc');
+  r.iframe.src = '';
+  r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+  r.body.classList.add('blog-reader-loading');
+
+  // Try OAuth API export first — works for any doc the user has access to,
+  // including private docs not published to the web.
+  try {
+    const html = await exportDocAsHtml(docId);
+    if (myCount !== _showCount) return; // reader closed while loading
+    // Use srcdoc with restrictive sandbox — scripts in exported HTML are blocked
+    r.iframe.setAttribute('sandbox', 'allow-popups');
+    r.iframe.removeAttribute('src');
+    r.iframe.srcdoc = html;
+  } catch (_) {
+    if (myCount !== _showCount) return;
+    // Fallback: /preview URL — works for link-shared docs + browser Google session
+    r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+    r.iframe.src = docEmbedUrl(docId);
+  } finally {
+    if (myCount === _showCount) r.body.classList.remove('blog-reader-loading');
+  }
 }
 
 function hideReader() {
   if (!_reader) return;
+  _showCount++; // cancel any in-flight export
   _reader.overlay.classList.add('hidden');
   _reader.iframe.src = '';
+  _reader.iframe.removeAttribute('srcdoc');
   document.body.style.overflow = '';
 }
 
