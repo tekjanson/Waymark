@@ -53,7 +53,7 @@ app.use((_req, res, next) => {
         "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://apis.google.com",
         "connect-src 'self' ws://localhost:9001 https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com",
         "frame-src https://docs.google.com",
-        "img-src 'self' https://*.googleusercontent.com data:",
+        "img-src 'self' https://*.googleusercontent.com https://drive.google.com data:",
         "style-src 'self' 'unsafe-inline'",
       ].join('; ')
     );
