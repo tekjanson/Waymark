@@ -202,6 +202,10 @@ const definition = {
   defaultHeaders: ['Photo', 'Title', 'Date', 'Album'],
 
   detect(lower) {
+    // Exclude social sheets (Post/Author columns → belongs to Social Feed template)
+    const isSocial = lower.some(h => /^(post|message|status|wall|feed|update)/.test(h))
+      && lower.some(h => /^(author|poster|user|posted.?by|from|who)/.test(h));
+    if (isSocial) return false;
     return lower.some(h => /^(photo|image|picture|pic)\s*(url|link|src)?$/.test(h))
       || (lower.some(h => /\bphoto\b|\bimage\b|\bpicture\b/.test(h))
         && lower.some(h => /\btitle\b|\bcaption\b|\balbum\b|\bdate\b/.test(h)));
