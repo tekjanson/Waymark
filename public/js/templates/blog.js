@@ -139,6 +139,7 @@ const definition = {
   icon: '✍️',
   color: '#0f766e',
   priority: 20,
+  defaultHeaders: ['Title', 'Doc', 'Date', 'Author', 'Category', 'Status'],
 
   detect(lower) {
     // Requires a title column AND a doc link column
