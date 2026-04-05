@@ -132,6 +132,7 @@ async function loadMockSheet(sheetId) {
     'sheet-059': 'marketing-waymark',
     'sheet-060': 'arcade-lobby',
     'sheet-061': 'worker-jobs',
+    'sheet-064': 'photos-gallery',
   'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];
@@ -539,6 +540,33 @@ export const api = {
       }
       const token = await requireToken();
       return driveApi.createTextFile(token, name, content, parents);
+    },
+
+    /**
+     * Upload a binary image file to Google Drive and make it publicly readable.
+     * @param {File}   file              Browser File object
+     * @param {string} [parentFolderId]  Drive folder ID to place the file in
+     * @returns {Promise<{id: string, webViewLink: string}>}  uploaded file metadata
+     */
+    async uploadFile(file, parentFolderId) {
+      if (isLocal) {
+        const fakeId = `photo-${Date.now()}`;
+        const record = {
+          id: fakeId,
+          type: 'photo-upload',
+          name: file.name,
+          mimeType: file.type || 'image/jpeg',
+          parentFolderId: parentFolderId || null,
+          webViewLink: `https://drive.google.com/file/d/${fakeId}/view`,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.uploadImageFile(token, file, parentFolderId);
+      });
     },
 
     /**

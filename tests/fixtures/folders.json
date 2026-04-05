@@ -785,6 +785,19 @@
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
+    },
+    {
+      "id": "f-photos",
+      "name": "Photos",
+      "mimeType": "application/vnd.google-apps.folder",
+      "shared": false,
+      "children": [
+        {
+          "id": "sheet-064",
+          "name": "Family Summer 2026",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        }
+      ]
     }
   ]
 }

@@ -958,4 +958,18 @@ export const EXAMPLE_SHEETS = {
       ['Daily backup export',  'script',  '{"script":"export-backup.js"}',                  'done',      '0 2 * * *',   '2026-03-14T02:00:00Z', 'Exported 1.2 MB'],
     ],
   },
+
+  /* ---- Photo Gallery examples ---- */
+  'Family Summer 2026': {
+    folder: 'Photos',
+    headers: ['Photo', 'Title', 'Date', 'Album', 'Description'],
+    rows: [
+      ['https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800', 'Mountain Sunrise', '2026-07-04', 'Mountain Trip', 'Golden hour above the clouds'],
+      ['https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800', 'Lakeside Picnic',  '2026-07-05', 'Mountain Trip', 'Lunch at the alpine lake'],
+      ['https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=800', 'Campfire Night',   '2026-07-05', 'Mountain Trip', 'Roasting marshmallows'],
+      ['https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800', 'Beach Day',        '2026-08-12', 'Beach Vacation', 'Perfect waves at sunset'],
+      ['https://images.unsplash.com/photo-1473116763249-2faaef81ccda?w=800', 'Snorkeling',       '2026-08-13', 'Beach Vacation', 'Found colorful fish'],
+      ['https://images.unsplash.com/photo-1444723121867-7a241cacace9?w=800', 'City Skyline',     '2026-09-03', 'City Break',    'Night view from the roof'],
+    ],
+  },
 };

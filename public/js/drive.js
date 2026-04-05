@@ -309,6 +309,48 @@ export async function createTextFile(token, name, content, parents = []) {
 }
 
 /**
+ * Upload a binary image file to Google Drive.
+ * After upload, sets the file permission to publicly readable so that
+ * the drive.google.com/uc?export=view&id=... URL works without sign-in.
+ * @param {string} token         OAuth access token
+ * @param {File}   file          Browser File object (from <input type="file">)
+ * @param {string} [parentFolderId]  Drive folder ID to place the file in
+ * @returns {Promise<{id: string, webViewLink: string}>}  uploaded file metadata
+ */
+export async function uploadImageFile(token, file, parentFolderId) {
+  const meta = JSON.stringify({
+    name: file.name,
+    ...(parentFolderId ? { parents: [parentFolderId] } : {}),
+  });
+  const form = new FormData();
+  form.append('metadata', new Blob([meta], { type: 'application/json' }));
+  form.append('file', file);
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    },
+  );
+  if (!res.ok) throw driveError('Drive uploadImageFile', res);
+  const fileData = await res.json();
+
+  // Make the file world-readable so uc?export=view URLs work
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileData.id}/permissions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+  });
+
+  return fileData;
+}
+
+/**
  * Update plain text content of an existing Drive file.
  * @param {string} token
  * @param {string} fileId
