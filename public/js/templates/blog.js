@@ -130,15 +130,21 @@ function injectReadingStyles(rawHtml) {
  * Extract /#/sheet/{id} links from the exported HTML.
  * These are rendered as "Referenced Sheets" cards below the article.
  */
-function extractWaymarkLinks(html) {
-  // Match either /#/sheet/ or /#/public/ followed by the sheet id
-  const RE = /href=["'][^"']*\/#\/(?:sheet|public)\/([a-zA-Z0-9_-]+)["']/g;
-  const ids = [];
+export function extractWaymarkLinks(html) {
+  // Match anchors whose href contains /#/ (direct) or %23/ (URL-encoded, from Google Docs redirect)
+  // before sheet/{id} or public/{id}. Returns [{id, label}] so cards can show the link text.
+  const ANCHOR_RE = /<a\s[^>]*href=["'][^"']*(?:\/#|%23)\/(?:sheet|public)\/([a-zA-Z0-9_-]+)[^>]*>([\s\S]*?)<\/a>/gi;
+  const seen = new Set();
+  const results = [];
   let m;
-  while ((m = RE.exec(html)) !== null) {
-    if (!ids.includes(m[1])) ids.push(m[1]);
+  while ((m = ANCHOR_RE.exec(html)) !== null) {
+    const id = m[1];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const label = m[2].replace(/<[^>]+>/g, '').trim() || id;
+    results.push({ id, label });
   }
-  return ids;
+  return results;
 }
 
 /* ---------- Full-page reader ---------- */
@@ -191,11 +197,10 @@ function getReader() {
 
     const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, shareBtn, openLink]);
 
-    // Referenced sheets section (shown when the doc links to other Waymark sheets)
-    const refsLabel = el('div', { className: 'blog-reader-refs-label' }, ['Referenced Sheets']);
-    const refs = el('div', { className: 'blog-reader-refs hidden' }, [refsLabel]);
+    // Inline embeds section (shown when the doc links to other Waymark sheets)
+    const embeds = el('div', { className: 'blog-reader-embeds hidden' });
 
-    const body = el('div', { className: 'blog-reader-body' }, [iframe, refs]);
+    const body = el('div', { className: 'blog-reader-body' }, [iframe, embeds]);
     const page = el('div', { className: 'blog-reader-page' }, [nav, body]);
     const overlay = el('div', { className: 'blog-reader-overlay hidden' }, [page]);
 
@@ -204,7 +209,7 @@ function getReader() {
     });
 
     document.body.appendChild(overlay);
-    _reader = { overlay, iframe, navTitle, openLink, body, refs, page };
+    _reader = { overlay, iframe, navTitle, openLink, body, embeds, page };
   }
   return _reader;
 }
@@ -233,12 +238,12 @@ async function showReader(docId, titleText, metaText, sheetId) {
   r.overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 
-  // Reset iframe + refs state
+  // Reset iframe + embeds state
   r.iframe.removeAttribute('srcdoc');
   r.iframe.src = '';
   r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-  r.refs.querySelectorAll('.blog-ref-card').forEach(c => c.remove());
-  r.refs.classList.add('hidden');
+  r.embeds.innerHTML = '';
+  r.embeds.classList.add('hidden');
   r.page.classList.add('blog-reader-loading');
 
   try {
@@ -247,22 +252,35 @@ async function showReader(docId, titleText, metaText, sheetId) {
     // Inject clean reading styles — strips Google's layout CSS
     r.iframe.setAttribute('sandbox', 'allow-popups');
     r.iframe.srcdoc = injectReadingStyles(rawHtml);
-    // Show referenced Waymark sheets as clickable cards
-    const sheetIds = extractWaymarkLinks(rawHtml);
-    if (sheetIds.length > 0) {
+    // Render referenced Waymark sheets inline below the post
+    const sheetLinks = extractWaymarkLinks(rawHtml);
+    if (sheetLinks.length > 0) {
       const base = window.__WAYMARK_BASE || '';
-      // Determine whether the current page is a public view so we route refs accordingly
       const isPublicRef = document.body.classList.contains('waymark-public');
       const prefix = isPublicRef ? '/#/public/' : '/#/sheet/';
-      sheetIds.forEach(id => {
-        const card = el('a', {
-          className: 'blog-ref-card',
-          href: base + prefix + id,
-          on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = (isPublicRef ? '/public/' : '/sheet/') + id; } },
-        }, [el('span', { className: 'blog-ref-icon' }, ['\u{1F4CA} ']), id]);
-        r.refs.appendChild(card);
+      sheetLinks.forEach(({ id, label }) => {
+        const embedBody = el('div', { className: 'blog-embed-body' });
+        const openHref = base + prefix + id;
+        const header = el('div', { className: 'blog-embed-header' }, [
+          el('span', { className: 'blog-embed-title' }, ['\u{1F4CA} ', label]),
+          el('a', {
+            className: 'blog-embed-open-link',
+            href: openHref,
+            on: { click(e) {
+              e.preventDefault();
+              hideReader();
+              window.location.hash = (isPublicRef ? '/public/' : '/sheet/') + id;
+            } },
+          }, ['Open full view \u2192']),
+        ]);
+        const card = el('div', { className: 'blog-embed-card' }, [header, embedBody]);
+        r.embeds.appendChild(card);
+        // Async: render the template inline (read-only preview)
+        if (window.__waymarkEmbedSheet) {
+          window.__waymarkEmbedSheet(id, embedBody, { isPublic: isPublicRef });
+        }
       });
-      r.refs.classList.remove('hidden');
+      r.embeds.classList.remove('hidden');
     }
   } catch (_) {
     if (myCount !== _showCount) return;
@@ -280,11 +298,16 @@ function hideReader() {
   _reader.iframe.src = '';
   _reader.iframe.removeAttribute('srcdoc');
   document.body.style.overflow = '';
-  // Restore URL to blog list (silent — no hashchange event)
-  if (_blogReturnHash) {
-    history.replaceState(null, '', _blogReturnHash);
-    _blogReturnHash = null;
-  }
+  // Restore URL to blog list (silent — no hashchange event).
+  // When arriving via a /post/ permalink, _blogReturnHash is null — construct the
+  // return URL from _currentSheetId so "← All Posts" always navigates correctly.
+  const returnHash = _blogReturnHash || (() => {
+    if (!_currentSheetId) return null;
+    const isPublic = document.body.classList.contains('waymark-public');
+    return (isPublic ? '#/public/' : '#/sheet/') + _currentSheetId;
+  })();
+  if (returnHash) history.replaceState(null, '', returnHash);
+  _blogReturnHash = null;
   _currentDocId = null;
 }
 

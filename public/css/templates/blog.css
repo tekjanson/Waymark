@@ -2,6 +2,7 @@
 
 .blog-container {
   padding: 16px;
+  max-width: 1400px;
 }
 
 .blog-header {
@@ -43,26 +44,28 @@
 
 .blog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
 }
 
 .blog-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 20px;
   cursor: pointer;
   transition: var(--transition);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-height: 100px;
 }
 
 .blog-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
   border-color: var(--color-primary);
+  transform: translateY(-1px);
 }
 
 .blog-card-draft {
@@ -82,10 +85,11 @@
 
 .blog-card-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   color: var(--color-text);
   line-height: 1.35;
+  flex: 1;
 }
 
 .blog-card-meta {
@@ -223,42 +227,86 @@
   min-height: 400px;
 }
 
-/* Referenced sheets */
-.blog-reader-refs {
-  padding: 16px 20px 24px;
+/* Inline embedded sheets */
+.blog-reader-embeds {
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-.blog-reader-refs-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #64748b);
-  margin-bottom: 10px;
+.blog-embed-card {
+  border-bottom: 1px solid var(--color-border);
+}
+.blog-embed-card:last-child {
+  border-bottom: none;
 }
 
-.blog-ref-card {
-  display: inline-flex;
+.blog-embed-header {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  justify-content: space-between;
+  padding: 10px 20px;
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  text-decoration: none;
-  color: var(--color-text);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: var(--transition);
-  margin: 0 6px 6px 0;
+  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
 }
 
-.blog-ref-card:hover {
-  border-color: var(--color-primary);
+.blog-embed-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.blog-embed-open-link {
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.blog-embed-open-link:hover {
+  text-decoration: underline;
+}
+
+.blog-embed-body {
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 0.82rem;
+  /* Prevent template renders from bleeding outside the card */
+  contain: layout style;
+}
+
+.blog-embed-body.blog-embed-loading {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.blog-embed-body.blog-embed-loading::after {
+  content: 'Loading\2026';
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.8rem;
+}
+
+/* Scale down template chrome inside embeds */
+.blog-embed-body .add-row-trigger,
+.blog-embed-body .add-row-form {
+  display: none !important;
+}
+.blog-embed-body .checklist-row {
+  font-size: 0.8rem;
+}
+.blog-embed-body .kanban-board {
+  overflow-x: auto;
 }
 
 /* Loading overlay shown while async export is in flight */

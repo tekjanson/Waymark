@@ -712,3 +712,71 @@ test('share button generates public URL even when viewed in authenticated mode',
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
   expect(clipboardText).toContain('#/public/sheet-062/post/');
 });
+
+/* ---- extractWaymarkLinks ---- */
+
+test('extractWaymarkLinks extracts sheet ID from direct /#/ link', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { extractWaymarkLinks } = await import('/js/templates/blog.js');
+    return extractWaymarkLinks('<a href="https://example.com/waymark/#/sheet/1abc123XYZ">My Sheet</a>');
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].id).toBe('1abc123XYZ');
+  expect(result[0].label).toBe('My Sheet');
+});
+
+test('extractWaymarkLinks extracts sheet ID from Google Docs redirect URL (%23/ format)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { extractWaymarkLinks } = await import('/js/templates/blog.js');
+    const html = '<a href="https://www.google.com/url?q=https://swiftirons.com/waymark/%23/public/1NG15SllfgAt2rNIWq4HPNsfnjxIGqBxGjCgZa1UhQYs&amp;sa=D">Waymark workboard</a>';
+    return extractWaymarkLinks(html);
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].id).toBe('1NG15SllfgAt2rNIWq4HPNsfnjxIGqBxGjCgZa1UhQYs');
+  expect(result[0].label).toBe('Waymark workboard');
+});
+
+test('extractWaymarkLinks deduplicates repeated links', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { extractWaymarkLinks } = await import('/js/templates/blog.js');
+    const html = '<a href="/#/sheet/ABC123">Link 1</a> <a href="/#/sheet/ABC123">Link 2</a>';
+    return extractWaymarkLinks(html);
+  });
+  expect(result).toHaveLength(1);
+});
+
+test('extractWaymarkLinks falls back to ID as label when anchor text is empty', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { extractWaymarkLinks } = await import('/js/templates/blog.js');
+    return extractWaymarkLinks('<a href="/#/sheet/XYZ789abc"></a>');
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].label).toBe('XYZ789abc');
+});
+
+test('reader shows referenced sheets section when doc contains Waymark links', async ({ page }) => {
+  // Inject the mock export HTML before any navigation so api-client picks it up
+  await page.addInitScript(() => {
+    const id = 'sheet-ref-001';
+    const label = 'My Referenced Sheet';
+    window.__WAYMARK_MOCK_EXPORT_HTML =
+      '<html><body><p>See <a href="https://www.google.com/url?q=https://swiftirons.com/waymark/%23/sheet/' +
+      id + '&amp;sa=D">' + label + '</a></p></body></html>';
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-page:not(.blog-reader-loading)', { timeout: 5000 });
+
+  const embeds = page.locator('.blog-reader-embeds');
+  await expect(embeds).toBeVisible();
+  await expect(page.locator('.blog-embed-card')).toHaveCount(1);
+  await expect(page.locator('.blog-embed-card')).toContainText('My Referenced Sheet');
+});
