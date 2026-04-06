@@ -232,14 +232,14 @@
 
 /* --- Article reading view --- */
 .blog-reader-article {
-  padding: 32px 48px 64px;
+  padding: 40px 60px 80px;
   font-family: Georgia, Cambria, "Times New Roman", serif;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1.78;
   color: var(--color-text, #1e293b);
   word-wrap: break-word;
   -webkit-text-size-adjust: 100%;
-  max-width: 740px;
+  max-width: 900px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -260,10 +260,10 @@
   font-weight: 700;
 }
 
-.blog-reader-article h1 { font-size: 2.1em; }
-.blog-reader-article h2 { font-size: 1.5em; }
-.blog-reader-article h3 { font-size: 1.25em; }
-.blog-reader-article h4 { font-size: 1.05em; }
+.blog-reader-article h1 { font-size: 2.8em; letter-spacing: -0.02em; }
+.blog-reader-article h2 { font-size: 1.65em; }
+.blog-reader-article h3 { font-size: 1.3em; }
+.blog-reader-article h4 { font-size: 1.1em; }
 
 /* Document title (first h1) — no top margin, add visual separator */
 .blog-reader-article h1:first-child,
@@ -353,12 +353,12 @@
   font-weight: 600;
 }
 
-/* Inline embedded sheet cards */
+/* Inline embedded sheet cards — break out past the text column padding */
 .blog-embed-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius, 6px);
   overflow: hidden;
-  margin: 1.5em 0;
+  margin: 2em -20px;
 }
 
 .blog-embed-header {
@@ -394,10 +394,10 @@
 }
 
 .blog-embed-body {
-  max-height: 360px;
+  max-height: 420px;
   overflow-y: auto;
   overflow-x: hidden;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   /* Prevent template renders from bleeding outside the card */
   contain: layout style;
 }
@@ -448,7 +448,11 @@
 /* Responsive */
 @media (min-width: 1024px) {
   .blog-reader-article {
-    padding: 40px 60px 80px;
+    padding: 48px 72px 96px;
+  }
+  .blog-embed-card {
+    margin-left: -40px;
+    margin-right: -40px;
   }
 }
 
@@ -468,6 +472,11 @@
   .blog-reader-article {
     padding: 20px 20px 48px;
     font-size: 16px;
+  }
+  .blog-embed-card {
+    margin-left: 0;
+    margin-right: 0;
+  }
   }
 }
 

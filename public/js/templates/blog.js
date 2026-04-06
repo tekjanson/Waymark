@@ -116,9 +116,8 @@ function inlineEmbeds(articleEl, isPublic) {
     if (!m) continue;
     const id = m[1];
     if (seen.has(id)) {
-      const span = document.createElement('span');
-      span.textContent = a.textContent;
-      a.parentNode.replaceChild(span, a);
+      // Duplicate link to same sheet — silently remove it
+      a.parentNode.removeChild(a);
       continue;
     }
     seen.add(id);
