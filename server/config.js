@@ -30,9 +30,6 @@ const config = {
     'email',
     'profile',
     'https://www.googleapis.com/auth/drive.file',
-    // drive.readonly allows exporting any Google Doc the user has access to
-    // (drive.file only covers files created/opened by the app itself)
-    'https://www.googleapis.com/auth/drive.readonly',
   ],
 
   GOOGLE_AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
