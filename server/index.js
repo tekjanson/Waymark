@@ -4,7 +4,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const config = require('./config');
 const setupAuth = require('./auth');
-const { createGitHubSource } = require('./github-source');
+const { createGitHubSource, isValidRef } = require('./github-source');
 
 const app = express();
 
@@ -25,6 +25,25 @@ try {
     const remote = execSync('git remote get-url origin', { cwd: __dirname }).toString().trim();
     gitRepoUrl = remote.replace(/^git@github\.com:/, 'https://github.com/').replace(/\.git$/, '');
   } catch { /* not a git repo — hash stays empty */ }
+}
+
+/* ---------- Per-user ref resolution ---------- */
+
+/**
+ * Determine which GitHub ref to serve for this specific request.
+ * Resolution order (per-user, never shared across users):
+ *   1. waymark_session_ref signed cookie  — temporary switch (cleared on login/logout)
+ *   2. waymark_pinned_ref signed cookie   — persisted user preference
+ *   3. config.GITHUB_REF                 — server default
+ *
+ * cookieParser (signed) must already be applied to req before calling this.
+ */
+function getRefForRequest(req) {
+  const sessionRef = req.signedCookies?.waymark_session_ref;
+  if (sessionRef && isValidRef(sessionRef)) return sessionRef;
+  const pinnedRef = req.signedCookies?.waymark_pinned_ref;
+  if (pinnedRef && isValidRef(pinnedRef)) return pinnedRef;
+  return config.GITHUB_REF;
 }
 
 /* ---------- Base-path aware router ---------- */
@@ -76,7 +95,7 @@ if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
     middleware: (_req, _res, next) => next(),
     setRef() {},
     getRef() { return config.GITHUB_REF; },
-    getContentSha() { return null; },
+    getContentShaForRef() { return null; },
     preWarm() {},
     purgeCache() {},
     listCachedRefs() { return []; },
@@ -88,6 +107,7 @@ if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
     repo: config.GITHUB_REPO,
     ref: config.GITHUB_REF,
     token: config.GITHUB_TOKEN || undefined,
+    resolveRef: getRefForRequest,
   });
   console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
 }
@@ -105,24 +125,28 @@ function safeJsString(val) {
 
 /* ---------- Helper: serve index.html with injections ---------- */
 
-// In-memory cache for the fully-built index.html response.
-// Keyed by content SHA so it is automatically invalidated when a new commit
-// is pushed to the branch or the user switches refs via setRef().
+// Per-ref in-memory HTML cache.
+// Each user's ref gets its own entry, keyed by ref string, so one user
+// switching refs NEVER invalidates or replaces another user's cached HTML.
 // Never used in local mode where source files change during development.
-let _htmlCache = { sha: null, html: null };
+const _htmlCacheByRef = new Map();
 
-function serveIndex(_req, res) {
-  // Serve from in-memory cache when the content SHA hasn't changed.
+function serveIndex(req, res) {
+  // Determine the ref for THIS specific user's request.
+  const currentRef = config.WAYMARK_LOCAL ? config.GITHUB_REF : getRefForRequest(req);
+
+  // Serve from per-ref in-memory cache when the content SHA hasn't changed.
   if (!config.WAYMARK_LOCAL) {
-    const sha = githubSource.getContentSha();
-    if (sha && sha === _htmlCache.sha) {
+    const sha = githubSource.getContentShaForRef(currentRef);
+    const cached = _htmlCacheByRef.get(currentRef);
+    if (sha && cached && sha === cached.sha) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       if (gitHash) res.setHeader('X-Waymark-Hash', gitHash);
-      return res.type('html').send(_htmlCache.html);
+      return res.type('html').send(cached.html);
     }
   }
-  // Read index.html from the git checkout, fall back to local file
-  let html = githubSource.readFile('index.html');
+  // Read index.html from the git checkout for this user's ref, fall back to local file
+  let html = githubSource.readFile('index.html', currentRef);
   if (!html) {
     const htmlPath = path.join(__dirname, '..', 'public', 'index.html');
     html = fs.readFileSync(htmlPath, 'utf-8');
@@ -143,7 +167,7 @@ function serveIndex(_req, res) {
     injections.push(`window.__WAYMARK_REPO=${safeJsString(gitRepoUrl)};`);
   }
   if (!config.WAYMARK_LOCAL) {
-    injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(githubSource.getRef())};`);
+    injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(currentRef)};`);
   }
   // Extract GCP project number from client ID (prefix before first dash)
   const gcpProject = (config.GOOGLE_CLIENT_ID || '').split('-')[0];
@@ -163,16 +187,18 @@ function serveIndex(_req, res) {
   // before any <script type="module"> (app.js), so it can set localStorage
   // first to prevent stale boot-time sync code in old branches.
   if (!config.WAYMARK_LOCAL) {
-    const currentRef = githubSource.getRef();
     html = html.replace('</body>', `${buildSettingsRefInjector(currentRef)}\n</body>`);
   }
 
-  // Cache the built HTML for subsequent requests (production mode only).
+  // Store in per-ref cache so this user's HTML doesn't pollute other users' entries.
   if (!config.WAYMARK_LOCAL) {
-    const sha = githubSource.getContentSha();
-    if (sha) _htmlCache = { sha, html };
+    const sha = githubSource.getContentShaForRef(currentRef);
+    if (sha) _htmlCacheByRef.set(currentRef, { sha, html });
   }
 
+  // Vary: Cookie ensures any caching layer (proxy, CDN) keys responses
+  // on the user's cookies — preventing User A's ref from being served to User B.
+  res.setHeader('Vary', 'Cookie');
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   if (gitHash) res.setHeader('X-Waymark-Hash', gitHash);
   res.type('html').send(html);
@@ -520,33 +546,49 @@ router.post('/api/fetch-url', async (req, res) => {
     maxAge: 365 * 24 * 60 * 60 * 1000,  // 1 year
   };
 
-  // GET /api/source — current ref + pinned ref + cached refs
+  /** Cookie options for the per-user temporary session ref (session-scoped, no maxAge). */
+  const SESSION_REF_COOKIE_OPTS = {
+    httpOnly: true,
+    signed: true,
+    secure: config.NODE_ENV === 'production',
+    sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: (config.BASE_PATH || '') + '/',
+    // No maxAge — browser-session cookie so it is cleared when the browser closes.
+  };
+
+  // GET /api/source — current ref for THIS user + pinned ref + cached refs
   router.get('/api/source', (req, res) => {
     res.json({
       mode: 'github',
       owner: config.GITHUB_OWNER,
       repo: config.GITHUB_REPO,
-      ref: githubSource.getRef(),
+      ref: getRefForRequest(req),
       pinnedRef: getPinnedRef(req),
       cachedRefs: githubSource.listCachedRefs(),
     });
   });
 
-  // POST /api/source/ref — switch to a different ref (temporary preview)
+  // POST /api/source/ref — temporary per-user preview switch.
+  // Pre-warms the ref on disk, then sets a signed session cookie so
+  // ONLY this user is served the new ref.  All other users are unaffected.
   router.post('/api/source/ref', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ error: 'Missing "ref" (commit SHA, branch, or tag)' });
     }
+    const trimmed = ref.trim();
     try {
-      await githubSource.setRef(ref.trim());
-      res.json({ ref: githubSource.getRef(), pinnedRef: getPinnedRef(req) });
+      await githubSource.setRef(trimmed); // pre-warm only — no global state change
+      res.cookie('waymark_session_ref', trimmed, SESSION_REF_COOKIE_OPTS);
+      res.json({ ref: trimmed, pinnedRef: getPinnedRef(req) });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  // POST /api/source/pin — pin a ref (switch + persist in cookie)
+  // POST /api/source/pin — persist a ref as this user's default.
+  // Pre-warms the ref, sets waymark_pinned_ref cookie, and clears the
+  // temporary session ref so the pinned ref governs future requests.
   router.post('/api/source/pin', async (req, res) => {
     const { ref } = req.body || {};
     if (!ref || typeof ref !== 'string') {
@@ -554,9 +596,11 @@ router.post('/api/fetch-url', async (req, res) => {
     }
     const trimmed = ref.trim();
     try {
-      await githubSource.setRef(trimmed);
+      await githubSource.setRef(trimmed); // pre-warm only — no global state change
       res.cookie('waymark_pinned_ref', trimmed, PIN_COOKIE_OPTS);
-      res.json({ ref: githubSource.getRef(), pinnedRef: trimmed, pinned: true });
+      // Clear the temporary session ref — pinned ref is now the source of truth.
+      res.clearCookie('waymark_session_ref', { path: (config.BASE_PATH || '') + '/' });
+      res.json({ ref: trimmed, pinnedRef: trimmed, pinned: true });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

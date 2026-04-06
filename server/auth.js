@@ -135,19 +135,19 @@ module.exports = function setupAuth(app) {
         res.cookie('waymark_refresh', tokens.refresh_token, REFRESH_COOKIE_OPTS);
       }
 
-      // On login, restore the user's pinned version (cookie-based).
-      // The pinned ref cookie is read by index.js at boot and after auth.
+      // On login, pre-warm the user's pinned ref so it is ready to serve
+      // immediately after redirect.  setRef() no longer mutates global state;
+      // the per-user cookie drives which ref is actually served.
       const pinnedRef = req.signedCookies?.waymark_pinned_ref;
       if (pinnedRef && pinnedRef !== 'main') {
         try {
-          // Lazy-require to avoid circular deps — index.js sets this at startup
           const githubSource = req.app.get('githubSource');
           if (githubSource && githubSource.setRef) {
             await githubSource.setRef(pinnedRef);
-            console.log(`[auth] Restored pinned ref on login: ${pinnedRef}`);
+            console.log(`[auth] Pre-warmed pinned ref on login: ${pinnedRef}`);
           }
         } catch (err) {
-          console.warn(`[auth] Failed to restore pinned ref "${pinnedRef}":`, err.message);
+          console.warn(`[auth] Failed to pre-warm pinned ref "${pinnedRef}":`, err.message);
         }
       }
 
@@ -206,17 +206,21 @@ module.exports = function setupAuth(app) {
   /* --- POST /auth/logout --- */
   app.post('/auth/logout', async (req, res) => {
     res.clearCookie('waymark_refresh', { path: bp + '/auth' });
+    // Clear the temporary session ref so the user's next visit uses their
+    // pinned ref (or the server default) rather than a stale switch.
+    res.clearCookie('waymark_session_ref', { path: bp + '/' });
 
-    // On logout, revert to the user's pinned ref (defaults to 'main').
+    // Pre-warm the pinned ref so it is ready to serve after login.
+    // This is best-effort; per-user cookies drive actual ref resolution.
     const pinnedRef = req.signedCookies?.waymark_pinned_ref || 'main';
     try {
       const githubSource = req.app.get('githubSource');
-      if (githubSource && githubSource.setRef && githubSource.getRef() !== pinnedRef) {
+      if (githubSource && githubSource.setRef) {
         await githubSource.setRef(pinnedRef);
-        console.log(`[auth] Reverted to pinned ref on logout: ${pinnedRef}`);
+        console.log(`[auth] Pre-warmed pinned ref on logout: ${pinnedRef}`);
       }
     } catch (err) {
-      console.warn(`[auth] Failed to revert to pinned ref on logout:`, err.message);
+      console.warn(`[auth] Failed to pre-warm pinned ref on logout:`, err.message);
     }
 
     res.json({ success: true });

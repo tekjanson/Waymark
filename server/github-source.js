@@ -269,23 +269,31 @@ function extractPublicDir(ref) {
  * Creates an Express middleware that serves files from a local git clone.
  *
  * @param {object} opts
- * @param {string} opts.owner   — GitHub repo owner
- * @param {string} opts.repo    — GitHub repo name
- * @param {string} opts.ref     — initial ref (branch, tag, SHA)
- * @param {string} [opts.token] — optional GitHub PAT for private repos
- * @returns {{ middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile }}
+ * @param {string} opts.owner       — GitHub repo owner
+ * @param {string} opts.repo        — GitHub repo name
+ * @param {string} opts.ref         — default/server ref (branch, tag, SHA)
+ * @param {string} [opts.token]     — optional GitHub PAT for private repos
+ * @param {Function} [opts.resolveRef] — (req) => string: per-request ref resolver
+ * @returns {{ middleware, setRef, getRef, getContentSha, getContentShaForRef, preWarm, purgeCache, listCachedRefs, readFile }}
  */
 function createGitHubSource(opts) {
   const { owner, repo, token } = opts;
-  let ref = opts.ref;
-  let publicDir = null;  // path to extracted public/ for current ref
-  let currentSha = null; // commit SHA of the currently extracted content
+  const defaultRef = opts.ref;
 
-  /** Read the SHA marker written by extractPublicDir and update currentSha. */
-  function updateContentSha(dir) {
+  /**
+   * Per-ref extracted state.
+   * Key: ref string  Value: { publicDir: string, contentSha: string|null }
+   * NEVER shared across requests — each user's ref has its own entry here.
+   */
+  const refState = new Map();
+
+  /** Update the refState entry after extractPublicDir succeeds. */
+  function updateRefState(theRef, dir) {
+    let sha = null;
     try {
-      currentSha = fs.readFileSync(path.join(dir, '.git-sha'), 'utf-8').trim();
-    } catch { currentSha = null; }
+      sha = fs.readFileSync(path.join(dir, '.git-sha'), 'utf-8').trim();
+    } catch { /* no marker */ }
+    refState.set(theRef, { publicDir: dir, contentSha: sha });
   }
 
   // Clone the repo (synchronous on first boot, fast on subsequent boots)
@@ -296,12 +304,12 @@ function createGitHubSource(opts) {
     console.warn('[github-source] Will serve from local public/ only.');
   }
 
-  // Extract public/ for the initial ref
+  // Extract public/ for the default ref
   try {
-    publicDir = extractPublicDir(ref);
-    updateContentSha(publicDir);
+    const dir = extractPublicDir(defaultRef);
+    updateRefState(defaultRef, dir);
   } catch (err) {
-    console.warn(`[github-source] Could not extract ref "${ref}":`, err.message);
+    console.warn(`[github-source] Could not extract ref "${defaultRef}":`, err.message);
   }
 
   /* ---------- Middleware ---------- */
@@ -310,8 +318,13 @@ function createGitHubSource(opts) {
     // Only handle GET/HEAD
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
 
-    // No checkout available — fall through to local public/
-    if (!publicDir) return next();
+    // Resolve the ref for THIS specific request — never share state across users.
+    // opts.resolveRef reads the user's signed cookies; falls back to the server default.
+    const requestRef = (opts.resolveRef ? opts.resolveRef(req) : null) || defaultRef;
+    const state = refState.get(requestRef) || refState.get(defaultRef);
+
+    // No checkout available for any ref — fall through to local public/
+    if (!state?.publicDir) return next();
 
     let filePath = req.path;
     if (filePath.startsWith('/')) filePath = filePath.slice(1);
@@ -327,7 +340,7 @@ function createGitHubSource(opts) {
       return next();
     }
 
-    const fullPath = path.join(publicDir, filePath);
+    const fullPath = path.join(state.publicDir, filePath);
 
     // Single stat call — avoids the previous existsSync + statSync double-syscall.
     // Reused for HEAD Content-Length to avoid a second kernel round-trip.
@@ -338,8 +351,12 @@ function createGitHubSource(opts) {
     // Serve the file
     const mime = getMimeType(filePath);
     res.setHeader('Content-Type', mime);
-    res.setHeader('X-GitHub-Ref', ref);
+    res.setHeader('X-GitHub-Ref', requestRef);
     res.setHeader('X-Served-From', 'github-source');
+
+    // Vary: Cookie — content differs per user's ref cookie.
+    // Ensures any caching proxy keys on cookie values, not just URL.
+    res.setHeader('Vary', 'Cookie');
 
     if (filePath.endsWith('.html')) {
       // HTML contains injected runtime config (ref, API key, etc.) — never cache.
@@ -365,7 +382,11 @@ function createGitHubSource(opts) {
 
   /* ---------- API ---------- */
 
-  /** Switch to a different ref. Fetches from origin first. */
+  /**
+   * Pre-warm a ref: fetch from origin and extract its public/ directory.
+   * Does NOT change the server default or affect any other user.
+   * Safe to call from any user-originated request.
+   */
   async function setRef(newRef) {
     if (!isValidRef(newRef)) {
       throw new Error(`Invalid ref: ${String(newRef).slice(0, 80)}`);
@@ -380,16 +401,15 @@ function createGitHubSource(opts) {
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
 
-    // Resolve and extract
+    // Resolve, extract, and cache — no global state mutation.
     const outDir = extractPublicDir(newRef);
-    ref = newRef;
-    publicDir = outDir;
-    updateContentSha(publicDir);
-    console.log(`[github-source] Switched to ref: ${ref}`);
+    updateRefState(newRef, outDir);
+    console.log(`[github-source] Pre-warmed ref: ${newRef}`);
   }
 
+  /** Returns the server default ref (from config). Never a per-user value. */
   function getRef() {
-    return ref;
+    return defaultRef;
   }
 
   /**
@@ -399,21 +419,20 @@ function createGitHubSource(opts) {
   async function preWarm() {
     try {
       await fetchOrigin();
-      publicDir = extractPublicDir(ref);
-      updateContentSha(publicDir);
+      const dir = extractPublicDir(defaultRef);
+      updateRefState(defaultRef, dir);
     } catch (err) {
       console.warn('[github-source] Pre-warm failed:', err.message);
     }
   }
 
-  /** Purge extracted files for the current ref. */
+  /** Purge extracted files for the default ref (used by admin purge endpoint). */
   function purgeCache() {
-    const safeRef = toSafeRef(ref);
+    const safeRef = toSafeRef(defaultRef);
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
-    publicDir = null;
-    currentSha = null; // invalidate HTML cache on next request
-    console.log(`[github-source] Purged checkout for ${ref}`);
+    refState.delete(defaultRef); // invalidate HTML cache for this ref
+    console.log(`[github-source] Purged checkout for ${defaultRef}`);
   }
 
   /** List all extracted refs. */
@@ -468,13 +487,13 @@ function createGitHubSource(opts) {
   }
 
   /**
-   * Read a file from the current ref's extracted public/ directory.
-   * Used by serveIndex() to get index.html without going through middleware.
-   * Returns the file contents as a string, or null if not found.
+   * Read a file from the extracted public/ for theRef (or defaultRef as fallback).
+   * Used by serveIndex() to get index.html per user without going through middleware.
    */
-  function readFile(relPath) {
-    if (!publicDir) return null;
-    const fullPath = path.join(publicDir, relPath);
+  function readFile(relPath, theRef) {
+    const state = refState.get(theRef || defaultRef) || refState.get(defaultRef);
+    if (!state?.publicDir) return null;
+    const fullPath = path.join(state.publicDir, relPath);
     try {
       return fs.readFileSync(fullPath, 'utf-8');
     } catch {
@@ -488,12 +507,15 @@ function createGitHubSource(opts) {
   const _fetchInterval = setInterval(async () => {
     try {
       await fetchOrigin();
-      // Re-extract current ref in case it moved (branch tips do)
-      const newDir = extractPublicDir(ref);
-      updateContentSha(newDir);
-      if (newDir !== publicDir) {
-        publicDir = newDir;
-        console.log(`[github-source] Auto-updated ref ${ref}`);
+      // Re-extract ALL cached refs in case branch tips moved.
+      for (const [cachedRef] of refState) {
+        try {
+          const newDir = extractPublicDir(cachedRef);
+          updateRefState(cachedRef, newDir);
+          console.log(`[github-source] Auto-updated ref ${cachedRef}`);
+        } catch (err) {
+          console.warn(`[github-source] Periodic update failed for ${cachedRef}:`, err.message);
+        }
       }
     } catch (err) {
       console.warn('[github-source] Periodic fetch failed:', err.message);
@@ -503,7 +525,16 @@ function createGitHubSource(opts) {
   // Don't let the interval keep the process alive during tests
   if (_fetchInterval.unref) _fetchInterval.unref();
 
-  return { middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile, getContentSha: () => currentSha };
+  return {
+    middleware,
+    setRef,
+    getRef,
+    getContentShaForRef: (theRef) => refState.get(theRef)?.contentSha || null,
+    preWarm,
+    purgeCache,
+    listCachedRefs,
+    readFile,
+  };
 }
 
-module.exports = { createGitHubSource };
+module.exports = { createGitHubSource, isValidRef };
