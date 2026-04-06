@@ -108,32 +108,41 @@ function sanitizeDocHtml(rawHtml) {
  * @param {boolean} isPublic
  */
 function inlineEmbeds(articleEl, isPublic) {
-  // Capture both the type (sheet|public) and the id so we can determine
-  // fetch mode from the link itself rather than the viewer's auth state.
-  const WAYMARK_HREF_RE = /(?:\/#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
+  // Leading / is optional: handles /#/public/ID, #/public/ID, %23/public/ID
+  const WAYMARK_HREF_RE = /(?:\/)?(#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
 
   /**
-   * Google Docs wraps external links in https://www.google.com/url?q=ENCODED_URL
-   * where the `#` in Waymark hashes gets percent-encoded inside the q parameter.
-   * URLSearchParams.get() decodes it, giving us the real target URL to match against.
+   * Return the best URL string to run the regex against.
+   * Tries, in order:
+   *  1. Google redirect q= param  (via URLSearchParams, then regex fallback)
+   *  2. a.href DOM property       (browser-resolved absolute URL — handles relative hrefs)
+   *  3. Raw attribute value
    */
-  function resolveHref(raw) {
+  function resolveHref(anchor) {
+    const raw = anchor.getAttribute('href') || '';
     if (raw.includes('google.com/url')) {
+      // Strategy 1: URL API
       try {
         const q = new URL(raw).searchParams.get('q');
         if (q) return q;
       } catch { /* fall through */ }
+      // Strategy 2: manual regex + decodeURIComponent (handles malformed google URLs)
+      const qm = raw.match(/[?&]q=([^&]+)/);
+      if (qm) {
+        try { return decodeURIComponent(qm[1]); } catch { return qm[1]; }
+      }
     }
-    return raw;
+    // Return the browser-resolved absolute href so relative #/… links work
+    return anchor.href || raw;
   }
 
   const seen = new Set();
   for (const a of [...articleEl.querySelectorAll('a[href]')]) {
-    const href = resolveHref(a.getAttribute('href') || '');
+    const href = resolveHref(a);
     const m = WAYMARK_HREF_RE.exec(href);
     if (!m) continue;
-    const linkType = m[1]; // 'sheet' or 'public'
-    const id = m[2];
+    const linkType = m[2]; // 'sheet' or 'public'  (group 1 is the # char)
+    const id = m[3];
     if (seen.has(id)) {
       // Duplicate link to same sheet — silently remove it
       a.parentNode.removeChild(a);
