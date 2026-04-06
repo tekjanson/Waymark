@@ -375,6 +375,36 @@ export const api = {
       });
     },
 
+    /**
+     * Export a Google Doc as HTML without OAuth, for publicly-shared documents.
+     * Uses the server-side /api/fetch-url proxy to bypass CORS.
+     * Works when the doc is shared as "Anyone with the link can view".
+     * Throws if the doc is private (proxy returns 403 → falls back to iframe).
+     * @param {string} docId
+     * @returns {Promise<string>}  the document content as HTML
+     */
+    async exportDocAsHtmlPublic(docId) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_EXPORT_HTML) return window.__WAYMARK_MOCK_EXPORT_HTML;
+        return '<html><body style="font-family:sans-serif;padding:16px"><h1>Mock Blog Post</h1><p>This is a public Google Document.</p></body></html>';
+      }
+      const exportUrl = `https://docs.google.com/document/d/${encodeURIComponent(docId)}/export?format=html`;
+      const res = await fetch(`${BASE}/api/fetch-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: exportUrl }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const err = new Error(body.error || `Public doc export failed (${res.status})`);
+        err.status = res.status;
+        throw err;
+      }
+      const { html } = await res.json();
+      if (!html) throw new Error('Empty response from public doc export');
+      return html;
+    },
+
     async getFile(fileId) {
       if (isLocal) {
         return { id: fileId, name: 'Mock File', mimeType: 'application/vnd.google-apps.spreadsheet' };

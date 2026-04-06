@@ -5,7 +5,7 @@
    using the Google Docs publish URL in a sandboxed iframe.
    ============================================================ */
 
-import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml } from './shared.js';
+import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml, exportDocAsHtmlPublic } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -359,9 +359,14 @@ async function showReader(docId, titleText, metaText, sheetId) {
   r.page.classList.add('blog-reader-loading');
 
   try {
-    const rawHtml = await exportDocAsHtml(docId);
+    const isPublicReader = document.body.classList.contains('waymark-public');
+    // Public mode: use server-side proxy to fetch published doc (no OAuth needed).
+    // Authenticated mode: use Drive API which works for private docs too.
+    const rawHtml = isPublicReader
+      ? await exportDocAsHtmlPublic(docId)
+      : await exportDocAsHtml(docId);
     if (myCount !== _showCount) return;
-    const isPublicRef = document.body.classList.contains('waymark-public');
+    const isPublicRef = isPublicReader;
     r.article.innerHTML = sanitizeDocHtml(rawHtml);
     inlineEmbeds(r.article, isPublicRef);
     // Detect and promote the document title to a styled editorial heading.
