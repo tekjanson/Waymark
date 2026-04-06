@@ -257,12 +257,22 @@
   color: var(--color-heading, var(--color-text));
   line-height: 1.3;
   margin: 1.5em 0 0.5em;
+  font-weight: 700;
 }
 
-.blog-reader-article h1 { font-size: 1.75em; }
-.blog-reader-article h2 { font-size: 1.4em; }
-.blog-reader-article h3 { font-size: 1.2em; }
+.blog-reader-article h1 { font-size: 2.1em; }
+.blog-reader-article h2 { font-size: 1.5em; }
+.blog-reader-article h3 { font-size: 1.25em; }
 .blog-reader-article h4 { font-size: 1.05em; }
+
+/* Document title (first h1) — no top margin, add visual separator */
+.blog-reader-article h1:first-child,
+.blog-reader-article > h1:first-of-type {
+  margin-top: 0;
+  padding-bottom: 0.5em;
+  border-bottom: 2px solid var(--color-border, #e2e8f0);
+  margin-bottom: 1em;
+}
 
 .blog-reader-article p {
   margin: 0 0 1em;
