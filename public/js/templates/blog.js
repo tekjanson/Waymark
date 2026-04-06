@@ -134,6 +134,17 @@ function inlineEmbeds(articleEl, isPublic) {
     ]);
     const card = el('div', { className: 'blog-embed-card' }, [header, embedBody]);
     a.parentNode.replaceChild(card, a);
+    // Extract card out of any inline container (e.g. <p>) to be a direct article child.
+    // This lets the CSS grid full-bleed rule (grid-column: 1 / -1) apply.
+    const cardParent = card.parentNode;
+    if (cardParent !== articleEl) {
+      const after = cardParent.cloneNode(false);
+      let n = card.nextSibling;
+      while (n) { const nx = n.nextSibling; after.appendChild(n); n = nx; }
+      cardParent.after(card);
+      if (after.hasChildNodes()) card.after(after);
+      if (!cardParent.hasChildNodes() || cardParent.textContent.trim() === '') cardParent.remove();
+    }
     if (window.__waymarkEmbedSheet) {
       window.__waymarkEmbedSheet(id, embedBody, { isPublic });
     }
@@ -266,6 +277,24 @@ async function showReader(docId, titleText, metaText, sheetId) {
     const isPublicRef = document.body.classList.contains('waymark-public');
     r.article.innerHTML = sanitizeDocHtml(rawHtml);
     inlineEmbeds(r.article, isPublicRef);
+    // Detect and promote the document title to a styled editorial heading.
+    // Google Docs exports the doc title as <h1> (or sometimes <p>) — the first
+    // non-empty element that doesn't contain an embed card is the title.
+    const firstTitleEl = [...r.article.children].find(
+      c => c.textContent.trim() &&
+           !c.classList.contains('blog-embed-card') &&
+           !c.querySelector('.blog-embed-card'),
+    );
+    if (firstTitleEl) {
+      if (firstTitleEl.tagName !== 'H1') {
+        const h1 = document.createElement('h1');
+        h1.innerHTML = firstTitleEl.innerHTML;
+        firstTitleEl.replaceWith(h1);
+        h1.classList.add('blog-doc-title');
+      } else {
+        firstTitleEl.classList.add('blog-doc-title');
+      }
+    }
   } catch (_) {
     if (myCount !== _showCount) return;
     // OAuth export failed — fall back to preview iframe

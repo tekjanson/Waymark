@@ -214,9 +214,11 @@
 .blog-reader-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 .blog-reader-iframe {
@@ -231,24 +233,65 @@
 }
 
 /* --- Article reading view --- */
+
+/* All direct children default to the center content column */
+.blog-reader-article > * {
+  grid-column: 2;
+  min-width: 0;
+}
+
 .blog-reader-article {
-  padding: 40px 60px 80px;
+  /*
+   * CSS grid: two 1fr gutters flanking a fluid content column that maxes at 700px.
+   * This fills all available space at every viewport width — no max-width centering
+   * that leaves dead black margins.
+   */
+  display: grid;
+  grid-template-columns:
+    minmax(16px, 1fr)
+    min(700px, calc(100% - 32px))
+    minmax(16px, 1fr);
+  padding-bottom: 96px;
+  width: 100%;
+  box-sizing: border-box;
   font-family: Georgia, Cambria, "Times New Roman", serif;
-  font-size: 18px;
+  font-size: clamp(15px, 0.6vw + 12px, 18px);
   line-height: 1.78;
   color: var(--color-text, #1e293b);
   word-wrap: break-word;
   -webkit-text-size-adjust: 100%;
-  max-width: 900px;
-  margin: 0 auto;
-  width: 100%;
-  box-sizing: border-box;
+  /* Fade in smoothly when loading finishes */
+  transition: opacity 0.3s ease;
 }
 
 .blog-reader-article.hidden {
   display: none;
 }
 
+/* ---- Document title: editorial full-viewport headline ---- */
+.blog-reader-article > .blog-doc-title {
+  grid-column: 1 / -1;
+  /* Align horizontal padding with the content column */
+  padding:
+    clamp(32px, 5vh, 64px)
+    max(5%, 24px)
+    clamp(20px, 3vh, 36px);
+  font-size: clamp(1.75rem, 4vw + 0.75rem, 4.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  border-bottom: 2px solid var(--color-border, #e2e8f0);
+  margin: 0;
+  color: var(--color-text);
+  font-family: inherit;
+}
+/* Space after the title */
+.blog-reader-article > .blog-doc-title + :not(hr) { margin-top: 40px; }
+/* Google Docs sometimes inserts an <hr> under the title — suppress it, we have border-bottom */
+.blog-reader-article > .blog-doc-title + hr { display: none; }
+.blog-reader-article > .blog-doc-title + hr + * { margin-top: 40px; }
+
+/* ---- Section headings ---- */
 .blog-reader-article h1,
 .blog-reader-article h2,
 .blog-reader-article h3,
@@ -256,23 +299,14 @@
   font-family: inherit;
   color: var(--color-heading, var(--color-text));
   line-height: 1.3;
-  margin: 1.5em 0 0.5em;
+  margin: 1.75em 0 0.5em;
   font-weight: 700;
 }
 
-.blog-reader-article h1 { font-size: 2.8em; letter-spacing: -0.02em; }
-.blog-reader-article h2 { font-size: 1.65em; }
-.blog-reader-article h3 { font-size: 1.3em; }
-.blog-reader-article h4 { font-size: 1.1em; }
-
-/* Document title (first h1) — no top margin, add visual separator */
-.blog-reader-article h1:first-child,
-.blog-reader-article > h1:first-of-type {
-  margin-top: 0;
-  padding-bottom: 0.5em;
-  border-bottom: 2px solid var(--color-border, #e2e8f0);
-  margin-bottom: 1em;
-}
+.blog-reader-article h1 { font-size: 2em; letter-spacing: -0.01em; }
+.blog-reader-article h2 { font-size: 1.6em; }
+.blog-reader-article h3 { font-size: 1.28em; }
+.blog-reader-article h4 { font-size: 1.08em; }
 
 .blog-reader-article p {
   margin: 0 0 1em;
@@ -353,12 +387,25 @@
   font-weight: 600;
 }
 
-/* Inline embedded sheet cards — break out past the text column padding */
+/* Inline embedded sheet cards.
+ * inlineEmbeds() extracts cards to be direct article children so grid-column applies. */
+.blog-reader-article > .blog-embed-card {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(1100px, calc(100% - 32px));
+  margin: 2.5em 0;
+  box-sizing: border-box;
+  border-radius: var(--radius, 6px);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+/* Fallback for any embed card not extracted (e.g. nested) */
 .blog-embed-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius, 6px);
   overflow: hidden;
-  margin: 2em -20px;
+  margin: 1.5em 0;
 }
 
 .blog-embed-header {
@@ -426,11 +473,10 @@
   overflow-x: auto;
 }
 
-/* Loading overlay shown while async export is in flight */
-.blog-reader-page.blog-reader-loading .blog-reader-article,
-.blog-reader-page.blog-reader-loading .blog-reader-iframe:not(.hidden) {
+/* Loading: fade out instantly, fade in smoothly */
+.blog-reader-page.blog-reader-loading .blog-reader-article {
   opacity: 0;
-  min-height: 300px;
+  pointer-events: none;
 }
 
 .blog-reader-page.blog-reader-loading::after {
@@ -445,17 +491,8 @@
   z-index: 2;
 }
 
-/* Responsive */
-@media (min-width: 1024px) {
-  .blog-reader-article {
-    padding: 48px 72px 96px;
-  }
-  .blog-embed-card {
-    margin-left: -40px;
-    margin-right: -40px;
-  }
-}
-
+/* Responsive — the grid handles column width automatically.
+ * Only card grid and nav tweaks needed. */
 @media (max-width: 900px) {
   .blog-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -468,15 +505,8 @@
     grid-template-columns: 1fr;
     gap: 12px;
   }
-
-  .blog-reader-article {
-    padding: 20px 20px 48px;
-    font-size: 16px;
-  }
-  .blog-embed-card {
-    margin-left: 0;
-    margin-right: 0;
-  }
+  .blog-reader-article > .blog-embed-card {
+    width: 100%;
   }
 }
 
@@ -498,10 +528,6 @@
   .blog-reader-back,
   .blog-reader-nav-title {
     font-size: 0.8rem;
-  }
-
-  .blog-reader-article {
-    padding: 16px 16px 40px;
   }
 }
 
