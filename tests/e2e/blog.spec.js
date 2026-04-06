@@ -761,12 +761,15 @@ test('extractWaymarkLinks falls back to ID as label when anchor text is empty', 
 });
 
 test('reader shows referenced sheets section when doc contains Waymark links', async ({ page }) => {
-  // Inject the mock export HTML before any navigation so api-client picks it up
+  // Use the real Google Docs redirect URL format: the # in the Waymark hash is
+  // percent-encoded to %23 in the target URL, then that % is encoded to %25 inside
+  // the q= parameter, producing %2523.  URLSearchParams.get('q') decodes it back.
   await page.addInitScript(() => {
     const id = 'sheet-ref-001';
     const label = 'My Referenced Sheet';
+    // Simulate Google Docs redirect URL with double-encoded hash (%2523 = %23 = #)
     window.__WAYMARK_MOCK_EXPORT_HTML =
-      '<html><body><p>See <a href="https://www.google.com/url?q=https://swiftirons.com/waymark/%23/sheet/' +
+      '<html><body><p>See <a href="https://www.google.com/url?q=https://swiftirons.com/waymark/%2523/sheet/' +
       id + '&amp;sa=D">' + label + '</a></p></body></html>';
   });
 

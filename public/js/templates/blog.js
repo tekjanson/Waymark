@@ -5,7 +5,7 @@
    using the Google Docs publish URL in a sandboxed iframe.
    ============================================================ */
 
-import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml } from './shared.js';
+import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml, exportDocAsHtmlPublic } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -108,22 +108,70 @@ function sanitizeDocHtml(rawHtml) {
  * @param {boolean} isPublic
  */
 function inlineEmbeds(articleEl, isPublic) {
-  const WAYMARK_HREF_RE = /(?:\/#|%23)\/(?:sheet|public)\/([a-zA-Z0-9_-]+)/;
+  // Leading / is optional: handles /#/public/ID, #/public/ID, %23/public/ID
+  const WAYMARK_HREF_RE = /(?:\/)?(#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
+
+  /**
+   * Return the best URL string to run the regex against, or null to skip.
+   *
+   * Handles three cases:
+   *  1. Google redirect  https://www.google.com/url?q=ENCODED  → decode q= param
+   *  2. Relative hash    #/public/ID or #/sheet/ID             → use anchor.href (browser resolves to absolute)
+   *  3. Absolute URL     https://swiftirons.com/waymark/#/…    → use as-is
+   *
+   * Intentionally returns null for empty hrefs, document-internal anchors (#heading),
+   * and other relative paths — using anchor.href for those would resolve to the current
+   * page URL (which contains the blog template sheet ID in its hash), causing false matches.
+   */
+  function resolveHref(anchor) {
+    const raw = anchor.getAttribute('href') || '';
+    if (!raw) return null;
+
+    // Case 1: Google Docs wraps external links in a google.com/url redirect
+    if (raw.includes('google.com/url')) {
+      try {
+        const q = new URL(raw).searchParams.get('q');
+        if (q) return q;
+      } catch { /* fall through */ }
+      const qm = raw.match(/[?&]q=([^&]+)/);
+      if (qm) {
+        try { return decodeURIComponent(qm[1]); } catch { return qm[1]; }
+      }
+      return null;
+    }
+
+    // Case 2: href starts with # — a real Waymark hash link like #/public/ID
+    // anchor.href is the browser-resolved absolute URL (safe to use here because
+    // we know it's a hash-relative link, not an empty/path-relative one).
+    if (raw.startsWith('#')) return anchor.href || raw;
+
+    // Case 3: absolute URL (http/https) — use as-is
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+
+    // Anything else (path-relative, protocol-relative, etc.) — skip
+    return null;
+  }
+
   const seen = new Set();
   for (const a of [...articleEl.querySelectorAll('a[href]')]) {
-    const href = a.getAttribute('href') || '';
+    const href = resolveHref(a);
+    if (!href) continue;
     const m = WAYMARK_HREF_RE.exec(href);
     if (!m) continue;
-    const id = m[1];
+    const linkType = m[2]; // 'sheet' or 'public'  (group 1 is the # char)
+    const id = m[3];
     if (seen.has(id)) {
       // Duplicate link to same sheet — silently remove it
       a.parentNode.removeChild(a);
       continue;
     }
     seen.add(id);
+    // A /#/public/ link is always fetched publicly regardless of viewer mode.
+    // A /#/sheet/ link uses the viewer's current auth context.
+    const embedIsPublic = linkType === 'public' || isPublic;
     const label = a.textContent.trim() || id;
     const embedBody = el('div', { className: 'blog-embed-body' });
-    const openHash = (isPublic ? '/public/' : '/sheet/') + id;
+    const openHash = (embedIsPublic ? '/public/' : '/sheet/') + id;
     const header = el('div', { className: 'blog-embed-header' }, [
       el('span', { className: 'blog-embed-title' }, ['\u{1F4CA} ', label]),
       el('a', {
@@ -146,7 +194,7 @@ function inlineEmbeds(articleEl, isPublic) {
       if (!cardParent.hasChildNodes() || cardParent.textContent.trim() === '') cardParent.remove();
     }
     if (window.__waymarkEmbedSheet) {
-      window.__waymarkEmbedSheet(id, embedBody, { isPublic });
+      window.__waymarkEmbedSheet(id, embedBody, { isPublic: embedIsPublic });
     }
   }
 }
@@ -209,11 +257,14 @@ function getReader() {
     const article = el('div', { className: 'blog-reader-article' });
 
     // Fallback iframe: shown only when OAuth export fails.
-    // Loads docs.google.com/preview — cross-origin, so allow-same-origin is not
-    // needed and combining it with allow-scripts would produce a sandbox-escape warning.
+    // Always loads https://docs.google.com/document/d/{id}/preview — a fixed
+    // cross-origin URL.  Do NOT sandbox: sandboxing sets origin to null, which
+    // breaks Google's own scripts (font cache, confirm(), frame access) without
+    // providing any real security gain since the URL is never user-controlled to
+    // a same-origin path.
     const iframe = el('iframe', {
       className: 'blog-reader-iframe hidden',
-      sandbox: 'allow-scripts allow-popups allow-forms',
+      referrerpolicy: 'no-referrer',
       title: 'Blog post reader',
     });
 
@@ -308,9 +359,14 @@ async function showReader(docId, titleText, metaText, sheetId) {
   r.page.classList.add('blog-reader-loading');
 
   try {
-    const rawHtml = await exportDocAsHtml(docId);
+    const isPublicReader = document.body.classList.contains('waymark-public');
+    // Public mode: use server-side proxy to fetch published doc (no OAuth needed).
+    // Authenticated mode: use Drive API which works for private docs too.
+    const rawHtml = isPublicReader
+      ? await exportDocAsHtmlPublic(docId)
+      : await exportDocAsHtml(docId);
     if (myCount !== _showCount) return;
-    const isPublicRef = document.body.classList.contains('waymark-public');
+    const isPublicRef = isPublicReader;
     r.article.innerHTML = sanitizeDocHtml(rawHtml);
     inlineEmbeds(r.article, isPublicRef);
     // Detect and promote the document title to a styled editorial heading.
@@ -335,7 +391,7 @@ async function showReader(docId, titleText, metaText, sheetId) {
     if (myCount !== _showCount) return;
     // OAuth export failed — fall back to preview iframe
     r.article.innerHTML = '';
-    r.iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms');
+    r.iframe.removeAttribute('sandbox');
     r.iframe.src = docEmbedUrl(docId);
     r.iframe.classList.remove('hidden');
   } finally {

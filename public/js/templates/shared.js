@@ -1266,3 +1266,15 @@ export async function exportDocAsHtml(docId) {
   if (!docId) throw new Error('No doc ID provided');
   return api.drive.exportDocAsHtml(docId);
 }
+
+/**
+ * Export a publicly-shared Google Doc as HTML without OAuth.
+ * Uses the server-side /api/fetch-url proxy to bypass CORS.
+ * Throws if the doc is not publicly accessible.
+ * @param {string} docId
+ * @returns {Promise<string>}  full HTML document string
+ */
+export async function exportDocAsHtmlPublic(docId) {
+  if (!docId) throw new Error('No doc ID provided');
+  return api.drive.exportDocAsHtmlPublic(docId);
+}
