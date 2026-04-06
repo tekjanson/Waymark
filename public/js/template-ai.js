@@ -112,14 +112,22 @@ export function hide() {
 /* ---------- Rendering ---------- */
 
 function _render() {
+  const oauthToken = storage.getGeminiOAuthToken();
+  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
   const hasKeys = storage.getAgentKeys().length > 0;
+  const canUseAI = isOAuthActive || hasKeys;
+
+  const headerLeft = el('div', { className: 'template-ai-header-left' }, [
+    el('span', { className: 'template-ai-sparkle' }, ['✨']),
+    el('span', { className: 'template-ai-header-title' }, ['Ask AI']),
+    el('span', { className: 'template-ai-sheet-name' }, [_context.title]),
+    isOAuthActive
+      ? el('span', { className: 'template-ai-oauth-badge' }, ['Google Subscription'])
+      : null,
+  ].filter(Boolean));
 
   const header = el('div', { className: 'template-ai-header' }, [
-    el('div', { className: 'template-ai-header-left' }, [
-      el('span', { className: 'template-ai-sparkle' }, ['✨']),
-      el('span', { className: 'template-ai-header-title' }, ['Ask AI']),
-      el('span', { className: 'template-ai-sheet-name' }, [_context.title]),
-    ]),
+    headerLeft,
     el('button', {
       className: 'template-ai-close',
       'aria-label': 'Close AI panel',
@@ -129,13 +137,13 @@ function _render() {
 
   _chatBody = el('div', { className: 'template-ai-body' });
 
-  if (!hasKeys) {
+  if (!canUseAI) {
     _chatBody.appendChild(_buildNoKeysState());
   } else {
     _chatBody.appendChild(_buildEmptyState());
   }
 
-  const inputRow = _buildInputRow(hasKeys);
+  const inputRow = _buildInputRow(canUseAI);
 
   _panel = el('div', {
     className: 'template-ai-panel',
@@ -153,7 +161,7 @@ function _render() {
 
   // Focus the text input
   const input = _panel.querySelector('.template-ai-input');
-  if (input && hasKeys) input.focus();
+  if (input && canUseAI) input.focus();
 
   // Escape key closes panel
   document.addEventListener('keydown', _handleKeyDown);
@@ -307,11 +315,14 @@ function _buildSystemPrompt() {
 async function _sendMessage(text) {
   if (!text.trim() || _isStreaming) return;
 
-  const keyEntry = _getNextKey();
-  if (!keyEntry) {
+  const oauthToken = storage.getGeminiOAuthToken();
+  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
+  const keyEntry = isOAuthActive ? null : _getNextKey();
+  if (!isOAuthActive && !keyEntry) {
     showToast('Configure API keys in the AI agent settings first', 'error');
     return;
   }
+  const apiKey = keyEntry?.key || '';
 
   // Clear empty/suggestion state on first message
   const empty = _chatBody.querySelector('.template-ai-empty');
@@ -387,17 +398,17 @@ async function _sendMessage(text) {
     try {
       res = await fetch(streamUrl, {
         method: 'POST',
-        headers: geminiHeaders(keyEntry.key),
+        headers: geminiHeaders(apiKey),
         body: JSON.stringify(body),
         signal,
       });
     } catch (err) {
       if (err.name === 'AbortError') throw err;
       // Fall back to buffered endpoint (proxy may reject SSE)
-      const response = await _callBuffered(keyEntry.key, body);
+      const response = await _callBuffered(apiKey, body);
       liveContent.innerHTML = '';
       renderMarkdown(liveContent, response);
-      storage.recordKeyUsage(keyEntry.idx);
+      if (keyEntry) storage.recordKeyUsage(keyEntry.idx);
       return;
     }
 
@@ -406,7 +417,7 @@ async function _sendMessage(text) {
       throw new Error(err?.error?.message || `API error ${res.status}`);
     }
 
-    storage.recordKeyUsage(keyEntry.idx);
+    if (keyEntry) storage.recordKeyUsage(keyEntry.idx);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -433,7 +444,7 @@ async function _sendMessage(text) {
         const fc = candidate.content.parts.find(p => p.functionCall);
         if (fc) {
           reader.cancel();
-          const response = await _callBuffered(keyEntry.key, body);
+          const response = await _callBuffered(apiKey, body);
           liveContent.innerHTML = '';
           renderMarkdown(liveContent, response);
           return;

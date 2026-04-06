@@ -8,6 +8,7 @@ import {
   getAgentKeys,
   getAgentModel,
   resetDailyKeyCounters,
+  getGeminiOAuthToken,
 } from '../storage.js';
 
 /* ---------- Constants ---------- */
@@ -82,11 +83,20 @@ export function geminiUrl(model, action, query = '') {
 }
 
 /**
- * Build headers for Gemini API requests using the documented auth pattern.
- * @param {string} apiKey
+ * Build headers for Gemini API requests.
+ * Prefers an active OAuth Bearer token (Power User flow); falls back to
+ * the supplied API key when no valid OAuth token is stored.
+ * @param {string} [apiKey]
  * @returns {Object}
  */
 export function geminiHeaders(apiKey) {
+  const oauthToken = getGeminiOAuthToken();
+  if (oauthToken?.access_token && oauthToken.expires_at > Date.now()) {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${oauthToken.access_token}`,
+    };
+  }
   return {
     'Content-Type': 'application/json',
     'X-goog-api-key': apiKey,
