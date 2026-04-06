@@ -112,85 +112,153 @@
   font-style: italic;
 }
 
-/* --- Reader modal --- */
+/* --- Full-page reader --- */
 
 .blog-reader-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
   z-index: 1000;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 24px 16px;
-}
-
-.blog-reader-modal {
-  background: var(--color-surface);
-  border-radius: var(--radius);
-  width: 100%;
-  max-width: 860px;
-  max-height: calc(100vh - 48px);
+  background: var(--color-bg, #f8fafc);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
   overflow: hidden;
 }
 
-.blog-reader-header {
+.blog-reader-page {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border);
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+.blog-reader-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
   background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  min-height: 48px;
+  z-index: 1;
 }
 
-.blog-reader-heading {
-  flex: 1;
-  min-width: 0;
-}
-
-.blog-reader-title {
-  margin: 0 0 4px 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--color-text);
-  line-height: 1.3;
-}
-
-.blog-reader-meta {
-  font-size: 0.8rem;
-  color: var(--color-text-muted, #64748b);
-}
-
-.blog-reader-close {
+.blog-reader-back {
   flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 1.2rem;
-  color: var(--color-text-muted, #64748b);
-  padding: 2px 6px;
-  border-radius: 4px;
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
   transition: var(--transition);
+  white-space: nowrap;
 }
 
-.blog-reader-close:hover {
+.blog-reader-back:hover {
   background: var(--color-bg);
+}
+
+.blog-reader-nav-title {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.blog-reader-open-link {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-primary);
+  white-space: nowrap;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.blog-reader-open-link:hover {
+  background: var(--color-primary);
+  color: #fff;
 }
 
 .blog-reader-body {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  -webkit-overflow-scrolling: touch;
   background: #fff;
 }
 
 .blog-reader-iframe {
+  flex: 1;
   width: 100%;
-  height: 100%;
   border: none;
-  min-height: 520px;
+  min-height: 400px;
+}
+
+/* Referenced sheets */
+.blog-reader-refs {
+  padding: 16px 20px 24px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.blog-reader-refs-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted, #64748b);
+  margin-bottom: 10px;
+}
+
+.blog-ref-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--color-text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: var(--transition);
+  margin: 0 6px 6px 0;
+}
+
+.blog-ref-card:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Loading overlay shown while async export is in flight */
+.blog-reader-page.blog-reader-loading .blog-reader-iframe {
+  opacity: 0;
+  min-height: 300px;
+}
+
+.blog-reader-page.blog-reader-loading::after {
+  content: 'Loading article\2026';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.9rem;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Responsive */
@@ -206,11 +274,18 @@
   }
 
   .blog-reader-overlay {
-    padding: 8px;
+    padding: 0;
   }
 
-  .blog-reader-title {
-    font-size: 0.95rem;
+  .blog-reader-nav {
+    padding: 8px 12px;
+    min-height: 44px;
+    gap: 8px;
+  }
+
+  .blog-reader-back,
+  .blog-reader-nav-title {
+    font-size: 0.8rem;
   }
 }
 

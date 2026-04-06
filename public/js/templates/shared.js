@@ -1254,3 +1254,15 @@ export async function createGoogleDoc(title, parents = []) {
     url: `https://docs.google.com/document/d/${data.id}/edit`,
   };
 }
+
+/**
+ * Export a Google Doc as HTML using the Drive API (OAuth-authenticated).
+ * Works for any document the current user has access to, including private docs
+ * that are not "published to the web".
+ * @param {string} docId
+ * @returns {Promise<string>}  full HTML document string
+ */
+export async function exportDocAsHtml(docId) {
+  if (!docId) throw new Error('No doc ID provided');
+  return api.drive.exportDocAsHtml(docId);
+}

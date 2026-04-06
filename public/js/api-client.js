@@ -363,6 +363,15 @@ export const api = {
       return driveApi.exportDoc(token, fileId);
     },
 
+    async exportDocAsHtml(fileId) {
+      if (isLocal) {
+        // Mock: return minimal HTML that simulates a private doc loaded via OAuth
+        return '<html><body style="font-family:sans-serif;padding:16px"><h1>Mock Blog Post</h1><p>This content was loaded via the Drive API with the user\'s OAuth token, enabling private Google Docs to be read within Waymark.</p></body></html>';
+      }
+      const token = await requireToken();
+      return driveApi.exportDocAsHtml(token, fileId);
+    },
+
     async getFile(fileId) {
       if (isLocal) {
         return { id: fileId, name: 'Mock File', mimeType: 'application/vnd.google-apps.spreadsheet' };
