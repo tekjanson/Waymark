@@ -180,6 +180,28 @@ let _currentSheetId = null;
 let _currentDocId = null;
 let _blogReturnHash = null;
 
+// Reading width + font size presets. Stored as index in localStorage.
+const READING_MODES = [
+  { col: '520px',               font: '14px', label: 'A−', hint: 'Compact' },
+  { col: '700px',               font: '16px', label: 'A',  hint: 'Comfortable' },
+  { col: '940px',               font: '18px', label: 'A+', hint: 'Wide' },
+  { col: 'calc(100% - 64px)',   font: '18px', label: '⊞',  hint: 'Full width' },
+];
+const BLOG_WIDTH_KEY = 'waymark-blog-width';
+
+function getReadingModeIdx() {
+  const v = parseInt(localStorage.getItem(BLOG_WIDTH_KEY) || '1', 10);
+  return isNaN(v) ? 1 : Math.min(Math.max(v, 0), READING_MODES.length - 1);
+}
+
+function applyReadingMode(article, idx, btns) {
+  const mode = READING_MODES[idx];
+  article.style.setProperty('--blog-col', mode.col);
+  article.style.setProperty('--blog-font', mode.font);
+  localStorage.setItem(BLOG_WIDTH_KEY, String(idx));
+  btns.forEach((b, i) => b.classList.toggle('blog-width-btn-active', i === idx));
+}
+
 /** Build or retrieve the singleton full-page reader. */
 function getReader() {
   if (!_reader) {
@@ -224,7 +246,17 @@ function getReader() {
       on: { click: () => hideReader() },
     }, ['← All Posts']);
 
-    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, shareBtn, openLink]);
+    // Reading width controls
+    const widthBtns = READING_MODES.map((mode, idx) =>
+      el('button', {
+        className: 'blog-width-btn',
+        title: mode.hint,
+        on: { click: () => applyReadingMode(article, idx, widthBtns) },
+      }, [mode.label]),
+    );
+    const widthGroup = el('div', { className: 'blog-width-group' }, widthBtns);
+
+    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, widthGroup, shareBtn, openLink]);
 
     const body = el('div', { className: 'blog-reader-body' }, [article, iframe]);
     const page = el('div', { className: 'blog-reader-page' }, [nav, body]);
@@ -235,7 +267,7 @@ function getReader() {
     });
 
     document.body.appendChild(overlay);
-    _reader = { overlay, iframe, article, navTitle, openLink, body, page };
+    _reader = { overlay, iframe, article, navTitle, openLink, body, page, widthBtns };
   }
   return _reader;
 }
@@ -245,6 +277,8 @@ async function showReader(docId, titleText, metaText, sheetId) {
   const r = getReader();
   r.navTitle.textContent = titleText || '';
   r.openLink.href = docOpenUrl(docId);
+  // Restore saved reading width
+  applyReadingMode(r.article, getReadingModeIdx(), r.widthBtns);
 
   // Store for share button and URL management
   _currentDocId = docId;

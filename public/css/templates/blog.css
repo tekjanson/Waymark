@@ -211,6 +211,41 @@
   color: var(--color-text);
 }
 
+/* Reading width controls */
+.blog-width-group {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.blog-width-btn {
+  background: none;
+  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm, 4px);
+  transition: var(--transition);
+  white-space: nowrap;
+  line-height: 1;
+  min-width: 28px;
+  text-align: center;
+}
+
+.blog-width-btn:hover {
+  background: var(--color-surface-hover, #f1f5f9);
+  color: var(--color-text);
+}
+
+.blog-width-btn.blog-width-btn-active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
 .blog-reader-body {
   flex: 1;
   overflow-y: auto;
@@ -242,25 +277,25 @@
 
 .blog-reader-article {
   /*
-   * CSS grid: two 1fr gutters flanking a fluid content column that maxes at 700px.
-   * This fills all available space at every viewport width — no max-width centering
-   * that leaves dead black margins.
+   * CSS grid with JS-controlled column width (--blog-col) and font size (--blog-font).
+   * Defaults match READING_MODES[1] (Comfortable). JS overrides via style attribute.
    */
+  --blog-col: 700px;
+  --blog-font: 16px;
   display: grid;
   grid-template-columns:
-    minmax(16px, 1fr)
-    min(700px, calc(100% - 32px))
-    minmax(16px, 1fr);
+    minmax(24px, 1fr)
+    min(var(--blog-col), calc(100% - 48px))
+    minmax(24px, 1fr);
   padding-bottom: 96px;
   width: 100%;
   box-sizing: border-box;
   font-family: Georgia, Cambria, "Times New Roman", serif;
-  font-size: clamp(15px, 0.6vw + 12px, 18px);
+  font-size: var(--blog-font, 16px);
   line-height: 1.78;
   color: var(--color-text, #1e293b);
   word-wrap: break-word;
   -webkit-text-size-adjust: 100%;
-  /* Fade in smoothly when loading finishes */
   transition: opacity 0.3s ease;
 }
 
@@ -268,28 +303,27 @@
   display: none;
 }
 
-/* ---- Document title: editorial full-viewport headline ---- */
+/* ---- Document title — proportional to body, never wraps at desktop ---- */
 .blog-reader-article > .blog-doc-title {
   grid-column: 1 / -1;
-  /* Align horizontal padding with the content column */
   padding:
-    clamp(32px, 5vh, 64px)
-    max(5%, 24px)
-    clamp(20px, 3vh, 36px);
-  font-size: clamp(1.75rem, 4vw + 0.75rem, 4.5rem);
+    clamp(24px, 4vh, 48px)
+    max(4%, 24px)
+    clamp(14px, 2vh, 24px);
+  /* Scales between 1.5rem (mobile) and 2.25rem (desktop), never wraps on 1366px */
+  font-size: clamp(1.5rem, 2vw + 0.5rem, 2.25rem);
   font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
   border-bottom: 2px solid var(--color-border, #e2e8f0);
   margin: 0;
   color: var(--color-text);
   font-family: inherit;
 }
-/* Space after the title */
-.blog-reader-article > .blog-doc-title + :not(hr) { margin-top: 40px; }
-/* Google Docs sometimes inserts an <hr> under the title — suppress it, we have border-bottom */
+.blog-reader-article > .blog-doc-title + :not(hr) { margin-top: 32px; }
+/* Google Docs inserts <hr> under title — hide it, we have border-bottom */
 .blog-reader-article > .blog-doc-title + hr { display: none; }
-.blog-reader-article > .blog-doc-title + hr + * { margin-top: 40px; }
+.blog-reader-article > .blog-doc-title + hr + * { margin-top: 32px; }
 
 /* ---- Section headings ---- */
 .blog-reader-article h1,
@@ -491,8 +525,7 @@
   z-index: 2;
 }
 
-/* Responsive — the grid handles column width automatically.
- * Only card grid and nav tweaks needed. */
+/* Responsive */
 @media (max-width: 900px) {
   .blog-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -508,6 +541,11 @@
   .blog-reader-article > .blog-embed-card {
     width: 100%;
   }
+  /* On mobile, force comfortable mode regardless of saved pref */
+  .blog-reader-article {
+    --blog-col: calc(100% - 32px) !important;
+    --blog-font: 15px !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -520,14 +558,19 @@
   }
 
   .blog-reader-nav {
-    padding: 8px 12px;
+    padding: 8px 10px;
     min-height: 44px;
-    gap: 8px;
+    gap: 6px;
   }
 
   .blog-reader-back,
   .blog-reader-nav-title {
     font-size: 0.8rem;
+  }
+
+  /* Hide width controls on very small screens — not useful */
+  .blog-width-group {
+    display: none;
   }
 }
 
