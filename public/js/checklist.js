@@ -27,6 +27,7 @@ let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, open
 let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
+let currentTemplateNoAutoRefresh = false;
 
 /* ---------- Public ---------- */
 
@@ -957,6 +958,7 @@ function renderWithTemplate(values) {
 
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
+  currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
 
   // Notify the app that a sheet was rendered (for notification evaluation)
   document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
@@ -1169,7 +1171,7 @@ function resetTimer() {
   refreshTimer = null;
 
   const interval = customRefreshRate || 60_000;
-  if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
+  if (currentSheetId && userData.getAutoRefresh() && !document.hidden && !currentTemplateNoAutoRefresh) {
     refreshTimer = setInterval(() => {
       if (currentSheetId && !isAddRowOpen()) {
         // Don't interrupt an active inline edit — silently skip this cycle;
