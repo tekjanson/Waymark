@@ -208,10 +208,12 @@ function getReader() {
     // Article: shows sanitized Google Docs content inline
     const article = el('div', { className: 'blog-reader-article' });
 
-    // Fallback iframe: shown only when OAuth export fails
+    // Fallback iframe: shown only when OAuth export fails.
+    // Loads docs.google.com/preview — cross-origin, so allow-same-origin is not
+    // needed and combining it with allow-scripts would produce a sandbox-escape warning.
     const iframe = el('iframe', {
       className: 'blog-reader-iframe hidden',
-      sandbox: 'allow-scripts allow-same-origin allow-popups',
+      sandbox: 'allow-scripts allow-popups allow-forms',
       title: 'Blog post reader',
     });
 
@@ -333,7 +335,7 @@ async function showReader(docId, titleText, metaText, sheetId) {
     if (myCount !== _showCount) return;
     // OAuth export failed — fall back to preview iframe
     r.article.innerHTML = '';
-    r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+    r.iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms');
     r.iframe.src = docEmbedUrl(docId);
     r.iframe.classList.remove('hidden');
   } finally {
