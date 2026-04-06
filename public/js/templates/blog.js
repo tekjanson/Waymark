@@ -112,33 +112,50 @@ function inlineEmbeds(articleEl, isPublic) {
   const WAYMARK_HREF_RE = /(?:\/)?(#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
 
   /**
-   * Return the best URL string to run the regex against.
-   * Tries, in order:
-   *  1. Google redirect q= param  (via URLSearchParams, then regex fallback)
-   *  2. a.href DOM property       (browser-resolved absolute URL — handles relative hrefs)
-   *  3. Raw attribute value
+   * Return the best URL string to run the regex against, or null to skip.
+   *
+   * Handles three cases:
+   *  1. Google redirect  https://www.google.com/url?q=ENCODED  → decode q= param
+   *  2. Relative hash    #/public/ID or #/sheet/ID             → use anchor.href (browser resolves to absolute)
+   *  3. Absolute URL     https://swiftirons.com/waymark/#/…    → use as-is
+   *
+   * Intentionally returns null for empty hrefs, document-internal anchors (#heading),
+   * and other relative paths — using anchor.href for those would resolve to the current
+   * page URL (which contains the blog template sheet ID in its hash), causing false matches.
    */
   function resolveHref(anchor) {
     const raw = anchor.getAttribute('href') || '';
+    if (!raw) return null;
+
+    // Case 1: Google Docs wraps external links in a google.com/url redirect
     if (raw.includes('google.com/url')) {
-      // Strategy 1: URL API
       try {
         const q = new URL(raw).searchParams.get('q');
         if (q) return q;
       } catch { /* fall through */ }
-      // Strategy 2: manual regex + decodeURIComponent (handles malformed google URLs)
       const qm = raw.match(/[?&]q=([^&]+)/);
       if (qm) {
         try { return decodeURIComponent(qm[1]); } catch { return qm[1]; }
       }
+      return null;
     }
-    // Return the browser-resolved absolute href so relative #/… links work
-    return anchor.href || raw;
+
+    // Case 2: href starts with # — a real Waymark hash link like #/public/ID
+    // anchor.href is the browser-resolved absolute URL (safe to use here because
+    // we know it's a hash-relative link, not an empty/path-relative one).
+    if (raw.startsWith('#')) return anchor.href || raw;
+
+    // Case 3: absolute URL (http/https) — use as-is
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+
+    // Anything else (path-relative, protocol-relative, etc.) — skip
+    return null;
   }
 
   const seen = new Set();
   for (const a of [...articleEl.querySelectorAll('a[href]')]) {
     const href = resolveHref(a);
+    if (!href) continue;
     const m = WAYMARK_HREF_RE.exec(href);
     if (!m) continue;
     const linkType = m[2]; // 'sheet' or 'public'  (group 1 is the # char)
