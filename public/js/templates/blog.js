@@ -111,9 +111,25 @@ function inlineEmbeds(articleEl, isPublic) {
   // Capture both the type (sheet|public) and the id so we can determine
   // fetch mode from the link itself rather than the viewer's auth state.
   const WAYMARK_HREF_RE = /(?:\/#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
+
+  /**
+   * Google Docs wraps external links in https://www.google.com/url?q=ENCODED_URL
+   * where the `#` in Waymark hashes gets percent-encoded inside the q parameter.
+   * URLSearchParams.get() decodes it, giving us the real target URL to match against.
+   */
+  function resolveHref(raw) {
+    if (raw.includes('google.com/url')) {
+      try {
+        const q = new URL(raw).searchParams.get('q');
+        if (q) return q;
+      } catch { /* fall through */ }
+    }
+    return raw;
+  }
+
   const seen = new Set();
   for (const a of [...articleEl.querySelectorAll('a[href]')]) {
-    const href = a.getAttribute('href') || '';
+    const href = resolveHref(a.getAttribute('href') || '');
     const m = WAYMARK_HREF_RE.exec(href);
     if (!m) continue;
     const linkType = m[1]; // 'sheet' or 'public'
