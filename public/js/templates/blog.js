@@ -108,22 +108,28 @@ function sanitizeDocHtml(rawHtml) {
  * @param {boolean} isPublic
  */
 function inlineEmbeds(articleEl, isPublic) {
-  const WAYMARK_HREF_RE = /(?:\/#|%23)\/(?:sheet|public)\/([a-zA-Z0-9_-]+)/;
+  // Capture both the type (sheet|public) and the id so we can determine
+  // fetch mode from the link itself rather than the viewer's auth state.
+  const WAYMARK_HREF_RE = /(?:\/#|%23)\/(sheet|public)\/([a-zA-Z0-9_-]+)/;
   const seen = new Set();
   for (const a of [...articleEl.querySelectorAll('a[href]')]) {
     const href = a.getAttribute('href') || '';
     const m = WAYMARK_HREF_RE.exec(href);
     if (!m) continue;
-    const id = m[1];
+    const linkType = m[1]; // 'sheet' or 'public'
+    const id = m[2];
     if (seen.has(id)) {
       // Duplicate link to same sheet — silently remove it
       a.parentNode.removeChild(a);
       continue;
     }
     seen.add(id);
+    // A /#/public/ link is always fetched publicly regardless of viewer mode.
+    // A /#/sheet/ link uses the viewer's current auth context.
+    const embedIsPublic = linkType === 'public' || isPublic;
     const label = a.textContent.trim() || id;
     const embedBody = el('div', { className: 'blog-embed-body' });
-    const openHash = (isPublic ? '/public/' : '/sheet/') + id;
+    const openHash = (embedIsPublic ? '/public/' : '/sheet/') + id;
     const header = el('div', { className: 'blog-embed-header' }, [
       el('span', { className: 'blog-embed-title' }, ['\u{1F4CA} ', label]),
       el('a', {
@@ -146,7 +152,7 @@ function inlineEmbeds(articleEl, isPublic) {
       if (!cardParent.hasChildNodes() || cardParent.textContent.trim() === '') cardParent.remove();
     }
     if (window.__waymarkEmbedSheet) {
-      window.__waymarkEmbedSheet(id, embedBody, { isPublic });
+      window.__waymarkEmbedSheet(id, embedBody, { isPublic: embedIsPublic });
     }
   }
 }
