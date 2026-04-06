@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet } = require('../helpers/test-utils');
+const { setupApp, setupPublicApp, navigateToSheet } = require('../helpers/test-utils');
 
 /* ---- Detection & Rendering ---- */
 
@@ -596,3 +596,119 @@ test('reader falls back to preview URL when OAuth export fails', async ({ page }
   expect(src || srcdoc).toBeTruthy();
 });
 
+/* ---- Permalink / shareable post links ---- */
+
+const FIRST_POST_DOC_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms';
+
+test('opening a card updates URL hash to post permalink', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const hash = await page.evaluate(() => window.location.hash);
+  expect(hash).toMatch(/^#\/sheet\/sheet-062\/post\//);
+  expect(hash).toContain(FIRST_POST_DOC_ID);
+});
+
+test('closing the reader restores the blog sheet URL', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await page.click('.blog-reader-back');
+  await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
+
+  const hash = await page.evaluate(() => window.location.hash);
+  expect(hash).toBe('#/sheet/sheet-062');
+});
+
+test('share button is visible when reader is open', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-share-btn')).toBeVisible();
+});
+
+test('share button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-share-btn')).toHaveCSS('cursor', 'pointer');
+});
+
+test('share button copies a public permalink to clipboard', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await page.click('.blog-reader-share-btn');
+  await page.waitForSelector('.toast', { timeout: 3000 });
+
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboardText).toContain('#/public/sheet-062/post/');
+  expect(clipboardText).toContain(FIRST_POST_DOC_ID);
+});
+
+test('navigating to a public post permalink auto-opens the reader', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  await page.goto(`/#/public/sheet-062/post/${FIRST_POST_DOC_ID}`);
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10000 });
+  await page.waitForSelector('.blog-container', { timeout: 5000 });
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 8000 });
+  await expect(page.locator('.blog-reader-overlay')).toBeVisible();
+});
+
+test('public post permalink loads correct sheet despite sub-path in URL', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  await page.goto(`/#/public/sheet-062/post/${FIRST_POST_DOC_ID}`);
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10000 });
+  // Blog grid should render (proves correct sheet-062 was loaded, not a broken sheetId)
+  await page.waitForSelector('.blog-container', { timeout: 5000 });
+  const cardCount = await page.locator('.blog-card').count();
+  expect(cardCount).toBe(5);
+});
+
+test('share button generates public URL even when viewed in authenticated mode', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  // Verify the URL while in auth mode starts with #/sheet/
+  const authHash = await page.evaluate(() => window.location.hash);
+  expect(authHash).toContain('#/sheet/');
+
+  // But share button should always generate a #/public/ URL
+  await page.click('.blog-reader-share-btn');
+  await page.waitForSelector('.toast', { timeout: 3000 });
+
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboardText).toContain('#/public/sheet-062/post/');
+});

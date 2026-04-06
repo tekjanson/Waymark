@@ -344,7 +344,7 @@ function enterPublicMode(hash) {
   loginScreen.classList.add('hidden');
   appScreen.classList.remove('hidden');
 
-  const sheetId = hash.replace('#/public/', '');
+  const sheetId = hash.replace('#/public/', '').split('/')[0];
   showView('checklist');
   checklist.showPublic(sheetId);
 
@@ -352,7 +352,7 @@ function enterPublicMode(hash) {
   window.addEventListener('hashchange', () => {
     const newHash = window.location.hash || '#/';
     if (newHash.startsWith('#/public/')) {
-      const newId = newHash.replace('#/public/', '');
+      const newId = newHash.replace('#/public/', '').split('/')[0];
       checklist.hide();
       showView('checklist');
       checklist.showPublic(newId);
@@ -516,7 +516,7 @@ function handleRoute() {
     userData.setLastView(hash);
     updateMenuActive('');
   } else if (hash.startsWith('#/public/')) {
-    const sheetId = hash.replace('#/public/', '');
+    const sheetId = hash.replace('#/public/', '').split('/')[0];
     document.body.classList.add('waymark-public');
     showView('checklist');
     checklist.showPublic(sheetId);

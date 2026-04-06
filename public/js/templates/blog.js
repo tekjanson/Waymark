@@ -143,7 +143,10 @@ function extractWaymarkLinks(html) {
 /* ---------- Full-page reader ---------- */
 
 let _reader = null;
-let _showCount = 0; // incremented on showReader/hideReader to cancel stale async loads
+let _showCount = 0;     // incremented on showReader/hideReader to cancel stale async loads
+let _currentSheetId = null;
+let _currentDocId = null;
+let _blogReturnHash = null;
 
 /** Build or retrieve the singleton full-page reader. */
 function getReader() {
@@ -163,12 +166,29 @@ function getReader() {
       title: 'Open in Google Docs',
     }, ['↗ Open in Docs']);
 
+    const shareBtn = el('button', {
+      className: 'blog-reader-share-btn',
+      title: 'Copy shareable link',
+      on: {
+        click() {
+          if (!_currentSheetId || !_currentDocId) return;
+          const base = window.location.origin + window.location.pathname;
+          const shareUrl = base + '#/public/' + _currentSheetId + '/post/' + _currentDocId;
+          navigator.clipboard.writeText(shareUrl).then(() => {
+            showToast('Link copied!', 'success');
+          }).catch(() => {
+            showToast('Could not copy link', 'error');
+          });
+        },
+      },
+    }, ['🔗 Share']);
+
     const backBtn = el('button', {
       className: 'blog-reader-back',
       on: { click: () => hideReader() },
     }, ['← All Posts']);
 
-    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, openLink]);
+    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, shareBtn, openLink]);
 
     // Referenced sheets section (shown when the doc links to other Waymark sheets)
     const refsLabel = el('div', { className: 'blog-reader-refs-label' }, ['Referenced Sheets']);
@@ -188,11 +208,27 @@ function getReader() {
   return _reader;
 }
 
-async function showReader(docId, titleText, metaText) {
+async function showReader(docId, titleText, metaText, sheetId) {
   const myCount = ++_showCount;
   const r = getReader();
   r.navTitle.textContent = titleText || '';
   r.openLink.href = docOpenUrl(docId);
+
+  // Store for share button and URL management
+  _currentDocId = docId;
+  if (sheetId) _currentSheetId = sheetId;
+
+  // Update URL to reflect the open post (silent — no hashchange event)
+  if (_currentSheetId) {
+    const isPublic = document.body.classList.contains('waymark-public');
+    const prefix = isPublic ? '#/public/' : '#/sheet/';
+    const currentHash = window.location.hash;
+    if (!currentHash.includes('/post/')) {
+      _blogReturnHash = currentHash || (prefix + _currentSheetId);
+    }
+    history.replaceState(null, '', prefix + _currentSheetId + '/post/' + docId);
+  }
+
   r.overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 
@@ -240,6 +276,12 @@ function hideReader() {
   _reader.iframe.src = '';
   _reader.iframe.removeAttribute('srcdoc');
   document.body.style.overflow = '';
+  // Restore URL to blog list (silent — no hashchange event)
+  if (_blogReturnHash) {
+    history.replaceState(null, '', _blogReturnHash);
+    _blogReturnHash = null;
+  }
+  _currentDocId = null;
 }
 
 /* ---------- Template definition ---------- */
@@ -280,6 +322,13 @@ const definition = {
 
   render(container, rows, cols, template) {
     container.innerHTML = '';
+
+    // Extract sheet ID from the current URL for permalink support
+    const hashAtRender = window.location.hash;
+    const sheetIdFromHash = hashAtRender
+      .replace(/^#\/(public|sheet)\//, '')
+      .split('/')[0] || '';
+    if (sheetIdFromHash) _currentSheetId = sheetIdFromHash;
 
     /* ---- New Post form ---- */
     let creating = false;
@@ -424,7 +473,7 @@ const definition = {
           click() {
             if (!docId) return;
             const metaParts = [author, formatPostDate(date)].filter(Boolean);
-            showReader(docId, title, metaParts.join(' · '));
+            showReader(docId, title, metaParts.join(' · '), sheetIdFromHash);
           },
         },
       }, [
@@ -462,6 +511,22 @@ const definition = {
 
     const wrap = el('div', { className: 'blog-container' }, [header, newPostForm, grid]);
     container.appendChild(wrap);
+
+    // Auto-open a post if the URL contains /post/{docId} (e.g. navigating to a shared link)
+    const postMatch = hashAtRender.match(/\/post\/([^/]+)$/);
+    if (postMatch) {
+      const pendingDocId = postMatch[1];
+      const matchRow = rows.find(r => extractDocId(cell(r, cols.doc)) === pendingDocId);
+      if (matchRow) {
+        const pTitle  = cell(matchRow, cols.title)  || '(Untitled)';
+        const pAuthor = cell(matchRow, cols.author);
+        const pDate   = cell(matchRow, cols.date);
+        const pMeta   = [pAuthor, formatPostDate(pDate)].filter(Boolean).join(' · ');
+        Promise.resolve().then(() => showReader(pendingDocId, pTitle, pMeta, sheetIdFromHash));
+      } else {
+        Promise.resolve().then(() => showReader(pendingDocId, '', '', sheetIdFromHash));
+      }
+    }
   },
 };
 
