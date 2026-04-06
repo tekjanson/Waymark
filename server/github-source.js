@@ -279,6 +279,14 @@ function createGitHubSource(opts) {
   const { owner, repo, token } = opts;
   let ref = opts.ref;
   let publicDir = null;  // path to extracted public/ for current ref
+  let currentSha = null; // commit SHA of the currently extracted content
+
+  /** Read the SHA marker written by extractPublicDir and update currentSha. */
+  function updateContentSha(dir) {
+    try {
+      currentSha = fs.readFileSync(path.join(dir, '.git-sha'), 'utf-8').trim();
+    } catch { currentSha = null; }
+  }
 
   // Clone the repo (synchronous on first boot, fast on subsequent boots)
   try {
@@ -291,6 +299,7 @@ function createGitHubSource(opts) {
   // Extract public/ for the initial ref
   try {
     publicDir = extractPublicDir(ref);
+    updateContentSha(publicDir);
   } catch (err) {
     console.warn(`[github-source] Could not extract ref "${ref}":`, err.message);
   }
@@ -320,10 +329,11 @@ function createGitHubSource(opts) {
 
     const fullPath = path.join(publicDir, filePath);
 
-    // Check file exists
-    if (!fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
-      return next(); // SPA fallback or local static
-    }
+    // Single stat call — avoids the previous existsSync + statSync double-syscall.
+    // Reused for HEAD Content-Length to avoid a second kernel round-trip.
+    let fileStat;
+    try { fileStat = fs.statSync(fullPath); } catch { return next(); }
+    if (fileStat.isDirectory()) return next();
 
     // Serve the file
     const mime = getMimeType(filePath);
@@ -331,17 +341,22 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', ref);
     res.setHeader('X-Served-From', 'github-source');
 
-    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
-      // no-store prevents browsers from caching ES modules across ref switches.
-      // no-cache was insufficient — Chrome's module cache ignores revalidation.
+    if (filePath.endsWith('.html')) {
+      // HTML contains injected runtime config (ref, API key, etc.) — never cache.
       res.setHeader('Cache-Control', 'no-store');
+    } else if (filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      // JS/CSS: allow ETag-based conditional GET (If-None-Match → 304 Not Modified).
+      // res.sendFile() sets ETag from file mtime+size, which changes each time
+      // extractPublicDir re-extracts the checkout (i.e., on every ref switch or
+      // new push).  This reduces page-refresh CPU from "read+stream 100 files"
+      // to "answer 100 tiny 304s" — the primary fix for the per-refresh CPU spike.
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=3600');
     }
 
     if (req.method === 'HEAD') {
-      const stat = fs.statSync(fullPath);
-      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Length', fileStat.size);
       return res.end();
     }
 
@@ -369,6 +384,7 @@ function createGitHubSource(opts) {
     const outDir = extractPublicDir(newRef);
     ref = newRef;
     publicDir = outDir;
+    updateContentSha(publicDir);
     console.log(`[github-source] Switched to ref: ${ref}`);
   }
 
@@ -384,6 +400,7 @@ function createGitHubSource(opts) {
     try {
       await fetchOrigin();
       publicDir = extractPublicDir(ref);
+      updateContentSha(publicDir);
     } catch (err) {
       console.warn('[github-source] Pre-warm failed:', err.message);
     }
@@ -395,6 +412,7 @@ function createGitHubSource(opts) {
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
     publicDir = null;
+    currentSha = null; // invalidate HTML cache on next request
     console.log(`[github-source] Purged checkout for ${ref}`);
   }
 
@@ -472,6 +490,7 @@ function createGitHubSource(opts) {
       await fetchOrigin();
       // Re-extract current ref in case it moved (branch tips do)
       const newDir = extractPublicDir(ref);
+      updateContentSha(newDir);
       if (newDir !== publicDir) {
         publicDir = newDir;
         console.log(`[github-source] Auto-updated ref ${ref}`);
@@ -484,7 +503,7 @@ function createGitHubSource(opts) {
   // Don't let the interval keep the process alive during tests
   if (_fetchInterval.unref) _fetchInterval.unref();
 
-  return { middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile };
+  return { middleware, setRef, getRef, preWarm, purgeCache, listCachedRefs, readFile, getContentSha: () => currentSha };
 }
 
 module.exports = { createGitHubSource };

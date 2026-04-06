@@ -76,6 +76,7 @@ if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
     middleware: (_req, _res, next) => next(),
     setRef() {},
     getRef() { return config.GITHUB_REF; },
+    getContentSha() { return null; },
     preWarm() {},
     purgeCache() {},
     listCachedRefs() { return []; },
@@ -104,7 +105,22 @@ function safeJsString(val) {
 
 /* ---------- Helper: serve index.html with injections ---------- */
 
+// In-memory cache for the fully-built index.html response.
+// Keyed by content SHA so it is automatically invalidated when a new commit
+// is pushed to the branch or the user switches refs via setRef().
+// Never used in local mode where source files change during development.
+let _htmlCache = { sha: null, html: null };
+
 function serveIndex(_req, res) {
+  // Serve from in-memory cache when the content SHA hasn't changed.
+  if (!config.WAYMARK_LOCAL) {
+    const sha = githubSource.getContentSha();
+    if (sha && sha === _htmlCache.sha) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      if (gitHash) res.setHeader('X-Waymark-Hash', gitHash);
+      return res.type('html').send(_htmlCache.html);
+    }
+  }
   // Read index.html from the git checkout, fall back to local file
   let html = githubSource.readFile('index.html');
   if (!html) {
@@ -149,6 +165,12 @@ function serveIndex(_req, res) {
   if (!config.WAYMARK_LOCAL) {
     const currentRef = githubSource.getRef();
     html = html.replace('</body>', `${buildSettingsRefInjector(currentRef)}\n</body>`);
+  }
+
+  // Cache the built HTML for subsequent requests (production mode only).
+  if (!config.WAYMARK_LOCAL) {
+    const sha = githubSource.getContentSha();
+    if (sha) _htmlCache = { sha, html };
   }
 
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
