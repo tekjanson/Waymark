@@ -131,7 +131,8 @@ function injectReadingStyles(rawHtml) {
  * These are rendered as "Referenced Sheets" cards below the article.
  */
 function extractWaymarkLinks(html) {
-  const RE = /href=["'][^"']*\/#\/sheet\/([a-zA-Z0-9_-]+)["']/g;
+  // Match either /#/sheet/ or /#/public/ followed by the sheet id
+  const RE = /href=["'][^"']*\/#\/(?:sheet|public)\/([a-zA-Z0-9_-]+)["']/g;
   const ids = [];
   let m;
   while ((m = RE.exec(html)) !== null) {
@@ -250,11 +251,14 @@ async function showReader(docId, titleText, metaText, sheetId) {
     const sheetIds = extractWaymarkLinks(rawHtml);
     if (sheetIds.length > 0) {
       const base = window.__WAYMARK_BASE || '';
+      // Determine whether the current page is a public view so we route refs accordingly
+      const isPublicRef = document.body.classList.contains('waymark-public');
+      const prefix = isPublicRef ? '/#/public/' : '/#/sheet/';
       sheetIds.forEach(id => {
         const card = el('a', {
           className: 'blog-ref-card',
-          href: base + '/#/sheet/' + id,
-          on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = '/sheet/' + id; } },
+          href: base + prefix + id,
+          on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = (isPublicRef ? '/public/' : '/sheet/') + id; } },
         }, [el('span', { className: 'blog-ref-icon' }, ['\u{1F4CA} ']), id]);
         r.refs.appendChild(card);
       });
