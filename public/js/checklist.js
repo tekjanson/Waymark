@@ -27,6 +27,7 @@ let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, open
 let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
+let currentTemplateNoAutoRefresh = false;
 
 /* ---------- Public ---------- */
 
@@ -582,6 +583,41 @@ export function hide() {
   refreshTimer = null;
 }
 
+/* ---------- Embed API ---------- */
+
+/**
+ * Render a Google Sheet's template inline into a container element.
+ * Called by blog.js to show previews of referenced sheets inside the blog reader.
+ * @param {string} sheetId
+ * @param {HTMLElement} container
+ * @param {{ isPublic?: boolean }} [opts]
+ */
+window.__waymarkEmbedSheet = async function embedSheet(sheetId, container, opts = {}) {
+  container.classList.add('blog-embed-loading');
+  try {
+    const data = opts.isPublic
+      ? await api.sheets.getPublicSpreadsheet(sheetId)
+      : await api.sheets.getSpreadsheet(sheetId);
+    const values = data?.values || [];
+    if (values.length === 0) {
+      container.innerHTML = '<p class="empty-state">Empty sheet.</p>';
+      return;
+    }
+    const headers = values[0];
+    const rows = values.slice(1);
+    const { template } = detectTemplate(headers);
+    const lower = headers.map(h => (h || '').toLowerCase().trim());
+    const cols = template.columns(lower);
+    template._totalColumns = headers.length;
+    container.innerHTML = '';
+    template.render(container, rows, cols, template);
+  } catch (_) {
+    container.innerHTML = '<p class="empty-state">Could not load sheet.</p>';
+  } finally {
+    container.classList.remove('blog-embed-loading');
+  }
+};
+
 /* ---------- CSV Download ---------- */
 
 /**
@@ -922,6 +958,7 @@ function renderWithTemplate(values) {
 
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
+  currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
 
   // Notify the app that a sheet was rendered (for notification evaluation)
   document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
@@ -1134,7 +1171,7 @@ function resetTimer() {
   refreshTimer = null;
 
   const interval = customRefreshRate || 60_000;
-  if (currentSheetId && userData.getAutoRefresh() && !document.hidden) {
+  if (currentSheetId && userData.getAutoRefresh() && !document.hidden && !currentTemplateNoAutoRefresh) {
     refreshTimer = setInterval(() => {
       if (currentSheetId && !isAddRowOpen()) {
         // Don't interrupt an active inline edit — silently skip this cycle;

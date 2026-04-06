@@ -365,6 +365,7 @@ export const api = {
 
     async exportDocAsHtml(fileId) {
       if (isLocal) {
+        if (window.__WAYMARK_MOCK_EXPORT_HTML) return window.__WAYMARK_MOCK_EXPORT_HTML;
         // Mock: return minimal HTML that simulates a private doc loaded via OAuth
         return '<html><body style="font-family:sans-serif;padding:16px"><h1>Mock Blog Post</h1><p>This content was loaded via the Drive API with the user\'s OAuth token, enabling private Google Docs to be read within Waymark.</p></body></html>';
       }

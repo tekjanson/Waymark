@@ -510,7 +510,7 @@ function handleRoute() {
   }
 
   if (hash.startsWith('#/sheet/')) {
-    const sheetId = hash.replace('#/sheet/', '');
+    const sheetId = hash.replace('#/sheet/', '').split('/')[0];
     showView('checklist');
     checklist.show(sheetId);
     userData.setLastView(hash);

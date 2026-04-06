@@ -80,65 +80,96 @@ export function formatPostDate(v) {
 
 /* ---------- Reader — reading styles injected into srcdoc ---------- */
 
-const READING_CSS = [
-  '* { box-sizing: border-box; }',
-  'html, body { margin: 0; padding: 0; width: 100%; }',
-  'body { padding: 32px 24px 64px; font-family: Georgia, Cambria, "Times New Roman", serif;',
-  '  font-size: 17px; line-height: 1.78; color: #1e293b; background: #fff;',
-  '  max-width: 720px; margin-left: auto; margin-right: auto;',
-  '  word-wrap: break-word; -webkit-text-size-adjust: 100%; }',
-  'h1,h2,h3,h4,h5,h6 { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; line-height: 1.3; }',
-  'h1 { font-size: 2em; font-weight: 700; margin: 1em 0 0.4em; }',
-  'h2 { font-size: 1.4em; font-weight: 600; margin: 1.6em 0 0.4em; }',
-  'h3 { font-size: 1.15em; font-weight: 600; margin: 1.4em 0 0.3em; }',
-  'h4 { font-size: 1em; font-weight: 600; margin: 1.2em 0 0.3em; }',
-  'p { margin: 0 0 1.1em; }',
-  'a { color: #2563eb; text-decoration: underline; }',
-  'a:hover { color: #1d4ed8; }',
-  'img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 1.2em 0; }',
-  'hr { border: none; border-top: 1px solid #e2e8f0; margin: 2.5em 0; }',
-  'blockquote { margin: 1.5em 0; padding: 1em 1.2em; border-left: 4px solid #e2e8f0;',
-  '  color: #475569; background: #f8fafc; border-radius: 0 6px 6px 0; }',
-  'ul, ol { padding-left: 1.6em; margin: 0 0 1.1em; }',
-  'li { margin-bottom: 0.35em; }',
-  'table { width: 100%; border-collapse: collapse; margin: 1.5em 0; font-size: 0.9em; }',
-  'td, th { padding: 8px 12px; border: 1px solid #e2e8f0; text-align: left; }',
-  'th { background: #f8fafc; font-weight: 600; }',
-  'code { font-family: ui-monospace, monospace; font-size: 0.875em; background: #f1f5f9; padding: 2px 5px; border-radius: 3px; }',
-  'pre { background: #f1f5f9; padding: 16px; border-radius: 6px; overflow-x: auto; }',
-  'pre code { background: none; padding: 0; }',
-  '@media (max-width: 480px) { body { padding: 20px 16px 48px; font-size: 16px; } h1 { font-size: 1.55em; } h2 { font-size: 1.25em; } }',
-].join('\n');
+/**
+ * Sanitize Google Docs HTML for safe inline rendering.
+ * Strips scripts, styles, event handlers, and Google-specific class/id attributes.
+ * Extracts body content only.
+ * @param {string} rawHtml
+ * @returns {string}
+ */
+function sanitizeDocHtml(rawHtml) {
+  let html = rawHtml
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/ style="[^"]*"/gi, '')
+    .replace(/ class="[^"]*"/gi, '')
+    .replace(/ id="[^"]*"/gi, '');
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return bodyMatch ? bodyMatch[1] : html;
+}
 
 /**
- * Remove Google Docs style blocks and inject clean reading CSS + viewport meta.
- * The result is set as iframe.srcdoc so Google's layout doesn't conflict with
- * the Waymark reading view.
+ * Walk the rendered article DOM and replace any Waymark links with inline embed cards.
+ * Called after setting article.innerHTML so we can work with real DOM nodes.
+ * @param {HTMLElement} articleEl
+ * @param {boolean} isPublic
  */
-function injectReadingStyles(rawHtml) {
-  let html = rawHtml
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
-  const injection = '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<style>' + READING_CSS + '</style>';
-  if (html.includes('</head>')) return html.replace('</head>', injection + '</head>');
-  if (html.includes('<head>'))  return html.replace('<head>', '<head>' + injection);
-  return injection + html;
+function inlineEmbeds(articleEl, isPublic) {
+  const WAYMARK_HREF_RE = /(?:\/#|%23)\/(?:sheet|public)\/([a-zA-Z0-9_-]+)/;
+  const seen = new Set();
+  for (const a of [...articleEl.querySelectorAll('a[href]')]) {
+    const href = a.getAttribute('href') || '';
+    const m = WAYMARK_HREF_RE.exec(href);
+    if (!m) continue;
+    const id = m[1];
+    if (seen.has(id)) {
+      // Duplicate link to same sheet — silently remove it
+      a.parentNode.removeChild(a);
+      continue;
+    }
+    seen.add(id);
+    const label = a.textContent.trim() || id;
+    const embedBody = el('div', { className: 'blog-embed-body' });
+    const openHash = (isPublic ? '/public/' : '/sheet/') + id;
+    const header = el('div', { className: 'blog-embed-header' }, [
+      el('span', { className: 'blog-embed-title' }, ['\u{1F4CA} ', label]),
+      el('a', {
+        className: 'blog-embed-open-link',
+        href: '/#' + openHash,
+        on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = openHash; } },
+      }, ['Open full view \u2192']),
+    ]);
+    const card = el('div', { className: 'blog-embed-card' }, [header, embedBody]);
+    a.parentNode.replaceChild(card, a);
+    // Extract card out of any inline container (e.g. <p>) to be a direct article child.
+    // This lets the CSS grid full-bleed rule (grid-column: 1 / -1) apply.
+    const cardParent = card.parentNode;
+    if (cardParent !== articleEl) {
+      const after = cardParent.cloneNode(false);
+      let n = card.nextSibling;
+      while (n) { const nx = n.nextSibling; after.appendChild(n); n = nx; }
+      cardParent.after(card);
+      if (after.hasChildNodes()) card.after(after);
+      if (!cardParent.hasChildNodes() || cardParent.textContent.trim() === '') cardParent.remove();
+    }
+    if (window.__waymarkEmbedSheet) {
+      window.__waymarkEmbedSheet(id, embedBody, { isPublic });
+    }
+  }
 }
 
 /**
  * Extract /#/sheet/{id} links from the exported HTML.
  * These are rendered as "Referenced Sheets" cards below the article.
  */
-function extractWaymarkLinks(html) {
-  // Match either /#/sheet/ or /#/public/ followed by the sheet id
-  const RE = /href=["'][^"']*\/#\/(?:sheet|public)\/([a-zA-Z0-9_-]+)["']/g;
-  const ids = [];
+export function extractWaymarkLinks(html) {
+  // Match anchors whose href contains /#/ (direct) or %23/ (URL-encoded, from Google Docs redirect)
+  // before sheet/{id} or public/{id}. Returns [{id, label}] so cards can show the link text.
+  const ANCHOR_RE = /<a\s[^>]*href=["'][^"']*(?:\/#|%23)\/(?:sheet|public)\/([a-zA-Z0-9_-]+)[^>]*>([\s\S]*?)<\/a>/gi;
+  const seen = new Set();
+  const results = [];
   let m;
-  while ((m = RE.exec(html)) !== null) {
-    if (!ids.includes(m[1])) ids.push(m[1]);
+  while ((m = ANCHOR_RE.exec(html)) !== null) {
+    const id = m[1];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const label = m[2].replace(/<[^>]+>/g, '').trim() || id;
+    results.push({ id, label });
   }
-  return ids;
+  return results;
 }
 
 /* ---------- Full-page reader ---------- */
@@ -149,11 +180,37 @@ let _currentSheetId = null;
 let _currentDocId = null;
 let _blogReturnHash = null;
 
+// Reading width + font size presets. Stored as index in localStorage.
+const READING_MODES = [
+  { col: '520px',               font: '14px', label: 'A−', hint: 'Compact' },
+  { col: '700px',               font: '16px', label: 'A',  hint: 'Comfortable' },
+  { col: '940px',               font: '18px', label: 'A+', hint: 'Wide' },
+  { col: 'calc(100% - 64px)',   font: '18px', label: '⊞',  hint: 'Full width' },
+];
+const BLOG_WIDTH_KEY = 'waymark-blog-width';
+
+function getReadingModeIdx() {
+  const v = parseInt(localStorage.getItem(BLOG_WIDTH_KEY) || '1', 10);
+  return isNaN(v) ? 1 : Math.min(Math.max(v, 0), READING_MODES.length - 1);
+}
+
+function applyReadingMode(article, idx, btns) {
+  const mode = READING_MODES[idx];
+  article.style.setProperty('--blog-col', mode.col);
+  article.style.setProperty('--blog-font', mode.font);
+  localStorage.setItem(BLOG_WIDTH_KEY, String(idx));
+  btns.forEach((b, i) => b.classList.toggle('blog-width-btn-active', i === idx));
+}
+
 /** Build or retrieve the singleton full-page reader. */
 function getReader() {
   if (!_reader) {
+    // Article: shows sanitized Google Docs content inline
+    const article = el('div', { className: 'blog-reader-article' });
+
+    // Fallback iframe: shown only when OAuth export fails
     const iframe = el('iframe', {
-      className: 'blog-reader-iframe',
+      className: 'blog-reader-iframe hidden',
       sandbox: 'allow-scripts allow-same-origin allow-popups',
       title: 'Blog post reader',
     });
@@ -189,13 +246,19 @@ function getReader() {
       on: { click: () => hideReader() },
     }, ['← All Posts']);
 
-    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, shareBtn, openLink]);
+    // Reading width controls
+    const widthBtns = READING_MODES.map((mode, idx) =>
+      el('button', {
+        className: 'blog-width-btn',
+        title: mode.hint,
+        on: { click: () => applyReadingMode(article, idx, widthBtns) },
+      }, [mode.label]),
+    );
+    const widthGroup = el('div', { className: 'blog-width-group' }, widthBtns);
 
-    // Referenced sheets section (shown when the doc links to other Waymark sheets)
-    const refsLabel = el('div', { className: 'blog-reader-refs-label' }, ['Referenced Sheets']);
-    const refs = el('div', { className: 'blog-reader-refs hidden' }, [refsLabel]);
+    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, widthGroup, shareBtn, openLink]);
 
-    const body = el('div', { className: 'blog-reader-body' }, [iframe, refs]);
+    const body = el('div', { className: 'blog-reader-body' }, [article, iframe]);
     const page = el('div', { className: 'blog-reader-page' }, [nav, body]);
     const overlay = el('div', { className: 'blog-reader-overlay hidden' }, [page]);
 
@@ -204,7 +267,7 @@ function getReader() {
     });
 
     document.body.appendChild(overlay);
-    _reader = { overlay, iframe, navTitle, openLink, body, refs, page };
+    _reader = { overlay, iframe, article, navTitle, openLink, body, page, widthBtns };
   }
   return _reader;
 }
@@ -214,6 +277,8 @@ async function showReader(docId, titleText, metaText, sheetId) {
   const r = getReader();
   r.navTitle.textContent = titleText || '';
   r.openLink.href = docOpenUrl(docId);
+  // Restore saved reading width
+  applyReadingMode(r.article, getReadingModeIdx(), r.widthBtns);
 
   // Store for share button and URL management
   _currentDocId = docId;
@@ -233,41 +298,44 @@ async function showReader(docId, titleText, metaText, sheetId) {
   r.overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 
-  // Reset iframe + refs state
-  r.iframe.removeAttribute('srcdoc');
+  // Reset article + iframe state
+  r.article.innerHTML = '';
   r.iframe.src = '';
-  r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-  r.refs.querySelectorAll('.blog-ref-card').forEach(c => c.remove());
-  r.refs.classList.add('hidden');
+  r.iframe.removeAttribute('srcdoc');
+  r.iframe.classList.add('hidden');
   r.page.classList.add('blog-reader-loading');
 
   try {
     const rawHtml = await exportDocAsHtml(docId);
     if (myCount !== _showCount) return;
-    // Inject clean reading styles — strips Google's layout CSS
-    r.iframe.setAttribute('sandbox', 'allow-popups');
-    r.iframe.srcdoc = injectReadingStyles(rawHtml);
-    // Show referenced Waymark sheets as clickable cards
-    const sheetIds = extractWaymarkLinks(rawHtml);
-    if (sheetIds.length > 0) {
-      const base = window.__WAYMARK_BASE || '';
-      // Determine whether the current page is a public view so we route refs accordingly
-      const isPublicRef = document.body.classList.contains('waymark-public');
-      const prefix = isPublicRef ? '/#/public/' : '/#/sheet/';
-      sheetIds.forEach(id => {
-        const card = el('a', {
-          className: 'blog-ref-card',
-          href: base + prefix + id,
-          on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = (isPublicRef ? '/public/' : '/sheet/') + id; } },
-        }, [el('span', { className: 'blog-ref-icon' }, ['\u{1F4CA} ']), id]);
-        r.refs.appendChild(card);
-      });
-      r.refs.classList.remove('hidden');
+    const isPublicRef = document.body.classList.contains('waymark-public');
+    r.article.innerHTML = sanitizeDocHtml(rawHtml);
+    inlineEmbeds(r.article, isPublicRef);
+    // Detect and promote the document title to a styled editorial heading.
+    // Google Docs exports the doc title as <h1> (or sometimes <p>) — the first
+    // non-empty element that doesn't contain an embed card is the title.
+    const firstTitleEl = [...r.article.children].find(
+      c => c.textContent.trim() &&
+           !c.classList.contains('blog-embed-card') &&
+           !c.querySelector('.blog-embed-card'),
+    );
+    if (firstTitleEl) {
+      if (firstTitleEl.tagName !== 'H1') {
+        const h1 = document.createElement('h1');
+        h1.innerHTML = firstTitleEl.innerHTML;
+        firstTitleEl.replaceWith(h1);
+        h1.classList.add('blog-doc-title');
+      } else {
+        firstTitleEl.classList.add('blog-doc-title');
+      }
     }
   } catch (_) {
     if (myCount !== _showCount) return;
+    // OAuth export failed — fall back to preview iframe
+    r.article.innerHTML = '';
     r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
     r.iframe.src = docEmbedUrl(docId);
+    r.iframe.classList.remove('hidden');
   } finally {
     if (myCount === _showCount) r.page.classList.remove('blog-reader-loading');
   }
@@ -277,14 +345,20 @@ function hideReader() {
   if (!_reader) return;
   _showCount++; // cancel any in-flight export
   _reader.overlay.classList.add('hidden');
+  _reader.article.innerHTML = '';
   _reader.iframe.src = '';
-  _reader.iframe.removeAttribute('srcdoc');
+  _reader.iframe.classList.add('hidden');
   document.body.style.overflow = '';
-  // Restore URL to blog list (silent — no hashchange event)
-  if (_blogReturnHash) {
-    history.replaceState(null, '', _blogReturnHash);
-    _blogReturnHash = null;
-  }
+  // Restore URL to blog list (silent — no hashchange event).
+  // When arriving via a /post/ permalink, _blogReturnHash is null — construct the
+  // return URL from _currentSheetId so "← All Posts" always navigates correctly.
+  const returnHash = _blogReturnHash || (() => {
+    if (!_currentSheetId) return null;
+    const isPublic = document.body.classList.contains('waymark-public');
+    return (isPublic ? '#/public/' : '#/sheet/') + _currentSheetId;
+  })();
+  if (returnHash) history.replaceState(null, '', returnHash);
+  _blogReturnHash = null;
   _currentDocId = null;
 }
 
@@ -292,6 +366,7 @@ function hideReader() {
 
 const definition = {
   name: 'Blog',
+  noAutoRefresh: true,
   icon: '✍️',
   color: '#0f766e',
   priority: 20,
