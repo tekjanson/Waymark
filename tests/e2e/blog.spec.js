@@ -96,17 +96,17 @@ test('clicking All restores all posts after filter', async ({ page }) => {
 
 /* ---- Reader modal ---- */
 
-test('clicking a blog card with a doc link opens the reader modal', async ({ page }) => {
+test('clicking a blog card with a doc link opens the full-page reader', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
 
   await page.click('.blog-card:not(.hidden)');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
-  await expect(page.locator('.blog-reader-modal')).toBeVisible();
+  await expect(page.locator('.blog-reader-page')).toBeVisible();
 });
 
-test('reader modal shows post title and meta', async ({ page }) => {
+test('reader nav shows post title', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
@@ -114,11 +114,10 @@ test('reader modal shows post title and meta', async ({ page }) => {
   await page.click('.blog-card >> text=Getting Started with Waymark');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
 
-  await expect(page.locator('.blog-reader-title')).toContainText('Getting Started with Waymark');
-  await expect(page.locator('.blog-reader-meta')).toContainText('Jamie Levine');
+  await expect(page.locator('.blog-reader-nav-title')).toContainText('Getting Started with Waymark');
 });
 
-test('reader modal closes via X button', async ({ page }) => {
+test('reader closes via back button', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
@@ -126,23 +125,11 @@ test('reader modal closes via X button', async ({ page }) => {
   await page.click('.blog-card:first-child');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
 
-  await page.click('.blog-reader-close');
+  await page.click('.blog-reader-back');
   await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
 });
 
-test('reader modal closes via overlay click', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-062');
-  await page.waitForSelector('.blog-card', { timeout: 5000 });
-
-  await page.click('.blog-card:first-child');
-  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
-
-  await page.click('.blog-reader-overlay', { position: { x: 5, y: 5 } });
-  await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
-});
-
-test('reader modal closes on Escape key', async ({ page }) => {
+test('reader closes on Escape key', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
@@ -161,13 +148,28 @@ test('reader iframe loads content via OAuth export (srcdoc) in local mode', asyn
 
   await page.click('.blog-card:first-child');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
-  // Wait for async export to finish (loading class removed)
-  await page.waitForSelector('.blog-reader-body:not(.blog-reader-loading)', { timeout: 5000 });
+  // Wait for async export to finish (loading class removed from page)
+  await page.waitForSelector('.blog-reader-page:not(.blog-reader-loading)', { timeout: 5000 });
 
   // In local mock mode exportDocAsHtml returns mock HTML → srcdoc is set
   const srcdoc = await page.locator('.blog-reader-iframe').getAttribute('srcdoc');
   expect(srcdoc).toBeTruthy();
   expect(srcdoc.length).toBeGreaterThan(0);
+});
+
+test('reader reading styles are injected into srcdoc (strips Google styles, adds clean CSS)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-page:not(.blog-reader-loading)', { timeout: 5000 });
+
+  const srcdoc = await page.locator('.blog-reader-iframe').getAttribute('srcdoc');
+  expect(srcdoc).toContain('max-width: 720px');    // reading column width from READING_CSS
+  expect(srcdoc).toContain('font-family: Georgia'); // serif reading font
+  expect(srcdoc).toContain('line-height: 1.78');   // comfortable line spacing
+  expect(srcdoc).toContain('viewport');             // mobile viewport meta tag
 });
 
 /* ---- Style & Visual ---- */
@@ -466,7 +468,44 @@ test('New Post form re-renders grid with new card after creation', async ({ page
 
 /* ---- OAuth reader (private doc support) ---- */
 
-test('reader header shows Open in Docs link when modal is open', async ({ page }) => {
+test('reader nav shows Back button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-back')).toBeVisible();
+  await expect(page.locator('.blog-reader-back')).toContainText('All Posts');
+});
+
+test('reader nav Back button has pointer cursor', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  await expect(page.locator('.blog-reader-back')).toHaveCSS('cursor', 'pointer');
+});
+
+test('reader is full-screen at mobile width (375px)', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const overlayRect = await page.locator('.blog-reader-overlay').boundingBox();
+  expect(overlayRect.width).toBeCloseTo(375, 0);
+  expect(overlayRect.height).toBeGreaterThan(700);
+});
+
+test('reader header shows Open in Docs link when reader is open', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-062');
   await page.waitForSelector('.blog-card', { timeout: 5000 });
@@ -511,8 +550,8 @@ test('reader closes while async export is in flight without errors', async ({ pa
   await page.click('.blog-card:first-child');
   await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
 
-  // Close immediately before async export can finish
-  await page.click('.blog-reader-close');
+  // Close immediately via back button before async export can finish
+  await page.click('.blog-reader-back');
   await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
 
   // No JS errors should have been thrown

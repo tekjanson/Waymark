@@ -78,12 +78,74 @@ export function formatPostDate(v) {
   } catch (_) { return v; }
 }
 
-/* ---------- Reader modal ---------- */
+/* ---------- Reader — reading styles injected into srcdoc ---------- */
+
+const READING_CSS = [
+  '* { box-sizing: border-box; }',
+  'html, body { margin: 0; padding: 0; width: 100%; }',
+  'body { padding: 32px 24px 64px; font-family: Georgia, Cambria, "Times New Roman", serif;',
+  '  font-size: 17px; line-height: 1.78; color: #1e293b; background: #fff;',
+  '  max-width: 720px; margin-left: auto; margin-right: auto;',
+  '  word-wrap: break-word; -webkit-text-size-adjust: 100%; }',
+  'h1,h2,h3,h4,h5,h6 { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; line-height: 1.3; }',
+  'h1 { font-size: 2em; font-weight: 700; margin: 1em 0 0.4em; }',
+  'h2 { font-size: 1.4em; font-weight: 600; margin: 1.6em 0 0.4em; }',
+  'h3 { font-size: 1.15em; font-weight: 600; margin: 1.4em 0 0.3em; }',
+  'h4 { font-size: 1em; font-weight: 600; margin: 1.2em 0 0.3em; }',
+  'p { margin: 0 0 1.1em; }',
+  'a { color: #2563eb; text-decoration: underline; }',
+  'a:hover { color: #1d4ed8; }',
+  'img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 1.2em 0; }',
+  'hr { border: none; border-top: 1px solid #e2e8f0; margin: 2.5em 0; }',
+  'blockquote { margin: 1.5em 0; padding: 1em 1.2em; border-left: 4px solid #e2e8f0;',
+  '  color: #475569; background: #f8fafc; border-radius: 0 6px 6px 0; }',
+  'ul, ol { padding-left: 1.6em; margin: 0 0 1.1em; }',
+  'li { margin-bottom: 0.35em; }',
+  'table { width: 100%; border-collapse: collapse; margin: 1.5em 0; font-size: 0.9em; }',
+  'td, th { padding: 8px 12px; border: 1px solid #e2e8f0; text-align: left; }',
+  'th { background: #f8fafc; font-weight: 600; }',
+  'code { font-family: ui-monospace, monospace; font-size: 0.875em; background: #f1f5f9; padding: 2px 5px; border-radius: 3px; }',
+  'pre { background: #f1f5f9; padding: 16px; border-radius: 6px; overflow-x: auto; }',
+  'pre code { background: none; padding: 0; }',
+  '@media (max-width: 480px) { body { padding: 20px 16px 48px; font-size: 16px; } h1 { font-size: 1.55em; } h2 { font-size: 1.25em; } }',
+].join('\n');
+
+/**
+ * Remove Google Docs style blocks and inject clean reading CSS + viewport meta.
+ * The result is set as iframe.srcdoc so Google's layout doesn't conflict with
+ * the Waymark reading view.
+ */
+function injectReadingStyles(rawHtml) {
+  let html = rawHtml
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
+  const injection = '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<style>' + READING_CSS + '</style>';
+  if (html.includes('</head>')) return html.replace('</head>', injection + '</head>');
+  if (html.includes('<head>'))  return html.replace('<head>', '<head>' + injection);
+  return injection + html;
+}
+
+/**
+ * Extract /#/sheet/{id} links from the exported HTML.
+ * These are rendered as "Referenced Sheets" cards below the article.
+ */
+function extractWaymarkLinks(html) {
+  const RE = /href=["'][^"']*\/#\/sheet\/([a-zA-Z0-9_-]+)["']/g;
+  const ids = [];
+  let m;
+  while ((m = RE.exec(html)) !== null) {
+    if (!ids.includes(m[1])) ids.push(m[1]);
+  }
+  return ids;
+}
+
+/* ---------- Full-page reader ---------- */
 
 let _reader = null;
-let _showCount = 0; // incremented on each showReader/hideReader to cancel stale loads
+let _showCount = 0; // incremented on showReader/hideReader to cancel stale async loads
 
-/** Build or retrieve the singleton reader overlay. */
+/** Build or retrieve the singleton full-page reader. */
 function getReader() {
   if (!_reader) {
     const iframe = el('iframe', {
@@ -92,8 +154,7 @@ function getReader() {
       title: 'Blog post reader',
     });
 
-    const heading = el('h2', { className: 'blog-reader-title' });
-    const meta    = el('div', { className: 'blog-reader-meta' });
+    const navTitle = el('div', { className: 'blog-reader-nav-title' });
 
     const openLink = el('a', {
       className: 'blog-reader-open-link',
@@ -102,36 +163,27 @@ function getReader() {
       title: 'Open in Google Docs',
     }, ['↗ Open in Docs']);
 
-    const closeBtn = el('button', {
-      className: 'blog-reader-close',
-      'aria-label': 'Close reader',
+    const backBtn = el('button', {
+      className: 'blog-reader-back',
       on: { click: () => hideReader() },
-    }, ['✕']);
+    }, ['← All Posts']);
 
-    const header = el('div', { className: 'blog-reader-header' }, [
-      el('div', { className: 'blog-reader-heading' }, [heading, meta]),
-      openLink,
-      closeBtn,
-    ]);
+    const nav = el('nav', { className: 'blog-reader-nav' }, [backBtn, navTitle, openLink]);
 
-    const body = el('div', { className: 'blog-reader-body' }, [iframe]);
+    // Referenced sheets section (shown when the doc links to other Waymark sheets)
+    const refsLabel = el('div', { className: 'blog-reader-refs-label' }, ['Referenced Sheets']);
+    const refs = el('div', { className: 'blog-reader-refs hidden' }, [refsLabel]);
 
-    const modal = el('div', { className: 'blog-reader-modal' }, [header, body]);
-
-    const overlay = el('div', {
-      className: 'blog-reader-overlay',
-      on: {
-        click(e) { if (e.target === overlay) hideReader(); },
-      },
-    }, [modal]);
+    const body = el('div', { className: 'blog-reader-body' }, [iframe, refs]);
+    const page = el('div', { className: 'blog-reader-page' }, [nav, body]);
+    const overlay = el('div', { className: 'blog-reader-overlay hidden' }, [page]);
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !overlay.classList.contains('hidden')) hideReader();
     });
 
     document.body.appendChild(overlay);
-    overlay.classList.add('hidden');
-    _reader = { overlay, iframe, heading, meta, openLink, body };
+    _reader = { overlay, iframe, navTitle, openLink, body, refs, page };
   }
   return _reader;
 }
@@ -139,34 +191,45 @@ function getReader() {
 async function showReader(docId, titleText, metaText) {
   const myCount = ++_showCount;
   const r = getReader();
-  r.heading.textContent = titleText || '';
-  r.meta.textContent    = metaText || '';
+  r.navTitle.textContent = titleText || '';
   r.openLink.href = docOpenUrl(docId);
   r.overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 
-  // Reset iframe state and show loading
+  // Reset iframe + refs state
   r.iframe.removeAttribute('srcdoc');
   r.iframe.src = '';
   r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-  r.body.classList.add('blog-reader-loading');
+  r.refs.querySelectorAll('.blog-ref-card').forEach(c => c.remove());
+  r.refs.classList.add('hidden');
+  r.page.classList.add('blog-reader-loading');
 
-  // Try OAuth API export first — works for any doc the user has access to,
-  // including private docs not published to the web.
   try {
-    const html = await exportDocAsHtml(docId);
-    if (myCount !== _showCount) return; // reader closed while loading
-    // Use srcdoc with restrictive sandbox — scripts in exported HTML are blocked
+    const rawHtml = await exportDocAsHtml(docId);
+    if (myCount !== _showCount) return;
+    // Inject clean reading styles — strips Google's layout CSS
     r.iframe.setAttribute('sandbox', 'allow-popups');
-    r.iframe.removeAttribute('src');
-    r.iframe.srcdoc = html;
+    r.iframe.srcdoc = injectReadingStyles(rawHtml);
+    // Show referenced Waymark sheets as clickable cards
+    const sheetIds = extractWaymarkLinks(rawHtml);
+    if (sheetIds.length > 0) {
+      const base = window.__WAYMARK_BASE || '';
+      sheetIds.forEach(id => {
+        const card = el('a', {
+          className: 'blog-ref-card',
+          href: base + '/#/sheet/' + id,
+          on: { click(e) { e.preventDefault(); hideReader(); window.location.hash = '/sheet/' + id; } },
+        }, [el('span', { className: 'blog-ref-icon' }, ['\u{1F4CA} ']), id]);
+        r.refs.appendChild(card);
+      });
+      r.refs.classList.remove('hidden');
+    }
   } catch (_) {
     if (myCount !== _showCount) return;
-    // Fallback: /preview URL — works for link-shared docs + browser Google session
     r.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
     r.iframe.src = docEmbedUrl(docId);
   } finally {
-    if (myCount === _showCount) r.body.classList.remove('blog-reader-loading');
+    if (myCount === _showCount) r.page.classList.remove('blog-reader-loading');
   }
 }
 
