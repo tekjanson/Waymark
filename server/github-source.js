@@ -341,10 +341,16 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', ref);
     res.setHeader('X-Served-From', 'github-source');
 
-    if (filePath.endsWith('.html') || filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
-      // no-store prevents browsers from caching ES modules across ref switches.
-      // no-cache was insufficient — Chrome's module cache ignores revalidation.
+    if (filePath.endsWith('.html')) {
+      // HTML contains injected runtime config (ref, API key, etc.) — never cache.
       res.setHeader('Cache-Control', 'no-store');
+    } else if (filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      // JS/CSS: allow ETag-based conditional GET (If-None-Match → 304 Not Modified).
+      // res.sendFile() sets ETag from file mtime+size, which changes each time
+      // extractPublicDir re-extracts the checkout (i.e., on every ref switch or
+      // new push).  This reduces page-refresh CPU from "read+stream 100 files"
+      // to "answer 100 tiny 304s" — the primary fix for the per-refresh CPU spike.
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=3600');
     }

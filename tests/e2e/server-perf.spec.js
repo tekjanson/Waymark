@@ -101,3 +101,49 @@ test('JS files still have correct no-cache headers after middleware optimization
     expect(h).toContain('must-revalidate');
   }
 });
+
+test('JS files include ETag header to enable conditional GET (304) on refresh', async ({ page }) => {
+  const jsTags = [];
+  page.on('response', (resp) => {
+    const url = resp.url();
+    if (url.endsWith('.js') && url.includes('localhost') && !url.includes('playwright')) {
+      const etag = resp.headers()['etag'] || '';
+      if (etag) jsTags.push(etag);
+    }
+  });
+  await setupApp(page);
+  // At least some JS files must have ETags to enable 304 conditional requests
+  expect(jsTags.length).toBeGreaterThan(0);
+  // ETags should be non-empty strings
+  for (const tag of jsTags) {
+    expect(tag.length).toBeGreaterThan(0);
+  }
+});
+
+test('conditional GET with valid ETag returns 304 Not Modified (zero body refresh)', async ({ page }) => {
+  await setupApp(page);
+
+  // Fetch a JS file to get its ETag
+  const firstResponse = await page.request.fetch('/js/app.js');
+  expect(firstResponse.status()).toBe(200);
+  const etag = firstResponse.headers()['etag'];
+  expect(etag).toBeTruthy();
+
+  // Second request with If-None-Match — should get 304, not a full download
+  const secondResponse = await page.request.fetch('/js/app.js', {
+    headers: { 'If-None-Match': etag },
+  });
+  expect(secondResponse.status()).toBe(304);
+});
+
+test('conditional GET with stale ETag returns 200 with full file', async ({ page }) => {
+  await setupApp(page);
+
+  // Send a request with a clearly wrong ETag — should get a fresh 200 response
+  const resp = await page.request.fetch('/js/app.js', {
+    headers: { 'If-None-Match': '"stale-etag-that-does-not-match"' },
+  });
+  expect(resp.status()).toBe(200);
+  const body = await resp.text();
+  expect(body.length).toBeGreaterThan(0);
+});
