@@ -189,6 +189,24 @@
   color: #fff;
 }
 
+.blog-reader-share-btn {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #64748b);
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border, #e2e8f0);
+  white-space: nowrap;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.blog-reader-share-btn:hover {
+  background: var(--color-surface-hover, #f1f5f9);
+  color: var(--color-text);
+}
+
 .blog-reader-body {
   flex: 1;
   overflow-y: auto;
