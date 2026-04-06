@@ -36,7 +36,7 @@ const config = {
   // These are appended to the base SCOPES via include_granted_scopes=true so
   // existing users are not forced through the unverified-app screen.
   GEMINI_SCOPES: [
-    'https://www.googleapis.com/auth/generative-language.retrieval',
+    'https://www.googleapis.com/auth/generative-language.retriever',
   ],
 
   GOOGLE_AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
