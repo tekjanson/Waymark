@@ -32,6 +32,13 @@ const config = {
     'https://www.googleapis.com/auth/drive.file',
   ],
 
+  // Restricted scopes for the incremental "Power User" Gemini OAuth flow.
+  // These are appended to the base SCOPES via include_granted_scopes=true so
+  // existing users are not forced through the unverified-app screen.
+  GEMINI_SCOPES: [
+    'https://www.googleapis.com/auth/generative-language.retriever',
+  ],
+
   GOOGLE_AUTH_URL: 'https://accounts.google.com/o/oauth2/v2/auth',
   GOOGLE_TOKEN_URL: 'https://oauth2.googleapis.com/token',
 };

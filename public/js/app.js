@@ -494,6 +494,26 @@ function handleRoute() {
     return;
   }
 
+  // Handle Gemini incremental OAuth callback — fetch the elevated access token
+  // and store it for Gemini API requests.
+  if (hash === '#gemini_success') {
+    const base = window.__WAYMARK_BASE || '';
+    fetch(base + '/auth/refresh', { method: 'POST', credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.access_token) {
+          storage.setGeminiOAuthToken({
+            access_token: data.access_token,
+            expires_at: Date.now() + ((data.expires_in || 3600) * 1000) - 60_000,
+          });
+          showToast('Gemini connected via Google Subscription \u2713', 'success');
+        }
+      })
+      .catch(() => {});
+    window.location.hash = '#/';
+    return;
+  }
+
   // Track internal navigation history
   if (_navHistory[_navHistory.length - 1] !== hash) {
     _navHistory.push(hash);
