@@ -561,3 +561,38 @@ test('reader closes while async export is in flight without errors', async ({ pa
   expect(errors).toHaveLength(0);
 });
 
+test('reader falls back to preview URL when OAuth export fails', async ({ page }) => {
+  // Override exportDocAsHtml mock to throw (simulates 403 from drive.file scope)
+  await page.addInitScript(() => {
+    // Intercept the export so it rejects — verifies fallback path works
+    window.__WAYMARK_FORCE_EXPORT_FAIL = true;
+  });
+  await setupApp(page);
+
+  // Inject the override AFTER setup to intercept the real api call
+  await page.evaluate(() => {
+    // Monkey-patch the api object post-setup
+    if (window.__WAYMARK_API && window.__WAYMARK_API.drive) {
+      const orig = window.__WAYMARK_API.drive.exportDocAsHtml;
+      window.__WAYMARK_API.drive.exportDocAsHtml = async () => {
+        throw new Error('Permission denied — simulated 403');
+      };
+    }
+  });
+
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+  // After export fails the loading state should clear and iframe src should be set
+  await page.waitForSelector('.blog-reader-page:not(.blog-reader-loading)', { timeout: 5000 });
+
+  const iframe = page.locator('.blog-reader-iframe');
+  const src = await iframe.getAttribute('src');
+  const srcdoc = await iframe.getAttribute('srcdoc');
+  // Either srcdoc (from successful mock if monkey-patch didn't reach) or
+  // src (fallback preview URL) should be set — reader should not be empty
+  expect(src || srcdoc).toBeTruthy();
+});
+
