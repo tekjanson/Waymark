@@ -1072,6 +1072,8 @@ import {
   getAgentModel,
   recordKeyUsage,
   recordKeyError,
+  getGeminiOAuthToken,
+  clearGeminiOAuthToken,
 } from '../storage.js';
 
 /**
@@ -1085,8 +1087,18 @@ import {
  * @returns {Promise<string>}
  */
 export async function generateText(systemPrompt, userMessage, opts = {}) {
-  const keys = pickBestKey();
-  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
+  const oauthToken = getGeminiOAuthToken();
+  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
+
+  // Build the candidate key list. OAuth takes priority and needs no key entry;
+  // represent it as a sentinel so the retry loop works uniformly.
+  let keys;
+  if (isOAuthActive) {
+    keys = [{ key: '', idx: -1 }];
+  } else {
+    keys = pickBestKey();
+    if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings, or connect via Google Subscription.');
+  }
 
   const model = getAgentModel() || DEFAULT_MODEL;
   const url = geminiUrl(model, 'generateContent');
@@ -1108,9 +1120,23 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
     });
 
     if (!res.ok) {
-      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
       const errBody = await res.json().catch(() => ({}));
-      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
+      const errMsg = errBody?.error?.message || `Gemini API error ${res.status}`;
+      if (res.status === 401) {
+        if (isOAuthActive) {
+          clearGeminiOAuthToken();
+          throw new Error('Your Google Subscription token has expired. Reconnect via Settings → Power User.');
+        }
+        if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+        throw new Error('Unauthorised. Check your API key in Settings.');
+      }
+      if (res.status === 403) {
+        if (isOAuthActive) throw new Error('Your Google account does not have access to this Gemini feature.');
+        if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+        throw new Error('API key does not have permission. Check your key at ai.google.dev.');
+      }
+      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+      lastErr = new Error(errMsg);
       if (res.status === 429 || res.status === 503) continue;
       throw lastErr;
     }

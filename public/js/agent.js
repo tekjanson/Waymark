@@ -311,7 +311,9 @@ export function hide() {
 /* ---------- UI Rendering ---------- */
 
 function _renderUI() {
-  const hasKeys = storage.getAgentKeys().length > 0;
+  const oauthToken = storage.getGeminiOAuthToken();
+  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
+  const hasKeys = isOAuthActive || storage.getAgentKeys().length > 0;
   const rendered = renderAgentUI({
     container: _container,
     messages: _messages,
@@ -481,7 +483,9 @@ function _clearConversation() {
   _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
-    const hasKeys = storage.getAgentKeys().length > 0;
+    const oauthToken = storage.getGeminiOAuthToken();
+    const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
+    const hasKeys = isOAuthActive || storage.getAgentKeys().length > 0;
     _chatBody.appendChild(hasKeys ? _buildEmptyState() : _buildWelcome());
   }
 }
@@ -489,8 +493,10 @@ function _clearConversation() {
 async function _sendMessage(text) {
   if (!text || !text.trim() || _isStreaming) return;
 
-  const keyEntry = _getNextKey();
-  if (!keyEntry) {
+  const oauthToken = storage.getGeminiOAuthToken();
+  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
+  const keyEntry = isOAuthActive ? null : _getNextKey();
+  if (!isOAuthActive && !keyEntry) {
     showToast('Configure your API keys in Settings first', 'error');
     return;
   }
@@ -512,7 +518,7 @@ async function _sendMessage(text) {
 
   let preparedRequest;
   try {
-    preparedRequest = await _prepareModelRequest(keyEntry.key, keyEntry.idx, userText);
+    preparedRequest = await _prepareModelRequest(keyEntry?.key || '', keyEntry?.idx ?? -1, userText);
   } catch (err) {
     const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
     _messages.push(errorMsg);
@@ -591,8 +597,8 @@ async function _sendMessage(text) {
 
   try {
     const response = await _streamCallGemini(
-      keyEntry.key,
-      keyEntry.idx,
+      keyEntry?.key || '',
+      keyEntry?.idx ?? -1,
       preparedRequest,
       (chunk) => {
         // Remove typing dots on first chunk
@@ -1016,6 +1022,7 @@ function _removeToolIndicator() {
  */
 async function _fetchGemini(url, body, keyIdx) {
   const currentKey = storage.getAgentKeys()[keyIdx]?.key || '';
+  const usingOAuth = !currentKey && !!storage.getGeminiOAuthToken()?.access_token;
   const fetchOpts = {
     method: 'POST',
     headers: _geminiHeaders(currentKey),
@@ -1058,10 +1065,9 @@ async function _fetchGemini(url, body, keyIdx) {
     // Billing/hard quota — retrying the same key won't help once rotation fails.
     if (hardQuotaExceeded) {
       throw new Error(
-        'Your Gemini API quota is exhausted. To fix this:\n' +
-        '• Wait until your quota resets (usually daily)\n' +
-        '• Or visit ai.google.dev to upgrade your plan\n' +
-        '• Or switch to a different model in Settings'
+        usingOAuth
+          ? 'Your Gemini quota via Google Subscription is exhausted. Wait for it to reset or try again later.'
+          : 'Your Gemini API quota is exhausted. To fix this:\n• Wait until your quota resets (usually daily)\n• Or visit ai.google.dev to upgrade your plan\n• Or switch to a different model in Settings'
       );
     }
 
@@ -1088,11 +1094,22 @@ async function _fetchGemini(url, body, keyIdx) {
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;
+    if (res.status === 401) {
+      if (usingOAuth) {
+        storage.clearGeminiOAuthToken();
+        throw new Error('Your Google Subscription token has expired. Reconnect via Settings → Power User.');
+      }
+      storage.recordKeyError(keyIdx);
+      throw new Error('Unauthorised. Check your API key in Settings.');
+    }
     if (res.status === 400 && /api.?key/i.test(errMsg)) {
       storage.recordKeyError(keyIdx);
       throw new Error('Invalid API key. Check your key in Settings.');
     }
     if (res.status === 403) {
+      if (usingOAuth) {
+        throw new Error('Your Google account does not have access to this Gemini feature.');
+      }
       storage.recordKeyError(keyIdx);
       throw new Error('API key does not have permission. Check your key at ai.google.dev.');
     }

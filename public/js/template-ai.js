@@ -500,8 +500,18 @@ async function _callBuffered(apiKey, body) {
       body: JSON.stringify({ ...body, contents: iterContents }),
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `API error ${res.status}`);
+      const errData = await res.json().catch(() => ({}));
+      const errMsg = errData?.error?.message || `API error ${res.status}`;
+      const oauthToken = storage.getGeminiOAuthToken();
+      const usingOAuth = !apiKey && !!(oauthToken?.access_token);
+      if (res.status === 401 && usingOAuth) {
+        storage.clearGeminiOAuthToken();
+        throw new Error('Your Google Subscription token has expired. Reconnect via Settings → Power User.');
+      }
+      if (res.status === 403 && usingOAuth) {
+        throw new Error('Your Google account does not have access to this Gemini feature.');
+      }
+      throw new Error(errMsg);
     }
     const data = await res.json();
     const candidate = data.candidates?.[0];
