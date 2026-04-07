@@ -814,6 +814,11 @@
           "id": "sheet-064",
           "name": "Family Summer 2026",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-066",
+          "name": "Registration Tracker",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     }

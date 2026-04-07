@@ -117,7 +117,7 @@ export async function getSpreadsheet(token, spreadsheetId) {
   // Single API call: fetch metadata + all cell data for the first sheet.
   // Uses includeGridData to avoid a separate values request (halves API usage).
   const res = await fetchWithRetry(
-    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
+    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.sheetId,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) throw sheetsError('Sheets read', res);
@@ -125,6 +125,7 @@ export async function getSpreadsheet(token, spreadsheetId) {
 
   const title = body.properties?.title || 'Untitled';
   const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
+  const numericSheetId = body.sheets?.[0]?.properties?.sheetId ?? 0;
 
   // Convert gridData into simple 2D string array (same format as values endpoint)
   const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
@@ -136,7 +137,82 @@ export async function getSpreadsheet(token, spreadsheetId) {
     })
   );
 
-  return { id: spreadsheetId, title, sheetTitle, values };
+  return { id: spreadsheetId, title, sheetTitle, numericSheetId, values };
+}
+
+/**
+ * Fetch all protected ranges for a spreadsheet.
+ * The existing drive.file OAuth scope (managed by auth.js / api-client.js) is
+ * sufficient to call this endpoint — no service account or additional GCP scope
+ * is required.
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @returns {Promise<Array>} flat array of protectedRange objects across all sheets
+ */
+export async function getProtectedRanges(token, spreadsheetId) {
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}?fields=sheets.protectedRanges`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw sheetsError('Protected ranges read', res);
+  const body = await res.json();
+  const ranges = [];
+  for (const sheet of (body.sheets || [])) {
+    for (const pr of (sheet.protectedRanges || [])) {
+      ranges.push(pr);
+    }
+  }
+  return ranges;
+}
+
+/**
+ * Protect a single row against edits by non-owners.
+ * Routed through fetchWithRetry (respects acquireSlot throttle queue and
+ * exponential backoff on 429s). If all retries are exhausted the caller
+ * MUST catch the error and surface 'Row saved but not locked' via showToast.
+ *
+ * The drive.file scope already held by the authenticated session is sufficient
+ * for addProtectedRange on files this user has opened — no extra scope needed.
+ *
+ * @param {string} token        OAuth access token (owner's session)
+ * @param {string} spreadsheetId
+ * @param {number} sheetId      numeric Google Sheets tab ID (not the spreadsheetId)
+ * @param {number} rowIndex     0-based row index to protect
+ * @param {string} ownerEmail   owner email — added to editors list so they keep full access
+ * @returns {Promise<Object>}   batchUpdate response
+ */
+export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail) {
+  const body = {
+    requests: [{
+      addProtectedRange: {
+        protectedRange: {
+          range: {
+            sheetId,
+            startRowIndex: rowIndex,
+            endRowIndex: rowIndex + 1,
+          },
+          description: 'Row locked on form submission',
+          warningOnly: false,
+          editors: {
+            users: [ownerEmail],
+          },
+        },
+      },
+    }],
+  };
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw sheetsError('Protected range add', res);
+  return res.json();
 }
 
 /**

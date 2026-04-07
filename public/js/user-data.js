@@ -80,6 +80,9 @@ function defaultUserData() {
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
 
+    /* ── Lock-on-Submit ── */
+    lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
+
     /* ── Housekeeping ── */
     updatedAt: new Date().toISOString(),
   };
@@ -740,6 +743,34 @@ export async function clearAll() {
       await api.drive.updateJsonFile(_dataFileId, _userData);
     } catch { /* ignore */ }
   }
+}
+
+/* ---------- Lock-on-Submit ---------- */
+
+/**
+ * Check whether row-locking on form submission is enabled for a spreadsheet.
+ * @param {string} spreadsheetId
+ * @returns {boolean}
+ */
+export function getLockOnSubmit(spreadsheetId) {
+  return !!(_userData?.lockOnSubmitSheets?.[spreadsheetId]);
+}
+
+/**
+ * Enable or disable lock-on-submit for a specific spreadsheet.
+ * When enabled, the owner's active session will lock each appended row
+ * immediately after submission using the Sheets protected-ranges API.
+ * @param {string}  spreadsheetId
+ * @param {boolean} enabled
+ */
+export async function setLockOnSubmit(spreadsheetId, enabled) {
+  const locks = { ...(_userData?.lockOnSubmitSheets || {}) };
+  if (enabled) {
+    locks[spreadsheetId] = true;
+  } else {
+    delete locks[spreadsheetId];
+  }
+  await save({ lockOnSubmitSheets: locks });
 }
 
 /* ---------- Folder name exports (for other modules) ---------- */

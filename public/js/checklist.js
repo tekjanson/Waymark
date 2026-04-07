@@ -24,7 +24,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, printBtn;
-let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn;
+let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lockSubmitToggle;
 let currentTemplateKey = null;
 let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
@@ -51,6 +51,7 @@ export function init() {
   notifRulesBtn     = document.getElementById('notif-rules-btn');
   templateAiBtn     = document.getElementById('template-ai-btn');
   encryptBtn        = document.getElementById('encrypt-btn');
+  lockSubmitToggle  = document.getElementById('lock-submit-toggle');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -148,6 +149,18 @@ export function init() {
     encryptBtn.addEventListener('click', () => {
       if (!currentSheetId) return;
       openEncryptModal();
+    });
+  }
+
+  if (lockSubmitToggle) {
+    lockSubmitToggle.addEventListener('change', () => {
+      if (!currentSheetId) return;
+      const enabled = lockSubmitToggle.checked;
+      userData.setLockOnSubmit(currentSheetId, enabled);
+      showToast(
+        enabled ? 'Row-lock on submit enabled for this sheet' : 'Row-lock on submit disabled',
+        'success'
+      );
     });
   }
 
@@ -829,6 +842,23 @@ async function loadSheet(sheetId) {
       sheetPinBtn.title = pinned ? 'Unpin sheet' : 'Pin sheet';
     }
 
+    // Sync lock-on-submit toggle to reflect current sheet's setting
+    if (lockSubmitToggle) {
+      lockSubmitToggle.checked = userData.getLockOnSubmit(sheetId);
+    }
+
+    // On load: background lock scan for any unprotected rows (owner only)
+    if (userData.getLockOnSubmit(sheetId) && api.auth.isLoggedIn()) {
+      const user = api.auth.getUser();
+      const ownerEmail = user?.email || '';
+      if (ownerEmail && currentValues && currentValues.length > 1) {
+        // Read numericSheetId from the loaded data (default 0 in mock/fixture mode)
+        const numericSheetId = data.numericSheetId ?? 0;
+        lockNewRows(sheetId, numericSheetId, currentValues.length, ownerEmail)
+          .catch(() => {}); // errors already logged/toasted inside lockNewRows
+      }
+    }
+
     // Notify app.js so the parent folder's .waymark-index stays fresh
     window.dispatchEvent(new CustomEvent('waymark:sheet-refreshed', {
       detail: {
@@ -849,6 +879,111 @@ async function loadSheet(sheetId) {
     }
     if (templateBadge) templateBadge.classList.add('hidden');
   }
+}
+
+/* ---------- Lock-on-Submit ---------- */
+
+/**
+ * Lock a single sheet row using the Sheets protected-ranges API.
+ * Checks for duplicates and the 10,000-range limit before calling addProtectedRange.
+ * Caller must catch errors and surface 'Row saved but not locked' toast if needed.
+ *
+ * @param {string}   spreadsheetId
+ * @param {number}   numericSheetId  Google Sheets tab ID (integer)
+ * @param {number}   rowIndex        0-based row index in the spreadsheet
+ * @param {string}   ownerEmail      owner email — added to editors list
+ * @param {Array}    [existingRanges] cached protected ranges (avoids a second API call)
+ *
+ * @returns {Promise<boolean>} true if locked, false if skipped (already locked or limit)
+ */
+async function lockSubmittedRow(spreadsheetId, numericSheetId, rowIndex, ownerEmail, existingRanges) {
+  const ranges = existingRanges || await api.sheets.getProtectedRanges(spreadsheetId);
+
+  // Duplicate check — skip if this row is already covered by a protection
+  const alreadyProtected = ranges.some(pr =>
+    pr.range &&
+    pr.range.startRowIndex <= rowIndex &&
+    pr.range.endRowIndex > rowIndex
+  );
+  if (alreadyProtected) return false;
+
+  // Hard limit guard — Google Sheets caps protected ranges at 10,000
+  if (ranges.length >= 10000) {
+    showToast(
+      'Cannot lock: sheet has reached the 10,000 protected range limit. Clean up old locks.',
+      'error'
+    );
+    return false;
+  }
+
+  await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIndex, ownerEmail);
+  return true;
+}
+
+/**
+ * Scan for and lock any unprotected data rows in the sheet.
+ * Called in the background on sheet load when lock-on-submit is enabled.
+ * Only runs for the authenticated owner (api.auth.isLoggedIn() required by caller).
+ *
+ * @param {string}   spreadsheetId
+ * @param {number}   numericSheetId
+ * @param {number}   totalRows       total rows in the sheet including header
+ * @param {string}   ownerEmail
+ */
+async function lockNewRows(spreadsheetId, numericSheetId, totalRows, ownerEmail) {
+  if (!ownerEmail) return;
+  try {
+    const existing = await api.sheets.getProtectedRanges(spreadsheetId);
+
+    // Show near-limit warning banner (90 % = 9,000 of 10,000)
+    if (existing.length >= 9000) {
+      showLimitWarningBanner(spreadsheetId, existing.length);
+    }
+
+    // Build a set of already-protected row indices for O(1) lookup
+    const protectedSet = new Set();
+    for (const pr of existing) {
+      if (pr.range) {
+        for (let i = pr.range.startRowIndex; i < pr.range.endRowIndex; i++) {
+          protectedSet.add(i);
+        }
+      }
+    }
+
+    // Lock every data row (index 1 … totalRows-1, 0 is header) that lacks protection
+    let locked = 0;
+    for (let rowIdx = 1; rowIdx < totalRows; rowIdx++) {
+      if (protectedSet.has(rowIdx)) continue;
+      if (existing.length + locked >= 10000) break;
+      try {
+        await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIdx, ownerEmail);
+        locked++;
+      } catch (err) {
+        console.warn('[lock-on-submit] Failed to lock row', rowIdx, err);
+        showToast('Row saved but could not be locked — check console for details', 'warn');
+        break;
+      }
+    }
+  } catch (err) {
+    console.warn('[lock-on-submit] Background lock scan failed:', err);
+  }
+}
+
+/** Render or update the near-limit warning banner above the sheet items. */
+function showLimitWarningBanner(spreadsheetId, count) {
+  if (!itemsEl) return;
+  const bannerId = 'lock-limit-warning';
+  let banner = document.getElementById(bannerId);
+  if (!banner) {
+    banner = el('div', {
+      id: bannerId,
+      className: 'lock-limit-banner',
+    });
+    itemsEl.parentElement?.insertBefore(banner, itemsEl);
+  }
+  banner.textContent = `⚠ This sheet is approaching the row-lock limit (${count.toLocaleString()}/10,000). ` +
+    'Clean up old protections in Google Sheets → Data → Protected sheets & ranges.';
+  banner.classList.remove('hidden');
 }
 
 /* ---------- Template-aware rendering ---------- */
@@ -892,8 +1027,41 @@ function renderWithTemplate(values) {
   const totalCols = headers.length;
   const addRowCallback = async (newRows) => {
     try {
+      // Snapshot current row count BEFORE appending (includes header at index 0)
+      const existingRowCount = currentValues ? currentValues.length : 1;
+
       await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
       showToast(`${template.itemNoun || 'Item'} added`, 'success');
+
+      // Apply row-lock if the owner has the feature enabled for this sheet
+      if (userData.getLockOnSubmit(currentSheetId) && api.auth.isLoggedIn()) {
+        const user = api.auth.getUser();
+        const ownerEmail = user?.email || '';
+        if (ownerEmail) {
+          const capturedSheetId = currentSheetId;
+          // Fetch protected ranges once and reuse for all appended rows
+          let ranges;
+          try {
+            const sheetData = await api.sheets.getSpreadsheet(capturedSheetId);
+            const numericSheetId = sheetData.numericSheetId ?? 0;
+            ranges = await api.sheets.getProtectedRanges(capturedSheetId);
+            for (let i = 0; i < newRows.length; i++) {
+              const rowIndex = existingRowCount + i;   // 0-based sheet row index
+              try {
+                await lockSubmittedRow(capturedSheetId, numericSheetId, rowIndex, ownerEmail, ranges);
+                // Add new range to local array so subsequent loop checks include it
+                ranges.push({ range: { startRowIndex: rowIndex, endRowIndex: rowIndex + 1 } });
+              } catch (lockErr) {
+                console.warn('[lock-on-submit] Failed to lock row', rowIndex, lockErr);
+                showToast('Row saved but could not be locked', 'warn');
+              }
+            }
+          } catch (fetchErr) {
+            console.warn('[lock-on-submit] Could not fetch sheet metadata for locking:', fetchErr);
+          }
+        }
+      }
+
       await loadSheet(currentSheetId);
     } catch (err) {
       showToast(`Failed to add: ${err.message}`, 'error');
