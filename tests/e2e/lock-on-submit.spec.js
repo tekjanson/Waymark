@@ -311,3 +311,129 @@ test('lock-submit toggle is inside overflow menu which uses correct display mode
   const menu = page.locator('.header-overflow-menu');
   await expect(menu).toHaveCSS('display', /flex|block/);
 });
+
+/* ── Layer 8: Lock Icon Rendering on Protected Rows (Row 14) ── */
+
+test('lock icon appears on rows that are server-side protected', async ({ page }) => {
+  // Pre-seed row 1 (Alice) as protected before page loads
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Row 1 (Alice) should have a lock icon; row 2 (Bob) should not
+  const rows = page.locator('.template-tracker-row');
+  await expect(rows.first().locator('.tracker-row-lock')).toBeVisible();
+  await expect(rows.nth(1).locator('.tracker-row-lock')).toHaveCount(0);
+});
+
+test('lock icon is absent when no rows are protected', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Default mock: no protected ranges → no lock icons
+  await expect(page.locator('.tracker-row-lock')).toHaveCount(0);
+});
+
+/* ── Layer 9: Editor Cannot Bypass a Locked Row (Row 18) ── */
+
+test('clicking editable cell on a protected row shows locked toast instead of opening input', async ({ page }) => {
+  // Pre-seed row 1 (Alice) as protected
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Click the label cell on the first row (Alice — which is protected)
+  const firstRowLabel = page.locator('.template-tracker-row').first().locator('.template-tracker-label');
+  await firstRowLabel.click();
+
+  // Should show a "locked" toast — no input should appear
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText(/locked/i);
+  await expect(firstRowLabel.locator('input.editable-cell-input')).toHaveCount(0);
+});
+
+test('editing a non-protected row opens input normally', async ({ page }) => {
+  // Only protect row 1 (Alice); row 2 (Bob) remains editable
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Click the label of the SECOND row (Bob — not protected)
+  const secondRowLabel = page.locator('.template-tracker-row').nth(1).locator('.template-tracker-label');
+  await secondRowLabel.click();
+
+  // An input should appear (edit mode opens)
+  await expect(secondRowLabel.locator('input.editable-cell-input')).toBeVisible({ timeout: 3000 });
+});
+
+/* ── Layer 10: Unit Test — addProtectedRange Payload Shape (Row 19) ── */
+
+test('addProtectedRange mock stores correct payload shape in WAYMARK_PROTECTED_RANGES', async ({ page }) => {
+  await setupApp(page);
+
+  const result = await page.evaluate(async () => {
+    // Reset the mock store
+    window.__WAYMARK_PROTECTED_RANGES = {};
+    window.__WAYMARK_RECORDS = window.__WAYMARK_RECORDS || [];
+
+    const { api } = await import('/js/api-client.js');
+    await api.sheets.addProtectedRange('test-sheet-payload', 42, 7, 'owner@example.com');
+
+    const ranges = window.__WAYMARK_PROTECTED_RANGES['test-sheet-payload'] || [];
+    const record = (window.__WAYMARK_RECORDS || []).find(r => r.type === 'row-protect' && r.spreadsheetId === 'test-sheet-payload');
+
+    if (!ranges.length || !record) return null;
+
+    const pr = ranges[0];
+    return {
+      sheetId: pr.range.sheetId,
+      startRowIndex: pr.range.startRowIndex,
+      endRowIndex: pr.range.endRowIndex,
+      warningOnly: pr.warningOnly,
+      editorsUser: pr.editors.users[0],
+      recordSheetId: record.sheetId,
+      recordRowIndex: record.rowIndex,
+      recordOwnerEmail: record.ownerEmail,
+    };
+  });
+
+  expect(result).not.toBeNull();
+  // sheetId must be the numeric tab ID passed in (42)
+  expect(result.sheetId).toBe(42);
+  // range must cover only the target row (0-based row index 7)
+  expect(result.startRowIndex).toBe(7);
+  expect(result.endRowIndex).toBe(8);  // endRowIndex = rowIndex + 1
+  // warningOnly must be false — hard protection, not just a warning
+  expect(result.warningOnly).toBe(false);
+  // owner email must be preserved in the editors list
+  expect(result.editorsUser).toBe('owner@example.com');
+  // record fields must match
+  expect(result.recordSheetId).toBe(42);
+  expect(result.recordRowIndex).toBe(7);
+  expect(result.recordOwnerEmail).toBe('owner@example.com');
+});

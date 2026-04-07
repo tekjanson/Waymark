@@ -9,7 +9,7 @@ import { el, showToast, timeAgo } from './ui.js';
 import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { detectTemplate, onEdit } from './templates/index.js';
-import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, getMissingMigrations, getCrossFeature } from './templates/shared.js';
+import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks } from './storage.js';
@@ -594,6 +594,8 @@ export function hide() {
   currentDataTitle = null;
   clearInterval(refreshTimer);
   refreshTimer = null;
+  // Reset protected-row state so lock icons don't bleed across sheets
+  setProtectedRows(new Set());
 }
 
 /* ---------- Embed API ---------- */
@@ -797,7 +799,26 @@ function openDuplicateModal() {
 
 async function loadSheet(sheetId) {
   try {
-    const data = await api.sheets.getSpreadsheet(sheetId);
+    // Fire sheet data and protected-range metadata in parallel when authenticated.
+    // Protected ranges are used to render lock icons and drive the background scan.
+    const [data, rawProtectedRanges] = await Promise.all([
+      api.sheets.getSpreadsheet(sheetId),
+      api.auth.isLoggedIn()
+        ? api.sheets.getProtectedRanges(sheetId).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    // Build a Set of 0-based row indices that are server-side protected.
+    // This is passed to shared.js so templates can render lock icons.
+    const protectedRowSet = new Set();
+    for (const pr of rawProtectedRanges) {
+      if (pr.range) {
+        for (let i = pr.range.startRowIndex; i < pr.range.endRowIndex; i++) {
+          protectedRowSet.add(i);
+        }
+      }
+    }
+    setProtectedRows(protectedRowSet);
     titleEl.textContent = data.title;
     currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
@@ -854,7 +875,8 @@ async function loadSheet(sheetId) {
       if (ownerEmail && currentValues && currentValues.length > 1) {
         // Read numericSheetId from the loaded data (default 0 in mock/fixture mode)
         const numericSheetId = data.numericSheetId ?? 0;
-        lockNewRows(sheetId, numericSheetId, currentValues.length, ownerEmail)
+        // Pass rawProtectedRanges to avoid a redundant API call — loadSheet already fetched them.
+        lockNewRows(sheetId, numericSheetId, currentValues.length, ownerEmail, rawProtectedRanges)
           .catch(() => {}); // errors already logged/toasted inside lockNewRows
       }
     }
@@ -929,11 +951,12 @@ async function lockSubmittedRow(spreadsheetId, numericSheetId, rowIndex, ownerEm
  * @param {number}   numericSheetId
  * @param {number}   totalRows       total rows in the sheet including header
  * @param {string}   ownerEmail
+ * @param {Array}    [preloadedRanges]  already-fetched protected ranges (avoids a second API call)
  */
-async function lockNewRows(spreadsheetId, numericSheetId, totalRows, ownerEmail) {
+async function lockNewRows(spreadsheetId, numericSheetId, totalRows, ownerEmail, preloadedRanges) {
   if (!ownerEmail) return;
   try {
-    const existing = await api.sheets.getProtectedRanges(spreadsheetId);
+    const existing = preloadedRanges || await api.sheets.getProtectedRanges(spreadsheetId);
 
     // Show near-limit warning banner (90 % = 9,000 of 10,000)
     if (existing.length >= 9000) {

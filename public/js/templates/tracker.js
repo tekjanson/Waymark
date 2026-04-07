@@ -2,7 +2,7 @@
    templates/tracker.js \u2014 Tracker: milestones + completion ETA
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate, drawBarChart, buildDirSyncBtn, delegateEvent } from './shared.js';
+import { el, cell, editableCell, emitEdit, parseProgress, registerTemplate, drawBarChart, buildDirSyncBtn, delegateEvent, isRowProtected } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -141,6 +141,10 @@ const definition = {
         el('div', { className: 'template-tracker-info' }, infoChildren),
         progressCell,
         pctEl,
+        ...(isRowProtected(rowIdx) ? [el('span', {
+          className: 'tracker-row-lock',
+          title: 'Row protected — editing disabled',
+        }, ['🔒'])] : []),
       ]));
     }
   },
