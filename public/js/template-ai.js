@@ -112,22 +112,14 @@ export function hide() {
 /* ---------- Rendering ---------- */
 
 function _render() {
-  const oauthToken = storage.getGeminiOAuthToken();
-  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
   const hasKeys = storage.getAgentKeys().length > 0;
-  const canUseAI = isOAuthActive || hasKeys;
-
-  const headerLeft = el('div', { className: 'template-ai-header-left' }, [
-    el('span', { className: 'template-ai-sparkle' }, ['✨']),
-    el('span', { className: 'template-ai-header-title' }, ['Ask AI']),
-    el('span', { className: 'template-ai-sheet-name' }, [_context.title]),
-    isOAuthActive
-      ? el('span', { className: 'template-ai-oauth-badge' }, ['Google Subscription'])
-      : null,
-  ].filter(Boolean));
 
   const header = el('div', { className: 'template-ai-header' }, [
-    headerLeft,
+    el('div', { className: 'template-ai-header-left' }, [
+      el('span', { className: 'template-ai-sparkle' }, ['✨']),
+      el('span', { className: 'template-ai-header-title' }, ['Ask AI']),
+      el('span', { className: 'template-ai-sheet-name' }, [_context.title]),
+    ]),
     el('button', {
       className: 'template-ai-close',
       'aria-label': 'Close AI panel',
@@ -137,13 +129,13 @@ function _render() {
 
   _chatBody = el('div', { className: 'template-ai-body' });
 
-  if (!canUseAI) {
+  if (!hasKeys) {
     _chatBody.appendChild(_buildNoKeysState());
   } else {
     _chatBody.appendChild(_buildEmptyState());
   }
 
-  const inputRow = _buildInputRow(canUseAI);
+  const inputRow = _buildInputRow(hasKeys);
 
   _panel = el('div', {
     className: 'template-ai-panel',
@@ -161,7 +153,7 @@ function _render() {
 
   // Focus the text input
   const input = _panel.querySelector('.template-ai-input');
-  if (input && canUseAI) input.focus();
+  if (input && hasKeys) input.focus();
 
   // Escape key closes panel
   document.addEventListener('keydown', _handleKeyDown);
@@ -315,14 +307,11 @@ function _buildSystemPrompt() {
 async function _sendMessage(text) {
   if (!text.trim() || _isStreaming) return;
 
-  const oauthToken = storage.getGeminiOAuthToken();
-  const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
-  const keyEntry = isOAuthActive ? null : _getNextKey();
-  if (!isOAuthActive && !keyEntry) {
+  const keyEntry = _getNextKey();
+  if (!keyEntry) {
     showToast('Configure API keys in the AI agent settings first', 'error');
     return;
   }
-  const apiKey = keyEntry?.key || '';
 
   // Clear empty/suggestion state on first message
   const empty = _chatBody.querySelector('.template-ai-empty');
@@ -398,17 +387,17 @@ async function _sendMessage(text) {
     try {
       res = await fetch(streamUrl, {
         method: 'POST',
-        headers: geminiHeaders(apiKey),
+        headers: geminiHeaders(keyEntry.key),
         body: JSON.stringify(body),
         signal,
       });
     } catch (err) {
       if (err.name === 'AbortError') throw err;
       // Fall back to buffered endpoint (proxy may reject SSE)
-      const response = await _callBuffered(apiKey, body);
+      const response = await _callBuffered(keyEntry.key, body);
       liveContent.innerHTML = '';
       renderMarkdown(liveContent, response);
-      if (keyEntry) storage.recordKeyUsage(keyEntry.idx);
+      storage.recordKeyUsage(keyEntry.idx);
       return;
     }
 
@@ -417,7 +406,7 @@ async function _sendMessage(text) {
       throw new Error(err?.error?.message || `API error ${res.status}`);
     }
 
-    if (keyEntry) storage.recordKeyUsage(keyEntry.idx);
+    storage.recordKeyUsage(keyEntry.idx);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -444,7 +433,7 @@ async function _sendMessage(text) {
         const fc = candidate.content.parts.find(p => p.functionCall);
         if (fc) {
           reader.cancel();
-          const response = await _callBuffered(apiKey, body);
+          const response = await _callBuffered(keyEntry.key, body);
           liveContent.innerHTML = '';
           renderMarkdown(liveContent, response);
           return;
@@ -500,18 +489,8 @@ async function _callBuffered(apiKey, body) {
       body: JSON.stringify({ ...body, contents: iterContents }),
     });
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const errMsg = errData?.error?.message || `API error ${res.status}`;
-      const oauthToken = storage.getGeminiOAuthToken();
-      const usingOAuth = !apiKey && !!(oauthToken?.access_token);
-      if (res.status === 401 && usingOAuth) {
-        storage.clearGeminiOAuthToken();
-        throw new Error('Your Google Subscription token has expired. Reconnect via Settings → Power User.');
-      }
-      if (res.status === 403 && usingOAuth) {
-        throw new Error('Your Google account does not have access to this Gemini feature.');
-      }
-      throw new Error(errMsg);
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `API error ${res.status}`);
     }
     const data = await res.json();
     const candidate = data.candidates?.[0];
