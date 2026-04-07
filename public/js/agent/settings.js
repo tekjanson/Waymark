@@ -185,38 +185,6 @@ export function showSettingsModal(onRefresh) {
       ]),
       el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
       modelSelect,
-      el('hr', { className: 'agent-settings-divider' }),
-      el('label', { className: 'agent-settings-label' }, ['Power User: Gemini via Google']),
-      el('p', { className: 'agent-settings-hint' }, [
-        'Connect your personal Google account to use your Gemini subscription directly. ',
-        'Google will show an "Unverified App" warning — click ',
-        el('strong', {}, ['"Advanced \u2192 Go to WayMark (unsafe)"']),
-        ' to proceed.',
-      ]),
-      (() => {
-        const oauthToken = storage.getGeminiOAuthToken();
-        const isOAuthActive = !!(oauthToken?.access_token && oauthToken.expires_at > Date.now());
-        if (isOAuthActive) {
-          return el('div', { className: 'agent-oauth-connected' }, [
-            el('span', { className: 'agent-oauth-badge' }, ['\u2713 Connected via Google Subscription']),
-            el('button', {
-              className: 'agent-oauth-disconnect-btn',
-              on: {
-                click: () => {
-                  storage.clearGeminiOAuthToken();
-                  showToast('Gemini connection removed', 'info');
-                  overlay.remove();
-                  onRefresh();
-                },
-              },
-            }, ['Disconnect']),
-          ]);
-        }
-        return el('a', {
-          className: 'agent-oauth-connect-btn',
-          href: (window.__WAYMARK_BASE || '') + '/auth/gemini',
-        }, ['Connect Gemini via Google \u2192']);
-      })(),
       el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
         cloudToggle,
         ' Sync keys across devices',

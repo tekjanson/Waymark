@@ -557,26 +557,3 @@ export function getEchoSuppression() {
 export function setEchoSuppression(level) {
   set('audio_echo_suppression', Number(level));
 }
-
-/* --- Gemini OAuth Token --- */
-
-/**
- * Get the stored Gemini OAuth token data.
- * @returns {{ access_token: string, expires_at: number }|null}
- */
-export function getGeminiOAuthToken() {
-  return get('gemini_oauth_token') || null;
-}
-
-/**
- * Persist the Gemini OAuth token with its expiry timestamp.
- * @param {{ access_token: string, expires_at: number }} tokenData
- */
-export function setGeminiOAuthToken(tokenData) {
-  set('gemini_oauth_token', tokenData);
-}
-
-/** Remove the stored Gemini OAuth token (disconnect). */
-export function clearGeminiOAuthToken() {
-  remove('gemini_oauth_token');
-}

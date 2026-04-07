@@ -29,22 +29,6 @@ function buildAuthUrl(codeChallenge, state) {
   return `${config.GOOGLE_AUTH_URL}?${params}`;
 }
 
-function buildGeminiAuthUrl(codeChallenge, state) {
-  const params = new URLSearchParams({
-    client_id: config.GOOGLE_CLIENT_ID,
-    redirect_uri: config.GOOGLE_REDIRECT_URI,
-    response_type: 'code',
-    scope: [...config.SCOPES, ...config.GEMINI_SCOPES].join(' '),
-    access_type: 'offline',
-    prompt: 'consent',
-    include_granted_scopes: 'true',
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    state,
-  });
-  return `${config.GOOGLE_AUTH_URL}?${params}`;
-}
-
 async function exchangeCode(code, codeVerifier) {
   const res = await fetch(config.GOOGLE_TOKEN_URL, {
     method: 'POST',
@@ -116,23 +100,6 @@ module.exports = function setupAuth(app) {
     res.redirect(buildAuthUrl(challenge, state));
   });
 
-  /* --- GET /auth/gemini --- */
-  // Incremental OAuth for Power Users: appends the Gemini generative-language
-  // scope to existing grants via include_granted_scopes=true.
-  app.get('/auth/gemini', (req, res) => {
-    if (config.WAYMARK_LOCAL) {
-      return res.redirect(bp + '/#gemini_success');
-    }
-
-    const { verifier, challenge } = generatePKCE();
-    const state = crypto.randomBytes(16).toString('hex');
-
-    res.cookie('gemini_pkce_verifier', verifier, SHORT_COOKIE_OPTS);
-    res.cookie('gemini_oauth_state', state, SHORT_COOKIE_OPTS);
-
-    res.redirect(buildGeminiAuthUrl(challenge, state));
-  });
-
   /* --- GET /auth/callback --- */
   app.get('/auth/callback', async (req, res) => {
     if (config.WAYMARK_LOCAL) {
@@ -140,17 +107,12 @@ module.exports = function setupAuth(app) {
     }
 
     const { code, state, error } = req.query;
+    const savedState = req.cookies.oauth_state;
+    const codeVerifier = req.cookies.pkce_verifier;
 
-    // Detect which flow this callback belongs to by matching the state cookie.
-    const isGeminiFlow = !!(req.cookies.gemini_oauth_state && state === req.cookies.gemini_oauth_state);
-    const savedState = isGeminiFlow ? req.cookies.gemini_oauth_state : req.cookies.oauth_state;
-    const codeVerifier = isGeminiFlow ? req.cookies.gemini_pkce_verifier : req.cookies.pkce_verifier;
-
-    // Clear all one-time cookies regardless of flow
+    // Clear one-time cookies
     res.clearCookie('pkce_verifier', { path: bp + '/' });
     res.clearCookie('oauth_state', { path: bp + '/' });
-    res.clearCookie('gemini_pkce_verifier', { path: bp + '/' });
-    res.clearCookie('gemini_oauth_state', { path: bp + '/' });
 
     if (error) {
       console.error('OAuth error:', error);
@@ -189,10 +151,8 @@ module.exports = function setupAuth(app) {
         }
       }
 
-      // Redirect to app — frontend calls /auth/refresh to get the access token.
-      // Gemini upgrades redirect to #gemini_success so the frontend can store
-      // the elevated token separately for AI requests.
-      res.redirect(bp + (isGeminiFlow ? '/#gemini_success' : '/#auth_success'));
+      // Redirect to app — frontend calls /auth/refresh to get the access token
+      res.redirect(bp + '/#auth_success');
     } catch (err) {
       console.error('OAuth callback exception:', err);
       res.redirect(bp + '/#auth_error');
