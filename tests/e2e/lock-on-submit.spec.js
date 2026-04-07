@@ -437,3 +437,96 @@ test('addProtectedRange mock stores correct payload shape in WAYMARK_PROTECTED_R
   expect(result.recordRowIndex).toBe(7);
   expect(result.recordOwnerEmail).toBe('owner@example.com');
 });
+
+/* ── Layer 11: Owner-Configured Lock (Jamie's QA feedback) ── */
+/* When the sheet already has protected ranges (owner set up the feature),
+   lock-on-submit must be ON for ALL authenticated users — no toggle required. */
+
+test('toggle is checked and disabled when sheet has pre-existing protected ranges', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  await openOverflowMenu(page);
+  const toggle = page.locator('#lock-submit-toggle');
+
+  // Must be checked (owner-configured = on)
+  await expect(toggle).toBeChecked();
+  // Must be disabled (user cannot override)
+  const isDisabled = await toggle.isDisabled();
+  expect(isDisabled).toBe(true);
+});
+
+test('toggle label title says owner-configured when protected ranges exist', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  await openOverflowMenu(page);
+  const label = page.locator('#lock-submit-label');
+  const title = await label.getAttribute('title');
+  expect(title).toMatch(/owner/i);
+});
+
+test('submitting a row auto-locks WITHOUT enabling toggle when protected ranges pre-exist', async ({ page }) => {
+  // Pre-seed row 1 as protected — signals "owner has configured lock-on-submit"
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Do NOT manually enable the toggle — owner configuration should take effect automatically
+  await page.waitForSelector('.add-row-trigger', { timeout: 5000 });
+  await page.click('.add-row-trigger');
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3000 });
+
+  const goalInput = page.locator('.add-row-field-input').first();
+  await goalInput.fill('Grace Auto-Lock');
+  await page.click('.add-row-submit');
+
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-protect'),
+    { timeout: 8000 }
+  );
+
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'row-protect')).toBe(true);
+});
+
+test('toggle unchecked and enabled when sheet has NO protected ranges', async ({ page }) => {
+  // No pre-seeded protected ranges — toggle should be available
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  await openOverflowMenu(page);
+  const toggle = page.locator('#lock-submit-toggle');
+
+  await expect(toggle).not.toBeChecked();
+  const isDisabled = await toggle.isDisabled();
+  expect(isDisabled).toBe(false);
+});
+

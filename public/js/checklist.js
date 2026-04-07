@@ -28,6 +28,7 @@ let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lock
 let currentTemplateKey = null;
 let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
+let currentSheetProtectedRanges = [];  // updated on each sheet load
 
 /* ---------- Public ---------- */
 
@@ -863,13 +864,26 @@ async function loadSheet(sheetId) {
       sheetPinBtn.title = pinned ? 'Unpin sheet' : 'Pin sheet';
     }
 
-    // Sync lock-on-submit toggle to reflect current sheet's setting
+    // Keep a module-level snapshot so addRowCallback can use it
+    currentSheetProtectedRanges = rawProtectedRanges;
+
+    // Sync lock-on-submit toggle: if sheet already has protected ranges the owner
+    // has configured the feature — enforce it and disable the toggle for non-owners.
     if (lockSubmitToggle) {
-      lockSubmitToggle.checked = userData.getLockOnSubmit(sheetId);
+      const ownerConfigured = rawProtectedRanges.length > 0;
+      lockSubmitToggle.checked  = ownerConfigured || userData.getLockOnSubmit(sheetId);
+      lockSubmitToggle.disabled = ownerConfigured;
+      const lockLabel = document.getElementById('lock-submit-label');
+      if (lockLabel) {
+        lockLabel.title = ownerConfigured
+          ? 'Row lock is configured by the sheet owner — cannot be changed'
+          : 'Lock each submitted row to prevent editing by others';
+      }
     }
 
-    // On load: background lock scan for any unprotected rows (owner only)
-    if (userData.getLockOnSubmit(sheetId) && api.auth.isLoggedIn()) {
+    // On load: background lock scan — runs if user enabled lock OR owner has ranges already
+    const ownerConfiguredOnLoad = rawProtectedRanges.length > 0;
+    if ((userData.getLockOnSubmit(sheetId) || ownerConfiguredOnLoad) && api.auth.isLoggedIn()) {
       const user = api.auth.getUser();
       const ownerEmail = user?.email || '';
       if (ownerEmail && currentValues && currentValues.length > 1) {
@@ -1056,8 +1070,10 @@ function renderWithTemplate(values) {
       await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
       showToast(`${template.itemNoun || 'Item'} added`, 'success');
 
-      // Apply row-lock if the owner has the feature enabled for this sheet
-      if (userData.getLockOnSubmit(currentSheetId) && api.auth.isLoggedIn()) {
+      // Apply row-lock if: user has toggle enabled, OR sheet is owner-configured
+      // (i.e. protected ranges already exist — meaning the owner configured this once).
+      const ownerConfiguredLock = currentSheetProtectedRanges.length > 0;
+      if ((userData.getLockOnSubmit(currentSheetId) || ownerConfiguredLock) && api.auth.isLoggedIn()) {
         const user = api.auth.getUser();
         const ownerEmail = user?.email || '';
         if (ownerEmail) {
