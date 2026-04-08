@@ -181,25 +181,18 @@ export async function getProtectedRanges(token, spreadsheetId) {
  * @param {string} ownerEmail   owner email — added to editors list so they keep full access
  * @returns {Promise<Object>}   batchUpdate response
  */
-export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail) {
-  const body = {
-    requests: [{
-      addProtectedRange: {
-        protectedRange: {
-          range: {
-            sheetId,
-            startRowIndex: rowIndex,
-            endRowIndex: rowIndex + 1,
-          },
-          description: 'Row locked on form submission',
-          warningOnly: false,
-          editors: {
-            users: [ownerEmail],
-          },
-        },
-      },
-    }],
+export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail, description) {
+  const protectedRange = {
+    range: {
+      sheetId,
+      startRowIndex: rowIndex,
+      endRowIndex: rowIndex + 1,
+    },
+    description: description || 'Row locked on form submission',
+    warningOnly: false,
+    editors: ownerEmail ? { users: [ownerEmail] } : { users: [] },
   };
+  const body = { requests: [{ addProtectedRange: { protectedRange } }] };
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}:batchUpdate`,
     {
@@ -223,6 +216,31 @@ export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex,
  * @param {string} spreadsheetId
  * @returns {Promise<Object>}  { id, title, sheetTitle, values }
  */
+
+/**
+ * Delete a protected range by its integer ID.
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @param {number} protectedRangeId
+ * @returns {Promise<Object>}
+ */
+export async function deleteProtectedRange(token, spreadsheetId, protectedRangeId) {
+  const body = { requests: [{ deleteProtectedRange: { protectedRangeId } }] };
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw sheetsError('Protected range delete', res);
+  return res.json();
+}
+
 export async function getSpreadsheetSummary(token, spreadsheetId) {
   // Fetch just the first two rows via includeGridData with a limited range
   const res = await fetchWithRetry(

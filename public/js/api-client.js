@@ -905,14 +905,14 @@ export const api = {
     /**
      * Protect a single row from editing by non-owners.
      * Routed through the global throttle queue and retry logic in sheets.js.
-     * If the call fails after retries, the caller must catch and show a toast.
      * @param {string} spreadsheetId
      * @param {number} sheetId       numeric Google Sheets tab ID
      * @param {number} rowIndex      0-based row index to protect
-     * @param {string} ownerEmail    owner email added to editors list
+     * @param {string|null} ownerEmail owner email added to editors; null for empty editors
+     * @param {string} [description] protection description; defaults to 'Row locked on form submission'
      * @returns {Promise<Object>}
      */
-    async addProtectedRange(spreadsheetId, sheetId, rowIndex, ownerEmail) {
+    async addProtectedRange(spreadsheetId, sheetId, rowIndex, ownerEmail, description) {
       if (isLocal) {
         if (!window.__WAYMARK_PROTECTED_RANGES) window.__WAYMARK_PROTECTED_RANGES = {};
         if (!window.__WAYMARK_PROTECTED_RANGES[spreadsheetId]) {
@@ -921,14 +921,15 @@ export const api = {
         const pr = {
           protectedRangeId: Date.now() + Math.random(),
           range: { sheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1 },
-          description: 'Row locked on form submission',
+          description: description || 'Row locked on form submission',
           warningOnly: false,
-          editors: { users: [ownerEmail] },
+          editors: ownerEmail ? { users: [ownerEmail] } : { users: [] },
         };
         window.__WAYMARK_PROTECTED_RANGES[spreadsheetId].push(pr);
         const record = {
           type: 'row-protect',
-          spreadsheetId, sheetId, rowIndex, ownerEmail,
+          spreadsheetId, sheetId, rowIndex, ownerEmail: ownerEmail || null,
+          description: pr.description,
           createdAt: new Date().toISOString(),
         };
         window.__WAYMARK_RECORDS.push(record);
@@ -936,7 +937,29 @@ export const api = {
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
-        return sheetsApi.addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail);
+        return sheetsApi.addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail, description);
+      });
+    },
+
+    /**
+     * Delete a protected range by its integer ID.
+     * @param {string} spreadsheetId
+     * @param {number} protectedRangeId
+     * @returns {Promise<Object>}
+     */
+    async deleteProtectedRange(spreadsheetId, protectedRangeId) {
+      if (isLocal) {
+        if (window.__WAYMARK_PROTECTED_RANGES?.[spreadsheetId]) {
+          window.__WAYMARK_PROTECTED_RANGES[spreadsheetId] =
+            window.__WAYMARK_PROTECTED_RANGES[spreadsheetId].filter(
+              pr => pr.protectedRangeId !== protectedRangeId
+            );
+        }
+        return { replies: [] };
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.deleteProtectedRange(token, spreadsheetId, protectedRangeId);
       });
     },
 

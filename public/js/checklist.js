@@ -154,14 +154,47 @@ export function init() {
   }
 
   if (lockSubmitToggle) {
-    lockSubmitToggle.addEventListener('change', () => {
+    lockSubmitToggle.addEventListener('change', async () => {
       if (!currentSheetId) return;
       const enabled = lockSubmitToggle.checked;
-      userData.setLockOnSubmit(currentSheetId, enabled);
-      showToast(
-        enabled ? 'Row-lock on submit enabled for this sheet' : 'Row-lock on submit disabled',
-        'success'
-      );
+      if (enabled) {
+        // Record the "lock enabled" state IN the sheet by protecting the header row.
+        // Any user loading the sheet will see this marker and enforce locking.
+        try {
+          const sheetData = await api.sheets.getSpreadsheet(currentSheetId);
+          const numericSheetId = sheetData.numericSheetId ?? 0;
+          const user = api.auth.getUser();
+          const ownerEmail = user?.email || null;
+          const result = await api.sheets.addProtectedRange(
+            currentSheetId, numericSheetId, 0, ownerEmail, 'waymark:lock-on-submit'
+          );
+          // Cache the new marker range so we can delete it on disable
+          const pr = result?.replies?.[0]?.addProtectedRange?.protectedRange;
+          if (pr) currentSheetProtectedRanges = [...currentSheetProtectedRanges, pr];
+          showToast('Row-lock on submit enabled for this sheet', 'success');
+        } catch (err) {
+          lockSubmitToggle.checked = false;
+          showToast(`Could not enable lock: ${err.message}`, 'error');
+        }
+      } else {
+        // Delete the waymark:lock-on-submit marker range from the sheet
+        const marker = currentSheetProtectedRanges.find(
+          pr => pr.description === 'waymark:lock-on-submit'
+        );
+        if (marker) {
+          try {
+            await api.sheets.deleteProtectedRange(currentSheetId, marker.protectedRangeId);
+            currentSheetProtectedRanges = currentSheetProtectedRanges.filter(
+              pr => pr.protectedRangeId !== marker.protectedRangeId
+            );
+          } catch (err) {
+            showToast(`Could not disable lock: ${err.message}`, 'error');
+            lockSubmitToggle.checked = true;
+            return;
+          }
+        }
+        showToast('Row-lock on submit disabled', 'success');
+      }
     });
   }
 
@@ -867,11 +900,14 @@ async function loadSheet(sheetId) {
     // Keep a module-level snapshot so addRowCallback can use it
     currentSheetProtectedRanges = rawProtectedRanges;
 
-    // Sync lock-on-submit toggle: if sheet already has protected ranges the owner
-    // has configured the feature — enforce it and disable the toggle for non-owners.
+    // Sync lock-on-submit toggle: detect from the waymark:lock-on-submit marker
+    // stored IN the sheet as a protected range on the header row.
+    // This persists for ALL users on ALL devices — not just the user who enabled it.
     if (lockSubmitToggle) {
-      const ownerConfigured = rawProtectedRanges.length > 0;
-      lockSubmitToggle.checked  = ownerConfigured || userData.getLockOnSubmit(sheetId);
+      const ownerConfigured = rawProtectedRanges.some(
+        pr => pr.description === 'waymark:lock-on-submit'
+      );
+      lockSubmitToggle.checked  = ownerConfigured;
       lockSubmitToggle.disabled = ownerConfigured;
       const lockLabel = document.getElementById('lock-submit-label');
       if (lockLabel) {
@@ -881,16 +917,17 @@ async function loadSheet(sheetId) {
       }
     }
 
-    // On load: background lock scan — runs if user enabled lock OR owner has ranges already
-    const ownerConfiguredOnLoad = rawProtectedRanges.length > 0;
-    if ((userData.getLockOnSubmit(sheetId) || ownerConfiguredOnLoad) && api.auth.isLoggedIn()) {
-      const user = api.auth.getUser();
-      const ownerEmail = user?.email || '';
-      if (ownerEmail && currentValues && currentValues.length > 1) {
+    // On load: background lock scan — runs only when lock is owner-configured
+    const ownerConfiguredOnLoad = rawProtectedRanges.some(
+      pr => pr.description === 'waymark:lock-on-submit'
+    );
+    if (ownerConfiguredOnLoad && api.auth.isLoggedIn()) {
+      if (currentValues && currentValues.length > 1) {
         // Read numericSheetId from the loaded data (default 0 in mock/fixture mode)
         const numericSheetId = data.numericSheetId ?? 0;
         // Pass rawProtectedRanges to avoid a redundant API call — loadSheet already fetched them.
-        lockNewRows(sheetId, numericSheetId, currentValues.length, ownerEmail, rawProtectedRanges)
+        // null email = empty editors for row locks (only sheet owner can bypass)
+        lockNewRows(sheetId, numericSheetId, currentValues.length, null, rawProtectedRanges)
           .catch(() => {}); // errors already logged/toasted inside lockNewRows
       }
     }
@@ -952,23 +989,22 @@ async function lockSubmittedRow(spreadsheetId, numericSheetId, rowIndex, ownerEm
     return false;
   }
 
-  await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIndex, ownerEmail);
+  // Null ownerEmail = empty editors; only the spreadsheet owner can bypass
+  await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIndex, null);
   return true;
 }
 
 /**
  * Scan for and lock any unprotected data rows in the sheet.
  * Called in the background on sheet load when lock-on-submit is enabled.
- * Only runs for the authenticated owner (api.auth.isLoggedIn() required by caller).
  *
  * @param {string}   spreadsheetId
  * @param {number}   numericSheetId
  * @param {number}   totalRows       total rows in the sheet including header
- * @param {string}   ownerEmail
+ * @param {null}     _ownerEmail     unused (kept for signature compat) — empty editors used
  * @param {Array}    [preloadedRanges]  already-fetched protected ranges (avoids a second API call)
  */
-async function lockNewRows(spreadsheetId, numericSheetId, totalRows, ownerEmail, preloadedRanges) {
-  if (!ownerEmail) return;
+async function lockNewRows(spreadsheetId, numericSheetId, totalRows, _ownerEmail, preloadedRanges) {
   try {
     const existing = preloadedRanges || await api.sheets.getProtectedRanges(spreadsheetId);
 
@@ -993,7 +1029,7 @@ async function lockNewRows(spreadsheetId, numericSheetId, totalRows, ownerEmail,
       if (protectedSet.has(rowIdx)) continue;
       if (existing.length + locked >= 10000) break;
       try {
-        await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIdx, ownerEmail);
+        await api.sheets.addProtectedRange(spreadsheetId, numericSheetId, rowIdx, null);
         locked++;
       } catch (err) {
         console.warn('[lock-on-submit] Failed to lock row', rowIdx, err);
@@ -1070,34 +1106,31 @@ function renderWithTemplate(values) {
       await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
       showToast(`${template.itemNoun || 'Item'} added`, 'success');
 
-      // Apply row-lock if: user has toggle enabled, OR sheet is owner-configured
-      // (i.e. protected ranges already exist — meaning the owner configured this once).
-      const ownerConfiguredLock = currentSheetProtectedRanges.length > 0;
-      if ((userData.getLockOnSubmit(currentSheetId) || ownerConfiguredLock) && api.auth.isLoggedIn()) {
-        const user = api.auth.getUser();
-        const ownerEmail = user?.email || '';
-        if (ownerEmail) {
-          const capturedSheetId = currentSheetId;
-          // Fetch protected ranges once and reuse for all appended rows
-          let ranges;
-          try {
-            const sheetData = await api.sheets.getSpreadsheet(capturedSheetId);
-            const numericSheetId = sheetData.numericSheetId ?? 0;
-            ranges = await api.sheets.getProtectedRanges(capturedSheetId);
-            for (let i = 0; i < newRows.length; i++) {
-              const rowIndex = existingRowCount + i;   // 0-based sheet row index
-              try {
-                await lockSubmittedRow(capturedSheetId, numericSheetId, rowIndex, ownerEmail, ranges);
-                // Add new range to local array so subsequent loop checks include it
-                ranges.push({ range: { startRowIndex: rowIndex, endRowIndex: rowIndex + 1 } });
-              } catch (lockErr) {
-                console.warn('[lock-on-submit] Failed to lock row', rowIndex, lockErr);
-                showToast('Row saved but could not be locked', 'warn');
-              }
+      // Apply row-lock if sheet has the waymark:lock-on-submit marker (owner-configured)
+      const ownerConfiguredLock = currentSheetProtectedRanges.some(
+        pr => pr.description === 'waymark:lock-on-submit'
+      );
+      if (ownerConfiguredLock && api.auth.isLoggedIn()) {
+        const capturedSheetId = currentSheetId;
+        // Lock with empty editors — only the Google Sheet owner can bypass
+        try {
+          const sheetData = await api.sheets.getSpreadsheet(capturedSheetId);
+          const numericSheetId = sheetData.numericSheetId ?? 0;
+          let ranges = await api.sheets.getProtectedRanges(capturedSheetId);
+          for (let i = 0; i < newRows.length; i++) {
+            const rowIndex = existingRowCount + i;   // 0-based sheet row index
+            try {
+              // null ownerEmail = empty editors: only the sheet owner can bypass
+              await lockSubmittedRow(capturedSheetId, numericSheetId, rowIndex, null, ranges);
+              // Add new range to local array so subsequent loop checks include it
+              ranges.push({ range: { startRowIndex: rowIndex, endRowIndex: rowIndex + 1 } });
+            } catch (lockErr) {
+              console.warn('[lock-on-submit] Failed to lock row', rowIndex, lockErr);
+              showToast('Row saved but could not be locked', 'warn');
             }
-          } catch (fetchErr) {
-            console.warn('[lock-on-submit] Could not fetch sheet metadata for locking:', fetchErr);
           }
+        } catch (fetchErr) {
+          console.warn('[lock-on-submit] Could not fetch sheet metadata for locking:', fetchErr);
         }
       }
 

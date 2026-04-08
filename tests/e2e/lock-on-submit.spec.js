@@ -169,14 +169,13 @@ test('locking a row stores correct row index and owner email in record', async (
   );
 
   const records = await getCreatedRecords(page);
-  const lockRecord = records.find(r => r.type === 'row-protect');
+  const lockRecord = records.find(r => r.type === 'row-protect' && r.description !== 'waymark:lock-on-submit');
 
   expect(lockRecord).toBeTruthy();
   // rowIndex 3 = header(0) + existing rows 1,2 + the new row at index 3
   expect(lockRecord.rowIndex).toBe(3);
-  // Owner email comes from mock fixture users[0] — test the field exists and is a string
-  expect(typeof lockRecord.ownerEmail).toBe('string');
-  expect(lockRecord.ownerEmail.length).toBeGreaterThan(0);
+  // Data row locks use empty editors — ownerEmail must be null
+  expect(lockRecord.ownerEmail).toBeNull();
 });
 
 /* ── Layer 4: Sequential Submissions All Get Locked (Task 13) ── */
@@ -250,7 +249,8 @@ test('duplicate lock is skipped when row is already protected', async ({ page })
   );
 
   const records = await getCreatedRecords(page);
-  const locks = records.filter(r => r.type === 'row-protect');
+  // Exclude the waymark:lock-on-submit marker (created by enableLockOnSubmit) — that's config, not a data row lock
+  const locks = records.filter(r => r.type === 'row-protect' && r.description !== 'waymark:lock-on-submit');
 
   // Duplicate protection must be skipped — no new lock record should appear
   expect(locks.length).toBe(0);
@@ -393,22 +393,19 @@ test('editing a non-protected row opens input normally', async ({ page }) => {
 
 /* ── Layer 10: Unit Test — addProtectedRange Payload Shape (Row 19) ── */
 
-test('addProtectedRange mock stores correct payload shape in WAYMARK_PROTECTED_RANGES', async ({ page }) => {
+test('addProtectedRange with ownerEmail stores editors correctly', async ({ page }) => {
   await setupApp(page);
 
   const result = await page.evaluate(async () => {
-    // Reset the mock store
     window.__WAYMARK_PROTECTED_RANGES = {};
-    window.__WAYMARK_RECORDS = window.__WAYMARK_RECORDS || [];
+    window.__WAYMARK_RECORDS = [];
 
     const { api } = await import('/js/api-client.js');
-    await api.sheets.addProtectedRange('test-sheet-payload', 42, 7, 'owner@example.com');
+    await api.sheets.addProtectedRange('test-sheet-payload', 42, 7, 'owner@example.com', 'waymark:lock-on-submit');
 
     const ranges = window.__WAYMARK_PROTECTED_RANGES['test-sheet-payload'] || [];
-    const record = (window.__WAYMARK_RECORDS || []).find(r => r.type === 'row-protect' && r.spreadsheetId === 'test-sheet-payload');
-
+    const record = (window.__WAYMARK_RECORDS || []).find(r => r.spreadsheetId === 'test-sheet-payload');
     if (!ranges.length || !record) return null;
-
     const pr = ranges[0];
     return {
       sheetId: pr.range.sheetId,
@@ -416,36 +413,59 @@ test('addProtectedRange mock stores correct payload shape in WAYMARK_PROTECTED_R
       endRowIndex: pr.range.endRowIndex,
       warningOnly: pr.warningOnly,
       editorsUser: pr.editors.users[0],
-      recordSheetId: record.sheetId,
+      description: pr.description,
       recordRowIndex: record.rowIndex,
       recordOwnerEmail: record.ownerEmail,
     };
   });
 
   expect(result).not.toBeNull();
-  // sheetId must be the numeric tab ID passed in (42)
   expect(result.sheetId).toBe(42);
-  // range must cover only the target row (0-based row index 7)
   expect(result.startRowIndex).toBe(7);
-  expect(result.endRowIndex).toBe(8);  // endRowIndex = rowIndex + 1
-  // warningOnly must be false — hard protection, not just a warning
+  expect(result.endRowIndex).toBe(8);
   expect(result.warningOnly).toBe(false);
-  // owner email must be preserved in the editors list
   expect(result.editorsUser).toBe('owner@example.com');
-  // record fields must match
-  expect(result.recordSheetId).toBe(42);
+  expect(result.description).toBe('waymark:lock-on-submit');
   expect(result.recordRowIndex).toBe(7);
   expect(result.recordOwnerEmail).toBe('owner@example.com');
 });
 
-/* ── Layer 11: Owner-Configured Lock (Jamie's QA feedback) ── */
-/* When the sheet already has protected ranges (owner set up the feature),
-   lock-on-submit must be ON for ALL authenticated users — no toggle required. */
+test('addProtectedRange with null ownerEmail uses empty editors list', async ({ page }) => {
+  await setupApp(page);
+
+  const result = await page.evaluate(async () => {
+    window.__WAYMARK_PROTECTED_RANGES = {};
+    window.__WAYMARK_RECORDS = [];
+
+    const { api } = await import('/js/api-client.js');
+    await api.sheets.addProtectedRange('test-empty-editors', 0, 3, null);
+
+    const ranges = window.__WAYMARK_PROTECTED_RANGES['test-empty-editors'] || [];
+    const record = (window.__WAYMARK_RECORDS || []).find(r => r.spreadsheetId === 'test-empty-editors');
+    if (!ranges.length || !record) return null;
+    const pr = ranges[0];
+    return {
+      editorsCount: pr.editors.users.length,
+      recordOwnerEmail: record.ownerEmail,
+    };
+  });
+
+  expect(result).not.toBeNull();
+  // Empty editors list — nobody bypasses except the spreadsheet owner
+  expect(result.editorsCount).toBe(0);
+  expect(result.recordOwnerEmail).toBeNull();
+});
+
+/* ── Layer 11: Owner-Configured Lock ── */
+/* Lock-on-submit is stored as a waymark:lock-on-submit protected range on the header row.
+   This makes the config PERSISTENT FOR ALL USERS on ALL DEVICES without localStorage. */
 
 test('toggle is checked and disabled when sheet has pre-existing protected ranges', async ({ page }) => {
   await page.addInitScript(() => {
     window.__WAYMARK_PROTECTED_RANGES = {
       'sheet-066': [
+        // Config marker — signals lock-on-submit is enabled for this sheet
+        { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 }, description: 'waymark:lock-on-submit', protectedRangeId: 99, editors: { users: [] } },
         { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
       ],
     };
@@ -469,6 +489,7 @@ test('toggle label title says owner-configured when protected ranges exist', asy
   await page.addInitScript(() => {
     window.__WAYMARK_PROTECTED_RANGES = {
       'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 }, description: 'waymark:lock-on-submit', protectedRangeId: 99, editors: { users: [] } },
         { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
       ],
     };
@@ -485,10 +506,11 @@ test('toggle label title says owner-configured when protected ranges exist', asy
 });
 
 test('submitting a row auto-locks WITHOUT enabling toggle when protected ranges pre-exist', async ({ page }) => {
-  // Pre-seed row 1 as protected — signals "owner has configured lock-on-submit"
+  // Pre-seed the waymark:lock-on-submit marker — signals owner has enabled lock-on-submit
   await page.addInitScript(() => {
     window.__WAYMARK_PROTECTED_RANGES = {
       'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 }, description: 'waymark:lock-on-submit', protectedRangeId: 99, editors: { users: [] } },
         { range: { sheetId: 0, startRowIndex: 1, endRowIndex: 2 }, protectedRangeId: 1 },
       ],
     };
@@ -528,5 +550,117 @@ test('toggle unchecked and enabled when sheet has NO protected ranges', async ({
   await expect(toggle).not.toBeChecked();
   const isDisabled = await toggle.isDisabled();
   expect(isDisabled).toBe(false);
+});
+
+/* ── Layer 12: Toggle Writes/Deletes Config Marker in Sheet ── */
+/* The lock config is stored IN the sheet as a protected range with
+   description 'waymark:lock-on-submit'. This persists for ALL users. */
+
+test('enabling toggle creates a waymark:lock-on-submit protected range on row 0', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // No pre-seeded ranges
+  const before = await page.evaluate(() =>
+    (window.__WAYMARK_PROTECTED_RANGES?.['sheet-066'] || [])
+      .filter(pr => pr.description === 'waymark:lock-on-submit').length
+  );
+  expect(before).toBe(0);
+
+  await enableLockOnSubmit(page);
+
+  // A waymark:lock-on-submit marker must now exist for row 0
+  const after = await page.evaluate(() => {
+    const ranges = window.__WAYMARK_PROTECTED_RANGES?.['sheet-066'] || [];
+    const marker = ranges.find(pr => pr.description === 'waymark:lock-on-submit');
+    if (!marker) return null;
+    return { rowIndex: marker.range.startRowIndex, endRowIndex: marker.range.endRowIndex };
+  });
+  expect(after).not.toBeNull();
+  expect(after.rowIndex).toBe(0);
+  expect(after.endRowIndex).toBe(1);
+});
+
+test('disabling toggle removes the waymark:lock-on-submit marker', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  // Enable first
+  await enableLockOnSubmit(page);
+  const before = await page.evaluate(() =>
+    (window.__WAYMARK_PROTECTED_RANGES?.['sheet-066'] || [])
+      .some(pr => pr.description === 'waymark:lock-on-submit')
+  );
+  expect(before).toBe(true);
+
+  // Disable
+  await openOverflowMenu(page);
+  await page.locator('#lock-submit-toggle').uncheck({ force: true });
+  await page.waitForSelector('.toast', { timeout: 3000 });
+
+  // Marker must be removed
+  const after = await page.evaluate(() =>
+    (window.__WAYMARK_PROTECTED_RANGES?.['sheet-066'] || [])
+      .some(pr => pr.description === 'waymark:lock-on-submit')
+  );
+  expect(after).toBe(false);
+});
+
+test('lock config persists for all users: loading sheet with marker shows toggle locked', async ({ page }) => {
+  // Simulate another user (or same user, different device) who finds the marker already in the sheet
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 }, description: 'waymark:lock-on-submit', protectedRangeId: 99, editors: { users: [] } },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  await openOverflowMenu(page);
+  const toggle = page.locator('#lock-submit-toggle');
+  // Toggle must be checked (marker detected) and disabled (owner-configured)
+  await expect(toggle).toBeChecked();
+  const isDisabled = await toggle.isDisabled();
+  expect(isDisabled).toBe(true);
+});
+
+test('data row locks use empty editors — only spreadsheet owner can bypass', async ({ page }) => {
+  // Pre-seed the lock marker so lock-on-submit is active from load
+  await page.addInitScript(() => {
+    window.__WAYMARK_PROTECTED_RANGES = {
+      'sheet-066': [
+        { range: { sheetId: 0, startRowIndex: 0, endRowIndex: 1 }, description: 'waymark:lock-on-submit', protectedRangeId: 99, editors: { users: [] } },
+      ],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-066');
+  await page.waitForSelector('.template-tracker-row', { timeout: 5000 });
+
+  await page.waitForSelector('.add-row-trigger', { timeout: 5000 });
+  await page.click('.add-row-trigger');
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3000 });
+
+  await page.locator('.add-row-field-input').first().fill('Test Empty Editors');
+  await page.click('.add-row-submit');
+
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-protect' && r.description !== 'waymark:lock-on-submit'),
+    { timeout: 8000 }
+  );
+
+  const records = await getCreatedRecords(page);
+  const dataRowLock = records.find(r => r.type === 'row-protect' && r.description !== 'waymark:lock-on-submit');
+
+  expect(dataRowLock).toBeTruthy();
+  // Data row lock must have null ownerEmail (empty editors)
+  expect(dataRowLock.ownerEmail).toBeNull();
 });
 
