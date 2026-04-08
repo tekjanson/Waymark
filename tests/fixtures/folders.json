@@ -589,6 +589,11 @@
           "id": "sheet-025",
           "name": "Europe Trip",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-065",
+          "name": "USA Road Trip",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     },

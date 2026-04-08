@@ -1,0 +1,16 @@
+{
+  "id": "sheet-065",
+  "title": "USA Road Trip Itinerary",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Activity", "Date", "Location", "Link", "Cost", "People", "Notes"],
+    ["🧳 Buy America the Beautiful Annual Pass", "Before departure", "Online", "https://store.usgs.gov/recreational-use", "$80", "", "Covers ALL National Park vehicle entries. Best value for this trip!"],
+    ["📋 Reserve Maid of the Mist tickets", "Book before June", "Niagara Falls, NY", "https://maidofthemist.com", "$49", "2", "Adults $24.50, children under 6 FREE. Book timed entry in advance."],
+    ["🚗 Drive Wrentham, MA to Albany, NY", "June 6, 2026 (Sat)", "Wrentham, MA", "", "~$30 gas", "", "Drive Route 20 west. Rest stop at Mass Pike services."],
+    ["🏘️ Old Sturbridge Village", "June 6, 2026 (Sat)", "Sturbridge, MA", "https://oldsturbridge.org", "$60 (2 adults)", "2", "Adults $30, under 3 FREE. Farm animals and village common."],
+    ["⛵ Maid of the Mist boat tour", "June 8, 2026 (Mon)", "Niagara Falls State Park, NY", "https://maidofthemist.com", "$49", "2", "Ponchos provided. Board at Prospect Point."],
+    ["🎸 Rock & Roll Hall of Fame", "June 9, 2026 (Tue)", "Cleveland, OH", "https://rockhall.com", "$64 (2 adults)", "2", "Adults $32, under 5 FREE. Tickets online."],
+    ["🦁 Lincoln Park Zoo", "June 11, 2026 (Thu)", "Chicago, IL", "https://lpzoo.org", "FREE", "", "FREE admission always! Farm-in-the-Zoo is perfect for toddlers."],
+    ["🏛️ Gateway Arch National Park", "June 14, 2026 (Sun)", "St. Louis, MO", "https://thegatewayarch.com", "$30 (2 adults)", "2", "Arch tram: adults $15, under 3 FREE. Book tram tickets online."]
+  ]
+}
