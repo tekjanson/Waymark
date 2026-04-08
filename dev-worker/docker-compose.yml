@@ -19,6 +19,7 @@ services:
     ports:
       - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
       - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
+      - "127.0.0.1:9111:9111"   # Orchestrator wake endpoint — POST /wake to skip sleep
 
     environment:
       # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
@@ -30,7 +31,7 @@ services:
       #   @waymark-builder start               (persistent loop, pushes branches)
       #   @waymark-builder-sub-board start     (local-only, never pushes)
       #   @waymark-builder pick next           (single task then stops)
-      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
+      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-orchestrator start}
 
       # ── Kanban board URL (Google Sheets) ──────────────────────────────────
       # When set, overrides the default spreadsheet ID in workboard scripts.
@@ -114,6 +115,21 @@ services:
       #   5. Token saved here — no re-auth needed until token expires
       # To force re-auth: docker volume rm waymark-vscode-auth
       - waymark-vscode-auth:/root/.config/Code/User/globalStorage
+
+      # ── Agent session logs ─────────────────────────────────────────────────
+      # Host-mounted read-write so logs are visible from the host immediately.
+      # Agents append to /agent-logs/session-{timestamp}.log inside the container.
+      # View with: make agent-logs
+      - /home/tekjanson/Documents/Code/Waymark/agent-logs:/agent-logs
+
+      # ── VS Code workspace storage (Copilot chat history) ───────────────────
+      # Bind-mounted so VS Code writes chat sessions directly to the host.
+      # The container accumulates nothing — all workspaceStorage I/O goes straight
+      # to this host directory, making raw Copilot chat logs readable immediately.
+      # Copilot logs land at:
+      #   agent-logs/vscode-workspace-storage/{hash}/GitHub.copilot-chat/debug-logs/
+      # View with: make chat-logs
+      - /home/tekjanson/Documents/Code/Waymark/agent-logs/vscode-workspace-storage:/root/.config/Code/User/workspaceStorage
 
 volumes:
   # Persists GitHub Copilot OAuth tokens across container rebuilds.

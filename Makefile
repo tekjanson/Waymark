@@ -26,7 +26,7 @@ CYCLE_HOURS := 4
 PIDFILE   := .agent-cycle.pid
 
 # Overridable from the command line or environment
-AGENT_COMMAND ?= @waymark-builder start
+AGENT_COMMAND ?= @waymark-orchestrator start
 AGENT_NAME    ?=
 AGENT_MODEL   ?= copilot/claude-sonnet-4.6
 BOARD_URL     ?=
@@ -57,18 +57,19 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  Variables (override with VAR=value):"
-	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-builder start)"
+	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-orchestrator start)"
 	@echo "    AGENT_NAME      Named agent identity for multi-agent (default: unset)"
 	@echo "    AGENT_MODEL     LLM model (default: copilot/claude-sonnet-4.6)"
-	@echo "    BOARD_URL       Google Sheets URL for the kanban board (overrides default)"
+	@echo "    BOARD_URL       Google Sheets URL to target (persisted to workboard-config.json)"
 	@echo ""
 	@echo "  Examples:"
-	@echo "    make start                                          # Default builder agent"
-	@echo "    make qa-patrol                                      # QA patrol agent"
-	@echo "    make start AGENT_NAME=alpha                         # Named agent"
-	@echo "    make start AGENT_COMMAND='@waymark-builder-sub-board start'"
-	@echo "    make qa-status                                      # Show QA verdicts"
-	@echo "    make logs                                           # Tail live output"
+	@echo "    make run https://docs.google.com/spreadsheets/d/SHEET_ID/edit  # Orchestrator on board"
+	@echo "    make run BOARD_URL=https://...                                  # Same, explicit var"
+	@echo "    make start                                                      # Default orchestrator"
+	@echo "    make qa-patrol                                                  # QA patrol agent"
+	@echo "    make start AGENT_NAME=alpha                                     # Named agent"
+	@echo "    make qa-status                                                  # Show QA verdicts"
+	@echo "    make logs                                                       # Tail live output"
 	@echo ""
 
 ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
@@ -89,6 +90,7 @@ ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
 	fi
 
 start: ensure-auth ## Start the agent container
+	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
@@ -113,7 +115,9 @@ qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
 	@echo "    Status:  make qa-status"
 	@echo ""
 
-run: ensure-auth ## Start the agent + restart it every 4 hours
+run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: make run BOARD_URL=https://...)
+	@# Persist board URL to workboard-config.json so host-side scripts use it too
+	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
 	@# Kill any existing cycle loop
 	@if [ -f $(PIDFILE) ] && kill -0 $$(cat $(PIDFILE)) 2>/dev/null; then \
 		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
@@ -130,7 +134,8 @@ run: ensure-auth ## Start the agent + restart it every 4 hours
 		$(COMPOSE) up -d --build; \
 	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
 	@echo ""
-	@echo "  ✓ Agent started (restarts every $(CYCLE_HOURS)h)"
+	@echo "  ✓ Orchestrator started (restarts every $(CYCLE_HOURS)h)"
+	@if [ -n "$(BOARD_URL)" ]; then echo "    Board:   $(BOARD_URL)"; fi
 	@echo "    Desktop: http://localhost:6080/vnc.html"
 	@echo "    Logs:    make logs"
 	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"
@@ -156,6 +161,34 @@ build: ## Rebuild the container image (no cache)
 
 logs: ## Tail live agent logs (Ctrl+C to stop)
 	docker logs -f $(CONTAINER) 2>&1
+
+agent-logs: ## Tail the latest agent session log file from the container (Ctrl+C to stop)
+	@mkdir -p agent-logs
+	@LATEST=$$(ls -t agent-logs/session-*.log 2>/dev/null | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "  No agent session logs yet. Start the container and wait for the first cycle."; \
+	else \
+		echo "  Tailing $$LATEST (Ctrl+C to stop)"; \
+		tail -f "$$LATEST"; \
+	fi
+
+agent-logs-list: ## List all agent session log files
+	@ls -lht agent-logs/session-*.log 2>/dev/null || echo "  No session logs found."
+
+chat-logs: ## Tail the latest Copilot chat debug log from the container (Ctrl+C to stop)
+	@mkdir -p agent-logs/vscode-workspace-storage
+	@LATEST=$$(find agent-logs/vscode-workspace-storage -path '*/GitHub.copilot-chat/debug-logs/*' -name '*.txt' -o -name '*.log' 2>/dev/null | xargs ls -t 2>/dev/null | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "  No Copilot chat logs yet. Start the container and wait for the first agent turn."; \
+	else \
+		echo "  Tailing $$LATEST (Ctrl+C to stop)"; \
+		tail -f "$$LATEST"; \
+	fi
+
+chat-logs-list: ## List all Copilot chat debug log files from the container
+	@find agent-logs/vscode-workspace-storage -path '*/GitHub.copilot-chat/debug-logs/*' \( -name '*.txt' -o -name '*.log' \) 2>/dev/null \
+		| xargs ls -lht 2>/dev/null \
+		|| echo "  No Copilot chat logs found. Is the container running?"
 
 status: ## Show container status and workboard summary
 	@echo "── Container ──"
@@ -193,6 +226,13 @@ auth: ## Run GitHub Copilot auth setup for the container
 workboard: ## Show current workboard state (todo/in-progress counts)
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
 		node scripts/check-workboard.js
+
+compile-all: ## Compile all 35 template agents (skip unchanged; use FORCE=1 to recompile all)
+	@if [ "$(FORCE)" = "1" ]; then \
+		node scripts/compile-all-agents.mjs --force; \
+	else \
+		node scripts/compile-all-agents.mjs; \
+	fi
 
 qa-status: ## Show QA items with verdict status (pass/fail/pending)
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \

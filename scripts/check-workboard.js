@@ -129,10 +129,27 @@ const auth = new GoogleAuth({
       const label    = (r[7] || '').trim();
       const desc     = (r[1] || '').trim();
 
+      // Extract a Google Sheets spreadsheet ID from desc or label if present.
+      // A task row may contain a Sheets URL like:
+      //   https://docs.google.com/spreadsheets/d/{ID}/edit
+      // or a bare ID (44-char alphanumeric) in the label column.
+      // Emitting this as `sheetId` lets the router skip template detection API calls.
+      const SHEETS_URL_RE = /\/spreadsheets\/d\/([\w-]{20,})/;
+      const BARE_ID_RE    = /\b([\w-]{44})\b/;
+      let sheetId = null;
+      const sheetUrlMatch = SHEETS_URL_RE.exec(desc) || SHEETS_URL_RE.exec(label);
+      if (sheetUrlMatch) {
+        sheetId = sheetUrlMatch[1];
+      } else {
+        const bareMatch = BARE_ID_RE.exec(label);
+        if (bareMatch) sheetId = bareMatch[1];
+      }
+
       const item = {
         row: i + 1, task, stage, project, assignee,
         priority, label, desc: desc.slice(0, 200),
       };
+      if (sheetId) item.sheetId = sheetId;
 
       if (stage === 'To Do') {
         // When filtering by agent, only show unassigned or own tasks

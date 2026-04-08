@@ -680,3 +680,43 @@ To test effectively, you need to know what Waymark IS. Read these on first run:
     - If the app is in a weird state, clean it up first: close stale modals, exit abandoned edit modes, dismiss leftover toasts. A tidy screen is a testable screen.
 
 14. **Auto-dismiss blocking overlays — EVERY time.** Before interacting with any screen, check for and dismiss tutorial popups (`.tutorial-overlay`), onboarding modals, or any other overlay that blocks the UI underneath. Run the dismiss snippet from Section 1 Step 5 after every `mqtt_navigate`, every `mqtt_open_sheet`, and any time you arrive at a new view. Never wait for the user to point out that a tutorial is covering the screen — that's YOUR job to handle automatically.
+
+---
+
+## 10. SESSION LOGGING
+
+The orchestrator creates a session log at `/agent-logs/session-*.log`. Write structured entries throughout your QA run so the full audit trail is visible on the host.
+
+**Find the current log** (run once at the very start, before connecting to the browser):
+```bash
+WAYMARK_LOG=$(ls -t /agent-logs/session-*.log 2>/dev/null | head -1)
+```
+
+If `WAYMARK_LOG` is empty, skip log writes but continue the QA run normally.
+
+**Required log entries — run these terminal commands at each moment:**
+
+```bash
+# QA session starts
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA START | mode: {qa patrol / explore / test <area>} | target: {task title or area}" >> "$WAYMARK_LOG"
+
+# Each screen / template tested
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA NAVIGATE | {route or URL} | {screen description}" >> "$WAYMARK_LOG"
+
+# Each bug found
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA BUG | severity: {critical/high/low} | {one-line description} | reproduced: {yes/no}" >> "$WAYMARK_LOG"
+
+# Each UX issue found (not a hard bug but a problem)
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA UX | {one-line description of experience problem}" >> "$WAYMARK_LOG"
+
+# Verdict written to workboard
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA VERDICT | row {n} | {PASS/FAIL/REJECT} | {one-line summary}" >> "$WAYMARK_LOG"
+
+# QA session complete
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA DONE | screens tested: {N} | bugs found: {N} | ux issues: {N} | verdict: {PASS/FAIL}" >> "$WAYMARK_LOG"
+
+# Any error (JS crash, API error, connection failure)
+[ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] QA ERROR | {error message}" >> "$WAYMARK_LOG"
+```
+
+Write entries as you go — do not batch at the end. If a crash stops the QA run, the log must show exactly how far you got and what bugs were found up to that point.

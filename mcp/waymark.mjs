@@ -67,6 +67,7 @@ const DEFAULT_HEADERS = {
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_BASE  = "https://www.googleapis.com/drive/v3";
+const TOKEN_URL   = "https://oauth2.googleapis.com/token";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!credPath) {
@@ -84,16 +85,68 @@ const auth = new GoogleAuth({
   ],
 });
 
+// Read SA email from key file so we can auto-share new sheets with it
+let SA_EMAIL = null;
+try {
+  SA_EMAIL = JSON.parse(readFileSync(credPath, "utf8")).client_email || null;
+} catch { /* non-fatal — auto-share will be skipped */ }
+
 async function getToken() {
   const client = await auth.getClient();
   const { token } = await client.getAccessToken();
   return token;
 }
 
+/**
+ * Get an OAuth access token for the human user (for sheet creation).
+ * Reads WAYMARK_OAUTH_TOKEN_PATH, refreshes if expired.
+ * Returns null if the token file is missing — caller falls back to SA.
+ */
+async function getUserOAuthToken() {
+  const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+    `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
+  let tokenData;
+  try {
+    const { readFileSync: read } = await import("node:fs");
+    tokenData = JSON.parse(read(tokenPath, "utf8"));
+  } catch {
+    return null; // token file missing — caller should fall back
+  }
+
+  // Refresh if expired (with 60s buffer)
+  if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
+    if (!tokenData.refresh_token) return null;
+    const res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: tokenData.refresh_token,
+        client_id: tokenData.client_id,
+        client_secret: tokenData.client_secret,
+      }),
+    });
+    const refreshed = await res.json();
+    if (refreshed.error || !refreshed.access_token) return null;
+    tokenData.access_token = refreshed.access_token;
+    tokenData.expiry_date = Date.now() + (refreshed.expires_in * 1000);
+    try {
+      const { writeFileSync: write } = await import("node:fs");
+      write(tokenPath, JSON.stringify(tokenData, null, 2));
+    } catch { /* read-only mount — ignore, token still usable this session */ }
+  }
+
+  return tokenData.access_token;
+}
+
 /* ---------- REST helpers ---------- */
 
 async function apiRequest(baseUrl, path, { method = "GET", body } = {}) {
   const token = await getToken();
+  return apiRequestWithToken(token, baseUrl, path, { method, body });
+}
+
+async function apiRequestWithToken(token, baseUrl, path, { method = "GET", body } = {}) {
   const opts = {
     method,
     headers: {
@@ -112,6 +165,7 @@ async function apiRequest(baseUrl, path, { method = "GET", body } = {}) {
 
 const sheets = (path, opts) => apiRequest(SHEETS_BASE, path, opts);
 const drive  = (path, opts) => apiRequest(DRIVE_BASE, path, opts);
+const driveAs = (token, path, opts) => apiRequestWithToken(token, DRIVE_BASE, path, opts);
 
 /* ---------- Template detection (Node.js, pure) ---------- */
 
@@ -299,7 +353,7 @@ const TOOLS = [
   },
   {
     name: "waymark_create_sheet",
-    description: "Create a new Google Sheet pre-configured with the correct column headers for a Waymark template. Returns the new spreadsheetId and a Waymark viewer URL.",
+    description: "Create a new Google Sheet pre-configured with the correct column headers for a Waymark template. The sheet is created under the user's Google account and automatically shared with the Waymark service account. Returns the new spreadsheetId and a Waymark viewer URL.",
     inputSchema: {
       type: "object",
       required: ["templateKey", "title"],
@@ -314,7 +368,12 @@ const TOOLS = [
         },
         parentFolderId: {
           type: "string",
-          description: "Google Drive folder ID to place the file in (optional).",
+          description: "Google Drive folder ID to place the file in (optional). Defaults to the configured Waymark folder.",
+        },
+        shareWith: {
+          type: "array",
+          items: { type: "string" },
+          description: "Additional email addresses to share the sheet with as editors (optional).",
         },
         seedRows: {
           type: "array",
@@ -323,6 +382,34 @@ const TOOLS = [
             description: "Initial data rows as { roleName: value } entries.",
           },
           description: "Optional initial data rows to pre-populate the sheet.",
+        },
+      },
+    },
+  },
+  {
+    name: "waymark_share_sheet",
+    description: "Share an existing Google Sheet with one or more users (or with anyone who has the link). The Waymark service account must be the owner or have edit access to the file.",
+    inputSchema: {
+      type: "object",
+      required: ["spreadsheetId"],
+      properties: {
+        spreadsheetId: {
+          type: "string",
+          description: "The spreadsheet ID to share.",
+        },
+        shareWith: {
+          type: "array",
+          items: { type: "string" },
+          description: "Email addresses to grant writer (editor) access to.",
+        },
+        shareWithAnyone: {
+          type: "boolean",
+          description: "If true, grant anyone-with-the-link writer access. Default: false.",
+        },
+        role: {
+          type: "string",
+          enum: ["writer", "reader", "commenter"],
+          description: "Permission role for all shareWith addresses. Default: writer.",
         },
       },
     },
@@ -497,7 +584,15 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
   return { success: true, updated: results, rowIndex };
 }
 
-async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, seedRows = [] }) {
+async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, shareWith = [], seedRows = [] }) {
+  // Fall back to the env-configured default folder so sheets land in the shared Waymark Drive folder
+  const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
+
+  // Prefer user OAuth for sheet creation so files count against the user's Drive quota, not the SA's.
+  // Fall back to SA token if the OAuth token file is missing.
+  const userToken = await getUserOAuthToken();
+  const createToken = userToken || await getToken();
+  const createdWithOAuth = !!userToken;
   const headers = DEFAULT_HEADERS[templateKey];
   if (!headers) throw new Error(`Unknown template key: ${templateKey}. Use waymark_list_templates to see valid keys.`);
 
@@ -530,16 +625,59 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, se
     }],
   };
 
-  const created = await sheets("", { method: "POST", body });
+  // Use whichever token we resolved (user OAuth preferred, SA fallback)
+  const created = await (async () => {
+    const token = createToken;
+    const res = await fetch(SHEETS_BASE, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Sheets create ${res.status}: ${await res.text()}`);
+    return res.json();
+  })();
   const spreadsheetId = created.spreadsheetId;
 
-  // Move to folder if requested
-  if (parentFolderId && spreadsheetId) {
+  // All Drive mutations on the new file must use the token of the owner (createToken).
+  // If created via SA token, that IS the SA — drive() works as before.
+  // If created via user OAuth, the user owns the file; must use createToken for Drive calls.
+
+  // Move to folder
+  if (effectiveFolderId && spreadsheetId) {
     try {
-      await drive(`/files/${spreadsheetId}?addParents=${parentFolderId}&fields=id`, { method: "PATCH", body: {} });
+      await driveAs(createToken, `/files/${spreadsheetId}?addParents=${effectiveFolderId}&fields=id`, { method: "PATCH", body: {} });
     } catch { /* non-fatal */ }
   }
 
+  // Always share with the service account so it can read/write the new sheet
+  const saShared = [];
+  if (createdWithOAuth && SA_EMAIL) {
+    try {
+      await driveAs(createToken, `/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: SA_EMAIL },
+      });
+      saShared.push(SA_EMAIL);
+    } catch (err) {
+      saShared.push(`${SA_EMAIL} (failed: ${err.message})`);
+    }
+  }
+
+  // Share with specific users requested by the caller
+  const sharedWith = [];
+  for (const email of shareWith) {
+    try {
+      await driveAs(createToken, `/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: email },
+      });
+      sharedWith.push(email);
+    } catch (err) {
+      sharedWith.push(`${email} (failed: ${err.message})`);
+    }
+  }
+
+  // Share with anyone-with-the-link
   return {
     spreadsheetId,
     title,
@@ -550,6 +688,49 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, se
     headers,
     columnRoles,
     rowsCreated: rows.length,
+    sharedWith,
+    serviceAccountShared: saShared,
+    createdWithOAuth,
+  };
+}
+
+async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWithAnyone = false, role = "writer" }) {
+  if (!spreadsheetId) throw new Error("spreadsheetId is required.");
+  if (!shareWith.length && !shareWithAnyone) throw new Error("Provide at least one of shareWith or shareWithAnyone:true.");
+
+  const sharedWith = [];
+  for (const email of shareWith) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role, emailAddress: email },
+      });
+      sharedWith.push({ email, status: "ok", role });
+    } catch (err) {
+      sharedWith.push({ email, status: "failed", error: err.message });
+    }
+  }
+
+  let sharedPublicly = false;
+  if (shareWithAnyone) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "anyone", role: "writer" },
+      });
+      sharedPublicly = true;
+    } catch (err) {
+      sharedPublicly = false;
+      sharedWith.push({ email: "anyone", status: "failed", error: err.message });
+    }
+  }
+
+  return {
+    spreadsheetId,
+    sheetsUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    waymarkUrl: `https://swiftirons.com/waymark/#/sheet/${spreadsheetId}`,
+    sharedWith,
+    sharedPublicly,
   };
 }
 
@@ -637,6 +818,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_update_entry":      result = await handleWaymarkUpdateEntry(args); break;
       case "waymark_create_sheet":      result = await handleWaymarkCreateSheet(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
+      case "waymark_share_sheet":       result = await handleWaymarkShareSheet(args); break;
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -656,4 +838,4 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write("Waymark MCP server ready (7 tools)\n");
+process.stderr.write("Waymark MCP server ready (8 tools)\n");

@@ -51,3 +51,4 @@ server/.github-cache
 *.swo
 Mimi_s Kitchen_ Gluten Free & Dairy Free Cooking for the Whole Family/
 full-deploy.sh
+agent-logs/

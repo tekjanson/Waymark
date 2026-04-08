@@ -42,6 +42,32 @@ else
     log "No host VS Code config mounted — starting with fresh profile"
 fi
 
+# ── 2b. Archive-and-wipe workspaceStorage ────────────────────────────────────
+# workspaceStorage is bind-mounted to agent-logs/vscode-workspace-storage on
+# the host so Copilot chat debug logs are visible in real time. But we never
+# want a previous run's data to bleed into the current session — VS Code must
+# always start with an empty directory so state is deterministic.
+#
+# Strategy: if anything already exists there, move it into a timestamped
+# archive subdirectory (keeping it on the host for inspection), then let VS
+# Code recreate the directory fresh.
+WS_DIR="/root/.config/Code/User/workspaceStorage"
+if [[ -d "$WS_DIR" ]] && [[ -n "$(ls -A "$WS_DIR" 2>/dev/null)" ]]; then
+    ARCHIVE_TS="$(date -u +%Y-%m-%d-%H%M%S)"
+    ARCHIVE_DIR="$WS_DIR/archive/$ARCHIVE_TS"
+    mkdir -p "$ARCHIVE_DIR"
+    # Move all entries except the archive folder itself
+    for entry in "$WS_DIR"/*; do
+        name="$(basename "$entry")"
+        [[ "$name" == "archive" ]] && continue
+        mv "$entry" "$ARCHIVE_DIR/" 2>/dev/null || true
+    done
+    log "workspaceStorage archived to archive/$ARCHIVE_TS — container starts clean"
+else
+    log "workspaceStorage is empty — nothing to archive"
+fi
+mkdir -p "$WS_DIR"
+
 # ── 3. Openbox autostart ──────────────────────────────────────────────────────
 mkdir -p /root/.config/openbox
 cp /config/openbox-autostart /root/.config/openbox/autostart
@@ -51,14 +77,28 @@ chmod +x /root/.config/openbox/autostart
 # Keybindings:
 #   Ctrl+Shift+F9  → acceptTool   (clears stuck "Allow" confirmations)
 #   Ctrl+Shift+F10 → /autoApprove (legacy fallback — autopilot mode handles this now)
-#   Ctrl+Shift+F12 → autopilot chat + auto-submit AGENT_COMMAND
-#   Ctrl+Shift+F11 → autopilot chat + partial query (for debugging)
-# Regenerated every boot so the AGENT_COMMAND env var is always current.
+#   Ctrl+Shift+F12 → agent chat mode + auto-submit prompt
+#   Ctrl+Shift+F11 → agent chat mode + partial query (for debugging)
+#
+# IMPORTANT: If AGENT_COMMAND starts with "@agentName prompt", we split it so
+# that "agentName" becomes the chat *mode* and "prompt" becomes the query text.
+# This prevents VS Code from wrapping the session in a runSubagent call, which
+# would mean the agent runs nested and cannot itself call runSubagent.
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 mkdir -p /root/.config/Code/User
 python3 -c "
-import json, os
+import json, os, re
 cmd = os.environ.get('AGENT_COMMAND', '@waymark-builder start')
+
+# Parse '@agentName rest' syntax into a mode + query pair
+m = re.match(r'^@(\S+)\s*(.*)', cmd.strip())
+if m:
+    agent_mode = m.group(1)   # e.g. 'waymark-orchestrator'
+    query      = m.group(2)   # e.g. 'start'
+else:
+    agent_mode = 'agent'
+    query      = cmd
+
 kb = [
     {
         'key': 'ctrl+shift+f9',
@@ -72,18 +112,19 @@ kb = [
     {
         'key': 'ctrl+shift+f12',
         'command': 'workbench.action.chat.open',
-        'args': {'mode': 'autopilot', 'query': cmd, 'isPartialQuery': False}
+        'args': {'mode': agent_mode, 'query': query, 'isPartialQuery': False}
     },
     {
         'key': 'ctrl+shift+f11',
         'command': 'workbench.action.chat.open',
-        'args': {'mode': 'autopilot', 'query': cmd, 'isPartialQuery': True}
+        'args': {'mode': agent_mode, 'query': query, 'isPartialQuery': True}
     }
 ]
 with open('/root/.config/Code/User/keybindings.json', 'w') as f:
     json.dump(kb, f, indent=4)
+print(f'[entrypoint] Keybindings: mode={agent_mode!r} query={query!r}')
 "
-log "VS Code keybindings installed (F10→autoApprove, F12→autopilot submit: ${AGENT_COMMAND})"
+log "VS Code keybindings installed (F12→mode submit: ${AGENT_COMMAND})"
 
 # ── 4. Git identity ───────────────────────────────────────────────────────────
 GIT_EMAIL="${GIT_EMAIL:-waymark-agent@container.local}"
@@ -194,20 +235,27 @@ log "VS Code agent settings applied"
 # with the correct model and autopilot mode is active from the first session.
 STATE_DB="/root/.config/Code/User/globalStorage/state.vscdb"
 AGENT_MODEL="${AGENT_MODEL:-copilot/claude-sonnet-4.6}"
+# Derive the chat mode from AGENT_COMMAND (strip leading '@' if present)
+CHAT_MODE=$(python3 -c "
+import os, re
+cmd = os.environ.get('AGENT_COMMAND', '@waymark-builder start')
+m = re.match(r'^@(\S+)', cmd.strip())
+print(m.group(1) if m else 'agent')
+")
 if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$STATE_DB" ]]; then
-    log "Seeding state.vscdb: model=${AGENT_MODEL}, mode=autopilot"
+    log "Seeding state.vscdb: model=${AGENT_MODEL}, mode=${CHAT_MODE}"
     sqlite3 "$STATE_DB" <<SQL
 INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel', '${AGENT_MODEL}'),
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
     ('chat.tools.global.autoApprove.optIn', 'true'),
-    ('chat.lastChatMode', 'autopilot');
+    ('chat.lastChatMode', '${CHAT_MODE}');
 SQL
 elif command -v sqlite3 >/dev/null 2>&1; then
     # state.vscdb doesn't exist yet; VS Code will create it on first launch.
     # Create the database and table so the settings are ready.
-    log "Creating state.vscdb with model=${AGENT_MODEL}, mode=autopilot"
+    log "Creating state.vscdb with model=${AGENT_MODEL}, mode=${CHAT_MODE}"
     mkdir -p "$(dirname "$STATE_DB")"
     sqlite3 "$STATE_DB" <<SQL
 CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value TEXT);
@@ -216,10 +264,10 @@ INSERT OR REPLACE INTO ItemTable (key, value) VALUES
     ('chat.currentLanguageModel.panel.isDefault', 'false'),
     ('chat.tools.terminal.autoApprove.warningAccepted', 'true'),
     ('chat.tools.global.autoApprove.optIn', 'true'),
-    ('chat.lastChatMode', 'autopilot');
+    ('chat.lastChatMode', '${CHAT_MODE}');
 SQL
 else
-    log "WARN: sqlite3 not available — cannot seed model/autopilot into state.vscdb"
+    log "WARN: sqlite3 not available — cannot seed model/chat mode into state.vscdb"
 fi
 
 # ── 9. Ensure log directory exists ───────────────────────────────────────────
