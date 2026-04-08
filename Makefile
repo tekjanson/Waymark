@@ -199,6 +199,13 @@ workboard: ## Show current workboard state (todo/in-progress counts)
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
 		node scripts/check-workboard.js
 
+compile-all: ## Compile all 35 template agents (skip unchanged; use FORCE=1 to recompile all)
+	@if [ "$(FORCE)" = "1" ]; then \
+		node scripts/compile-all-agents.mjs --force; \
+	else \
+		node scripts/compile-all-agents.mjs; \
+	fi
+
 qa-status: ## Show QA items with verdict status (pass/fail/pending)
 	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
 		node scripts/check-workboard.js --qa-details 2>/dev/null | \
