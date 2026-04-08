@@ -45,14 +45,44 @@
 }
 .travel-map-link {
   font-size: 0.85rem; text-decoration: none; opacity: 0.7;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s; cursor: pointer;
 }
 .travel-map-link:hover { opacity: 1; }
+
+/* Booking link (URL) */
+.travel-booking-link {
+  font-size: 0.75rem; font-weight: 600; color: #0891b2;
+  text-decoration: none; cursor: pointer;
+  padding: 1px 4px; border-radius: 3px;
+  border: 1px solid #a5f3fc; transition: background 0.15s;
+}
+.travel-booking-link:hover { background: #ecfeff; }
+
+/* People count (informational) */
+.travel-people {
+  font-size: 0.75rem; color: var(--color-text-muted); font-weight: 500;
+}
+
+/* Notes (booking details) */
+.travel-notes {
+  margin-top: 6px; font-size: 0.78rem; color: var(--color-text-muted);
+  line-height: 1.4; border-left: 2px solid var(--color-border); padding-left: 8px;
+}
+
+/* Google Maps route button in summary bar */
+.travel-map-route-btn {
+  font-size: 0.85rem; font-weight: 600; color: #0891b2;
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+}
+.travel-map-route-btn:hover { text-decoration: underline; }
 
 /* --- Dark Theme --- */
 [data-theme="dark"] .travel-date-header { color: #22d3ee; border-bottom-color: rgba(34, 211, 238, 0.25); }
 [data-theme="dark"] .travel-booking-ref { color: #22d3ee; }
 [data-theme="dark"] .travel-cost { color: #fbbf24; }
+[data-theme="dark"] .travel-booking-link { color: #22d3ee; border-color: rgba(34, 211, 238, 0.3); }
+[data-theme="dark"] .travel-booking-link:hover { background: rgba(34, 211, 238, 0.08); }
+[data-theme="dark"] .travel-map-route-btn { color: #22d3ee; }
 [data-theme="dark"] .travel-summary {
   background: linear-gradient(135deg, rgba(34, 211, 238, 0.1) 0%, rgba(34, 211, 238, 0.06) 100%);
   border-color: rgba(34, 211, 238, 0.25);
