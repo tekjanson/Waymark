@@ -2,7 +2,7 @@
 name: waymark-timesheet
 description: Compiled Waymark agent for the Timesheet template (Work). Reads and writes Google Sheets rendered as Timesheet views. Understands column roles, valid state transitions, and domain-specific operations for this template type. Dispatched by @waymark-orchestrator — do not invoke directly for pipeline work.
 argument-hint: "spreadsheetId and task description, e.g. 'Update sheet 1AbC... — mark overdue items'"
-tools: [execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, read/readFile, read/problems, search/fileSearch, search/textSearch, search/codebase, search/listDirectory, edit/createFile, edit/editFiles, waymark/waymark_list_templates, waymark/waymark_detect_template, waymark/waymark_get_sheet, waymark/waymark_add_entry, waymark/waymark_update_entry, waymark/waymark_create_sheet, waymark/waymark_search_entries, google-sheets/sheets_values_get, google-sheets/sheets_values_update, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_append, google-sheets/sheets_spreadsheet_get, todo]
+tools: [execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, read/readFile, read/problems, search/fileSearch, search/textSearch, search/codebase, search/listDirectory, edit/createFile, edit/editFiles, waymark/waymark_list_templates, waymark/waymark_detect_template, waymark/waymark_get_sheet, waymark/waymark_add_entry, waymark/waymark_update_entry, waymark/waymark_create_sheet, waymark/waymark_search_entries, waymark/waymark_share_sheet, google-sheets/sheets_values_get, google-sheets/sheets_values_update, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_append, google-sheets/sheets_spreadsheet_get, todo]
 ---
 
 # Waymark Timesheet Agent

@@ -299,7 +299,7 @@ const TOOLS = [
   },
   {
     name: "waymark_create_sheet",
-    description: "Create a new Google Sheet pre-configured with the correct column headers for a Waymark template. Returns the new spreadsheetId and a Waymark viewer URL.",
+    description: "Create a new Google Sheet pre-configured with the correct column headers for a Waymark template, then share it automatically. Returns the new spreadsheetId and a Waymark viewer URL.",
     inputSchema: {
       type: "object",
       required: ["templateKey", "title"],
@@ -316,6 +316,15 @@ const TOOLS = [
           type: "string",
           description: "Google Drive folder ID to place the file in (optional).",
         },
+        shareWith: {
+          type: "array",
+          items: { type: "string" },
+          description: "Email addresses to share the new sheet with as editors. The Waymark service account owns the file; these users get writer access so they can open it.",
+        },
+        shareWithAnyone: {
+          type: "boolean",
+          description: "If true, grant anyone-with-the-link editor access (no sign-in required). Useful when the user's email is unknown. Default: false.",
+        },
         seedRows: {
           type: "array",
           items: {
@@ -323,6 +332,34 @@ const TOOLS = [
             description: "Initial data rows as { roleName: value } entries.",
           },
           description: "Optional initial data rows to pre-populate the sheet.",
+        },
+      },
+    },
+  },
+  {
+    name: "waymark_share_sheet",
+    description: "Share an existing Google Sheet with one or more users (or with anyone who has the link). The Waymark service account must be the owner or have edit access to the file.",
+    inputSchema: {
+      type: "object",
+      required: ["spreadsheetId"],
+      properties: {
+        spreadsheetId: {
+          type: "string",
+          description: "The spreadsheet ID to share.",
+        },
+        shareWith: {
+          type: "array",
+          items: { type: "string" },
+          description: "Email addresses to grant writer (editor) access to.",
+        },
+        shareWithAnyone: {
+          type: "boolean",
+          description: "If true, grant anyone-with-the-link writer access. Default: false.",
+        },
+        role: {
+          type: "string",
+          enum: ["writer", "reader", "commenter"],
+          description: "Permission role for all shareWith addresses. Default: writer.",
         },
       },
     },
@@ -497,7 +534,7 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
   return { success: true, updated: results, rowIndex };
 }
 
-async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, seedRows = [] }) {
+async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, shareWith = [], shareWithAnyone = false, seedRows = [] }) {
   const headers = DEFAULT_HEADERS[templateKey];
   if (!headers) throw new Error(`Unknown template key: ${templateKey}. Use waymark_list_templates to see valid keys.`);
 
@@ -540,6 +577,32 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, se
     } catch { /* non-fatal */ }
   }
 
+  // Share with specific users
+  const sharedWith = [];
+  for (const email of shareWith) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: email },
+      });
+      sharedWith.push(email);
+    } catch (err) {
+      sharedWith.push(`${email} (failed: ${err.message})`);
+    }
+  }
+
+  // Share with anyone-with-the-link
+  let sharedPublicly = false;
+  if (shareWithAnyone) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "anyone", role: "writer" },
+      });
+      sharedPublicly = true;
+    } catch { /* non-fatal */ }
+  }
+
   return {
     spreadsheetId,
     title,
@@ -550,6 +613,48 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, se
     headers,
     columnRoles,
     rowsCreated: rows.length,
+    sharedWith,
+    sharedPublicly,
+  };
+}
+
+async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWithAnyone = false, role = "writer" }) {
+  if (!spreadsheetId) throw new Error("spreadsheetId is required.");
+  if (!shareWith.length && !shareWithAnyone) throw new Error("Provide at least one of shareWith or shareWithAnyone:true.");
+
+  const sharedWith = [];
+  for (const email of shareWith) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role, emailAddress: email },
+      });
+      sharedWith.push({ email, status: "ok", role });
+    } catch (err) {
+      sharedWith.push({ email, status: "failed", error: err.message });
+    }
+  }
+
+  let sharedPublicly = false;
+  if (shareWithAnyone) {
+    try {
+      await drive(`/files/${spreadsheetId}/permissions`, {
+        method: "POST",
+        body: { type: "anyone", role: "writer" },
+      });
+      sharedPublicly = true;
+    } catch (err) {
+      sharedPublicly = false;
+      sharedWith.push({ email: "anyone", status: "failed", error: err.message });
+    }
+  }
+
+  return {
+    spreadsheetId,
+    sheetsUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    waymarkUrl: `https://swiftirons.com/waymark/#/sheet/${spreadsheetId}`,
+    sharedWith,
+    sharedPublicly,
   };
 }
 
@@ -637,6 +742,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_update_entry":      result = await handleWaymarkUpdateEntry(args); break;
       case "waymark_create_sheet":      result = await handleWaymarkCreateSheet(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
+      case "waymark_share_sheet":       result = await handleWaymarkShareSheet(args); break;
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -656,4 +762,4 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write("Waymark MCP server ready (7 tools)\n");
+process.stderr.write("Waymark MCP server ready (8 tools)\n");
