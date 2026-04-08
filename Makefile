@@ -26,7 +26,7 @@ CYCLE_HOURS := 4
 PIDFILE   := .agent-cycle.pid
 
 # Overridable from the command line or environment
-AGENT_COMMAND ?= @waymark-builder start
+AGENT_COMMAND ?= @waymark-orchestrator start
 AGENT_NAME    ?=
 AGENT_MODEL   ?= copilot/claude-sonnet-4.6
 BOARD_URL     ?=
@@ -57,18 +57,19 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  Variables (override with VAR=value):"
-	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-builder start)"
+	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-orchestrator start)"
 	@echo "    AGENT_NAME      Named agent identity for multi-agent (default: unset)"
 	@echo "    AGENT_MODEL     LLM model (default: copilot/claude-sonnet-4.6)"
-	@echo "    BOARD_URL       Google Sheets URL for the kanban board (overrides default)"
+	@echo "    BOARD_URL       Google Sheets URL to target (persisted to workboard-config.json)"
 	@echo ""
 	@echo "  Examples:"
-	@echo "    make start                                          # Default builder agent"
-	@echo "    make qa-patrol                                      # QA patrol agent"
-	@echo "    make start AGENT_NAME=alpha                         # Named agent"
-	@echo "    make start AGENT_COMMAND='@waymark-builder-sub-board start'"
-	@echo "    make qa-status                                      # Show QA verdicts"
-	@echo "    make logs                                           # Tail live output"
+	@echo "    make run https://docs.google.com/spreadsheets/d/SHEET_ID/edit  # Orchestrator on board"
+	@echo "    make run BOARD_URL=https://...                                  # Same, explicit var"
+	@echo "    make start                                                      # Default orchestrator"
+	@echo "    make qa-patrol                                                  # QA patrol agent"
+	@echo "    make start AGENT_NAME=alpha                                     # Named agent"
+	@echo "    make qa-status                                                  # Show QA verdicts"
+	@echo "    make logs                                                       # Tail live output"
 	@echo ""
 
 ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
@@ -89,6 +90,7 @@ ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
 	fi
 
 start: ensure-auth ## Start the agent container
+	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
@@ -113,7 +115,9 @@ qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
 	@echo "    Status:  make qa-status"
 	@echo ""
 
-run: ensure-auth ## Start the agent + restart it every 4 hours
+run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: make run BOARD_URL=https://...)
+	@# Persist board URL to workboard-config.json so host-side scripts use it too
+	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
 	@# Kill any existing cycle loop
 	@if [ -f $(PIDFILE) ] && kill -0 $$(cat $(PIDFILE)) 2>/dev/null; then \
 		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
@@ -130,7 +134,8 @@ run: ensure-auth ## Start the agent + restart it every 4 hours
 		$(COMPOSE) up -d --build; \
 	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
 	@echo ""
-	@echo "  ✓ Agent started (restarts every $(CYCLE_HOURS)h)"
+	@echo "  ✓ Orchestrator started (restarts every $(CYCLE_HOURS)h)"
+	@if [ -n "$(BOARD_URL)" ]; then echo "    Board:   $(BOARD_URL)"; fi
 	@echo "    Desktop: http://localhost:6080/vnc.html"
 	@echo "    Logs:    make logs"
 	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"

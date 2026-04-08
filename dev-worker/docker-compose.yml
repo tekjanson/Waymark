@@ -30,7 +30,7 @@ services:
       #   @waymark-builder start               (persistent loop, pushes branches)
       #   @waymark-builder-sub-board start     (local-only, never pushes)
       #   @waymark-builder pick next           (single task then stops)
-      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
+      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-orchestrator start}
 
       # ── Kanban board URL (Google Sheets) ──────────────────────────────────
       # When set, overrides the default spreadsheet ID in workboard scripts.
