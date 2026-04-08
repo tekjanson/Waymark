@@ -2,7 +2,7 @@
 name: waymark-orchestrator
 description: Self-compiling pipeline orchestrator. Owns the persistent sleep→check→work loop. For each task, detects the Waymark template type of its sheet, compiles a specialized agent for that template on demand (via the Agent Compiler MCP), then dispatches the task to the compiled specialist agent. Unknown template types are handled automatically — a new agent is compiled on first encounter. Also coordinates QA via @waymark-manual-qa. This is the only agent that should be running persistently; all other waymark agents are workers dispatched by this one.
 argument-hint: "'start' or 'pipeline' to run the full persistent loop, 'status' for current board state, 'compile all' to pre-compile all template agents, 'qa' to only run the QA agent, or 'one cycle' to process one task then stop"
-tools: [execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, read/readFile, read/problems, agent/runSubagent, waymark/waymark_list_templates, waymark/waymark_detect_template, waymark/waymark_get_sheet, waymark/waymark_search_entries, agent-compiler/agent_compile, agent-compiler/agent_list, agent-compiler/agent_invalidate, agent-compiler/agent_eval, agent-compiler/agent_eval_all, google-sheets/sheets_sheets_list, google-sheets/sheets_spreadsheet_get, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_get, edit/createFile, edit/createDirectory, search/fileSearch, search/textSearch, search/codebase, todo]
+tools: [execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, read/readFile, read/problems, agent/runSubagent, waymark/waymark_list_templates, waymark/waymark_detect_template, waymark/waymark_get_sheet, waymark/waymark_search_entries, agent-compiler/agent_compile, agent-compiler/agent_list, agent-compiler/agent_invalidate, google-sheets/sheets_sheets_list, google-sheets/sheets_spreadsheet_get, google-sheets/sheets_values_batch_get, google-sheets/sheets_values_get, edit/createFile, edit/createDirectory, search/fileSearch, search/textSearch, search/codebase, todo]
 ---
 
 # Waymark Orchestrator Agent
@@ -52,13 +52,21 @@ Spawn `@waymark-manual-qa` with `qa patrol`. Wait. Report results. Stop.
 Run exactly one poll → compile → dispatch cycle, then stop.
 
 ### Mode F: `eval {key}` — Evaluate a single agent
-Run `agent_eval({ templateKey: key })` with the default threshold (0.85) and up to 3
-improvement iterations. Print the score, pass/fail breakdown, and whether the agent was
-approved. Do not run the pipeline loop.
+Dispatch `@waymark-eval` as a subagent:
+```
+Subagent: waymark-eval
+Prompt:   "templateKey: {key}, threshold: 0.85, maxIterations: 3"
+```
+Print the returned score, pass/fail breakdown, and approval status. Do not run the pipeline loop.
 
 ### Mode G: `eval all` — Evaluate all unapproved agents
-Run `agent_eval_all({ onlyFailing: true })`. Print a summary table of scores.
-Do not run the pipeline loop.
+Read `.github/agents/evals/*.eval.json` to identify templates where `approved: false` or no eval
+file exists. For each, dispatch `@waymark-eval` sequentially:
+```
+Subagent: waymark-eval
+Prompt:   "templateKey: {key}, threshold: 0.85, maxIterations: 3"
+```
+Print a summary table of scores when all are done. Do not run the pipeline loop.
 
 ### Mode H: `eval status` — Show current eval results without re-running
 Read `.github/agents/evals/*.eval.json` and print a summary table:
@@ -166,27 +174,28 @@ LOOP:
 ```
 agent_compile({ templateKey })
 ```
-- If already compiled (returned `skipped: true`): proceed immediately.
-- If newly compiled: log `Compiled new agent: waymark-{key}` and proceed.
+- Returns `upToDate: true` (skipped) if inputs are unchanged — this is now the default fast path.
+- Returns compiled/recompiled result if inputs changed since last compile.
 - If compilation returns an error: log the error, fall back to `@waymark-builder`.
 
-This is a no-op if the agent already exists. Call it every time — do not pre-check.
+The compiler tracks input changes via SHA-256 hash. Calling `agent_compile` every dispatch
+cycle is safe and cheap — it does not recompile unless base template, domain knowledge,
+or registry entry has changed.
 
 ### 4a-ii — Check Eval Approval (advisory)
-After ensuring the agent is compiled, check whether it has an approved eval result:
+After ensuring the agent is compiled, check for an existing eval result:
 ```
 Read .github/agents/evals/{templateKey}.eval.json
-  → if exists and approved: true  — proceed to dispatch
-  → if exists and approved: false — log a warning: "Agent {key} did not reach eval threshold (score: N%)"
-                                    Dispatch anyway; do not block the pipeline.
-  → if file does not exist         — log: "Agent {key} has no eval result yet."
-                                    Dispatch anyway.
+  → approved: true   — proceed to dispatch
+  → approved: false  — log a warning: "Agent {key} did not reach eval threshold (score: N%)"
+                        Dispatch anyway; do not block the pipeline.
+  → file missing     — log: "Agent {key} has no eval result yet."
+                        Dispatch anyway.
 ```
-Eval results are informational during normal pipeline operation. The orchestrator does NOT
-delay or block task dispatch waiting for eval. When the pipeline is idle (todo == 0,
-qa == 0), you MAY run `agent_eval_all({ onlyFailing: true })` to improve unapproved agents
-in the background before the next task arrives. Only do this when the pipeline is truly
-clear — never during an active work cycle.
+Eval results are **informational** during normal pipeline operation — never block dispatch.
+When the pipeline is idle (todo == 0, qa == 0), you MAY dispatch `@waymark-eval` for
+unapproved or un-evaluated templates to improve them while waiting for the next task.
+Only do this when the pipeline is truly empty — never during an active work cycle.
 
 ### 4b — Dispatch Task
 Invoke the compiled agent as a subagent:
@@ -267,7 +276,7 @@ The compiler caches compiled agents and skips re-compilation unless forced. To t
 |---|---|
 | `check-workboard.js` exits non-zero | Log stderr, sleep 60s, retry |
 | `agent_compile` returns error | Log it, fall back to `@waymark-builder` for that task |
-| `agent_eval` returns error | Log it, mark eval as skipped, continue pipeline |
+| `@waymark-eval` returns error | Log it, continue pipeline — eval failure never blocks work |
 | Dispatched agent returns error | Log it, re-check workboard, do not re-dispatch same task automatically |
 | QA agent returns error | Log it, re-check workboard, continue |
 | Task stuck In Progress >20 min | Flag to user: "Possible stuck task — manual check needed" |
@@ -286,6 +295,7 @@ The compiler caches compiled agents and skips re-compilation unless forced. To t
 | `generated/agents/waymark-{key}.agent.md` | Compiled template agents (output) |
 | `agent-templates/base.md.tmpl` | Shared agent brain template |
 | `agent-templates/domain-knowledge/` | Per-template smart ops |
+| `.github/agents/waymark-eval.agent.md` | Eval quality-assurance agent |
 | `.github/agents/evals/` | Eval results (one JSON per template key) |
 | `template-registry.json` | Template metadata source of truth |
 | `generated/workboard-config.json` | Active workboard target |
@@ -295,33 +305,33 @@ The compiler caches compiled agents and skips re-compilation unless forced. To t
 
 ## 11. LLM EVAL SYSTEM
 
-The Agent Compiler MCP exposes `agent_eval` and `agent_eval_all` tools that use an
-external LLM to validate that compiled agents are fit for purpose.
+Evaluation is performed by `@waymark-eval` — a dedicated Copilot agent. No external LLM API
+keys are required; eval uses your existing GitHub Copilot (GHCP) license.
 
 ### How Eval Works
-1. **Test suite generation** — the LLM generates 8 test prompts grounded in the template's
-   domain knowledge (listing, adding, updating, state transitions, smart ops, edge cases).
-2. **Scoring pass** — for each test, an LLM judge reads the compiled agent and scores
-   whether it could handle the request correctly (0.0–1.0 per test).
-3. **Improvement loop** — if the overall score is below `threshold`, the LLM rewrites the
-   domain knowledge file to address the failures, the agent is recompiled, and the same
-   test suite is re-scored. This repeats up to `maxIterations` times.
-4. **Approval** — if the final score ≥ threshold, the eval result is marked `approved: true`.
-5. **Persistence** — results are written to `.github/agents/evals/{key}.eval.json`.
+1. **Test suite generation** — `@waymark-eval` reads the compiled agent and its domain
+   knowledge, then generates 8 test scenarios covering: listing, adding, updating, state
+   transitions, smart ops, edge cases, search, and summary operations.
+2. **Self-scoring** — the eval agent acts as its own judge: for each scenario it assesses
+   whether the compiled agent's instructions are sufficient to handle it correctly (0.0–1.0
+   per test). No external judge LLM required.
+3. **Improvement loop** — if overall score is below `threshold`, the eval agent rewrites
+   `agent-templates/domain-knowledge/{key}.md` to address the failing cases, then calls
+   `agent_invalidate` + `agent_compile` to recompile, then re-scores the same test suite.
+   Repeats up to `maxIterations` times.
+4. **Approval** — final score ≥ threshold → `approved: true` in the eval JSON.
+5. **Persistence** — results written to `.github/agents/evals/{key}.eval.json`.
+
+### Change Detection
+The compiler hashes each agent's inputs (base template + domain knowledge + registry entry)
+and stores the hash as a sidecar file. `agent_compile` skips recompilation when the hash
+is unchanged — no unnecessary work per dispatch cycle. Call `agent_invalidate` to clear the
+hash and trigger a fresh recompile + re-eval.
 
 ### When to Trigger Eval
-- **After first compile** of a new template agent: run `agent_eval({ templateKey })`.
-- **After updating domain knowledge**: `agent_invalidate` → `agent_compile` → `agent_eval`.
-- **Idle pipeline sweep**: when todo == 0 and qa == 0, run `agent_eval_all({ onlyFailing: true })`
-  to bring unapproved agents up to threshold while waiting for the next task.
-- **Manual command** `eval {key}` / `eval all` (Modes F & G).
-
-### Env Requirements
-```
-EVAL_LLM_API_KEY   — required (OpenAI or Anthropic API key)
-EVAL_LLM_PROVIDER  — optional: "openai" (default) | "anthropic"
-EVAL_LLM_MODEL     — optional: model name (default: gpt-4o / claude-3-5-sonnet-20241022)
-```
-Without `EVAL_LLM_API_KEY`, `agent_eval` returns an error — the pipeline continues
-unaffected and no eval result is written.
+- **After first compile** of a new template: dispatch `@waymark-eval` with the template key.
+- **After updating domain knowledge**: `agent_invalidate` → `agent_compile` → `@waymark-eval`.
+- **Idle pipeline sweep**: when todo == 0 and qa == 0, dispatch `@waymark-eval` for
+  unapproved templates (check `approved` field in each `.eval.json`).
+- **Manual commands**: `eval {key}` (Mode F) or `eval all` (Mode G).
 
