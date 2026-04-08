@@ -135,6 +135,7 @@ async function loadMockSheet(sheetId) {
     'sheet-062': 'blog-posts',
     'sheet-064': 'photos-gallery',
     'sheet-065': 'travel-roadtrip',
+    'sheet-066': 'lock-submit-tracker',
   'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];
@@ -728,7 +729,8 @@ export const api = {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
-        return data;
+        // Fixtures may not have numericSheetId — default to 0
+        return { numericSheetId: 0, ...data };
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
@@ -881,6 +883,84 @@ export const api = {
       }
       const token = await requireToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
+    },
+
+    /**
+     * Fetch all protected ranges for a spreadsheet.
+     * Returns an array of protectedRange objects (flat, across all sheet tabs).
+     * @param {string} spreadsheetId
+     * @returns {Promise<Array>}
+     */
+    async getProtectedRanges(spreadsheetId) {
+      if (isLocal) {
+        if (!window.__WAYMARK_PROTECTED_RANGES) window.__WAYMARK_PROTECTED_RANGES = {};
+        return (window.__WAYMARK_PROTECTED_RANGES[spreadsheetId] || []).slice();
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.getProtectedRanges(token, spreadsheetId);
+      });
+    },
+
+    /**
+     * Protect a single row from editing by non-owners.
+     * Routed through the global throttle queue and retry logic in sheets.js.
+     * @param {string} spreadsheetId
+     * @param {number} sheetId       numeric Google Sheets tab ID
+     * @param {number} rowIndex      0-based row index to protect
+     * @param {string|null} ownerEmail owner email added to editors; null for empty editors
+     * @param {string} [description] protection description; defaults to 'Row locked on form submission'
+     * @returns {Promise<Object>}
+     */
+    async addProtectedRange(spreadsheetId, sheetId, rowIndex, ownerEmail, description) {
+      if (isLocal) {
+        if (!window.__WAYMARK_PROTECTED_RANGES) window.__WAYMARK_PROTECTED_RANGES = {};
+        if (!window.__WAYMARK_PROTECTED_RANGES[spreadsheetId]) {
+          window.__WAYMARK_PROTECTED_RANGES[spreadsheetId] = [];
+        }
+        const pr = {
+          protectedRangeId: Date.now() + Math.random(),
+          range: { sheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1 },
+          description: description || 'Row locked on form submission',
+          warningOnly: false,
+          editors: ownerEmail ? { users: [ownerEmail] } : { users: [] },
+        };
+        window.__WAYMARK_PROTECTED_RANGES[spreadsheetId].push(pr);
+        const record = {
+          type: 'row-protect',
+          spreadsheetId, sheetId, rowIndex, ownerEmail: ownerEmail || null,
+          description: pr.description,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return { replies: [{ addProtectedRange: { protectedRange: pr } }] };
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail, description);
+      });
+    },
+
+    /**
+     * Delete a protected range by its integer ID.
+     * @param {string} spreadsheetId
+     * @param {number} protectedRangeId
+     * @returns {Promise<Object>}
+     */
+    async deleteProtectedRange(spreadsheetId, protectedRangeId) {
+      if (isLocal) {
+        if (window.__WAYMARK_PROTECTED_RANGES?.[spreadsheetId]) {
+          window.__WAYMARK_PROTECTED_RANGES[spreadsheetId] =
+            window.__WAYMARK_PROTECTED_RANGES[spreadsheetId].filter(
+              pr => pr.protectedRangeId !== protectedRangeId
+            );
+        }
+        return { replies: [] };
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return sheetsApi.deleteProtectedRange(token, spreadsheetId, protectedRangeId);
+      });
     },
 
   },

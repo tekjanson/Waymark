@@ -29,6 +29,28 @@ export function setEditLocked(locked) { _editLocked = !!locked; }
  */
 export function isEditLocked() { return _editLocked; }
 
+/* ---------- Protected rows (populated by checklist.js on sheet load) ---------- */
+
+let _protectedRows = new Set();
+
+/**
+ * Replace the set of 0-based sheet-row indices that are server-side protected.
+ * Called by checklist.js after fetching protectedRanges metadata.
+ * @param {Set<number>} rowIndexSet
+ */
+export function setProtectedRows(rowIndexSet) {
+  _protectedRows = rowIndexSet instanceof Set ? rowIndexSet : new Set();
+}
+
+/**
+ * Return true if the given 0-based sheet-row index is server-side protected.
+ * In templates, the 1-based rowIdx used for emitEdit() equals the 0-based
+ * sheet rowIndex (header is at 0, first data row at 1).
+ * @param {number} rowIndex
+ * @returns {boolean}
+ */
+export function isRowProtected(rowIndex) { return _protectedRows.has(rowIndex); }
+
 /* ---------- User name (set by checklist.js for note authoring) ---------- */
 
 let _userName = '';
@@ -218,6 +240,10 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
 
   function startEdit() {
     if (_editLocked) return;                               // sheet is locked
+    if (_protectedRows.has(rowIdx)) {                      // server-side row protection
+      showToast('This row is locked — editing is disabled', 'warn');
+      return;
+    }
     if (wrapper.querySelector('input')) return;            // already editing
     const current = text || '';
     const input = document.createElement('input');

@@ -2445,3 +2445,20 @@ ul { list-style: none; }
   margin: 0 0 6px;
   line-height: 1.4;
 }
+
+/* Lock-on-Submit — near-limit warning banner */
+.lock-limit-banner {
+  margin: 8px 0 0;
+  padding: 10px 16px;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: #92400e;
+  line-height: 1.5;
+}
+[data-theme="dark"] .lock-limit-banner {
+  background: #451a03;
+  border-color: #92400e;
+  color: #fef3c7;
+}

@@ -1,0 +1,10 @@
+{
+  "id": "sheet-066",
+  "title": "Registration Tracker",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Goal", "Progress", "Target", "Started", "Notes"],
+    ["Alice Johnson", "1", "1", "2026-04-01", "Confirmed"],
+    ["Bob Smith", "0", "1", "2026-04-02", "Pending"]
+  ]
+}
