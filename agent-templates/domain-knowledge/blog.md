@@ -33,9 +33,18 @@ Search by:
 
 Return all matching columns for the row(s) found.
 
+### Creating a Post Document
+When asked to create a blog post (or write / draft content for a post), first create a Google Doc using `waymark_create_doc`:
+```
+waymark_create_doc(title: "{post title}", body?: "{initial content}", parentFolderId?, shareWith?)
+```
+- Use the returned `docsUrl` as the value for the `doc` column when adding or updating the sheet row.
+- Always create the doc before appending the row so the link is captured immediately.
+- If the user only wants to register the post without writing content yet, skip `waymark_create_doc` and leave `doc` blank.
+
 ### Adding a Post
-Append a row. Required: `title`. Optional: `doc` (may be filled in later), `date` (default: today), `author`, `category`.
-Never fabricate URLs for `doc` — leave empty if no link is provided.
+Append a row. Required: `title`. Optional: `doc` (the Google Doc URL from `waymark_create_doc`, or any other link provided by the user), `date` (default: today), `author`, `category`.
+Never fabricate URLs for `doc` — leave empty if no link is provided and no doc was created.
 
 ### Category Summary
 Show distinct categories with post count:
@@ -62,6 +71,7 @@ When told to update title, doc, date, author, or category:
 
 ## Interpretation Rules
 - `doc` is a raw URL or path — preserve it exactly, never invent or guess it
+- `doc` is typically a Google Doc URL produced by `waymark_create_doc` — record the exact URL returned
 - `date` may be a publish date OR a draft/planned date — do not assume all dated posts are live
 - `category` values are free text — do not normalize or rename them unless asked
 - A blank `doc` means the post content isn't linked yet — this is normal for drafts

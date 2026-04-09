@@ -207,7 +207,13 @@ Break the task into discrete work items and record them in a Waymark kanban boar
    [ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PLAN CREATED: $PLAN_ID | {N} items" >> "$WAYMARK_LOG"
    ```
 
-3. Log a summary of the plan before leaving this phase:
+3. **Update the workboard** to show the plan is live:
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js note {workboardRow} "Plan: {PLAN_ID} | {N} items queued — starting research" --agent waymark-habit
+   ```
+
+4. Log a summary of the plan before leaving this phase:
    ```bash
    [ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PLAN ITEMS: {item1} | {item2} | {item3} | ..." >> "$WAYMARK_LOG"
    ```
@@ -254,6 +260,11 @@ Work through the plan cards one at a time. For each card in "To Do" status:
    ```bash
    [ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] RESEARCH DONE: {item title} | key facts: {2-3 bullet summary}" >> "$WAYMARK_LOG"
    ```
+   **Update the workboard** so the user sees live progress:
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js note {workboardRow} "Research {doneCount}/{totalCount}: '{item title}' complete" --agent waymark-habit
+   ```
 
 5. Repeat for the next card. Work through ALL cards before proceeding to Phase 3.
 
@@ -265,23 +276,29 @@ Work through the plan cards one at a time. For each card in "To Do" status:
 
 With all research complete, write the data to the target Waymark sheet.
 
-1. If a target sheet already exists (provided in the prompt as `Spreadsheet: {id}`):
+1. **Update the workboard** to signal implementation is starting:
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
+     node scripts/update-workboard.js note {workboardRow} "Writing {N} items to sheet — {targetSpreadsheetId or 'new sheet'}" --agent waymark-habit
+   ```
+
+2. If a target sheet already exists (provided in the prompt as `Spreadsheet: {id}`):
    - Read it first with `waymark_get_sheet` to understand current state
    - Update or append rows using the research from Phase 2
 
-2. If no target sheet exists (prompt says "create a new sheet"):
+3. If no target sheet exists (prompt says "create a new sheet"):
    - Create the destination sheet:
      ```
      waymark_create_sheet(templateKey: "habit", title: "{descriptive title}")
      ```
    - Then populate it row by row using Phase 2 research
 
-3. Write each item as a row. Use the column roles from §1. Write one item at a time, logging each:
+4. Write each item as a row. Use the column roles from §1. Write one item at a time, logging each:
    ```bash
    [ -n "$WAYMARK_LOG" ] && echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] IMPL WRITE: row {n} | {item title} | {key fields written}" >> "$WAYMARK_LOG"
    ```
 
-4. After all rows are written, read back the completed sheet with `waymark_get_sheet` to confirm row count matches the plan card count.
+5. After all rows are written, read back the completed sheet with `waymark_get_sheet` to confirm row count matches the plan card count.
 
 ---
 

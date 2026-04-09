@@ -23,6 +23,11 @@ const DOMAIN_KN_DIR  = path.join(ROOT, "agent-templates", "domain-knowledge");
 const OUTPUT_DIR     = path.join(ROOT, ".github", "agents");
 const EVAL_DIR       = path.join(OUTPUT_DIR, "evals");
 
+/** Extra tools injected into the tools list for specific templates (after waymark_create_sheet). */
+const EXTRA_TOOLS = {
+  blog: ["waymark/waymark_create_doc"],
+};
+
 const DEFAULT_HEADERS = {
   testcases:    ["Test Case", "Result", "Expected", "Actual", "Priority", "Notes"],
   checklist:    ["Item", "Status", "Category", "Due", "Notes"],
@@ -121,6 +126,7 @@ function compileOne(tmpl) {
   const interactionStates = tmpl.interactionStates || [];
   const toggleOn  = interactionStates[0] ?? "done";
   const toggleOff = interactionStates[1] ?? "";
+  const extraToolsList = (EXTRA_TOOLS[key] || []).map(t => `, ${t}`).join("");
 
   const compiled = base
     .replace(/\{\{TEMPLATE_KEY\}\}/g,           key)
@@ -133,6 +139,7 @@ function compileOne(tmpl) {
     .replace(/\{\{INTERACTION_STATES_BLOCK\}\}/g, buildStatesBlock(tmpl))
     .replace(/\{\{TOGGLE_ON\}\}/g,                toggleOn)
     .replace(/\{\{TOGGLE_OFF\}\}/g,               toggleOff)
+    .replace(/\{\{EXTRA_TOOLS\}\}/g,              extraToolsList)
     .replace(/\{\{DOMAIN_KNOWLEDGE\}\}/g,         domain.trim());
 
   mkdirSync(OUTPUT_DIR, { recursive: true });

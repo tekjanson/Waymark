@@ -67,6 +67,7 @@ const DEFAULT_HEADERS = {
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_BASE  = "https://www.googleapis.com/drive/v3";
+const DOCS_BASE   = "https://docs.googleapis.com/v1/documents";
 const TOKEN_URL   = "https://oauth2.googleapis.com/token";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -82,6 +83,7 @@ const auth = new GoogleAuth({
   scopes: [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/documents",
   ],
 });
 
@@ -166,6 +168,7 @@ async function apiRequestWithToken(token, baseUrl, path, { method = "GET", body 
 const sheets = (path, opts) => apiRequest(SHEETS_BASE, path, opts);
 const drive  = (path, opts) => apiRequest(DRIVE_BASE, path, opts);
 const driveAs = (token, path, opts) => apiRequestWithToken(token, DRIVE_BASE, path, opts);
+const docsAs  = (token, path, opts) => apiRequestWithToken(token, DOCS_BASE, path, opts);
 
 /* ---------- Template detection (Node.js, pure) ---------- */
 
@@ -410,6 +413,33 @@ const TOOLS = [
           type: "string",
           enum: ["writer", "reader", "commenter"],
           description: "Permission role for all shareWith addresses. Default: writer.",
+        },
+      },
+    },
+  },
+  {
+    name: "waymark_create_doc",
+    description: "Create a new Google Doc for blog post content (or any long-form writing). Returns the documentId and editing URL. Use this when adding a post that needs a full document for its body — store the returned URL in the blog sheet's 'doc' column.",
+    inputSchema: {
+      type: "object",
+      required: ["title"],
+      properties: {
+        title: {
+          type: "string",
+          description: "Title for the new Google Doc.",
+        },
+        body: {
+          type: "string",
+          description: "Initial text content to insert into the document (optional). Plain text; newlines are preserved.",
+        },
+        parentFolderId: {
+          type: "string",
+          description: "Google Drive folder ID to place the file in (optional). Defaults to the configured Waymark folder.",
+        },
+        shareWith: {
+          type: "array",
+          items: { type: "string" },
+          description: "Email addresses to share the doc with as editors (optional).",
         },
       },
     },
@@ -694,6 +724,87 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, sh
   };
 }
 
+async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith = [] }) {
+  if (!title) throw new Error("title is required.");
+
+  const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
+
+  const userToken = await getUserOAuthToken();
+  const createToken = userToken || await getToken();
+  const createdWithOAuth = !!userToken;
+
+  // Create the Google Doc
+  const res = await fetch(DOCS_BASE, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${createToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`Docs create ${res.status}: ${await res.text()}`);
+  const created = await res.json();
+  const documentId = created.documentId;
+
+  // Insert initial body text if provided
+  if (body) {
+    try {
+      const insertRes = await fetch(`${DOCS_BASE}/${documentId}:batchUpdate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${createToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ insertText: { location: { index: 1 }, text: body } }],
+        }),
+      });
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        process.stderr.write(`Docs batchUpdate warning: ${errText}\n`);
+      }
+    } catch { /* non-fatal — doc was still created */ }
+  }
+
+  // Move to Drive folder
+  if (effectiveFolderId) {
+    try {
+      await driveAs(createToken, `/files/${documentId}?addParents=${effectiveFolderId}&fields=id`, { method: "PATCH", body: {} });
+    } catch { /* non-fatal */ }
+  }
+
+  // Share with the service account so it can read/write the doc
+  const saShared = [];
+  if (createdWithOAuth && SA_EMAIL) {
+    try {
+      await driveAs(createToken, `/files/${documentId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: SA_EMAIL },
+      });
+      saShared.push(SA_EMAIL);
+    } catch (err) {
+      saShared.push(`${SA_EMAIL} (failed: ${err.message})`);
+    }
+  }
+
+  // Share with additional users
+  const sharedWith = [];
+  for (const email of shareWith) {
+    try {
+      await driveAs(createToken, `/files/${documentId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: email },
+      });
+      sharedWith.push(email);
+    } catch (err) {
+      sharedWith.push(`${email} (failed: ${err.message})`);
+    }
+  }
+
+  return {
+    documentId,
+    title,
+    docsUrl: `https://docs.google.com/document/d/${documentId}/edit`,
+    sharedWith,
+    serviceAccountShared: saShared,
+    createdWithOAuth,
+  };
+}
+
 async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWithAnyone = false, role = "writer" }) {
   if (!spreadsheetId) throw new Error("spreadsheetId is required.");
   if (!shareWith.length && !shareWithAnyone) throw new Error("Provide at least one of shareWith or shareWithAnyone:true.");
@@ -817,6 +928,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_add_entry":         result = await handleWaymarkAddEntry(args); break;
       case "waymark_update_entry":      result = await handleWaymarkUpdateEntry(args); break;
       case "waymark_create_sheet":      result = await handleWaymarkCreateSheet(args); break;
+      case "waymark_create_doc":         result = await handleWaymarkCreateDoc(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
       case "waymark_share_sheet":       result = await handleWaymarkShareSheet(args); break;
       default:
@@ -838,4 +950,4 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write("Waymark MCP server ready (8 tools)\n");
+process.stderr.write("Waymark MCP server ready (9 tools)\n");
