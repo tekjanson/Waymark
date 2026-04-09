@@ -179,8 +179,46 @@ function detectTemplate(headers) {
  * @param {{ task: string, desc: string, sheetId?: string }} task
  * @returns {Promise<{ agent: string, method: string }>}
  */
+// Known agent names — any label or assignee exactly matching one routes directly to it.
+const KNOWN_AGENTS = new Set([
+    "waymark-builder", "waymark-travel", "waymark-budget", "waymark-recipe",
+    "waymark-meal", "waymark-kanban", "waymark-crm", "waymark-contacts",
+    "waymark-inventory", "waymark-tracker", "waymark-schedule", "waymark-timesheet",
+    "waymark-log", "waymark-habit", "waymark-poll", "waymark-changelog",
+    "waymark-gantt", "waymark-okr", "waymark-roster", "waymark-knowledge",
+    "waymark-guide", "waymark-flow", "waymark-automation", "waymark-blog",
+    "waymark-social", "waymark-marketing", "waymark-notification", "waymark-arcade",
+    "waymark-iot", "waymark-grading", "waymark-passwords", "waymark-photos",
+    "waymark-linker", "waymark-testcases", "waymark-worker", "waymark-checklist",
+]);
+
+// Labels that always mean "this is a codebase task → waymark-builder"
+const BUILDER_LABELS = new Set([
+    "feature", "bug", "fix", "refactor", "chore", "infra", "test", "docs",
+    "enhancement", "improvement", "architecture",
+]);
+
 async function routeTask(task) {
     const text = `${task.task} ${task.desc || ""}`.toLowerCase();
+    const label    = (task.label    || "").trim().toLowerCase();
+    const assignee = (task.assignee || "").trim().toLowerCase();
+
+    // Step 0a: Explicit agent assignee → routes directly to that agent
+    if (assignee && KNOWN_AGENTS.has(assignee)) {
+        return { agent: assignee, method: "assignee" };
+    }
+
+    // Step 0b: Label is an exact agent name → route to that agent
+    if (label && KNOWN_AGENTS.has(label)) {
+        return { agent: label, method: "label-agent" };
+    }
+
+    // Step 0c: Label marks this as a builder (codebase) task → waymark-builder wins
+    //          This fires BEFORE keyword matching so "feature" tasks with travel keywords
+    //          (e.g. "update the itinerary template") go to the builder, not waymark-travel.
+    if (label && BUILDER_LABELS.has(label)) {
+        return { agent: "waymark-builder", method: "label-feature" };
+    }
 
     // Step A: If sheetId present, detect template
     if (task.sheetId) {
@@ -646,25 +684,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         prompt,
                         taskTitle: task.task,
                         routeMethod: routeResult.method,
-                    }),
-                }],
-            };
-        }
-
-        // Check QA
-        const qaCount = Array.isArray(board.qa) ? board.qa.length : board.qa;
-        if (qaCount > 0 && (!board.todo || board.todo.length === 0)) {
-            appendFileSync(logPath, `[${iso()}] ROUTE: waymark-manual-qa (qa-patrol) | ${qaCount} QA items\n`);
-            _sessions.set(args.sessionId, { lastAction: "DISPATCH", lastAgentName: "waymark-manual-qa" });
-            return {
-                content: [{
-                    type: "text",
-                    text: JSON.stringify({
-                        action: "DISPATCH",
-                        agentName: "waymark-manual-qa",
-                        prompt: "qa patrol",
-                        taskTitle: `QA patrol (${qaCount} items)`,
-                        routeMethod: "qa-patrol",
                     }),
                 }],
             };

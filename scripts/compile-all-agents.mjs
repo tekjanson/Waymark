@@ -184,3 +184,34 @@ if (generic.length > 0) {
 }
 
 console.log(`\nOutput: .github/agents/waymark-*.agent.md (${compiled + upToDate} total)\n`);
+
+// ── Worker agents: builder + qa (no template registry — compiled 1:1 from templates) ──────────
+
+const WORKER_TEMPLATES = [
+  {
+    tmpl: path.join(ROOT, "agent-templates", "builder.md.tmpl"),
+    out:  path.join(OUTPUT_DIR, "waymark-builder.agent.md"),
+    name: "builder",
+  },
+  // waymark-manual-qa excluded until MQTT bridge is available
+];
+
+console.log("Compiling worker agents…\n");
+let workerCompiled = 0, workerErrors = 0;
+for (const { tmpl, out, name } of WORKER_TEMPLATES) {
+  if (!existsSync(tmpl)) {
+    console.log(`  SKIP ${name}: template not found at ${tmpl}`);
+    continue;
+  }
+  try {
+    const src = readFileSync(tmpl, "utf8");
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, src, "utf8");
+    workerCompiled++;
+    console.log(`  ✓ compiled ${path.basename(out)}`);
+  } catch (err) {
+    workerErrors++;
+    console.log(`  ✗ error compiling ${name}: ${err.message}`);
+  }
+}
+console.log(`\nWorker agents compiled: ${workerCompiled}, errors: ${workerErrors}\n`);

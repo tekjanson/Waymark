@@ -371,6 +371,7 @@ Use `NEEDS-REVIEW` in the log (and as a note on the workboard QA update) if any 
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
   node scripts/update-workboard.js stage {workboardRow} "QA" --agent waymark-testcases
+GOOGLE_APPLICATION_CREDENTIALS=/home/tekjanson/.config/gcloud/waymark-service-account-key.json \
   node scripts/update-workboard.js note {workboardRow} "Sheet: {targetSpreadsheetId} | Plan: {PLAN_ID} | {N} items | {N} synthesis fixes | {PASS / NEEDS-REVIEW}" --agent waymark-testcases
 ```
 
