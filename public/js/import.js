@@ -131,6 +131,8 @@ const ROLE_LABELS = {
   'travel.date': 'Date',
   'travel.location': 'Location / Destination',
   'travel.booking': 'Booking Reference',
+  'travel.bookingLink': 'Booking Link (URL)',
+  'travel.bookingDetails': 'Booking Details',
   'travel.cost': 'Cost ($)',
   // Roster
   'roster.employee': 'Employee / Team Member',
@@ -336,7 +338,9 @@ const CANONICAL_HEADERS = {
   'meal.recipe': 'Recipe', 'meal.calories': 'Calories', 'meal.protein': 'Protein',
   // Travel
   'travel.activity': 'Activity', 'travel.date': 'Date',
-  'travel.location': 'Location', 'travel.booking': 'Booking', 'travel.cost': 'Cost',
+  'travel.location': 'Location', 'travel.booking': 'Booking',
+  'travel.bookingLink': 'Booking Link', 'travel.bookingDetails': 'Booking Details',
+  'travel.cost': 'Cost',
   // Roster
   'roster.employee': 'Employee', 'roster.role': 'Role', 'roster.shift': 'Shift',
   // Flow Diagram

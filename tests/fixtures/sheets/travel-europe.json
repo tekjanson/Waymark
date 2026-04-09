@@ -8,6 +8,8 @@
       "Date",
       "Location",
       "Booking",
+      "Booking Link",
+      "Booking Details",
       "Cost"
     ],
     [
@@ -15,6 +17,8 @@
       "2026-06-15",
       "JFK → CDG",
       "AA-1234",
+      "https://aa.com/booking/AA-1234",
+      "Departs 10:30 AM. Check in online 24h before.",
       "$650"
     ],
     [
@@ -22,6 +26,8 @@
       "2026-06-15",
       "Paris",
       "BK-5678",
+      "https://booking.com/hotel/le-marais",
+      "Check-in from 3 PM. Breakfast included.",
       "$180/night"
     ],
     [
@@ -29,6 +35,8 @@
       "2026-06-16",
       "Paris",
       "TK-9012",
+      "https://toureiffel.paris/en",
+      "Summit access. Arrive 15 min early.",
       "$35"
     ],
     [
@@ -36,6 +44,8 @@
       "2026-06-17",
       "Paris",
       "TK-9013",
+      "https://louvre.fr/en/visit",
+      "Time slot: 10:00 AM. Audio guide included.",
       "$20"
     ],
     [
@@ -43,6 +53,8 @@
       "2026-06-18",
       "Paris → Amsterdam",
       "TH-3456",
+      "https://thalys.com/booking/TH-3456",
+      "Departs Gare du Nord 09:22 AM. Seat 24B.",
       "$120"
     ],
     [
@@ -50,6 +62,8 @@
       "2026-06-18",
       "Amsterdam",
       "BK-7890",
+      "https://booking.com/hotel/canal-hotel",
+      "Check-in from 2 PM. Canal view room.",
       "$160/night"
     ],
     [
@@ -57,6 +71,8 @@
       "2026-06-19",
       "Amsterdam",
       "TK-2345",
+      "https://vangoghmuseum.nl/en/visit",
+      "Timed entry 11:00 AM. No bag check needed.",
       "$22"
     ],
     [
@@ -64,6 +80,8 @@
       "2026-06-20",
       "Amsterdam",
       "TK-6789",
+      "https://bikecity.nl/tours",
+      "Meet at Centraal Station east entrance at 10 AM.",
       "$45"
     ],
     [
@@ -71,6 +89,8 @@
       "2026-06-21",
       "AMS → JFK",
       "KL-5678",
+      "https://klm.com/booking/KL-5678",
+      "Departs 2:15 PM. Online check-in opens 30h before.",
       "$700"
     ]
   ]
