@@ -49,7 +49,7 @@ const definition = {
   color: '#0891b2',
   priority: 20,
   itemNoun: 'Activity',
-  defaultHeaders: ['Activity', 'Date', 'Location', 'Link', 'Cost', 'People', 'Notes'],
+  defaultHeaders: ['Activity', 'Date', 'Location', 'Booking', 'Booking Link', 'Booking Details', 'Cost'],
 
   detect(lower) {
     return lower.some(h => /^(flight|hotel|booking|itinerary|accommodation|departure|arrival|transport)/.test(h) || /^(activity|event|attraction)/.test(h))
@@ -57,29 +57,32 @@ const definition = {
   },
 
   columns(lower) {
-    const cols = { activity: -1, date: -1, location: -1, link: -1, booking: -1, cost: -1, people: -1, notes: -1 };
-    cols.activity = lower.findIndex(h => /^(activity|event|item|flight|hotel|what|description|name|attraction|plan)/.test(h));
+    const cols = { activity: -1, date: -1, location: -1, booking: -1, bookingLink: -1, bookingDetails: -1, cost: -1, people: -1, notes: -1 };
+    cols.activity       = lower.findIndex(h => /^(activity|event|item|flight|hotel|what|description|name|attraction|plan)/.test(h));
     if (cols.activity === -1) cols.activity = 0;
-    cols.date     = lower.findIndex(h => /^(date|day|when|depart|arrive|check)/.test(h));
-    cols.location = lower.findIndex(h => /^(location|where|city|place|destination|from|to|route|address)/.test(h));
-    cols.link     = lower.findIndex(h => /^(link|url)/.test(h));
-    cols.booking  = lower.findIndex(h => /^(booking|confirmation|ref|reservation|code|ticket|record)/.test(h));
-    cols.cost     = lower.findIndex(h => /^(cost|price|amount|total|fee|\$|budget|paid)/.test(h));
-    cols.people   = lower.findIndex(h => /^(people|person|guests?|adults?|count|qty|quantity|party|pax)/.test(h));
-    cols.notes    = lower.findIndex(h => /^(notes?|comments?|details?)/.test(h));
+    cols.date           = lower.findIndex(h => /^(date|day|when|depart|arrive|check)/.test(h));
+    cols.location       = lower.findIndex(h => /^(location|where|city|place|destination|from|to|route|address)/.test(h));
+    // Resolve booking link and details before booking to prevent greedy overlap
+    cols.bookingLink    = lower.findIndex(h => /^(booking.?link|booking.?url|^link$|^url$)/.test(h));
+    cols.bookingDetails = lower.findIndex((h, i) => /^(booking.?det|booking.?info|booking.?note|details?)/.test(h) && i !== cols.bookingLink);
+    cols.booking        = lower.findIndex((h, i) => /^(booking|confirmation|ref|reservation|code|ticket|record)/.test(h) && i !== cols.bookingLink && i !== cols.bookingDetails);
+    cols.cost           = lower.findIndex(h => /^(cost|price|amount|total|fee|\$|budget|paid)/.test(h));
+    cols.people         = lower.findIndex(h => /^(people|person|guests?|adults?|count|qty|quantity|party|pax)/.test(h));
+    cols.notes          = lower.findIndex((h, i) => /^(notes?|comments?)/.test(h) && i !== cols.bookingDetails);
     return cols;
   },
 
   addRowFields(cols) {
-    const linkColIdx = cols.link >= 0 ? cols.link : cols.booking;
     return [
-      { role: 'activity', label: 'Activity', colIndex: cols.activity, type: 'text', placeholder: 'Flight, hotel, excursion…', required: true },
-      { role: 'date',     label: 'Date',     colIndex: cols.date,     type: 'date' },
-      { role: 'location', label: 'Location', colIndex: cols.location, type: 'text', placeholder: 'City or address' },
-      linkColIdx >= 0 ? { role: 'link',   label: 'Link/Ref', colIndex: linkColIdx,   type: 'text', placeholder: 'URL or confirmation #' } : null,
-      { role: 'cost',     label: 'Cost',     colIndex: cols.cost,     type: 'text', placeholder: 'Amount, e.g. $49 or FREE' },
+      { role: 'activity',       label: 'Activity',        colIndex: cols.activity,        type: 'text',   placeholder: 'Flight, hotel, excursion…', required: true },
+      { role: 'date',           label: 'Date',             colIndex: cols.date,            type: 'date' },
+      { role: 'location',       label: 'Location',         colIndex: cols.location,        type: 'text',   placeholder: 'City or address' },
+      cols.booking       >= 0 ? { role: 'booking',        label: 'Booking Ref',           colIndex: cols.booking,        type: 'text',   placeholder: 'Confirmation # or code' } : null,
+      cols.bookingLink   >= 0 ? { role: 'bookingLink',    label: 'Booking Link',          colIndex: cols.bookingLink,    type: 'text',   placeholder: 'https://…' } : null,
+      cols.bookingDetails >= 0 ? { role: 'bookingDetails', label: 'Booking Details',      colIndex: cols.bookingDetails, type: 'text',   placeholder: 'Check-in time, included meals…' } : null,
+      { role: 'cost',           label: 'Cost',             colIndex: cols.cost,            type: 'text',   placeholder: 'Amount, e.g. $49 or FREE' },
       cols.people >= 0 ? { role: 'people', label: 'People', colIndex: cols.people, type: 'number', placeholder: '# of guests' } : null,
-      cols.notes  >= 0 ? { role: 'notes',  label: 'Notes',  colIndex: cols.notes,  type: 'text',   placeholder: 'Booking details…' } : null,
+      cols.notes  >= 0 ? { role: 'notes',  label: 'Notes',  colIndex: cols.notes,  type: 'text',   placeholder: 'Additional notes…' } : null,
     ].filter(Boolean);
   },
 
@@ -136,16 +139,16 @@ const definition = {
     container.append(el('div', { className: 'travel-summary' }, summaryItems));
 
     /* ---------- Itinerary cards ---------- */
-    /* Support both old (booking) and new (link) column formats */
-    const linkColIdx = cols.link >= 0 ? cols.link : cols.booking;
     let prevDate = '';
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const rowIdx = i + 1;
-      const activity = cell(row, cols.activity) || row[0] || '\u2014';
+      const activity = cell(row, cols.activity) || row[0] || '—';
       const date = cell(row, cols.date);
       const location = cell(row, cols.location);
-      const linkVal = linkColIdx >= 0 ? cell(row, linkColIdx) : '';
+      const bookingRef     = cols.booking        >= 0 ? cell(row, cols.booking)        : '';
+      const bookingLinkVal = cols.bookingLink    >= 0 ? cell(row, cols.bookingLink)    : '';
+      const bookingDet     = cols.bookingDetails >= 0 ? cell(row, cols.bookingDetails) : '';
       const cost = cell(row, cols.cost);
       const people = cols.people >= 0 ? cell(row, cols.people) : '';
       const notes  = cols.notes  >= 0 ? cell(row, cols.notes)  : '';
@@ -177,21 +180,33 @@ const definition = {
         ]);
       }
 
-      /* Link element — URL → clickable link, non-URL text → editable ref */
-      let linkEl = null;
-      if (linkColIdx >= 0 && linkVal) {
-        if (/^https?:\/\//.test(linkVal)) {
-          linkEl = el('a', {
+      /* Booking reference — editable confirmation code */
+      const bookingRefEl = bookingRef
+        ? editableCell('span', { className: 'travel-booking-ref' }, bookingRef, rowIdx, cols.booking)
+        : null;
+
+      /* Booking link — URL opens in new tab, other text is editable */
+      let bookingLinkEl = null;
+      if (cols.bookingLink >= 0 && bookingLinkVal) {
+        if (/^https?:\/\//.test(bookingLinkVal)) {
+          bookingLinkEl = el('a', {
             className: 'travel-booking-link',
-            href: linkVal,
+            href: bookingLinkVal,
             target: '_blank',
             rel: 'noopener',
-            title: linkVal,
-          }, ['\uD83D\uDCCE Book']);
+            title: bookingLinkVal,
+          }, ['📎 Book']);
         } else {
-          linkEl = editableCell('span', { className: 'travel-booking-ref' }, linkVal, rowIdx, linkColIdx);
+          bookingLinkEl = editableCell('span', { className: 'travel-booking-link-ref' }, bookingLinkVal, rowIdx, cols.bookingLink);
         }
       }
+
+      /* Booking details — additional booking info shown below meta row */
+      const bookingDetEl = bookingDet
+        ? el('div', { className: 'travel-booking-details' }, [
+            editableCell('span', {}, bookingDet, rowIdx, cols.bookingDetails),
+          ])
+        : null;
 
       const costEl = cols.cost >= 0
         ? editableCell('span', { className: 'travel-cost' }, cost, rowIdx, cols.cost)
@@ -211,10 +226,12 @@ const definition = {
           editableCell('div', { className: 'travel-card-title' }, activity, rowIdx, cols.activity),
           locationEl,
           el('div', { className: 'travel-card-meta' }, [
-            linkEl,
+            bookingRefEl,
+            bookingLinkEl,
             costEl,
             peopleEl,
           ]),
+          bookingDetEl,
           notesEl,
         ]),
       ]));

@@ -606,6 +606,8 @@
         "flight",
         "hotel",
         "booking",
+        "booking link",
+        "booking details",
         "itinerary",
         "departure",
         "arrival",
@@ -616,6 +618,8 @@
         "date",
         "location",
         "booking",
+        "bookingLink",
+        "bookingDetails",
         "cost"
       ],
       "interactive": false,
