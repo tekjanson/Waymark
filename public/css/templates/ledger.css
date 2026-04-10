@@ -1,0 +1,153 @@
+/* Ledger Template */
+
+/* ---------- P&L Summary ---------- */
+.ledger-pnl {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.ledger-pnl-item {
+  flex: 1; min-width: 130px; text-align: center;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+}
+.ledger-pnl-label {
+  display: block; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 4px;
+}
+.ledger-pnl-value { display: block; font-size: 1.25rem; font-weight: 700; }
+.ledger-pnl-income .ledger-pnl-value   { color: #059669; }
+.ledger-pnl-expense .ledger-pnl-value  { color: #dc2626; }
+.ledger-pnl-profit .ledger-pnl-value   { color: #059669; background: #dcfce7; border-radius: var(--radius-sm); padding: 2px 6px; }
+.ledger-pnl-loss .ledger-pnl-value     { color: #dc2626; background: #fee2e2; border-radius: var(--radius-sm); padding: 2px 6px; }
+
+/* ---------- Monthly chart ---------- */
+.ledger-chart {
+  margin-bottom: 16px; padding: 14px 16px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.ledger-chart-title {
+  font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;
+}
+.ledger-chart-inner { display: flex; gap: 16px; }
+.ledger-chart-half { flex: 1; min-width: 0; }
+.ledger-chart-half-label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--color-text-muted); margin-bottom: 4px;
+}
+
+/* ---------- Filter bar ---------- */
+.ledger-filter-bar {
+  display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.ledger-filter-btn {
+  padding: 4px 14px; border-radius: 20px; border: 1px solid var(--color-border);
+  background: var(--color-surface); color: var(--color-text);
+  font-size: 0.8rem; cursor: pointer; transition: all var(--transition);
+}
+.ledger-filter-btn:hover { background: var(--color-bg); }
+.ledger-filter-active {
+  background: #0f766e; color: #fff; border-color: #0f766e;
+}
+
+/* ---------- Category groups ---------- */
+.ledger-groups { display: flex; flex-direction: column; gap: 2px; }
+
+.ledger-cat-label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #0f766e;
+  padding: 10px 4px 5px; margin-top: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+.ledger-cat-net { font-size: 0.78rem; }
+.ledger-cat-positive { color: #059669; }
+.ledger-cat-negative { color: #dc2626; }
+
+/* ---------- Ledger row ---------- */
+.ledger-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius); transition: box-shadow var(--transition);
+}
+.ledger-row:hover { box-shadow: var(--shadow); }
+
+.ledger-row-left {
+  display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 0;
+}
+.ledger-row-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.ledger-row-desc  { font-weight: 500; font-size: 0.95rem; }
+.ledger-row-date  { font-size: 0.75rem; color: var(--color-text-muted); }
+.ledger-row-ref   { font-size: 0.72rem; color: var(--color-text-muted); font-style: italic; }
+
+.ledger-row-right {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+
+/* ---------- Type badge ---------- */
+.ledger-type-badge {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 2px 7px; border-radius: 10px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.ledger-type-income   { background: #dcfce7; color: #15803d; }
+.ledger-type-expense  { background: #fee2e2; color: #b91c1c; }
+.ledger-type-transfer { background: #ede9fe; color: #6d28d9; }
+
+/* ---------- Amount ---------- */
+.ledger-amt {
+  font-weight: 700; font-size: 0.95rem; white-space: nowrap;
+  padding: 2px 10px; border-radius: 12px; cursor: pointer;
+  transition: all var(--transition);
+}
+.ledger-amt-positive { background: #dcfce7; color: #15803d; }
+.ledger-amt-negative { background: #fee2e2; color: #b91c1c; }
+.ledger-amt:hover { filter: brightness(0.92); transform: scale(1.04); }
+
+.ledger-running-balance {
+  font-size: 0.72rem; color: var(--color-text-muted); white-space: nowrap;
+}
+
+/* ---------- Directory view ---------- */
+.ledger-directory { max-width: 800px; }
+.ledger-dir-title-bar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.ledger-dir-icon { font-size: 1.6rem; }
+.ledger-dir-title { font-size: 1.2rem; font-weight: 700; }
+.ledger-dir-count {
+  font-size: 0.72rem; color: var(--color-text-muted);
+  background: var(--color-bg); padding: 2px 8px; border-radius: 10px;
+}
+.ledger-dir-totals {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+  padding: 14px 18px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
+.ledger-dir-total-item { flex: 1; min-width: 120px; text-align: center; }
+.ledger-dir-total-label {
+  display: block; font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--color-text-muted); margin-bottom: 4px;
+}
+.ledger-dir-total-value { display: block; font-size: 1.1rem; font-weight: 700; }
+.ledger-dir-income   { color: #059669; }
+.ledger-dir-expense  { color: #dc2626; }
+.ledger-dir-profit   { color: #059669; }
+.ledger-dir-loss     { color: #dc2626; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .ledger-pnl { flex-direction: column; }
+  .ledger-chart-inner { flex-direction: column; }
+  .ledger-row { flex-wrap: wrap; }
+  .ledger-row-right { width: 100%; justify-content: flex-end; }
+}
+
+@media (max-width: 480px) {
+  .ledger-pnl-item { min-width: 100%; }
+  .ledger-filter-bar { gap: 4px; }
+  .ledger-filter-btn { padding: 3px 10px; font-size: 0.75rem; }
+}

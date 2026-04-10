@@ -1,0 +1,29 @@
+{
+  "id": "sheet-067",
+  "title": "Business Ledger 2026",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Date", "Type", "Category", "Description", "Amount", "Reference"],
+    ["2026-01-01", "Income", "Revenue", "Consulting retainer - Acme Corp", "8500", "REF-001"],
+    ["2026-01-05", "Expense", "Payroll", "Salary - Alex Martinez", "4200", "PAY-001"],
+    ["2026-01-07", "Expense", "Rent", "Office rent - January", "1800", "LEASE-01"],
+    ["2026-01-10", "Income", "Revenue", "Project invoice - BuildRight LLC", "3200", "REF-002"],
+    ["2026-01-15", "Expense", "Software", "SaaS tools subscription", "350", "SUB-01"],
+    ["2026-01-20", "Expense", "Marketing", "Online advertising campaign", "600", "MKT-01"],
+    ["2026-01-28", "Expense", "Utilities", "Internet & phone", "120", "UTIL-01"],
+    ["2026-02-01", "Income", "Revenue", "Consulting retainer - Acme Corp", "8500", "REF-003"],
+    ["2026-02-03", "Income", "Revenue", "Project milestone - BuildRight LLC", "4800", "REF-004"],
+    ["2026-02-05", "Expense", "Payroll", "Salary - Alex Martinez", "4200", "PAY-002"],
+    ["2026-02-07", "Expense", "Rent", "Office rent - February", "1800", "LEASE-02"],
+    ["2026-02-12", "Expense", "Equipment", "Laptop for new hire", "1400", "EQP-01"],
+    ["2026-02-18", "Expense", "Software", "SaaS tools subscription", "350", "SUB-02"],
+    ["2026-02-25", "Expense", "Travel", "Client site visit - airfare & hotel", "920", "TRV-01"],
+    ["2026-03-01", "Income", "Revenue", "Consulting retainer - Acme Corp", "8500", "REF-005"],
+    ["2026-03-05", "Expense", "Payroll", "Salary - Alex Martinez", "4200", "PAY-003"],
+    ["2026-03-07", "Expense", "Rent", "Office rent - March", "1800", "LEASE-03"],
+    ["2026-03-14", "Income", "Revenue", "New client onboarding - DataFlow Inc", "6000", "REF-006"],
+    ["2026-03-18", "Expense", "Software", "SaaS tools subscription", "350", "SUB-03"],
+    ["2026-03-22", "Expense", "Professional Services", "Accounting & bookkeeping", "750", "ACCT-01"],
+    ["2026-03-28", "Expense", "Marketing", "Trade show booth", "1200", "MKT-02"]
+  ]
+}

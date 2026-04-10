@@ -985,4 +985,40 @@ export const EXAMPLE_SHEETS = {
       ['https://images.unsplash.com/photo-1444723121867-7a241cacace9?w=800', 'City Skyline',     '2026-09-03', 'City Break',    'Night view from the roof'],
     ],
   },
+
+  /* ---- Ledger examples ---- */
+  'Business Ledger Q1': {
+    folder: 'Finance',
+    headers: ['Date', 'Type', 'Category', 'Description', 'Amount', 'Reference'],
+    rows: [
+      ['2026-01-02', 'Income',  'Revenue',              'Consulting retainer - Client A',    '7500', 'REF-001'],
+      ['2026-01-05', 'Expense', 'Payroll',              'Staff salaries',                    '4800', 'PAY-001'],
+      ['2026-01-07', 'Expense', 'Rent',                 'Office rent',                       '2000', 'RENT-01'],
+      ['2026-01-15', 'Income',  'Revenue',              'Project milestone payment',         '5000', 'REF-002'],
+      ['2026-01-22', 'Expense', 'Software',             'Annual SaaS subscriptions',         '480',  'SUB-01'],
+      ['2026-02-01', 'Income',  'Revenue',              'Consulting retainer - Client A',    '7500', 'REF-003'],
+      ['2026-02-05', 'Expense', 'Payroll',              'Staff salaries',                    '4800', 'PAY-002'],
+      ['2026-02-10', 'Income',  'Revenue',              'New project deposit - Client B',    '6000', 'REF-004'],
+      ['2026-02-18', 'Expense', 'Marketing',            'Ad campaign',                       '750',  'MKT-01'],
+      ['2026-03-01', 'Income',  'Revenue',              'Consulting retainer - Client A',    '7500', 'REF-005'],
+      ['2026-03-05', 'Expense', 'Payroll',              'Staff salaries',                    '4800', 'PAY-003'],
+      ['2026-03-20', 'Expense', 'Professional Services','Accounting fees',                   '600',  'ACCT-01'],
+    ],
+  },
+
+  /* ---- Invoice examples ---- */
+  'Client Invoices': {
+    folder: 'Finance',
+    headers: ['Invoice #', 'Client', 'Date', 'Due Date', 'Status', 'Item', 'Qty', 'Unit Price', 'Notes'],
+    rows: [
+      ['INV-001', 'Acme Corp',      '2026-01-10', '2026-02-10', 'Paid', 'Brand Strategy Workshop',       '1',  '2500', 'Net 30'],
+      ['',        '',               '',           '',           '',     'Consulting Hours',               '6',  '150',  ''],
+      ['INV-002', 'BuildRight LLC', '2026-02-01', '2026-03-01', 'Paid', 'Web Application Development',   '1', '12000', 'Phase 1 complete'],
+      ['',        '',               '',           '',           '',     'Database Design',                '1',  '2000', ''],
+      ['INV-003', 'DataFlow Inc',   '2026-03-01', '2026-04-01', 'Sent', 'API Integration',               '1',  '5500', 'Net 30'],
+      ['',        '',               '',           '',           '',     'Technical Documentation',        '1',   '800', ''],
+      ['INV-004', 'NovaStar Media', '2026-04-01', '2026-05-01', 'Draft','Social Media Campaign Setup',   '1',  '1800', 'Pending approval'],
+      ['',        '',               '',           '',           '',     'Content Calendar - 3 months',    '1',  '1200', ''],
+    ],
+  },
 };

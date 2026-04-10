@@ -1,0 +1,25 @@
+{
+  "id": "sheet-068",
+  "title": "Client Invoices 2026",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Invoice #", "Client", "Date", "Due Date", "Status", "Item", "Qty", "Unit Price", "Notes"],
+    ["INV-001", "Acme Corp", "2026-01-10", "2026-02-10", "Paid", "Brand Strategy Workshop", "1", "2500", "Net 30"],
+    ["", "", "", "", "", "Website Audit Report", "1", "800", ""],
+    ["", "", "", "", "", "Consulting Hours", "8", "150", ""],
+    ["INV-002", "BuildRight LLC", "2026-01-18", "2026-02-18", "Paid", "Custom Web Application - Phase 1", "1", "12000", "50% deposit on delivery"],
+    ["", "", "", "", "", "Database Architecture", "1", "2500", ""],
+    ["INV-003", "DataFlow Inc", "2026-02-05", "2026-03-05", "Sent", "API Integration Development", "1", "5500", "Net 30"],
+    ["", "", "", "", "", "Technical Documentation", "1", "800", ""],
+    ["", "", "", "", "", "Code Review Sessions", "4", "200", ""],
+    ["INV-004", "GreenTech Solutions", "2026-02-20", "2026-03-22", "Overdue", "Marketing Strategy Plan", "1", "3000", "Net 30 – payment overdue"],
+    ["", "", "", "", "", "Competitor Analysis Report", "1", "750", ""],
+    ["INV-005", "Acme Corp", "2026-03-01", "2026-04-01", "Viewed", "Q2 Retainer - Consulting", "3", "2500", "Monthly retainer × 3 months"],
+    ["INV-006", "BuildRight LLC", "2026-03-15", "2026-04-15", "Draft", "Mobile App Development - Phase 2", "1", "18000", "Pending contract signature"],
+    ["", "", "", "", "", "UI/UX Design", "1", "3500", ""],
+    ["", "", "", "", "", "Testing & QA", "1", "2000", ""],
+    ["INV-007", "NovaStar Media", "2026-04-01", "2026-05-01", "Draft", "Social Media Campaign Setup", "1", "1800", "Net 30"],
+    ["", "", "", "", "", "Content Calendar - 3 months", "1", "1200", ""],
+    ["", "", "", "", "", "Analytics Dashboard", "1", "950", ""]
+  ]
+}

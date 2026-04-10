@@ -269,6 +269,24 @@ const ROLE_LABELS = {
   'photos.date': 'Date Taken',
   'photos.album': 'Album / Category',
   'photos.description': 'Description / Notes',
+  // Ledger
+  'ledger.date': 'Date',
+  'ledger.type': 'Type (Income / Expense / Transfer)',
+  'ledger.category': 'Category / Account / GL Code',
+  'ledger.text': 'Description / Narration',
+  'ledger.amount': 'Amount ($)',
+  'ledger.reference': 'Reference / Journal Entry # / Check #',
+  'ledger.balance': 'Running Balance',
+  // Invoice
+  'invoice.invoice': 'Invoice # / Quote # (primary row only)',
+  'invoice.client': 'Client / Customer / Bill To',
+  'invoice.date': 'Invoice Date',
+  'invoice.due': 'Due Date / Payment Due',
+  'invoice.status': 'Status (Draft, Sent, Viewed, Paid, Overdue, Cancelled)',
+  'invoice.item': 'Item / Service / Product Description',
+  'invoice.qty': 'Quantity / Units / Hours',
+  'invoice.unitPrice': 'Unit Price / Rate / Cost',
+  'invoice.notes': 'Notes / Payment Terms',
 };
 
 /**
@@ -404,6 +422,17 @@ const CANONICAL_HEADERS = {
   'photos.photo': 'Photo', 'photos.title': 'Title',
   'photos.date': 'Date', 'photos.album': 'Album',
   'photos.description': 'Description',
+  // Ledger
+  'ledger.date': 'Date', 'ledger.type': 'Type',
+  'ledger.category': 'Category', 'ledger.text': 'Description',
+  'ledger.amount': 'Amount', 'ledger.reference': 'Reference',
+  'ledger.balance': 'Balance',
+  // Invoice
+  'invoice.invoice': 'Invoice #', 'invoice.client': 'Client',
+  'invoice.date': 'Date', 'invoice.due': 'Due Date',
+  'invoice.status': 'Status', 'invoice.item': 'Item',
+  'invoice.qty': 'Qty', 'invoice.unitPrice': 'Unit Price',
+  'invoice.notes': 'Notes',
 };
 
 /**
