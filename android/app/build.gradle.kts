@@ -65,7 +65,7 @@ dependencies {
     implementation("org.json:json:20231013")
 
     // WebRTC (Google's maintained prebuilt via Stream's distribution)
-    implementation("io.getstream:stream-webrtc-android:1.1.4")
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
 
     // Unit tests
     testImplementation("junit:junit:4.13.2")
