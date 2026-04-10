@@ -152,23 +152,29 @@ test('presence: chip removed when peer sends leave signal (t=-1)', async ({ page
   // Use a unique peerId to avoid cross-test BC interference
   const uniquePeerId = 'leavePeer-' + Math.random().toString(36).slice(2, 8);
 
+  // Post join beat — keep BC open for follow-up leave signal
   await page.evaluate((peerId) => {
     const sheetId = window.location.hash.split('/sheet/')[1];
-    const bc = new BroadcastChannel(`waymark-presence-${sheetId}`);
-    // Join
-    bc.postMessage({ type: 'presence', peerId, displayName: 'Eve', activeRow: 1, activeCol: 0, t: Date.now() });
-    // Leave after a brief delay
-    setTimeout(() => {
-      bc.postMessage({ type: 'presence', peerId, displayName: 'Eve', activeRow: -1, activeCol: -1, t: -1 });
-      bc.close();
-    }, 150);
+    window.__presenceTestBC = new BroadcastChannel(`waymark-presence-${sheetId}`);
+    window.__presenceTestBC.postMessage({
+      type: 'presence', peerId, displayName: 'Eve', activeRow: 1, activeCol: 0, t: Date.now(),
+    });
   }, uniquePeerId);
 
-  // Chip for our specific peer should appear then disappear
+  // Wait for chip to confirm join was received BEFORE sending leave
   const chipSel = `.presence-chip[data-peer-id="${uniquePeerId}"]`;
-  await page.waitForSelector(chipSel, { timeout: 3_000 });
-  // After leave signal the chip for this peer must be removed from the DOM
-  await page.waitForSelector(chipSel, { state: 'detached', timeout: 3_000 });
+  await page.waitForSelector(chipSel, { timeout: 5_000 });
+
+  // Now send the leave signal — chip must be removed from DOM
+  await page.evaluate((peerId) => {
+    window.__presenceTestBC.postMessage({
+      type: 'presence', peerId, displayName: 'Eve', activeRow: -1, activeCol: -1, t: -1,
+    });
+    window.__presenceTestBC.close();
+    delete window.__presenceTestBC;
+  }, uniquePeerId);
+
+  await page.waitForSelector(chipSel, { state: 'detached', timeout: 5_000 });
 });
 
 test('presence: chip for previous peer does not appear on new sheet load', async ({ page }) => {
