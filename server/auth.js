@@ -45,6 +45,33 @@ async function exchangeCode(code, codeVerifier) {
   return res.json();
 }
 
+/* ---------- Android pending-flow store ----------
+ * When login is initiated from the Android WebView the system browser handles
+ * /auth/callback — a completely separate cookie store from the WebView.  So
+ * the normal httpOnly PKCE cookies are invisible to the callback.  Instead we
+ * stash { verifier, expiry } server-side keyed by the state parameter — the
+ * state value is already random and unguessable, so it is safe to use as a key.
+ * Entries expire after 10 minutes (matching SHORT_COOKIE_OPTS for web flows).
+ */
+const _pendingFlows = new Map(); // state → { verifier, expiry }
+const FLOW_TTL_MS = 10 * 60 * 1000;
+
+function storePendingFlow(state, verifier) {
+  _pendingFlows.set(state, { verifier, expiry: Date.now() + FLOW_TTL_MS });
+  // Lazily evict expired entries
+  for (const [k, v] of _pendingFlows) {
+    if (v.expiry < Date.now()) _pendingFlows.delete(k);
+  }
+}
+
+function consumePendingFlow(state) {
+  const entry = _pendingFlows.get(state);
+  if (!entry) return null;
+  _pendingFlows.delete(state);
+  if (entry.expiry < Date.now()) return null;
+  return entry.verifier;
+}
+
 /* ---------- Android nonce store ----------
  * After /auth/callback completes for an Android-initiated flow, the refresh
  * token is stashed here keyed by a one-time nonce so the WebView can claim
@@ -121,14 +148,15 @@ module.exports = function setupAuth(app) {
     const { verifier, challenge } = generatePKCE();
     const state = crypto.randomBytes(16).toString('hex');
 
-    res.cookie('pkce_verifier', verifier, SHORT_COOKIE_OPTS);
-    res.cookie('oauth_state', state, SHORT_COOKIE_OPTS);
-
-    // Android WebView passes ?android=1 — flag this flow so /auth/callback
-    // knows to redirect to the app via a custom-scheme deep-link instead of
-    // sending the response cookies back to the system browser.
     if (req.query.android) {
-      res.cookie('waymark_android_flow', '1', SHORT_COOKIE_OPTS);
+      // Android: /auth/callback runs in the system browser — a completely
+      // different cookie store from the WebView.  Store the PKCE verifier and
+      // flow type server-side so the callback can retrieve them by state param.
+      storePendingFlow(state, verifier);
+    } else {
+      // Web: callback runs in the same browser, cookies work fine.
+      res.cookie('pkce_verifier', verifier, SHORT_COOKIE_OPTS);
+      res.cookie('oauth_state', state, SHORT_COOKIE_OPTS);
     }
 
     res.redirect(buildAuthUrl(challenge, state));
@@ -141,24 +169,38 @@ module.exports = function setupAuth(app) {
     }
 
     const { code, state, error } = req.query;
-    const savedState = req.cookies.oauth_state;
-    const codeVerifier = req.cookies.pkce_verifier;
-
-    // Clear one-time cookies
-    res.clearCookie('pkce_verifier', { path: bp + '/' });
-    res.clearCookie('oauth_state', { path: bp + '/' });
 
     if (error) {
       console.error('OAuth error:', error);
       return res.redirect(bp + '/#auth_error');
     }
 
-    if (!code || !state || state !== savedState || !codeVerifier) {
-      return res.status(400).send('Invalid OAuth callback — missing or mismatched parameters.');
+    // Resolve the PKCE verifier — for Android flows it lives server-side
+    // (keyed by state) because the system browser has no access to the WebView
+    // cookies set during /auth/login.  For web flows it lives in httpOnly cookies.
+    let codeVerifier = null;
+    let isAndroidFlow = false;
+
+    const serverVerifier = state ? consumePendingFlow(state) : null;
+    if (serverVerifier) {
+      // Android flow: verifier was stored server-side at login time
+      codeVerifier = serverVerifier;
+      isAndroidFlow = true;
+    } else {
+      // Web flow: verifier and state are in httpOnly cookies
+      const savedState = req.cookies.oauth_state;
+      codeVerifier = req.cookies.pkce_verifier;
+      res.clearCookie('pkce_verifier', { path: bp + '/' });
+      res.clearCookie('oauth_state', { path: bp + '/' });
+
+      if (!code || !state || state !== savedState || !codeVerifier) {
+        return res.status(400).send('Invalid OAuth callback — missing or mismatched parameters.');
+      }
     }
 
-    const isAndroidFlow = !!req.cookies.waymark_android_flow;
-    res.clearCookie('waymark_android_flow', { path: bp + '/' });
+    if (!code || !codeVerifier) {
+      return res.status(400).send('Invalid OAuth callback — missing or mismatched parameters.');
+    }
 
     try {
       const tokens = await exchangeCode(code, codeVerifier);
