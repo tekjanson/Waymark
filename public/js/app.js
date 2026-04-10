@@ -307,11 +307,20 @@ async function boot() {
     });
   }
 
-  // Public route: skip auth entirely and show sheet in read-only mode
-  const bootHash = window.location.hash || '#/';
+  // Public route: skip auth entirely and show sheet in read-only mode.
+  // Supports both hash-based (#/public/{id}) and path-based (/public/{id}) URLs.
+  // Path-based URLs are used by the blog template for SEO crawlability (no # fragment).
+  const base = window.__WAYMARK_BASE || '';
+  const currentPathname = window.location.pathname.replace(base, '') || '/';
+  const pathPublic = currentPathname.startsWith('/public/');
+
+  const bootHash = pathPublic
+    ? '#' + currentPathname   // convert path-based URL to virtual hash for routing
+    : (window.location.hash || '#/');
+
   if (bootHash.startsWith('#/public/')) {
     hideLoading();
-    enterPublicMode(bootHash);
+    enterPublicMode(bootHash, pathPublic);
     return;
   }
 
@@ -337,9 +346,10 @@ function showLogin() {
 
 /**
  * Enter public viewing mode — no auth, no sidebar, read-only.
- * @param {string} hash  current hash like '#/public/{sheetId}'
+ * @param {string} hash  current (virtual) hash like '#/public/{sheetId}'
+ * @param {boolean} [pathBased]  true when URL is path-based (no # fragment) for SEO
  */
-function enterPublicMode(hash) {
+function enterPublicMode(hash, pathBased) {
   document.body.classList.add('waymark-public');
   loginScreen.classList.add('hidden');
   appScreen.classList.remove('hidden');
@@ -348,7 +358,33 @@ function enterPublicMode(hash) {
   showView('checklist');
   checklist.showPublic(sheetId);
 
-  // Handle hash changes while in public mode
+  if (pathBased) {
+    // Path-based public URL (e.g. /public/sheet-062/post/docId).
+    // Use popstate to detect browser back/forward navigation.
+    window.addEventListener('popstate', () => {
+      const base = window.__WAYMARK_BASE || '';
+      const newPathname = window.location.pathname.replace(base, '') || '/';
+      const newHash = window.location.hash || '#/';
+      if (newPathname.startsWith('/public/')) {
+        const newId = newPathname.split('/').filter(Boolean)[1] || '';
+        if (newId) {
+          checklist.hide();
+          showView('checklist');
+          checklist.showPublic(newId);
+        }
+      } else if (newHash.startsWith('#/public/')) {
+        const newId = newHash.replace('#/public/', '').split('/')[0];
+        checklist.hide();
+        showView('checklist');
+        checklist.showPublic(newId);
+      } else {
+        document.body.classList.remove('waymark-public');
+        window.location.reload();
+      }
+    });
+  }
+
+  // Handle hash changes while in public mode (hash-based navigation)
   window.addEventListener('hashchange', () => {
     const newHash = window.location.hash || '#/';
     if (newHash.startsWith('#/public/')) {
