@@ -1356,11 +1356,95 @@
       "fixtureFiles": [
         "blog-posts"
       ]
+    },
+    {
+      "key": "ledger",
+      "name": "Ledger",
+      "icon": "📒",
+      "color": "#0f766e",
+      "priority": 22,
+      "category": "Finance",
+      "detectSignals": [
+        "reference",
+        "journal",
+        "balance",
+        "running balance",
+        "type",
+        "entry type",
+        "gl code",
+        "folio"
+      ],
+      "columnRoles": [
+        "date",
+        "type",
+        "category",
+        "text",
+        "amount",
+        "reference",
+        "balance"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-067"
+      ],
+      "fixtureFiles": [
+        "ledger-business"
+      ]
+    },
+    {
+      "key": "invoice",
+      "name": "Invoice",
+      "icon": "🧾",
+      "color": "#7c3aed",
+      "priority": 22,
+      "category": "Finance",
+      "detectSignals": [
+        "invoice",
+        "invoice #",
+        "quote #",
+        "invoice no",
+        "client",
+        "due date",
+        "unit price",
+        "qty"
+      ],
+      "columnRoles": [
+        "invoice",
+        "client",
+        "date",
+        "due",
+        "status",
+        "item",
+        "qty",
+        "unitPrice",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Draft",
+        "Sent",
+        "Viewed",
+        "Paid",
+        "Overdue",
+        "Cancelled"
+      ],
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-068"
+      ],
+      "fixtureFiles": [
+        "invoice-sample"
+      ]
     }
 
   ],
-  "nextSheetId": "sheet-065",
-  "totalTemplates": 35,
+  "nextSheetId": "sheet-069",
+  "totalTemplates": 37,
   "categories": [
     "Productivity",
     "Engineering",

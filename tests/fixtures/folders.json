@@ -819,6 +819,16 @@
           "id": "sheet-066",
           "name": "Registration Tracker",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-067",
+          "name": "Business Ledger 2026",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-068",
+          "name": "Client Invoices 2026",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     }

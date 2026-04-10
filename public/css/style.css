@@ -41,6 +41,8 @@
 @import url('./templates/arcade.css');
 @import url('./templates/worker.css');
 @import url('./templates/photos.css');
+@import url('./templates/ledger.css');
+@import url('./templates/invoice.css');
 
 @import url('./templates/charts.css');
 

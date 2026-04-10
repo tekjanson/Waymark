@@ -136,6 +136,8 @@ async function loadMockSheet(sheetId) {
     'sheet-064': 'photos-gallery',
     'sheet-065': 'travel-roadtrip',
     'sheet-066': 'lock-submit-tracker',
+    'sheet-067': 'ledger-business',
+    'sheet-068': 'invoice-sample',
   'sheet-iot-blank': 'iot-blank',
   };
   const filename = mapping[sheetId];

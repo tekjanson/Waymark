@@ -47,6 +47,8 @@ import './arcade/index.js';
 import './worker.js';
 import './blog.js';
 import './photos.js';
+import './ledger/index.js';
+import './invoice/index.js';
 
 /* ---------- Detection ---------- */
 
