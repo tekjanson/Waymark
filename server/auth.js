@@ -45,6 +45,33 @@ async function exchangeCode(code, codeVerifier) {
   return res.json();
 }
 
+/* ---------- Android nonce store ----------
+ * After /auth/callback completes for an Android-initiated flow, the refresh
+ * token is stashed here keyed by a one-time nonce so the WebView can claim
+ * it via /auth/exchange without the token ever appearing in a URL or cookie
+ * visible to the system browser.  Entries expire after 5 minutes.
+ */
+const _androidNonces = new Map(); // nonce → { refreshToken, expiry }
+const NONCE_TTL_MS = 5 * 60 * 1000;
+
+function storeAndroidNonce(refreshToken) {
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  _androidNonces.set(nonce, { refreshToken, expiry: Date.now() + NONCE_TTL_MS });
+  // Lazily evict expired entries
+  for (const [k, v] of _androidNonces) {
+    if (v.expiry < Date.now()) _androidNonces.delete(k);
+  }
+  return nonce;
+}
+
+function consumeAndroidNonce(nonce) {
+  const entry = _androidNonces.get(nonce);
+  if (!entry) return null;
+  _androidNonces.delete(nonce);
+  if (entry.expiry < Date.now()) return null;
+  return entry.refreshToken;
+}
+
 async function refreshAccessToken(refreshToken) {
   const res = await fetch(config.GOOGLE_TOKEN_URL, {
     method: 'POST',
@@ -97,6 +124,13 @@ module.exports = function setupAuth(app) {
     res.cookie('pkce_verifier', verifier, SHORT_COOKIE_OPTS);
     res.cookie('oauth_state', state, SHORT_COOKIE_OPTS);
 
+    // Android WebView passes ?android=1 — flag this flow so /auth/callback
+    // knows to redirect to the app via a custom-scheme deep-link instead of
+    // sending the response cookies back to the system browser.
+    if (req.query.android) {
+      res.cookie('waymark_android_flow', '1', SHORT_COOKIE_OPTS);
+    }
+
     res.redirect(buildAuthUrl(challenge, state));
   });
 
@@ -123,12 +157,23 @@ module.exports = function setupAuth(app) {
       return res.status(400).send('Invalid OAuth callback — missing or mismatched parameters.');
     }
 
+    const isAndroidFlow = !!req.cookies.waymark_android_flow;
+    res.clearCookie('waymark_android_flow', { path: bp + '/' });
+
     try {
       const tokens = await exchangeCode(code, codeVerifier);
 
       if (tokens.error) {
         console.error('Token exchange error:', tokens);
-        return res.redirect(bp + '/#auth_error');
+        return res.redirect(isAndroidFlow ? 'com.waymark.app://auth_error' : bp + '/#auth_error');
+      }
+
+      if (isAndroidFlow) {
+        // The callback ran in the system browser — its cookies won't be in the
+        // WebView's session.  Stash the refresh token behind a one-time nonce
+        // and redirect back to the app; the WebView claims it via /auth/exchange.
+        const nonce = tokens.refresh_token ? storeAndroidNonce(tokens.refresh_token) : '';
+        return res.redirect(`com.waymark.app://auth_success?nonce=${encodeURIComponent(nonce)}`);
       }
 
       if (tokens.refresh_token) {
@@ -155,8 +200,35 @@ module.exports = function setupAuth(app) {
       res.redirect(bp + '/#auth_success');
     } catch (err) {
       console.error('OAuth callback exception:', err);
-      res.redirect(bp + '/#auth_error');
+      res.redirect(isAndroidFlow ? 'com.waymark.app://auth_error' : bp + '/#auth_error');
     }
+  });
+
+  /* --- GET /auth/exchange ---
+   * Called by the Android WebView after onNewIntent catches the
+   * com.waymark.app://auth_success?nonce=X deep-link.  Retrieves the
+   * refresh token stored by /auth/callback and sets the httpOnly cookie
+   * in the WebView's own cookie session. */
+  app.get('/auth/exchange', (req, res) => {
+    if (config.WAYMARK_LOCAL) {
+      // Local mode: just set the mock cookie and redirect
+      res.cookie('waymark_refresh', 'mock-refresh-token', REFRESH_COOKIE_OPTS);
+      return res.redirect(bp + '/#auth_success');
+    }
+
+    const { nonce } = req.query;
+    if (!nonce || typeof nonce !== 'string') {
+      return res.status(400).send('Missing nonce.');
+    }
+
+    const refreshToken = consumeAndroidNonce(nonce);
+    if (!refreshToken) {
+      // Nonce invalid or expired — send user back to login
+      return res.redirect(bp + '/#auth_error');
+    }
+
+    res.cookie('waymark_refresh', refreshToken, REFRESH_COOKIE_OPTS);
+    res.redirect(bp + '/#auth_success');
   });
 
   /* --- POST /auth/refresh --- */

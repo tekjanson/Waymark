@@ -25,8 +25,10 @@ class WaymarkWebViewClient : WebViewClient() {
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url.toString()
 
-        // Google OAuth consent screen — open in external browser so the  
-        // system can handle the redirect back to com.waymark.app://oauth2callback
+        // Google OAuth consent screen — open in external browser.
+        // The server's /auth/callback runs there, then redirects to
+        // com.waymark.app://auth_success?nonce=X which onNewIntent catches.
+        // The WebView then loads /auth/exchange to claim the session cookie.
         if (url.startsWith("https://accounts.google.com/")) {
             view.context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             return true

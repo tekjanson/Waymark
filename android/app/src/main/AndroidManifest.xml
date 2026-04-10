@@ -39,12 +39,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Handle OAuth redirect back to app -->
+            <!-- Handle OAuth deep-link redirect back to app -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.waymark.app" android:host="oauth2callback" />
+                <data android:scheme="com.waymark.app" android:host="auth_success" />
+                <data android:scheme="com.waymark.app" android:host="auth_error" />
             </intent-filter>
         </activity>
 

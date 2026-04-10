@@ -12,6 +12,7 @@ package com.waymark.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.webkit.*
@@ -51,10 +52,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Handle OAuth deep-link redirect — relay the URL back into the WebView
-        val data = intent.data
-        if (data != null && data.scheme == "com.waymark.app") {
-            webView.loadUrl(data.toString())
+        val data = intent.data ?: return
+        if (data.scheme != "com.waymark.app") return
+
+        when (data.host) {
+            "auth_success" -> {
+                // The server completed OAuth in the system browser and stored the
+                // refresh token behind a one-time nonce.  Load /auth/exchange in
+                // the WebView so the server can set the httpOnly cookie here.
+                val nonce = data.getQueryParameter("nonce")
+                if (!nonce.isNullOrBlank()) {
+                    val exchangeUrl = Uri.parse(WaymarkConfig.BASE_URL + "/auth/exchange")
+                        .buildUpon()
+                        .appendQueryParameter("nonce", nonce)
+                        .build()
+                        .toString()
+                    webView.loadUrl(exchangeUrl)
+                }
+            }
+            "auth_error" -> {
+                // Redirect the WebView to the app root with the error fragment so
+                // the JS error handler can show a message to the user.
+                webView.loadUrl(WaymarkConfig.BASE_URL + "#auth_error")
+            }
         }
     }
 

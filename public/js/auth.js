@@ -14,7 +14,11 @@ const BASE = window.__WAYMARK_BASE || '';
 
 /** Redirect browser to server's OAuth login endpoint. */
 export function login() {
-  window.location.href = BASE + '/auth/login';
+  // Android WebView exposes window.Android — signal the server so it uses
+  // the custom-scheme redirect URI (com.waymark.app://oauth2callback) instead
+  // of the HTTPS callback, allowing the deep-link to return to the app.
+  const platform = (typeof window !== 'undefined' && window.Android) ? '?android=1' : '';
+  window.location.href = BASE + '/auth/login' + platform;
 }
 
 /**
