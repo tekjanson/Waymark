@@ -41,6 +41,9 @@ const RULES_TTL_MS = 5 * 60 * 1000; // re-fetch every 5 min
 /* ---------- Session state (automatic RETURNED detection) ---------- */
 const _sessions = new Map(); // sessionId → { lastAction, lastAgentName }
 
+/* ---------- Cycle tracking state (QA/Done thresholds + cycle rate) ---------- */
+const _cycleState = new Map(); // sessionId → { lastQaCount, lastDoneCount, cycleTimestamps }
+
 /* ---------- Template registry (for sheetId-based detection) ---------- */
 
 const REGISTRY = JSON.parse(
@@ -115,14 +118,57 @@ const TEMPLATE_KEY_TO_AGENT = {
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
 import { GoogleAuth } from "google-auth-library";
+import { SheetWebRtcPeer } from "./sheet-webrtc-peer.mjs";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let sheetsAuth = null;
 if (credPath) {
     sheetsAuth = new GoogleAuth({
         keyFile: credPath,
-        scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        scopes: [
+            "https://www.googleapis.com/auth/spreadsheets",  // read + write
+        ],
     });
+}
+
+/* ---------- WebRTC signaling peer ----------
+ * WAYMARK_SIGNALING_SHEET_ID — Google Sheet used as the signaling channel
+ * between this orchestrator and the Android app.  Name the sheet
+ * ".waymark-signaling" by convention.  The service account must have Editor
+ * access.  Both sides (MCP + Android) read this same env/config value.
+ */
+const WAYMARK_SIGNALING_SHEET_ID = process.env.WAYMARK_SIGNALING_SHEET_ID || "";
+/** @type {SheetWebRtcPeer|null} */
+let _signalingPeer = null;
+
+async function startSignalingPeer() {
+    if (!sheetsAuth || !WAYMARK_SIGNALING_SHEET_ID) {
+        process.stderr.write(
+            "orchestrator: WAYMARK_SIGNALING_SHEET_ID or GOOGLE_APPLICATION_CREDENTIALS not set " +
+            "— WebRTC signaling peer disabled\n"
+        );
+        return;
+    }
+    // Stable 8-char hex peer ID for this MCP server instance
+    const { createHash } = await import("node:crypto");
+    const peerId = createHash("sha256")
+        .update("orchestrator-mcp-" + WAYMARK_SIGNALING_SHEET_ID)
+        .digest("hex")
+        .slice(0, 8);
+
+    _signalingPeer = new SheetWebRtcPeer({
+        sheetId:     WAYMARK_SIGNALING_SHEET_ID,
+        auth:        sheetsAuth,
+        peerId,
+        displayName: "Orchestrator MCP",
+        onConnect: (remotePeerId) => {
+            process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
+        },
+        onMessage: (remotePeerId, msg) => {
+            process.stderr.write(`orchestrator: message from ${remotePeerId}: ${JSON.stringify(msg)}\n`);
+        },
+    });
+    await _signalingPeer.start();
 }
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -285,7 +331,10 @@ function buildPrompt(task, routeResult) {
  * Read the rules sheet and parse into rule objects.
  * Sheet format (row 1 = headers, any casing):
  *   Event | Condition | Title | Body | Priority | Enabled
- * Event values: DISPATCH, RETURNED, BLOCKED, POLL_FAILED, WAKE, IDLE, WAIT, * (wildcard)
+ * Event values: DISPATCH, RETURNED, BLOCKED, POLL_FAILED, WAKE, IDLE, WAIT,
+ *               TASK_QA (task(s) moved to QA), TASK_DONE (task(s) completed),
+ *               CYCLE_RATE_HIGH (10 cycles in 10 min — possible spin loop),
+ *               * (wildcard)
  * Condition values: "always" or empty (always fires), or "key=value" against the event context.
  * Priority values: low, normal, high, urgent
  * Enabled: yes/no/true/false/1/0 (default yes if empty)
@@ -428,6 +477,21 @@ async function fireNotifications(event, ctx) {
         const title = interpolate(rule.title || event, ctx);
         const body  = interpolate(rule.body, ctx);
         await sendNotification(title, body, rule.priority);
+
+        // Push to Android app via WebRTC DataChannel if a peer is connected
+        if (_signalingPeer) {
+            const sent = _signalingPeer.broadcast({
+                type:     "orchestrator-alert",
+                title,
+                body,
+                priority: rule.priority,
+                event,
+                ts:       Date.now(),
+            });
+            if (sent > 0) {
+                process.stderr.write(`orchestrator: pushed '${title}' to ${sent} Android peer(s) via WebRTC\n`);
+            }
+        }
     }
 }
 
@@ -588,8 +652,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         appendFileSync(logPath, `[${iso()}] ORCHESTRATOR STARTED${args.rulesSheetId ? ` (rules: ${args.rulesSheetId})` : ""}\n`);
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
+        _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
+
+        // Start the Android WebRTC signaling peer on first boot
+        if (!_signalingPeer) {
+            startSignalingPeer().catch(err =>
+                process.stderr.write(`orchestrator: signaling peer start failed: ${err.message}\n`)
+            );
+        }
+
         return {
-            content: [{ type: "text", text: JSON.stringify({ sessionId, logPath, rulesLoaded: _notifRules.length }) }],
+            content: [{ type: "text", text: JSON.stringify({
+                sessionId,
+                logPath,
+                rulesLoaded: _notifRules.length,
+                signalingSheet: WAYMARK_SIGNALING_SHEET_ID || null,
+                signalingPeerId: _signalingPeer?.peerId ?? null,
+            }) }],
         };
     }
 
@@ -632,6 +711,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
         }
         appendFileSync(logPath, `[${iso()}] POLL: ${JSON.stringify(board)}\n`);
+
+        // Step 2b: Cycle counter — alert if 10 cycles within 10 minutes
+        const cs = _cycleState.get(args.sessionId) || { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] };
+        const nowMs = Date.now();
+        cs.cycleTimestamps.push(nowMs);
+        const tenMinAgo = nowMs - 10 * 60 * 1000;
+        cs.cycleTimestamps = cs.cycleTimestamps.filter(t => t >= tenMinAgo);
+        if (cs.cycleTimestamps.length >= 10) {
+            appendFileSync(logPath, `[${iso()}] CYCLE_RATE_HIGH: ${cs.cycleTimestamps.length} cycles in last 10 min\n`);
+            await fireNotifications("CYCLE_RATE_HIGH", {
+                cycleCount: cs.cycleTimestamps.length,
+                windowMinutes: 10,
+                sessionId: args.sessionId,
+            });
+            cs.cycleTimestamps = []; // reset window to avoid re-firing every cycle
+        }
+
+        // Step 2c: Detect tasks moving into QA or Done
+        if (cs.lastQaCount !== null && board.qa > cs.lastQaCount) {
+            const delta = board.qa - cs.lastQaCount;
+            appendFileSync(logPath, `[${iso()}] TASK_QA: ${delta} new task(s) in QA (total ${board.qa})\n`);
+            await fireNotifications("TASK_QA", {
+                qaCount: board.qa,
+                delta,
+                sessionId: args.sessionId,
+            });
+        }
+        cs.lastQaCount = board.qa;
+
+        if (cs.lastDoneCount !== null && board.done > cs.lastDoneCount) {
+            const delta = board.done - cs.lastDoneCount;
+            appendFileSync(logPath, `[${iso()}] TASK_DONE: ${delta} new task(s) done (total ${board.done})\n`);
+            await fireNotifications("TASK_DONE", {
+                doneCount: board.done,
+                delta,
+                sessionId: args.sessionId,
+            });
+        }
+        cs.lastDoneCount = board.done;
+
+        _cycleState.set(args.sessionId, cs);
 
         // Step 3: Route
         // Check inProgress first
@@ -690,8 +810,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // Board is clear
-        const reason = `board is clear — todo=0, qa=0`;
+        const reason = `board is clear — todo=0, qa=${board.qa ?? 0}, done=${board.done ?? 0}`;
         appendFileSync(logPath, `[${iso()}] IDLE: ${reason}\n`);
+        await fireNotifications("IDLE", { reason, sessionId: args.sessionId });
         return {
             content: [{ type: "text", text: JSON.stringify({ action: "IDLE", reason }) }],
         };

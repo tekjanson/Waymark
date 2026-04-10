@@ -52,6 +52,14 @@ class WebRtcService : LifecycleService() {
             NotificationHelper.buildServiceNotification(this)
         )
         Log.i(TAG, "Service created")
+
+        // Auto-connect to the orchestrator signaling sheet so notifications
+        // can arrive even before the user opens any sheet in the WebView.
+        val signalingSheet = WaymarkConfig.WAYMARK_SIGNALING_SHEET_ID
+        if (signalingSheet.isNotBlank()) {
+            Log.i(TAG, "Auto-connecting to orchestrator signaling sheet")
+            connectToSheet(signalingSheet)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

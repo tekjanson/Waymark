@@ -55,4 +55,14 @@ object WaymarkConfig {
     const val PREF_ACCESS_TOKEN = "access_token"
     const val PREF_ACTIVE_SHEET = "active_sheet"
     const val PREF_DISPLAY_NAME = "display_name"
+
+    /**
+     * The Google Sheet used for WebRTC signaling between this app and the
+     * orchestrator MCP server.  Name the sheet ".waymark-signaling" by convention.
+     * Set at build time via local.properties: WAYMARK_SIGNALING_SHEET_ID=<spreadsheet-id>
+     *
+     * The same sheet ID must be set as WAYMARK_SIGNALING_SHEET_ID in the
+     * orchestrator environment.
+     */
+    val WAYMARK_SIGNALING_SHEET_ID: String get() = BuildConfig.WAYMARK_SIGNALING_SHEET_ID
 }

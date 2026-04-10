@@ -48,6 +48,10 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
+
+        // Start the background WebRTC service so the orchestrator signaling
+        // peer connects even before the user opens a sheet.
+        startService(Intent(this, WebRtcService::class.java))
     }
 
     override fun onNewIntent(intent: Intent) {

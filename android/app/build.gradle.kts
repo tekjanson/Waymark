@@ -19,6 +19,12 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Orchestrator signaling sheet — the Google Sheet the orchestrator MCP
+        // server also connects to for WebRTC P2P notifications.  Override this
+        // in local.properties: WAYMARK_SIGNALING_SHEET_ID=<spreadsheet-id>
+        val signalingSheetId: String = project.findProperty("WAYMARK_SIGNALING_SHEET_ID")?.toString() ?: ""
+        buildConfigField("String", "WAYMARK_SIGNALING_SHEET_ID", "\"$signalingSheetId\"")
     }
 
     buildTypes {
