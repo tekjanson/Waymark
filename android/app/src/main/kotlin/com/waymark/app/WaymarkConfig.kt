@@ -7,7 +7,7 @@ package com.waymark.app
 object WaymarkConfig {
 
     /** Base URL for the Waymark web app loaded in the WebView. */
-    const val BASE_URL = "https://waymark.app"
+    const val BASE_URL = "https://swiftirons.com/waymark/"
 
     /* ---------- Sheets signaling constants (mirrors webrtc.js) ---------- */
 

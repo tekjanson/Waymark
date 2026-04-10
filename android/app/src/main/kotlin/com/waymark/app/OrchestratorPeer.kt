@@ -349,6 +349,7 @@ class OrchestratorPeer(
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {}
             override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent?) {}
             override fun onTrack(transceiver: RtpTransceiver?) {}
+            override fun onIceConnectionReceivingChange(p0: Boolean) {}
         })
     }
 
