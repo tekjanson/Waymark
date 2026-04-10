@@ -165,7 +165,7 @@ export class SheetWebRtcPeer {
 
     async _writeCell(rowIdx, value) {
         const token = await this._getToken();
-        const sheetsRow = rowIdx + 1; // 0-based → 1-based
+        const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
         const range = `Sheet1!T${sheetsRow}`;
         const body = JSON.stringify({
             range,

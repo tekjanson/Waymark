@@ -103,8 +103,8 @@ class SignalingClient(
     fun writeCell(row: Int, value: String) {
         val token = getToken().ifBlank { throw IOException("No access token") }
 
-        // Convert 0-based row to 1-based Sheets row
-        val sheetsRow = row + 1
+        // Row indices are already 1-based (BLOCK_START=1)
+        val sheetsRow = row
         val range = "Sheet1!T$sheetsRow"
 
         val payload = JSONObject().apply {
