@@ -42,6 +42,7 @@ const MOCK_AUTH_COOKIE = {
  * @param {Object}   [opts.textFiles]               seed window.__WAYMARK_TEXT_FILES (id → content)
  * @param {boolean}  [opts.githubSource]             simulate GitHub source mode (sets __WAYMARK_GITHUB_SOURCE)
  * @param {string}   [opts.githubRef]                ref to inject as __WAYMARK_GITHUB_REF (default 'main')
+ * @param {string}   [opts.theme]                    seed 'waymark_theme' in localStorage before load (e.g. 'dark', 'light', 'system')
  */
 async function setupApp(page, opts = {}) {
   const {
@@ -57,6 +58,7 @@ async function setupApp(page, opts = {}) {
     textFiles,
     githubSource,
     githubRef = 'main',
+    theme,
   } = opts;
 
   /* 1. Auth — inject cookie before any navigation */
@@ -69,6 +71,7 @@ async function setupApp(page, opts = {}) {
   if (pinnedSheets.length) lsEntries.pinned_sheets = pinnedSheets;
   if (autoRefresh !== undefined) lsEntries.auto_refresh = autoRefresh;
   if (sidebarOpen !== undefined) lsEntries.sidebar_open = sidebarOpen;
+  if (theme !== undefined) lsEntries.theme = theme;
   lsEntries.tutorial_completed = tutorialCompleted;
   // Suppress template tutorial auto-start unless explicitly enabled
   if (!templateTutorials) lsEntries.template_tutorials_auto = false;
