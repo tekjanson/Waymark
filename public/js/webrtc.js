@@ -90,6 +90,7 @@ export class WaymarkConnect {
     this.onCallEnded = opts.onCallEnded || (() => {});
     this.onCallActive = opts.onCallActive || (() => {});
     this.onArcadeMessage = opts.onArcadeMessage || null;
+    this.onPresence = opts.onPresence || null;
 
     // Session password for encrypting signaling data (optional)
     this._password = opts.password || null;
@@ -150,6 +151,25 @@ export class WaymarkConnect {
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
+  }
+
+  /**
+   * Broadcast a presence heartbeat to all connected peers.
+   * Called by presence.js every 2 s.
+   * @param {number} activeRow — 1-based row index (-1 = none)
+   * @param {number} activeCol — 0-based col index (-1 = none)
+   */
+  broadcastPresence(activeRow, activeCol) {
+    const msg = {
+      type: 'presence',
+      peerId: this.peerId,
+      displayName: this.displayName,
+      activeRow,
+      activeCol,
+      t: Date.now(),
+    };
+    if (this._bc) this._bc.postMessage(msg);
+    this._dcBroadcast(msg);
   }
 
   /** Send a JSON message to a specific peer's DataChannel (or BroadcastChannel fallback). */
@@ -622,6 +642,9 @@ export class WaymarkConnect {
         this._peers.delete(d.peerId);
         this._emitPeers();
         break;
+      case 'presence':
+        if (this.onPresence) this.onPresence(d);
+        break;
       default:
         // Forward targeted arcade messages (invite/accept/decline)
         if (d._to && d._to !== this.peerId) return;
@@ -1042,6 +1065,9 @@ export class WaymarkConnect {
             if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
               window.Android.onPeerMessage(e.data);
             }
+            break;
+          case 'presence':
+            if (this.onPresence) this.onPresence(m);
             break;
           default:
             if (this.onArcadeMessage) {

@@ -14,6 +14,7 @@ import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks } from './storage.js';
 import * as encryption from './encryption.js';
+import * as presence from './presence.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -559,6 +560,9 @@ export async function show(sheetId, sheetName) {
   }
   await loadSheet(sheetId);
   resetTimer();
+  // Initialise presence for this sheet (registers BroadcastChannel + heartbeat)
+  const displayName = api.auth.getUser()?.name || api.auth.getUser()?.email || 'Anonymous';
+  presence.init(sheetId, itemsEl, displayName);
 }
 
 /**
@@ -622,6 +626,9 @@ export function hide() {
   // Notify templates BEFORE clearing state — async cleanup closures
   // still reference currentSheetId and need it to be non-null.
   window.dispatchEvent(new CustomEvent('waymark:sheet-hidden'));
+
+  // Tear down presence (broadcasts leave signal, removes bar + listeners)
+  presence.destroy();
 
   // Remove public banner if visible
   const banner = document.getElementById('public-banner');
@@ -1203,6 +1210,9 @@ function renderWithTemplate(values) {
   // Render using template-specific renderer
   template.render(itemsEl, rows, cols, template);
   currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
+
+  // Tag rows for presence cursor tracking (must run after each render)
+  presence.retag();
 
   // Notify the app that a sheet was rendered (for notification evaluation)
   document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {

@@ -2487,3 +2487,86 @@ ul { list-style: none; }
   border-color: #92400e;
   color: #fef3c7;
 }
+
+/* ============================================================
+   Presence Bar — live collaborators (P2P)
+   ============================================================ */
+
+.presence-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.8rem;
+}
+
+.presence-bar-label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+.presence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 3px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: default;
+  transition: box-shadow var(--transition);
+}
+
+.presence-chip:hover {
+  box-shadow: 0 0 0 2px color-mix(in sRGB, var(--color-primary) 20%, transparent);
+}
+
+.presence-chip-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.presence-chip-name {
+  font-weight: 500;
+  color: var(--color-text);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presence-chip-pos {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+/* Row highlight when a peer is focused on that row */
+[data-presence-row].presence-row-highlight {
+  outline: 2px solid var(--presence-color, #6366f1);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Dark mode */
+[data-theme="dark"] .presence-bar {
+  background: var(--color-surface);
+  border-bottom-color: var(--color-border);
+}
+
+[data-theme="dark"] .presence-chip {
+  background: var(--color-bg);
+}

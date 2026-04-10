@@ -89,6 +89,8 @@ async function destroyChat() {
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
   _chatLog = [];
+  // Notify presence module so it detaches from the destroyed connection
+  window.dispatchEvent(new CustomEvent('waymark:connect-destroyed'));
 }
 
 // When navigating away from a sheet, pause the connection (preserving the
@@ -1294,6 +1296,9 @@ function openChat(sheetId, displayName, signal) {
     },
   });
   _activeConnect.start();
+
+  // Notify presence module so it can route cross-device heartbeats through this connection
+  window.dispatchEvent(new CustomEvent('waymark:connect-ready', { detail: { connect: _activeConnect } }));
 }
 
 /* ---------- Template Definition ---------- */
