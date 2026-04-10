@@ -127,22 +127,19 @@ if (credPath) {
         keyFile: credPath,
         scopes: [
             "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",  // find-or-create signaling sheet
         ],
     });
 }
 
-/* ---------- WebRTC signaling peer — zero-config auto-discovery ----------
- * The signaling sheet is found or created automatically by resolveSignalingSheet().
- * No environment variables or manual configuration needed.  The Android app
- * discovers the same sheet ID by calling GET /api/signaling-sheet.
- *
- * Cache file: /agent-logs/.signaling-sheet-id
- *   Written after first successful resolve; read on every subsequent start
- *   so Drive API is not called on every boot.
+/* ---------- WebRTC signaling peer — user-owned sheet discovery ----------
+ * The .waymark-signaling sheet is created client-side (user-data.js) on
+ * the user's first web-app boot and stored in their .waymark-data.json.
+ * The orchestrator reads that file via the user's OAuth token to discover
+ * the sheet ID — no service-account ownership or sharing required.
  */
-const SIGNALING_SHEET_NAME = ".waymark-signaling";
-const SIGNALING_CACHE_PATH = path.join(LOG_DIR, ".signaling-sheet-id");
+
+const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 /** @type {string|null} resolved sheet ID, cached in memory once resolved */
 let _resolvedSignalingSheetId = null;
@@ -150,85 +147,91 @@ let _resolvedSignalingSheetId = null;
 let _signalingPeer = null;
 
 /**
- * Finds the .waymark-signaling sheet in the service account's Drive.
- * Creates one if none exists and shares it so any authenticated user can
- * find it via GET /api/signaling-sheet.
- * Returns the spreadsheet ID, or null if auth is not configured.
+ * Get a fresh user OAuth access token, refreshing if expired.
+ * Reads from WAYMARK_OAUTH_TOKEN_PATH (same as waymark.mjs).
+ * Returns null if the token file is missing or unusable.
+ */
+async function getUserOAuthToken() {
+    const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+        `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
+    let tokenData;
+    try {
+        tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
+    } catch {
+        return null;
+    }
+    if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
+        if (!tokenData.refresh_token) return null;
+        const res = await fetch(OAUTH_TOKEN_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type:    "refresh_token",
+                refresh_token: tokenData.refresh_token,
+                client_id:     tokenData.client_id,
+                client_secret: tokenData.client_secret,
+            }),
+        });
+        const refreshed = await res.json();
+        if (refreshed.error || !refreshed.access_token) return null;
+        tokenData.access_token = refreshed.access_token;
+        tokenData.expiry_date  = Date.now() + (refreshed.expires_in * 1000);
+        try {
+            writeFileSync(tokenPath, JSON.stringify(tokenData, null, 2));
+        } catch { /* read-only mount — ignore, token still usable this session */ }
+    }
+    return tokenData.access_token;
+}
+
+/**
+ * Reads the user's .waymark-data.json from Drive and returns the
+ * signalingSheetId stored there by user-data.js on first web-app boot.
+ * Returns null if the token is unavailable or the sheet hasn't been created yet.
  */
 async function resolveSignalingSheet() {
     if (_resolvedSignalingSheetId) return _resolvedSignalingSheetId;
 
-    // Fast path: cached on disk from a previous run
-    try {
-        const cached = readFileSync(SIGNALING_CACHE_PATH, "utf8").trim();
-        if (cached) {
-            _resolvedSignalingSheetId = cached;
-            process.stderr.write(`orchestrator: signaling sheet resolved from cache: ${cached}\n`);
-            return cached;
-        }
-    } catch { /* not yet cached */ }
+    const token = await getUserOAuthToken();
+    if (!token) {
+        process.stderr.write(
+            "orchestrator: WAYMARK_OAUTH_TOKEN_PATH not set or token invalid — WebRTC signaling peer disabled\n"
+        );
+        return null;
+    }
 
-    if (!sheetsAuth) return null;
-
-    const client = await sheetsAuth.getClient();
-    const { token } = await client.getAccessToken();
-    const DRIVE = "https://www.googleapis.com/drive/v3";
-    const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
-
-    // Search for an existing .waymark-signaling sheet
+    // Find .waymark-data.json in the user's Drive
     const q = encodeURIComponent(
-        `name='${SIGNALING_SHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+        "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
     );
-    const searchRes = await fetch(`${DRIVE}/files?q=${q}&fields=files(id)&pageSize=1`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
+    const searchRes = await fetch(
+        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
     if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
     const { files } = await searchRes.json();
-
-    let sheetId;
-    if (files && files.length > 0) {
-        sheetId = files[0].id;
-        process.stderr.write(`orchestrator: found existing signaling sheet: ${sheetId}\n`);
-    } else {
-        // Create a new spreadsheet
-        const createRes = await fetch(SHEETS, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ properties: { title: SIGNALING_SHEET_NAME } }),
-        });
-        if (!createRes.ok) throw new Error(`Sheet create failed: ${createRes.status}`);
-        const created = await createRes.json();
-        sheetId = created.spreadsheetId;
-        process.stderr.write(`orchestrator: created signaling sheet: ${sheetId}\n`);
-
-        // Share with anyoneWithLink so the Android app (and server endpoint) can use it
-        await fetch(`${DRIVE}/files/${sheetId}/permissions`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ role: "writer", type: "anyone" }),
-        });
-        process.stderr.write(`orchestrator: shared signaling sheet as anyoneWithLink writer\n`);
+    if (!files || files.length === 0) {
+        process.stderr.write("orchestrator: .waymark-data.json not found — user may not have booted the web app yet\n");
+        return null;
     }
 
-    // Cache to disk for next boot + serve to Android via /api/signaling-sheet
-    try {
-        mkdirSync(LOG_DIR, { recursive: true });
-        writeFileSync(SIGNALING_CACHE_PATH, sheetId, "utf8");
-    } catch (e) {
-        process.stderr.write(`orchestrator: warning — could not write signaling cache: ${e.message}\n`);
+    const fileRes = await fetch(
+        `${DRIVE_FILES_URL}/${files[0].id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!fileRes.ok) throw new Error(`Drive read failed: ${fileRes.status}`);
+    const data = await fileRes.json();
+    const sheetId = data.signalingSheetId || null;
+    if (!sheetId) {
+        process.stderr.write("orchestrator: signalingSheetId not set in .waymark-data.json — user may not have booted the web app yet\n");
+        return null;
     }
 
+    process.stderr.write(`orchestrator: signaling sheet resolved from user Drive: ${sheetId}\n`);
     _resolvedSignalingSheetId = sheetId;
     return sheetId;
 }
 
 async function startSignalingPeer() {
-    if (!sheetsAuth) {
-        process.stderr.write(
-            "orchestrator: GOOGLE_APPLICATION_CREDENTIALS not set — WebRTC signaling peer disabled\n"
-        );
-        return;
-    }
     let sheetId;
     try {
         sheetId = await resolveSignalingSheet();
@@ -247,7 +250,7 @@ async function startSignalingPeer() {
 
     _signalingPeer = new SheetWebRtcPeer({
         sheetId,
-        auth:        sheetsAuth,
+        getToken:    getUserOAuthToken,  // user OAuth token — can write to user-owned sheet
         peerId,
         displayName: "Orchestrator MCP",
         onConnect: (remotePeerId) => {

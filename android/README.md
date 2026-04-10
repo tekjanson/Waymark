@@ -34,7 +34,12 @@ Android App
    the same Google Sheets signaling protocol as `webrtc.js`, so the Android
    device appears as a peer in the mesh.
 
-4. When any peer sends a `waymark-notification` or `orchestrator-alert`
+4. On first start after login, `WebRtcService` reads `.waymark-data.json`
+   directly from the user's Google Drive (using the stored OAuth token) to
+   find the `signalingSheetId` created by the web app. No server relay
+   is involved — Drive is accessed from the Android device directly.
+
+5. When any peer sends a `waymark-notification` or `orchestrator-alert`
    DataChannel message, both the in-browser handler (via `WaymarkBridge`) and
    the background service show an Android notification.
 

@@ -46,6 +46,9 @@ object WaymarkConfig {
     /** Sheets API endpoint for reading a spreadsheet range. */
     const val SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
 
+    /** Drive REST v3 API base URL. */
+    const val DRIVE_BASE = "https://www.googleapis.com/drive/v3"
+
     /** Sheet range used for the signaling rows (column T covers col 20). */
     const val SIG_RANGE_TEMPLATE = "Sheet1!T1:T%d"
 

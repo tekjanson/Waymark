@@ -55,13 +55,14 @@ const STUN_SERVERS = [
  * @param {function}            [opts.onConnect]  - (remotePeerId) called on DataChannel open
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, peerId, displayName, onMessage, onConnect }) {
-        this.sheetId     = sheetId;
-        this.auth        = auth;
-        this.peerId      = peerId;
-        this.displayName = displayName;
-        this.onMessage   = onMessage;
-        this.onConnect   = onConnect;
+    constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect }) {
+        this.sheetId      = sheetId;
+        this.auth         = auth;
+        this._getTokenFn  = getToken || null;  // preferred over auth when provided
+        this.peerId       = peerId;
+        this.displayName  = displayName;
+        this.onMessage    = onMessage;
+        this.onConnect    = onConnect;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
         this.peers = new Map();
@@ -136,6 +137,7 @@ export class SheetWebRtcPeer {
     /* ---------- Sheets helpers ---------- */
 
     async _getToken() {
+        if (this._getTokenFn) return this._getTokenFn();
         const client = await this.auth.getClient();
         const { token } = await client.getAccessToken();
         return token;

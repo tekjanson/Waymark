@@ -22,6 +22,7 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
 import java.security.SecureRandom
 import java.util.HexFormat
 
@@ -100,8 +101,8 @@ class WebRtcService : LifecycleService() {
      * Resolves the signaling sheet ID with no manual configuration:
      * 1. Returns immediately if already connected.
      * 2. Reads the cached ID from SharedPreferences.
-     * 3. Falls back to GET /api/signaling-sheet on the Waymark server using
-     *    the stored OAuth access token (set by WaymarkBridge.onAuthToken).
+     * 3. Falls back to reading .waymark-data.json directly from the user's
+     *    Google Drive using the stored OAuth access token — no server involvement.
      * Called on service start and whenever the OAuth token is refreshed.
      */
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
@@ -117,7 +118,9 @@ class WebRtcService : LifecycleService() {
             return@withContext
         }
 
-        // 2. Ask the server (needs a valid OAuth token)
+        // 2. Read .waymark-data.json directly from the user's Drive.
+        //    The web app creates this file on first boot (user-data.js) and
+        //    writes signalingSheetId into it.  The server is never involved.
         val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
         if (token.isBlank()) {
             Log.d(TAG, "No token yet — will retry signaling discovery after next auth")
@@ -125,28 +128,59 @@ class WebRtcService : LifecycleService() {
         }
 
         try {
-            val url = URL("${WaymarkConfig.BASE_URL}api/signaling-sheet")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 10_000
-            if (conn.responseCode == 200) {
-                val body = conn.inputStream.bufferedReader().readText()
-                val sheetId = JSONObject(body).optString("sheetId", "")
-                if (sheetId.isNotBlank()) {
-                    Log.i(TAG, "Signaling sheet discovered from server: $sheetId")
-                    prefs.edit().putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, sheetId).apply()
-                    connectToSheet(sheetId)
-                } else {
-                    Log.d(TAG, "Server has no signaling sheet yet — orchestrator may not have booted")
-                }
+            val sheetId = fetchSignalingSheetIdFromDrive(token)
+            if (sheetId.isNotBlank()) {
+                Log.i(TAG, "Signaling sheet discovered from Drive: $sheetId")
+                prefs.edit().putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, sheetId).apply()
+                connectToSheet(sheetId)
             } else {
-                Log.w(TAG, "Signaling sheet API returned ${conn.responseCode}")
+                Log.d(TAG, "signalingSheetId not set yet — user may not have opened the web app")
             }
-            conn.disconnect()
         } catch (e: Exception) {
-            Log.e(TAG, "Signaling sheet discovery failed: ${e.message}")
+            Log.e(TAG, "Signaling sheet Drive discovery failed: ${e.message}")
         }
+    }
+
+    /**
+     * Reads .waymark-data.json from the user's Google Drive and returns the
+     * signalingSheetId field written there by the web app's user-data.js.
+     * All Drive access uses the user's own OAuth token — no server proxy.
+     */
+    private fun fetchSignalingSheetIdFromDrive(token: String): String {
+        val drive = WaymarkConfig.DRIVE_BASE
+
+        // Search for .waymark-data.json by name
+        val q = "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
+        val searchUrl = URL("$drive/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&fields=files(id)&pageSize=1&spaces=drive")
+        val searchConn = searchUrl.openConnection() as HttpURLConnection
+        searchConn.setRequestProperty("Authorization", "Bearer $token")
+        searchConn.connectTimeout = 10_000
+        searchConn.readTimeout = 10_000
+        if (searchConn.responseCode != 200) {
+            searchConn.disconnect()
+            throw IOException("Drive search returned ${searchConn.responseCode}")
+        }
+        val searchBody = searchConn.inputStream.bufferedReader().readText()
+        searchConn.disconnect()
+
+        val files = JSONObject(searchBody).optJSONArray("files") ?: return ""
+        if (files.length() == 0) return ""
+        val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return "" }
+
+        // Download the file content
+        val dlUrl = URL("$drive/files/$fileId?alt=media")
+        val dlConn = dlUrl.openConnection() as HttpURLConnection
+        dlConn.setRequestProperty("Authorization", "Bearer $token")
+        dlConn.connectTimeout = 10_000
+        dlConn.readTimeout = 15_000
+        if (dlConn.responseCode != 200) {
+            dlConn.disconnect()
+            throw IOException("Drive download returned ${dlConn.responseCode}")
+        }
+        val content = dlConn.inputStream.bufferedReader().readText()
+        dlConn.disconnect()
+
+        return JSONObject(content).optString("signalingSheetId", "")
     }
 
     /* ---------- Sheet connection ---------- */
