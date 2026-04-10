@@ -78,7 +78,107 @@ export function formatPostDate(v) {
   } catch (_) { return v; }
 }
 
-/* ---------- Reader — reading styles injected into srcdoc ---------- */
+/* ---------- SEO meta helpers ---------- */
+
+/**
+ * Find or create a `<meta property="{prop}">` element and set its content.
+ * Passing null/empty removes the content attribute.
+ * @param {string} prop
+ * @param {string|null} content
+ */
+function setMetaProp(prop, content) {
+  let el = document.querySelector(`meta[property="${prop}"]`);
+  if (!el) {
+    el = document.createElement('meta');
+    el.setAttribute('property', prop);
+    document.head.appendChild(el);
+  }
+  if (content) el.setAttribute('content', content);
+  else el.removeAttribute('content');
+}
+
+/** Saved page title so we can restore it when the reader closes. */
+let _originalTitle = '';
+
+/**
+ * Inject Open Graph + JSON-LD meta for the current blog post.
+ * Called by showReader() when a post opens.
+ * @param {{ title:string, date:string, author:string, photo:string, sheetId:string, docId:string }} post
+ */
+function injectPostMeta(post) {
+  if (!_originalTitle) _originalTitle = document.title;
+  const base = window.__WAYMARK_BASE || '';
+  const canonicalUrl = window.location.origin + base +
+    '/public/' + post.sheetId + '/post/' + post.docId;
+
+  document.title = post.title ? post.title + ' — Waymark' : document.title;
+  setMetaProp('og:title', post.title || null);
+  setMetaProp('og:type', 'article');
+  setMetaProp('og:url', canonicalUrl);
+  setMetaProp('og:image', post.photo || null);
+  setMetaProp('article:author', post.author || null);
+  if (post.date) {
+    // Store ISO date (YYYY-MM-DD) as article:published_time
+    try {
+      const d = new Date(post.date);
+      if (!isNaN(d.getTime())) {
+        setMetaProp('article:published_time', d.toISOString());
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  // Canonical link
+  let canon = document.getElementById('blog-canonical-link');
+  if (!canon) {
+    canon = document.createElement('link');
+    canon.id = 'blog-canonical-link';
+    canon.rel = 'canonical';
+    document.head.appendChild(canon);
+  }
+  canon.href = canonicalUrl;
+
+  // JSON-LD BlogPosting structured data
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: post.title || '',
+    datePublished: post.date || undefined,
+    author: post.author ? { '@type': 'Person', name: post.author } : undefined,
+    image: post.photo || undefined,
+    url: canonicalUrl,
+    publisher: { '@type': 'Organization', name: 'Waymark' },
+  };
+  // Remove undefined keys (clean JSON)
+  Object.keys(jsonLd).forEach(k => { if (jsonLd[k] === undefined) delete jsonLd[k]; });
+
+  let script = document.getElementById('blog-json-ld');
+  if (!script) {
+    script = document.createElement('script');
+    script.id = 'blog-json-ld';
+    script.type = 'application/ld+json';
+    document.head.appendChild(script);
+  }
+  script.textContent = JSON.stringify(jsonLd);
+}
+
+/**
+ * Restore page title and remove post-specific meta/canonical/JSON-LD.
+ * Called by hideReader().
+ */
+function clearPostMeta() {
+  if (_originalTitle) { document.title = _originalTitle; _originalTitle = ''; }
+  setMetaProp('og:title', null);
+  setMetaProp('og:type', 'website');
+  setMetaProp('og:url', null);
+  setMetaProp('og:image', null);
+  setMetaProp('article:author', null);
+  setMetaProp('article:published_time', null);
+  const canon = document.getElementById('blog-canonical-link');
+  if (canon) canon.remove();
+  const script = document.getElementById('blog-json-ld');
+  if (script) script.remove();
+}
+
 
 /**
  * Sanitize Google Docs HTML for safe inline rendering.
@@ -325,7 +425,7 @@ function getReader() {
   return _reader;
 }
 
-async function showReader(docId, titleText, metaText, sheetId) {
+async function showReader(docId, titleText, metaText, sheetId, postData) {
   const myCount = ++_showCount;
   const r = getReader();
   r.navTitle.textContent = titleText || '';
@@ -337,15 +437,42 @@ async function showReader(docId, titleText, metaText, sheetId) {
   _currentDocId = docId;
   if (sheetId) _currentSheetId = sheetId;
 
-  // Update URL to reflect the open post (silent — no hashchange event)
+  // Update URL to reflect the open post (silent — no hashchange/popstate event)
   if (_currentSheetId) {
     const isPublic = document.body.classList.contains('waymark-public');
-    const prefix = isPublic ? '#/public/' : '#/sheet/';
+    const base = window.__WAYMARK_BASE || '';
     const currentHash = window.location.hash;
-    if (!currentHash.includes('/post/')) {
-      _blogReturnHash = currentHash || (prefix + _currentSheetId);
+    const currentPathname = window.location.pathname.replace(base, '');
+
+    // Save the return URL (where to go when the reader is closed)
+    if (!currentHash.includes('/post/') && !currentPathname.includes('/post/')) {
+      if (isPublic && currentPathname.startsWith('/public/')) {
+        // Came from a clean path URL — preserve path on return
+        _blogReturnHash = base + '/public/' + _currentSheetId;
+      } else {
+        const prefix = isPublic ? '#/public/' : '#/sheet/';
+        _blogReturnHash = currentHash || (prefix + _currentSheetId);
+      }
     }
-    history.replaceState(null, '', prefix + _currentSheetId + '/post/' + docId);
+
+    if (isPublic) {
+      // Public mode: use clean path-based URL (no # fragment) so search engine
+      // bots can crawl individual post URLs.
+      history.pushState(null, '', base + '/public/' + _currentSheetId + '/post/' + docId);
+    } else {
+      // Authenticated mode: keep hash-based URL (existing behaviour)
+      history.replaceState(null, '', '#/sheet/' + _currentSheetId + '/post/' + docId);
+    }
+
+    // Inject SEO meta tags + JSON-LD for this post
+    injectPostMeta({
+      title: titleText || '',
+      date: postData && postData.date ? postData.date : '',
+      author: postData && postData.author ? postData.author : '',
+      photo: postData && postData.photo ? postData.photo : '',
+      sheetId: _currentSheetId,
+      docId,
+    });
   }
 
   r.overlay.classList.remove('hidden');
@@ -407,15 +534,23 @@ function hideReader() {
   _reader.iframe.src = '';
   _reader.iframe.classList.add('hidden');
   document.body.style.overflow = '';
-  // Restore URL to blog list (silent — no hashchange event).
-  // When arriving via a /post/ permalink, _blogReturnHash is null — construct the
-  // return URL from _currentSheetId so "← All Posts" always navigates correctly.
-  const returnHash = _blogReturnHash || (() => {
+
+  // Clear SEO meta tags injected for this post
+  clearPostMeta();
+
+  // Restore URL to blog list (silent — no hashchange/popstate event).
+  // When arriving via a /post/ permalink, _blogReturnHash may be null —
+  // construct the return URL from _currentSheetId so "← All Posts" always
+  // navigates correctly, using path-based URLs for public mode.
+  const returnUrl = _blogReturnHash || (() => {
     if (!_currentSheetId) return null;
     const isPublic = document.body.classList.contains('waymark-public');
-    return (isPublic ? '#/public/' : '#/sheet/') + _currentSheetId;
+    const base = window.__WAYMARK_BASE || '';
+    return isPublic
+      ? base + '/public/' + _currentSheetId       // path-based for SEO
+      : '#/sheet/' + _currentSheetId;             // hash-based for authenticated
   })();
-  if (returnHash) history.replaceState(null, '', returnHash);
+  if (returnUrl) history.replaceState(null, '', returnUrl);
   _blogReturnHash = null;
   _currentDocId = null;
 }
@@ -428,7 +563,7 @@ const definition = {
   icon: '✍️',
   color: '#0f766e',
   priority: 20,
-  defaultHeaders: ['Title', 'Doc', 'Date', 'Author', 'Category', 'Status'],
+  defaultHeaders: ['Title', 'Doc', 'Date', 'Author', 'Category', 'Status', 'Photo'],
 
   detect(lower) {
     // Requires a title column AND a doc link column
@@ -447,6 +582,7 @@ const definition = {
       author:   -1,
       category: -1,
       status:   -1,
+      photo:    -1,
     };
     cols.title    = lower.findIndex(h => /^(title|headline|post|article)$/.test(h));
     cols.doc      = lower.findIndex(h => /^(doc|document|google.?doc|article.?url|post.?url|doc.?link)$/.test(h));
@@ -454,15 +590,23 @@ const definition = {
     cols.author   = lower.findIndex(h => /^(author|writer|by|from|creator|name)$/.test(h));
     cols.category = lower.findIndex(h => /^(category|tag|topic|section|type)$/.test(h));
     cols.status   = lower.findIndex(h => /^(status|state|visibility|published)$/.test(h));
+    cols.photo    = lower.findIndex(h => /^(photo|image|cover|hero|thumbnail|img|picture)$/.test(h));
     return cols;
   },
 
   render(container, rows, cols, template) {
     container.innerHTML = '';
 
-    // Extract sheet ID from the current URL for permalink support
+    // Extract sheet ID from the current URL — supports both:
+    //   hash-based:  #/public/{id}/post/{docId}  (legacy)
+    //   path-based:  /public/{id}/post/{docId}    (SEO-crawlable, no # fragment)
     const hashAtRender = window.location.hash;
-    const sheetIdFromHash = hashAtRender
+    const base = window.__WAYMARK_BASE || '';
+    const pathnameAtRender = window.location.pathname.replace(base, '') || '/';
+    // Build a unified route string that both approaches can match against
+    const routeAtRender = hashAtRender.startsWith('#/') ? hashAtRender
+      : (pathnameAtRender.startsWith('/public/') ? '#' + pathnameAtRender : hashAtRender);
+    const sheetIdFromHash = routeAtRender
       .replace(/^#\/(public|sheet)\//, '')
       .split('/')[0] || '';
     if (sheetIdFromHash) _currentSheetId = sheetIdFromHash;
@@ -601,7 +745,12 @@ const definition = {
       const author   = cell(row, cols.author);
       const category = cell(row, cols.category);
       const status   = blogStatus(cell(row, cols.status));
+      const photo    = cell(row, cols.photo);
       const docId    = extractDocId(docRaw);
+
+      const photoEl = photo
+        ? el('img', { className: 'blog-card-photo', src: photo, alt: title, loading: 'lazy' })
+        : el('div', { className: 'blog-card-no-photo' }, ['⚠ No cover photo — required for Google News']);
 
       const card = el('div', {
         className: `blog-card blog-card-${status}`,
@@ -610,25 +759,28 @@ const definition = {
           click() {
             if (!docId) return;
             const metaParts = [author, formatPostDate(date)].filter(Boolean);
-            showReader(docId, title, metaParts.join(' · '), sheetIdFromHash);
+            showReader(docId, title, metaParts.join(' · '), sheetIdFromHash, { date, author, category, photo });
           },
         },
       }, [
-        category
-          ? el('span', { className: 'blog-category-badge' }, [category])
-          : null,
-        el('h3', { className: 'blog-card-title' }, [title]),
-        el('div', { className: 'blog-card-meta' }, [
-          author ? el('span', { className: 'blog-card-author' }, [author]) : null,
-          date   ? el('span', { className: 'blog-card-date'   }, [formatPostDate(date)]) : null,
-        ]),
-        status === 'draft'
-          ? el('span', { className: 'blog-draft-badge' }, ['Draft'])
-          : null,
-        !docId
-          ? el('span', { className: 'blog-no-doc' }, ['No document linked'])
-          : null,
-      ].filter(Boolean));
+        photoEl,
+        el('div', { className: 'blog-card-body' }, [
+          category
+            ? el('span', { className: 'blog-category-badge' }, [category])
+            : null,
+          el('h3', { className: 'blog-card-title' }, [title]),
+          el('div', { className: 'blog-card-meta' }, [
+            author ? el('span', { className: 'blog-card-author' }, [author]) : null,
+            date   ? el('span', { className: 'blog-card-date'   }, [formatPostDate(date)]) : null,
+          ]),
+          status === 'draft'
+            ? el('span', { className: 'blog-draft-badge' }, ['Draft'])
+            : null,
+          !docId
+            ? el('span', { className: 'blog-no-doc' }, ['No document linked'])
+            : null,
+        ].filter(Boolean)),
+      ]);
 
       grid.appendChild(card);
     });
@@ -650,7 +802,7 @@ const definition = {
     container.appendChild(wrap);
 
     // Auto-open a post if the URL contains /post/{docId} (e.g. navigating to a shared link)
-    const postMatch = hashAtRender.match(/\/post\/([^/]+)$/);
+    const postMatch = routeAtRender.match(/\/post\/([^/]+)$/);
     if (postMatch) {
       const pendingDocId = postMatch[1];
       const matchRow = rows.find(r => extractDocId(cell(r, cols.doc)) === pendingDocId);
@@ -658,10 +810,14 @@ const definition = {
         const pTitle  = cell(matchRow, cols.title)  || '(Untitled)';
         const pAuthor = cell(matchRow, cols.author);
         const pDate   = cell(matchRow, cols.date);
+        const pPhoto  = cell(matchRow, cols.photo);
+        const pCategory = cell(matchRow, cols.category);
         const pMeta   = [pAuthor, formatPostDate(pDate)].filter(Boolean).join(' · ');
-        Promise.resolve().then(() => showReader(pendingDocId, pTitle, pMeta, sheetIdFromHash));
+        Promise.resolve().then(() => showReader(pendingDocId, pTitle, pMeta, sheetIdFromHash, {
+          date: pDate, author: pAuthor, category: pCategory, photo: pPhoto,
+        }));
       } else {
-        Promise.resolve().then(() => showReader(pendingDocId, '', '', sheetIdFromHash));
+        Promise.resolve().then(() => showReader(pendingDocId, '', '', sheetIdFromHash, {}));
       }
     }
   },

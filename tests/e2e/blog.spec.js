@@ -784,3 +784,231 @@ test('reader shows referenced sheets section when doc contains Waymark links', a
   await expect(page.locator('.blog-embed-card')).toHaveCount(1);
   await expect(page.locator('.blog-embed-card')).toContainText('My Referenced Sheet');
 });
+
+/* ---- Cover photo (Google News requirement) ---- */
+
+test('blog card shows cover photo when Photo column is provided', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // First card has a photo URL in fixture
+  const photoEl = page.locator('.blog-card').first().locator('.blog-card-photo');
+  await expect(photoEl).toBeVisible();
+  const src = await photoEl.getAttribute('src');
+  expect(src).toBeTruthy();
+  expect(src).toContain('https://');
+});
+
+test('blog card shows cover photo as img element', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  const tag = await page.locator('.blog-card').first().locator('.blog-card-photo').evaluate(el => el.tagName.toLowerCase());
+  expect(tag).toBe('img');
+});
+
+test('blog card with missing photo shows no-photo warning', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // Third row (index 2) has empty Photo in fixture — Community Guidelines
+  const thirdCard = page.locator('.blog-card').nth(2);
+  await expect(thirdCard.locator('.blog-card-no-photo')).toBeVisible();
+});
+
+test('blog card with photo does not show no-photo warning', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  // First card has a photo — no warning expected
+  const noPhotoEl = page.locator('.blog-card').first().locator('.blog-card-no-photo');
+  const count = await noPhotoEl.count();
+  expect(count).toBe(0);
+});
+
+test('blog card content is inside blog-card-body wrapper', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  const cardBody = page.locator('.blog-card').first().locator('.blog-card-body');
+  await expect(cardBody).toBeVisible();
+  await expect(cardBody.locator('.blog-card-title')).toBeVisible();
+});
+
+/* ---- SEO: path-based public URL (no # fragment) ---- */
+
+test('opening a card in public mode updates URL to clean path (no # fragment)', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  await page.goto('/#/public/sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const url = await page.evaluate(() => window.location.href);
+  // URL should use path-based format, not hash-based, in public mode
+  expect(url).toContain('/public/sheet-062/post/');
+  expect(url).not.toMatch(/#\/public\/sheet-062\/post\//);
+});
+
+test('closing reader in public mode restores clean path URL', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  await page.goto('/#/public/sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+  await page.click('.blog-reader-back');
+  await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
+
+  const pathname = await page.evaluate(() => window.location.pathname);
+  const hash = await page.evaluate(() => window.location.hash);
+  // Either path-based or hash-based is fine — must not include /post/
+  const fullUrl = pathname + hash;
+  expect(fullUrl).not.toContain('/post/');
+  expect(fullUrl).toContain('sheet-062');
+});
+
+test('navigating to path-based public post URL auto-opens reader', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  const docId = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms';
+  await page.goto('/public/sheet-062/post/' + docId);
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10000 });
+  await page.waitForSelector('.blog-container', { timeout: 5000 });
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 8000 });
+  await expect(page.locator('.blog-reader-overlay')).toBeVisible();
+});
+
+test('path-based public post URL serves correct blog sheet', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_tutorial_completed', 'true');
+    localStorage.setItem('waymark_template_tutorials_auto', 'false');
+  });
+  const docId = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms';
+  await page.goto('/public/sheet-062/post/' + docId);
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10000 });
+  await page.waitForSelector('.blog-container', { timeout: 5000 });
+  const cardCount = await page.locator('.blog-card').count();
+  expect(cardCount).toBe(5);
+});
+
+/* ---- SEO: meta tags injected when reader opens ---- */
+
+test('opening a blog post injects og:title meta tag', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card >> text=Getting Started with Waymark');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const ogTitle = await page.evaluate(() => {
+    const el = document.querySelector('meta[property="og:title"]');
+    return el ? el.getAttribute('content') : null;
+  });
+  expect(ogTitle).toBeTruthy();
+  expect(ogTitle).toContain('Getting Started with Waymark');
+});
+
+test('opening a blog post sets og:type to article', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const ogType = await page.evaluate(() => {
+    const el = document.querySelector('meta[property="og:type"]');
+    return el ? el.getAttribute('content') : null;
+  });
+  expect(ogType).toBe('article');
+});
+
+test('opening a blog post injects JSON-LD BlogPosting schema', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card >> text=Getting Started with Waymark');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+
+  const jsonLd = await page.evaluate(() => {
+    const el = document.getElementById('blog-json-ld');
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch { return null; }
+  });
+  expect(jsonLd).toBeTruthy();
+  expect(jsonLd['@type']).toBe('BlogPosting');
+  expect(jsonLd.headline).toContain('Getting Started with Waymark');
+  expect(jsonLd['@context']).toBe('https://schema.org');
+});
+
+test('closing reader removes JSON-LD and resets og:type to website', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-062');
+  await page.waitForSelector('.blog-card', { timeout: 5000 });
+
+  await page.click('.blog-card:first-child');
+  await page.waitForSelector('.blog-reader-overlay:not(.hidden)', { timeout: 3000 });
+  await page.click('.blog-reader-back');
+  await expect(page.locator('.blog-reader-overlay')).toHaveClass(/hidden/);
+
+  const jsonLdEl = await page.evaluate(() => document.getElementById('blog-json-ld'));
+  expect(jsonLdEl).toBeNull();
+
+  const ogType = await page.evaluate(() => {
+    const el = document.querySelector('meta[property="og:type"]');
+    return el ? el.getAttribute('content') : null;
+  });
+  expect(ogType).toBe('website');
+});
+
+/* ---- helpers: columns() detects photo column ---- */
+
+test('columns() detects Photo column as photo role', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { default: def } = await import('/js/templates/blog.js');
+    const lower = ['title', 'doc', 'date', 'author', 'category', 'status', 'photo'];
+    return def.columns(lower).photo;
+  });
+  expect(result).toBe(6);
+});
+
+test('columns() detects cover/image/hero as photo role', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { default: def } = await import('/js/templates/blog.js');
+    const coverIdx = def.columns(['title', 'doc', 'cover']).photo;
+    const imageIdx = def.columns(['title', 'doc', 'image']).photo;
+    const heroIdx  = def.columns(['title', 'doc', 'hero']).photo;
+    return { coverIdx, imageIdx, heroIdx };
+  });
+  expect(result.coverIdx).toBe(2);
+  expect(result.imageIdx).toBe(2);
+  expect(result.heroIdx).toBe(2);
+});
+
+test('columns() returns -1 for photo when column absent', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { default: def } = await import('/js/templates/blog.js');
+    return def.columns(['title', 'doc', 'date', 'author']).photo;
+  });
+  expect(result).toBe(-1);
+});

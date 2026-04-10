@@ -177,6 +177,13 @@ function serveIndex(req, res) {
   if (config.GOOGLE_API_KEY) {
     injections.push(`window.__WAYMARK_API_KEY=${safeJsString(config.GOOGLE_API_KEY)};`);
   }
+  // Inject <base href> so relative asset URLs (CSS, JS, images) always resolve
+  // from the app root — this is required for path-based public blog post URLs
+  // like /public/{sheetId}/post/{docId} where relative paths would otherwise
+  // resolve to a sub-directory instead of the app root.
+  const appBaseHref = basePath ? basePath + '/' : '/';
+  html = html.replace('<head>', `<head>\n  <base href="${appBaseHref}">`);
+
   if (injections.length) {
     html = html.replace('</head>', `  <script>${injections.join('')}</script>\n</head>`);
   }
