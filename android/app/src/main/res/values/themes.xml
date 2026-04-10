@@ -2,7 +2,9 @@
 <resources>
     <style name="Theme.Waymark" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@android:color/white</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
+        <!-- Status bar: white with dark icons to match the web app's light-mode header (#ffffff) -->
+        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">@android:color/white</item>
     </style>
 </resources>

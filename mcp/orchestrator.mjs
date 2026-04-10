@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -126,38 +126,127 @@ if (credPath) {
     sheetsAuth = new GoogleAuth({
         keyFile: credPath,
         scopes: [
-            "https://www.googleapis.com/auth/spreadsheets",  // read + write
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",  // find-or-create signaling sheet
         ],
     });
 }
 
-/* ---------- WebRTC signaling peer ----------
- * WAYMARK_SIGNALING_SHEET_ID — Google Sheet used as the signaling channel
- * between this orchestrator and the Android app.  Name the sheet
- * ".waymark-signaling" by convention.  The service account must have Editor
- * access.  Both sides (MCP + Android) read this same env/config value.
+/* ---------- WebRTC signaling peer — zero-config auto-discovery ----------
+ * The signaling sheet is found or created automatically by resolveSignalingSheet().
+ * No environment variables or manual configuration needed.  The Android app
+ * discovers the same sheet ID by calling GET /api/signaling-sheet.
+ *
+ * Cache file: /agent-logs/.signaling-sheet-id
+ *   Written after first successful resolve; read on every subsequent start
+ *   so Drive API is not called on every boot.
  */
-const WAYMARK_SIGNALING_SHEET_ID = process.env.WAYMARK_SIGNALING_SHEET_ID || "";
+const SIGNALING_SHEET_NAME = ".waymark-signaling";
+const SIGNALING_CACHE_PATH = path.join(LOG_DIR, ".signaling-sheet-id");
+
+/** @type {string|null} resolved sheet ID, cached in memory once resolved */
+let _resolvedSignalingSheetId = null;
 /** @type {SheetWebRtcPeer|null} */
 let _signalingPeer = null;
 
+/**
+ * Finds the .waymark-signaling sheet in the service account's Drive.
+ * Creates one if none exists and shares it so any authenticated user can
+ * find it via GET /api/signaling-sheet.
+ * Returns the spreadsheet ID, or null if auth is not configured.
+ */
+async function resolveSignalingSheet() {
+    if (_resolvedSignalingSheetId) return _resolvedSignalingSheetId;
+
+    // Fast path: cached on disk from a previous run
+    try {
+        const cached = readFileSync(SIGNALING_CACHE_PATH, "utf8").trim();
+        if (cached) {
+            _resolvedSignalingSheetId = cached;
+            process.stderr.write(`orchestrator: signaling sheet resolved from cache: ${cached}\n`);
+            return cached;
+        }
+    } catch { /* not yet cached */ }
+
+    if (!sheetsAuth) return null;
+
+    const client = await sheetsAuth.getClient();
+    const { token } = await client.getAccessToken();
+    const DRIVE = "https://www.googleapis.com/drive/v3";
+    const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
+
+    // Search for an existing .waymark-signaling sheet
+    const q = encodeURIComponent(
+        `name='${SIGNALING_SHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+    );
+    const searchRes = await fetch(`${DRIVE}/files?q=${q}&fields=files(id)&pageSize=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
+    const { files } = await searchRes.json();
+
+    let sheetId;
+    if (files && files.length > 0) {
+        sheetId = files[0].id;
+        process.stderr.write(`orchestrator: found existing signaling sheet: ${sheetId}\n`);
+    } else {
+        // Create a new spreadsheet
+        const createRes = await fetch(SHEETS, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ properties: { title: SIGNALING_SHEET_NAME } }),
+        });
+        if (!createRes.ok) throw new Error(`Sheet create failed: ${createRes.status}`);
+        const created = await createRes.json();
+        sheetId = created.spreadsheetId;
+        process.stderr.write(`orchestrator: created signaling sheet: ${sheetId}\n`);
+
+        // Share with anyoneWithLink so the Android app (and server endpoint) can use it
+        await fetch(`${DRIVE}/files/${sheetId}/permissions`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "writer", type: "anyone" }),
+        });
+        process.stderr.write(`orchestrator: shared signaling sheet as anyoneWithLink writer\n`);
+    }
+
+    // Cache to disk for next boot + serve to Android via /api/signaling-sheet
+    try {
+        mkdirSync(LOG_DIR, { recursive: true });
+        writeFileSync(SIGNALING_CACHE_PATH, sheetId, "utf8");
+    } catch (e) {
+        process.stderr.write(`orchestrator: warning — could not write signaling cache: ${e.message}\n`);
+    }
+
+    _resolvedSignalingSheetId = sheetId;
+    return sheetId;
+}
+
 async function startSignalingPeer() {
-    if (!sheetsAuth || !WAYMARK_SIGNALING_SHEET_ID) {
+    if (!sheetsAuth) {
         process.stderr.write(
-            "orchestrator: WAYMARK_SIGNALING_SHEET_ID or GOOGLE_APPLICATION_CREDENTIALS not set " +
-            "— WebRTC signaling peer disabled\n"
+            "orchestrator: GOOGLE_APPLICATION_CREDENTIALS not set — WebRTC signaling peer disabled\n"
         );
         return;
     }
+    let sheetId;
+    try {
+        sheetId = await resolveSignalingSheet();
+    } catch (err) {
+        process.stderr.write(`orchestrator: signaling sheet resolve failed: ${err.message}\n`);
+        return;
+    }
+    if (!sheetId) return;
+
     // Stable 8-char hex peer ID for this MCP server instance
     const { createHash } = await import("node:crypto");
     const peerId = createHash("sha256")
-        .update("orchestrator-mcp-" + WAYMARK_SIGNALING_SHEET_ID)
+        .update("orchestrator-mcp-" + sheetId)
         .digest("hex")
         .slice(0, 8);
 
     _signalingPeer = new SheetWebRtcPeer({
-        sheetId:     WAYMARK_SIGNALING_SHEET_ID,
+        sheetId,
         auth:        sheetsAuth,
         peerId,
         displayName: "Orchestrator MCP",
@@ -418,56 +507,17 @@ function interpolate(template, ctx) {
     return template.replace(/\{(\w+)\}/g, (_, k) => ctx[k] ?? "");
 }
 
-/* ---------- Send notification via ntfy / Pushover ---------- */
-
-async function sendNotification(title, body, priority) {
-    const ntfyTopic = process.env.NTFY_TOPIC;
-    if (ntfyTopic) {
-        const ntfyPri = { low: "low", normal: "default", high: "high", urgent: "urgent" }[priority] || "default";
-        try {
-            await fetch(ntfyTopic, {
-                method: "POST",
-                headers: {
-                    "Title": title,
-                    "Priority": ntfyPri,
-                    "Content-Type": "text/plain",
-                },
-                body: body || title,
-            });
-        } catch (err) {
-            process.stderr.write(`orchestrator: ntfy send failed: ${err.message}\n`);
-        }
-    }
-
-    const pushToken = process.env.PUSHOVER_TOKEN;
-    const pushUser  = process.env.PUSHOVER_USER;
-    if (pushToken && pushUser) {
-        const priMap = { low: -1, normal: 0, high: 1, urgent: 2 };
-        try {
-            await fetch("https://api.pushover.net/1/messages.json", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    token: pushToken,
-                    user:  pushUser,
-                    title,
-                    message: body || title,
-                    priority: priMap[priority] ?? 0,
-                }),
-            });
-        } catch (err) {
-            process.stderr.write(`orchestrator: pushover send failed: ${err.message}\n`);
-        }
-    }
-}
-
 /**
- * Check rules for a given event and fire matching notifications.
+ * Check rules for a given event and push matching notifications to the
+ * Android app via WebRTC DataChannel.  No third-party services (ntfy,
+ * Pushover, etc.) — delivery is purely peer-to-peer through the signaling
+ * sheet.
  * @param {string} event  - uppercase event name e.g. "DISPATCH"
  * @param {object} ctx    - context variables for condition matching and template interpolation
  */
 async function fireNotifications(event, ctx) {
     if (!_notifRules.length) return;
+    if (!_signalingPeer) return;
     const matching = _notifRules.filter(r =>
         r.enabled &&
         (r.event === event || r.event === "*") &&
@@ -476,22 +526,19 @@ async function fireNotifications(event, ctx) {
     for (const rule of matching) {
         const title = interpolate(rule.title || event, ctx);
         const body  = interpolate(rule.body, ctx);
-        await sendNotification(title, body, rule.priority);
-
-        // Push to Android app via WebRTC DataChannel if a peer is connected
-        if (_signalingPeer) {
-            const sent = _signalingPeer.broadcast({
-                type:     "orchestrator-alert",
-                title,
-                body,
-                priority: rule.priority,
-                event,
-                ts:       Date.now(),
-            });
-            if (sent > 0) {
-                process.stderr.write(`orchestrator: pushed '${title}' to ${sent} Android peer(s) via WebRTC\n`);
-            }
-        }
+        const sent = _signalingPeer.broadcast({
+            type:     "orchestrator-alert",
+            title,
+            body,
+            priority: rule.priority,
+            event,
+            ts:       Date.now(),
+        });
+        process.stderr.write(
+            sent > 0
+                ? `orchestrator: pushed '${title}' to ${sent} Android peer(s) via WebRTC\n`
+                : `orchestrator: rule matched for '${event}' but no Android peers connected\n`
+        );
     }
 }
 
@@ -666,7 +713,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 sessionId,
                 logPath,
                 rulesLoaded: _notifRules.length,
-                signalingSheet: WAYMARK_SIGNALING_SHEET_ID || null,
+                signalingSheet: _resolvedSignalingSheetId ?? null,
                 signalingPeerId: _signalingPeer?.peerId ?? null,
             }) }],
         };

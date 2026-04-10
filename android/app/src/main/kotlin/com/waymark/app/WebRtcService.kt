@@ -19,6 +19,9 @@ import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.SecureRandom
 import java.util.HexFormat
 
@@ -53,13 +56,9 @@ class WebRtcService : LifecycleService() {
         )
         Log.i(TAG, "Service created")
 
-        // Auto-connect to the orchestrator signaling sheet so notifications
-        // can arrive even before the user opens any sheet in the WebView.
-        val signalingSheet = WaymarkConfig.WAYMARK_SIGNALING_SHEET_ID
-        if (signalingSheet.isNotBlank()) {
-            Log.i(TAG, "Auto-connecting to orchestrator signaling sheet")
-            connectToSheet(signalingSheet)
-        }
+        // Attempt to connect to the signaling sheet automatically.
+        // Uses the cached sheet ID if available, otherwise queries the server.
+        scope.launch { resolveAndConnect() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -71,9 +70,9 @@ class WebRtcService : LifecycleService() {
                 connectToSheet(sheetId)
             }
             ACTION_UPDATE_TOKEN -> {
-                // The token is stored in SharedPreferences by WaymarkBridge —
-                // no explicit hand-off needed; SignalingClient reads via lambda.
-                Log.d(TAG, "Token updated — signaling will pick it up on next poll")
+                // Token was refreshed — retry sheet discovery if not yet connected.
+                Log.d(TAG, "Token updated — retrying signaling sheet discovery")
+                scope.launch { resolveAndConnect() }
             }
             ACTION_STOP -> {
                 disconnectPeer()
@@ -93,6 +92,61 @@ class WebRtcService : LifecycleService() {
     override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
         return null
+    }
+
+    /* ---------- Auto-discovery ---------- */
+
+    /**
+     * Resolves the signaling sheet ID with no manual configuration:
+     * 1. Returns immediately if already connected.
+     * 2. Reads the cached ID from SharedPreferences.
+     * 3. Falls back to GET /api/signaling-sheet on the Waymark server using
+     *    the stored OAuth access token (set by WaymarkBridge.onAuthToken).
+     * Called on service start and whenever the OAuth token is refreshed.
+     */
+    private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
+        if (currentSheetId != null) return@withContext
+
+        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+
+        // 1. Cached from a previous session
+        val cached = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+        if (cached.isNotBlank()) {
+            Log.i(TAG, "Signaling sheet from cache: $cached")
+            connectToSheet(cached)
+            return@withContext
+        }
+
+        // 2. Ask the server (needs a valid OAuth token)
+        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
+        if (token.isBlank()) {
+            Log.d(TAG, "No token yet — will retry signaling discovery after next auth")
+            return@withContext
+        }
+
+        try {
+            val url = URL("${WaymarkConfig.BASE_URL}api/signaling-sheet")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                val sheetId = JSONObject(body).optString("sheetId", "")
+                if (sheetId.isNotBlank()) {
+                    Log.i(TAG, "Signaling sheet discovered from server: $sheetId")
+                    prefs.edit().putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, sheetId).apply()
+                    connectToSheet(sheetId)
+                } else {
+                    Log.d(TAG, "Server has no signaling sheet yet — orchestrator may not have booted")
+                }
+            } else {
+                Log.w(TAG, "Signaling sheet API returned ${conn.responseCode}")
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Signaling sheet discovery failed: ${e.message}")
+        }
     }
 
     /* ---------- Sheet connection ---------- */

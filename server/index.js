@@ -437,6 +437,43 @@ if (config.WAYMARK_LOCAL) {
 // Must come before express.static so the root '/' is handled here.
 router.get('/', serveIndex);
 
+/* ---------- Signaling sheet discovery ---------- */
+// Returns the WebRTC signaling sheet ID written by the MCP orchestrator.
+// The Android app calls this to discover the sheet ID automatically without
+// any manual configuration.  Requires an authenticated session (cookie) or
+// a valid Google Bearer token so we don't hand the ID to unauthenticated callers.
+
+const SIGNALING_CACHE_PATH = '/agent-logs/.signaling-sheet-id';
+
+router.get('/api/signaling-sheet', async (req, res) => {
+  // Accept authentication via httpOnly refresh cookie (web) or Bearer token (Android).
+  const hasCookie  = !!req.cookies?.waymark_refresh;
+  const bearerToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!hasCookie && !bearerToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // If using a Bearer token, verify it is a real Google token.
+  if (!hasCookie && bearerToken) {
+    try {
+      const info = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(bearerToken)}`
+      );
+      if (!info.ok) return res.status(401).json({ error: 'Invalid token' });
+    } catch {
+      return res.status(502).json({ error: 'Token verification failed' });
+    }
+  }
+
+  try {
+    const sheetId = fs.readFileSync(SIGNALING_CACHE_PATH, 'utf8').trim();
+    return res.json({ sheetId: sheetId || null });
+  } catch {
+    // MCP hasn't resolved the sheet yet
+    return res.json({ sheetId: null });
+  }
+});
+
 /* ---------- Scraping proxy (fetch a URL on behalf of the browser) ---------- */
 
 router.post('/api/fetch-url', async (req, res) => {

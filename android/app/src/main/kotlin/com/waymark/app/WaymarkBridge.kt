@@ -14,16 +14,24 @@ package com.waymark.app
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import org.json.JSONObject
 
 /**
  * JavascriptInterface bridging the Waymark JavaScript app to
  * Android native services.
  *
- * @param context Application/Activity context
+ * @param context Activity context (needed for window operations)
  */
 class WaymarkBridge(private val context: Context) {
+
+    /** Reference to the hosting activity for window-level operations. */
+    private val activity get() = context as? androidx.appcompat.app.AppCompatActivity
 
     /* ---------- Auth token handoff ---------- */
 
@@ -117,6 +125,31 @@ class WaymarkBridge(private val context: Context) {
             }
         } catch (ignored: Exception) {
             // Malformed JSON — discard silently
+        }
+    }
+
+    /* ---------- Theme sync ---------- */
+
+    /**
+     * Called by the web app whenever the theme changes (dark/light).
+     * Updates the Android status bar and navigation bar colors to match
+     * the web app's surface color so they blend seamlessly.
+     *
+     * @param theme "dark" or "light"
+     */
+    @JavascriptInterface
+    fun onThemeChanged(theme: String) {
+        val isDark = theme == "dark"
+        Handler(Looper.getMainLooper()).post {
+            val act = activity ?: return@post
+            val window = act.window
+            // Surface colors mirror the CSS variables in base.css
+            val surfaceColor = if (isDark) Color.parseColor("#1e293b") else Color.WHITE
+            window.statusBarColor = surfaceColor
+            window.navigationBarColor = surfaceColor
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !isDark
+            controller.isAppearanceLightNavigationBars = !isDark
         }
     }
 }

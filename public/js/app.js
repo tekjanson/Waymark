@@ -2350,6 +2350,11 @@ function applyTheme(pref) {
   document.querySelectorAll('.settings-theme-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === pref);
   });
+
+  // Sync the Android status bar color with the web app theme
+  if (window.Android && typeof window.Android.onThemeChanged === 'function') {
+    window.Android.onThemeChanged(resolved);
+  }
 }
 
 function initTheme() {

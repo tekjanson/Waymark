@@ -22,9 +22,8 @@ android {
 
         // Orchestrator signaling sheet — the Google Sheet the orchestrator MCP
         // server also connects to for WebRTC P2P notifications.  Override this
-        // in local.properties: WAYMARK_SIGNALING_SHEET_ID=<spreadsheet-id>
-        val signalingSheetId: String = project.findProperty("WAYMARK_SIGNALING_SHEET_ID")?.toString() ?: ""
-        buildConfigField("String", "WAYMARK_SIGNALING_SHEET_ID", "\"$signalingSheetId\"")
+        // Signaling sheet ID is discovered automatically at runtime — no build-time config needed.
+        // See WebRtcService.resolveAndConnect() and GET /api/signaling-sheet.
     }
 
     buildTypes {
