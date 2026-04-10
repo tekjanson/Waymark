@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml
+  Allows the app to make cleartext (HTTP) connections only to localhost
+  for development. All other connections (including waymark.app) require
+  HTTPS. This prevents accidental cleartext leaks in production.
+-->
+<network-security-config>
+    <!-- Allow HTTP to the local dev server only -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+    <!-- All other domains must use HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

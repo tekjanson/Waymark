@@ -57,6 +57,10 @@ async function _doRefresh() {
     const data = await res.json();
     accessToken  = data.access_token;
     tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
+    // Hand fresh token to Android native WebRTC service (no-op in browser)
+    if (typeof window !== 'undefined' && window.Android?.onAuthToken) {
+      window.Android.onAuthToken(accessToken);
+    }
     return true;
   } catch {
     accessToken = null;

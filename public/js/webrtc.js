@@ -887,12 +887,23 @@ export class WaymarkConnect {
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
             break;
+          case 'waymark-notification':
+          case 'orchestrator-alert':
+            // Forward orchestrator alerts to the Android native layer
+            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
+              window.Android.onPeerMessage(e.data);
+            }
+            break;
           default:
             if (this.onArcadeMessage) {
               console.log(`[WC] DC arcade msg from ${remotePeerId}:`, m.type);
               this.onArcadeMessage(remotePeerId, m);
             } else {
               console.warn(`[WC] DC arcade msg from ${remotePeerId} DROPPED — no onArcadeMessage handler:`, m.type);
+            }
+            // Forward unknown messages to Android for extensibility
+            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
+              window.Android.onPeerMessage(e.data);
             }
             break;
         }

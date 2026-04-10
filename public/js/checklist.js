@@ -553,6 +553,10 @@ export async function show(sheetId, sheetName) {
   // Restore per-sheet lock state
   const locked = localStorage.getItem(`waymark-lock-${sheetId}`) === '1';
   applyLockState(locked);
+  // Notify Android native layer so it can connect WebRTC for this sheet
+  if (typeof window !== 'undefined' && window.Android?.onSheetOpened) {
+    window.Android.onSheetOpened(sheetId);
+  }
   await loadSheet(sheetId);
   resetTimer();
 }
