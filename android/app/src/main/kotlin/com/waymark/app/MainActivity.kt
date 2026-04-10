@@ -132,6 +132,11 @@ class MainActivity : AppCompatActivity() {
         // Media: allow auto-play (needed for WebRTC in the web app)
         settings.mediaPlaybackRequiresUserGesture = false
 
+        // Append a token to the User-Agent so the server reliably identifies
+        // requests from this WebView as the Android app — even if the frontend
+        // code hasn't been updated — and uses the correct (cookie-free) OAuth flow.
+        settings.userAgentString = "${settings.userAgentString} WaymarkAndroid/1.0"
+
         // Register the native bridge accessible as `Android` in JavaScript
         webView.addJavascriptInterface(bridge, "Android")
 

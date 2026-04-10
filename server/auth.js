@@ -45,31 +45,48 @@ async function exchangeCode(code, codeVerifier) {
   return res.json();
 }
 
-/* ---------- Android pending-flow store ----------
- * When login is initiated from the Android WebView the system browser handles
- * /auth/callback — a completely separate cookie store from the WebView.  So
- * the normal httpOnly PKCE cookies are invisible to the callback.  Instead we
- * stash { verifier, expiry } server-side keyed by the state parameter — the
- * state value is already random and unguessable, so it is safe to use as a key.
- * Entries expire after 10 minutes (matching SHORT_COOKIE_OPTS for web flows).
+/* ---------- Android PKCE state encryption ----------
+ * For Android flows, the PKCE verifier is encrypted into the OAuth `state`
+ * parameter using AES-256-GCM.  This is fully stateless — no server-side Map,
+ * no cross-process dependencies, no in-flight state that a restart or a
+ * second server instance could lose.
+ *
+ * Layout (all base64url):  IV(12) || TAG(16) || CT(JSON({v, exp}))
+ *
+ * The key is derived from COOKIE_SECRET, so a forged state from a different
+ * server would fail authentication on decrypt.
  */
-const _pendingFlows = new Map(); // state → { verifier, expiry }
-const FLOW_TTL_MS = 10 * 60 * 1000;
-
-function storePendingFlow(state, verifier) {
-  _pendingFlows.set(state, { verifier, expiry: Date.now() + FLOW_TTL_MS });
-  // Lazily evict expired entries
-  for (const [k, v] of _pendingFlows) {
-    if (v.expiry < Date.now()) _pendingFlows.delete(k);
-  }
+function _androidKey() {
+  return crypto.createHash('sha256').update(config.COOKIE_SECRET).digest();
 }
 
-function consumePendingFlow(state) {
-  const entry = _pendingFlows.get(state);
-  if (!entry) return null;
-  _pendingFlows.delete(state);
-  if (entry.expiry < Date.now()) return null;
-  return entry.verifier;
+function buildAndroidState(verifier) {
+  const key = _androidKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plain = JSON.stringify({ v: verifier, exp: Date.now() + 10 * 60 * 1000 });
+  const ct = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, ct]).toString('base64url');
+}
+
+function parseAndroidState(state) {
+  if (!state) return null;
+  try {
+    const buf = Buffer.from(state, 'base64url');
+    if (buf.length < 29) return null; // 12 + 16 + at least 1 byte CT
+    const iv  = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const ct  = buf.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', _androidKey(), iv);
+    decipher.setAuthTag(tag);
+    const plain = Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+    const obj = JSON.parse(plain);
+    if (!obj.v || obj.exp < Date.now()) return null;
+    return obj.v; // PKCE verifier
+  } catch {
+    return null;
+  }
 }
 
 /* ---------- Android nonce store ----------
@@ -146,20 +163,27 @@ module.exports = function setupAuth(app) {
     }
 
     const { verifier, challenge } = generatePKCE();
-    const state = crypto.randomBytes(16).toString('hex');
 
-    if (req.query.android) {
-      // Android: /auth/callback runs in the system browser — a completely
-      // different cookie store from the WebView.  Store the PKCE verifier and
-      // flow type server-side so the callback can retrieve them by state param.
-      storePendingFlow(state, verifier);
+    // Detect the Android WebView from its custom User-Agent string (set by
+    // MainActivity) or from the explicit ?android=1 query param (set by
+    // auth.js when window.Android is present).  The UA check is authoritative
+    // and works even if the frontend code hasn't been updated.
+    const ua = req.headers['user-agent'] || '';
+    const isAndroid = !!req.query.android || ua.includes('WaymarkAndroid');
+
+    if (isAndroid) {
+      // Encrypt the PKCE verifier into the state parameter so /auth/callback
+      // can recover it without any server-side storage or cookies.
+      // The system browser will forward this opaque state to Google and back.
+      const state = buildAndroidState(verifier);
+      res.redirect(buildAuthUrl(challenge, state));
     } else {
-      // Web: callback runs in the same browser, cookies work fine.
+      // Web flow: store PKCE in short-lived httpOnly cookies (same browser).
+      const state = crypto.randomBytes(16).toString('hex');
       res.cookie('pkce_verifier', verifier, SHORT_COOKIE_OPTS);
       res.cookie('oauth_state', state, SHORT_COOKIE_OPTS);
+      res.redirect(buildAuthUrl(challenge, state));
     }
-
-    res.redirect(buildAuthUrl(challenge, state));
   });
 
   /* --- GET /auth/callback --- */
@@ -175,19 +199,19 @@ module.exports = function setupAuth(app) {
       return res.redirect(bp + '/#auth_error');
     }
 
-    // Resolve the PKCE verifier — for Android flows it lives server-side
-    // (keyed by state) because the system browser has no access to the WebView
-    // cookies set during /auth/login.  For web flows it lives in httpOnly cookies.
+    // Resolve the PKCE verifier.
+    // Android flow: the verifier is encrypted inside the state parameter itself
+    //   (stateless, no server-side storage — survives restarts and works across
+    //   any number of server instances).
+    // Web flow: verifier lives in short-lived httpOnly cookies.
     let codeVerifier = null;
     let isAndroidFlow = false;
 
-    const serverVerifier = state ? consumePendingFlow(state) : null;
-    if (serverVerifier) {
-      // Android flow: verifier was stored server-side at login time
-      codeVerifier = serverVerifier;
+    const androidVerifier = parseAndroidState(state);
+    if (androidVerifier) {
+      codeVerifier = androidVerifier;
       isAndroidFlow = true;
     } else {
-      // Web flow: verifier and state are in httpOnly cookies
       const savedState = req.cookies.oauth_state;
       codeVerifier = req.cookies.pkce_verifier;
       res.clearCookie('pkce_verifier', { path: bp + '/' });
