@@ -346,10 +346,14 @@ export class SheetWebRtcPeer {
             const alive = this._scanAlive(vals);
             const aliveIds = new Set(alive.map(p => p.peerId));
 
-            // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
+            // Evict entries still in 'connecting' state after HANDSHAKE_TIMEOUT_MS.
+            // Only applies while state === 'connecting' — once a DC successfully opens
+            // (state → 'connected') this guard is inactive, preventing a closed-and-
+            // being-rebuilt connection from being incorrectly evicted based on its
+            // original createdAt.
             const now = Date.now();
             for (const [id, entry] of this.peers) {
-                if (entry.dc?.readyState !== "open" && (now - (entry.createdAt || 0)) > HANDSHAKE_TIMEOUT_MS) {
+                if (entry.state === "connecting" && (now - (entry.createdAt || 0)) > HANDSHAKE_TIMEOUT_MS) {
                     this._log(`stuck handshake for ${id} (${Math.round((now - (entry.createdAt || 0)) / 1000)}s) — evicting`);
                     this._closeOne(id);
                 }
@@ -585,12 +589,23 @@ export class SheetWebRtcPeer {
         };
         dc.onclose = () => {
             this._log(`DataChannel closed with ${remotePeerId}`);
-            const entry = this.peers.get(remotePeerId);
-            if (entry) entry.state = "disconnected";
+            // Clean up immediately so next _poll() cycle rebuilds the connection
+            this._closeOne(remotePeerId);
         };
         dc.onmessage = (event) => {
             try {
-                const msg = JSON.parse(typeof event === "string" ? event : event.data);
+                const raw = typeof event === "string" ? event : event.data;
+                const msg = JSON.parse(raw);
+                // Keep-alive: Android pings every 30 s (DC_PING_MS) and evicts peers
+                // that haven't ponged within 90 s (DC_PONG_TIMEOUT_MS).  Reply here
+                // so the connection is never torn down due to a missing pong.
+                if (msg.type === "waymark-ping") {
+                    try { dc.send(JSON.stringify({ type: "waymark-pong", ts: Date.now() })); } catch {}
+                    return; // don't forward to orchestrator
+                }
+                if (msg.type === "waymark-pong") {
+                    return; // received our own ping reply — nothing to do
+                }
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
         };
