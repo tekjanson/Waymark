@@ -584,6 +584,7 @@ class OrchestratorPeer(
                 "waymark-notification", "orchestrator-alert" -> {
                     val title = obj.optString("title", "Waymark")
                     val body  = obj.optString("body", obj.optString("message", ""))
+                    Log.i(TAG, "Notification received — title=\"$title\" body=\"$body\"")
                     if (body.isNotBlank()) onNotification(title, body)
                 }
             }

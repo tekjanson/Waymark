@@ -42,6 +42,11 @@ const STUN_SERVERS = [
     { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+/** How long to retain a notification in the buffer for late-joining or reconnecting peers. */
+const NOTIF_BUFFER_TTL = 5 * 60_000;  // 5 minutes
+/** Maximum buffered notifications per peer instance (oldest are dropped when full). */
+const NOTIF_BUFFER_MAX = 100;
+
 /* ---------- SheetWebRtcPeer ---------- */
 
 /**
@@ -73,6 +78,12 @@ export class SheetWebRtcPeer {
         this._polling        = false;  // guard: prevent concurrent poll cycles
         this._heartbeatTimer = null;
         this._pollTimer      = null;
+
+        /**
+         * Notification delivery buffer.  Each entry: { json, ts, deliveredTo: Set<peerId> }.
+         * Flushed to a peer when its DataChannel first opens.
+         */
+        this._notifQueue = [];
     }
 
     /* ---------- Lifecycle ---------- */
@@ -115,17 +126,25 @@ export class SheetWebRtcPeer {
      */
     broadcast(message) {
         const json = typeof message === "string" ? message : JSON.stringify(message);
+        const isNotif = typeof message === "object" && message !== null &&
+            (message.type === "waymark-notification" || message.type === "orchestrator-alert");
+
+        const deliveredTo = new Set();
         let sent = 0;
         for (const [id, entry] of this.peers) {
             try {
                 if (entry.dc && entry.dc.readyState === "open") {
                     entry.dc.send(json);
+                    deliveredTo.add(id);
                     sent++;
                 }
             } catch (e) {
                 this._log(`broadcast to ${id} failed: ${e.message}`);
             }
         }
+        // Buffer notification messages.  When a new (or reconnected) peer opens a
+        // DataChannel, _flushNotifQueue() delivers anything it missed.
+        if (isNotif) this._enqueueNotif(json, deliveredTo);
         return sent;
     }
 
@@ -434,6 +453,8 @@ export class SheetWebRtcPeer {
             const entry = this.peers.get(remotePeerId);
             if (entry) entry.state = "connected";
             this._log(`DataChannel open with ${remotePeerId}`);
+            // Deliver any notifications buffered while this peer was disconnected
+            this._flushNotifQueue(remotePeerId, dc);
             if (this.onConnect) this.onConnect(remotePeerId);
         };
         dc.onclose = () => {
@@ -447,6 +468,40 @@ export class SheetWebRtcPeer {
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
         };
+    }
+
+    /* ---------- Notification buffer ---------- */
+
+    _enqueueNotif(json, deliveredTo) {
+        const now = Date.now();
+        // Prune expired items and enforce the size cap
+        this._notifQueue = this._notifQueue
+            .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
+            .slice(-(NOTIF_BUFFER_MAX - 1));
+        this._notifQueue.push({ json, ts: now, deliveredTo: new Set(deliveredTo) });
+    }
+
+    /**
+     * Deliver any buffered notifications that `remotePeerId` has not yet received.
+     * Called each time a DataChannel opens — covers both fresh joins and reconnects.
+     */
+    _flushNotifQueue(remotePeerId, dc) {
+        if (!this._notifQueue.length) return;
+        const now = Date.now();
+        let flushed = 0;
+        for (const item of this._notifQueue) {
+            if (now - item.ts >= NOTIF_BUFFER_TTL) continue;
+            if (item.deliveredTo.has(remotePeerId)) continue;
+            try {
+                dc.send(item.json);
+                item.deliveredTo.add(remotePeerId);
+                flushed++;
+            } catch (e) {
+                this._log(`flush to ${remotePeerId} failed: ${e.message}`);
+                break;
+            }
+        }
+        if (flushed) this._log(`flushed ${flushed} buffered notification(s) to ${remotePeerId}`);
     }
 
     async _writeOffers(offers) {

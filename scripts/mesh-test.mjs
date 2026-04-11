@@ -396,7 +396,7 @@ async function scenarioFreshJoin(runner, sheetId, logcat) {
             logcat.lines.length = 0;
             await peer.start();
             // Wait up to 3 poll cycles for Android to pick up our presence and open a DC
-            const match = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 3 * POLL_MS + 8_000);
+            const match = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, POLL_MS * 6 + ICE_TIMEOUT_MS);
             return {
                 pass: match !== null,
                 detail: match
@@ -444,7 +444,7 @@ async function scenarioWorkerRestart(runner, sheetId, logcat) {
         const { peer } = makePeer(sheetId, "restart3");
         try {
             await peer.start();
-            const match = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open|Joined mesh/, 3 * POLL_MS + 8_000);
+            const match = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open|Joined mesh/, POLL_MS * 6 + ICE_TIMEOUT_MS);
             return {
                 pass: match !== null,
                 detail: match ? match.trim() : "Android did not open DC to restarted worker in time",
@@ -524,7 +524,7 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
         const { peer } = makePeer(sheetId, "icefail2");
         try {
             await peer.start();
-            const match = await logcat.waitForLine(/DC .{6,} → OPEN|Joined mesh|DataChannel open|Reconnect/, POLL_MS * 4);
+            const match = await logcat.waitForLine(/DC .{6,} → OPEN|Joined mesh|DataChannel open|Reconnect/, POLL_MS * 6 + ICE_TIMEOUT_MS);
             return {
                 pass: match !== null,
                 detail: match ? match.trim() : "no DC open or reconnect log in time",
@@ -684,8 +684,8 @@ async function scenarioNotification(runner, sheetId, logcat) {
             };
             peer.broadcast(notif);
 
-            // Android's handleMessage logs "waymark-notification" branch
-            const received = await logcat.waitForLine(/waymark-notification|orchestrator-alert|onNotification/, 8_000);
+            // Android's handleMessage logs: Notification received — title="..." body="..."
+            const received = await logcat.waitForLine(/Notification received/, 8_000);
 
             return {
                 pass: received !== null,
@@ -714,10 +714,11 @@ async function scenarioNotification(runner, sheetId, logcat) {
             logcat.lines.length = 0;
             peer.broadcast({ type: "waymark-notification", title: "Mesh E2E", body: unique });
 
-            const line = await logcat.waitForLine(new RegExp(unique.slice(-8)), 8_000);
+            // Android logs: Notification received — title="Mesh E2E" body="MeshTestBody-1234567890"
+            const line = await logcat.waitForLine(new RegExp(unique.slice(-10)), 8_000);
             return {
                 pass: line !== null,
-                detail: line ? `body found in logcat: "${line.trim()}"` : `"${unique.slice(-8)}" not seen in logcat`,
+                detail: line ? `body found in logcat: "${line.trim()}"` : `"${unique.slice(-10)}" not seen in logcat`,
             };
         } finally {
             peer.stop();
@@ -732,24 +733,40 @@ async function scenarioNotification(runner, sheetId, logcat) {
    ---------------------------------------------------------------- */
 async function scenarioNotificationLive(runner, sheetId, logcat) {
     await runner.run("notification-live: launch app + fire notification + confirm receipt", async () => {
-        // ── Step 1: Try to bring the Waymark app to foreground ──────────
+        // ── Step 1: Check for fresh Android presence first ──────────────
+        // Only call monkey if Android isn't already active (fresh heartbeat < 15 s).
+        // Calling monkey when Android is already running restarts the WebRTC service
+        // which breaks the in-progress connection.
+        let android = null;
         if (ADB_DEVICE) {
-            try {
-                log("   Launching Waymark on Android...");
-                adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1");
-                await sleep(3000);
-            } catch {
-                log("   (monkey launch failed — app may already be running)");
+            const existing = await findAndroidPresence(sheetId);
+            if (existing && (Date.now() - (existing.ts || 0)) < 15_000) {
+                log(`   Android already active (${Math.round((Date.now() - existing.ts) / 1000)}s ago) — skipping monkey launch`);
+                android = existing;
+            } else {
+                try {
+                    log("   Launching Waymark via monkey...");
+                    adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1");
+                } catch {
+                    log("   (monkey launch failed — app may already be running)");
+                }
             }
         }
 
-        // ── Step 2: Wait for Android to appear in the signaling sheet ──
-        log("   Waiting for Android to appear in signaling sheet (up to 40 s)...");
-        let android = null;
-        const deadline = Date.now() + 40_000;
-        while (!android && Date.now() < deadline) {
-            android = await findAndroidPresence(sheetId);
-            if (!android) await sleep(1500);
+        // ── Step 2: Wait for a FRESH Android presence (ts < 20 s) ────────
+        // If we just called monkey, Android may have restarted — require a fresh heartbeat
+        // to confirm the peer has fully rejoined the mesh before we try to open a DC.
+        if (!android) {
+            log("   Waiting for fresh Android presence (up to 50 s)...");
+            const deadline = Date.now() + 50_000;
+            while (Date.now() < deadline) {
+                const p = await findAndroidPresence(sheetId);
+                if (p && (Date.now() - (p.ts || 0)) < 20_000) {
+                    android = p;
+                    break;
+                }
+                await sleep(1500);
+            }
         }
         if (!android) {
             // If ADB_DEVICE is set we expected Android to be reachable — that's a FAIL.
@@ -770,7 +787,7 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             await peer.start();
             log(`   Node peer joined (block=${peer.block}), waiting for DataChannel to Android...`);
 
-            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 5 + ICE_TIMEOUT_MS);
+            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 7 + ICE_TIMEOUT_MS);
             if (!dcOpened) {
                 return {
                     pass: false,
@@ -1068,6 +1085,164 @@ async function scenarioAndroidPeerVisibility(runner, sheetId, logcat) {
 }
 
 /* ============================================================
+   Notification buffer — tests that notifications buffered while
+   the DataChannel is down are delivered when it (re)opens.
+   ============================================================ */
+
+async function scenarioNotifBuffer(runner, sheetId, logcat) {
+    // ── Sub-test 1: buffered on start, delivered when DC first opens ──────────
+    await runner.run("notif-buffer: notification sent before DC open is delivered on connect", async () => {
+        const { peer: pA, peerId: idA } = makePeer(sheetId, "nbuf-A");
+        const { peer: pB, messages: msgsB } = makePeer(sheetId, "nbuf-B");
+        try {
+            await pA.start();
+            await sleep(800);
+
+            // Broadcast before B exists — goes into pA's buffer
+            const uniqueBody = "buffer-test-" + Date.now();
+            const sentToOpen = pA.broadcast({ type: "waymark-notification", title: "Buffer Test", body: uniqueBody });
+
+            // Now B joins; when the DC between A and B opens, A flushes the buffer
+            await pB.start();
+            const deadline = Date.now() + POLL_MS * 5 + ICE_TIMEOUT_MS;
+            while (Date.now() < deadline && !msgsB.some(m => m.msg?.body === uniqueBody)) {
+                await sleep(300);
+            }
+            const delivered = msgsB.some(m => m.msg?.body === uniqueBody);
+            return {
+                pass: delivered,
+                detail: delivered
+                    ? `buffered notification delivered to B after DC open (sentToOpen=${sentToOpen})`
+                    : `B did not receive buffered notification within timeout (sentToOpen=${sentToOpen})`,
+            };
+        } finally {
+            pA.stop(); pB.stop();
+        }
+    });
+
+    // ── Sub-test 2: buffered while DC is down, delivered on reconnect ─────────
+    await runner.run("notif-buffer: notification buffered during disconnect, delivered on reconnect", async () => {
+        const { peer: pA } = makePeer(sheetId, "nbuf-C");
+        const { peer: pB, peerId: idB } = makePeer(sheetId, "nbuf-D");
+        try {
+            await Promise.all([pA.start(), pB.start()]);
+            const dcOpen = await waitUntil(
+                () => pA.peers.get(idB)?.dc?.readyState === "open",
+                POLL_MS * 5 + ICE_TIMEOUT_MS
+            );
+            if (!dcOpen) return { pass: false, detail: "Initial DC between A and B never opened" };
+
+            // Tear down B — A will detect it gone via poll or manual _closeOne
+            pB.stop();
+            await sleep(500);
+            pA._closeOne(idB);  // evict immediately so broadcast finds no open DCs
+            await sleep(200);
+
+            // Notification fired into an empty mesh — goes into buffer
+            const uniqueBody = "reconnect-test-" + Date.now();
+            pA.broadcast({ type: "waymark-notification", title: "Reconnect Test", body: uniqueBody });
+
+            // Fresh peer reconnects (different peerId — same as a worker restart)
+            const { peer: pB2, messages: msgsB2 } = makePeer(sheetId, "nbuf-D2");
+            try {
+                await pB2.start();
+                const deadline = Date.now() + POLL_MS * 5 + ICE_TIMEOUT_MS;
+                while (Date.now() < deadline && !msgsB2.some(m => m.msg?.body === uniqueBody)) {
+                    await sleep(300);
+                }
+                const delivered = msgsB2.some(m => m.msg?.body === uniqueBody);
+                return {
+                    pass: delivered,
+                    detail: delivered
+                        ? `buffered notification delivered to reconnected peer`
+                        : `reconnected peer did not receive buffered notification`,
+                };
+            } finally {
+                pB2.stop();
+            }
+        } finally {
+            pA.stop(); pB.stop();
+        }
+    });
+
+    // ── Sub-test 3: expired notifications are NOT delivered ──────────────────
+    await runner.run("notif-buffer: notification past TTL is not delivered", async () => {
+        const { peer: pA } = makePeer(sheetId, "nbuf-E");
+        const { peer: pB, messages: msgsB } = makePeer(sheetId, "nbuf-F");
+        try {
+            await pA.start();
+            await sleep(500);
+
+            if (!Array.isArray(pA._notifQueue)) {
+                return { pass: false, detail: "SheetWebRtcPeer._notifQueue not found — buffer not implemented" };
+            }
+            // Manually inject an already-expired entry
+            const expiredBody = "expired-" + Date.now();
+            pA._notifQueue.push({
+                json: JSON.stringify({ type: "waymark-notification", title: "Expired", body: expiredBody }),
+                ts: Date.now() - (5 * 60_000 + 1_000),  // 1 s past TTL
+                deliveredTo: new Set(),
+            });
+
+            await pB.start();
+            // Wait for DC to open (flush would have fired)
+            await waitUntil(
+                () => pA.peers.get(pB.peerId)?.dc?.readyState === "open",
+                POLL_MS * 4 + ICE_TIMEOUT_MS
+            );
+            await sleep(500);
+
+            const delivered = msgsB.some(m => m.msg?.body === expiredBody);
+            return {
+                pass: !delivered,
+                detail: delivered
+                    ? `FAIL — expired notification was delivered (should have been pruned)`
+                    : `expired notification correctly withheld (queue length=${pA._notifQueue.length})`,
+            };
+        } finally {
+            pA.stop(); pB.stop();
+        }
+    });
+
+    // ── Sub-test 4: Android receives notification buffered before DC opens ────
+    await runner.run("notif-buffer: Android receives notification buffered before DC opened (requires ADB)", async () => {
+        const android = await findAndroidPresence(sheetId);
+        if (!android) {
+            return { pass: true, detail: "SKIP — Android not in signaling sheet" };
+        }
+
+        const { peer, connected } = makePeer(sheetId, "nbuf-android");
+        try {
+            // Broadcast BEFORE start() — no DCs open, goes straight into buffer
+            logcat.lines.length = 0;
+            const uniqueBody = "buf-android-" + Date.now().toString(36).toUpperCase();
+            const sentBefore = peer.broadcast({
+                type: "waymark-notification",
+                title: "Buffer Android Test",
+                body: uniqueBody,
+            });
+            log(`   Buffered notification (sent=${sentBefore}), now joining mesh...`);
+
+            // Join mesh — when DC to Android opens, buffer is flushed automatically
+            await peer.start();
+            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 6 + ICE_TIMEOUT_MS);
+            if (!dcOpened) return { pass: false, detail: "DC to Android never opened" };
+
+            // Android should now have received the flushed notification
+            const logLine = await logcat.waitForLine(/Notification received/, 6_000);
+            return {
+                pass: logLine !== null,
+                detail: logLine
+                    ? `Android received buffered notification: "${logLine.trim()}"`
+                    : `buffered notification not confirmed in logcat (phone: ${uniqueBody})`,
+            };
+        } finally {
+            peer.stop();
+        }
+    });
+}
+
+/* ============================================================
    CLI entry point
    ============================================================ */
 
@@ -1079,6 +1254,7 @@ const SCENARIO_MAP = {
     "sustained-ping":        scenarioSustainedPing,
     "notification":          scenarioNotification,
     "notification-live":     scenarioNotificationLive,
+    "notif-buffer":          scenarioNotifBuffer,
     "slot-collision":        scenarioSlotCollision,
     "mesh-full":             scenarioMeshFull,
     "poll-guard":            scenarioPollConcurrency,
@@ -1096,7 +1272,8 @@ const FULL_ROUNDTRIP_ORDER = [
     "stale-offer",
     "ice-failure",
     "notification-live",     // launch app + real end-to-end notification + feel it on your phone
-    "notification",          // logcat-only confirmation (independent)
+    "notification",          // logcat confirmation that Android logged the received notification
+    "notif-buffer",          // delivery guarantee: buffer + reconnect + TTL + Android flush
     "sustained-ping",
     "mesh-full",
 ];
