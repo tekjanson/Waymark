@@ -252,11 +252,9 @@ async function startSignalingPeer() {
         getToken:    getUserOAuthToken,
         peerId,
         displayName: "Orchestrator MCP",
-        // Persist the buffer to disk so notifications survive orchestrator restarts
         bufferFile:  `${LOG_DIR}/notif-buffer.json`,
         onConnect: (remotePeerId) => {
             process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
-            // Wake the orchestrator if it is sleeping while waiting for peer
             if (_wakeResolve) _wakeResolve("peer-connected");
         },
         onMessage: (remotePeerId, msg) => {

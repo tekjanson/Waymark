@@ -85,8 +85,11 @@ class OrchestratorPeer(
         private const val DC_PING_MS           = 30_000L
         /** Close peer if no pong received for this long. */
         private const val DC_PONG_TIMEOUT_MS   = 90_000L
-        /** Delay before forcing close after ICE DISCONNECTED. */
-        private const val ICE_DISCONNECT_GRACE_MS = 15_000L
+        /** Delay before forcing close after ICE DISCONNECTED.
+         *  30 s gives ICE enough time to self-heal through WiFi blips (2.4 GHz channel
+         *  noise, brief NAT rebinds) without tearing down a healthy connection.
+         *  Matches the Node.js ICE_DISCONNECT_GRACE_MS on the orchestrator side. */
+        private const val ICE_DISCONNECT_GRACE_MS = 30_000L
         /** Consecutive Sheets IO failures before forcing a mesh reconnect (refreshes token). */
         private const val SHEETS_FAILURE_THRESHOLD = 3
     }
