@@ -57,9 +57,17 @@ class WebRtcService : LifecycleService() {
         )
         Log.i(TAG, "Service created")
 
-        // Attempt to connect to the signaling sheet automatically.
-        // Uses the cached sheet ID if available, otherwise queries the server.
-        scope.launch { resolveAndConnect() }
+        // Only auto-connect on start if the cached token is still fresh.
+        // If stale, wait for the WebView to load and call onAuthToken() —
+        // that triggers ACTION_UPDATE_TOKEN which will connect with a fresh token.
+        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val tokenAge = System.currentTimeMillis() -
+                prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
+        if (tokenAge < WaymarkConfig.ACCESS_TOKEN_TTL_MS) {
+            scope.launch { resolveAndConnect() }
+        } else {
+            Log.d(TAG, "Cached token is stale (${ tokenAge / 1000 }s old) — waiting for fresh token from WebView")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -71,9 +79,18 @@ class WebRtcService : LifecycleService() {
                 connectToSheet(sheetId)
             }
             ACTION_UPDATE_TOKEN -> {
-                // Token was refreshed — retry sheet discovery if not yet connected.
-                Log.d(TAG, "Token updated — retrying signaling sheet discovery")
-                scope.launch { resolveAndConnect() }
+                Log.d(TAG, "Token updated")
+                // If we have a cached sheet ID but the peer died, restart it now
+                // with the fresh token. resolveAndConnect() exits early when
+                // currentSheetId is already set, so we need to handle this case.
+                val cachedSheet = currentSheetId
+                if (cachedSheet != null && (peer == null || peer?.destroyed == true)) {
+                    Log.i(TAG, "Peer was dead — restarting with fresh token")
+                    currentSheetId = null  // allow connectToSheet to proceed
+                    connectToSheet(cachedSheet)
+                } else {
+                    scope.launch { resolveAndConnect() }
+                }
             }
             ACTION_STOP -> {
                 disconnectPeer()

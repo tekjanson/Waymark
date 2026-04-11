@@ -81,7 +81,8 @@ class OrchestratorPeer(
     /** Assigned signaling block row (0-based index into signaling column). */
     @Volatile private var block = -1
 
-    @Volatile private var destroyed = false
+    @Volatile var destroyed = false
+        private set
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -90,21 +91,31 @@ class OrchestratorPeer(
     /** Join the peer mesh and start the poll + heartbeat loops. */
     fun start() {
         scope.launch {
-            try {
-                join()
-                if (block < 0) {
-                    Log.w(TAG, "No free signaling slot — mesh full")
-                    return@launch
+            var retryDelay = 10_000L // 10 s initial, doubles each attempt up to 60 s
+            while (!destroyed) {
+                try {
+                    block = -1 // reset before each join attempt
+                    join()
+                    if (block < 0) {
+                        Log.w(TAG, "No free signaling slot — mesh full")
+                        return@launch
+                    }
+                    Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
+                    retryDelay = 10_000L // reset backoff on success
+                    delay(peerIdJitter())
+                    while (!destroyed) {
+                        poll()
+                        delay(WaymarkConfig.POLL_MS)
+                    }
+                } catch (e: CancellationException) { return@launch }
+                catch (e: Exception) {
+                    Log.e(TAG, "Mesh loop error — retrying in ${retryDelay / 1000}s", e)
+                    if (!destroyed) {
+                        delay(retryDelay)
+                        retryDelay = minOf(retryDelay * 2, 60_000L)
+                    }
                 }
-                Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
-                // Staggered first-run (matches webrtc.js jitter logic)
-                delay(peerIdJitter())
-                while (!destroyed) {
-                    poll()
-                    delay(WaymarkConfig.POLL_MS)
-                }
-            } catch (e: CancellationException) { /* normal stop */ }
-            catch (e: Exception) { Log.e(TAG, "Mesh loop error", e) }
+            }
         }
         scope.launch {
             delay(500)

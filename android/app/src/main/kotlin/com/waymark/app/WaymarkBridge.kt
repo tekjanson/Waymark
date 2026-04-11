@@ -49,6 +49,7 @@ class WaymarkBridge(private val context: Context) {
         context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(WaymarkConfig.PREF_ACCESS_TOKEN, token)
+            .putLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, System.currentTimeMillis())
             .apply()
 
         // Start (or update) the WebRTC background service with the new token

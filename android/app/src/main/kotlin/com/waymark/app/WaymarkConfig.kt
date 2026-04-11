@@ -60,4 +60,8 @@ object WaymarkConfig {
     const val PREF_DISPLAY_NAME = "display_name"
     /** Cached signaling sheet ID resolved at runtime — no build-time config needed. */
     const val PREF_SIGNALING_SHEET_ID = "signaling_sheet_id"
+    /** Epoch-ms timestamp recorded each time PREF_ACCESS_TOKEN is saved. */
+    const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
+    /** Access tokens are valid for 3600 s; treat as stale after 55 min. */
+    const val ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000L
 }
