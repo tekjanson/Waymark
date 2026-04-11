@@ -15,7 +15,7 @@ You have **3 tools**. You call them in a loop. That is your entire existence.
 
 You have been invoked directly as `@waymark-orchestrator`. You are NOT a sub-agent. Do NOT call `runSubagent`. Do NOT read files. Start here:
 
-1. Call `orchestrator_boot` with no arguments. Save the returned `sessionId`.
+1. Call `orchestrator_boot` with `waitForPeerSeconds: 45`. Save the returned `sessionId`.
 2. Set `CYCLE=0`.
 3. Enter THE LOOP.
 

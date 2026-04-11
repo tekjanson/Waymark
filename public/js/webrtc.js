@@ -103,12 +103,17 @@ export class WaymarkConnect {
     this._inCall = false;
     this._remoteStreams = new Map(); // peerId → MediaStream (for pipeline rebuild)
 
+    // Optional ICE gathering timeout override (ms). Node.js via werift needs more time.
+    this._iceWait = opts.iceWait ?? null;
+
     this._onUnload = () => {
       if (this.signal && this._block >= 0) {
         this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL, '');
       }
     };
-    window.addEventListener('beforeunload', this._onUnload);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', this._onUnload);
+    }
   }
 
   /* ---------- Public API ---------- */
@@ -444,7 +449,9 @@ export class WaymarkConnect {
 
   destroy() {
     this._destroyed = true;
-    window.removeEventListener('beforeunload', this._onUnload);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this._onUnload);
+    }
     if (this._inCall) this.endCall();
     if (this._bc) {
       this._bc.postMessage({ type: 'leave', peerId: this.peerId });
@@ -461,6 +468,35 @@ export class WaymarkConnect {
   }
 
   /* ---------- Internal helpers ---------- */
+
+  /**
+   * Send a JSON payload to every peer with an open DataChannel.
+   * Returns the number of peers reached. Available in both browser and Node.js.
+   * @param {object} msg
+   * @returns {number}
+   */
+  broadcast(msg) {
+    const s = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    let sent = 0;
+    for (const [, r] of this._rtc) {
+      if (r.dc?.readyState === 'open') {
+        try { r.dc.send(s); sent++; } catch {}
+      }
+    }
+    return sent;
+  }
+
+  /**
+   * Returns peer IDs of peers whose DataChannel is currently open.
+   * @returns {string[]}
+   */
+  connectedPeers() {
+    const out = [];
+    for (const [id, p] of this._peers) {
+      if (p.channel === 'rtc') out.push(id);
+    }
+    return out;
+  }
 
   _dcBroadcast(msg) {
     const s = JSON.stringify(msg);
@@ -949,9 +985,10 @@ export class WaymarkConnect {
   /* ---------- Helpers ---------- */
 
   _iceReady(pc) {
+    const timeoutMs = this._iceWait ?? ICE_WAIT;
     return new Promise(resolve => {
       if (pc.iceGatheringState === 'complete') { resolve(); return; }
-      const t = setTimeout(resolve, ICE_WAIT);
+      const t = setTimeout(resolve, timeoutMs);
       pc.onicegatheringstatechange = () => {
         if (pc.iceGatheringState === 'complete') { clearTimeout(t); resolve(); }
       };
