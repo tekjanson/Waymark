@@ -44,7 +44,7 @@ endif
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
-.PHONY: help run start stop restart build logs status vnc test auth ensure-auth workboard qa-patrol qa-status clean
+.PHONY: help run start stop restart build logs status vnc test mesh-test auth ensure-auth workboard qa-patrol qa-status clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -217,6 +217,13 @@ vnc: ## Open the VNC desktop in your browser
 
 test: ## Run the container diagnostic test suite
 	bash dev-worker/test.sh
+
+mesh-test: ## Run the WebRTC P2P mesh E2E test jig against the real signaling sheet + Android (usage: make mesh-test [ADB_DEVICE=ip:port] [SCENARIO=fresh-join])
+	@WAYMARK_OAUTH_TOKEN_PATH=~/.config/gcloud/waymark-oauth-token.json \
+	GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
+	ADB_DEVICE="$(ADB_DEVICE)" \
+	SIGNAL_SHEET="$(SIGNAL_SHEET)" \
+	node scripts/mesh-test.mjs $(if $(SCENARIO),--scenario $(SCENARIO),--all)
 
 auth: ## Run GitHub Copilot auth setup for the container
 	bash dev-worker/setup-auth.sh

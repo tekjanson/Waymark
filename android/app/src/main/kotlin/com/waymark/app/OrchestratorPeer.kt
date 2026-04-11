@@ -64,7 +64,10 @@ class OrchestratorPeer(
 
         private val STUN_SERVERS = listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer()
         )
 
         /** Drop a PeerEntry if DC never opened within this window. */
@@ -106,6 +109,9 @@ class OrchestratorPeer(
 
     @Volatile var destroyed = false
         private set
+
+    /** True when this peer has successfully claimed a signaling slot and is active in the mesh. */
+    val isInMesh: Boolean get() = block >= 0 && !destroyed
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -262,6 +268,20 @@ class OrchestratorPeer(
                 val weInit = peerId < remotePeerId
 
                 if (weInit) {
+                    // Drop stale pending offers — mirrors Node.js OFFER_MAX_AGE check
+                    val pendingOffer = myOffers.optJSONObject(remotePeerId)
+                    if (pendingOffer != null) {
+                        val age = System.currentTimeMillis() - pendingOffer.optLong("ts", 0)
+                        if (age > WaymarkConfig.OFFER_MAX_AGE_MS) {
+                            Log.w(TAG, "Stale offer for $remotePeerId (${age / 1000}s) — dropping, will rebuild next poll")
+                            peers.remove(remotePeerId)?.pc?.dispose()
+                            lastPong.remove(remotePeerId)
+                            myOffers.remove(remotePeerId)
+                            offDirty = true
+                            continue  // entry is now stale; rebuild on the next poll cycle
+                        }
+                    }
+
                     if (entry == null) {
                         // Build offer (suspends until ICE gathering completes)
                         try {
@@ -335,7 +355,8 @@ class OrchestratorPeer(
      * Returns the complete SDP string, or null on failure.
      */
     private suspend fun buildOffer(remotePeerId: String): String? = withContext(Dispatchers.IO) {
-        val pc = createPeerConnection(remotePeerId) ?: return@withContext null
+        val iceGatheringDone = CompletableDeferred<Unit>()
+        val pc = createPeerConnection(remotePeerId, iceGatheringDone) ?: return@withContext null
         val dc = pc.createDataChannel("waymark", DataChannel.Init())
         peers[remotePeerId] = PeerEntry(pc, dc)
         attachDataChannelObserver(dc, remotePeerId)
@@ -360,8 +381,8 @@ class OrchestratorPeer(
             }, offerSdp)
         }
 
-        // Wait for ICE gathering to complete (vanilla ICE — full SDP exchange)
-        waitForIceGathering(pc)
+        // Wait for ICE gathering to complete (wakes immediately via onIceGatheringChange callback)
+        waitForIceGathering(iceGatheringDone)
         pc.localDescription?.description
     }
 
@@ -370,7 +391,8 @@ class OrchestratorPeer(
      * Returns the complete answer SDP string, or null on failure.
      */
     private suspend fun buildAnswer(remotePeerId: String, offerSdp: String): String? = withContext(Dispatchers.IO) {
-        val pc = createPeerConnection(remotePeerId) ?: return@withContext null
+        val iceGatheringDone = CompletableDeferred<Unit>()
+        val pc = createPeerConnection(remotePeerId, iceGatheringDone) ?: return@withContext null
         peers[remotePeerId] = PeerEntry(pc, null)
 
         // Set remote description (the offer)
@@ -404,27 +426,32 @@ class OrchestratorPeer(
             }, answerSdp)
         }
 
-        // Wait for ICE gathering to complete (vanilla ICE — full SDP exchange)
-        waitForIceGathering(pc)
+        // Wait for ICE gathering to complete (wakes immediately via onIceGatheringChange callback)
+        waitForIceGathering(iceGatheringDone)
         pc.localDescription?.description
     }
 
-    /** Poll until ICE gathering completes or 12 s timeout. */
-    private suspend fun waitForIceGathering(pc: PeerConnection, timeoutMs: Long = 12_000) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (pc.iceGatheringState() != PeerConnection.IceGatheringState.COMPLETE
-               && System.currentTimeMillis() < deadline && !destroyed) {
-            delay(200)
-        }
+    /**
+     * Waits for ICE gathering to complete using a callback-driven deferred —
+     * wakes up immediately when COMPLETE fires rather than polling every 200 ms.
+     * Times out after [timeoutMs] ms if gathering never completes.
+     */
+    private suspend fun waitForIceGathering(done: CompletableDeferred<Unit>, timeoutMs: Long = 12_000) {
+        withTimeoutOrNull(timeoutMs) { done.await() }
     }
 
     /* ---------- PeerConnection factory ---------- */
 
-    private fun createPeerConnection(remotePeerId: String): PeerConnection? {
+    private fun createPeerConnection(remotePeerId: String, iceGatheringDone: CompletableDeferred<Unit>): PeerConnection? {
         val config = PeerConnection.RTCConfiguration(STUN_SERVERS).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
         return factory(context).createPeerConnection(config, object : PeerConnection.Observer {
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+                if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                    iceGatheringDone.complete(Unit)
+                }
+            }
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
                 Log.d(TAG, "ICE $remotePeerId → $state")
                 when (state) {
@@ -459,7 +486,6 @@ class OrchestratorPeer(
                 attachDataChannelObserver(dc, remotePeerId)
             }
             override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
-            override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
             override fun onIceCandidate(p0: IceCandidate?) {}
             override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
             override fun onAddStream(p0: MediaStream?) {}

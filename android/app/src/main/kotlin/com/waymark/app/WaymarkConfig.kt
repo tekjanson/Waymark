@@ -41,6 +41,9 @@ object WaymarkConfig {
     /** Age threshold (ms) after which a peer is considered gone. */
     const val ALIVE_TTL = 50_000L
 
+    /** Age threshold after which an unanswered offer is stale and must be rebuilt (mirrors sheet-webrtc-peer.mjs OFFER_MAX_AGE). */
+    const val OFFER_MAX_AGE_MS = 3 * 60 * 1000L
+
     /* ---------- Google Sheets API ---------- */
 
     /** Sheets API endpoint for reading a spreadsheet range. */
@@ -64,4 +67,11 @@ object WaymarkConfig {
     const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
     /** Access tokens are valid for 3600 s; treat as stale after 55 min. */
     const val ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000L
+    /**
+     * Stable 8-char hex peer ID for this device, generated once on first run
+     * and preserved forever.  Never regenerated — a stable ID means remote
+     * peers can reconnect without re-doing the full ICE handshake each time
+     * the service restarts.
+     */
+    const val PREF_PEER_ID = "peer_id"
 }

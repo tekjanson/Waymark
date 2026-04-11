@@ -80,16 +80,23 @@ class WebRtcService : LifecycleService() {
             }
             ACTION_UPDATE_TOKEN -> {
                 Log.d(TAG, "Token updated")
-                // If we have a cached sheet ID but the peer died, restart it now
-                // with the fresh token. resolveAndConnect() exits early when
-                // currentSheetId is already set, so we need to handle this case.
                 val cachedSheet = currentSheetId
-                if (cachedSheet != null && (peer == null || peer?.destroyed == true)) {
-                    Log.i(TAG, "Peer was dead — restarting with fresh token")
-                    currentSheetId = null  // allow connectToSheet to proceed
-                    connectToSheet(cachedSheet)
-                } else {
-                    scope.launch { resolveAndConnect() }
+                val livePeer    = peer
+                when {
+                    cachedSheet != null && (livePeer == null || livePeer.destroyed) -> {
+                        // Peer died — restart with the fresh token
+                        Log.i(TAG, "Peer was dead — restarting with fresh token")
+                        currentSheetId = null
+                        connectToSheet(cachedSheet)
+                    }
+                    cachedSheet != null && livePeer != null && !livePeer.isInMesh -> {
+                        // Peer is alive but never joined the mesh — likely stuck in a retry
+                        // backoff because the previous token was expired.  Reconnect now.
+                        Log.i(TAG, "Peer not in mesh — reconnecting immediately with fresh token")
+                        currentSheetId = null
+                        connectToSheet(cachedSheet)
+                    }
+                    else -> scope.launch { resolveAndConnect() }
                 }
             }
             ACTION_STOP -> {
@@ -220,7 +227,7 @@ class WebRtcService : LifecycleService() {
         val newPeer = OrchestratorPeer(
             context       = applicationContext,
             sheetId       = sheetId,
-            peerId        = generatePeerId(),
+            peerId        = getOrCreatePeerId(),
             displayName   = displayName,
             signalingClient = signalingClient,
             onNotification = { title, body ->
@@ -253,10 +260,21 @@ class WebRtcService : LifecycleService() {
 
     /* ---------- Helpers ---------- */
 
-    /** Generates an 8-character hex peer ID that is stable for this service instance. */
-    private fun generatePeerId(): String {
+    /**
+     * Returns the stable 8-char hex peer ID for this device.
+     * Generated with SecureRandom on first call and stored in SharedPreferences forever.
+     * A stable ID means remote peers (Node.js workers, other Android devices) can
+     * reconnect without re-doing the full ICE handshake each time the service restarts.
+     */
+    private fun getOrCreatePeerId(): String {
+        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        val stored = prefs.getString(WaymarkConfig.PREF_PEER_ID, null)
+        if (!stored.isNullOrBlank()) return stored
         val bytes = ByteArray(4)
         SecureRandom().nextBytes(bytes)
-        return bytes.joinToString("") { "%02x".format(it) }
+        val newId = bytes.joinToString("") { "%02x".format(it) }
+        prefs.edit().putString(WaymarkConfig.PREF_PEER_ID, newId).apply()
+        Log.i(TAG, "Generated permanent peerId: $newId")
+        return newId
     }
 }
