@@ -34,7 +34,7 @@ const LOG_DIR = "/agent-logs";
 /* ---------- Notification state ---------- */
 
 let _notifRules = [];          // cached parsed rules
-let _rulesSheetId = null;      // set by orchestrator_boot
+let _rulesSheetId = process.env.WAYMARK_RULES_SHEET_ID || null; // env default; overridable at boot
 let _rulesLastFetched = 0;     // epoch ms
 const RULES_TTL_MS = 5 * 60 * 1000; // re-fetch every 5 min
 
@@ -79,7 +79,6 @@ const KEYWORD_ROUTES = [
     { keywords: ["blog", "posts", "content calendar"], agent: "waymark-blog" },
     { keywords: ["social feed", "community", "shares"], agent: "waymark-social" },
     { keywords: ["marketing", "campaigns", "promotions"], agent: "waymark-marketing" },
-    { keywords: ["notifications", "alerts", "announcements"], agent: "waymark-notification" },
     { keywords: ["arcade", "games", "social game", "score"], agent: "waymark-arcade" },
     { keywords: ["iot", "sensors", "readings", "telemetry", "device data"], agent: "waymark-iot" },
     { keywords: ["grading", "gradebook", "scores", "assignments", "students"], agent: "waymark-grading" },
@@ -109,7 +108,7 @@ const TEMPLATE_KEY_TO_AGENT = {
     gantt: "waymark-gantt", okr: "waymark-okr", roster: "waymark-roster",
     meal: "waymark-meal", knowledge: "waymark-knowledge", guide: "waymark-guide",
     flow: "waymark-flow", automation: "waymark-automation", blog: "waymark-blog",
-    social: "waymark-social", marketing: "waymark-marketing", notification: "waymark-notification",
+    social: "waymark-social", marketing: "waymark-marketing",
     arcade: "waymark-arcade", iot: "waymark-iot", grading: "waymark-grading",
     passwords: "waymark-passwords", photos: "waymark-photos", linker: "waymark-linker",
     testcases: "waymark-testcases", worker: "waymark-worker",
@@ -325,7 +324,7 @@ const KNOWN_AGENTS = new Set([
     "waymark-log", "waymark-habit", "waymark-poll", "waymark-changelog",
     "waymark-gantt", "waymark-okr", "waymark-roster", "waymark-knowledge",
     "waymark-guide", "waymark-flow", "waymark-automation", "waymark-blog",
-    "waymark-social", "waymark-marketing", "waymark-notification", "waymark-arcade",
+    "waymark-social", "waymark-marketing", "waymark-arcade",
     "waymark-iot", "waymark-grading", "waymark-passwords", "waymark-photos",
     "waymark-linker", "waymark-testcases", "waymark-worker", "waymark-checklist",
 ]);
@@ -694,13 +693,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ts = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
         const sessionId = `session-${ts}`;
         const logPath = `${LOG_DIR}/${sessionId}.log`;
-        // Load notification rules if a sheet was provided
+        // Allow explicit arg to override env default; otherwise use whatever was set at startup
         if (args.rulesSheetId) {
             _rulesSheetId = args.rulesSheetId;
             _rulesLastFetched = 0;
+        }
+        // Fetch rules if we have a sheet ID and haven't loaded yet
+        if (_rulesSheetId && _notifRules.length === 0) {
             await fetchRulesSheet(_rulesSheetId);
         }
-        appendFileSync(logPath, `[${iso()}] ORCHESTRATOR STARTED${args.rulesSheetId ? ` (rules: ${args.rulesSheetId})` : ""}\n`);
+        appendFileSync(logPath, `[${iso()}] ORCHESTRATOR STARTED${_rulesSheetId ? ` (rules: ${_rulesSheetId})` : ""}\n`);
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
         _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
 

@@ -33,6 +33,11 @@ services:
       #   @waymark-builder pick next           (single task then stops)
       - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-orchestrator start}
 
+      # ── Phone notification rules sheet ─────────────────────────────────────
+      # Google Sheets ID of the rules sheet for WebRTC push notifications.
+      # Loaded automatically at orchestrator startup — no need to pass rulesSheetId as arg.
+      - WAYMARK_RULES_SHEET_ID=10Vmn84-7sqyQtCLqy7b-rFrHFbXWiB7InGPl4uQ53XA
+
       # ── Kanban board URL (Google Sheets) ──────────────────────────────────
       # When set, overrides the default spreadsheet ID in workboard scripts.
       # Pass via: make run BOARD_URL="https://docs.google.com/spreadsheets/d/..."
