@@ -18,6 +18,7 @@
    ============================================================ */
 
 import { RTCPeerConnection } from "werift";
+import { readFileSync, writeFileSync } from "node:fs";
 
 /* ---------- Protocol constants (mirrors WaymarkConfig.kt) ---------- */
 
@@ -59,9 +60,10 @@ const NOTIF_BUFFER_MAX = 100;
  * @param {string}              opts.displayName  - Human-readable name shown in peer lists
  * @param {function}            [opts.onMessage]  - (remotePeerId, message) callback
  * @param {function}            [opts.onConnect]  - (remotePeerId) called on DataChannel open
+ * @param {string}              [opts.bufferFile] - Absolute path to persist the notification buffer across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect }) {
+    constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect, bufferFile }) {
         this.sheetId      = sheetId;
         this.auth         = auth;
         this._getTokenFn  = getToken || null;  // preferred over auth when provided
@@ -69,6 +71,7 @@ export class SheetWebRtcPeer {
         this.displayName  = displayName;
         this.onMessage    = onMessage;
         this.onConnect    = onConnect;
+        this._bufferFile  = bufferFile || null;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
         this.peers = new Map();
@@ -84,6 +87,20 @@ export class SheetWebRtcPeer {
          * Flushed to a peer when its DataChannel first opens.
          */
         this._notifQueue = [];
+
+        // Load persisted buffer from disk (survives orchestrator restarts)
+        if (this._bufferFile) {
+            try {
+                const saved = JSON.parse(readFileSync(this._bufferFile, 'utf8'));
+                const now = Date.now();
+                this._notifQueue = saved
+                    .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
+                    .map(n => ({ ...n, deliveredTo: new Set(n.deliveredTo || []) }));
+                if (this._notifQueue.length) {
+                    process.stderr.write(`sheet-peer [${this.peerId}]: loaded ${this._notifQueue.length} buffered notification(s) from disk\n`);
+                }
+            } catch { /* no file yet or parse error — start fresh */ }
+        }
     }
 
     /* ---------- Lifecycle ---------- */
@@ -479,6 +496,25 @@ export class SheetWebRtcPeer {
             .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
             .slice(-(NOTIF_BUFFER_MAX - 1));
         this._notifQueue.push({ json, ts: now, deliveredTo: new Set(deliveredTo) });
+        this._persistBuffer();
+    }
+
+    /**
+     * Write the current notification queue to disk so it survives process restarts.
+     * Serializes deliveredTo Sets to arrays; expired entries are excluded on next load.
+     */
+    _persistBuffer() {
+        if (!this._bufferFile) return;
+        try {
+            const toSave = this._notifQueue.map(n => ({
+                json: n.json,
+                ts:   n.ts,
+                deliveredTo: [...n.deliveredTo],
+            }));
+            writeFileSync(this._bufferFile, JSON.stringify(toSave));
+        } catch (e) {
+            this._log(`buffer persist failed: ${e.message}`);
+        }
     }
 
     /**
@@ -501,7 +537,11 @@ export class SheetWebRtcPeer {
                 break;
             }
         }
-        if (flushed) this._log(`flushed ${flushed} buffered notification(s) to ${remotePeerId}`);
+        if (flushed) {
+            this._log(`flushed ${flushed} buffered notification(s) to ${remotePeerId}`);
+            // Update persisted deliveredTo sets so we don't re-deliver after restart
+            this._persistBuffer();
+        }
     }
 
     async _writeOffers(offers) {

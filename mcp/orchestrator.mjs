@@ -117,7 +117,7 @@ const TEMPLATE_KEY_TO_AGENT = {
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
 import { GoogleAuth } from "google-auth-library";
-import { createNodeConnect } from "./node-connect.mjs";
+import { SheetWebRtcPeer } from "./sheet-webrtc-peer.mjs";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let sheetsAuth = null;
@@ -247,35 +247,22 @@ async function startSignalingPeer() {
         .digest("hex")
         .slice(0, 8);
 
-    // Track previous connected count so we can fire wake on first connection
-    let _prevConnectedCount = 0;
-
-    _signalingPeer = createNodeConnect({
+    _signalingPeer = new SheetWebRtcPeer({
         sheetId,
         getToken:    getUserOAuthToken,
         peerId,
         displayName: "Orchestrator MCP",
-        onPeersChanged: (peers) => {
-            const connected = [...peers.values()].filter(p => p.channel === 'rtc').length;
-            if (connected > 0 && _prevConnectedCount === 0) {
-                const ids = [...peers.entries()]
-                    .filter(([, p]) => p.channel === 'rtc')
-                    .map(([id]) => id)
-                    .join(", ");
-                process.stderr.write(`orchestrator: Android peer connected: ${ids}\n`);
-                // Wake the orchestrator if it is sleeping while waiting for peer
-                if (_wakeResolve) _wakeResolve("peer-connected");
-            }
-            _prevConnectedCount = connected;
+        // Persist the buffer to disk so notifications survive orchestrator restarts
+        bufferFile:  `${LOG_DIR}/notif-buffer.json`,
+        onConnect: (remotePeerId) => {
+            process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
+            // Wake the orchestrator if it is sleeping while waiting for peer
+            if (_wakeResolve) _wakeResolve("peer-connected");
         },
-        onMessage: (msg) => {
-            process.stderr.write(`orchestrator: message from peer: ${JSON.stringify(msg)}\n`);
+        onMessage: (remotePeerId, msg) => {
+            process.stderr.write(`orchestrator: message from peer ${remotePeerId}: ${JSON.stringify(msg)}\n`);
         },
     });
-    // WaymarkConnect uses a stable peerId derived from sha256 above,
-    // but its constructor generates a random UUID slice. Override it
-    // so the presence row is stable across restarts.
-    _signalingPeer.peerId = peerId;
     await _signalingPeer.start();
 }
 

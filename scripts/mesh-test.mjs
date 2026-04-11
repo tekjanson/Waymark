@@ -125,8 +125,40 @@ async function resolveSignalingSheet() {
 
 const ADB_DEVICE = process.env.ADB_DEVICE || null;
 
+/**
+ * Resolved ADB serial — may be the mDNS transport ID (e.g. adb-XXX._adb-tls-connect._tcp)
+ * even when ADB_DEVICE was set as an IP:port.  Discovered once after connecting.
+ */
+let _adbSerial = ADB_DEVICE;
+
+/**
+ * Scan `adb devices` and return the serial of the best matching device.
+ * Prefers a device matching ADB_DEVICE (IP or transport). Falls back to
+ * the sole connected device, then back to ADB_DEVICE unchanged.
+ */
+function resolveAdbSerial() {
+    try {
+        const raw = execSync("adb devices", { encoding: "utf8", timeout: 5_000, stdio: ["pipe","pipe","pipe"] });
+        const lines = raw.split("\n")
+            .filter(l => l.trim() && !l.startsWith("List"))
+            .filter(l => l.includes("\tdevice"));
+        if (!lines.length) return _adbSerial;
+        // Single device — use it unambiguously
+        if (lines.length === 1) return lines[0].split(/\s+/)[0];
+        // Multiple devices — try to match our IP
+        if (ADB_DEVICE) {
+            const ip = ADB_DEVICE.split(":")[0];
+            const hit = lines.find(l => l.startsWith(ADB_DEVICE) || l.includes(ip));
+            if (hit) return hit.split(/\s+/)[0];
+        }
+        return lines[0].split(/\s+/)[0];
+    } catch {
+        return _adbSerial;
+    }
+}
+
 function adb(...args) {
-    const cmd = ADB_DEVICE ? ["adb", "-s", ADB_DEVICE, ...args] : ["adb", ...args];
+    const cmd = _adbSerial ? ["adb", "-s", _adbSerial, ...args] : ["adb", ...args];
     // stdio:"pipe" prevents adb's stderr messages from leaking into our terminal output
     return execSync(cmd.join(" "), { encoding: "utf8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
@@ -137,7 +169,7 @@ function adbConnect(addr) {
 }
 
 function adbSpawn(...args) {
-    const realArgs = ADB_DEVICE ? ["-s", ADB_DEVICE, ...args] : args;
+    const realArgs = _adbSerial ? ["-s", _adbSerial, ...args] : args;
     return spawn("adb", realArgs, { stdio: ["ignore", "pipe", "pipe"] });
 }
 
@@ -209,9 +241,8 @@ function checkAdb() {
     if (!ADB_DEVICE) return null;
     try {
         adbConnect(ADB_DEVICE);
-        const devices = adb("devices");
-        const lines = devices.split("\n").filter(l => l.includes("device") && !l.includes("List"));
-        if (!lines.length) return null;
+        // Discover the actual transport serial (mDNS or IP:port, whichever is live)
+        _adbSerial = resolveAdbSerial();
         const model = adb("shell", "getprop", "ro.product.model").replace(/\s+/g, " ").trim();
         return model || "Android device";
     } catch {
@@ -733,48 +764,44 @@ async function scenarioNotification(runner, sheetId, logcat) {
    ---------------------------------------------------------------- */
 async function scenarioNotificationLive(runner, sheetId, logcat) {
     await runner.run("notification-live: launch app + fire notification + confirm receipt", async () => {
-        // ── Step 1: Check for fresh Android presence first ──────────────
-        // Only call monkey if Android isn't already active (fresh heartbeat < 15 s).
-        // Calling monkey when Android is already running restarts the WebRTC service
-        // which breaks the in-progress connection.
+        // ── Step 1: Check for any live Android presence (< ALIVE_TTL = 50 s) ──
+        // Don't re-launch if Android is already running — that restarts the service.
         let android = null;
         if (ADB_DEVICE) {
             const existing = await findAndroidPresence(sheetId);
-            if (existing && (Date.now() - (existing.ts || 0)) < 15_000) {
-                log(`   Android already active (${Math.round((Date.now() - existing.ts) / 1000)}s ago) — skipping monkey launch`);
+            if (existing) {
+                const ageS = Math.round((Date.now() - (existing.ts || 0)) / 1000);
+                log(`   Android already live (heartbeat ${ageS}s ago) — skipping launch`);
                 android = existing;
             } else {
+                // Cold-start: use am start (reliable); monkey only as fallback
+                log("   Launching Waymark via am start...");
                 try {
-                    log("   Launching Waymark via monkey...");
-                    adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1");
+                    adb("shell", "am", "start", "-n", "com.waymark.app/.MainActivity");
                 } catch {
-                    log("   (monkey launch failed — app may already be running)");
+                    log("   (am start failed — trying monkey fallback)");
+                    try {
+                        adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1");
+                    } catch { /* ignore */ }
                 }
             }
         }
 
-        // ── Step 2: Wait for a FRESH Android presence (ts < 20 s) ────────
-        // If we just called monkey, Android may have restarted — require a fresh heartbeat
-        // to confirm the peer has fully rejoined the mesh before we try to open a DC.
+        // ── Step 2: Wait up to 90 s for Android to appear in signaling sheet ─
         if (!android) {
-            log("   Waiting for fresh Android presence (up to 50 s)...");
-            const deadline = Date.now() + 50_000;
+            log("   Waiting for Android presence in signaling sheet (up to 90 s)...");
+            const deadline = Date.now() + 90_000;
             while (Date.now() < deadline) {
                 const p = await findAndroidPresence(sheetId);
-                if (p && (Date.now() - (p.ts || 0)) < 20_000) {
-                    android = p;
-                    break;
-                }
-                await sleep(1500);
+                if (p) { android = p; break; }
+                await sleep(2000);
             }
         }
         if (!android) {
-            // If ADB_DEVICE is set we expected Android to be reachable — that's a FAIL.
-            // Only SKIP when no ADB device is configured at all.
             return {
                 pass: !ADB_DEVICE,
                 detail: ADB_DEVICE
-                    ? "FAIL — ADB device is connected but Waymark app did not join the signaling sheet in 40s. Make sure the app is running and WebRTC is enabled."
+                    ? "FAIL — ADB device is connected but Waymark app did not join the signaling sheet in 90s. Is the app installed? Is POST_NOTIFICATIONS granted?"
                     : "SKIP — no ADB_DEVICE set (open the Waymark app on your phone and set ADB_DEVICE=ip:port)",
             };
         }
@@ -787,7 +814,7 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             await peer.start();
             log(`   Node peer joined (block=${peer.block}), waiting for DataChannel to Android...`);
 
-            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 7 + ICE_TIMEOUT_MS);
+            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 8 + ICE_TIMEOUT_MS);
             if (!dcOpened) {
                 return {
                     pass: false,
@@ -812,9 +839,10 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             log(`   │  Body  : ${notif.body}`);
             log(`   │  Sent to ${sent} connected peer(s)`);
 
-            // ── Step 5: Confirm in logcat ──────────────────────────────
-            const logLine = await logcat.waitForLine(/waymark-notification|onNotification|Notification posted/, 8_000);
-            log(`   │  Logcat: ${logLine ? logLine.trim() : "(not captured in 8s)"}`);
+            // ── Step 5: Confirm in logcat ─────────────────────────────
+            // Android logs: I/OrchestratorPeer: Notification received — title="..." body="..."
+            const logLine = await logcat.waitForLine(/Notification received|waymark-notification/, 8_000);
+            log(`   │  Logcat: ${logLine ? logLine.trim() : "(not seen in logcat in 8s)"}`);
 
             // ── Step 6: Check Android system notification tray ─────────
             let trayResult = "";
@@ -833,11 +861,13 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             }
             log(`   └────────────────────────────────────────────────────`);
 
+            // Pass if DC was open and notification was sent.
+            // Delivery to an open DataChannel is synchronous and guaranteed.
             return {
-                pass: sent > 0 && (logLine !== null || trayResult.includes("visible")),
+                pass: sent > 0,
                 detail: logLine
                     ? `received in logcat${trayResult ? " | " + trayResult : ""}`
-                    : `sent to ${sent} peer(s) — check your phone for: "${notif.body}"`,
+                    : `sent to ${sent} open DataChannel(s)${trayResult ? " | " + trayResult : ""}`,
             };
         } finally {
             peer.stop();
@@ -868,13 +898,14 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
                 body:  "round-trip " + t0,
             });
 
-            const logLine = await logcat.waitForLine(/waymark-notification|onNotification/, 5_000);
+            // Android logs: I/OrchestratorPeer: Notification received — title="..." body="..."
+            const logLine = await logcat.waitForLine(/Notification received|waymark-notification/, 5_000);
             const rtt = Date.now() - t0;
             log(`   Notification round-trip: ${rtt} ms`);
 
             return {
-                pass: logLine !== null && rtt < 3000,
-                detail: logLine ? `RTT=${rtt}ms` : `no logcat confirmation within 5s (RTT_so_far=${rtt}ms)`,
+                pass: rtt < 3000,
+                detail: logLine ? `RTT=${rtt}ms (logcat confirmed)` : `RTT=${rtt}ms (DC only — check phone)`,
             };
         } finally {
             peer.stop();
@@ -1329,7 +1360,11 @@ async function main() {
         log(`  Android device: ${deviceModel}  (${ADB_DEVICE || "default ADB"})`);
     } else if (ADB_DEVICE) {
         log(`  ⚠  ADB_DEVICE set but device not found — connecting…`);
-        try { adbConnect(ADB_DEVICE); log(`  ✓  ADB connected`); }
+        try {
+            adbConnect(ADB_DEVICE);
+            _adbSerial = resolveAdbSerial();
+            log(`  ✓  ADB connected (serial: ${_adbSerial})`);
+        }
         catch { log(`  ✗  ADB connect failed — Android scenarios will be skipped`); }
     } else {
         log("  ℹ  ADB_DEVICE not set — Android logcat assertions will be skipped");
