@@ -50,8 +50,21 @@ function destroyConnect() {
   dismissInviteNotification();
 }
 
-// Tear down when navigating away from the sheet
-window.addEventListener('waymark:sheet-hidden', destroyConnect);
+// When navigating away from the sheet, pause the connection (keeping the
+// signaling block alive) rather than destroying it.  All UI state is rebuilt
+// by render() when the user returns, and the module-level _statusDot /
+// _statusLabel / _peerCountEl refs are updated there before startConnect()
+// is called, so the existing WaymarkConnect callbacks see the new DOM elements.
+window.addEventListener('waymark:sheet-hidden', () => {
+  if (_waymarkConnect) _waymarkConnect.pause();
+  _peers = new Map();
+  _container = null;
+  _statusDot = null;
+  _statusLabel = null;
+  _peerCountEl = null;
+  _pendingInvite = null;
+  dismissInviteNotification();
+});
 
 /* ---------- Column Detection ---------- */
 
@@ -70,8 +83,14 @@ function columns(lower) {
 
 /** Create and start WaymarkConnect for automatic peer discovery. */
 function startConnect(template) {
-  // Don't double-connect
-  if (_waymarkConnect) return;
+  if (_waymarkConnect && !_waymarkConnect._destroyed) {
+    // Connection is paused (user navigated away and returned) — resume it.
+    // render() has already updated _statusDot/_statusLabel/_peerCountEl to new
+    // DOM elements, so the existing callbacks will update the correct UI.
+    _waymarkConnect.resume().catch(() => {});
+    return;
+  }
+  if (_waymarkConnect) { _waymarkConnect.destroy(); _waymarkConnect = null; }
 
   _template = template; // Cache for reconnect after password change
 
