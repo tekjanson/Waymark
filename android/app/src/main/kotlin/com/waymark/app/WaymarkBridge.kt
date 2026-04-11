@@ -17,6 +17,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.webkit.JavascriptInterface
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -45,6 +46,7 @@ class WaymarkBridge(private val context: Context) {
     @JavascriptInterface
     fun onAuthToken(token: String) {
         if (token.isBlank()) return
+        Log.i("WaymarkBridge", "onAuthToken called — token length=${token.length}")
         // Store token securely for the background service
         context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
