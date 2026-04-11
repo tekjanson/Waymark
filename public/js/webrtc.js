@@ -857,6 +857,20 @@ export class WaymarkConnect {
           this._peers.set(remotePeerId, { name: this._peers.get(remotePeerId)?.name || 'Peer', channel: 'sig' });
           this._emitPeers();
         }
+      } else if (s === 'disconnected') {
+        // Give ICE a short window to self-heal, then force close so the next poll
+        // cycle rebuilds the connection cleanly.
+        setTimeout(() => {
+          if (!this._destroyed && this._rtc.get(remotePeerId)?.pc?.iceConnectionState === 'disconnected') {
+            console.warn(`[WC] ICE ${remotePeerId} still DISCONNECTED after 15s — closing`);
+            this._closeOne(remotePeerId);
+            const peer = this._peers.get(remotePeerId);
+            if (peer?.channel === 'rtc') {
+              this._peers.set(remotePeerId, { name: peer.name, channel: 'sig' });
+              this._emitPeers();
+            }
+          }
+        }, 15_000);
       }
     };
 
@@ -922,6 +936,12 @@ export class WaymarkConnect {
             break;
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
+            break;
+          case 'waymark-ping':
+            try { dc.send(JSON.stringify({ type: 'waymark-pong', ts: Date.now() })); } catch {}
+            break;
+          case 'waymark-pong':
+            // pong received — connection is alive
             break;
           case 'waymark-notification':
           case 'orchestrator-alert':

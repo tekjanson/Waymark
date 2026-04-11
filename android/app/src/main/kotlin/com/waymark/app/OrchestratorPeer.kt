@@ -16,6 +16,7 @@ import android.util.Log
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.webrtc.*
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "OrchestratorPeer"
@@ -65,6 +66,15 @@ class OrchestratorPeer(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
         )
+
+        /** Drop a PeerEntry if DC never opened within this window. */
+        private const val HANDSHAKE_TIMEOUT_MS = 90_000L
+        /** How often to send a ping on open DataChannels. */
+        private const val DC_PING_MS           = 30_000L
+        /** Close peer if no pong received for this long. */
+        private const val DC_PONG_TIMEOUT_MS   = 90_000L
+        /** Delay before forcing close after ICE DISCONNECTED. */
+        private const val ICE_DISCONNECT_GRACE_MS = 15_000L
     }
 
     /* ---------- State ---------- */
@@ -73,10 +83,13 @@ class OrchestratorPeer(
     private data class PeerEntry(
         val pc: PeerConnection,
         val dc: DataChannel?,
-        var state: String = "connecting"
+        var state: String = "connecting",
+        val createdAt: Long = System.currentTimeMillis()
     )
 
-    private val peers = ConcurrentHashMap<String, PeerEntry>()
+    private val peers   = ConcurrentHashMap<String, PeerEntry>()
+    /** Tracks epoch-ms of last pong received per peer, for DC keepalive. */
+    private val lastPong = ConcurrentHashMap<String, Long>()
 
     /**
      * Invoked on the IO dispatcher whenever the number of open DataChannel
@@ -134,6 +147,13 @@ class OrchestratorPeer(
                 delay(WaymarkConfig.HEART_MS)
             }
         }
+        scope.launch {
+            delay(DC_PING_MS)
+            while (!destroyed) {
+                pingAndPrune()
+                delay(DC_PING_MS)
+            }
+        }
     }
 
     /** Leave the mesh and release all resources. */
@@ -143,6 +163,7 @@ class OrchestratorPeer(
         if (block >= 0) signalingClient.clearPresence(block)
         peers.values.forEach { it.pc.dispose() }
         peers.clear()
+        lastPong.clear()
     }
 
     /* ---------- Signaling: join ---------- */
@@ -191,6 +212,17 @@ class OrchestratorPeer(
             val vals = signalingClient.readAll()
             val alive = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
+
+            // Clean up stuck handshakes — entries where DC never opened in time
+            val now = System.currentTimeMillis()
+            for ((rId, entry) in peers.entries.toList()) {
+                if (entry.dc?.state() != DataChannel.State.OPEN &&
+                        now - entry.createdAt > HANDSHAKE_TIMEOUT_MS) {
+                    Log.w(TAG, "Stuck handshake for $rId (${(now - entry.createdAt) / 1000}s) — dropping")
+                    peers.remove(rId)?.pc?.dispose()
+                    lastPong.remove(rId)
+                }
+            }
 
             // Remove dead peers
             val deadIds = peers.keys.filter { it !in aliveIds }
@@ -395,10 +427,28 @@ class OrchestratorPeer(
         return factory(context).createPeerConnection(config, object : PeerConnection.Observer {
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
                 Log.d(TAG, "ICE $remotePeerId → $state")
-                if (state == PeerConnection.IceConnectionState.FAILED ||
-                    state == PeerConnection.IceConnectionState.CLOSED) {
-                    peers.remove(remotePeerId)?.pc?.dispose()
-                    fireConnectionState()
+                when (state) {
+                    PeerConnection.IceConnectionState.FAILED,
+                    PeerConnection.IceConnectionState.CLOSED -> {
+                        peers.remove(remotePeerId)?.pc?.dispose()
+                        lastPong.remove(remotePeerId)
+                        fireConnectionState()
+                    }
+                    PeerConnection.IceConnectionState.DISCONNECTED -> {
+                        // Give ICE a short window to self-heal before forcing a reconnect
+                        scope.launch {
+                            delay(ICE_DISCONNECT_GRACE_MS)
+                            val entry = peers[remotePeerId] ?: return@launch
+                            if (entry.pc.iceConnectionState() ==
+                                    PeerConnection.IceConnectionState.DISCONNECTED) {
+                                Log.w(TAG, "ICE $remotePeerId still DISCONNECTED after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing")
+                                peers.remove(remotePeerId)?.pc?.dispose()
+                                lastPong.remove(remotePeerId)
+                                fireConnectionState()
+                            }
+                        }
+                    }
+                    else -> {}
                 }
             }
             override fun onDataChannel(dc: DataChannel) {
@@ -431,6 +481,35 @@ class OrchestratorPeer(
         onConnectionStateChanged?.invoke(openCount > 0, openCount)
     }
 
+    /**
+     * Sends a ping on every open DataChannel and closes any peer that hasn't
+     * responded with a pong within DC_PONG_TIMEOUT_MS.
+     */
+    private fun pingAndPrune() {
+        val now = System.currentTimeMillis()
+        val ping = JSONObject().apply {
+            put("type", "waymark-ping")
+            put("ts", now)
+        }.toString()
+        for ((rId, entry) in peers.entries.toList()) {
+            val dc = entry.dc ?: continue
+            if (dc.state() != DataChannel.State.OPEN) continue
+            try {
+                val bytes = ping.toByteArray(Charsets.UTF_8)
+                dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
+            } catch (e: Exception) {
+                Log.w(TAG, "Ping send failed for $rId: ${e.message}")
+            }
+            val last = lastPong.getOrDefault(rId, entry.createdAt)
+            if (now - last > DC_PONG_TIMEOUT_MS) {
+                Log.w(TAG, "Peer $rId pong timeout (${(now - last) / 1000}s) — closing")
+                peers.remove(rId)?.pc?.dispose()
+                lastPong.remove(rId)
+                fireConnectionState()
+            }
+        }
+    }
+
     private fun attachDataChannelObserver(dc: DataChannel, remotePeerId: String) {
         dc.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(amount: Long) {}
@@ -446,20 +525,41 @@ class OrchestratorPeer(
                 if (!buffer.binary) {
                     val bytes = ByteArray(buffer.data.remaining())
                     buffer.data.get(bytes)
-                    handleMessage(String(bytes, Charsets.UTF_8))
+                    handleMessage(String(bytes, Charsets.UTF_8), remotePeerId)
                 }
             }
         })
     }
 
-    private fun handleMessage(json: String) {
+    private fun handleMessage(json: String, remotePeerId: String) {
         try {
-            val obj = JSONObject(json)
+            val obj  = JSONObject(json)
             val type = obj.optString("type")
-            if (type == "waymark-notification" || type == "orchestrator-alert") {
-                val title = obj.optString("title", "Waymark")
-                val body  = obj.optString("body", obj.optString("message", ""))
-                if (body.isNotBlank()) onNotification(title, body)
+            when (type) {
+                "waymark-ping" -> {
+                    val pong = JSONObject().apply {
+                        put("type", "waymark-pong")
+                        put("ts", System.currentTimeMillis())
+                    }.toString()
+                    try {
+                        peers[remotePeerId]?.dc?.let { dc ->
+                            if (dc.state() == DataChannel.State.OPEN) {
+                                val bytes = pong.toByteArray(Charsets.UTF_8)
+                                dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Pong send failed: ${e.message}")
+                    }
+                }
+                "waymark-pong" -> {
+                    lastPong[remotePeerId] = System.currentTimeMillis()
+                }
+                "waymark-notification", "orchestrator-alert" -> {
+                    val title = obj.optString("title", "Waymark")
+                    val body  = obj.optString("body", obj.optString("message", ""))
+                    if (body.isNotBlank()) onNotification(title, body)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Bad DataChannel message: ${e.message}")
