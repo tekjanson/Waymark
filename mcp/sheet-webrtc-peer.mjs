@@ -31,9 +31,11 @@ const OFF_ANSWERS  = 2;
 const ALIVE_TTL      = 50_000;   // ms — matches Android ALIVE_TTL
 const POLL_MS        = 5_000;    // ms — matches Android POLL_MS
 const HEART_MS       = 15_000;   // ms — matches Android HEART_MS
-const OFFER_MAX_AGE  = 3 * 60_000; // ms — stale offer: rebuild if unanswered for 3 min
-/** Drop peer entries where the DataChannel never opened within this window (mirrors Android). */
-const HANDSHAKE_TIMEOUT_MS = 90_000;  // ms
+const OFFER_MAX_AGE           = 3 * 60_000; // ms — stale offer: rebuild if unanswered for 3 min
+const HANDSHAKE_TIMEOUT_MS    = 90_000;      // ms — evict entry if DC never opened within this window
+const ICE_DISCONNECT_GRACE_MS = 30_000;      // ms — wait before closing on ICE DISCONNECTED (give path changes time to recover)
+const NOTIF_BUFFER_TTL        = 5 * 60_000; // ms — max age of a buffered notification
+const NOTIF_BUFFER_MAX        = 100;         // max buffered entries
 
 const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
 const SIG_RANGE  = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
@@ -43,12 +45,10 @@ const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const STUN_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
 ];
-
-/** How long to retain a notification in the buffer for late-joining or reconnecting peers. */
-const NOTIF_BUFFER_TTL = 5 * 60_000;  // 5 minutes
-/** Maximum buffered notifications per peer instance (oldest are dropped when full). */
-const NOTIF_BUFFER_MAX = 100;
 
 /* ---------- SheetWebRtcPeer ---------- */
 
@@ -62,7 +62,7 @@ const NOTIF_BUFFER_MAX = 100;
  * @param {string}              opts.displayName  - Human-readable name shown in peer lists
  * @param {function}            [opts.onMessage]  - (remotePeerId, message) callback
  * @param {function}            [opts.onConnect]  - (remotePeerId) called on DataChannel open
- * @param {string}              [opts.bufferFile] - Absolute path to persist the notification buffer across restarts
+ * @param {string}              [opts.bufferFile] - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
     constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect, bufferFile }) {
@@ -78,31 +78,26 @@ export class SheetWebRtcPeer {
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
         this.peers = new Map();
 
+        /** @type {Array<{ json: string, ts: number, deliveredTo: Set<string> }>} */
+        this._notifQueue = [];
+
+        // Load persisted buffer (survives process restarts)
+        if (this._bufferFile) {
+            try {
+                const saved = JSON.parse(readFileSync(this._bufferFile, "utf8"));
+                const now = Date.now();
+                this._notifQueue = saved
+                    .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
+                    .map(n => ({ ...n, deliveredTo: new Set(n.deliveredTo || []) }));
+                this._log(`loaded ${this._notifQueue.length} buffered notification(s) from ${this._bufferFile}`);
+            } catch { /* start fresh */ }
+        }
+
         this.block     = -1;
         this.destroyed = false;
         this._polling        = false;  // guard: prevent concurrent poll cycles
         this._heartbeatTimer = null;
         this._pollTimer      = null;
-
-        /**
-         * Notification delivery buffer.  Each entry: { json, ts, deliveredTo: Set<peerId> }.
-         * Flushed to a peer when its DataChannel first opens.
-         */
-        this._notifQueue = [];
-
-        // Load persisted buffer from disk (survives orchestrator restarts)
-        if (this._bufferFile) {
-            try {
-                const saved = JSON.parse(readFileSync(this._bufferFile, 'utf8'));
-                const now = Date.now();
-                this._notifQueue = saved
-                    .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
-                    .map(n => ({ ...n, deliveredTo: new Set(n.deliveredTo || []) }));
-                if (this._notifQueue.length) {
-                    process.stderr.write(`sheet-peer [${this.peerId}]: loaded ${this._notifQueue.length} buffered notification(s) from disk\n`);
-                }
-            } catch { /* no file yet or parse error — start fresh */ }
-        }
     }
 
     /* ---------- Lifecycle ---------- */
@@ -140,14 +135,16 @@ export class SheetWebRtcPeer {
     }
 
     /**
-     * Send a message to all connected Android peers via DataChannel.
+     * Send a message to all connected peers via DataChannel.
+     * If the message is a waymark-notification or orchestrator-alert, it is also
+     * buffered so peers that are not yet connected (or reconnect later) receive it.
      * @param {object|string} message
+     * @returns {number} count of peers the message was sent to immediately
      */
     broadcast(message) {
         const json = typeof message === "string" ? message : JSON.stringify(message);
         const isNotif = typeof message === "object" && message !== null &&
             (message.type === "waymark-notification" || message.type === "orchestrator-alert");
-
         const deliveredTo = new Set();
         let sent = 0;
         for (const [id, entry] of this.peers) {
@@ -161,10 +158,67 @@ export class SheetWebRtcPeer {
                 this._log(`broadcast to ${id} failed: ${e.message}`);
             }
         }
-        // Buffer notification messages.  When a new (or reconnected) peer opens a
-        // DataChannel, _flushNotifQueue() delivers anything it missed.
         if (isNotif) this._enqueueNotif(json, deliveredTo);
         return sent;
+    }
+
+    /* ---------- Notification buffer ---------- */
+
+    /**
+     * Add a notification to the buffer with the set of peers already delivered.
+     * @param {string} json  - Serialised notification
+     * @param {Set<string>} deliveredTo - Peers that received it on this broadcast
+     */
+    _enqueueNotif(json, deliveredTo) {
+        const now = Date.now();
+        // Evict expired + enforce cap before pushing
+        this._notifQueue = this._notifQueue
+            .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
+            .slice(-(NOTIF_BUFFER_MAX - 1));
+        this._notifQueue.push({ json, ts: now, deliveredTo: new Set(deliveredTo) });
+        this._persistBuffer();
+    }
+
+    /**
+     * Flush queued notifications to a newly-opened DataChannel.
+     * Items are only sent if the remotePeerId has not yet received them.
+     * @param {string} remotePeerId
+     * @param {RTCDataChannel} dc
+     */
+    _flushNotifQueue(remotePeerId, dc) {
+        if (!this._notifQueue.length) return;
+        const now = Date.now();
+        let flushed = 0;
+        for (const item of this._notifQueue) {
+            if (now - item.ts >= NOTIF_BUFFER_TTL) continue;
+            if (item.deliveredTo.has(remotePeerId)) continue;
+            try {
+                dc.send(item.json);
+                item.deliveredTo.add(remotePeerId);
+                flushed++;
+            } catch (e) {
+                this._log(`flush to ${remotePeerId} failed: ${e.message}`);
+            }
+        }
+        if (flushed) {
+            this._log(`flushed ${flushed} buffered notification(s) to ${remotePeerId}`);
+            this._persistBuffer();
+        }
+    }
+
+    /** Persist the current queue to disk (no-op if bufferFile not set). */
+    _persistBuffer() {
+        if (!this._bufferFile) return;
+        try {
+            const toSave = this._notifQueue.map(n => ({
+                json:        n.json,
+                ts:          n.ts,
+                deliveredTo: [...n.deliveredTo],
+            }));
+            writeFileSync(this._bufferFile, JSON.stringify(toSave));
+        } catch (e) {
+            this._log(`buffer persist failed: ${e.message}`);
+        }
     }
 
     connectedPeers() {
@@ -292,18 +346,22 @@ export class SheetWebRtcPeer {
             const alive = this._scanAlive(vals);
             const aliveIds = new Set(alive.map(p => p.peerId));
 
-            // Remove dead peers
-            for (const [id] of this.peers) {
-                if (!aliveIds.has(id)) {
+            // Evict entries still in 'connecting' state after HANDSHAKE_TIMEOUT_MS.
+            // Only applies while state === 'connecting' — once a DC successfully opens
+            // (state → 'connected') this guard is inactive, preventing a closed-and-
+            // being-rebuilt connection from being incorrectly evicted based on its
+            // original createdAt.
+            const now = Date.now();
+            for (const [id, entry] of this.peers) {
+                if (entry.state === "connecting" && (now - (entry.createdAt || 0)) > HANDSHAKE_TIMEOUT_MS) {
+                    this._log(`stuck handshake for ${id} (${Math.round((now - (entry.createdAt || 0)) / 1000)}s) — evicting`);
                     this._closeOne(id);
                 }
             }
 
-            // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
-            const now = Date.now();
-            for (const [id, entry] of [...this.peers.entries()]) {
-                if (entry.dc?.readyState !== "open" && (now - (entry.createdAt || 0)) > HANDSHAKE_TIMEOUT_MS) {
-                    this._log(`stuck handshake for ${id} (${Math.round((now - (entry.createdAt || 0)) / 1000)}s) — evicting`);
+            // Remove dead peers
+            for (const [id, { pc }] of this.peers) {
+                if (!aliveIds.has(id)) {
                     this._closeOne(id);
                 }
             }
@@ -317,8 +375,6 @@ export class SheetWebRtcPeer {
             for (const k of Object.keys(myOffers))  { if (!aliveIds.has(k)) { delete myOffers[k];  offDirty = true; } }
             for (const k of Object.keys(myAnswers)) { if (!aliveIds.has(k)) { delete myAnswers[k]; ansDirty = true; } }
 
-            // First pass: handle fast ops inline; collect ICE-gathering jobs for parallel execution
-            const buildJobs = []; // { type: 'offer'|'answer', remoteId, offerSdp? }
             for (const remote of alive) {
                 const remoteId    = remote.peerId;
                 const remoteBlock = remote.block;
@@ -336,6 +392,14 @@ export class SheetWebRtcPeer {
                     continue;
                 }
 
+                // If the DataChannel closed on us (remote disconnected) but the entry
+                // survived, force cleanup so next poll cycle rebuilds the connection.
+                if (entry?.dc && (entry.dc.readyState === "closed" || entry.dc.readyState === "closing")) {
+                    this._log(`DC closed for ${remoteId} — resetting for rebuild`);
+                    this._closeOne(remoteId);
+                    continue;
+                }
+
                 // Already connected — clean up stale signal entries and skip renegotiation
                 if (entry?.dc?.readyState === "open") {
                     if (myOffers[remoteId])  { delete myOffers[remoteId];  offDirty = true; }
@@ -346,6 +410,7 @@ export class SheetWebRtcPeer {
                 const weInit = this.peerId < remoteId; // lexicographic — matches Android logic
 
                 if (weInit) {
+                    // === INITIATOR: create offer, wait for answer ===
                     const existingOffer = myOffers[remoteId];
                     const offerStale = existingOffer && (Date.now() - (existingOffer.ts || 0) > OFFER_MAX_AGE);
 
@@ -353,15 +418,19 @@ export class SheetWebRtcPeer {
                         if (offerStale) {
                             this._log(`stale offer for ${remoteId} (age ${Math.round((Date.now() - existingOffer.ts) / 1000)}s) — rebuilding`);
                             this._closeOne(remoteId);
-                            delete myOffers[remoteId];
-                            offDirty = true;
                         }
-                        buildJobs.push({ type: "offer", remoteId });
+                        // Build offer
+                        await this._createOffer(remoteId, myOffers).catch(e =>
+                            this._log(`createOffer for ${remoteId} failed: ${e.message}`)
+                        );
+                        offDirty = false; // _writeOffers called inside _createOffer
                     } else if (entry.state !== "connected") {
-                        // Look for answer — fast op, no ICE gathering needed
+                        // Look for answer from remote
                         const remoteAnswers = this._parseJson(vals[remoteBlock + OFF_ANSWERS]) || {};
                         const ans = remoteAnswers[this.peerId];
-                        if (ans) {
+                        // Guard: only apply answer when in the correct offer state.
+                        // Repeated poll cycles see the same answer; skip if already applied.
+                        if (ans && entry.pc.signalingState === "have-local-offer") {
                             try {
                                 await entry.pc.setRemoteDescription({ type: "answer", sdp: ans.sdp });
                                 // state will become "connected" when dc.onopen fires
@@ -379,33 +448,11 @@ export class SheetWebRtcPeer {
                         const remoteOffers = this._parseJson(vals[remoteBlock + OFF_OFFERS]) || {};
                         const offer = remoteOffers[this.peerId];
                         if (offer) {
-                            buildJobs.push({ type: "answer", remoteId, offerSdp: offer.sdp });
+                            await this._createAnswer(remoteId, offer.sdp, myAnswers).catch(e =>
+                                this._log(`createAnswer for ${remoteId} failed: ${e.message}`)
+                            );
+                            ansDirty = false; // _writeAnswers called inside _createAnswer
                         }
-                    }
-                }
-            }
-
-            // Second pass: run all ICE-gathering builds concurrently
-            if (buildJobs.length) {
-                const results = await Promise.allSettled(
-                    buildJobs.map(job => job.type === "offer"
-                        ? this._buildOffer(job.remoteId)
-                        : this._buildAnswer(job.remoteId, job.offerSdp)
-                    )
-                );
-                for (let i = 0; i < results.length; i++) {
-                    const r   = results[i];
-                    const job = buildJobs[i];
-                    if (r.status === "fulfilled" && r.value) {
-                        if (job.type === "offer") {
-                            myOffers[job.remoteId] = r.value;
-                            offDirty = true;
-                        } else {
-                            myAnswers[job.remoteId] = r.value;
-                            ansDirty = true;
-                        }
-                    } else if (r.status === "rejected") {
-                        this._log(`${job.type} build for ${job.remoteId} failed: ${r.reason?.message}`);
                     }
                 }
             }
@@ -442,25 +489,25 @@ export class SheetWebRtcPeer {
 
     /* ---------- Offer / Answer builders ---------- */
 
-    /** Create an offer, gather ICE, and return { sdp, ts } without writing to the sheet. */
-    async _buildOffer(remotePeerId) {
+    async _createOffer(remotePeerId, myOffers) {
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
         const dc = pc.createDataChannel("waymark");
         this.peers.set(remotePeerId, { pc, dc, state: "connecting", createdAt: Date.now() });
+        this._monitorIce(pc, remotePeerId);
         this._attachDataChannel(dc, remotePeerId);
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await this._waitForIceGathering(pc);
 
-        const sdp = pc.localDescription?.sdp;
-        return sdp ? { sdp, ts: Date.now() } : null;
+        myOffers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
+        await this._writeOffers(myOffers);
     }
 
-    /** Accept a remote offer, gather ICE, and return { sdp, ts } without writing to the sheet. */
-    async _buildAnswer(remotePeerId, offerSdp) {
+    async _createAnswer(remotePeerId, offerSdp, myAnswers) {
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
         this.peers.set(remotePeerId, { pc, dc: null, state: "connecting", createdAt: Date.now() });
+        this._monitorIce(pc, remotePeerId);
 
         pc.ondatachannel = (event) => {
             const dc = event.channel;
@@ -474,8 +521,41 @@ export class SheetWebRtcPeer {
         await pc.setLocalDescription(answer);
         await this._waitForIceGathering(pc);
 
-        const sdp = pc.localDescription?.sdp;
-        return sdp ? { sdp, ts: Date.now() } : null;
+        myAnswers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
+        await this._writeAnswers(myAnswers);
+    }
+
+    /**
+     * Listen for ICE connection state changes on a peer connection.
+     * Gives ICE ICE_DISCONNECT_GRACE_MS to self-heal before tearing down.
+     * Immediate close on FAILED/CLOSED so next poll rebuilds quickly.
+     */
+    _monitorIce(pc, remotePeerId) {
+        let disconnectTimer = null;
+        pc.oniceconnectionstatechange = () => {
+            const state = pc.iceConnectionState;
+            this._log(`ICE ${remotePeerId} → ${state}`);
+            if (state === "disconnected") {
+                // Give ICE a grace window to self-heal (path change, NAT rebind, WiFi blip)
+                disconnectTimer = setTimeout(() => {
+                    if (this.destroyed) return;
+                    const entry = this.peers.get(remotePeerId);
+                    if (entry?.pc === pc) {
+                        this._log(`ICE ${remotePeerId} still disconnected after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing for rebuild`);
+                        this._closeOne(remotePeerId);
+                    }
+                }, ICE_DISCONNECT_GRACE_MS);
+            } else if (state === "connected" || state === "completed") {
+                clearTimeout(disconnectTimer);
+                disconnectTimer = null;
+            } else if (state === "failed" || state === "closed") {
+                clearTimeout(disconnectTimer);
+                if (!this.destroyed) {
+                    const entry = this.peers.get(remotePeerId);
+                    if (entry?.pc === pc) this._closeOne(remotePeerId);
+                }
+            }
+        };
     }
 
     /** Resolves when ICE gathering is complete or times out. */
@@ -504,78 +584,31 @@ export class SheetWebRtcPeer {
             const entry = this.peers.get(remotePeerId);
             if (entry) entry.state = "connected";
             this._log(`DataChannel open with ${remotePeerId}`);
-            // Deliver any notifications buffered while this peer was disconnected
             this._flushNotifQueue(remotePeerId, dc);
             if (this.onConnect) this.onConnect(remotePeerId);
         };
         dc.onclose = () => {
             this._log(`DataChannel closed with ${remotePeerId}`);
-            const entry = this.peers.get(remotePeerId);
-            if (entry) entry.state = "disconnected";
+            // Clean up immediately so next _poll() cycle rebuilds the connection
+            this._closeOne(remotePeerId);
         };
         dc.onmessage = (event) => {
             try {
-                const msg = JSON.parse(typeof event === "string" ? event : event.data);
+                const raw = typeof event === "string" ? event : event.data;
+                const msg = JSON.parse(raw);
+                // Keep-alive: Android pings every 30 s (DC_PING_MS) and evicts peers
+                // that haven't ponged within 90 s (DC_PONG_TIMEOUT_MS).  Reply here
+                // so the connection is never torn down due to a missing pong.
+                if (msg.type === "waymark-ping") {
+                    try { dc.send(JSON.stringify({ type: "waymark-pong", ts: Date.now() })); } catch {}
+                    return; // don't forward to orchestrator
+                }
+                if (msg.type === "waymark-pong") {
+                    return; // received our own ping reply — nothing to do
+                }
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
         };
-    }
-
-    /* ---------- Notification buffer ---------- */
-
-    _enqueueNotif(json, deliveredTo) {
-        const now = Date.now();
-        // Prune expired items and enforce the size cap
-        this._notifQueue = this._notifQueue
-            .filter(n => now - n.ts < NOTIF_BUFFER_TTL)
-            .slice(-(NOTIF_BUFFER_MAX - 1));
-        this._notifQueue.push({ json, ts: now, deliveredTo: new Set(deliveredTo) });
-        this._persistBuffer();
-    }
-
-    /**
-     * Write the current notification queue to disk so it survives process restarts.
-     * Serializes deliveredTo Sets to arrays; expired entries are excluded on next load.
-     */
-    _persistBuffer() {
-        if (!this._bufferFile) return;
-        try {
-            const toSave = this._notifQueue.map(n => ({
-                json: n.json,
-                ts:   n.ts,
-                deliveredTo: [...n.deliveredTo],
-            }));
-            writeFileSync(this._bufferFile, JSON.stringify(toSave));
-        } catch (e) {
-            this._log(`buffer persist failed: ${e.message}`);
-        }
-    }
-
-    /**
-     * Deliver any buffered notifications that `remotePeerId` has not yet received.
-     * Called each time a DataChannel opens — covers both fresh joins and reconnects.
-     */
-    _flushNotifQueue(remotePeerId, dc) {
-        if (!this._notifQueue.length) return;
-        const now = Date.now();
-        let flushed = 0;
-        for (const item of this._notifQueue) {
-            if (now - item.ts >= NOTIF_BUFFER_TTL) continue;
-            if (item.deliveredTo.has(remotePeerId)) continue;
-            try {
-                dc.send(item.json);
-                item.deliveredTo.add(remotePeerId);
-                flushed++;
-            } catch (e) {
-                this._log(`flush to ${remotePeerId} failed: ${e.message}`);
-                break;
-            }
-        }
-        if (flushed) {
-            this._log(`flushed ${flushed} buffered notification(s) to ${remotePeerId}`);
-            // Update persisted deliveredTo sets so we don't re-deliver after restart
-            this._persistBuffer();
-        }
     }
 
     async _writeOffers(offers) {

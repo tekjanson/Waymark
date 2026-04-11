@@ -521,7 +521,7 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
             await peer._poll();
 
             const evicted = !peer.peers.has(fakeId) ||
-                            peer.peers.get(fakeId)?.pc?.iceConnectionState?.() !== "failed";
+                            peer.peers.get(fakeId)?.pc?.iceConnectionState !== "failed";
 
             // Clean up the fake row we wrote
             try {
@@ -549,16 +549,22 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
         if (!android) {
             return { pass: true, detail: "SKIP — Android not in signaling sheet" };
         }
-        // We can't force Android's ICE failure remotely, but joining a fresh peer
-        // triggers Android's ICE negotiation path, which exercises the same reconnect code.
+        // Verify Android can reconnect to a fresh peer — exercises the same ICE
+        // re-negotiation path as a real ICE failure + recovery cycle.
         logcat.lines.length = 0;
-        const { peer } = makePeer(sheetId, "icefail2");
+        const { peer, connected } = makePeer(sheetId, "icefail2");
         try {
             await peer.start();
-            const match = await logcat.waitForLine(/DC .{6,} → OPEN|Joined mesh|DataChannel open|Reconnect/, POLL_MS * 6 + ICE_TIMEOUT_MS);
+            // Primary check: Node-side DC open (fast and reliable).
+            // Also try to capture the Android logcat confirmation.
+            const dcOpened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 6 + ICE_TIMEOUT_MS);
+            if (!dcOpened) {
+                return { pass: false, detail: "DC to Android never opened in ice-failure recovery test" };
+            }
+            const logLine = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 3_000);
             return {
-                pass: match !== null,
-                detail: match ? match.trim() : "no DC open or reconnect log in time",
+                pass: true,
+                detail: logLine ? logLine.trim() : `DC opened at Node side (Android logcat not captured in 3s)`,
             };
         } finally {
             peer.stop();
@@ -700,7 +706,9 @@ async function scenarioNotification(runner, sheetId, logcat) {
         const { peer, connected, messages } = makePeer(sheetId, "notif");
         try {
             await peer.start();
-            const opened = await waitUntil(() => connected.size > 0, POLL_MS * 4 + ICE_TIMEOUT_MS);
+            // Use a longer window (7 polls + ICE) in case Android is recovering from a
+            // previous test's teardown before reconnecting.
+            const opened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 7 + ICE_TIMEOUT_MS);
             if (!opened) {
                 return { pass: false, detail: "DC to Android never opened — skipping send" };
             }
@@ -738,8 +746,8 @@ async function scenarioNotification(runner, sheetId, logcat) {
         const { peer, connected } = makePeer(sheetId, "notif2");
         try {
             await peer.start();
-            const opened = await waitUntil(() => connected.size > 0, POLL_MS * 4 + ICE_TIMEOUT_MS);
-            if (!opened) return { pass: false, detail: "DC never opened" };
+            const opened = await waitUntil(() => connected.has(android.peerId), POLL_MS * 4 + ICE_TIMEOUT_MS);
+            if (!opened) return { pass: false, detail: "DC to Android never opened" };
 
             const unique = "MeshTestBody-" + Date.now();
             logcat.lines.length = 0;
@@ -784,24 +792,33 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
                         adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1");
                     } catch { /* ignore */ }
                 }
+                // Also kick the service directly with the sheet ID — works if the cached
+                // token is still fresh (< 55 min old) and avoids waiting for the WebView.
+                try {
+                    adb("shell", "am", "startforegroundservice",
+                        "-n", "com.waymark.app/.WebRtcService",
+                        "-a", "com.waymark.app.action.CONNECT",
+                        "--es", "sheet_id", sheetId);
+                    log("   Service ACTION_CONNECT sent");
+                } catch { /* token may be stale — WebView path is the fallback */ }
             }
         }
 
-        // ── Step 2: Wait up to 90 s for Android to appear in signaling sheet ─
+        // ── Step 2: Wait up to 120 s for Android to appear in signaling sheet ─
         if (!android) {
-            log("   Waiting for Android presence in signaling sheet (up to 90 s)...");
-            const deadline = Date.now() + 90_000;
+            log("   Waiting for Android presence in signaling sheet (up to 120 s)...");
+            const deadline = Date.now() + 120_000;
             while (Date.now() < deadline) {
                 const p = await findAndroidPresence(sheetId);
                 if (p) { android = p; break; }
-                await sleep(2000);
+                await sleep(1000);
             }
         }
         if (!android) {
             return {
                 pass: !ADB_DEVICE,
                 detail: ADB_DEVICE
-                    ? "FAIL — ADB device is connected but Waymark app did not join the signaling sheet in 90s. Is the app installed? Is POST_NOTIFICATIONS granted?"
+                    ? "FAIL — ADB device is connected but Waymark app did not join the signaling sheet in 120s. Is the app installed? Is POST_NOTIFICATIONS granted?"
                     : "SKIP — no ADB_DEVICE set (open the Waymark app on your phone and set ADB_DEVICE=ip:port)",
             };
         }
