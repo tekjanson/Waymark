@@ -74,16 +74,16 @@ class WaymarkBridge(private val context: Context) {
     @JavascriptInterface
     fun onSheetOpened(sheetId: String) {
         if (sheetId.isBlank()) return
+        // Track which content sheet is active for context purposes only.
+        // The WebRtcService manages its own persistent connection to the
+        // dedicated signaling sheet (resolved from .waymark-data.json at
+        // startup and on token refresh) — triggering ACTION_CONNECT here
+        // with the content-sheet ID would disconnect the orchestrator P2P
+        // every time the user changes views, causing bad UX.
         context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(WaymarkConfig.PREF_ACTIVE_SHEET, sheetId)
             .apply()
-
-        val intent = Intent(context, WebRtcService::class.java).apply {
-            action = WebRtcService.ACTION_CONNECT
-            putExtra(WebRtcService.EXTRA_SHEET_ID, sheetId)
-        }
-        context.startForegroundService(intent)
     }
 
     /* ---------- Direct notification requests ---------- */

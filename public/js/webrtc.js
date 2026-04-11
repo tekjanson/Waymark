@@ -66,7 +66,21 @@ const HANDSHAKE_PBKDF2_ITER = 10000;
 export class WaymarkConnect {
   constructor(sheetId, opts = {}) {
     this.sheetId = sheetId;
-    this.peerId = crypto.randomUUID().slice(0, 8);
+    // Stable session-scoped peerId: reuses the same ID whenever this browser tab
+    // visits the same sheet, so navigating away and returning reclaims the same
+    // signaling slot and lets remote peers detect a restart via the session nonce.
+    const _peerStorageKey = `waymark-peer-${sheetId}`;
+    try {
+      const stored = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(_peerStorageKey);
+      this.peerId = stored || crypto.randomUUID().slice(0, 8);
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(_peerStorageKey, this.peerId);
+    } catch {
+      this.peerId = crypto.randomUUID().slice(0, 8);
+    }
+    // Fresh nonce per WaymarkConnect instance.  Remote peers detect a nonce change
+    // and immediately close the stale DataChannel to rebuild — same mechanism as
+    // OrchestratorPeer.kt / sheet-webrtc-peer.mjs.
+    this._sessionNonce = crypto.randomUUID().slice(0, 8);
     this.displayName = opts.displayName || 'Anonymous';
     this.signal = opts.signal || null;
     this.onMessage = opts.onMessage || (() => {});
@@ -85,6 +99,8 @@ export class WaymarkConnect {
     this._peers = new Map();        // peerId → { name, channel, protected? }
     this._rtc = new Map();          // peerId → { pc, dc, state }
     this._destroyed = false;
+    this._paused = false;
+    this._remoteNonces = new Map(); // peerId → last observed presence nonce
 
     this._block = -1;
     this._pollTimer = null;
@@ -447,8 +463,16 @@ export class WaymarkConnect {
     };
   }
 
-  destroy() {
+  /**
+   * Destroy the connection and release all resources.
+   * @param {object} [opts]
+   * @param {boolean} [opts.keepBlock=false] — skip clearing the signaling block.
+   *   Use this when a new WaymarkConnect with the same peerId will immediately
+   *   reclaim the slot (e.g., after pause() + navigation back to the same sheet).
+   */
+  destroy({ keepBlock = false } = {}) {
     this._destroyed = true;
+    this._paused = false;
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', this._onUnload);
     }
@@ -460,11 +484,51 @@ export class WaymarkConnect {
     }
     clearInterval(this._pollTimer);
     clearInterval(this._heartTimer);
+    this._pollTimer = null;
+    this._heartTimer = null;
     for (const [id] of this._rtc) this._closeOne(id);
-    this._clearBlock();
+    if (!keepBlock) this._clearBlock();
     this._peers.clear();
     this._remoteStreams.clear();
+    this._remoteNonces.clear();
     this.onStatusChanged('disconnected');
+  }
+
+  /**
+   * Pause the connection — stop timers but keep existing peer connections and
+   * the signaling block alive.  Call resume() to restart.  Typically invoked
+   * when navigating away from a sheet so the stable peerId + nonce mechanism
+   * enables fast reconnect when the user returns.
+   */
+  pause() {
+    if (this._destroyed || this._paused) return;
+    clearInterval(this._pollTimer);
+    clearInterval(this._heartTimer);
+    this._pollTimer = null;
+    this._heartTimer = null;
+    this._paused = true;
+    // Write a final heartbeat so the block stays valid until ALIVE_TTL expires.
+    this._heartbeat().catch(() => {});
+  }
+
+  /**
+   * Resume a previously paused connection.
+   * Re-joins the mesh if the signaling block expired while paused.
+   * @returns {Promise<void>}
+   */
+  async resume() {
+    if (this._destroyed) return;
+    if (!this._paused && (this._pollTimer || this._heartTimer)) return; // already running
+    this._paused = false;
+    if (this._block < 0) {
+      // Block expired while paused — re-join; _join() starts timers internally.
+      await this._join();
+      return;
+    }
+    this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
+    this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
+    this._heartbeat().catch(() => {});
+    this._poll().catch(() => {});
   }
 
   /* ---------- Internal helpers ---------- */
@@ -576,12 +640,27 @@ export class WaymarkConnect {
   async _join() {
     try {
       const vals = await this.signal.readAll();
-      this._block = this._findSlot(vals);
+
+      // Crash/navigation-recovery: if our previous slot is still alive in the sheet,
+      // reclaim it so remote peers see a nonce change (restart signal) rather than
+      // a fresh unknown peer — enables immediate connection rebuild instead of waiting
+      // for the old block to expire (ALIVE_TTL).
+      let reclaimedBlock = -1;
+      for (let i = 0; i < MAX_SLOTS; i++) {
+        const row = BLOCK_START + i * BLOCK_SIZE;
+        const p = _json(vals[row]?.[SIG_COL]);
+        if (p?.peerId === this.peerId) { reclaimedBlock = row; break; }
+      }
+      this._block = reclaimedBlock >= 0 ? reclaimedBlock : this._findSlot(vals);
       if (this._block < 0) {
         console.warn('[WC] _join — no free signal slot (all', MAX_SLOTS, 'occupied)');
         return;
       }
-      console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
+      if (reclaimedBlock >= 0) {
+        console.log(`[WC] _join — reclaimed slot row ${this._block} (crash/nav recovery), peerId=${this.peerId}`);
+      } else {
+        console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
+      }
       await this._heartbeat();
 
       // Race-condition guard: two peers joining at the same time can both read
@@ -637,7 +716,7 @@ export class WaymarkConnect {
   async _heartbeat() {
     if (this._destroyed || this._block < 0) return;
     try {
-      const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now() };
+      const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now(), nonce: this._sessionNonce };
       if (this._password) presence.protected = true;
       await this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL,
         JSON.stringify(presence));
@@ -669,6 +748,7 @@ export class WaymarkConnect {
         if ((p.channel === 'sig' || p.channel === 'rtc') && !aliveIds.has(id)) {
           this._peers.delete(id);
           this._closeOne(id);
+          this._remoteNonces.delete(id);
           peerChanged = true;
         }
       }
@@ -690,6 +770,19 @@ export class WaymarkConnect {
 
       // Drive per-pair negotiation for each alive peer
       for (const remote of alive) {
+        // Detect remote peer restart via nonce change — close the stale DataChannel
+        // immediately so the rest of the loop rebuilds the connection this cycle.
+        if (remote.nonce) {
+          const knownNonce = this._remoteNonces.get(remote.peerId);
+          if (knownNonce && knownNonce !== remote.nonce && this._rtc.has(remote.peerId)) {
+            console.log(`[WC] peer ${remote.peerId} restarted (nonce changed) — closing stale connection for rebuild`);
+            this._closeOne(remote.peerId);
+            if (myOffers[remote.peerId]) { delete myOffers[remote.peerId]; offDirty = true; }
+            if (myAnswers[remote.peerId]) { delete myAnswers[remote.peerId]; ansDirty = true; }
+          }
+          this._remoteNonces.set(remote.peerId, remote.nonce);
+        }
+
         const r = this._rtc.get(remote.peerId);
 
         // Clean up failed/closed connections — will rebuild next cycle

@@ -18,6 +18,7 @@ import org.json.JSONObject
 import org.webrtc.*
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -110,6 +111,16 @@ class OrchestratorPeer(
     /** Counts consecutive Sheets API failures; resets on a successful read to detect token expiry. */
     private val _sheetsFailures = AtomicInteger(0)
 
+    /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
+     *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
+     *  immediately rather than waiting for ICE teardown (crash-recovery). */
+    private val sessionNonce: String = run {
+        val bytes = ByteArray(4).also { SecureRandom().nextBytes(it) }
+        bytes.joinToString("") { "%02x".format(it) }
+    }
+    /** Last observed presence nonce per remote peerId — used to detect peer restarts. */
+    private val remoteNonces = ConcurrentHashMap<String, String>()
+
     /**
      * Invoked on the IO dispatcher whenever the number of open DataChannel
      * peers changes.  The service uses this to update the foreground
@@ -182,17 +193,44 @@ class OrchestratorPeer(
     fun stop() {
         destroyed = true
         scope.cancel()
-        if (block >= 0) signalingClient.clearPresence(block)
-        peers.values.forEach { it.pc.dispose() }
+        // Snapshot and clear the peers map *before* disposing PeerConnections.
+        // Clearing first prevents ICE-CLOSED callbacks (fired from a native WebRTC
+        // thread) from calling dispose() a second time on an already-disposed object,
+        // which causes a native use-after-free crash.
+        val snapshot = peers.values.toList()
         peers.clear()
         lastPong.clear()
+        remoteNonces.clear()
+        // clearPresence and dispose run on a background thread so stop() never
+        // blocks the calling thread (onStartCommand / onDestroy run on main thread).
+        CoroutineScope(Dispatchers.IO).launch {
+            if (block >= 0) signalingClient.clearPresence(block)
+            snapshot.forEach { entry ->
+                try { entry.dc?.dispose() } catch (_: Exception) {}
+                try { entry.pc.dispose()  } catch (_: Exception) {}
+            }
+        }
     }
 
     /* ---------- Signaling: join ---------- */
 
     private suspend fun join() = withContext(Dispatchers.IO) {
         val vals = signalingClient.readAll()
-        block = findSlot(vals)
+        // If this device crashed without calling stop(), its presence row is still live
+        // in the sheet.  Reclaim the same slot so remote peers can find us at the
+        // expected block — avoids a slot mismatch that delays reconnection by a full
+        // ALIVE_TTL window.
+        var reclaimedBlock = -1
+        for (i in 0 until WaymarkConfig.MAX_SLOTS) {
+            val row = WaymarkConfig.BLOCK_START + i * WaymarkConfig.BLOCK_SIZE
+            val p = parseJson(vals.getOrNull(row)) ?: continue
+            if (p.optString("peerId") == peerId) {
+                reclaimedBlock = row
+                Log.i(TAG, "Reclaiming stale slot $row from previous session (crash recovery)")
+                break
+            }
+        }
+        block = if (reclaimedBlock >= 0) reclaimedBlock else findSlot(vals)
         if (block < 0) return@withContext
         heartbeat()
 
@@ -219,6 +257,7 @@ class OrchestratorPeer(
                 put("peerId", peerId)
                 put("name", displayName)
                 put("ts", System.currentTimeMillis())
+                put("nonce", sessionNonce)
             }
             signalingClient.writeCell(block + WaymarkConfig.OFF_PRESENCE, presence.toString())
         } catch (e: Exception) {
@@ -251,6 +290,7 @@ class OrchestratorPeer(
             val deadIds = peers.keys.filter { it !in aliveIds }
             for (id in deadIds) {
                 peers.remove(id)?.pc?.dispose()
+                remoteNonces.remove(id)
                 Log.d(TAG, "Removed dead peer $id")
             }
             if (deadIds.isNotEmpty()) fireConnectionState()
@@ -274,6 +314,23 @@ class OrchestratorPeer(
                 val remotePeerId = remote.optString("peerId")
                 val remoteBlock  = remote.optInt("block", -1)
                 if (remotePeerId == peerId || remoteBlock < 0) continue
+
+                // Detect a remote peer restart via nonce change.  A changed nonce means
+                // the remote crashed and rejoined — close the stale DataChannel so the
+                // rest of the loop rebuilds the connection this cycle.
+                val remoteNonce = remote.optString("nonce", "")
+                if (remoteNonce.isNotBlank()) {
+                    val knownNonce = remoteNonces[remotePeerId]
+                    if (knownNonce != null && knownNonce != remoteNonce && peers.containsKey(remotePeerId)) {
+                        Log.i(TAG, "Remote $remotePeerId restarted (nonce changed) — closing stale connection for rebuild")
+                        peers.remove(remotePeerId)?.pc?.dispose()
+                        lastPong.remove(remotePeerId)
+                        fireConnectionState()
+                        if (myOffers.has(remotePeerId)) { myOffers.remove(remotePeerId); offDirty = true }
+                        if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
+                    }
+                    remoteNonces[remotePeerId] = remoteNonce
+                }
 
                 val entry = peers[remotePeerId]
 

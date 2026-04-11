@@ -78,14 +78,30 @@ async function destroyChat() {
     try { await _saveChatHistory(); } catch {}
     _saveChatHistory = null;
   }
-  if (_activeConnect) { _activeConnect.destroy(); _activeConnect = null; }
+  if (_activeConnect) {
+    // When the connection was paused on navigation, skip clearing the signaling
+    // block so a new WaymarkConnect with the same stable peerId can reclaim it
+    // immediately, triggering nonce-change detection on remote peers for faster
+    // reconnect instead of waiting for the old block to time out (ALIVE_TTL).
+    _activeConnect.destroy({ keepBlock: _activeConnect._paused });
+    _activeConnect = null;
+  }
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
   _chatLog = [];
 }
 
-// Tear down when navigating away from the sheet
-window.addEventListener('waymark:sheet-hidden', destroyChat);
+// When navigating away from a sheet, pause the connection (preserving the
+// signaling block for fast reconnect) and remove the panel UI.
+// Full teardown happens via destroyChat() when a different sheet is opened.
+window.addEventListener('waymark:sheet-hidden', () => {
+  stopRingtone();
+  if (_saveChatHistory) {
+    _saveChatHistory().catch(() => {}).finally(() => { _saveChatHistory = null; });
+  }
+  if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
+  if (_activeConnect) _activeConnect.pause();
+});
 
 /**
  * Build the floating chat panel and connect to peers.
@@ -95,9 +111,12 @@ window.addEventListener('waymark:sheet-hidden', destroyChat);
  */
 function openChat(sheetId, displayName, signal) {
   // Don't double-open for the same sheet
-  if (_activeConnect && _activeSheetId === sheetId) {
-    if (_chatPanel) _chatPanel.classList.remove('hidden');
-    return;
+  if (_activeConnect && !_activeConnect._destroyed && _activeSheetId === sheetId) {
+    if (_chatPanel) { _chatPanel.classList.remove('hidden'); return; }
+    // Panel was removed (user navigated away briefly), connection is paused.
+    // Fall through to rebuild the panel. destroyChat() below cleans up the
+    // paused connection with keepBlock:true so the fresh WaymarkConnect can
+    // reclaim the same signaling slot for faster reconnect.
   }
   destroyChat();
   _activeSheetId = sheetId;

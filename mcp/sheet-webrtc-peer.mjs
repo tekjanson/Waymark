@@ -36,6 +36,8 @@ const HANDSHAKE_TIMEOUT_MS    = 90_000;      // ms — evict entry if DC never o
 const ICE_DISCONNECT_GRACE_MS = 30_000;      // ms — wait before closing on ICE DISCONNECTED (give path changes time to recover)
 const NOTIF_BUFFER_TTL        = 5 * 60_000; // ms — max age of a buffered notification
 const NOTIF_BUFFER_MAX        = 100;         // max buffered entries
+const DC_PING_MS              = 30_000;      // ms — interval between DataChannel keepalive pings
+const DC_PONG_TIMEOUT_MS      = 90_000;      // ms — close peer if no pong received for this long
 
 const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
 const SIG_RANGE  = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
@@ -98,6 +100,9 @@ export class SheetWebRtcPeer {
         this._polling        = false;  // guard: prevent concurrent poll cycles
         this._heartbeatTimer = null;
         this._pollTimer      = null;
+        this._pingTimer      = null;   // DataChannel keepalive interval
+        this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
+        this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
     }
 
     /* ---------- Lifecycle ---------- */
@@ -120,12 +125,18 @@ export class SheetWebRtcPeer {
         this._pollTimer = setInterval(() => {
             this._poll().catch(e => this._log(`poll error: ${e.message}`));
         }, POLL_MS);
+
+        // DataChannel keepalive — detect dead Android connections within DC_PONG_TIMEOUT_MS
+        this._pingTimer = setInterval(() => this._pingAndPrune(), DC_PING_MS);
     }
 
     stop() {
         this.destroyed = true;
         clearInterval(this._heartbeatTimer);
         clearInterval(this._pollTimer);
+        clearInterval(this._pingTimer);
+        this._lastPong.clear();
+        this._peerNonces.clear();
         if (this.block >= 0) {
             this._clearPresence().catch(() => {});
         }
@@ -380,6 +391,21 @@ export class SheetWebRtcPeer {
                 const remoteBlock = remote.block;
                 if (remoteId === this.peerId || remoteBlock < 0) continue;
 
+                // Detect a remote peer restart via nonce change — a changed nonce means
+                // the remote crashed and rejoined without cleanly leaving the mesh.
+                // Close the stale DataChannel now so the loop below rebuilds immediately.
+                const remoteNonce = remote.nonce || "";
+                if (remoteNonce) {
+                    const knownNonce = this._peerNonces.get(remoteId);
+                    if (knownNonce && knownNonce !== remoteNonce && this.peers.has(remoteId)) {
+                        this._log(`peer ${remoteId} restarted (nonce changed) — closing stale connection for rebuild`);
+                        if (myOffers[remoteId]) { delete myOffers[remoteId]; offDirty = true; }
+                        if (myAnswers[remoteId]) { delete myAnswers[remoteId]; ansDirty = true; }
+                        this._closeOne(remoteId);
+                    }
+                    this._peerNonces.set(remoteId, remoteNonce);
+                }
+
                 const entry  = this.peers.get(remoteId);
 
                 // Clean up failed or closed ICE connections — will rebuild next cycle
@@ -485,6 +511,28 @@ export class SheetWebRtcPeer {
         try { entry.dc?.close(); }  catch {}
         try { entry.pc?.close(); }  catch {}
         this.peers.delete(remoteId);
+        this._lastPong.delete(remoteId);
+    }
+
+    /**
+     * Send a ping on every open DataChannel and evict peers that have not ponged
+     * within DC_PONG_TIMEOUT_MS.  Mirrors OrchestratorPeer.pingAndPrune() on Android.
+     */
+    _pingAndPrune() {
+        if (this.destroyed) return;
+        const now = Date.now();
+        const ping = JSON.stringify({ type: "waymark-ping", ts: now });
+        for (const [id, entry] of this.peers) {
+            if (!entry.dc || entry.dc.readyState !== "open") continue;
+            try { entry.dc.send(ping); } catch (e) {
+                this._log(`ping to ${id} failed: ${e.message}`);
+            }
+            const last = this._lastPong.get(id) ?? (entry.createdAt || now);
+            if (now - last > DC_PONG_TIMEOUT_MS) {
+                this._log(`pong timeout for ${id} (${Math.round((now - last) / 1000)}s) — closing for rebuild`);
+                this._closeOne(id);
+            }
+        }
     }
 
     /* ---------- Offer / Answer builders ---------- */
@@ -583,6 +631,7 @@ export class SheetWebRtcPeer {
         dc.onopen = () => {
             const entry = this.peers.get(remotePeerId);
             if (entry) entry.state = "connected";
+            this._lastPong.set(remotePeerId, Date.now()); // seed keepalive clock
             this._log(`DataChannel open with ${remotePeerId}`);
             this._flushNotifQueue(remotePeerId, dc);
             if (this.onConnect) this.onConnect(remotePeerId);
@@ -604,7 +653,8 @@ export class SheetWebRtcPeer {
                     return; // don't forward to orchestrator
                 }
                 if (msg.type === "waymark-pong") {
-                    return; // received our own ping reply — nothing to do
+                    this._lastPong.set(remotePeerId, Date.now()); // update keepalive clock
+                    return;
                 }
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
