@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Waymark</string>
+    <string name="service_notification_title">Waymark is running</string>
+    <string name="service_notification_body">Connected to your sheets in the background</string>
+    <string name="notification_denied">Notifications are disabled. You won\'t receive alerts from Waymark.</string>
+</resources>

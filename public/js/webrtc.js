@@ -29,7 +29,7 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const SIG_COL     = 20;
+const SIG_COL     = 19;       // 0-based column index — column T
 const BLOCK_SIZE  = 5;
 const BLOCK_START = 1;    // Row 0 = sheet header
 const MAX_SLOTS   = 8;   // Up to 8 peers (rows 1–40)
@@ -887,12 +887,23 @@ export class WaymarkConnect {
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
             break;
+          case 'waymark-notification':
+          case 'orchestrator-alert':
+            // Forward orchestrator alerts to the Android native layer
+            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
+              window.Android.onPeerMessage(e.data);
+            }
+            break;
           default:
             if (this.onArcadeMessage) {
               console.log(`[WC] DC arcade msg from ${remotePeerId}:`, m.type);
               this.onArcadeMessage(remotePeerId, m);
             } else {
               console.warn(`[WC] DC arcade msg from ${remotePeerId} DROPPED — no onArcadeMessage handler:`, m.type);
+            }
+            // Forward unknown messages to Android for extensibility
+            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
+              window.Android.onPeerMessage(e.data);
             }
             break;
         }

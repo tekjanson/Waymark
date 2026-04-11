@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -34,12 +34,15 @@ const LOG_DIR = "/agent-logs";
 /* ---------- Notification state ---------- */
 
 let _notifRules = [];          // cached parsed rules
-let _rulesSheetId = null;      // set by orchestrator_boot
+let _rulesSheetId = process.env.WAYMARK_RULES_SHEET_ID || null; // env default; overridable at boot
 let _rulesLastFetched = 0;     // epoch ms
 const RULES_TTL_MS = 5 * 60 * 1000; // re-fetch every 5 min
 
 /* ---------- Session state (automatic RETURNED detection) ---------- */
 const _sessions = new Map(); // sessionId → { lastAction, lastAgentName }
+
+/* ---------- Cycle tracking state (QA/Done thresholds + cycle rate) ---------- */
+const _cycleState = new Map(); // sessionId → { lastQaCount, lastDoneCount, cycleTimestamps }
 
 /* ---------- Template registry (for sheetId-based detection) ---------- */
 
@@ -76,7 +79,6 @@ const KEYWORD_ROUTES = [
     { keywords: ["blog", "posts", "content calendar"], agent: "waymark-blog" },
     { keywords: ["social feed", "community", "shares"], agent: "waymark-social" },
     { keywords: ["marketing", "campaigns", "promotions"], agent: "waymark-marketing" },
-    { keywords: ["notifications", "alerts", "announcements"], agent: "waymark-notification" },
     { keywords: ["arcade", "games", "social game", "score"], agent: "waymark-arcade" },
     { keywords: ["iot", "sensors", "readings", "telemetry", "device data"], agent: "waymark-iot" },
     { keywords: ["grading", "gradebook", "scores", "assignments", "students"], agent: "waymark-grading" },
@@ -106,7 +108,7 @@ const TEMPLATE_KEY_TO_AGENT = {
     gantt: "waymark-gantt", okr: "waymark-okr", roster: "waymark-roster",
     meal: "waymark-meal", knowledge: "waymark-knowledge", guide: "waymark-guide",
     flow: "waymark-flow", automation: "waymark-automation", blog: "waymark-blog",
-    social: "waymark-social", marketing: "waymark-marketing", notification: "waymark-notification",
+    social: "waymark-social", marketing: "waymark-marketing",
     arcade: "waymark-arcade", iot: "waymark-iot", grading: "waymark-grading",
     passwords: "waymark-passwords", photos: "waymark-photos", linker: "waymark-linker",
     testcases: "waymark-testcases", worker: "waymark-worker",
@@ -115,14 +117,149 @@ const TEMPLATE_KEY_TO_AGENT = {
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
 import { GoogleAuth } from "google-auth-library";
+import { SheetWebRtcPeer } from "./sheet-webrtc-peer.mjs";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let sheetsAuth = null;
 if (credPath) {
     sheetsAuth = new GoogleAuth({
         keyFile: credPath,
-        scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        scopes: [
+            "https://www.googleapis.com/auth/spreadsheets",
+        ],
     });
+}
+
+/* ---------- WebRTC signaling peer — user-owned sheet discovery ----------
+ * The .waymark-signaling sheet is created client-side (user-data.js) on
+ * the user's first web-app boot and stored in their .waymark-data.json.
+ * The orchestrator reads that file via the user's OAuth token to discover
+ * the sheet ID — no service-account ownership or sharing required.
+ */
+
+const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+
+/** @type {string|null} resolved sheet ID, cached in memory once resolved */
+let _resolvedSignalingSheetId = null;
+/** @type {SheetWebRtcPeer|null} */
+let _signalingPeer = null;
+
+/**
+ * Get a fresh user OAuth access token, refreshing if expired.
+ * Reads from WAYMARK_OAUTH_TOKEN_PATH (same as waymark.mjs).
+ * Returns null if the token file is missing or unusable.
+ */
+async function getUserOAuthToken() {
+    const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+        `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
+    let tokenData;
+    try {
+        tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
+    } catch {
+        return null;
+    }
+    if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
+        if (!tokenData.refresh_token) return null;
+        const res = await fetch(OAUTH_TOKEN_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type:    "refresh_token",
+                refresh_token: tokenData.refresh_token,
+                client_id:     tokenData.client_id,
+                client_secret: tokenData.client_secret,
+            }),
+        });
+        const refreshed = await res.json();
+        if (refreshed.error || !refreshed.access_token) return null;
+        tokenData.access_token = refreshed.access_token;
+        tokenData.expiry_date  = Date.now() + (refreshed.expires_in * 1000);
+        try {
+            writeFileSync(tokenPath, JSON.stringify(tokenData, null, 2));
+        } catch { /* read-only mount — ignore, token still usable this session */ }
+    }
+    return tokenData.access_token;
+}
+
+/**
+ * Reads the user's .waymark-data.json from Drive and returns the
+ * signalingSheetId stored there by user-data.js on first web-app boot.
+ * Returns null if the token is unavailable or the sheet hasn't been created yet.
+ */
+async function resolveSignalingSheet() {
+    if (_resolvedSignalingSheetId) return _resolvedSignalingSheetId;
+
+    const token = await getUserOAuthToken();
+    if (!token) {
+        process.stderr.write(
+            "orchestrator: WAYMARK_OAUTH_TOKEN_PATH not set or token invalid — WebRTC signaling peer disabled\n"
+        );
+        return null;
+    }
+
+    // Find .waymark-data.json in the user's Drive
+    const q = encodeURIComponent(
+        "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
+    );
+    const searchRes = await fetch(
+        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
+    const { files } = await searchRes.json();
+    if (!files || files.length === 0) {
+        process.stderr.write("orchestrator: .waymark-data.json not found — user may not have booted the web app yet\n");
+        return null;
+    }
+
+    const fileRes = await fetch(
+        `${DRIVE_FILES_URL}/${files[0].id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!fileRes.ok) throw new Error(`Drive read failed: ${fileRes.status}`);
+    const data = await fileRes.json();
+    const sheetId = data.signalingSheetId || null;
+    if (!sheetId) {
+        process.stderr.write("orchestrator: signalingSheetId not set in .waymark-data.json — user may not have booted the web app yet\n");
+        return null;
+    }
+
+    process.stderr.write(`orchestrator: signaling sheet resolved from user Drive: ${sheetId}\n`);
+    _resolvedSignalingSheetId = sheetId;
+    return sheetId;
+}
+
+async function startSignalingPeer() {
+    let sheetId;
+    try {
+        sheetId = await resolveSignalingSheet();
+    } catch (err) {
+        process.stderr.write(`orchestrator: signaling sheet resolve failed: ${err.message}\n`);
+        return;
+    }
+    if (!sheetId) return;
+
+    // Stable 8-char hex peer ID for this MCP server instance
+    const { createHash } = await import("node:crypto");
+    const peerId = createHash("sha256")
+        .update("orchestrator-mcp-" + sheetId)
+        .digest("hex")
+        .slice(0, 8);
+
+    _signalingPeer = new SheetWebRtcPeer({
+        sheetId,
+        getToken:    getUserOAuthToken,  // user OAuth token — can write to user-owned sheet
+        peerId,
+        displayName: "Orchestrator MCP",
+        onConnect: (remotePeerId) => {
+            process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
+        },
+        onMessage: (remotePeerId, msg) => {
+            process.stderr.write(`orchestrator: message from ${remotePeerId}: ${JSON.stringify(msg)}\n`);
+        },
+    });
+    await _signalingPeer.start();
 }
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -187,7 +324,7 @@ const KNOWN_AGENTS = new Set([
     "waymark-log", "waymark-habit", "waymark-poll", "waymark-changelog",
     "waymark-gantt", "waymark-okr", "waymark-roster", "waymark-knowledge",
     "waymark-guide", "waymark-flow", "waymark-automation", "waymark-blog",
-    "waymark-social", "waymark-marketing", "waymark-notification", "waymark-arcade",
+    "waymark-social", "waymark-marketing", "waymark-arcade",
     "waymark-iot", "waymark-grading", "waymark-passwords", "waymark-photos",
     "waymark-linker", "waymark-testcases", "waymark-worker", "waymark-checklist",
 ]);
@@ -285,7 +422,10 @@ function buildPrompt(task, routeResult) {
  * Read the rules sheet and parse into rule objects.
  * Sheet format (row 1 = headers, any casing):
  *   Event | Condition | Title | Body | Priority | Enabled
- * Event values: DISPATCH, RETURNED, BLOCKED, POLL_FAILED, WAKE, IDLE, WAIT, * (wildcard)
+ * Event values: DISPATCH, RETURNED, BLOCKED, POLL_FAILED, WAKE, IDLE, WAIT,
+ *               TASK_QA (task(s) moved to QA), TASK_DONE (task(s) completed),
+ *               CYCLE_RATE_HIGH (10 cycles in 10 min — possible spin loop),
+ *               * (wildcard)
  * Condition values: "always" or empty (always fires), or "key=value" against the event context.
  * Priority values: low, normal, high, urgent
  * Enabled: yes/no/true/false/1/0 (default yes if empty)
@@ -369,56 +509,17 @@ function interpolate(template, ctx) {
     return template.replace(/\{(\w+)\}/g, (_, k) => ctx[k] ?? "");
 }
 
-/* ---------- Send notification via ntfy / Pushover ---------- */
-
-async function sendNotification(title, body, priority) {
-    const ntfyTopic = process.env.NTFY_TOPIC;
-    if (ntfyTopic) {
-        const ntfyPri = { low: "low", normal: "default", high: "high", urgent: "urgent" }[priority] || "default";
-        try {
-            await fetch(ntfyTopic, {
-                method: "POST",
-                headers: {
-                    "Title": title,
-                    "Priority": ntfyPri,
-                    "Content-Type": "text/plain",
-                },
-                body: body || title,
-            });
-        } catch (err) {
-            process.stderr.write(`orchestrator: ntfy send failed: ${err.message}\n`);
-        }
-    }
-
-    const pushToken = process.env.PUSHOVER_TOKEN;
-    const pushUser  = process.env.PUSHOVER_USER;
-    if (pushToken && pushUser) {
-        const priMap = { low: -1, normal: 0, high: 1, urgent: 2 };
-        try {
-            await fetch("https://api.pushover.net/1/messages.json", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    token: pushToken,
-                    user:  pushUser,
-                    title,
-                    message: body || title,
-                    priority: priMap[priority] ?? 0,
-                }),
-            });
-        } catch (err) {
-            process.stderr.write(`orchestrator: pushover send failed: ${err.message}\n`);
-        }
-    }
-}
-
 /**
- * Check rules for a given event and fire matching notifications.
+ * Check rules for a given event and push matching notifications to the
+ * Android app via WebRTC DataChannel.  No third-party services (ntfy,
+ * Pushover, etc.) — delivery is purely peer-to-peer through the signaling
+ * sheet.
  * @param {string} event  - uppercase event name e.g. "DISPATCH"
  * @param {object} ctx    - context variables for condition matching and template interpolation
  */
 async function fireNotifications(event, ctx) {
     if (!_notifRules.length) return;
+    if (!_signalingPeer) return;
     const matching = _notifRules.filter(r =>
         r.enabled &&
         (r.event === event || r.event === "*") &&
@@ -427,7 +528,19 @@ async function fireNotifications(event, ctx) {
     for (const rule of matching) {
         const title = interpolate(rule.title || event, ctx);
         const body  = interpolate(rule.body, ctx);
-        await sendNotification(title, body, rule.priority);
+        const sent = _signalingPeer.broadcast({
+            type:     "orchestrator-alert",
+            title,
+            body,
+            priority: rule.priority,
+            event,
+            ts:       Date.now(),
+        });
+        process.stderr.write(
+            sent > 0
+                ? `orchestrator: pushed '${title}' to ${sent} Android peer(s) via WebRTC\n`
+                : `orchestrator: rule matched for '${event}' but no Android peers connected\n`
+        );
     }
 }
 
@@ -580,16 +693,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const ts = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
         const sessionId = `session-${ts}`;
         const logPath = `${LOG_DIR}/${sessionId}.log`;
-        // Load notification rules if a sheet was provided
+        // Allow explicit arg to override env default; otherwise use whatever was set at startup
         if (args.rulesSheetId) {
             _rulesSheetId = args.rulesSheetId;
             _rulesLastFetched = 0;
+        }
+        // Fetch rules if we have a sheet ID and haven't loaded yet
+        if (_rulesSheetId && _notifRules.length === 0) {
             await fetchRulesSheet(_rulesSheetId);
         }
-        appendFileSync(logPath, `[${iso()}] ORCHESTRATOR STARTED${args.rulesSheetId ? ` (rules: ${args.rulesSheetId})` : ""}\n`);
+        appendFileSync(logPath, `[${iso()}] ORCHESTRATOR STARTED${_rulesSheetId ? ` (rules: ${_rulesSheetId})` : ""}\n`);
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
+        _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
+
+        // Start the Android WebRTC signaling peer on first boot
+        if (!_signalingPeer) {
+            startSignalingPeer().catch(err =>
+                process.stderr.write(`orchestrator: signaling peer start failed: ${err.message}\n`)
+            );
+        }
+
         return {
-            content: [{ type: "text", text: JSON.stringify({ sessionId, logPath, rulesLoaded: _notifRules.length }) }],
+            content: [{ type: "text", text: JSON.stringify({
+                sessionId,
+                logPath,
+                rulesLoaded: _notifRules.length,
+                signalingSheet: _resolvedSignalingSheetId ?? null,
+                signalingPeerId: _signalingPeer?.peerId ?? null,
+            }) }],
         };
     }
 
@@ -632,6 +763,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
         }
         appendFileSync(logPath, `[${iso()}] POLL: ${JSON.stringify(board)}\n`);
+
+        // Step 2b: Cycle counter — alert if 10 cycles within 10 minutes
+        const cs = _cycleState.get(args.sessionId) || { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] };
+        const nowMs = Date.now();
+        cs.cycleTimestamps.push(nowMs);
+        const tenMinAgo = nowMs - 10 * 60 * 1000;
+        cs.cycleTimestamps = cs.cycleTimestamps.filter(t => t >= tenMinAgo);
+        if (cs.cycleTimestamps.length >= 10) {
+            appendFileSync(logPath, `[${iso()}] CYCLE_RATE_HIGH: ${cs.cycleTimestamps.length} cycles in last 10 min\n`);
+            await fireNotifications("CYCLE_RATE_HIGH", {
+                cycleCount: cs.cycleTimestamps.length,
+                windowMinutes: 10,
+                sessionId: args.sessionId,
+            });
+            cs.cycleTimestamps = []; // reset window to avoid re-firing every cycle
+        }
+
+        // Step 2c: Detect tasks moving into QA or Done
+        if (cs.lastQaCount !== null && board.qa > cs.lastQaCount) {
+            const delta = board.qa - cs.lastQaCount;
+            appendFileSync(logPath, `[${iso()}] TASK_QA: ${delta} new task(s) in QA (total ${board.qa})\n`);
+            await fireNotifications("TASK_QA", {
+                qaCount: board.qa,
+                delta,
+                sessionId: args.sessionId,
+            });
+        }
+        cs.lastQaCount = board.qa;
+
+        if (cs.lastDoneCount !== null && board.done > cs.lastDoneCount) {
+            const delta = board.done - cs.lastDoneCount;
+            appendFileSync(logPath, `[${iso()}] TASK_DONE: ${delta} new task(s) done (total ${board.done})\n`);
+            await fireNotifications("TASK_DONE", {
+                doneCount: board.done,
+                delta,
+                sessionId: args.sessionId,
+            });
+        }
+        cs.lastDoneCount = board.done;
+
+        _cycleState.set(args.sessionId, cs);
 
         // Step 3: Route
         // Check inProgress first
@@ -690,8 +862,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         // Board is clear
-        const reason = `board is clear — todo=0, qa=0`;
+        const reason = `board is clear — todo=0, qa=${board.qa ?? 0}, done=${board.done ?? 0}`;
         appendFileSync(logPath, `[${iso()}] IDLE: ${reason}\n`);
+        await fireNotifications("IDLE", { reason, sessionId: args.sessionId });
         return {
             content: [{ type: "text", text: JSON.stringify({ action: "IDLE", reason }) }],
         };

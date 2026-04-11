@@ -931,46 +931,25 @@
     },
     {
       "key": "notification",
-      "name": "Notifications",
-      "icon": "\ud83d\udd14",
+      "name": "Push Notification Rules",
+      "icon": "\ud83d\udcf2",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Productivity",
       "detectSignals": [
-        "title",
-        "message",
-        "status",
-        "notification",
-        "alert",
-        "icon"
+        "event",
+        "condition",
+        "enabled"
       ],
       "columnRoles": [
+        "event",
+        "condition",
         "title",
-        "message",
-        "type",
-        "status",
-        "icon",
+        "body",
         "priority",
-        "created",
-        "expires",
-        "source",
-        "sheet"
+        "enabled"
       ],
-      "interactive": true,
-      "interactionType": "status-cycle",
-      "interactionStates": [
-        "Active",
-        "Read",
-        "Dismissed"
-      ],
-      "hasDirectoryView": true,
-      "exampleCount": 1,
-      "fixtureIds": [
-        "sheet-046"
-      ],
-      "fixtureFiles": [
-        "notification-waymark"
-      ]
+      "hasDirectoryView": true
     },
     {
       "key": "iot",

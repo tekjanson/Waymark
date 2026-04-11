@@ -200,7 +200,6 @@ async function boot() {
   checklist.init();
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
-  notifications.init(document.querySelector('.top-bar-right'));
   dashboard.init(document.getElementById('dashboard-view'));
 
   // Wire UI events
@@ -209,12 +208,6 @@ async function boot() {
   sidebarToggle.addEventListener('click', () => {
     const open = toggleSidebar();
     userData.setSidebarOpen(open);
-  });
-
-  // Evaluate notifications when a sheet is rendered
-  document.addEventListener('waymark:sheet-rendered', (e) => {
-    const { sheetId, title, templateKey, rows, cols, headers } = e.detail;
-    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols, headers);
   });
 
   // Persist sidebar state from swipe/overlay events
@@ -428,12 +421,6 @@ async function showApp(user) {
       console.warn('[MQTT Bridge] Failed to start:', err.message);
     });
   }
-
-  // Ensure the notification sheet exists in the Waymark directory.
-  // Fire-and-forget — don't block app boot if it fails.
-  notifications.ensureSheet().catch(err => {
-    console.warn('[notifications] Sheet setup failed:', err);
-  });
 
   // Expose Drive-save function so the server-injected version picker can
   // persist the pinned ref to Google Drive (cross-device persistence).
@@ -2350,6 +2337,11 @@ function applyTheme(pref) {
   document.querySelectorAll('.settings-theme-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === pref);
   });
+
+  // Sync the Android status bar color with the web app theme
+  if (window.Android && typeof window.Android.onThemeChanged === 'function') {
+    window.Android.onThemeChanged(resolved);
+  }
 }
 
 function initTheme() {

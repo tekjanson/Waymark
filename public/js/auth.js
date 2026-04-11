@@ -14,7 +14,11 @@ const BASE = window.__WAYMARK_BASE || '';
 
 /** Redirect browser to server's OAuth login endpoint. */
 export function login() {
-  window.location.href = BASE + '/auth/login';
+  // Android WebView exposes window.Android — signal the server so it uses
+  // the custom-scheme redirect URI (com.waymark.app://oauth2callback) instead
+  // of the HTTPS callback, allowing the deep-link to return to the app.
+  const platform = (typeof window !== 'undefined' && window.Android) ? '?android=1' : '';
+  window.location.href = BASE + '/auth/login' + platform;
 }
 
 /**
@@ -53,12 +57,22 @@ export async function refreshToken() {
 async function _doRefresh() {
   try {
     const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (!res.ok) { accessToken = null; return false; }
+    if (!res.ok) {
+      console.warn('[auth] refresh failed — status', res.status);
+      accessToken = null;
+      return false;
+    }
     const data = await res.json();
     accessToken  = data.access_token;
     tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
+    console.log('[auth] refresh OK — handing token to Android bridge');
+    // Hand fresh token to Android native WebRTC service (no-op in browser)
+    if (typeof window !== 'undefined' && window.Android?.onAuthToken) {
+      window.Android.onAuthToken(accessToken);
+    }
     return true;
-  } catch {
+  } catch (err) {
+    console.warn('[auth] refresh exception:', err);
     accessToken = null;
     return false;
   }

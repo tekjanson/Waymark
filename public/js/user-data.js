@@ -80,6 +80,9 @@ function defaultUserData() {
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
 
+    /* ── WebRTC Signaling ── */
+    signalingSheetId: null,     // spreadsheetId of user-owned .waymark-signaling sheet
+
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
 
@@ -154,10 +157,28 @@ async function _doInit() {
 
     // Sync loaded data back to localStorage as a fallback cache
     syncToLocalStorage(_userData);
+
+    // Ensure the WebRTC signaling sheet exists (fire-and-forget)
+    ensureSignalingSheet().catch(e =>
+      console.warn('[user-data] ensureSignalingSheet:', e)
+    );
   } catch (err) {
     console.warn('[user-data] Drive init failed, falling back to localStorage:', err);
     _userData = migrateFromLocalStorage();
   }
+}
+
+/**
+ * Find or create the user-owned .waymark-signaling spreadsheet.
+ * Called once after init. Idempotent — skips if already recorded.
+ * @returns {Promise<void>}
+ */
+async function ensureSignalingSheet() {
+  if (!_rootFolderId || _userData?.signalingSheetId) return;
+  const created = await api.sheets.createSpreadsheet(
+    '.waymark-signaling', [], _rootFolderId
+  );
+  await save({ signalingSheetId: created.spreadsheetId });
 }
 
 /* ---------- Folder helpers ---------- */
@@ -743,6 +764,16 @@ export async function clearAll() {
       await api.drive.updateJsonFile(_dataFileId, _userData);
     } catch { /* ignore */ }
   }
+}
+
+/* ---------- WebRTC Signaling Sheet ---------- */
+
+/**
+ * Get the user-owned signaling sheet ID, or null if not yet created.
+ * @returns {string|null}
+ */
+export function getSignalingSheetId() {
+  return _userData?.signalingSheetId ?? null;
 }
 
 /* ---------- Lock-on-Submit ---------- */

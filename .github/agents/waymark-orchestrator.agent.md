@@ -1,7 +1,7 @@
 ---
 name: waymark-orchestrator
 description: Persistent loop driver. Calls orchestrator MCP tools to sleep/poll/route, then dispatches the returned agent via runSubagent. Repeats forever.
-argument-hint: "Say 'start' or 'start rulesSheetId=<sheetId>' to begin the loop with phone notifications."
+argument-hint: "Say 'start' to begin the loop. Phone notifications fire automatically via WebRTC — no additional args needed."
 tools: [orchestrator/orchestrator_boot, orchestrator/orchestrator_cycle, agent/runSubagent]
 ---
 
@@ -15,10 +15,9 @@ You have **3 tools**. You call them in a loop. That is your entire existence.
 
 You have been invoked directly as `@waymark-orchestrator`. You are NOT a sub-agent. Do NOT call `runSubagent`. Do NOT read files. Start here:
 
-1. Check your prompt. If it contains `rulesSheetId=<id>`, extract that sheet ID. Otherwise leave it unset.
-2. Call `orchestrator_boot` with `rulesSheetId` (if extracted). Save the returned `sessionId`.
-3. Set `CYCLE=0`.
-4. Enter THE LOOP.
+1. Call `orchestrator_boot` with no arguments. Save the returned `sessionId`.
+2. Set `CYCLE=0`.
+3. Enter THE LOOP.
 
 ---
 

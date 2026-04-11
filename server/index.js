@@ -437,6 +437,13 @@ if (config.WAYMARK_LOCAL) {
 // Must come before express.static so the root '/' is handled here.
 router.get('/', serveIndex);
 
+/* ---------- Signaling sheet discovery — REMOVED ----------
+ * The server must never touch user Drive data.
+ * Android discovers the signaling sheet ID by reading .waymark-data.json
+ * directly from the Google Drive API using its own OAuth token.
+ * See WebRtcService.resolveAndConnect().
+ */
+
 /* ---------- Scraping proxy (fetch a URL on behalf of the browser) ---------- */
 
 router.post('/api/fetch-url', async (req, res) => {
