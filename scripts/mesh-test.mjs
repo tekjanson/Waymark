@@ -862,9 +862,10 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             log(`   └────────────────────────────────────────────────────`);
 
             // Pass if DC was open and notification was sent.
-            // Delivery to an open DataChannel is synchronous and guaranteed.
+            // When ADB is available, require logcat confirmation — dc.send() is enqueued
+            // and can be silently dropped if the channel starts closing immediately after.
             return {
-                pass: sent > 0,
+                pass: sent > 0 && (logLine !== null || !ADB_DEVICE),
                 detail: logLine
                     ? `received in logcat${trayResult ? " | " + trayResult : ""}`
                     : `sent to ${sent} open DataChannel(s)${trayResult ? " | " + trayResult : ""}`,

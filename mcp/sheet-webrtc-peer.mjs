@@ -32,6 +32,8 @@ const ALIVE_TTL      = 50_000;   // ms — matches Android ALIVE_TTL
 const POLL_MS        = 5_000;    // ms — matches Android POLL_MS
 const HEART_MS       = 15_000;   // ms — matches Android HEART_MS
 const OFFER_MAX_AGE  = 3 * 60_000; // ms — stale offer: rebuild if unanswered for 3 min
+/** Drop peer entries where the DataChannel never opened within this window (mirrors Android). */
+const HANDSHAKE_TIMEOUT_MS = 90_000;  // ms
 
 const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
 const SIG_RANGE  = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
@@ -291,8 +293,17 @@ export class SheetWebRtcPeer {
             const aliveIds = new Set(alive.map(p => p.peerId));
 
             // Remove dead peers
-            for (const [id, { pc }] of this.peers) {
+            for (const [id] of this.peers) {
                 if (!aliveIds.has(id)) {
+                    this._closeOne(id);
+                }
+            }
+
+            // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
+            const now = Date.now();
+            for (const [id, entry] of [...this.peers.entries()]) {
+                if (entry.dc?.readyState !== "open" && (now - (entry.createdAt || 0)) > HANDSHAKE_TIMEOUT_MS) {
+                    this._log(`stuck handshake for ${id} (${Math.round((now - (entry.createdAt || 0)) / 1000)}s) — evicting`);
                     this._closeOne(id);
                 }
             }
@@ -306,6 +317,8 @@ export class SheetWebRtcPeer {
             for (const k of Object.keys(myOffers))  { if (!aliveIds.has(k)) { delete myOffers[k];  offDirty = true; } }
             for (const k of Object.keys(myAnswers)) { if (!aliveIds.has(k)) { delete myAnswers[k]; ansDirty = true; } }
 
+            // First pass: handle fast ops inline; collect ICE-gathering jobs for parallel execution
+            const buildJobs = []; // { type: 'offer'|'answer', remoteId, offerSdp? }
             for (const remote of alive) {
                 const remoteId    = remote.peerId;
                 const remoteBlock = remote.block;
@@ -333,7 +346,6 @@ export class SheetWebRtcPeer {
                 const weInit = this.peerId < remoteId; // lexicographic — matches Android logic
 
                 if (weInit) {
-                    // === INITIATOR: create offer, wait for answer ===
                     const existingOffer = myOffers[remoteId];
                     const offerStale = existingOffer && (Date.now() - (existingOffer.ts || 0) > OFFER_MAX_AGE);
 
@@ -341,14 +353,12 @@ export class SheetWebRtcPeer {
                         if (offerStale) {
                             this._log(`stale offer for ${remoteId} (age ${Math.round((Date.now() - existingOffer.ts) / 1000)}s) — rebuilding`);
                             this._closeOne(remoteId);
+                            delete myOffers[remoteId];
+                            offDirty = true;
                         }
-                        // Build offer
-                        await this._createOffer(remoteId, myOffers).catch(e =>
-                            this._log(`createOffer for ${remoteId} failed: ${e.message}`)
-                        );
-                        offDirty = false; // _writeOffers called inside _createOffer
+                        buildJobs.push({ type: "offer", remoteId });
                     } else if (entry.state !== "connected") {
-                        // Look for answer from remote
+                        // Look for answer — fast op, no ICE gathering needed
                         const remoteAnswers = this._parseJson(vals[remoteBlock + OFF_ANSWERS]) || {};
                         const ans = remoteAnswers[this.peerId];
                         if (ans) {
@@ -369,11 +379,33 @@ export class SheetWebRtcPeer {
                         const remoteOffers = this._parseJson(vals[remoteBlock + OFF_OFFERS]) || {};
                         const offer = remoteOffers[this.peerId];
                         if (offer) {
-                            await this._createAnswer(remoteId, offer.sdp, myAnswers).catch(e =>
-                                this._log(`createAnswer for ${remoteId} failed: ${e.message}`)
-                            );
-                            ansDirty = false; // _writeAnswers called inside _createAnswer
+                            buildJobs.push({ type: "answer", remoteId, offerSdp: offer.sdp });
                         }
+                    }
+                }
+            }
+
+            // Second pass: run all ICE-gathering builds concurrently
+            if (buildJobs.length) {
+                const results = await Promise.allSettled(
+                    buildJobs.map(job => job.type === "offer"
+                        ? this._buildOffer(job.remoteId)
+                        : this._buildAnswer(job.remoteId, job.offerSdp)
+                    )
+                );
+                for (let i = 0; i < results.length; i++) {
+                    const r   = results[i];
+                    const job = buildJobs[i];
+                    if (r.status === "fulfilled" && r.value) {
+                        if (job.type === "offer") {
+                            myOffers[job.remoteId] = r.value;
+                            offDirty = true;
+                        } else {
+                            myAnswers[job.remoteId] = r.value;
+                            ansDirty = true;
+                        }
+                    } else if (r.status === "rejected") {
+                        this._log(`${job.type} build for ${job.remoteId} failed: ${r.reason?.message}`);
                     }
                 }
             }
@@ -410,23 +442,25 @@ export class SheetWebRtcPeer {
 
     /* ---------- Offer / Answer builders ---------- */
 
-    async _createOffer(remotePeerId, myOffers) {
+    /** Create an offer, gather ICE, and return { sdp, ts } without writing to the sheet. */
+    async _buildOffer(remotePeerId) {
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
         const dc = pc.createDataChannel("waymark");
-        this.peers.set(remotePeerId, { pc, dc, state: "connecting" });
+        this.peers.set(remotePeerId, { pc, dc, state: "connecting", createdAt: Date.now() });
         this._attachDataChannel(dc, remotePeerId);
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await this._waitForIceGathering(pc);
 
-        myOffers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
-        await this._writeOffers(myOffers);
+        const sdp = pc.localDescription?.sdp;
+        return sdp ? { sdp, ts: Date.now() } : null;
     }
 
-    async _createAnswer(remotePeerId, offerSdp, myAnswers) {
+    /** Accept a remote offer, gather ICE, and return { sdp, ts } without writing to the sheet. */
+    async _buildAnswer(remotePeerId, offerSdp) {
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-        this.peers.set(remotePeerId, { pc, dc: null, state: "connecting" });
+        this.peers.set(remotePeerId, { pc, dc: null, state: "connecting", createdAt: Date.now() });
 
         pc.ondatachannel = (event) => {
             const dc = event.channel;
@@ -440,8 +474,8 @@ export class SheetWebRtcPeer {
         await pc.setLocalDescription(answer);
         await this._waitForIceGathering(pc);
 
-        myAnswers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
-        await this._writeAnswers(myAnswers);
+        const sdp = pc.localDescription?.sdp;
+        return sdp ? { sdp, ts: Date.now() } : null;
     }
 
     /** Resolves when ICE gathering is complete or times out. */

@@ -16,10 +16,19 @@ import android.util.Log
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.webrtc.*
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "OrchestratorPeer"
+
+/** Holds a deferred ICE-building task within a single [OrchestratorPeer.poll] cycle. */
+private data class BuildJob(
+    val remotePeerId: String,
+    val type: String,       // "offer" or "answer"
+    val offerSdp: String? = null
+)
 
 /**
  * Participates in the Waymark peer mesh for a single sheet.
@@ -78,6 +87,8 @@ class OrchestratorPeer(
         private const val DC_PONG_TIMEOUT_MS   = 90_000L
         /** Delay before forcing close after ICE DISCONNECTED. */
         private const val ICE_DISCONNECT_GRACE_MS = 15_000L
+        /** Consecutive Sheets IO failures before forcing a mesh reconnect (refreshes token). */
+        private const val SHEETS_FAILURE_THRESHOLD = 3
     }
 
     /* ---------- State ---------- */
@@ -90,9 +101,11 @@ class OrchestratorPeer(
         val createdAt: Long = System.currentTimeMillis()
     )
 
-    private val peers   = ConcurrentHashMap<String, PeerEntry>()
+    private val peers    = ConcurrentHashMap<String, PeerEntry>()
     /** Tracks epoch-ms of last pong received per peer, for DC keepalive. */
     private val lastPong = ConcurrentHashMap<String, Long>()
+    /** Counts consecutive Sheets API failures; resets on a successful read to detect token expiry. */
+    private val _sheetsFailures = AtomicInteger(0)
 
     /**
      * Invoked on the IO dispatcher whenever the number of open DataChannel
@@ -215,11 +228,12 @@ class OrchestratorPeer(
     private suspend fun poll() = withContext(Dispatchers.IO) {
         if (destroyed || block < 0) return@withContext
         try {
-            val vals = signalingClient.readAll()
-            val alive = scanAlive(vals)
+            val vals     = signalingClient.readAll()
+            _sheetsFailures.set(0)  // successful Sheets read — reset error count
+            val alive    = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
 
-            // Clean up stuck handshakes — entries where DC never opened in time
+            // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
             val now = System.currentTimeMillis()
             for ((rId, entry) in peers.entries.toList()) {
                 if (entry.dc?.state() != DataChannel.State.OPEN &&
@@ -240,8 +254,8 @@ class OrchestratorPeer(
 
             var myOffers  = parseJson(vals.getOrNull(block + WaymarkConfig.OFF_OFFERS))  ?: JSONObject()
             var myAnswers = parseJson(vals.getOrNull(block + WaymarkConfig.OFF_ANSWERS)) ?: JSONObject()
-            var offDirty = false
-            var ansDirty = false
+            var offDirty  = false
+            var ansDirty  = false
 
             // Clean stale entries
             for (key in myOffers.keys().asSequence().toList()) {
@@ -251,6 +265,8 @@ class OrchestratorPeer(
                 if (key !in aliveIds) { myAnswers.remove(key); ansDirty = true }
             }
 
+            // Collect ICE-building jobs; handle fast (non-ICE) ops inline
+            val buildJobs = mutableListOf<BuildJob>()
             for (remote in alive) {
                 val remotePeerId = remote.optString("peerId")
                 val remoteBlock  = remote.optInt("block", -1)
@@ -278,27 +294,14 @@ class OrchestratorPeer(
                             lastPong.remove(remotePeerId)
                             myOffers.remove(remotePeerId)
                             offDirty = true
-                            continue  // entry is now stale; rebuild on the next poll cycle
+                            continue  // rebuild on next poll cycle (same as original)
                         }
                     }
 
                     if (entry == null) {
-                        // Build offer (suspends until ICE gathering completes)
-                        try {
-                            val sdp = buildOffer(remotePeerId)
-                            if (sdp != null) {
-                                myOffers.put(remotePeerId, JSONObject().apply {
-                                    put("sdp", sdp); put("ts", System.currentTimeMillis())
-                                })
-                                writeOffers(myOffers)
-                                offDirty = false
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "buildOffer to $remotePeerId failed", e)
-                            peers.remove(remotePeerId)?.pc?.dispose()
-                        }
+                        buildJobs.add(BuildJob(remotePeerId, "offer"))
                     } else {
-                        // Check for answer
+                        // Check for answer — fast op, no ICE gathering needed
                         val remoteAns = parseJson(vals.getOrNull(remoteBlock + WaymarkConfig.OFF_ANSWERS)) ?: JSONObject()
                         val ans = remoteAns.optJSONObject(peerId)
                         if (ans != null) {
@@ -321,19 +324,38 @@ class OrchestratorPeer(
                         val remoteOff = parseJson(vals.getOrNull(remoteBlock + WaymarkConfig.OFF_OFFERS)) ?: JSONObject()
                         val offer = remoteOff.optJSONObject(peerId)
                         if (offer != null) {
+                            buildJobs.add(BuildJob(remotePeerId, "answer", offer.getString("sdp")))
+                        }
+                    }
+                }
+            }
+
+            // Run all ICE-gathering operations concurrently instead of sequentially
+            if (buildJobs.isNotEmpty()) {
+                coroutineScope {
+                    buildJobs.map { job ->
+                        async {
                             try {
-                                val sdp = buildAnswer(remotePeerId, offer.getString("sdp"))
-                                if (sdp != null) {
-                                    myAnswers.put(remotePeerId, JSONObject().apply {
-                                        put("sdp", sdp); put("ts", System.currentTimeMillis())
-                                    })
-                                    writeAnswers(myAnswers)
-                                    ansDirty = false
+                                when (job.type) {
+                                    "offer" -> {
+                                        val sdp = buildOffer(job.remotePeerId)
+                                        if (sdp != null) Triple(job.remotePeerId, "offer", sdp) else null
+                                    }
+                                    else -> {
+                                        val sdp = buildAnswer(job.remotePeerId, job.offerSdp!!)
+                                        if (sdp != null) Triple(job.remotePeerId, "answer", sdp) else null
+                                    }
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "buildAnswer for $remotePeerId failed", e)
-                                peers.remove(remotePeerId)?.pc?.dispose()
+                                Log.e(TAG, "Build ${job.type} for ${job.remotePeerId} failed", e)
+                                peers.remove(job.remotePeerId)?.pc?.dispose()
+                                null
                             }
+                        }
+                    }.awaitAll().filterNotNull().forEach { (rId, type, sdp) ->
+                        when (type) {
+                            "offer"  -> { myOffers.put(rId, JSONObject().apply { put("sdp", sdp); put("ts", System.currentTimeMillis()) }); offDirty = true }
+                            "answer" -> { myAnswers.put(rId, JSONObject().apply { put("sdp", sdp); put("ts", System.currentTimeMillis()) }); ansDirty = true }
                         }
                     }
                 }
@@ -344,6 +366,13 @@ class OrchestratorPeer(
 
         } catch (e: Exception) {
             Log.e(TAG, "Poll error", e)
+            // After SHEETS_FAILURE_THRESHOLD consecutive IO failures, propagate to the
+            // outer start() retry loop so the peer rejoins the mesh with a fresh token.
+            if (e is IOException && _sheetsFailures.incrementAndGet() >= SHEETS_FAILURE_THRESHOLD) {
+                _sheetsFailures.set(0)
+                Log.w(TAG, "Repeated Sheets IO failures — forcing mesh reconnect to use fresh token")
+                throw e
+            }
         }
     }
 
@@ -446,7 +475,10 @@ class OrchestratorPeer(
         val config = PeerConnection.RTCConfiguration(STUN_SERVERS).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
-        return factory(context).createPeerConnection(config, object : PeerConnection.Observer {
+        // pcRef lets onDataChannel re-insert an entry pruned by the handshake-timeout cleanup
+        // while ICE was still gathering. Set synchronously before any async callback can fire.
+        var pcRef: PeerConnection? = null
+        val pc = factory(context).createPeerConnection(config, object : PeerConnection.Observer {
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
                 if (state == PeerConnection.IceGatheringState.COMPLETE) {
                     iceGatheringDone.complete(Unit)
@@ -479,9 +511,15 @@ class OrchestratorPeer(
                 }
             }
             override fun onDataChannel(dc: DataChannel) {
-                // Answerer receives the data channel here
-                peers[remotePeerId]?.let {
-                    peers[remotePeerId] = it.copy(dc = dc)
+                val existing = peers[remotePeerId]
+                if (existing != null) {
+                    peers[remotePeerId] = existing.copy(dc = dc)
+                } else {
+                    // Entry was evicted (e.g., handshake timeout) but the DataChannel arrived
+                    // anyway — re-insert so the peer is tracked and notifications are delivered.
+                    val captured = pcRef ?: return
+                    Log.w(TAG, "onDataChannel for evicted $remotePeerId — re-inserting entry")
+                    peers[remotePeerId] = PeerEntry(captured, dc, state = "connecting")
                 }
                 attachDataChannelObserver(dc, remotePeerId)
             }
@@ -497,6 +535,8 @@ class OrchestratorPeer(
             override fun onTrack(transceiver: RtpTransceiver?) {}
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
         })
+        pcRef = pc
+        return pc
     }
 
     /* ---------- DataChannel message processing ---------- */
