@@ -24,7 +24,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
 import java.security.SecureRandom
-import java.util.HexFormat
 
 private const val TAG = "WebRtcService"
 
