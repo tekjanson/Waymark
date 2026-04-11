@@ -228,6 +228,13 @@ class WebRtcService : LifecycleService() {
             }
         )
 
+        newPeer.onConnectionStateChanged = { connected, count ->
+            startForeground(
+                NotificationHelper.NOTIFICATION_ID_SERVICE,
+                NotificationHelper.buildServiceNotification(applicationContext, connected, count)
+            )
+        }
+
         peer = newPeer
         newPeer.start()
     }
@@ -238,6 +245,10 @@ class WebRtcService : LifecycleService() {
         peer?.stop()
         peer = null
         currentSheetId = null
+        startForeground(
+            NotificationHelper.NOTIFICATION_ID_SERVICE,
+            NotificationHelper.buildServiceNotification(this, false, 0)
+        )
     }
 
     /* ---------- Helpers ---------- */

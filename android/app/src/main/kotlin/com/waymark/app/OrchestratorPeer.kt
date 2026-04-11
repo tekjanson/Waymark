@@ -78,6 +78,16 @@ class OrchestratorPeer(
 
     private val peers = ConcurrentHashMap<String, PeerEntry>()
 
+    /**
+     * Invoked on the IO dispatcher whenever the number of open DataChannel
+     * peers changes.  The service uses this to update the foreground
+     * notification status in real time.
+     *
+     * @param connected True when at least one DataChannel is OPEN
+     * @param peerCount Number of peers with an OPEN DataChannel
+     */
+    var onConnectionStateChanged: ((connected: Boolean, peerCount: Int) -> Unit)? = null
+
     /** Assigned signaling block row (0-based index into signaling column). */
     @Volatile private var block = -1
 
@@ -188,6 +198,7 @@ class OrchestratorPeer(
                 peers.remove(id)?.pc?.dispose()
                 Log.d(TAG, "Removed dead peer $id")
             }
+            if (deadIds.isNotEmpty()) fireConnectionState()
 
             var myOffers  = parseJson(vals.getOrNull(block + WaymarkConfig.OFF_OFFERS))  ?: JSONObject()
             var myAnswers = parseJson(vals.getOrNull(block + WaymarkConfig.OFF_ANSWERS)) ?: JSONObject()
@@ -387,6 +398,7 @@ class OrchestratorPeer(
                 if (state == PeerConnection.IceConnectionState.FAILED ||
                     state == PeerConnection.IceConnectionState.CLOSED) {
                     peers.remove(remotePeerId)?.pc?.dispose()
+                    fireConnectionState()
                 }
             }
             override fun onDataChannel(dc: DataChannel) {
@@ -413,11 +425,22 @@ class OrchestratorPeer(
 
     /* ---------- DataChannel message processing ---------- */
 
+    /** Counts open DataChannels and fires the connection-state callback. */
+    private fun fireConnectionState() {
+        val openCount = peers.values.count { it.dc?.state() == DataChannel.State.OPEN }
+        onConnectionStateChanged?.invoke(openCount > 0, openCount)
+    }
+
     private fun attachDataChannelObserver(dc: DataChannel, remotePeerId: String) {
         dc.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(amount: Long) {}
             override fun onStateChange() {
                 Log.d(TAG, "DC $remotePeerId → ${dc.state()}")
+                val s = dc.state()
+                if (s == DataChannel.State.OPEN || s == DataChannel.State.CLOSED ||
+                    s == DataChannel.State.CLOSING) {
+                    fireConnectionState()
+                }
             }
             override fun onMessage(buffer: DataChannel.Buffer) {
                 if (!buffer.binary) {
