@@ -29,7 +29,7 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const SIG_COL     = 20;
+const SIG_COL     = 19;       // 0-based column index — column T
 const BLOCK_SIZE  = 5;
 const BLOCK_START = 1;    // Row 0 = sheet header
 const MAX_SLOTS   = 8;   // Up to 8 peers (rows 1–40)

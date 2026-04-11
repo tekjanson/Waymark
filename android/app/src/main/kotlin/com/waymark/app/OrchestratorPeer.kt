@@ -209,17 +209,19 @@ class OrchestratorPeer(
 
                 if (weInit) {
                     if (entry == null) {
-                        // Build offer
-                        val pc = buildOffer(remotePeerId) { sdp ->
-                            scope.launch {
+                        // Build offer (suspends until ICE gathering completes)
+                        try {
+                            val sdp = buildOffer(remotePeerId)
+                            if (sdp != null) {
                                 myOffers.put(remotePeerId, JSONObject().apply {
                                     put("sdp", sdp); put("ts", System.currentTimeMillis())
                                 })
                                 writeOffers(myOffers)
+                                offDirty = false
                             }
-                        }
-                        if (pc != null) {
-                            offDirty = false // writeOffers already called inside offer callback
+                        } catch (e: Exception) {
+                            Log.e(TAG, "buildOffer to $remotePeerId failed", e)
+                            peers.remove(remotePeerId)?.pc?.dispose()
                         }
                     } else {
                         // Check for answer
@@ -245,15 +247,19 @@ class OrchestratorPeer(
                         val remoteOff = parseJson(vals.getOrNull(remoteBlock + WaymarkConfig.OFF_OFFERS)) ?: JSONObject()
                         val offer = remoteOff.optJSONObject(peerId)
                         if (offer != null) {
-                            buildAnswer(remotePeerId, offer.getString("sdp")) { sdp ->
-                                scope.launch {
+                            try {
+                                val sdp = buildAnswer(remotePeerId, offer.getString("sdp"))
+                                if (sdp != null) {
                                     myAnswers.put(remotePeerId, JSONObject().apply {
                                         put("sdp", sdp); put("ts", System.currentTimeMillis())
                                     })
                                     writeAnswers(myAnswers)
+                                    ansDirty = false
                                 }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "buildAnswer for $remotePeerId failed", e)
+                                peers.remove(remotePeerId)?.pc?.dispose()
                             }
-                            ansDirty = false // writeAnswers already called
                         }
                     }
                 }
@@ -269,52 +275,93 @@ class OrchestratorPeer(
 
     /* ---------- Offer / Answer builders ---------- */
 
-    private fun buildOffer(remotePeerId: String, onSdp: (String) -> Unit): PeerConnection? {
-        val pc = createPeerConnection(remotePeerId) ?: return null
+    /**
+     * Create a WebRTC offer and wait for ICE gathering to complete so the
+     * returned SDP contains all ICE candidates (vanilla ICE — no trickle).
+     * Returns the complete SDP string, or null on failure.
+     */
+    private suspend fun buildOffer(remotePeerId: String): String? = withContext(Dispatchers.IO) {
+        val pc = createPeerConnection(remotePeerId) ?: return@withContext null
         val dc = pc.createDataChannel("waymark", DataChannel.Init())
         peers[remotePeerId] = PeerEntry(pc, dc)
         attachDataChannelObserver(dc, remotePeerId)
 
-        pc.createOffer(object : SdpObserver {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                pc.setLocalDescription(object : SdpObserver {
-                    override fun onCreateSuccess(p0: SessionDescription?) {}
-                    override fun onSetSuccess() { onSdp(sdp.description) }
-                    override fun onCreateFailure(s: String?) = logSdpError("setLocal offer", s)
-                    override fun onSetFailure(s: String?) = logSdpError("setLocal offer set", s)
-                }, sdp)
-            }
-            override fun onSetSuccess() {}
-            override fun onCreateFailure(s: String?) = logSdpError("createOffer", s)
-            override fun onSetFailure(s: String?)    = logSdpError("createOffer set", s)
-        }, MediaConstraints())
-        return pc
+        // Create offer
+        val offerSdp = suspendCancellableCoroutine { cont: CancellableContinuation<SessionDescription?> ->
+            pc.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription) { cont.resume(sdp) {} }
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(s: String?) { logSdpError("createOffer", s); cont.resume(null) {} }
+                override fun onSetFailure(s: String?) { cont.resume(null) {} }
+            }, MediaConstraints())
+        } ?: return@withContext null
+
+        // Set local description (starts ICE gathering)
+        suspendCancellableCoroutine { cont: CancellableContinuation<Boolean> ->
+            pc.setLocalDescription(object : SdpObserver {
+                override fun onCreateSuccess(p0: SessionDescription?) {}
+                override fun onSetSuccess() { cont.resume(true) {} }
+                override fun onCreateFailure(s: String?) { cont.resume(false) {} }
+                override fun onSetFailure(s: String?) { logSdpError("setLocal offer", s); cont.resume(false) {} }
+            }, offerSdp)
+        }
+
+        // Wait for ICE gathering to complete (vanilla ICE — full SDP exchange)
+        waitForIceGathering(pc)
+        pc.localDescription?.description
     }
 
-    private fun buildAnswer(remotePeerId: String, offerSdp: String, onSdp: (String) -> Unit) {
-        val pc = createPeerConnection(remotePeerId) ?: return
+    /**
+     * Accept a remote offer and create an answer, waiting for ICE gathering.
+     * Returns the complete answer SDP string, or null on failure.
+     */
+    private suspend fun buildAnswer(remotePeerId: String, offerSdp: String): String? = withContext(Dispatchers.IO) {
+        val pc = createPeerConnection(remotePeerId) ?: return@withContext null
         peers[remotePeerId] = PeerEntry(pc, null)
 
-        pc.setRemoteDescription(object : SdpObserver {
-            override fun onCreateSuccess(p0: SessionDescription?) {}
-            override fun onSetSuccess() {
-                pc.createAnswer(object : SdpObserver {
-                    override fun onCreateSuccess(sdp: SessionDescription) {
-                        pc.setLocalDescription(object : SdpObserver {
-                            override fun onCreateSuccess(p0: SessionDescription?) {}
-                            override fun onSetSuccess() { onSdp(sdp.description) }
-                            override fun onCreateFailure(s: String?) = logSdpError("setLocal answer", s)
-                            override fun onSetFailure(s: String?) = logSdpError("setLocal answer set", s)
-                        }, sdp)
-                    }
-                    override fun onSetSuccess() {}
-                    override fun onCreateFailure(s: String?) = logSdpError("createAnswer", s)
-                    override fun onSetFailure(s: String?) = logSdpError("createAnswer set", s)
-                }, MediaConstraints())
-            }
-            override fun onCreateFailure(s: String?) = logSdpError("setRemote offer", s)
-            override fun onSetFailure(s: String?) = logSdpError("setRemote offer set", s)
-        }, SessionDescription(SessionDescription.Type.OFFER, offerSdp))
+        // Set remote description (the offer)
+        val remoteOk = suspendCancellableCoroutine { cont: CancellableContinuation<Boolean> ->
+            pc.setRemoteDescription(object : SdpObserver {
+                override fun onCreateSuccess(p0: SessionDescription?) {}
+                override fun onSetSuccess() { cont.resume(true) {} }
+                override fun onCreateFailure(s: String?) { logSdpError("setRemote offer", s); cont.resume(false) {} }
+                override fun onSetFailure(s: String?) { logSdpError("setRemote offer", s); cont.resume(false) {} }
+            }, SessionDescription(SessionDescription.Type.OFFER, offerSdp))
+        }
+        if (!remoteOk) return@withContext null
+
+        // Create answer
+        val answerSdp = suspendCancellableCoroutine { cont: CancellableContinuation<SessionDescription?> ->
+            pc.createAnswer(object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription) { cont.resume(sdp) {} }
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(s: String?) { logSdpError("createAnswer", s); cont.resume(null) {} }
+                override fun onSetFailure(s: String?) { cont.resume(null) {} }
+            }, MediaConstraints())
+        } ?: return@withContext null
+
+        // Set local description (starts ICE gathering)
+        suspendCancellableCoroutine { cont: CancellableContinuation<Boolean> ->
+            pc.setLocalDescription(object : SdpObserver {
+                override fun onCreateSuccess(p0: SessionDescription?) {}
+                override fun onSetSuccess() { cont.resume(true) {} }
+                override fun onCreateFailure(s: String?) { cont.resume(false) {} }
+                override fun onSetFailure(s: String?) { logSdpError("setLocal answer", s); cont.resume(false) {} }
+            }, answerSdp)
+        }
+
+        // Wait for ICE gathering to complete (vanilla ICE — full SDP exchange)
+        waitForIceGathering(pc)
+        pc.localDescription?.description
+    }
+
+    /** Poll until ICE gathering completes or 12 s timeout. */
+    private suspend fun waitForIceGathering(pc: PeerConnection, timeoutMs: Long = 12_000) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (pc.iceGatheringState() != PeerConnection.IceGatheringState.COMPLETE
+               && System.currentTimeMillis() < deadline && !destroyed) {
+            delay(200)
+        }
     }
 
     /* ---------- PeerConnection factory ---------- */

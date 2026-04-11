@@ -410,11 +410,13 @@ export class SheetWebRtcPeer {
     }
 
     async _writeOffers(offers) {
-        await this._writeCell(this.block + OFF_OFFERS, JSON.stringify(offers));
+        const v = Object.keys(offers).length ? JSON.stringify(offers) : '';
+        await this._writeCell(this.block + OFF_OFFERS, v);
     }
 
     async _writeAnswers(answers) {
-        await this._writeCell(this.block + OFF_ANSWERS, JSON.stringify(answers));
+        const v = Object.keys(answers).length ? JSON.stringify(answers) : '';
+        await this._writeCell(this.block + OFF_ANSWERS, v);
     }
 
     _log(msg) {
