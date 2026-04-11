@@ -4,4 +4,6 @@
     <string name="service_notification_title">Waymark is running</string>
     <string name="service_notification_body">Connected to your sheets in the background</string>
     <string name="notification_denied">Notifications are disabled. You won\'t receive alerts from Waymark.</string>
+    <string name="service_notif_connected">Connected · %d peer(s)</string>
+    <string name="service_notif_waiting">Waiting for connection\u2026</string>
 </resources>

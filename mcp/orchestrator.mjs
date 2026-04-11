@@ -117,7 +117,7 @@ const TEMPLATE_KEY_TO_AGENT = {
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
 import { GoogleAuth } from "google-auth-library";
-import { SheetWebRtcPeer } from "./sheet-webrtc-peer.mjs";
+import { createNodeConnect } from "./node-connect.mjs";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let sheetsAuth = null;
@@ -142,7 +142,7 @@ const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 /** @type {string|null} resolved sheet ID, cached in memory once resolved */
 let _resolvedSignalingSheetId = null;
-/** @type {SheetWebRtcPeer|null} */
+/** @type {import('../public/js/webrtc.js').WaymarkConnect|null} */
 let _signalingPeer = null;
 
 /**
@@ -247,18 +247,35 @@ async function startSignalingPeer() {
         .digest("hex")
         .slice(0, 8);
 
-    _signalingPeer = new SheetWebRtcPeer({
+    // Track previous connected count so we can fire wake on first connection
+    let _prevConnectedCount = 0;
+
+    _signalingPeer = createNodeConnect({
         sheetId,
-        getToken:    getUserOAuthToken,  // user OAuth token — can write to user-owned sheet
+        getToken:    getUserOAuthToken,
         peerId,
         displayName: "Orchestrator MCP",
-        onConnect: (remotePeerId) => {
-            process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
+        onPeersChanged: (peers) => {
+            const connected = [...peers.values()].filter(p => p.channel === 'rtc').length;
+            if (connected > 0 && _prevConnectedCount === 0) {
+                const ids = [...peers.entries()]
+                    .filter(([, p]) => p.channel === 'rtc')
+                    .map(([id]) => id)
+                    .join(", ");
+                process.stderr.write(`orchestrator: Android peer connected: ${ids}\n`);
+                // Wake the orchestrator if it is sleeping while waiting for peer
+                if (_wakeResolve) _wakeResolve("peer-connected");
+            }
+            _prevConnectedCount = connected;
         },
-        onMessage: (remotePeerId, msg) => {
-            process.stderr.write(`orchestrator: message from ${remotePeerId}: ${JSON.stringify(msg)}\n`);
+        onMessage: (msg) => {
+            process.stderr.write(`orchestrator: message from peer: ${JSON.stringify(msg)}\n`);
         },
     });
+    // WaymarkConnect uses a stable peerId derived from sha256 above,
+    // but its constructor generates a random UUID slice. Override it
+    // so the presence row is stable across restarts.
+    _signalingPeer.peerId = peerId;
     await _signalingPeer.start();
 }
 
@@ -504,9 +521,13 @@ function matchesCondition(condition, ctx) {
     return true; // unknown format → fire
 }
 
-/* ---------- Template interpolation: {variable} ---------- */
+/* ---------- Template interpolation: {{variable}} or {variable} ---------- */
+// Domain knowledge documents {{variable}} (double-brace) format.
+// Single-brace {variable} is supported as a fallback for backward compat.
 function interpolate(template, ctx) {
-    return template.replace(/\{(\w+)\}/g, (_, k) => ctx[k] ?? "");
+    return template
+        .replace(/\{\{(\w+)\}\}/g, (_, k) => ctx[k] ?? "")
+        .replace(/\{(\w+)\}/g,     (_, k) => ctx[k] ?? "");
 }
 
 /**
@@ -657,6 +678,10 @@ const TOOLS = [
                     type: "string",
                     description: "Optional Google Sheets ID of a notification rules sheet. Columns: Event, Condition, Title, Body, Priority, Enabled. Omit to disable notifications.",
                 },
+                waitForPeerSeconds: {
+                    type: "number",
+                    description: "Optional seconds to wait for an Android peer to connect before dispatching the first task. Useful when the Android app is known to be opening shortly after the orchestrator starts. Default 0 (no wait). Recommended: 30–60.",
+                },
             },
         },
     },
@@ -706,6 +731,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
         _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
 
+        // peerWaitMs — how long to wait for Android before first dispatch
+        const peerWaitMs = Math.max(0, (args.waitForPeerSeconds || 0)) * 1000;
+        // Store alongside session; re-use sessions map with augmented object
+        _sessions.set(sessionId, { lastAction: null, lastAgentName: null, peerWaitMs, peerWaitUsed: false });
+
         // Start the Android WebRTC signaling peer on first boot
         if (!_signalingPeer) {
             startSignalingPeer().catch(err =>
@@ -720,6 +750,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 rulesLoaded: _notifRules.length,
                 signalingSheet: _resolvedSignalingSheetId ?? null,
                 signalingPeerId: _signalingPeer?.peerId ?? null,
+                peerWaitMs,
             }) }],
         };
     }
@@ -737,7 +768,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 agentName: sess.lastAgentName,
                 sessionId: args.sessionId,
             });
-            _sessions.set(args.sessionId, { lastAction: "RETURNED", lastAgentName: null });
+            _sessions.set(args.sessionId, { ...sess, lastAction: "RETURNED", lastAgentName: null });
         }
 
         // Refresh notification rules if stale
@@ -835,17 +866,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const routeResult = await routeTask(task);
             const prompt = buildPrompt(task, routeResult);
 
+            // If notifications are configured but no Android peer is connected yet,
+            // wait up to peerWaitMs for one to connect (sleep is interrupted by onConnect).
+            // Only applies once per session (peerWaitUsed flag) to avoid per-task delays.
+            const sess2 = _sessions.get(args.sessionId) || {};
+            if (
+                _signalingPeer &&
+                _notifRules.length > 0 &&
+                !sess2.peerWaitUsed &&
+                (sess2.peerWaitMs || 0) > 0 &&
+                _signalingPeer.connectedPeers().length === 0
+            ) {
+                const waitMs = sess2.peerWaitMs;
+                appendFileSync(logPath, `[${iso()}] PEER_WAIT: waiting up to ${waitMs / 1000}s for Android peer...\n`);
+                process.stderr.write(`orchestrator: waiting up to ${waitMs / 1000}s for Android peer before dispatch\n`);
+                _sessions.set(args.sessionId, { ...sess2, peerWaitUsed: true });
+                const pw = await sleep(waitMs);
+                if (pw.interrupted) {
+                    appendFileSync(logPath, `[${iso()}] PEER_WAIT: woke early — ${pw.reason}\n`);
+                }
+            } else {
+                _sessions.set(args.sessionId, { ...sess2, peerWaitUsed: true });
+            }
+
             appendFileSync(logPath, `[${iso()}] ROUTE: ${routeResult.agent} (${routeResult.method}) | ${task.task}\n`);
             await fireNotifications("DISPATCH", {
-                agentName: routeResult.agent,
-                taskTitle: task.task,
+                agentName:   routeResult.agent,
+                taskTitle:   task.task,
+                task:        task.task,          // alias: domain doc lists {{task}}
+                desc:        task.desc || "",
                 routeMethod: routeResult.method,
-                sessionId: args.sessionId,
+                sessionId:   args.sessionId,
             });
             // Claim "In Progress" on the workboard BEFORE returning — prevents re-dispatch
             await claimTask(task.row, routeResult.agent);
             appendFileSync(logPath, `[${iso()}] CLAIMED: row ${task.row} → In Progress (${routeResult.agent})\n`);
-            _sessions.set(args.sessionId, { lastAction: "DISPATCH", lastAgentName: routeResult.agent });
+            const sessDisp = _sessions.get(args.sessionId) || {};
+            _sessions.set(args.sessionId, { ...sessDisp, lastAction: "DISPATCH", lastAgentName: routeResult.agent });
 
             return {
                 content: [{

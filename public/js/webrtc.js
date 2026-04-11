@@ -103,12 +103,17 @@ export class WaymarkConnect {
     this._inCall = false;
     this._remoteStreams = new Map(); // peerId → MediaStream (for pipeline rebuild)
 
+    // Optional ICE gathering timeout override (ms). Node.js via werift needs more time.
+    this._iceWait = opts.iceWait ?? null;
+
     this._onUnload = () => {
       if (this.signal && this._block >= 0) {
         this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL, '');
       }
     };
-    window.addEventListener('beforeunload', this._onUnload);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', this._onUnload);
+    }
   }
 
   /* ---------- Public API ---------- */
@@ -444,7 +449,9 @@ export class WaymarkConnect {
 
   destroy() {
     this._destroyed = true;
-    window.removeEventListener('beforeunload', this._onUnload);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this._onUnload);
+    }
     if (this._inCall) this.endCall();
     if (this._bc) {
       this._bc.postMessage({ type: 'leave', peerId: this.peerId });
@@ -461,6 +468,35 @@ export class WaymarkConnect {
   }
 
   /* ---------- Internal helpers ---------- */
+
+  /**
+   * Send a JSON payload to every peer with an open DataChannel.
+   * Returns the number of peers reached. Available in both browser and Node.js.
+   * @param {object} msg
+   * @returns {number}
+   */
+  broadcast(msg) {
+    const s = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    let sent = 0;
+    for (const [, r] of this._rtc) {
+      if (r.dc?.readyState === 'open') {
+        try { r.dc.send(s); sent++; } catch {}
+      }
+    }
+    return sent;
+  }
+
+  /**
+   * Returns peer IDs of peers whose DataChannel is currently open.
+   * @returns {string[]}
+   */
+  connectedPeers() {
+    const out = [];
+    for (const [id, p] of this._peers) {
+      if (p.channel === 'rtc') out.push(id);
+    }
+    return out;
+  }
 
   _dcBroadcast(msg) {
     const s = JSON.stringify(msg);
@@ -821,6 +857,20 @@ export class WaymarkConnect {
           this._peers.set(remotePeerId, { name: this._peers.get(remotePeerId)?.name || 'Peer', channel: 'sig' });
           this._emitPeers();
         }
+      } else if (s === 'disconnected') {
+        // Give ICE a short window to self-heal, then force close so the next poll
+        // cycle rebuilds the connection cleanly.
+        setTimeout(() => {
+          if (!this._destroyed && this._rtc.get(remotePeerId)?.pc?.iceConnectionState === 'disconnected') {
+            console.warn(`[WC] ICE ${remotePeerId} still DISCONNECTED after 15s — closing`);
+            this._closeOne(remotePeerId);
+            const peer = this._peers.get(remotePeerId);
+            if (peer?.channel === 'rtc') {
+              this._peers.set(remotePeerId, { name: peer.name, channel: 'sig' });
+              this._emitPeers();
+            }
+          }
+        }, 15_000);
       }
     };
 
@@ -887,6 +937,12 @@ export class WaymarkConnect {
           case 'renego-answer':
             this._onRenegoAnswer(remotePeerId, m);
             break;
+          case 'waymark-ping':
+            try { dc.send(JSON.stringify({ type: 'waymark-pong', ts: Date.now() })); } catch {}
+            break;
+          case 'waymark-pong':
+            // pong received — connection is alive
+            break;
           case 'waymark-notification':
           case 'orchestrator-alert':
             // Forward orchestrator alerts to the Android native layer
@@ -949,9 +1005,10 @@ export class WaymarkConnect {
   /* ---------- Helpers ---------- */
 
   _iceReady(pc) {
+    const timeoutMs = this._iceWait ?? ICE_WAIT;
     return new Promise(resolve => {
       if (pc.iceGatheringState === 'complete') { resolve(); return; }
-      const t = setTimeout(resolve, ICE_WAIT);
+      const t = setTimeout(resolve, timeoutMs);
       pc.onicegatheringstatechange = () => {
         if (pc.iceGatheringState === 'complete') { clearTimeout(t); resolve(); }
       };

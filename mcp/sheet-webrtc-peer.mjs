@@ -27,9 +27,10 @@ const MAX_SLOTS   = 8;
 const OFF_PRESENCE = 0;
 const OFF_OFFERS   = 1;
 const OFF_ANSWERS  = 2;
-const ALIVE_TTL   = 50_000;   // ms — matches Android ALIVE_TTL
-const POLL_MS     = 5_000;    // ms — matches Android POLL_MS
-const HEART_MS    = 15_000;   // ms — matches Android HEART_MS
+const ALIVE_TTL      = 50_000;   // ms — matches Android ALIVE_TTL
+const POLL_MS        = 5_000;    // ms — matches Android POLL_MS
+const HEART_MS       = 15_000;   // ms — matches Android HEART_MS
+const OFFER_MAX_AGE  = 3 * 60_000; // ms — stale offer: rebuild if unanswered for 3 min
 
 const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
 const SIG_RANGE  = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
@@ -69,6 +70,7 @@ export class SheetWebRtcPeer {
 
         this.block     = -1;
         this.destroyed = false;
+        this._polling        = false;  // guard: prevent concurrent poll cycles
         this._heartbeatTimer = null;
         this._pollTimer      = null;
     }
@@ -102,10 +104,9 @@ export class SheetWebRtcPeer {
         if (this.block >= 0) {
             this._clearPresence().catch(() => {});
         }
-        for (const { pc } of this.peers.values()) {
-            try { pc.close(); } catch {}
+        for (const id of [...this.peers.keys()]) {
+            this._closeOne(id);
         }
-        this.peers.clear();
     }
 
     /**
@@ -246,78 +247,108 @@ export class SheetWebRtcPeer {
     /* ---------- Poll cycle ---------- */
 
     async _poll() {
-        if (this.destroyed || this.block < 0) return;
+        if (this.destroyed || this.block < 0 || this._polling) return;
+        this._polling = true;
+        try {
+            const vals  = await this._readAll();
+            const alive = this._scanAlive(vals);
+            const aliveIds = new Set(alive.map(p => p.peerId));
 
-        const vals  = await this._readAll();
-        const alive = this._scanAlive(vals);
-        const aliveIds = new Set(alive.map(p => p.peerId));
-
-        // Remove dead peers
-        for (const [id, { pc }] of this.peers) {
-            if (!aliveIds.has(id)) {
-                try { pc.close(); } catch {}
-                this.peers.delete(id);
+            // Remove dead peers
+            for (const [id, { pc }] of this.peers) {
+                if (!aliveIds.has(id)) {
+                    this._closeOne(id);
+                }
             }
-        }
 
-        let myOffers  = this._parseJson(vals[this.block + OFF_OFFERS])  || {};
-        let myAnswers = this._parseJson(vals[this.block + OFF_ANSWERS]) || {};
-        let offDirty = false;
-        let ansDirty = false;
+            let myOffers  = this._parseJson(vals[this.block + OFF_OFFERS])  || {};
+            let myAnswers = this._parseJson(vals[this.block + OFF_ANSWERS]) || {};
+            let offDirty = false;
+            let ansDirty = false;
 
-        // Clean stale entries
-        for (const k of Object.keys(myOffers))  { if (!aliveIds.has(k)) { delete myOffers[k];  offDirty = true; } }
-        for (const k of Object.keys(myAnswers)) { if (!aliveIds.has(k)) { delete myAnswers[k]; ansDirty = true; } }
+            // Clean stale entries for dead peers
+            for (const k of Object.keys(myOffers))  { if (!aliveIds.has(k)) { delete myOffers[k];  offDirty = true; } }
+            for (const k of Object.keys(myAnswers)) { if (!aliveIds.has(k)) { delete myAnswers[k]; ansDirty = true; } }
 
-        for (const remote of alive) {
-            const remoteId    = remote.peerId;
-            const remoteBlock = remote.block;
-            if (remoteId === this.peerId || remoteBlock < 0) continue;
+            for (const remote of alive) {
+                const remoteId    = remote.peerId;
+                const remoteBlock = remote.block;
+                if (remoteId === this.peerId || remoteBlock < 0) continue;
 
-            const entry  = this.peers.get(remoteId);
-            const weInit = this.peerId < remoteId; // lexicographic — matches Android logic
+                const entry  = this.peers.get(remoteId);
 
-            if (weInit) {
-                if (!entry) {
-                    // Build offer
-                    await this._createOffer(remoteId, myOffers).catch(e =>
-                        this._log(`createOffer for ${remoteId} failed: ${e.message}`)
-                    );
-                    offDirty = false; // _writeOffers called inside _createOffer
-                } else if (entry.state !== "connected") {
-                    // Look for answer from remote
-                    const remoteAnswers = this._parseJson(vals[remoteBlock + OFF_ANSWERS]) || {};
-                    const ans = remoteAnswers[this.peerId];
-                    if (ans) {
-                        try {
-                            await entry.pc.setRemoteDescription({ type: "answer", sdp: ans.sdp });
-                            entry.state = "connected";
-                            delete myOffers[remoteId];
-                            offDirty = true;
-                        } catch (e) {
-                            this._log(`setRemoteDescription(answer) failed for ${remoteId}: ${e.message}`);
-                            try { entry.pc.close(); } catch {}
-                            this.peers.delete(remoteId);
+                // Clean up failed or closed ICE connections — will rebuild next cycle
+                if (entry?.pc && (
+                    entry.pc.iceConnectionState === "failed" ||
+                    entry.pc.iceConnectionState === "closed"
+                )) {
+                    this._log(`ICE ${entry.pc.iceConnectionState} for ${remoteId} — resetting`);
+                    this._closeOne(remoteId);
+                    continue;
+                }
+
+                // Already connected — clean up stale signal entries and skip renegotiation
+                if (entry?.dc?.readyState === "open") {
+                    if (myOffers[remoteId])  { delete myOffers[remoteId];  offDirty = true; }
+                    if (myAnswers[remoteId]) { delete myAnswers[remoteId]; ansDirty = true; }
+                    continue;
+                }
+
+                const weInit = this.peerId < remoteId; // lexicographic — matches Android logic
+
+                if (weInit) {
+                    // === INITIATOR: create offer, wait for answer ===
+                    const existingOffer = myOffers[remoteId];
+                    const offerStale = existingOffer && (Date.now() - (existingOffer.ts || 0) > OFFER_MAX_AGE);
+
+                    if (!entry || offerStale) {
+                        if (offerStale) {
+                            this._log(`stale offer for ${remoteId} (age ${Math.round((Date.now() - existingOffer.ts) / 1000)}s) — rebuilding`);
+                            this._closeOne(remoteId);
+                        }
+                        // Build offer
+                        await this._createOffer(remoteId, myOffers).catch(e =>
+                            this._log(`createOffer for ${remoteId} failed: ${e.message}`)
+                        );
+                        offDirty = false; // _writeOffers called inside _createOffer
+                    } else if (entry.state !== "connected") {
+                        // Look for answer from remote
+                        const remoteAnswers = this._parseJson(vals[remoteBlock + OFF_ANSWERS]) || {};
+                        const ans = remoteAnswers[this.peerId];
+                        if (ans) {
+                            try {
+                                await entry.pc.setRemoteDescription({ type: "answer", sdp: ans.sdp });
+                                // state will become "connected" when dc.onopen fires
+                                delete myOffers[remoteId];
+                                offDirty = true;
+                            } catch (e) {
+                                this._log(`setRemoteDescription(answer) failed for ${remoteId}: ${e.message}`);
+                                this._closeOne(remoteId);
+                            }
+                        }
+                    }
+                } else {
+                    // === ANSWERER: look for offer in remote's OFFERS row ===
+                    if (!entry) {
+                        const remoteOffers = this._parseJson(vals[remoteBlock + OFF_OFFERS]) || {};
+                        const offer = remoteOffers[this.peerId];
+                        if (offer) {
+                            await this._createAnswer(remoteId, offer.sdp, myAnswers).catch(e =>
+                                this._log(`createAnswer for ${remoteId} failed: ${e.message}`)
+                            );
+                            ansDirty = false; // _writeAnswers called inside _createAnswer
                         }
                     }
                 }
-            } else {
-                if (!entry) {
-                    // Look for offer from remote
-                    const remoteOffers = this._parseJson(vals[remoteBlock + OFF_OFFERS]) || {};
-                    const offer = remoteOffers[this.peerId];
-                    if (offer) {
-                        await this._createAnswer(remoteId, offer.sdp, myAnswers).catch(e =>
-                            this._log(`createAnswer for ${remoteId} failed: ${e.message}`)
-                        );
-                        ansDirty = false; // _writeAnswers called inside _createAnswer
-                    }
-                }
             }
-        }
 
-        if (offDirty) await this._writeOffers(myOffers);
-        if (ansDirty) await this._writeAnswers(myAnswers);
+            if (offDirty) await this._writeOffers(myOffers);
+            if (ansDirty) await this._writeAnswers(myAnswers);
+        } catch (err) {
+            this._log(`_poll error: ${err.message}`);
+        } finally {
+            this._polling = false;
+        }
     }
 
     _scanAlive(vals) {
@@ -330,6 +361,15 @@ export class SheetWebRtcPeer {
             alive.push({ ...p, block: row });
         }
         return alive;
+    }
+
+    /** Close and remove a single peer entry (mirrors browser webrtc.js _closeOne). */
+    _closeOne(remoteId) {
+        const entry = this.peers.get(remoteId);
+        if (!entry) return;
+        try { entry.dc?.close(); }  catch {}
+        try { entry.pc?.close(); }  catch {}
+        this.peers.delete(remoteId);
     }
 
     /* ---------- Offer / Answer builders ---------- */

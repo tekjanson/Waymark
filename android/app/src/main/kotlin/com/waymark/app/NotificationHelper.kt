@@ -107,12 +107,19 @@ object NotificationHelper {
 
     /**
      * Builds the persistent notification that is required to keep the
-     * WebRtcService alive in the foreground.
+     * WebRtcService alive in the foreground.  The body updates dynamically
+     * to reflect the current P2P connection state.
      *
-     * @param context Service context
+     * @param context   Service context
+     * @param connected True when at least one DataChannel peer is OPEN
+     * @param peerCount Number of currently connected peers
      * @returns Notification shown in the status bar while the service runs
      */
-    fun buildServiceNotification(context: Context): Notification {
+    fun buildServiceNotification(
+        context: Context,
+        connected: Boolean = false,
+        peerCount: Int = 0
+    ): Notification {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -123,14 +130,36 @@ object NotificationHelper {
             PendingIntent.FLAG_IMMUTABLE
         )
 
+        val body = if (connected)
+            context.getString(R.string.service_notif_connected, peerCount)
+        else
+            context.getString(R.string.service_notif_waiting)
+
         return NotificationCompat.Builder(context, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.service_notification_title))
-            .setContentText(context.getString(R.string.service_notification_body))
+            .setContentText(body)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
+    }
+
+    /**
+     * Updates the live foreground service notification in-place to reflect
+     * the current P2P connection state.  Safe to call from any thread.
+     *
+     * @param context   Service context
+     * @param connected True when at least one DataChannel peer is OPEN
+     * @param peerCount Number of currently connected peers
+     */
+    fun updateServiceNotification(context: Context, connected: Boolean, peerCount: Int) {
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(NOTIFICATION_ID_SERVICE, buildServiceNotification(context, connected, peerCount))
+        } catch (ignored: SecurityException) {
+            // POST_NOTIFICATIONS permission not granted — fail silently
+        }
     }
 }
