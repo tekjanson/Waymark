@@ -241,16 +241,16 @@ async function main() {
         await writePrivateConfig(privateId, { version: 1, createdAt: new Date().toISOString(), publicSignalingSheetId: wantsPublicId }, token);
     }
 
-    // ── AES-256 key — local file ONLY (never in any sheet) ───────────────
+    // ── AES-256 key — created at runtime by the orchestrator ───────────────
+    // The key is generated automatically by the orchestrator on first boot
+    // and distributed to peers over the WebRTC DataChannel.
+    // No key file generation here — it's a runtime concern.
     const existingKey = readLocalKey();
-    if (!existingKey || existingKey.length !== 64 || FORCE_KEY) {
-        const keyHex = generateAndSaveKey();
-        log(`${!existingKey ? "Generated initial" : "Rotated"} AES-256 key → ${KEY_FILE}`);
-        log(`  Key (first 16 chars): ${keyHex.slice(0, 16)}…`);
-        log(`  IMPORTANT: push this key to Android via adb before running tests:`);
-        log(`    adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${keyHex}`);
+    if (existingKey && existingKey.length === 64) {
+        log(`Existing local key found at ${KEY_FILE}: ${existingKey.slice(0, 16)}…`);
+        log(`  (Key is managed at runtime by the orchestrator — no action needed)`);
     } else {
-        log(`Key already present at ${KEY_FILE}: ${existingKey.slice(0, 16)}…`);
+        log(`No local key file — the orchestrator will generate one on first boot.`);
     }
 
     // ── Public sheet ──────────────────────────────────────────────────────
@@ -261,7 +261,6 @@ async function main() {
         updates.publicSignalingSheetId = publicId;
         log(`  Created: ${publicId}`);
         // Back-fill the publicSignalingSheetId into the private config now that we have it
-        const key = readLocalKey() || "";
         await writePrivateConfig(privateId, { version: 1, createdAt: new Date().toISOString(), publicSignalingSheetId: publicId }, token);
     } else {
         log(`Public sheet exists: ${publicId}`);
@@ -290,13 +289,14 @@ async function main() {
 
     log("");
     log("=== Signaling setup complete ===");
-    log(`Private config sheet : ${privateId}  (plain text — no key stored here)`);
+    log(`Private config sheet : ${privateId}  (plaintext OAuth-protected — key exchange happens here)`);
     log(`Public signal sheet  : ${publicId}    (100% AES-256-GCM encrypted)`);
-    log(`Local key file       : ${KEY_FILE}`);
     log("");
-    log("The AES key lives ONLY in the local key file and on each device's");
-    log("secure storage (Android SharedPreferences / browser localStorage).");
-    log("Key distribution between peers happens ONLY over the WebRTC DataChannel.");
+    log("The AES key is generated at runtime by the orchestrator on first boot.");
+    log("Key distribution between peers happens ONLY over the WebRTC DataChannel:");
+    log("  1. Peers connect to the private sheet (plaintext, OAuth-protected)");
+    log("  2. Orchestrator sends the key over the DataChannel");
+    log("  3. Both peers switch to the public sheet with AES-256-GCM encryption");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

@@ -49,7 +49,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { spawn, execSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -84,7 +84,7 @@ const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
 
 // Resolved once in main(), used by all helper functions that read/write the sheet
-let _encKey         = null;  // AES-256 GCM key hex from private sheet
+let _encKey         = null;  // AES-256 GCM key hex from local key file
 let _privateSheetId = null;  // private (.waymark-signaling) sheet ID
 
 /** Encrypt a cell value if we have a key; pass through otherwise */
@@ -148,7 +148,7 @@ async function resolveSignalingSheet() {
     return id;
 }
 
-/** Resolve the PRIVATE key sheet ID (stores AES-256 key in Sheet1!A1) */
+/** Resolve the PRIVATE config sheet ID (stores JSON config marker only — never any key) */
 async function resolvePrivateSheetId() {
     if (process.env.PRIV_SHEET) return process.env.PRIV_SHEET;
     const data = await _loadWaymarkData();
@@ -165,10 +165,16 @@ async function resolveEncryptionKey() {
         const key = readFileSync(keyFile, "utf8").trim();
         if (key.length === 64) return key;
     } catch {}
-    throw new Error(
-        `Signal key not found — run 'node scripts/provision-signaling.mjs' to generate it\n` +
-        `  or set SIGNAL_KEY env var`
-    );
+    // Generate a key if one doesn't exist (same as orchestrator first-boot)
+    const newKey = randomBytes(32).toString("hex");
+    const dir = path.dirname(keyFile);
+    if (!existsSync(dir)) {
+        const { mkdirSync } = await import("node:fs");
+        mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(keyFile, newKey + "\n", { mode: 0o600 });
+    log(`  Generated new signal key → ${keyFile}`);
+    return newKey;
 }
 
 /* ============================================================
@@ -1381,11 +1387,7 @@ async function scenarioNotifBuffer(runner, sheetId, logcat) {
    ============================================================ */
 
 async function scenarioKeyCycling(runner, sheetId, logcat) {
-    await runner.run("key-cycling: new key written to private sheet is picked up next cycle", async () => {
-        if (!_privateSheetId) {
-            return { pass: true, detail: "SKIP — private sheet ID not resolved (no PRIV_SHEET env and no .waymark-data.json)" };
-        }
-
+    await runner.run("key-cycling: new key written to local file is picked up by new peer", async () => {
         // Start a Node peer with the CURRENT key
         const { peer: pA, peerId: idA } = makePeer(sheetId, "cycle-A");
         try {
@@ -1395,24 +1397,29 @@ async function scenarioKeyCycling(runner, sheetId, logcat) {
             const slotClaimed = pA.block >= BLOCK_START;
             if (!slotClaimed) return { pass: false, detail: "Peer A could not claim a slot before key cycle" };
 
-            // Generate a new key and write it to the private sheet
+            // Generate a new key and write it to the LOCAL key file (never to any sheet)
             const { randomBytes } = await import("node:crypto");
             const newKeyHex = randomBytes(32).toString("hex");
-            const token = await getOAuthToken();
-            const keyRange = encodeURIComponent("Sheet1!A1:A2");
-            const writeRes = await fetch(
-                `${SHEETS_BASE}/${_privateSheetId}/values/${keyRange}?valueInputOption=RAW`,
-                {
-                    method: "PUT",
-                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        range: "Sheet1!A1:A2",
-                        majorDimension: "ROWS",
-                        values: [[newKeyHex], [String(Date.now())]],
-                    }),
+            const keyFile = process.env.WAYMARK_KEY_FILE
+                || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+            try {
+                writeFileSync(keyFile, newKeyHex + "\n");
+            } catch (e) {
+                return { pass: false, detail: `Failed to write new key to ${keyFile}: ${e.message}` };
+            }
+
+            // Push new key to Android via adb broadcast
+            if (_adbSerial) {
+                try {
+                    execSync(
+                        `adb -s ${_adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver ` +
+                        `-a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${newKeyHex}`,
+                        { stdio: ["pipe", "pipe", "pipe"] }
+                    );
+                } catch (e) {
+                    log(`  ⚠ adb key push failed during key cycle: ${e.message}`);
                 }
-            );
-            if (!writeRes.ok) return { pass: false, detail: "Failed to write new key to private sheet: " + writeRes.status };
+            }
 
             // Update module-level key so subsequent reads/writes use the new key
             const oldKey = _encKey;
@@ -1447,11 +1454,8 @@ async function scenarioKeyCycling(runner, sheetId, logcat) {
         if (!android) {
             return { pass: true, detail: "SKIP — Android not in signaling sheet" };
         }
-        if (!_privateSheetId) {
-            return { pass: true, detail: "SKIP — private sheet ID not resolved" };
-        }
-        // After the key was cycled in the prior sub-test, Android will need OAuth
-        // to fetch the new key from the private sheet and reconnect.
+        // After the key was cycled in the prior sub-test, Android received the new
+        // key via adb broadcast. It should reconnect with the new key.
         // We just verify that Android eventually shows up with a freshened ts.
         const tsBefore = android.ts || 0;
         const deadline = Date.now() + 120_000;
@@ -1581,7 +1585,9 @@ async function main() {
         log(`  Private sheet: ${_privateSheetId}`);
         _encKey = await resolveEncryptionKey();
         log(`  Encryption key: ${_encKey.slice(0, 8)}… (AES-256-GCM) [from local file]`);
-        // Push the key to Android via adb so it uses the same key as the test
+        // With the two-phase architecture, the key is distributed to Android
+        // over the DataChannel (not via adb push).  However, for test stability
+        // we still push the key via adb as a fast setup path.
         if (_adbSerial && _encKey) {
             try {
                 execSync(
@@ -1589,9 +1595,9 @@ async function main() {
                     `-a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${_encKey}`,
                     { stdio: ["pipe", "pipe", "pipe"] }
                 );
-                log(`  ✓ Signal key pushed to Android (${_adbSerial})`);
+                log(`  ✓ Signal key pushed to Android via adb (fast path)`);
             } catch (e) {
-                log(`  ⚠ adb key push failed: ${e.message}`);
+                log(`  ⚠ adb key push failed: ${e.message} — Android will get key via DataChannel`);
             }
         }
     } catch (err) {

@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -142,8 +142,10 @@ const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 /** @type {string|null} resolved sheet ID, cached in memory once resolved */
 let _resolvedSignalingSheetId = null;
-/** @type {import('../public/js/webrtc.js').WaymarkConnect|null} */
+/** @type {SheetWebRtcPeer|null} Public-sheet peer for encrypted notification traffic */
 let _signalingPeer = null;
+/** @type {SheetWebRtcPeer|null} Private-sheet peer for key distribution (plaintext, OAuth-protected) */
+let _privateSignalingPeer = null;
 
 /**
  * Get a fresh user OAuth access token, refreshing if expired.
@@ -232,7 +234,7 @@ async function resolveSignalingSheet() {
 
 /** Resolved public signaling sheet ID — separate from the private key sheet */
 let _resolvedPublicSignalingSheetId = null;
-/** Resolved AES-256 signal key hex from the private key sheet */
+/** Resolved AES-256 signal key hex from the local key file */
 let _resolvedSignalKeyHex = null;
 
 /**
@@ -271,72 +273,128 @@ async function resolvePublicSignalingSheet() {
 }
 
 /**
- * Reads the AES-256 signal key from the private signaling sheet (Sheet1!A1:A2).
+ * Reads the AES-256 signal key from the local key file.
  *
- * The web app writes the key to column A of the private sheet after creation.
+ * The key is NEVER stored in any Google Sheet. It lives only in:
+ *   - Browser: localStorage['waymark_signal_key']
+ *   - Android: SharedPreferences PREF_SIGNAL_KEY
+ *   - Node:    ~/.config/gcloud/waymark-signal.key (or WAYMARK_KEY_FILE env)
+ *
  * Returns the 64-char hex key, or null if not yet provisioned.
  */
-async function resolveSignalKey(privateSheetId) {
+function resolveSignalKey() {
     if (_resolvedSignalKeyHex) return _resolvedSignalKeyHex;
-    if (!privateSheetId) return null;
 
-    const token = await getUserOAuthToken();
-    if (!token) return null;
-
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
     try {
-        const range = encodeURIComponent("Sheet1!A1:A2");
-        const res = await fetch(
-            `${SHEETS_BASE_URL}/${privateSheetId}/values/${range}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) return null;
-        const data = await res.json();
-        const rows = data.values || [];
-        const keyRow = rows[0];
-        if (!keyRow || keyRow.length === 0) return null;
-        const key = keyRow[0]?.trim();
-        if (!key || key.length !== 64) return null;
+        const key = readFileSync(keyFile, "utf8").trim();
+        if (key.length !== 64) return null;
         _resolvedSignalKeyHex = key;
-        process.stderr.write(`orchestrator: signal key resolved (${key.length / 2} bytes)\n`);
+        process.stderr.write(`orchestrator: signal key resolved from ${keyFile} (${key.length / 2} bytes)\n`);
         return key;
     } catch {
         return null;
     }
 }
 
+/**
+ * Generate a new AES-256 signal key, save to the local key file, and cache in memory.
+ * @returns {string} 64-char hex key
+ */
+async function generateAndSaveSignalKey() {
+    const { randomBytes: rb } = await import("node:crypto");
+    const keyHex = rb(32).toString("hex");
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    const dir = path.dirname(keyFile);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(keyFile, keyHex + "\n", { mode: 0o600 });
+    _resolvedSignalKeyHex = keyHex;
+    process.stderr.write(`orchestrator: generated new signal key → ${keyFile} (32 bytes)\n`);
+    return keyHex;
+}
+
+/**
+ * Two-phase WebRTC signaling startup.
+ *
+ * Phase 1 — Private sheet (plaintext, OAuth-protected):
+ *   Connects to .waymark-signaling for key distribution. When any peer joins
+ *   via DataChannel, the orchestrator sends them the AES key. This peer stays
+ *   alive so late-joining or rekeyed peers can always fetch the current key.
+ *
+ * Phase 2 — Public sheet (AES-256-GCM encrypted):
+ *   Connects to .waymark-public-signaling with the key. Normal notification
+ *   traffic flows here. Also sends the key if a peer requests it over DC.
+ */
 async function startSignalingPeer() {
-    let publicSheetId;
+    let publicSheetId, privateSheetId;
     try {
-        publicSheetId = await resolvePublicSignalingSheet();
+        [publicSheetId, privateSheetId] = await Promise.all([
+            resolvePublicSignalingSheet(),
+            resolveSignalingSheet(),
+        ]);
     } catch (err) {
         process.stderr.write(`orchestrator: signaling sheet resolve failed: ${err.message}\n`);
         return;
     }
     if (!publicSheetId) return;
 
-    // Resolve signal key from the private key sheet
-    const privateSheetId = await resolveSignalingSheet();
-    const signalKey = privateSheetId ? await resolveSignalKey(privateSheetId) : null;
+    // Read or generate the AES-256 signal key
+    let signalKey = resolveSignalKey();
     if (!signalKey) {
-        process.stderr.write("orchestrator: signal key not provisioned — signaling without encryption\n");
+        signalKey = await generateAndSaveSignalKey();
     }
 
     // Stable 8-char hex peer ID for this MCP server instance
     const { createHash } = await import("node:crypto");
-    const peerId = createHash("sha256")
+    const basePeerId = createHash("sha256")
         .update("orchestrator-mcp-" + publicSheetId)
         .digest("hex")
         .slice(0, 8);
 
+    // ── Phase 1: Private sheet — key distribution (plaintext, OAuth-protected) ──
+    if (privateSheetId) {
+        // Use a distinct peerId for the private sheet so both peers can coexist
+        const privatePeerId = createHash("sha256")
+            .update("orchestrator-mcp-private-" + privateSheetId)
+            .digest("hex")
+            .slice(0, 8);
+
+        _privateSignalingPeer = new SheetWebRtcPeer({
+            sheetId:     privateSheetId,
+            getToken:    getUserOAuthToken,
+            peerId:      privatePeerId,
+            displayName: "Orchestrator MCP (Key Exchange)",
+            // NO encryptionKey — plaintext signaling on the OAuth-protected private sheet
+            onConnect: (remotePeerId) => {
+                process.stderr.write(`orchestrator: peer ${remotePeerId} connected on private sheet — sending key\n`);
+                _privateSignalingPeer.broadcastKeyExchange(signalKey);
+            },
+            onMessage: (remotePeerId, msg) => {
+                // Peers may request a key re-send
+                if (msg.type === "waymark-key-request") {
+                    process.stderr.write(`orchestrator: key-request from ${remotePeerId} on private sheet\n`);
+                    _privateSignalingPeer.broadcastKeyExchange(signalKey);
+                }
+            },
+        });
+        await _privateSignalingPeer.start();
+        process.stderr.write(`orchestrator: Phase 1 — private sheet peer started (key distribution)\n`);
+    } else {
+        process.stderr.write("orchestrator: private sheet not found — skipping Phase 1 key distribution\n");
+    }
+
+    // ── Phase 2: Public sheet — encrypted notification traffic ──
     _signalingPeer = new SheetWebRtcPeer({
         sheetId:       publicSheetId,
         getToken:      getUserOAuthToken,
-        peerId,
+        peerId:        basePeerId,
         displayName:   "Orchestrator MCP",
         encryptionKey: signalKey,
         bufferFile:    `${LOG_DIR}/notif-buffer.json`,
         onConnect: (remotePeerId) => {
-            process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
+            process.stderr.write(`orchestrator: peer ${remotePeerId} connected on public sheet\n`);
             if (_wakeResolve) _wakeResolve("peer-connected");
         },
         onMessage: (remotePeerId, msg) => {
@@ -344,6 +402,7 @@ async function startSignalingPeer() {
         },
     });
     await _signalingPeer.start();
+    process.stderr.write(`orchestrator: Phase 2 — public sheet peer started (encrypted)\n`);
 }
 
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";

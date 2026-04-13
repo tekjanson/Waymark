@@ -200,11 +200,8 @@ async function ensureSignalingSheet() {
     } catch (e) {
       console.warn('[user-data] Failed to write private config marker:', e);
     }
-    // Generate and store the AES-256 key in localStorage ONLY
-    if (!localStorage.getItem('waymark_signal_key')) {
-      const keyHex = _generateSignalKeyHex();
-      localStorage.setItem('waymark_signal_key', keyHex);
-    }
+    // Key is NOT generated here — it is created at runtime by the orchestrator
+    // and distributed to peers exclusively over the WebRTC DataChannel.
   }
 
   // Create the public signaling sheet if missing
@@ -860,24 +857,22 @@ export function getPublicSignalingSheetId() {
 }
 
 /**
- * Cycle the AES-256 signal key by generating a fresh key and writing it to
- * the private signaling sheet.  All connected peers will detect the key change
-/**
  * Rotate the AES-256 signal key.
  *
- * Generates a fresh key and stores it ONLY in localStorage['waymark_signal_key'].
+ * Generates a fresh key and stores it in localStorage['waymark_signal_key'].
  * The key is NEVER written to any Google Sheet.
- * Peers receive the new key via the WebRTC DataChannel.
+ * The orchestrator is the key authority — it generates and distributes keys
+ * at runtime over the WebRTC DataChannel.  This browser-side function is a
+ * convenience for manual key rotation when the mesh peer is active.
  *
  * @returns {Promise<void>}
  */
 export async function cycleSignalKey() {
   const newKey = _generateSignalKeyHex();
   localStorage.setItem('waymark_signal_key', newKey);
-  // Peers will receive the new key over the WebRTC DataChannel.
   // Trigger a DataChannel key-push if the P2P mesh is active.
-  if (typeof window !== 'undefined' && window._waymarkMeshPeer?.broadcastSignalKey) {
-    window._waymarkMeshPeer.broadcastSignalKey(newKey);
+  if (typeof window !== 'undefined' && window._waymarkMeshPeer?.broadcastKeyExchange) {
+    window._waymarkMeshPeer.broadcastKeyExchange(newKey);
   }
 }
 

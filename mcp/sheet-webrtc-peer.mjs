@@ -125,10 +125,11 @@ const STUN_SERVERS = [
  *                                                   Google STUN only.
  * @param {function}            [opts.onMessage]   - (remotePeerId, message) callback
  * @param {function}            [opts.onConnect]   - (remotePeerId) called on DataChannel open
+ * @param {function}            [opts.onKeyExchange] - (remotePeerId, keyHex) called when a waymark-key-exchange message arrives
  * @param {string}              [opts.bufferFile]  - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, getEncryptionKey, iceServers, onMessage, onConnect, bufferFile }) {
+    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, getEncryptionKey, iceServers, onMessage, onConnect, onKeyExchange, bufferFile }) {
         this.sheetId       = sheetId;
         this.auth          = auth;
         this._getTokenFn   = getToken || null;
@@ -141,6 +142,7 @@ export class SheetWebRtcPeer {
         this._iceServers   = iceServers || STUN_SERVERS;  // pass TURN entries here for hard-NAT fallback
         this.onMessage     = onMessage;
         this.onConnect     = onConnect;
+        this.onKeyExchange = onKeyExchange || null;
         this._bufferFile   = bufferFile || null;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
@@ -237,6 +239,17 @@ export class SheetWebRtcPeer {
         }
         if (isNotif) this._enqueueNotif(json, deliveredTo);
         return sent;
+    }
+
+    /**
+     * Send a waymark-key-exchange message to all connected peers.
+     * Used by the orchestrator to distribute the AES-256 key
+     * to peers on the private (key-exchange) sheet.
+     * @param {string} keyHex - 64-char hex AES-256 key
+     * @returns {number} count of peers the key was sent to
+     */
+    broadcastKeyExchange(keyHex) {
+        return this.broadcast({ type: "waymark-key-exchange", key: keyHex });
     }
 
     /* ---------- Notification buffer ---------- */
@@ -763,6 +776,11 @@ export class SheetWebRtcPeer {
                 }
                 if (msg.type === "waymark-pong") {
                     this._lastPong.set(remotePeerId, Date.now()); // update keepalive clock
+                    return;
+                }
+                if (msg.type === "waymark-key-exchange" && msg.key) {
+                    this._log(`key-exchange received from ${remotePeerId} (${msg.key.length / 2} bytes)`);
+                    if (this.onKeyExchange) this.onKeyExchange(remotePeerId, msg.key);
                     return;
                 }
                 if (this.onMessage) this.onMessage(remotePeerId, msg);

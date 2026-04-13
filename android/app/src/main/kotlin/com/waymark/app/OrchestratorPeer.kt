@@ -123,6 +123,12 @@ class OrchestratorPeer(
      */
     var onSignalKeyStale: (() -> Unit)? = null
 
+    /**
+     * Called when a waymark-key-exchange message arrives over the DataChannel.
+     * WebRtcService overrides this to store the key and switch to the public sheet.
+     */
+    var onKeyReceived: ((keyHex: String) -> Unit)? = null
+
     /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
      *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
      *  immediately rather than waiting for ICE teardown (crash-recovery). */
@@ -707,6 +713,15 @@ class OrchestratorPeer(
                 }
                 "waymark-pong" -> {
                     lastPong[remotePeerId] = System.currentTimeMillis()
+                }
+                "waymark-key-exchange" -> {
+                    val keyHex = obj.optString("key", "")
+                    if (keyHex.length == 64) {
+                        Log.i(TAG, "Key exchange received from $remotePeerId (${keyHex.length / 2} bytes)")
+                        onKeyReceived?.invoke(keyHex)
+                    } else {
+                        Log.w(TAG, "Key exchange from $remotePeerId: invalid key length ${keyHex.length}")
+                    }
                 }
                 "waymark-notification", "orchestrator-alert" -> {
                     val title = obj.optString("title", "Waymark")
