@@ -318,10 +318,9 @@ function makePeer(suffix, extraOpts = {}) {
         displayName:   `Stress-${suffix}`,
         onMessage(rid, msg) {
             messages.push({ from: rid, msg, t: Date.now() });
-            // If msg is a pong (stress protocol: "pong:<echoMs>"), record latency
-            if (typeof msg === "string" && msg.startsWith("pong:")) {
-                const sent = parseInt(msg.slice(5), 10);
-                if (!isNaN(sent)) latencies.push(Date.now() - sent);
+            // If msg is a stress-pong, record latency
+            if (msg && msg.type === "stress-pong" && typeof msg.ts === "number") {
+                latencies.push(Date.now() - msg.ts);
             }
         },
         onConnect(rid)    { connected.add(rid); disconnected.delete(rid); },
@@ -396,9 +395,8 @@ async function phaseBaseline(report) {
     const { peer: B, peerId: bId, connected: bC } = makePeer("base-B", {
         onMessage(rid, msg) {
             // echo pings back as pongs
-            if (typeof msg === "string" && msg.startsWith("ping:")) {
-                const ts = msg.slice(5);
-                try { B.broadcast("pong:" + ts); } catch {}
+            if (msg && msg.type === "stress-ping") {
+                try { B.broadcast({ type: "stress-pong", ts: msg.ts }); } catch {}
             }
         },
     });
@@ -421,7 +419,7 @@ async function phaseBaseline(report) {
     while (Date.now() < deadline) {
         await sleep(5_000);
         if (aC.has(bId)) {
-            A.broadcast("ping:" + Date.now());
+            A.broadcast({ type: "stress-ping", ts: Date.now() });
             pingSent++;
         }
         // Check for pong from most recent ping
@@ -501,15 +499,26 @@ async function phaseSustained(report, phaseDurationMs) {
     // Track token age so we can log when it would expire without refresh
     let tokenFetchedAt = Date.now();
 
+    // Only peer A connects to Android so we don't get two-peer ICE churn.
+    // Peer B actively closes any non-A DC on connect.
     const { peer: A, peerId: aId, connected: aC, disconnected: aD, latencies: aLat }
         = makePeer("sustained-A");
+    const bConnected = new Set();
     const { peer: B, peerId: bId }
         = makePeer("sustained-B", {
             onMessage(rid, msg) {
-                if (typeof msg === "string" && msg.startsWith("ping:")) {
-                    try { B.broadcast("pong:" + msg.slice(5)); } catch {}
+                if (msg && msg.type === "stress-ping") {
+                    try { B.broadcast({ type: "stress-pong", ts: msg.ts }); } catch {}
                 }
             },
+            onConnect(rid) {
+                bConnected.add(rid);
+                // Close DC to anyone except A — only peer A talks to Android
+                if (rid !== aId) {
+                    try { const e = B.peers.get(rid); if (e?.dc) e.dc.close(); } catch {}
+                }
+            },
+            onDisconnect(rid) { bConnected.delete(rid); },
         });
 
     A.start();
@@ -524,18 +533,42 @@ async function phaseSustained(report, phaseDurationMs) {
     }
     log("  Initial DataChannel open ✓");
 
-    let lastPingSent = Date.now();
-    let totalPings   = 0;
-    let pingsPonged  = 0;
+    let lastPingSent    = Date.now();
+    let totalPings      = 0;
+    let pingsPonged     = 0;
+    let lastNotifSent   = 0;
+    let notifCount      = 0;
+    const NOTIF_INTERVAL = 10 * 60_000; // every 10 minutes
 
     while (Date.now() < deadline) {
         await sleep(10_000);
 
         const nowMs = Date.now();
 
+        // ── Periodic status notification (every 10 min) ───────────────
+        if (nowMs - lastNotifSent >= NOTIF_INTERVAL) {
+            notifCount++;
+            const elapsedMin = Math.round((nowMs - (deadline - phaseDurationMs)) / 60_000);
+            const pct = pingsPonged && totalPings
+                ? ((pingsPonged / totalPings) * 100).toFixed(0)
+                : "—";
+            try {
+                const delivered = A.broadcast({
+                    type:  "waymark-notification",
+                    title: `Stress test (${elapsedMin}min)`,
+                    body:  `Pings: ${pingsPonged}/${totalPings} (${pct}%) • reconnects: ${reconnects} • p95: ${m.percentile(95) ?? "—"}ms`,
+                    id:    `stress-notif-${notifCount}`,
+                });
+                lastNotifSent = nowMs;
+                log(`  📱 Notification #${notifCount} sent to ${delivered} peer(s) (${elapsedMin}min, ${pct}% success)`);
+            } catch (e) {
+                log(`  Notification #${notifCount} send failed: ${e.message}`);
+            }
+        }
+
         // ── Send ping ──────────────────────────────────────────────────
         if (aC.has(bId)) {
-            A.broadcast("ping:" + nowMs);
+            A.broadcast({ type: "stress-ping", ts: nowMs });
             totalPings++;
             lastPingSent = nowMs;
         } else {
@@ -601,6 +634,7 @@ async function phaseSustained(report, phaseDurationMs) {
     s.tokenRefreshes  = tokenRefreshes;
     s.pingsPonged     = pingsPonged;
     s.totalPings      = totalPings;
+    s.notifssent      = notifCount;
     report.phases.push(s);
 
     // Detect sustained degradation: if p95 in the last epoch is > 3× p95 in first epoch
@@ -615,7 +649,7 @@ async function phaseSustained(report, phaseDurationMs) {
     }
 
     const pass = !degraded && (m.failures / Math.max(m.total, 1)) < 0.10;
-    log(`  Sustained: ${pingsPonged}/${totalPings} pings ponged, reconnects=${reconnects}, tokenRefreshes=${tokenRefreshes}`);
+    log(`  Sustained: ${pingsPonged}/${totalPings} pings ponged, reconnects=${reconnects}, tokenRefreshes=${tokenRefreshes}, notifsSent=${notifCount}`);
     return { pass, detail: JSON.stringify({ degraded, reconnects, tokenRefreshes }) };
 }
 
@@ -836,8 +870,8 @@ async function phaseKeyCycle(report, privId) {
         = makePeer("cycle-B", {
             getEncryptionKey: () => currentKey,
             onMessage(rid, msg) {
-                if (typeof msg === "string" && msg.startsWith("ping:"))
-                    try { B.broadcast("pong:" + msg.slice(5)); } catch {}
+                if (msg && msg.type === "stress-ping")
+                    try { B.broadcast({ type: "stress-pong", ts: msg.ts }); } catch {}
             },
         });
 
@@ -858,7 +892,7 @@ async function phaseKeyCycle(report, privId) {
     let preCycleOk = 0;
     for (let i = 0; i < 3; i++) {
         const prevLen = aLat.length;
-        A.broadcast("ping:" + Date.now());
+        A.broadcast({ type: "stress-ping", ts: Date.now() });
         const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
         if (ponged) { preCycleOk++; m.record(aLat[aLat.length - 1]); }
         await sleep(2_000);
@@ -915,7 +949,7 @@ async function phaseKeyCycle(report, privId) {
     while (Date.now() < deadline && postCycleSent < POST_PINGS) {
         await sleep(5_000);
         const prevLen = aLat.length;
-        try { A.broadcast("ping:" + Date.now()); postCycleSent++; } catch { m.fail(); continue; }
+        try { A.broadcast({ type: "stress-ping", ts: Date.now() }); postCycleSent++; } catch { m.fail(); continue; }
         const ponged = await waitUntil(() => aLat.length > prevLen, 12_000);
         if (ponged) { postCycleOk++; m.record(aLat[aLat.length - 1]); } else { m.fail(); }
     }
@@ -968,8 +1002,8 @@ async function phaseKeyLoss(report, privId) {
         = makePeer("loss-B", {
             getEncryptionKey: () => currentKey,
             onMessage(rid, msg) {
-                if (typeof msg === "string" && msg.startsWith("ping:"))
-                    try { B.broadcast("pong:" + msg.slice(5)); } catch {}
+                if (msg && msg.type === "stress-ping")
+                    try { B.broadcast({ type: "stress-pong", ts: msg.ts }); } catch {}
             },
         });
 
@@ -990,7 +1024,7 @@ async function phaseKeyLoss(report, privId) {
     let preOk = 0;
     for (let i = 0; i < 3; i++) {
         const prevLen = aLat.length;
-        A.broadcast("ping:" + Date.now());
+        A.broadcast({ type: "stress-ping", ts: Date.now() });
         const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
         if (ponged) preOk++;
         await sleep(2_000);
@@ -1104,7 +1138,7 @@ async function phaseKeyLoss(report, privId) {
     const postTotal = 5;
     for (let i = 0; i < postTotal; i++) {
         const prevLen = aLat.length;
-        try { A.broadcast("ping:" + Date.now()); } catch { m.fail(); await sleep(2_000); continue; }
+        try { A.broadcast({ type: "stress-ping", ts: Date.now() }); } catch { m.fail(); await sleep(2_000); continue; }
         const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
         if (ponged) { postOk++; m.record(aLat[aLat.length - 1]); } else { m.fail(); }
         await sleep(3_000);

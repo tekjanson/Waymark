@@ -81,14 +81,32 @@ class WebRtcService : LifecycleService() {
     @Volatile private var peer: OrchestratorPeer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** Set when we lose a network — cleared on the next onAvailable. */
+    @Volatile private var networkLost = false
+
     /** Reconnect when the device regains a capable network after Doze or WiFi handoff. */
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
+            if (networkLost) {
+                // Network transition (WiFi → cellular or vice versa).
+                // Old ICE candidates are bound to the dead interface — tear down
+                // and rebuild immediately on the new network.
+                networkLost = false
+                Log.i(TAG, "Network recovered after loss — forcing full reconnect")
+                disconnectPeer()
+                scope.launch { resolveAndConnect() }
+                return
+            }
             val livePeer = peer
             if (livePeer == null || livePeer.destroyed || !livePeer.isInMesh) {
                 Log.i(TAG, "Network available — reconnecting peer")
                 scope.launch { resolveAndConnect() }
             }
+        }
+
+        override fun onLost(network: Network) {
+            Log.i(TAG, "Network lost — will force reconnect when a new network appears")
+            networkLost = true
         }
     }
 
