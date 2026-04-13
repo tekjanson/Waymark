@@ -146,6 +146,8 @@ let _resolvedSignalingSheetId = null;
 let _signalingPeer = null;
 /** @type {SheetWebRtcPeer|null} Private-sheet peer for key distribution (plaintext, OAuth-protected) */
 let _privateSignalingPeer = null;
+/** @type {ReturnType<typeof setInterval>|null} Health check timer for signaling peers */
+let _signalingHealthTimer = null;
 
 /**
  * Get a fresh user OAuth access token, refreshing if expired.
@@ -326,6 +328,13 @@ async function generateAndSaveSignalKey() {
  * Phase 2 — Public sheet (AES-256-GCM encrypted):
  *   Connects to .waymark-public-signaling with the key. Normal notification
  *   traffic flows here. Also sends the key if a peer requests it over DC.
+ *
+ * Resilience:
+ *   - The public peer uses getEncryptionKey() so key rotations take effect
+ *     immediately without reconnecting.
+ *   - The private peer always reads the CURRENT key from _resolvedSignalKeyHex
+ *     when distributing, so a rotated key is distributed correctly.
+ *   - A periodic health check restarts any peer that has lost its mesh slot.
  */
 async function startSignalingPeer() {
     let publicSheetId, privateSheetId;
@@ -353,6 +362,10 @@ async function startSignalingPeer() {
         .digest("hex")
         .slice(0, 8);
 
+    /** Always return the freshest key — reads from cached memory variable
+     *  which is updated by resolveSignalKey() / generateAndSaveSignalKey(). */
+    const currentKey = () => _resolvedSignalKeyHex;
+
     // ── Phase 1: Private sheet — key distribution (plaintext, OAuth-protected) ──
     if (privateSheetId) {
         // Use a distinct peerId for the private sheet so both peers can coexist
@@ -368,14 +381,16 @@ async function startSignalingPeer() {
             displayName: "Orchestrator MCP (Key Exchange)",
             // NO encryptionKey — plaintext signaling on the OAuth-protected private sheet
             onConnect: (remotePeerId) => {
-                process.stderr.write(`orchestrator: peer ${remotePeerId} connected on private sheet — sending key\n`);
-                _privateSignalingPeer.broadcastKeyExchange(signalKey);
+                const key = currentKey();
+                process.stderr.write(`orchestrator: peer ${remotePeerId} connected on private sheet — sending key (${key?.slice(0, 8)}…)\n`);
+                if (key) _privateSignalingPeer.broadcastKeyExchange(key);
             },
             onMessage: (remotePeerId, msg) => {
                 // Peers may request a key re-send
                 if (msg.type === "waymark-key-request") {
+                    const key = currentKey();
                     process.stderr.write(`orchestrator: key-request from ${remotePeerId} on private sheet\n`);
-                    _privateSignalingPeer.broadcastKeyExchange(signalKey);
+                    if (key) _privateSignalingPeer.broadcastKeyExchange(key);
                 }
             },
         });
@@ -387,12 +402,12 @@ async function startSignalingPeer() {
 
     // ── Phase 2: Public sheet — encrypted notification traffic ──
     _signalingPeer = new SheetWebRtcPeer({
-        sheetId:       publicSheetId,
-        getToken:      getUserOAuthToken,
-        peerId:        basePeerId,
-        displayName:   "Orchestrator MCP",
-        encryptionKey: signalKey,
-        bufferFile:    `${LOG_DIR}/notif-buffer.json`,
+        sheetId:          publicSheetId,
+        getToken:         getUserOAuthToken,
+        peerId:           basePeerId,
+        displayName:      "Orchestrator MCP",
+        getEncryptionKey: currentKey,
+        bufferFile:       `${LOG_DIR}/notif-buffer.json`,
         onConnect: (remotePeerId) => {
             process.stderr.write(`orchestrator: peer ${remotePeerId} connected on public sheet\n`);
             if (_wakeResolve) _wakeResolve("peer-connected");
@@ -403,6 +418,26 @@ async function startSignalingPeer() {
     });
     await _signalingPeer.start();
     process.stderr.write(`orchestrator: Phase 2 — public sheet peer started (encrypted)\n`);
+
+    // ── Health check: restart peers that lost their slot ──
+    _signalingHealthTimer = setInterval(() => {
+        if (_signalingPeer && _signalingPeer.block < 0 && !_signalingPeer.destroyed) {
+            process.stderr.write("orchestrator: public peer lost slot — restarting\n");
+            _signalingPeer.stop();
+            _signalingPeer.destroyed = false;
+            _signalingPeer.start().catch(e =>
+                process.stderr.write(`orchestrator: public peer restart failed: ${e.message}\n`)
+            );
+        }
+        if (_privateSignalingPeer && _privateSignalingPeer.block < 0 && !_privateSignalingPeer.destroyed) {
+            process.stderr.write("orchestrator: private peer lost slot — restarting\n");
+            _privateSignalingPeer.stop();
+            _privateSignalingPeer.destroyed = false;
+            _privateSignalingPeer.start().catch(e =>
+                process.stderr.write(`orchestrator: private peer restart failed: ${e.message}\n`)
+            );
+        }
+    }, 60_000);
 }
 
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -772,6 +807,39 @@ const wakeServer = createServer((req, res) => {
     } else if (req.method === "GET" && req.url === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, sleeping: !!_wakeResolve }));
+    } else if (req.method === "GET" && req.url === "/status") {
+        // Detailed signaling peer status
+        const status = {
+            ok: true,
+            publicPeer: _signalingPeer ? {
+                peerId: _signalingPeer.peerId,
+                block: _signalingPeer.block,
+                destroyed: _signalingPeer.destroyed,
+                connectedPeers: _signalingPeer.connectedPeers(),
+            } : null,
+            privatePeer: _privateSignalingPeer ? {
+                peerId: _privateSignalingPeer.peerId,
+                block: _privateSignalingPeer.block,
+                destroyed: _privateSignalingPeer.destroyed,
+                connectedPeers: _privateSignalingPeer.connectedPeers(),
+            } : null,
+            keyPrefix: _resolvedSignalKeyHex?.slice(0, 8) ?? null,
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(status));
+    } else if (req.method === "POST" && req.url === "/rekey") {
+        // Re-read the key file and push to all private-sheet peers.
+        // Used after provision-signaling.mjs --force-key or manual key rotation.
+        _resolvedSignalKeyHex = null; // clear cache
+        const key = resolveSignalKey();
+        if (key && _privateSignalingPeer) {
+            const sent = _privateSignalingPeer.broadcastKeyExchange(key);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true, keyPrefix: key.slice(0, 8), sentTo: sent }));
+        } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, reason: !key ? "no key file" : "no private peer" }));
+        }
     } else {
         res.writeHead(404);
         res.end();

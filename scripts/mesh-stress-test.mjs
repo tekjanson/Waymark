@@ -146,44 +146,113 @@ async function resolveEncryptionKey() {
 }
 
 /** Rotate the AES-256 key: write a fresh key to the local key file.
- *  Also pushes the new key to Android via adb broadcast if an adb serial is available.
- *  Returns the new key hex. */
-function rotateKeyLocally(adbSerial) {
+ *  Returns the new key hex. Key distribution to peers happens separately
+ *  via the DataChannel on the private sheet (Phase 1 architecture). */
+function rotateKeyLocally() {
     const newKey = randomBytes(32).toString("hex");
     const keyFile = process.env.WAYMARK_KEY_FILE
         || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
     writeFileSync(keyFile, newKey + "\n", { mode: 0o600 });
-    if (adbSerial) {
-        try {
-            const cmd = adbSerial
-                ? `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${newKey}`
-                : `adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${newKey}`;
-            execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] });
-            log(`Key rotated → pushed to Android via adb`);
-        } catch (e) {
-            log(`Key rotated locally (adb push failed: ${e.message})`);
-        }
-    }
+    log(`Key rotated locally → ${keyFile}`);
     return newKey;
 }
 
 /** Clear the local key file, simulating key loss / corruption.
- *  Also clears the key on Android via adb broadcast if available. */
+ *  On Android, send CLEAR_SIGNAL_KEY broadcast so it enters Phase 1. */
 function clearKeyLocally(adbSerial) {
     const keyFile = process.env.WAYMARK_KEY_FILE
         || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
     try { writeFileSync(keyFile, "", { mode: 0o600 }); } catch {}
     if (adbSerial) {
         try {
-            const cmd = adbSerial
-                ? `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`
-                : `adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`;
+            const cmd = `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`;
             execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] });
-            log(`Key cleared locally + Android notified via adb`);
+            log(`Key cleared locally + Android CLEAR broadcast sent`);
         } catch (e) {
-            log(`Key cleared locally (adb clear failed: ${e.message})`);
+            log(`Key cleared locally (Android CLEAR failed: ${e.message})`);
         }
     }
+}
+
+/** Distribute a key to Android via the private-sheet DataChannel (Phase 1).
+ *  Connects a temporary Node peer to the private sheet, waits for Android
+ *  to appear, opens a DataChannel, and sends the key. */
+async function distributeKeyViaDataChannel(privSheetId, newKeyHex, adbSerial, timeoutMs = 90_000) {
+    // Clear Android's key → forces it to Phase 1 on the private sheet
+    if (adbSerial) {
+        try {
+            execSync(
+                `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`,
+                { stdio: "pipe" }
+            );
+        } catch {}
+        await sleep(2_000);
+    }
+
+    // Wait for Android on private sheet
+    const deadline = Date.now() + timeoutMs;
+    let androidPeerId = null;
+    while (Date.now() < deadline) {
+        const vals = await readSignalingColumnRaw(privSheetId);
+        for (let slot = 0; slot < MAX_SLOTS; slot++) {
+            const row = BLOCK_START + slot * BLOCK_SIZE;
+            try {
+                const p = JSON.parse(vals[row] || "");
+                if (p?.peerId && (p.name || "").toLowerCase().includes("android")) {
+                    if (Date.now() - (p.ts || 0) < ALIVE_TTL) {
+                        androidPeerId = p.peerId;
+                        break;
+                    }
+                }
+            } catch {}
+        }
+        if (androidPeerId) break;
+        await sleep(3_000);
+    }
+    if (!androidPeerId) {
+        log(`  ⚠ Android did not appear on private sheet within ${timeoutMs / 1000}s`);
+        return false;
+    }
+    log(`  Android on private sheet: peerId=${androidPeerId}`);
+
+    // Node peer joins private sheet (no encryption), sends key via DataChannel
+    const kpId = createHash("sha256").update(`stress-keyex-${Date.now()}`).digest("hex").slice(0, 8);
+    const kpConnected = new Set();
+    const kp = new SheetWebRtcPeer({
+        sheetId:     privSheetId,
+        getToken:    getOAuthToken,
+        peerId:      kpId,
+        displayName: "Stress-KeyExchange",
+        onConnect(rid) { kpConnected.add(rid); },
+    });
+    try {
+        await kp.start();
+        const dcOpen = await waitUntil(() => kpConnected.has(androidPeerId), 60_000);
+        if (dcOpen) {
+            kp.broadcastKeyExchange(newKeyHex);
+            log(`  Key sent to Android via DataChannel on private sheet`);
+            await sleep(3_000); // give Android time to process
+            return true;
+        } else {
+            log(`  ⚠ DataChannel to Android never opened on private sheet`);
+            return false;
+        }
+    } finally {
+        kp.stop();
+    }
+}
+
+/** Read signaling column from a sheet WITHOUT decryption (for private sheet). */
+async function readSignalingColumnRaw(sheetId) {
+    const total = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
+    const range = encodeURIComponent(`Sheet1!T1:T${total + 1}`);
+    const token = await getOAuthToken();
+    const res = await fetch(`${SHEETS_BASE}/${sheetId}/values/${range}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return [];
+    const { values } = await res.json();
+    return (values || []).flat();
 }
 
 /* ---------- ADB ---------- */
@@ -800,7 +869,7 @@ async function phaseKeyCycle(report, privId) {
     log("  Rotating AES-256 key (local key file)…");
     let newKey;
     try {
-        newKey = rotateKeyLocally(_adbSerial);
+        newKey = rotateKeyLocally();
     } catch (e) {
         A.stop(); B.stop();
         m.fail();
@@ -813,6 +882,28 @@ async function phaseKeyCycle(report, privId) {
     // Update the closure variable — both peers see the new key immediately.
     currentKey = newKey;
     log("  Node peer key closures updated live");
+
+    // ── Distribute new key to Android via private-sheet DataChannel ──
+    let androidRecovered = null;
+    if (_adbSerial && privId) {
+        log("  Distributing new key to Android via Phase 1 DataChannel…");
+        const distributed = await distributeKeyViaDataChannel(privId, newKey, _adbSerial, 90_000);
+        if (distributed) {
+            m.record(Date.now() - rotateMs);
+            log("  ✓ Key distributed to Android");
+            // Wait for Android to appear on public sheet with new key
+            log("  Waiting for Android on public sheet with new key (up to 60s)…");
+            const appeared = await waitUntil(async () => {
+                const p = await findAndroidPeerInSheet();
+                return p && (p.ts || 0) > rotateMs;
+            }, 60_000, 5_000);
+            androidRecovered = !!appeared;
+            log(`  Android on public sheet: ${appeared ? "✓" : "✗ (timed out)"}`);
+        } else {
+            log("  ✗ Key distribution to Android failed");
+            androidRecovered = false;
+        }
+    }
 
     // ── Post-cycle pings (DataChannel already open, signaling now uses new key) ──
     const POST_PINGS   = 10;
@@ -829,24 +920,6 @@ async function phaseKeyCycle(report, privId) {
         if (ponged) { postCycleOk++; m.record(aLat[aLat.length - 1]); } else { m.fail(); }
     }
     log(`  Post-cycle pings: ${postCycleOk}/${postCycleSent} ponged (new key)`);
-
-    // ── Android detection (optional, needs ADB) ─────────────────────────
-    let androidRecovered = null;
-    if (_adbSerial) {
-        log("  Waiting for Android to detect stale key (up to 90s)…");
-        const events = [];
-        const lc = spawnLogcatLocal(TAG_ANDROID, line => {
-            if (line.includes("Signal key appears cycled") || line.includes("Signal key stale")) {
-                events.push({ t: Date.now(), line });
-                log(`  Android: ${line}`);
-            }
-        });
-        const detected = await waitUntil(() => events.length > 0, 90_000);
-        lc.stop();
-        androidRecovered = !!detected;
-        if (detected) m.record(events[0].t - rotateMs);
-        log(`  Android stale-key detection: ${detected ? "✓" : "✗ (timed out)"}`);
-    }
 
     A.stop(); B.stop();
 
@@ -998,6 +1071,17 @@ async function phaseKeyLoss(report, privId) {
     currentKey = rebuiltKey;
     _encKey    = rebuiltKey;
     log("  Node peer key closures updated with rebuilt key");
+
+    // ── Distribute rebuilt key to Android via DataChannel ─────────────
+    if (_adbSerial && privId) {
+        log("  Distributing rebuilt key to Android via private-sheet DataChannel…");
+        try {
+            const dcOk = await distributeKeyViaDataChannel(privId, rebuiltKey, _adbSerial, 120_000);
+            log(`  DataChannel key distribution: ${dcOk ? "✓" : "✗ (timed out)"}`);
+        } catch (e) {
+            log(`  DataChannel key distribution error: ${e.message}`);
+        }
+    }
     const rebuildMs = Date.now();
 
     // ── Verify recovery ───────────────────────────────────────────────
