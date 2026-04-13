@@ -420,22 +420,50 @@ async function startSignalingPeer() {
     process.stderr.write(`orchestrator: Phase 2 — public sheet peer started (encrypted)\n`);
 
     // ── Health check: restart peers that lost their slot ──
-    _signalingHealthTimer = setInterval(() => {
-        if (_signalingPeer && _signalingPeer.block < 0 && !_signalingPeer.destroyed) {
-            process.stderr.write("orchestrator: public peer lost slot — restarting\n");
-            _signalingPeer.stop();
-            _signalingPeer.destroyed = false;
-            _signalingPeer.start().catch(e =>
-                process.stderr.write(`orchestrator: public peer restart failed: ${e.message}\n`)
-            );
+    // Also detects peers that have a slot but are stuck with no connections
+    // for an extended period (e.g. after a network transition killed all ICE).
+    let _publicPeerEmptySince  = 0; // epoch when public peer first had 0 connections
+    let _privatePeerEmptySince = 0;
+    const STALE_PEER_MS = 3 * 60_000; // restart if 0 connections for 3 min
+
+    async function restartPeer(peer, label) {
+        process.stderr.write(`orchestrator: ${label} — restarting\n`);
+        peer.stop();
+        // Create a fresh peer instead of mutating destroyed flag on the stopped one.
+        // stop() clears all intervals; start() creates new ones — clean lifecycle.
+        peer.destroyed = false;
+        peer.block = -1;
+        try {
+            await peer.start();
+            process.stderr.write(`orchestrator: ${label} — restarted successfully\n`);
+        } catch (e) {
+            process.stderr.write(`orchestrator: ${label} restart failed: ${e.message}\n`);
         }
-        if (_privateSignalingPeer && _privateSignalingPeer.block < 0 && !_privateSignalingPeer.destroyed) {
-            process.stderr.write("orchestrator: private peer lost slot — restarting\n");
-            _privateSignalingPeer.stop();
-            _privateSignalingPeer.destroyed = false;
-            _privateSignalingPeer.start().catch(e =>
-                process.stderr.write(`orchestrator: private peer restart failed: ${e.message}\n`)
-            );
+    }
+
+    _signalingHealthTimer = setInterval(() => {
+        // Public peer health
+        if (_signalingPeer && !_signalingPeer.destroyed) {
+            if (_signalingPeer.block < 0) {
+                restartPeer(_signalingPeer, "public peer lost slot");
+                _publicPeerEmptySince = 0;
+            } else if (_signalingPeer.connectedPeers().length === 0) {
+                if (!_publicPeerEmptySince) _publicPeerEmptySince = Date.now();
+                else if (Date.now() - _publicPeerEmptySince > STALE_PEER_MS) {
+                    restartPeer(_signalingPeer, "public peer 0 connections for 3min");
+                    _publicPeerEmptySince = 0;
+                }
+            } else {
+                _publicPeerEmptySince = 0;
+            }
+        }
+        // Private peer health
+        if (_privateSignalingPeer && !_privateSignalingPeer.destroyed) {
+            if (_privateSignalingPeer.block < 0) {
+                restartPeer(_privateSignalingPeer, "private peer lost slot");
+                _privatePeerEmptySince = 0;
+            }
+            // Private peer doesn't need the stale-empty check — it's only for key exchange
         }
     }, 60_000);
 }
