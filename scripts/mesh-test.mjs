@@ -143,7 +143,8 @@ async function _loadWaymarkData() {
 async function resolveSignalingSheet() {
     if (process.env.SIGNAL_SHEET) return process.env.SIGNAL_SHEET;
     const data = await _loadWaymarkData();
-    const id = data.publicSignalingSheetId || data.signalingSheetId;
+    const id = data.publicSignalingSheetId;
+    if (!id) die("publicSignalingSheetId missing — run node scripts/provision-signaling.mjs first");
     if (!id) die("Neither publicSignalingSheetId nor signalingSheetId found in .waymark-data.json — open the web app to initialize it");
     return id;
 }

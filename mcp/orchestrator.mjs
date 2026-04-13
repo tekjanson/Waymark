@@ -267,9 +267,13 @@ async function resolvePublicSignalingSheet() {
     if (!fileRes.ok) return null;
     const data = await fileRes.json();
 
-    // Prefer the dedicated public sheet; fall back to signalingSheetId if not yet created
-    const publicId = data.publicSignalingSheetId || data.signalingSheetId || null;
-    if (!publicId) return null;
+    // Prefer the dedicated public sheet; NEVER fall back to the private sheet —
+    // writing encrypted data to the private sheet breaks Phase 1 key exchange.
+    const publicId = data.publicSignalingSheetId || null;
+    if (!publicId) {
+        process.stderr.write("orchestrator: publicSignalingSheetId not set — run provision-signaling.mjs\n");
+        return null;
+    }
     _resolvedPublicSignalingSheetId = publicId;
     return publicId;
 }
