@@ -69,6 +69,9 @@ dependencies {
     // JSON parsing
     implementation("org.json:json:20231013")
 
+    // WorkManager — periodic watchdog to restart WebRtcService after aggressive OEM kills
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // WebRTC (Google's maintained prebuilt via Stream's distribution)
     implementation("io.getstream:stream-webrtc-android:1.3.10")
 

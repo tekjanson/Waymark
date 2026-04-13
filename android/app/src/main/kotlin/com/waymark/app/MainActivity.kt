@@ -15,6 +15,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.webkit.*
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -42,6 +44,7 @@ class MainActivity : AppCompatActivity() {
 
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
+        requestBatteryOptimizationExemption()
 
         bridge = WaymarkBridge(this)
         webView = findViewById(R.id.webView)
@@ -160,6 +163,30 @@ class MainActivity : AppCompatActivity() {
                     arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                     PERMISSION_REQUEST_NOTIFICATIONS
                 )
+            }
+        }
+    }
+
+    /**
+     * Ask the user to exempt Waymark from battery optimization (Doze).
+     *
+     * Without this exemption, Android can block network access for foreground
+     * services during Doze windows, which silently kills the P2P connection.
+     * The system dialog is shown at most once — Android remembers the choice.
+     */
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                    )
+                } catch (_: Exception) {
+                    // Some OEMs remove this dialog — fail silently
+                }
             }
         }
     }

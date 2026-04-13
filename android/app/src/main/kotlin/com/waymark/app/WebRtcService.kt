@@ -37,6 +37,10 @@ package com.waymark.app
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.LifecycleService
@@ -68,7 +72,16 @@ class WebRtcService : LifecycleService() {
     @Volatile private var peer: OrchestratorPeer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-
+    /** Reconnect when the device regains a capable network after Doze or WiFi handoff. */
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val livePeer = peer
+            if (livePeer == null || livePeer.destroyed || !livePeer.isInMesh) {
+                Log.i(TAG, "Network available — reconnecting peer")
+                scope.launch { resolveAndConnect() }
+            }
+        }
+    }
 
     /* ---------- Lifecycle ---------- */
 
@@ -79,6 +92,17 @@ class WebRtcService : LifecycleService() {
             NotificationHelper.buildServiceNotification(this)
         )
         Log.i(TAG, "Service created")
+
+        // Register for network-available events so Doze maintenance-window resumption
+        // and WiFi→mobile handoffs trigger an immediate reconnect rather than waiting
+        // for the poll loop to recover on its own.
+        (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
+            .registerNetworkCallback(
+                NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(),
+                networkCallback
+            )
 
         // Attempt to connect using cached credentials.  Fetches the AES signal
         // key from the private sheet (one-time OAuth call) then connects to the
@@ -126,6 +150,8 @@ class WebRtcService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        try { cm.unregisterNetworkCallback(networkCallback) } catch (_: IllegalArgumentException) {}
         disconnectPeer()
         scope.cancel()
         Log.i(TAG, "Service destroyed")

@@ -12,6 +12,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.util.concurrent.atomic.AtomicInteger
@@ -101,6 +102,17 @@ object NotificationHelper {
         } catch (ignored: SecurityException) {
             // POST_NOTIFICATIONS permission not granted — fail silently
         }
+
+        // Acquire a brief partial wake lock so the CPU stays awake long enough
+        // to post the notification to the status bar.  Without this, Doze can
+        // put the CPU to sleep before NotificationManager delivers the notification.
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        val wl = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "waymark:notif_delivery"
+        )
+        wl.acquire(2_000L) // auto-releases after 2 s
     }
 
     /* ---------- Foreground service notification ---------- */

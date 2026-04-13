@@ -608,10 +608,12 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
             if (!dcOpened) {
                 return { pass: false, detail: "DC to Android never opened in ice-failure recovery test" };
             }
-            const logLine = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 3_000);
+            // Require Android to confirm reconnect — without this the test only proves
+            // Node recovered, not that Android actually re-established the channel.
+            const logLine = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 8_000);
             return {
-                pass: true,
-                detail: logLine ? logLine.trim() : `DC opened at Node side (Android logcat not captured in 3s)`,
+                pass: logLine !== null,
+                detail: logLine ? logLine.trim() : "DC opened at Node side but Android did not confirm reconnect within 8s",
             };
         } finally {
             peer.stop();
