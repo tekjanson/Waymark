@@ -67,6 +67,8 @@ class WebRtcService : LifecycleService() {
         const val ACTION_SET_SIGNAL_KEY     = "com.waymark.app.action.SET_SIGNAL_KEY"
         /** Debug/test: clear AES key via adb shell am broadcast -a com.waymark.app.action.CLEAR_SIGNAL_KEY */
         const val ACTION_CLEAR_SIGNAL_KEY   = "com.waymark.app.action.CLEAR_SIGNAL_KEY"
+        /** Disconnect and re-resolve from scratch (Phase 1 if no key). */
+        const val ACTION_REBOOTSTRAP        = "com.waymark.app.action.REBOOTSTRAP"
 
         const val EXTRA_SHEET_ID  = "sheet_id"
         const val EXTRA_TOKEN     = "token"
@@ -172,16 +174,16 @@ class WebRtcService : LifecycleService() {
                 }
             }
             ACTION_CLEAR_SIGNAL_KEY -> {
-                // Debug/test helper: clear the AES key via adb broadcast.
-                // adb shell am broadcast -a com.waymark.app.action.CLEAR_SIGNAL_KEY
                 val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
                 prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
-                Log.i(TAG, "Signal key cleared via adb broadcast — reconnecting in bootstrap mode")
-                currentSheetId?.let { sheetId ->
-                    disconnectPeer()
-                    currentSheetId = null
-                    connectToSheet(sheetId)
-                } ?: scope.launch { resolveAndConnect() }
+                Log.i(TAG, "Signal key cleared \u2014 re-bootstrapping via Phase 1")
+                disconnectPeer()
+                scope.launch { resolveAndConnect() }
+            }
+            ACTION_REBOOTSTRAP -> {
+                Log.i(TAG, "Re-bootstrap requested \u2014 disconnecting and re-resolving")
+                disconnectPeer()
+                scope.launch { resolveAndConnect() }
             }
         }
         return START_STICKY
@@ -222,6 +224,28 @@ class WebRtcService : LifecycleService() {
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
+        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
+
+        // ── Always re-fetch sheet IDs from Drive when we have a token ──
+        // Cached IDs can become stale when the user re-provisions signaling
+        // sheets from the web app.  Drive is the source of truth.
+        if (token.isNotBlank()) {
+            try {
+                val (freshPublicId, freshPrivateId) = fetchSheetIdsFromDrive(token)
+                if (freshPublicId.isNotBlank() || freshPrivateId.isNotBlank()) {
+                    prefs.edit().apply {
+                        if (freshPublicId.isNotBlank())  putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, freshPublicId)
+                        if (freshPrivateId.isNotBlank()) putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, freshPrivateId)
+                        apply()
+                    }
+                    Log.i(TAG, "Drive refresh: public=$freshPublicId private=$freshPrivateId")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Drive refresh failed (using cache): ${e.message}")
+            }
+        }
+
+        // Re-read prefs after potential Drive update
         val cachedPublicId  = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
         val cachedPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
         val cachedKeyHex    = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
@@ -247,41 +271,11 @@ class WebRtcService : LifecycleService() {
             return@withContext
         }
 
-        // ── Neither sheet ID cached — discover from Drive ──
-        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
+        // ── No token — nothing we can do ──
         if (token.isBlank()) {
             Log.d(TAG, "No access token — waiting for user to open the app")
-            return@withContext
-        }
-
-        try {
-            val (publicId, privateId) = fetchSheetIdsFromDrive(token)
-
-            if (publicId.isBlank() && privateId.isBlank()) {
-                Log.d(TAG, "No signaling sheets found — open the web app to initialise signaling")
-                return@withContext
-            }
-
-            // Cache both IDs
-            prefs.edit().apply {
-                if (publicId.isNotBlank()) putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, publicId)
-                if (privateId.isNotBlank()) putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, privateId)
-                apply()
-            }
-
-            val keyHex = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
-            if (keyHex.isNotBlank() && publicId.isNotBlank()) {
-                Log.i(TAG, "Phase 2: connecting to public sheet (key found after Drive fetch)")
-                connectToSheet(publicId)
-            } else if (privateId.isNotBlank()) {
-                Log.i(TAG, "Phase 1: connecting to private sheet for key exchange (no key yet)")
-                connectToPrivateSheet(privateId)
-            } else {
-                Log.w(TAG, "Public sheet found but no key and no private sheet — cannot bootstrap")
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "resolveAndConnect failed: ${e.message}")
+        } else {
+            Log.d(TAG, "No signaling sheets found — open the web app to initialise signaling")
         }
     }
 

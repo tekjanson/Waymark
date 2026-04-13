@@ -49,8 +49,10 @@ class SignalKeyReceiver : BroadcastReceiver() {
 
             WebRtcService.ACTION_CLEAR_SIGNAL_KEY -> {
                 prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
-                Log.i(TAG, "Signal key cleared via adb broadcast")
-                restartService(context)
+                Log.i(TAG, "Signal key cleared via broadcast — triggering Phase 1 re-bootstrap")
+                // Send REBOOTSTRAP so the service disconnects and re-resolves
+                // (no key → Phase 1 on private sheet → key exchange via DataChannel)
+                rebootstrapService(context)
             }
         }
     }
@@ -63,6 +65,17 @@ class SignalKeyReceiver : BroadcastReceiver() {
         val svcIntent = Intent(context, WebRtcService::class.java).apply {
             action = WebRtcService.ACTION_CONNECT
             putExtra(WebRtcService.EXTRA_SHEET_ID, cachedSheet)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(svcIntent)
+        } else {
+            context.startService(svcIntent)
+        }
+    }
+
+    private fun rebootstrapService(context: Context) {
+        val svcIntent = Intent(context, WebRtcService::class.java).apply {
+            action = WebRtcService.ACTION_REBOOTSTRAP
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(svcIntent)

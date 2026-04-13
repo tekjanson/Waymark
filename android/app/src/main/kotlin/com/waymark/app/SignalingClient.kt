@@ -85,45 +85,61 @@ class SignalingClient(
      * Rows that are empty in the sheet appear as null.
      * Values are AES-256-GCM decrypted if a key is available.
      *
-     * @throws IOException if the Sheets request fails
+     * Retries up to 4 times with exponential backoff on HTTP 429 (quota exhausted).
+     * Delays: 2s, 4s, 8s — matches the Node.js SheetWebRtcPeer._readAll() pattern.
+     *
+     * @throws IOException if the Sheets request fails after all retries
      */
     fun readAll(): List<String?> {
         val token = getToken().ifBlank { throw IOException("No access token") }
         val url = "${WaymarkConfig.SHEETS_BASE}/$sheetId/values/${RANGE}"
 
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $token")
-            .get()
-            .build()
+        var lastErr: IOException? = null
+        for (attempt in 0 until 4) {
+            if (attempt > 0) Thread.sleep(2000L * attempt)
 
-        val body = http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("Sheets read ${resp.code}")
-            resp.body?.string() ?: throw IOException("Empty Sheets response")
-        }
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .get()
+                .build()
 
-        val root = JSONObject(body)
-        val rows = root.optJSONArray("values") ?: JSONArray()
-        val keyHex = getKey()
+            val resp = http.newCall(request).execute()
+            if (resp.code == 429) {
+                resp.close()
+                lastErr = IOException("Sheets read 429")
+                continue
+            }
 
-        // Pad the list to TOTAL_ROWS so callers can index safely
-        val result = MutableList<String?>(TOTAL_ROWS + 2) { null }
-        var failures = 0
-        for (i in 0 until rows.length()) {
-            val row = rows.getJSONArray(i)
-            if (row.length() > 0) {
-                val raw = row.getString(0)
-                if (keyHex != null) {
-                    val dec = SignalingEncryption.decrypt(raw, keyHex)
-                    if (dec == null && raw.startsWith(SignalingEncryption.ENCRYPT_PREFIX)) failures++
-                    result[i + WaymarkConfig.BLOCK_START] = dec
-                } else {
-                    result[i + WaymarkConfig.BLOCK_START] = raw
+            val body = resp.use { r ->
+                if (!r.isSuccessful) throw IOException("Sheets read ${r.code}")
+                r.body?.string() ?: throw IOException("Empty Sheets response")
+            }
+
+            val root = JSONObject(body)
+            val rows = root.optJSONArray("values") ?: JSONArray()
+            val keyHex = getKey()
+
+            // Pad the list to TOTAL_ROWS so callers can index safely
+            val result = MutableList<String?>(TOTAL_ROWS + 2) { null }
+            var failures = 0
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONArray(i)
+                if (row.length() > 0) {
+                    val raw = row.getString(0)
+                    if (keyHex != null) {
+                        val dec = SignalingEncryption.decrypt(raw, keyHex)
+                        if (dec == null && raw.startsWith(SignalingEncryption.ENCRYPT_PREFIX)) failures++
+                        result[i + WaymarkConfig.BLOCK_START] = dec
+                    } else {
+                        result[i + WaymarkConfig.BLOCK_START] = raw
+                    }
                 }
             }
+            decryptFailureCount = failures
+            return result
         }
-        decryptFailureCount = failures
-        return result
+        throw lastErr ?: IOException("Sheets read failed after 4 attempts")
     }
 
     /**
@@ -131,7 +147,9 @@ class SignalingClient(
      * An empty [value] clears the cell (never encrypted).
      * Non-empty values are AES-256-GCM encrypted if a key is available.
      *
-     * @throws IOException if the Sheets request fails
+     * Retries up to 4 times with exponential backoff on HTTP 429.
+     *
+     * @throws IOException if the Sheets request fails after all retries
      */
     fun writeCell(row: Int, value: String) {
         val token = getToken().ifBlank { throw IOException("No access token") }
@@ -157,15 +175,29 @@ class SignalingClient(
         }.toString()
 
         val url = "${WaymarkConfig.SHEETS_BASE}/$sheetId/values/${range}?valueInputOption=RAW"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $token")
-            .put(payload.toRequestBody(JSON_MEDIA))
-            .build()
 
-        http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("Sheets write ${resp.code}")
+        var lastErr: IOException? = null
+        for (attempt in 0 until 4) {
+            if (attempt > 0) Thread.sleep(2000L * attempt)
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .put(payload.toRequestBody(JSON_MEDIA))
+                .build()
+
+            val resp = http.newCall(request).execute()
+            if (resp.code == 429) {
+                resp.close()
+                lastErr = IOException("Sheets write 429")
+                continue
+            }
+            resp.use { r ->
+                if (!r.isSuccessful) throw IOException("Sheets write ${r.code}")
+            }
+            return
         }
+        throw lastErr ?: IOException("Sheets write failed after 4 attempts")
     }
 
     /**

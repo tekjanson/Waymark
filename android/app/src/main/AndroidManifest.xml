@@ -80,14 +80,14 @@
         <!-- Debug/test helper: set or clear the AES signal key via adb broadcast.
              The AES key NEVER touches any Google Sheet - it is only distributed
              over the WebRTC DataChannel in production and via adb in test.
-             Not exported - target with component name from adb:
+             Exported so adb shell broadcasts reach it on Android 14+:
                adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver
                  -a com.waymark.app.action.SET_SIGNAL_KEY
                  -e signalKey HEX64_KEY -->
         <receiver
             android:name=".SignalKeyReceiver"
             android:enabled="true"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.waymark.app.action.SET_SIGNAL_KEY" />
                 <action android:name="com.waymark.app.action.CLEAR_SIGNAL_KEY" />
