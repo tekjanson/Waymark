@@ -206,6 +206,14 @@ async function ensureSignalingSheet() {
       '.waymark-public-signaling', [], _rootFolderId
     );
     updates.publicSignalingSheetId = pub.spreadsheetId;
+    // Grant public write access — all cells are AES-256-GCM encrypted so there
+    // is no privacy risk. This is required for cross-device P2P signaling.
+    try {
+      const token = await api.auth.getToken();
+      await import('./drive.js').then(d => d.setPublicWritable(token, pub.spreadsheetId));
+    } catch (e) {
+      console.warn('[user-data] Could not set public signaling sheet writable:', e);
+    }
   }
 
   if (Object.keys(updates).length > 0) {

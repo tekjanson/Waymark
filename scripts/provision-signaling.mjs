@@ -6,12 +6,16 @@
 
    Architecture:
      Private sheet  (.waymark-signaling)        → signalingSheetId
+       OAuth-protected — only accessible to authenticated peers.
        Sheet1!A1 = 64-char hex AES-256 key
        Sheet1!A2 = key version epoch ms
+       Peers exchange / verify the shared secret here over the OAuth channel.
 
      Public sheet   (.waymark-public-signaling)  → publicSignalingSheetId
+       Publicly writable (anyone with the link can edit).
        Column T = WebRTC signaling cells (PRESENCE / OFFERS / ANSWERS)
-       All cells AES-256-GCM encrypted with the key from the private sheet.
+       ALL cell values are AES-256-GCM encrypted with the key from the private
+       sheet. Privacy is enforced by encryption, not by sheet-level auth.
 
    This script is idempotent — if either sheet already exists it is
    left unchanged.  Run it whenever the web app has not yet created
@@ -130,6 +134,22 @@ async function createSpreadsheet(title, token) {
     return d.spreadsheetId;
 }
 
+/** Grant "anyone with the link can edit" access to a Drive file. */
+async function setPublicWritable(fileId, token) {
+    const res = await fetch(`${DRIVE_BASE}/files/${fileId}/permissions`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role: "writer", type: "anyone" }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`setPublicWritable ${fileId} → ${res.status}: ${text}`);
+    }
+}
+
 /** Read Sheet1!A1:A2 from a spreadsheet. Returns [a1, a2] or [null, null]. */
 async function readCell(sheetId, token) {
     const range = encodeURIComponent("Sheet1!A1:A2");
@@ -191,6 +211,7 @@ async function main() {
         log(`Private sheet exists: ${privateId}`);
     }
 
+
     // ── AES-256 key ───────────────────────────────────────────────────────
     const [existingKey] = await readCell(privateId, token);
     if (!existingKey || existingKey.length !== 64 || FORCE_KEY) {
@@ -211,6 +232,17 @@ async function main() {
         log(`  Created: ${publicId}`);
     } else {
         log(`Public sheet exists: ${publicId}`);
+    }
+
+    // ── Set public write permission ───────────────────────────────────────
+    // All cells are AES-256-GCM encrypted so granting public write access
+    // is safe and required for cross-device P2P signaling without shared OAuth.
+    log(`Setting 'anyone can edit' permission on public sheet…`);
+    try {
+        await setPublicWritable(publicId, token);
+        log(`  ✓ Public sheet is now writable by anyone with the link`);
+    } catch (e) {
+        log(`  ⚠ setPublicWritable failed (may already be set): ${e.message}`);
     }
 
     // ── Persist to Drive ──────────────────────────────────────────────────

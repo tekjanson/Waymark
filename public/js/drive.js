@@ -376,3 +376,23 @@ export async function updateTextFile(token, fileId, content) {
   if (!res.ok) throw driveError('Drive updateTextFile', res);
   return res.json();
 }
+
+/**
+ * Grant "anyone with the link can edit" access to a Drive file.
+ * Used for the public signaling sheet — all data written there is
+ * AES-256-GCM encrypted so there is no privacy risk.
+ * @param {string} token   OAuth access token
+ * @param {string} fileId  Drive / Sheets file ID
+ * @returns {Promise<void>}
+ */
+export async function setPublicWritable(token, fileId) {
+  const res = await fetch(`${BASE}/files/${fileId}/permissions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role: 'writer', type: 'anyone' }),
+  });
+  if (!res.ok) throw driveError('Drive setPublicWritable', res);
+}
