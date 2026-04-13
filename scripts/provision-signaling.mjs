@@ -170,8 +170,8 @@ async function writeKey(sheetId, keyHex, token) {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
             range,
-            majorDimension: "COLUMNS",
-            values: [[keyHex, String(Date.now())]],
+            majorDimension: "ROWS",
+            values: [[keyHex], [String(Date.now())]],
         }),
     });
     if (!res.ok) throw new Error(`Key write → ${res.status}: ${await res.text()}`);

@@ -9,6 +9,8 @@
      • latency histogram drift (p50/p95/p99 over time)
      • rapid disconnect/reconnect storm under load
      • notification delivery reliability under sustained traffic
+     • key cycling — live AES-256 key rotation while peers are connected; Node and Android recover automatically
+     • key loss + rebuild — key deleted from private sheet; re-provisioned with --force-key and verified
 
    Usage:
      node scripts/mesh-stress-test.mjs [options]
@@ -141,6 +143,36 @@ async function resolveEncryptionKey(privateSheetId) {
     const key = d.values?.[0]?.[0]?.trim();
     if (!key || key.length !== 64) throw new Error("Signal key missing — run provision-signaling.mjs");
     return key;
+}
+
+/** Write a fresh AES-256 key to Sheet1!A1:A2 on the private sheet. Returns the new key hex. */
+async function rotateKeyOnPrivateSheet(privId) {
+    const newKey = randomBytes(32).toString("hex");
+    const token  = await getOAuthToken();
+    const res = await fetch(
+        `${SHEETS_BASE}/${privId}/values/${encodeURIComponent("Sheet1!A1:A2")}?valueInputOption=RAW`,
+        {
+            method:  "PUT",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body:    JSON.stringify({
+                range:          "Sheet1!A1:A2",
+                majorDimension: "ROWS",
+                values:         [[newKey], [String(Date.now())]],
+            }),
+        }
+    );
+    if (!res.ok) throw new Error(`Key rotation write failed: ${res.status} ${await res.text()}`);
+    return newKey;
+}
+
+/** Clear Sheet1!A1:A2 on the private sheet, simulating key deletion / corruption. */
+async function clearKeyOnPrivateSheet(privId) {
+    const token = await getOAuthToken();
+    const res = await fetch(
+        `${SHEETS_BASE}/${privId}/values/${encodeURIComponent("Sheet1!A1:A2")}:clear`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) throw new Error(`Key clear failed: ${res.status} ${await res.text()}`);
 }
 
 /* ---------- ADB ---------- */
@@ -698,6 +730,313 @@ function spawnLogcatLocal(tag, onLine) {
     return { stop: () => { try { proc.kill("SIGKILL"); } catch {} } };
 }
 
+/**
+ * Phase 6 — Key cycle: rotate the AES-256 signal key on the private sheet while
+ * peers are actively exchanging pings.
+ *
+ * Steps:
+ *   1. Two Node peers exchange pings to confirm current key works.
+ *   2. Write a new key to the private sheet via the Sheets API.
+ *   3. Update the in-process key closure so both peers start using the new key.
+ *   4. Verify pings continue uninterrupted (DataChannel is independent of signaling key).
+ *   5. If ADB available, confirm Android detects the stale key and reconnects.
+ *
+ * Pass criteria: ≥ 8/10 post-cycle pings succeed; Android recovers (or ADB not present).
+ */
+async function phaseKeyCycle(report, privId) {
+    log("─── Phase 6: Key cycle (live key rotation) ───");
+    const m = new Metrics("key-cycle");
+
+    // Mutable key reference — both peer closures read from this variable.
+    let currentKey = _encKey;
+
+    const { peer: A, peerId: aId, connected: aC, latencies: aLat }
+        = makePeer("cycle-A", { getEncryptionKey: () => currentKey });
+    const { peer: B, peerId: bId }
+        = makePeer("cycle-B", {
+            getEncryptionKey: () => currentKey,
+            onMessage(rid, msg) {
+                if (typeof msg === "string" && msg.startsWith("ping:"))
+                    try { B.broadcast("pong:" + msg.slice(5)); } catch {}
+            },
+        });
+
+    A.start();
+    B.start();
+
+    log("  Waiting for initial DataChannel…");
+    const opened = await waitUntil(() => aC.has(bId), 90_000);
+    if (!opened) {
+        A.stop(); B.stop();
+        m.fail();
+        report.phases.push({ ...m.summary(), error: "DataChannel never opened before key cycle" });
+        return { pass: false, detail: "DC never opened before key cycle" };
+    }
+    log("  DataChannel open ✓");
+
+    // ── Pre-cycle pings (confirm current key works) ────────────────────
+    let preCycleOk = 0;
+    for (let i = 0; i < 3; i++) {
+        const prevLen = aLat.length;
+        A.broadcast("ping:" + Date.now());
+        const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
+        if (ponged) { preCycleOk++; m.record(aLat[aLat.length - 1]); }
+        await sleep(2_000);
+    }
+    log(`  Pre-cycle pings: ${preCycleOk}/3 ponged`);
+
+    // ── Rotate key on private sheet ────────────────────────────────────
+    log("  Rotating AES-256 key on private sheet…");
+    let newKey;
+    try {
+        newKey = await rotateKeyOnPrivateSheet(privId);
+    } catch (e) {
+        A.stop(); B.stop();
+        m.fail();
+        report.phases.push({ ...m.summary(), error: "Key rotation failed: " + e.message });
+        return { pass: false, detail: "Key write failed: " + e.message };
+    }
+    const rotateMs = Date.now();
+    log(`  New key: ${newKey.slice(0, 16)}… written`);
+
+    // Update the closure variable — both peers see the new key immediately.
+    currentKey = newKey;
+    log("  Node peer key closures updated live");
+
+    // ── Post-cycle pings (DataChannel already open, signaling now uses new key) ──
+    const POST_PINGS   = 10;
+    const RECOVERY_MS  = 60_000;
+    const deadline     = Date.now() + RECOVERY_MS;
+    let postCycleSent  = 0;
+    let postCycleOk    = 0;
+
+    while (Date.now() < deadline && postCycleSent < POST_PINGS) {
+        await sleep(5_000);
+        const prevLen = aLat.length;
+        try { A.broadcast("ping:" + Date.now()); postCycleSent++; } catch { m.fail(); continue; }
+        const ponged = await waitUntil(() => aLat.length > prevLen, 12_000);
+        if (ponged) { postCycleOk++; m.record(aLat[aLat.length - 1]); } else { m.fail(); }
+    }
+    log(`  Post-cycle pings: ${postCycleOk}/${postCycleSent} ponged (new key)`);
+
+    // ── Android detection (optional, needs ADB) ─────────────────────────
+    let androidRecovered = null;
+    if (_adbSerial) {
+        log("  Waiting for Android to detect stale key (up to 90s)…");
+        const events = [];
+        const lc = spawnLogcatLocal(TAG_ANDROID, line => {
+            if (line.includes("Signal key appears cycled") || line.includes("Signal key stale")) {
+                events.push({ t: Date.now(), line });
+                log(`  Android: ${line}`);
+            }
+        });
+        const detected = await waitUntil(() => events.length > 0, 90_000);
+        lc.stop();
+        androidRecovered = !!detected;
+        if (detected) m.record(events[0].t - rotateMs);
+        log(`  Android stale-key detection: ${detected ? "✓" : "✗ (timed out)"}`);
+    }
+
+    A.stop(); B.stop();
+
+    // Persist new key for subsequent phases.
+    _encKey     = newKey;
+    currentKey  = newKey;
+
+    const s = m.summary();
+    s.preCycleOk       = preCycleOk;
+    s.postCycleSent    = postCycleSent;
+    s.postCycleOk      = postCycleOk;
+    s.androidRecovered = androidRecovered;
+    report.phases.push(s);
+
+    const nodePassed    = postCycleOk >= Math.max(1, postCycleSent - 2);
+    const androidPassed = androidRecovered !== false; // null = skip (no ADB)
+    const pass          = nodePassed && androidPassed;
+    log(`  Key cycle: Node=${postCycleOk}/${postCycleSent}, Android=${androidRecovered === null ? "SKIP" : androidRecovered ? "✓" : "✗"}`);
+    return {
+        pass,
+        detail: `Node=${postCycleSent > 0 ? postCycleOk + "/" + postCycleSent : "0 pings sent"}, Android=${androidRecovered === null ? "SKIP" : androidRecovered}`,
+    };
+}
+
+/**
+ * Phase 7 — Key loss + rebuild:
+ *   1. Clear Sheet1!A1 on the private sheet (simulates accidental deletion / corruption).
+ *   2. null out currentKey — Node peers will now produce/decrypt garbage on new signaling writes.
+ *   3. Wait 30 s for Android to detect decrypt failures and log the event (if ADB available).
+ *   4. Re-provision via `node scripts/provision-signaling.mjs --force-key`.
+ *   5. Re-read the rebuilt key and update all closures.
+ *   6. Verify pings resume.
+ *
+ * Pass criteria: provision succeeds; ≥ 4/5 post-rebuild pings succeed;
+ *                Android detected failure (or ADB not present).
+ */
+async function phaseKeyLoss(report, privId) {
+    log("─── Phase 7: Key loss + rebuild from scratch ───");
+    const m = new Metrics("key-loss-rebuild");
+
+    let currentKey = _encKey;
+
+    const { peer: A, peerId: aId, connected: aC, latencies: aLat }
+        = makePeer("loss-A", { getEncryptionKey: () => currentKey });
+    const { peer: B, peerId: bId }
+        = makePeer("loss-B", {
+            getEncryptionKey: () => currentKey,
+            onMessage(rid, msg) {
+                if (typeof msg === "string" && msg.startsWith("ping:"))
+                    try { B.broadcast("pong:" + msg.slice(5)); } catch {}
+            },
+        });
+
+    A.start();
+    B.start();
+
+    log("  Waiting for initial DataChannel…");
+    const opened = await waitUntil(() => aC.has(bId), 90_000);
+    if (!opened) {
+        A.stop(); B.stop();
+        m.fail();
+        report.phases.push({ ...m.summary(), error: "DataChannel never opened before key loss" });
+        return { pass: false, detail: "DC never opened before key loss" };
+    }
+    log("  DataChannel open ✓");
+
+    // ── Pre-loss confirmation ──────────────────────────────────────────
+    let preOk = 0;
+    for (let i = 0; i < 3; i++) {
+        const prevLen = aLat.length;
+        A.broadcast("ping:" + Date.now());
+        const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
+        if (ponged) preOk++;
+        await sleep(2_000);
+    }
+    log(`  Pre-loss pings: ${preOk}/3 ponged`);
+
+    // ── Delete key from private sheet ─────────────────────────────────
+    log("  Clearing key from private sheet (simulating loss)…");
+    try {
+        await clearKeyOnPrivateSheet(privId);
+        log("  Key cleared ✓");
+    } catch (e) {
+        A.stop(); B.stop();
+        m.fail();
+        report.phases.push({ ...m.summary(), error: "Key clear failed: " + e.message });
+        return { pass: false, detail: "Key clear failed: " + e.message };
+    }
+    const lossMs = Date.now();
+
+    // Null out the closure so peers produce un-decryptable signaling writes.
+    currentKey = null;
+    log("  Node peer key set to null — signaling reads will fail decryption");
+
+    // ── Wait for Android to detect failures ──────────────────────────
+    let androidDetected = null;
+    if (_adbSerial) {
+        log("  Monitoring Android logcat for decrypt failures (30s window)…");
+        const events = [];
+        const lc = spawnLogcatLocal(TAG_ANDROID, line => {
+            if (line.includes("Signal key") || line.includes("decrypt fail") || line.includes("stale")) {
+                events.push({ t: Date.now(), line });
+                log(`  Android: ${line}`);
+            }
+        });
+        await sleep(30_000);
+        lc.stop();
+        androidDetected = events.length > 0;
+        log(`  Android detection: ${androidDetected ? "✓" : "✗ (no matching log in 30s)"}`);
+    } else {
+        await sleep(5_000); // brief pause before rebuild
+    }
+
+    // ── Rebuild via provision-signaling.mjs --force-key ──────────────
+    log("  Running provision-signaling.mjs --force-key to rebuild…");
+    let rebuildOk = false;
+    try {
+        execSync(
+            `node ${path.join(ROOT, "scripts/provision-signaling.mjs")} --force-key`,
+            { stdio: "pipe", encoding: "utf8", timeout: 90_000 }
+        );
+        rebuildOk = true;
+        log("  Provision succeeded ✓");
+    } catch (e) {
+        const stderr = e.stderr || "";
+        log(`  Provision failed: ${stderr.trim() || e.message}`);
+        m.fail();
+    }
+
+    if (!rebuildOk) {
+        A.stop(); B.stop();
+        const s = m.summary();
+        s.rebuildOk = false; s.androidDetected = androidDetected;
+        report.phases.push(s);
+        return { pass: false, detail: "provision-signaling.mjs --force-key failed" };
+    }
+
+    // ── Read rebuilt key and update closures ──────────────────────────
+    let rebuiltKey;
+    try {
+        rebuiltKey = await resolveEncryptionKey(privId);
+        log(`  Rebuilt key: ${rebuiltKey.slice(0, 16)}… fetched`);
+    } catch (e) {
+        A.stop(); B.stop();
+        m.fail();
+        report.phases.push({ ...m.summary(), error: "Key re-read failed: " + e.message });
+        return { pass: false, detail: "Post-rebuild key read failed: " + e.message };
+    }
+    currentKey = rebuiltKey;
+    _encKey    = rebuiltKey;
+    log("  Node peer key closures updated with rebuilt key");
+    const rebuildMs = Date.now();
+
+    // ── Verify recovery ───────────────────────────────────────────────
+    // DataChannel may still be open (ICE is independent of the signaling key).
+    const stillOpen = await waitUntil(() => aC.has(bId), 60_000);
+    if (!stillOpen) {
+        log("  DataChannel dropped during key-loss window, waiting for re-open…");
+        const recovered = await waitUntil(() => aC.has(bId), 120_000);
+        if (!recovered) {
+            A.stop(); B.stop();
+            m.fail();
+            const s = m.summary();
+            s.rebuildOk = rebuildOk; s.androidDetected = androidDetected;
+            report.phases.push(s);
+            return { pass: false, detail: "DC did not recover after key rebuild" };
+        }
+    }
+
+    let postOk    = 0;
+    const postTotal = 5;
+    for (let i = 0; i < postTotal; i++) {
+        const prevLen = aLat.length;
+        try { A.broadcast("ping:" + Date.now()); } catch { m.fail(); await sleep(2_000); continue; }
+        const ponged = await waitUntil(() => aLat.length > prevLen, 15_000);
+        if (ponged) { postOk++; m.record(aLat[aLat.length - 1]); } else { m.fail(); }
+        await sleep(3_000);
+    }
+    log(`  Post-rebuild pings: ${postOk}/${postTotal} ponged`);
+
+    A.stop(); B.stop();
+
+    const s = m.summary();
+    s.preOk          = preOk;
+    s.rebuildOk      = rebuildOk;
+    s.androidDetected = androidDetected;
+    s.postOk         = postOk;
+    s.postTotal      = postTotal;
+    s.rebuildTimeMs  = rebuildMs - lossMs;
+    report.phases.push(s);
+
+    const nodeRecovered = postOk >= postTotal - 1;
+    const androidOk     = androidDetected !== false;
+    const pass          = rebuildOk && nodeRecovered && androidOk;
+    log(`  Key-loss: rebuild=${rebuildOk}, Node=${postOk}/${postTotal}, Android=${androidDetected === null ? "SKIP" : androidDetected ? "✓" : "✗"}, rebuildMs=${s.rebuildTimeMs}`);
+    return {
+        pass,
+        detail: `rebuild=${rebuildOk}, Node=${postOk}/${postTotal}, Android=${androidDetected === null ? "SKIP" : androidDetected}`,
+    };
+}
+
 /* ============================================================
    Main
    ============================================================ */
@@ -745,9 +1084,11 @@ async function main() {
     //   Phase 2 reconnect storm   :  ~3 min   (fixed, 10 cycles)
     //   Phase 4 android background: TOTAL_HOURS >= 1 ? 30 min : 0
     //   Phase 5 notifications     :  ~5 min  (fixed)
+    //   Phase 6 key cycle         :  ~5 min  (fixed)
+    //   Phase 7 key loss+rebuild  : ~10 min  (fixed)
     //   Phase 3 sustained         : rest of the total time
 
-    const FIXED_MIN = 5 + 3 + (TOTAL_HOURS >= 1 ? 30 : 0) + 5;
+    const FIXED_MIN = 5 + 3 + (TOTAL_HOURS >= 1 ? 30 : 0) + 5 + 5 + 10;
     const sustainedMs = Math.max(0, TOTAL_MS - FIXED_MIN * 60_000);
 
     const phaseSummary = [];
@@ -776,6 +1117,16 @@ async function main() {
     const p5 = await phaseNotifications(report);
     phaseSummary.push({ phase: 5, name: "Notification reliability", ...p5 });
     log(`Phase 5 result: ${p5.pass ? "PASS ✓" : "FAIL ✗"}`);
+
+    // ── Phase 6: Key cycle ────────────────────────────────────────────
+    const p6 = await phaseKeyCycle(report, privId);
+    phaseSummary.push({ phase: 6, name: "Key cycle", ...p6 });
+    log(`Phase 6 result: ${p6.pass ? "PASS ✓" : "FAIL ✗"}`);
+
+    // ── Phase 7: Key loss + rebuild ───────────────────────────────────
+    const p7 = await phaseKeyLoss(report, privId);
+    phaseSummary.push({ phase: 7, name: "Key loss + rebuild", ...p7 });
+    log(`Phase 7 result: ${p7.pass ? "PASS ✓" : "FAIL ✗"}`);
 
     // ── Final report ──────────────────────────────────────────────────
     report.phaseSummary  = phaseSummary;

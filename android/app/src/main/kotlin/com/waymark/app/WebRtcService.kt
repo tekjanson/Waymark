@@ -177,13 +177,23 @@ class WebRtcService : LifecycleService() {
      * DataChannel is established, no further OAuth is needed.
      */
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
-        if (currentSheetId != null) return@withContext
-
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
         val cachedPublicId  = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
         val cachedKeyHex    = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
         val cachedPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+
+        // Already on the correct public sheet with a key — nothing to do.
+        if (currentSheetId != null && cachedPublicId.isNotBlank() && currentSheetId == cachedPublicId && cachedKeyHex.isNotBlank()) {
+            return@withContext
+        }
+
+        // On the wrong sheet (e.g. migrating from private to public after first provisioning).
+        // Disconnect so we re-join on the correct sheet below.
+        if (currentSheetId != null && cachedPublicId.isNotBlank() && currentSheetId != cachedPublicId) {
+            Log.i(TAG, "Migrating: was on $currentSheetId, switching to public sheet $cachedPublicId")
+            disconnectPeer()
+        }
 
         if (cachedPublicId.isNotBlank() && cachedKeyHex.isNotBlank()) {
             Log.i(TAG, "Using cached public sheet: $cachedPublicId (key cached)")
@@ -358,6 +368,7 @@ class WebRtcService : LifecycleService() {
                 NotificationHelper.showMessage(applicationContext, title, body)
             }
         )
+        newPeer.onSignalKeyStale = { onSignalKeyStale() }
 
         newPeer.onConnectionStateChanged = { connected, count ->
             startForeground(

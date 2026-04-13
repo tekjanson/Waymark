@@ -93,6 +93,8 @@ class OrchestratorPeer(
         private const val ICE_DISCONNECT_GRACE_MS = 30_000L
         /** Consecutive Sheets IO failures before forcing a mesh reconnect (refreshes token). */
         private const val SHEETS_FAILURE_THRESHOLD = 3
+        /** Consecutive decrypt-failure polls before deciding the AES key has been cycled. */
+        private const val DECRYPT_FAILURE_THRESHOLD = 3
     }
 
     /* ---------- State ---------- */
@@ -110,6 +112,16 @@ class OrchestratorPeer(
     private val lastPong = ConcurrentHashMap<String, Long>()
     /** Counts consecutive Sheets API failures; resets on a successful read to detect token expiry. */
     private val _sheetsFailures = AtomicInteger(0)
+    /** Counts consecutive polls where GCM decryption fails on all encrypted cells.
+     *  When this exceeds [DECRYPT_FAILURE_THRESHOLD] the AES key has been cycled remotely
+     *  and [onSignalKeyStale] is invoked to trigger a key re-fetch. */
+    private val _decryptFailures = AtomicInteger(0)
+
+    /**
+     * Called when consecutive GCM decryption failures indicate the signal key was cycled.
+     * Default: no-op.  [WebRtcService] overrides this to clear the cached key and reconnect.
+     */
+    var onSignalKeyStale: (() -> Unit)? = null
 
     /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
      *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
@@ -272,6 +284,21 @@ class OrchestratorPeer(
         try {
             val vals     = signalingClient.readAll()
             _sheetsFailures.set(0)  // successful Sheets read — reset error count
+
+            // Detect cycled AES key: if encrypted cells consistently fail GCM decryption,
+            // the owner has rotated the key and this peer needs to re-fetch it via OAuth.
+            if (signalingClient.decryptFailureCount > 0) {
+                val failRow = _decryptFailures.incrementAndGet()
+                if (failRow >= DECRYPT_FAILURE_THRESHOLD) {
+                    Log.w(TAG, "Signal key appears cycled ($failRow consecutive decrypt failures) — notifying service")
+                    _decryptFailures.set(0)
+                    onSignalKeyStale?.invoke()
+                    return@withContext
+                }
+            } else {
+                _decryptFailures.set(0)
+            }
+
             val alive    = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
 

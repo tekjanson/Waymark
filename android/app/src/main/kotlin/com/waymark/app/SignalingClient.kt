@@ -50,6 +50,15 @@ class SignalingClient(
     private val getKey: () -> String? = { null }
 ) {
 
+    /**
+     * Number of encrypted cells that failed GCM decryption on the most recent [readAll] call.
+     * A non-zero value on several consecutive polls means the AES key has been cycled remotely.
+     * [OrchestratorPeer] monitors this and calls [WebRtcService.onSignalKeyStale] when the
+     * threshold is exceeded.
+     */
+    @Volatile var decryptFailureCount: Int = 0
+        private set
+
     /* ---------- HTTP client ---------- */
 
     private val http = OkHttpClient.Builder()
@@ -99,17 +108,21 @@ class SignalingClient(
 
         // Pad the list to TOTAL_ROWS so callers can index safely
         val result = MutableList<String?>(TOTAL_ROWS + 2) { null }
+        var failures = 0
         for (i in 0 until rows.length()) {
             val row = rows.getJSONArray(i)
             if (row.length() > 0) {
                 val raw = row.getString(0)
-                result[i + WaymarkConfig.BLOCK_START] = if (keyHex != null) {
-                    SignalingEncryption.decrypt(raw, keyHex)
+                if (keyHex != null) {
+                    val dec = SignalingEncryption.decrypt(raw, keyHex)
+                    if (dec == null && raw.startsWith(SignalingEncryption.ENCRYPT_PREFIX)) failures++
+                    result[i + WaymarkConfig.BLOCK_START] = dec
                 } else {
-                    raw
+                    result[i + WaymarkConfig.BLOCK_START] = raw
                 }
             }
         }
+        decryptFailureCount = failures
         return result
     }
 

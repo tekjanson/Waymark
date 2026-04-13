@@ -244,7 +244,7 @@ async function _writeSignalKey(sheetId, keyHex) {
   const res = await fetch(url, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range, majorDimension: 'COLUMNS', values: [[keyHex, String(Date.now())]] }),
+    body: JSON.stringify({ range, majorDimension: 'ROWS', values: [[keyHex], [String(Date.now())]] }),
   });
   if (!res.ok) throw new Error(`Signal key write failed: ${res.status}`);
 }

@@ -128,13 +128,16 @@ const STUN_SERVERS = [
  * @param {string}              [opts.bufferFile]  - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, iceServers, onMessage, onConnect, bufferFile }) {
+    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, getEncryptionKey, iceServers, onMessage, onConnect, bufferFile }) {
         this.sheetId       = sheetId;
         this.auth          = auth;
         this._getTokenFn   = getToken || null;
         this.peerId        = peerId;
         this.displayName   = displayName;
-        this._encKey       = encryptionKey || null;  // 64-char hex AES-256 key; null = no encryption
+        // getEncryptionKey() is called on every read/write so the key can be rotated live.
+        // Fall back to the static encryptionKey string for backwards compatibility.
+        this._getKeyFn     = getEncryptionKey || (encryptionKey ? () => encryptionKey : null);
+        this._encKey       = encryptionKey || null;  // kept for read-only callers that inspect it directly
         this._iceServers   = iceServers || STUN_SERVERS;  // pass TURN entries here for hard-NAT fallback
         this.onMessage     = onMessage;
         this.onConnect     = onConnect;
@@ -331,7 +334,8 @@ export class SheetWebRtcPeer {
             if (row && row.length > 0 && row[0] !== "") {
                 const raw = row[0];
                 // Decrypt cell if a key is available; passthrough if no key or no prefix
-                result[i + BLOCK_START] = this._encKey ? (decryptCell(raw, this._encKey) ?? raw) : raw;
+                const key = this._getKeyFn ? this._getKeyFn() : null;
+                result[i + BLOCK_START] = key ? (decryptCell(raw, key) ?? raw) : raw;
             }
         }
         return result;
@@ -342,7 +346,8 @@ export class SheetWebRtcPeer {
         const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
         const range = `Sheet1!T${sheetsRow}`;
         // Encrypt non-empty values when a key is available
-        const cellValue = (value && this._encKey) ? encryptCell(value, this._encKey) : (value ?? "");
+        const key = this._getKeyFn ? this._getKeyFn() : null;
+        const cellValue = (value && key) ? encryptCell(value, key) : (value ?? "");
         const body = JSON.stringify({
             range,
             majorDimension: "ROWS",
