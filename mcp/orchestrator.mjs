@@ -138,6 +138,8 @@ if (credPath) {
  */
 
 const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
+const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 /** @type {string|null} resolved sheet ID, cached in memory once resolved */
@@ -186,96 +188,176 @@ async function getUserOAuthToken() {
     return tokenData.access_token;
 }
 
-/**
- * Reads the user's .waymark-data.json from Drive and returns the
- * signalingSheetId stored there by user-data.js on first web-app boot.
- * Returns null if the token is unavailable or the sheet hasn't been created yet.
- */
-async function resolveSignalingSheet() {
-    if (_resolvedSignalingSheetId) return _resolvedSignalingSheetId;
-
-    const token = await getUserOAuthToken();
-    if (!token) {
-        process.stderr.write(
-            "orchestrator: WAYMARK_OAUTH_TOKEN_PATH not set or token invalid — WebRTC signaling peer disabled\n"
-        );
-        return null;
-    }
-
-    // Find .waymark-data.json in the user's Drive
-    const q = encodeURIComponent(
-        "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
-    );
-    const searchRes = await fetch(
-        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
-    const { files } = await searchRes.json();
-    if (!files || files.length === 0) {
-        process.stderr.write("orchestrator: .waymark-data.json not found — user may not have booted the web app yet\n");
-        return null;
-    }
-
-    const fileRes = await fetch(
-        `${DRIVE_FILES_URL}/${files[0].id}?alt=media`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!fileRes.ok) throw new Error(`Drive read failed: ${fileRes.status}`);
-    const data = await fileRes.json();
-    const sheetId = data.signalingSheetId || null;
-    if (!sheetId) {
-        process.stderr.write("orchestrator: signalingSheetId not set in .waymark-data.json — user may not have booted the web app yet\n");
-        return null;
-    }
-
-    process.stderr.write(`orchestrator: signaling sheet resolved from user Drive: ${sheetId}\n`);
-    _resolvedSignalingSheetId = sheetId;
-    return sheetId;
-}
-
 /** Resolved public signaling sheet ID — separate from the private key sheet */
 let _resolvedPublicSignalingSheetId = null;
 /** Resolved AES-256 signal key hex from the local key file */
 let _resolvedSignalKeyHex = null;
+/** Cached Drive file ID for .waymark-data.json (avoids repeat searches) */
+let _dataFileId = null;
+
+/* ---------- Auto-provisioning helpers ---------- */
+
+/** Check if a Google Sheet still exists (not deleted/trashed). */
+async function sheetExists(sheetId, token) {
+    try {
+        const res = await fetch(
+            `${SHEETS_BASE_URL}/${sheetId}?fields=spreadsheetId`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return res.ok;
+    } catch { return false; }
+}
+
+/** Create a new empty Google Spreadsheet. Returns the spreadsheetId. */
+async function createSpreadsheet(title, token) {
+    const res = await fetch(SHEETS_BASE_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { title } }),
+    });
+    if (!res.ok) throw new Error(`createSpreadsheet(${title}) → ${res.status}: ${await res.text()}`);
+    const d = await res.json();
+    return d.spreadsheetId;
+}
+
+/** Grant "anyone with the link can edit" on a Drive file. */
+async function setPublicWritable(fileId, token) {
+    const res = await fetch(`${DRIVE_FILES_URL}/${fileId}/permissions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "writer", type: "anyone" }),
+    });
+    if (!res.ok) {
+        process.stderr.write(`orchestrator: setPublicWritable(${fileId}) → ${res.status}\n`);
+    }
+}
+
+/** Update a Drive file's JSON content in-place. */
+async function driveUpdateJson(fileId, data, token) {
+    const body = JSON.stringify(data, null, 2);
+    const res = await fetch(`${DRIVE_UPLOAD_URL}/${fileId}?uploadType=media`, {
+        method: "PATCH",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Content-Length": String(Buffer.byteLength(body)),
+        },
+        body,
+    });
+    if (!res.ok) throw new Error(`driveUpdateJson(${fileId}) → ${res.status}: ${await res.text()}`);
+}
 
 /**
- * Reads .waymark-data.json and returns the publicSignalingSheetId.
- * Falls back to the private signalingSheetId when not yet set (migration path).
+ * Ensure all signaling infrastructure exists. Reads .waymark-data.json once,
+ * validates both sheet IDs (checking the actual sheets still exist on Drive),
+ * auto-creates any missing sheets, sets public write permission, and saves
+ * changes back to .waymark-data.json.
+ *
+ * Returns { privateSheetId, publicSheetId } or null on failure.
+ * Caches both IDs so subsequent calls are instant.
  */
-async function resolvePublicSignalingSheet() {
-    if (_resolvedPublicSignalingSheetId) return _resolvedPublicSignalingSheetId;
+async function ensureSignalingInfra() {
+    // Fast path: both already validated and cached
+    if (_resolvedSignalingSheetId && _resolvedPublicSignalingSheetId) {
+        return {
+            privateSheetId: _resolvedSignalingSheetId,
+            publicSheetId:  _resolvedPublicSignalingSheetId,
+        };
+    }
 
     const token = await getUserOAuthToken();
-    if (!token) return null;
-
-    const q = encodeURIComponent(
-        "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
-    );
-    const searchRes = await fetch(
-        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!searchRes.ok) return null;
-    const { files } = await searchRes.json();
-    if (!files || files.length === 0) return null;
-
-    const fileRes = await fetch(
-        `${DRIVE_FILES_URL}/${files[0].id}?alt=media`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!fileRes.ok) return null;
-    const data = await fileRes.json();
-
-    // Prefer the dedicated public sheet; NEVER fall back to the private sheet —
-    // writing encrypted data to the private sheet breaks Phase 1 key exchange.
-    const publicId = data.publicSignalingSheetId || null;
-    if (!publicId) {
-        process.stderr.write("orchestrator: publicSignalingSheetId not set — run provision-signaling.mjs\n");
+    if (!token) {
+        process.stderr.write("orchestrator: OAuth token unavailable — signaling disabled\n");
         return null;
     }
+
+    // Find .waymark-data.json in Drive (cache the file ID)
+    if (!_dataFileId) {
+        const q = encodeURIComponent(
+            "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
+        );
+        const searchRes = await fetch(
+            `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!searchRes.ok) {
+            process.stderr.write(`orchestrator: Drive search failed: ${searchRes.status}\n`);
+            return null;
+        }
+        const { files } = await searchRes.json();
+        if (!files?.length) {
+            process.stderr.write("orchestrator: .waymark-data.json not found — user must open web app first\n");
+            return null;
+        }
+        _dataFileId = files[0].id;
+    }
+
+    // Read current config
+    const fileRes = await fetch(
+        `${DRIVE_FILES_URL}/${_dataFileId}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!fileRes.ok) {
+        process.stderr.write(`orchestrator: Drive read .waymark-data.json failed: ${fileRes.status}\n`);
+        _dataFileId = null; // invalidate — might have been deleted
+        return null;
+    }
+    const data = await fileRes.json();
+    let dirty = false;
+
+    // ── Private sheet — plaintext, OAuth-protected key exchange ──
+    let privateId = data.signalingSheetId || null;
+    if (privateId && !(await sheetExists(privateId, token))) {
+        process.stderr.write(`orchestrator: private sheet ${privateId} deleted from Drive — recreating\n`);
+        privateId = null;
+    }
+    if (!privateId) {
+        process.stderr.write("orchestrator: auto-provisioning private signaling sheet (.waymark-signaling)\n");
+        privateId = await createSpreadsheet(".waymark-signaling", token);
+        data.signalingSheetId = privateId;
+        dirty = true;
+        process.stderr.write(`orchestrator: created private sheet: ${privateId}\n`);
+    }
+
+    // ── Public sheet — AES-256-GCM encrypted, publicly writable ──
+    let publicId = data.publicSignalingSheetId || null;
+    if (publicId && !(await sheetExists(publicId, token))) {
+        process.stderr.write(`orchestrator: public sheet ${publicId} deleted from Drive — recreating\n`);
+        publicId = null;
+    }
+    if (!publicId) {
+        process.stderr.write("orchestrator: auto-provisioning public signaling sheet (.waymark-public-signaling)\n");
+        publicId = await createSpreadsheet(".waymark-public-signaling", token);
+        data.publicSignalingSheetId = publicId;
+        dirty = true;
+        process.stderr.write(`orchestrator: created public sheet: ${publicId}\n`);
+    }
+
+    // Always ensure public write permission (idempotent — safe to call if already set)
+    await setPublicWritable(publicId, token);
+
+    // Persist any changes back to Drive
+    if (dirty) {
+        data.updatedAt = new Date().toISOString();
+        await driveUpdateJson(_dataFileId, data, token);
+        process.stderr.write("orchestrator: saved updated sheet IDs to .waymark-data.json on Drive\n");
+    }
+
+    // Cache resolved IDs
+    _resolvedSignalingSheetId = privateId;
     _resolvedPublicSignalingSheetId = publicId;
-    return publicId;
+    process.stderr.write(`orchestrator: signaling infra ready — private=${privateId} public=${publicId}\n`);
+    return { privateSheetId: privateId, publicSheetId: publicId };
+}
+
+/**
+ * Invalidate cached sheet IDs so the next ensureSignalingInfra() call
+ * re-reads Drive and re-validates (or re-creates) the sheets.
+ */
+function invalidateSignalingCache() {
+    _resolvedSignalingSheetId = null;
+    _resolvedPublicSignalingSheetId = null;
+    process.stderr.write("orchestrator: signaling sheet cache invalidated\n");
 }
 
 /**
@@ -341,17 +423,15 @@ async function generateAndSaveSignalKey() {
  *   - A periodic health check restarts any peer that has lost its mesh slot.
  */
 async function startSignalingPeer() {
-    let publicSheetId, privateSheetId;
+    let infra;
     try {
-        [publicSheetId, privateSheetId] = await Promise.all([
-            resolvePublicSignalingSheet(),
-            resolveSignalingSheet(),
-        ]);
+        infra = await ensureSignalingInfra();
     } catch (err) {
-        process.stderr.write(`orchestrator: signaling sheet resolve failed: ${err.message}\n`);
+        process.stderr.write(`orchestrator: signaling infra setup failed: ${err.message}\n`);
         return;
     }
-    if (!publicSheetId) return;
+    if (!infra) return;
+    const { privateSheetId, publicSheetId } = infra;
 
     // Read or generate the AES-256 signal key
     let signalKey = resolveSignalKey();
@@ -433,8 +513,6 @@ async function startSignalingPeer() {
     async function restartPeer(peer, label) {
         process.stderr.write(`orchestrator: ${label} — restarting\n`);
         peer.stop();
-        // Create a fresh peer instead of mutating destroyed flag on the stopped one.
-        // stop() clears all intervals; start() creates new ones — clean lifecycle.
         peer.destroyed = false;
         peer.block = -1;
         try {
@@ -442,6 +520,22 @@ async function startSignalingPeer() {
             process.stderr.write(`orchestrator: ${label} — restarted successfully\n`);
         } catch (e) {
             process.stderr.write(`orchestrator: ${label} restart failed: ${e.message}\n`);
+            // Sheet may have been deleted — invalidate caches so the next
+            // health tick re-provisions via ensureSignalingInfra() and
+            // calls startSignalingPeer() from scratch.
+            invalidateSignalingCache();
+            process.stderr.write(`orchestrator: scheduling full signaling re-provision in 30s\n`);
+            setTimeout(async () => {
+                try {
+                    // Stop both peers before re-provisioning
+                    if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
+                    if (_privateSignalingPeer) { _privateSignalingPeer.stop(); _privateSignalingPeer = null; }
+                    if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
+                    await startSignalingPeer();
+                } catch (e2) {
+                    process.stderr.write(`orchestrator: re-provision failed: ${e2.message}\n`);
+                }
+            }, 30_000);
         }
     }
 
@@ -472,7 +566,6 @@ async function startSignalingPeer() {
     }, 60_000);
 }
 
-const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
 const SHEETS_BASE = SHEETS_BASE_URL;  // alias for getSheetHeaders below
 
 async function getSheetHeaders(spreadsheetId) {
