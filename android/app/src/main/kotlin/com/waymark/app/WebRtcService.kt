@@ -4,6 +4,17 @@
    Keeps the OrchestratorPeer alive when the user switches away
    from the app so notifications can still arrive via the P2P mesh.
 
+   Two-tier token strategy
+   -----------------------
+   Tier 1 (primary): Use cached OAuth access token from SharedPreferences.
+     Works for ~55 minutes after the WebView last refreshed it.
+
+   Tier 2 (silent refresh): When Tier 1 is stale (or approaching expiry),
+     TokenRefresher reads the waymark_refresh cookie from the WebView's
+     CookieManager and POSTs it to the server's /auth/refresh endpoint.
+     This keeps the background service connected indefinitely without
+     requiring the user to reopen the app.
+
    Actions:
      ACTION_CONNECT       — Start or switch to a new sheetId
      ACTION_UPDATE_TOKEN  — Refresh the access token in-place
@@ -46,6 +57,9 @@ class WebRtcService : LifecycleService() {
     @Volatile private var peer: OrchestratorPeer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** Tier 2: silent token refresh using the WebView's refresh cookie. */
+    private val tokenRefresher by lazy { TokenRefresher(applicationContext) }
+
     /* ---------- Lifecycle ---------- */
 
     override fun onCreate() {
@@ -56,16 +70,34 @@ class WebRtcService : LifecycleService() {
         )
         Log.i(TAG, "Service created")
 
-        // Only auto-connect on start if the cached token is still fresh.
-        // If stale, wait for the WebView to load and call onAuthToken() —
-        // that triggers ACTION_UPDATE_TOKEN which will connect with a fresh token.
-        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-        val tokenAge = System.currentTimeMillis() -
-                prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
-        if (tokenAge < WaymarkConfig.ACCESS_TOKEN_TTL_MS) {
-            scope.launch { resolveAndConnect() }
-        } else {
-            Log.d(TAG, "Cached token is stale (${ tokenAge / 1000 }s old) — waiting for fresh token from WebView")
+        // Attempt to connect immediately.  ensureFreshToken() implements the
+        // two-tier strategy: Tier 1 uses the cached access token; if stale,
+        // Tier 2 silently refreshes via the WebView's refresh cookie.
+        scope.launch { resolveAndConnect() }
+
+        // Periodic preemptive Tier 2 refresh — runs before the token expires
+        // so signaling is never interrupted by a mid-cycle 401.
+        // Calculate the initial delay from the current token age so that if the
+        // service starts with a token that is already 45 min old, the first
+        // preemptive refresh fires in ~5 min rather than ~50 min.
+        scope.launch {
+            val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            val tokenAge = System.currentTimeMillis() -
+                    prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
+            val preemptThreshold = WaymarkConfig.ACCESS_TOKEN_TTL_MS - WaymarkConfig.ACCESS_TOKEN_PREEMPT_MS
+            val initialDelay = maxOf(0L, preemptThreshold - tokenAge)
+            Log.d(TAG, "Preemptive refresh loop starts in ${initialDelay / 1000}s")
+            delay(initialDelay)
+            while (true) {
+                Log.d(TAG, "Preemptive token refresh cycle")
+                val freshToken = tokenRefresher.refresh()
+                if (freshToken != null) {
+                    Log.i(TAG, "Preemptive refresh succeeded — signaling uninterrupted")
+                } else {
+                    Log.d(TAG, "Preemptive refresh unavailable — waiting for WebView auth")
+                }
+                delay(WaymarkConfig.ACCESS_TOKEN_TTL_MS - WaymarkConfig.ACCESS_TOKEN_PREEMPT_MS)
+            }
         }
     }
 
@@ -121,35 +153,47 @@ class WebRtcService : LifecycleService() {
     /* ---------- Auto-discovery ---------- */
 
     /**
-     * Resolves the signaling sheet ID with no manual configuration:
+     * Resolves the signaling sheet ID with no manual configuration.
+     * Implements the two-tier token strategy before attempting Drive discovery:
+     *
+     *  Tier 1: Use the cached access token if it is still within its TTL.
+     *  Tier 2: If stale, attempt a silent refresh via [TokenRefresher] before
+     *          giving up — this keeps the service connected without the
+     *          user having to reopen the app.
+     *
+     * Discovery order:
      * 1. Returns immediately if already connected.
-     * 2. Reads the cached ID from SharedPreferences.
-     * 3. Falls back to reading .waymark-data.json directly from the user's
-     *    Google Drive using the stored OAuth access token — no server involvement.
-     * Called on service start and whenever the OAuth token is refreshed.
+     * 2. Reads the cached sheet ID from SharedPreferences.
+     * 3. Ensures a valid token (Tier 1 → Tier 2 fallback).
+     * 4. Reads .waymark-data.json from the user's Google Drive.
      */
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
         if (currentSheetId != null) return@withContext
 
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
-        // 1. Cached from a previous session
+        // 1. Cached sheet ID from a previous session
         val cached = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
         if (cached.isNotBlank()) {
             Log.i(TAG, "Signaling sheet from cache: $cached")
-            connectToSheet(cached)
+            // Still need a valid token even for the cached sheet path
+            val token = ensureFreshToken(prefs)
+            if (token.isNotBlank()) {
+                connectToSheet(cached)
+            }
             return@withContext
         }
 
-        // 2. Read .waymark-data.json directly from the user's Drive.
+        // 2. Ensure we have a valid access token (Tier 1 / Tier 2 strategy)
+        val token = ensureFreshToken(prefs)
+        if (token.isBlank()) {
+            Log.d(TAG, "No valid token available — will retry after next auth event")
+            return@withContext
+        }
+
+        // 3. Read .waymark-data.json directly from the user's Drive.
         //    The web app creates this file on first boot (user-data.js) and
         //    writes signalingSheetId into it.  The server is never involved.
-        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
-        if (token.isBlank()) {
-            Log.d(TAG, "No token yet — will retry signaling discovery after next auth")
-            return@withContext
-        }
-
         try {
             val sheetId = fetchSignalingSheetIdFromDrive(token)
             if (sheetId.isNotBlank()) {
@@ -162,6 +206,45 @@ class WebRtcService : LifecycleService() {
         } catch (e: Exception) {
             Log.e(TAG, "Signaling sheet Drive discovery failed: ${e.message}")
         }
+    }
+
+    /**
+     * Returns a valid OAuth access token using the two-tier strategy:
+     *
+     *  Tier 1 (primary): Return the cached token if it is fresh enough
+     *    (age < ACCESS_TOKEN_TTL_MS - ACCESS_TOKEN_PREEMPT_MS).
+     *
+     *  Tier 2 (silent refresh): If the cached token is stale or approaching
+     *    expiry, ask [TokenRefresher] to silently obtain a new one using the
+     *    `waymark_refresh` cookie stored in the WebView's CookieManager.
+     *
+     * Returns an empty string if both tiers fail (no cookie, server unreachable).
+     */
+    private suspend fun ensureFreshToken(prefs: android.content.SharedPreferences): String {
+        val cachedToken = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
+
+        // Tier 1: cached token is fresh — use it directly
+        if (cachedToken.isNotBlank() && !tokenRefresher.isRefreshNeeded()) {
+            return cachedToken
+        }
+
+        // Tier 2: token is stale or missing — attempt silent refresh
+        if (cachedToken.isBlank()) {
+            Log.d(TAG, "Tier 1 unavailable (no cached token) — attempting Tier 2 silent refresh")
+        } else {
+            val age = System.currentTimeMillis() - prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
+            Log.d(TAG, "Tier 1 token stale (${age / 1000}s old) — attempting Tier 2 silent refresh")
+        }
+
+        val freshToken = tokenRefresher.refresh()
+        if (freshToken != null) {
+            Log.i(TAG, "Tier 2 silent refresh succeeded")
+            return freshToken
+        }
+
+        // Both tiers failed — return whatever we have (may be stale; caller will handle 401)
+        Log.d(TAG, "Tier 2 unavailable — proceeding with cached token if present")
+        return cachedToken
     }
 
     /**

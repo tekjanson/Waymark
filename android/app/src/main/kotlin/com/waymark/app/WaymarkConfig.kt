@@ -65,8 +65,14 @@ object WaymarkConfig {
     const val PREF_SIGNALING_SHEET_ID = "signaling_sheet_id"
     /** Epoch-ms timestamp recorded each time PREF_ACCESS_TOKEN is saved. */
     const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
-    /** Access tokens are valid for 3600 s; treat as stale after 55 min. */
+    /** Access tokens are valid for 3600 s; treat as stale after 55 min (Tier 1 window). */
     const val ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000L
+    /**
+     * Start the Tier 2 silent refresh this many ms before the Tier 1 token
+     * would expire.  This gives a 5-minute window to obtain a new token
+     * from the server before any active signaling cycle is interrupted.
+     */
+    const val ACCESS_TOKEN_PREEMPT_MS = 5 * 60 * 1000L
     /**
      * Stable 8-char hex peer ID for this device, generated once on first run
      * and preserved forever.  Never regenerated — a stable ID means remote
