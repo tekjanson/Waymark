@@ -34,8 +34,6 @@ import java.security.SecureRandom
  */
 object SignalingEncryption {
 
-    companion object {
-
         /** Marker prefix for encrypted signaling cell values. Matches Node.js peer. */
         const val ENCRYPT_PREFIX = "\uD83D\uDD10SIG:"  // 🔐SIG:
 
@@ -132,5 +130,5 @@ object SignalingEncryption {
         /** Encode a byte array to a lowercase hex string. */
         fun bytesToHex(bytes: ByteArray): String =
             bytes.joinToString("") { "%02x".format(it) }
-    }
+
 }
