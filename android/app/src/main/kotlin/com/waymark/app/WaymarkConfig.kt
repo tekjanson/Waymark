@@ -59,6 +59,8 @@ object WaymarkConfig {
 
     const val PREFS_NAME = "waymark_prefs"
     const val PREF_ACCESS_TOKEN = "access_token"
+    /** Epoch-ms when the access token was last stored — used for expiry checks. */
+    const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
     const val PREF_ACTIVE_SHEET = "active_sheet"
     const val PREF_DISPLAY_NAME = "display_name"
     /** Cached PRIVATE signaling sheet ID (OAuth-gated, stores the AES key in col A). */
