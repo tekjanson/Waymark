@@ -230,29 +230,111 @@ async function resolveSignalingSheet() {
     return sheetId;
 }
 
-async function startSignalingPeer() {
-    let sheetId;
+/** Resolved public signaling sheet ID — separate from the private key sheet */
+let _resolvedPublicSignalingSheetId = null;
+/** Resolved AES-256 signal key hex from the private key sheet */
+let _resolvedSignalKeyHex = null;
+
+/**
+ * Reads .waymark-data.json and returns the publicSignalingSheetId.
+ * Falls back to the private signalingSheetId when not yet set (migration path).
+ */
+async function resolvePublicSignalingSheet() {
+    if (_resolvedPublicSignalingSheetId) return _resolvedPublicSignalingSheetId;
+
+    const token = await getUserOAuthToken();
+    if (!token) return null;
+
+    const q = encodeURIComponent(
+        "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
+    );
+    const searchRes = await fetch(
+        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!searchRes.ok) return null;
+    const { files } = await searchRes.json();
+    if (!files || files.length === 0) return null;
+
+    const fileRes = await fetch(
+        `${DRIVE_FILES_URL}/${files[0].id}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!fileRes.ok) return null;
+    const data = await fileRes.json();
+
+    // Prefer the dedicated public sheet; fall back to signalingSheetId if not yet created
+    const publicId = data.publicSignalingSheetId || data.signalingSheetId || null;
+    if (!publicId) return null;
+    _resolvedPublicSignalingSheetId = publicId;
+    return publicId;
+}
+
+/**
+ * Reads the AES-256 signal key from the private signaling sheet (Sheet1!A1:A2).
+ *
+ * The web app writes the key to column A of the private sheet after creation.
+ * Returns the 64-char hex key, or null if not yet provisioned.
+ */
+async function resolveSignalKey(privateSheetId) {
+    if (_resolvedSignalKeyHex) return _resolvedSignalKeyHex;
+    if (!privateSheetId) return null;
+
+    const token = await getUserOAuthToken();
+    if (!token) return null;
+
     try {
-        sheetId = await resolveSignalingSheet();
+        const range = encodeURIComponent("Sheet1!A1:A2");
+        const res = await fetch(
+            `${SHEETS_BASE_URL}/${privateSheetId}/values/${range}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        const rows = data.values || [];
+        const keyRow = rows[0];
+        if (!keyRow || keyRow.length === 0) return null;
+        const key = keyRow[0]?.trim();
+        if (!key || key.length !== 64) return null;
+        _resolvedSignalKeyHex = key;
+        process.stderr.write(`orchestrator: signal key resolved (${key.length / 2} bytes)\n`);
+        return key;
+    } catch {
+        return null;
+    }
+}
+
+async function startSignalingPeer() {
+    let publicSheetId;
+    try {
+        publicSheetId = await resolvePublicSignalingSheet();
     } catch (err) {
         process.stderr.write(`orchestrator: signaling sheet resolve failed: ${err.message}\n`);
         return;
     }
-    if (!sheetId) return;
+    if (!publicSheetId) return;
+
+    // Resolve signal key from the private key sheet
+    const privateSheetId = await resolveSignalingSheet();
+    const signalKey = privateSheetId ? await resolveSignalKey(privateSheetId) : null;
+    if (!signalKey) {
+        process.stderr.write("orchestrator: signal key not provisioned — signaling without encryption\n");
+    }
 
     // Stable 8-char hex peer ID for this MCP server instance
     const { createHash } = await import("node:crypto");
     const peerId = createHash("sha256")
-        .update("orchestrator-mcp-" + sheetId)
+        .update("orchestrator-mcp-" + publicSheetId)
         .digest("hex")
         .slice(0, 8);
 
     _signalingPeer = new SheetWebRtcPeer({
-        sheetId,
-        getToken:    getUserOAuthToken,
+        sheetId:       publicSheetId,
+        getToken:      getUserOAuthToken,
         peerId,
-        displayName: "Orchestrator MCP",
-        bufferFile:  `${LOG_DIR}/notif-buffer.json`,
+        displayName:   "Orchestrator MCP",
+        encryptionKey: signalKey,
+        bufferFile:    `${LOG_DIR}/notif-buffer.json`,
         onConnect: (remotePeerId) => {
             process.stderr.write(`orchestrator: Android peer connected: ${remotePeerId}\n`);
             if (_wakeResolve) _wakeResolve("peer-connected");
@@ -264,7 +346,8 @@ async function startSignalingPeer() {
     await _signalingPeer.start();
 }
 
-const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
+const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
+const SHEETS_BASE = SHEETS_BASE_URL;  // alias for getSheetHeaders below
 
 async function getSheetHeaders(spreadsheetId) {
     if (!sheetsAuth) return null;

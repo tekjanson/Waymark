@@ -4,16 +4,27 @@
    Keeps the OrchestratorPeer alive when the user switches away
    from the app so notifications can still arrive via the P2P mesh.
 
-   Two-tier token strategy
-   -----------------------
-   Tier 1 (primary): Use cached OAuth access token from SharedPreferences.
-     Works for ~55 minutes after the WebView last refreshed it.
+   Encrypted public-sheet architecture
+   ------------------------------------
+   1. At service startup, the user's OAuth access token is used
+      ONCE to fetch the AES-256 signal key from the PRIVATE key
+      sheet (Sheet1!A1:A2 of the .waymark-signaling spreadsheet).
 
-   Tier 2 (silent refresh): When Tier 1 is stale (or approaching expiry),
-     TokenRefresher reads the waymark_refresh cookie from the WebView's
-     CookieManager and POSTs it to the server's /auth/refresh endpoint.
-     This keeps the background service connected indefinitely without
-     requiring the user to reopen the app.
+   2. The signal key is cached in SharedPreferences.  All ongoing
+      WebRTC signaling is performed on the PUBLIC signaling sheet
+      (.waymark-public-signaling), with every cell value
+      AES-256-GCM encrypted/decrypted using that key.
+
+   3. Once a direct WebRTC DataChannel is established between
+      Android and the orchestrator, notifications flow over the
+      P2P channel without any further dependency on OAuth or
+      Google Sheets.
+
+   4. If the OAuth token expires while the app is backgrounded,
+      the existing DataChannel connection stays alive.  If it drops,
+      reconnection requires the user to re-open the app so the
+      WebView can refresh the token.  No background token refresh
+      loop is needed or desired.
 
    Actions:
      ACTION_CONNECT       — Start or switch to a new sheetId
@@ -57,8 +68,7 @@ class WebRtcService : LifecycleService() {
     @Volatile private var peer: OrchestratorPeer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    /** Tier 2: silent token refresh using the WebView's refresh cookie. */
-    private val tokenRefresher by lazy { TokenRefresher(applicationContext) }
+
 
     /* ---------- Lifecycle ---------- */
 
@@ -70,35 +80,11 @@ class WebRtcService : LifecycleService() {
         )
         Log.i(TAG, "Service created")
 
-        // Attempt to connect immediately.  ensureFreshToken() implements the
-        // two-tier strategy: Tier 1 uses the cached access token; if stale,
-        // Tier 2 silently refreshes via the WebView's refresh cookie.
+        // Attempt to connect using cached credentials.  Fetches the AES signal
+        // key from the private sheet (one-time OAuth call) then connects to the
+        // public signaling sheet with encryption.  Once the DataChannel is open,
+        // no further OAuth access to Google Sheets is needed.
         scope.launch { resolveAndConnect() }
-
-        // Periodic preemptive Tier 2 refresh — runs before the token expires
-        // so signaling is never interrupted by a mid-cycle 401.
-        // Calculate the initial delay from the current token age so that if the
-        // service starts with a token that is already 45 min old, the first
-        // preemptive refresh fires in ~5 min rather than ~50 min.
-        scope.launch {
-            val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-            val tokenAge = System.currentTimeMillis() -
-                    prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
-            val preemptThreshold = WaymarkConfig.ACCESS_TOKEN_TTL_MS - WaymarkConfig.ACCESS_TOKEN_PREEMPT_MS
-            val initialDelay = maxOf(0L, preemptThreshold - tokenAge)
-            Log.d(TAG, "Preemptive refresh loop starts in ${initialDelay / 1000}s")
-            delay(initialDelay)
-            while (true) {
-                Log.d(TAG, "Preemptive token refresh cycle")
-                val freshToken = tokenRefresher.refresh()
-                if (freshToken != null) {
-                    Log.i(TAG, "Preemptive refresh succeeded — signaling uninterrupted")
-                } else {
-                    Log.d(TAG, "Preemptive refresh unavailable — waiting for WebView auth")
-                }
-                delay(WaymarkConfig.ACCESS_TOKEN_TTL_MS - WaymarkConfig.ACCESS_TOKEN_PREEMPT_MS)
-            }
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -153,111 +139,91 @@ class WebRtcService : LifecycleService() {
     /* ---------- Auto-discovery ---------- */
 
     /**
-     * Resolves the signaling sheet ID with no manual configuration.
-     * Implements the two-tier token strategy before attempting Drive discovery:
-     *
-     *  Tier 1: Use the cached access token if it is still within its TTL.
-     *  Tier 2: If stale, attempt a silent refresh via [TokenRefresher] before
-     *          giving up — this keeps the service connected without the
-     *          user having to reopen the app.
+     * Resolves the AES-256 signal key and public signaling sheet ID, then connects.
      *
      * Discovery order:
-     * 1. Returns immediately if already connected.
-     * 2. Reads the cached sheet ID from SharedPreferences.
-     * 3. Ensures a valid token (Tier 1 → Tier 2 fallback).
-     * 4. Reads .waymark-data.json from the user's Google Drive.
+     *  1. Return immediately if already connected to the public sheet.
+     *  2. If key + public sheet ID are cached, connect immediately.
+     *  3. Use OAuth to fetch sheet IDs from Drive and key from private sheet.
+     *  4. Connect to the public sheet with AES-256-GCM encrypted signaling.
+     *
+     * OAuth is used ONLY for this initial setup phase.  Once the WebRTC
+     * DataChannel is established, no further OAuth is needed.
      */
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
         if (currentSheetId != null) return@withContext
 
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
-        // 1. Cached sheet ID from a previous session
-        val cached = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
-        if (cached.isNotBlank()) {
-            Log.i(TAG, "Signaling sheet from cache: $cached")
-            // Still need a valid token even for the cached sheet path
-            val token = ensureFreshToken(prefs)
-            if (token.isNotBlank()) {
-                connectToSheet(cached)
-            }
+        val cachedPublicId  = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
+        val cachedKeyHex    = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
+        val cachedPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+
+        if (cachedPublicId.isNotBlank() && cachedKeyHex.isNotBlank()) {
+            Log.i(TAG, "Using cached public sheet: $cachedPublicId (key cached)")
+            connectToSheet(cachedPublicId)
             return@withContext
         }
 
-        // 2. Ensure we have a valid access token (Tier 1 / Tier 2 strategy)
-        val token = ensureFreshToken(prefs)
+        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
         if (token.isBlank()) {
-            Log.d(TAG, "No valid token available — will retry after next auth event")
+            Log.d(TAG, "No access token — waiting for user to open the app")
             return@withContext
         }
 
-        // 3. Read .waymark-data.json directly from the user's Drive.
-        //    The web app creates this file on first boot (user-data.js) and
-        //    writes signalingSheetId into it.  The server is never involved.
         try {
-            val sheetId = fetchSignalingSheetIdFromDrive(token)
-            if (sheetId.isNotBlank()) {
-                Log.i(TAG, "Signaling sheet discovered from Drive: $sheetId")
-                prefs.edit().putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, sheetId).apply()
-                connectToSheet(sheetId)
+            // Discover the private + public sheet IDs from Drive
+            val (privateId, publicId) = if (cachedPrivateId.isNotBlank() && cachedPublicId.isNotBlank()) {
+                Pair(cachedPrivateId, cachedPublicId)
             } else {
-                Log.d(TAG, "signalingSheetId not set yet — user may not have opened the web app")
+                fetchSheetIdsFromDrive(token)
             }
+
+            if (privateId.isBlank() || publicId.isBlank()) {
+                Log.d(TAG, "Sheet IDs not set — user may not have opened the web app yet")
+                return@withContext
+            }
+
+            prefs.edit()
+                .putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, privateId)
+                .putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, publicId)
+                .apply()
+
+            // Fetch the AES signal key from the private sheet (one-time OAuth call)
+            val keyHex = fetchSignalKey(token, privateId)
+            if (keyHex.isBlank()) {
+                Log.w(TAG, "Signal key not provisioned — connecting without encryption")
+                connectToSheet(publicId)
+                return@withContext
+            }
+
+            prefs.edit()
+                .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
+                .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
+                .apply()
+
+            Log.i(TAG, "Signal key fetched (${keyHex.length / 2} bytes) — connecting to public sheet")
+            connectToSheet(publicId)
+
         } catch (e: Exception) {
-            Log.e(TAG, "Signaling sheet Drive discovery failed: ${e.message}")
+            Log.e(TAG, "resolveAndConnect failed: ${e.message}")
         }
     }
 
     /**
-     * Returns a valid OAuth access token using the two-tier strategy:
+     * Reads .waymark-data.json from the user's Google Drive and returns
+     * (signalingSheetId, publicSignalingSheetId) — the private key sheet
+     * and the public P2P signaling sheet.
      *
-     *  Tier 1 (primary): Return the cached token if it is fresh enough
-     *    (age < ACCESS_TOKEN_TTL_MS - ACCESS_TOKEN_PREEMPT_MS).
-     *
-     *  Tier 2 (silent refresh): If the cached token is stale or approaching
-     *    expiry, ask [TokenRefresher] to silently obtain a new one using the
-     *    `waymark_refresh` cookie stored in the WebView's CookieManager.
-     *
-     * Returns an empty string if both tiers fail (no cookie, server unreachable).
+     * @throws IOException if Drive is unreachable or the file is missing/malformed
      */
-    private suspend fun ensureFreshToken(prefs: android.content.SharedPreferences): String {
-        val cachedToken = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
-
-        // Tier 1: cached token is fresh — use it directly
-        if (cachedToken.isNotBlank() && !tokenRefresher.isRefreshNeeded()) {
-            return cachedToken
-        }
-
-        // Tier 2: token is stale or missing — attempt silent refresh
-        if (cachedToken.isBlank()) {
-            Log.d(TAG, "Tier 1 unavailable (no cached token) — attempting Tier 2 silent refresh")
-        } else {
-            val age = System.currentTimeMillis() - prefs.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
-            Log.d(TAG, "Tier 1 token stale (${age / 1000}s old) — attempting Tier 2 silent refresh")
-        }
-
-        val freshToken = tokenRefresher.refresh()
-        if (freshToken != null) {
-            Log.i(TAG, "Tier 2 silent refresh succeeded")
-            return freshToken
-        }
-
-        // Both tiers failed — return whatever we have (may be stale; caller will handle 401)
-        Log.d(TAG, "Tier 2 unavailable — proceeding with cached token if present")
-        return cachedToken
-    }
-
-    /**
-     * Reads .waymark-data.json from the user's Google Drive and returns the
-     * signalingSheetId field written there by the web app's user-data.js.
-     * All Drive access uses the user's own OAuth token — no server proxy.
-     */
-    private fun fetchSignalingSheetIdFromDrive(token: String): String {
+    private fun fetchSheetIdsFromDrive(token: String): Pair<String, String> {
         val drive = WaymarkConfig.DRIVE_BASE
 
-        // Search for .waymark-data.json by name
         val q = "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
-        val searchUrl = URL("$drive/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&fields=files(id)&pageSize=1&spaces=drive")
+        val searchUrl = URL(
+            "$drive/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}&fields=files(id)&pageSize=1&spaces=drive"
+        )
         val searchConn = searchUrl.openConnection() as HttpURLConnection
         searchConn.setRequestProperty("Authorization", "Bearer $token")
         searchConn.connectTimeout = 10_000
@@ -269,11 +235,10 @@ class WebRtcService : LifecycleService() {
         val searchBody = searchConn.inputStream.bufferedReader().readText()
         searchConn.disconnect()
 
-        val files = JSONObject(searchBody).optJSONArray("files") ?: return ""
-        if (files.length() == 0) return ""
-        val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return "" }
+        val files = JSONObject(searchBody).optJSONArray("files") ?: return Pair("", "")
+        if (files.length() == 0) return Pair("", "")
+        val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return Pair("", "") }
 
-        // Download the file content
         val dlUrl = URL("$drive/files/$fileId?alt=media")
         val dlConn = dlUrl.openConnection() as HttpURLConnection
         dlConn.setRequestProperty("Authorization", "Bearer $token")
@@ -286,33 +251,84 @@ class WebRtcService : LifecycleService() {
         val content = dlConn.inputStream.bufferedReader().readText()
         dlConn.disconnect()
 
-        return JSONObject(content).optString("signalingSheetId", "")
+        val data = JSONObject(content)
+        return Pair(
+            data.optString("signalingSheetId", ""),
+            data.optString("publicSignalingSheetId", "")
+        )
+    }
+
+    /**
+     * Reads the AES-256 signal key from the PRIVATE key sheet.
+     *
+     * The web app writes the key to Sheet1!A1:A2:
+     *   A1 = 64-char hex AES-256 key
+     *   A2 = key version epoch ms
+     *
+     * @param token          Current OAuth access token
+     * @param privateSheetId ID of the private .waymark-signaling sheet
+     * @return 64-char hex key string, or empty string if not yet provisioned
+     */
+    private fun fetchSignalKey(token: String, privateSheetId: String): String {
+        val url = URL(
+            "${WaymarkConfig.SHEETS_BASE}/$privateSheetId/values/${WaymarkConfig.KEY_RANGE}"
+        )
+        val conn = url.openConnection() as HttpURLConnection
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 10_000
+        if (conn.responseCode != 200) {
+            conn.disconnect()
+            throw IOException("Signal key fetch returned ${conn.responseCode}")
+        }
+        val body = conn.inputStream.bufferedReader().readText()
+        conn.disconnect()
+
+        val rows = JSONObject(body).optJSONArray("values") ?: return ""
+        val keyRow = if (rows.length() > 0) rows.optJSONArray(0) else null
+        if (keyRow == null || keyRow.length() == 0) return ""
+        return keyRow.optString(0, "").trim()
+    }
+
+    /**
+     * Called when OrchestratorPeer detects decryption failures indicating the
+     * signal key has been cycled.  Clears the cached key and reconnects.
+     */
+    fun onSignalKeyStale() {
+        Log.i(TAG, "Signal key stale — clearing cache and reconnecting")
+        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
+        disconnectPeer()
+        scope.launch { resolveAndConnect() }
     }
 
     /* ---------- Sheet connection ---------- */
 
     private fun connectToSheet(sheetId: String) {
         if (sheetId == currentSheetId) return
-        Log.i(TAG, "Connecting to sheet $sheetId")
+        Log.i(TAG, "Connecting to public sheet $sheetId")
 
         disconnectPeer()
         currentSheetId = sheetId
 
-        val signalingClient = SignalingClient(sheetId) {
-            getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
-        }
+        val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
-        val displayName = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(WaymarkConfig.PREF_DISPLAY_NAME, "Waymark Android") ?: "Waymark Android"
+        val signalingClient = SignalingClient(
+            sheetId  = sheetId,
+            getToken = { prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: "" },
+            getKey   = { prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, null) }
+        )
+
+        val displayName = prefs.getString(WaymarkConfig.PREF_DISPLAY_NAME, "Waymark Android")
+            ?: "Waymark Android"
 
         val newPeer = OrchestratorPeer(
-            context       = applicationContext,
-            sheetId       = sheetId,
-            peerId        = getOrCreatePeerId(),
-            displayName   = displayName,
+            context         = applicationContext,
+            sheetId         = sheetId,
+            peerId          = getOrCreatePeerId(),
+            displayName     = displayName,
             signalingClient = signalingClient,
-            onNotification = { title, body ->
+            onNotification  = { title, body ->
                 NotificationHelper.showMessage(applicationContext, title, body)
             }
         )

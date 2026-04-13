@@ -14,11 +14,67 @@
      block + 1  OFFERS    { targetPeerId: { sdp, ts }, ... }
      block + 2  ANSWERS   { toPeerId: { sdp, ts }, ... }
 
+   All cell values are AES-256-GCM encrypted when an encryptionKey is
+   provided.  The format is compatible with SignalingEncryption.kt on Android:
+     ENCRYPT_PREFIX + Base64( iv[12] + ciphertext + authTag[16] )
+
    Signaling column: T (index 19, 1-based 20) — to match the Android + web app.
    ============================================================ */
 
 import { RTCPeerConnection } from "werift";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+
+/* ---------- Cell encryption helpers (mirrors SignalingEncryption.kt) ---------- */
+
+/** Prefix identifying an encrypted signaling cell. Matches Android ENCRYPT_PREFIX. */
+const ENCRYPT_PREFIX = "\uD83D\uDD10SIG:";
+
+/**
+ * Encrypt a signaling cell value with AES-256-GCM.
+ *
+ * @param {string} plaintext  - JSON string to encrypt
+ * @param {string} keyHex     - 64-char hex AES-256 key
+ * @returns {string}           ENCRYPT_PREFIX + Base64(iv[12] + ciphertext + authTag[16])
+ */
+function encryptCell(plaintext, keyHex) {
+    const key = Buffer.from(keyHex, "hex");
+    const iv  = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();                    // 16 bytes
+    const combined = Buffer.concat([iv, encrypted, tag]);
+    return ENCRYPT_PREFIX + combined.toString("base64");
+}
+
+/**
+ * Decrypt a signaling cell value encrypted by [encryptCell] or
+ * SignalingEncryption.kt#encrypt().
+ *
+ * Cells that do not start with ENCRYPT_PREFIX are returned unchanged
+ * (backward compatibility with any unencrypted rows).
+ *
+ * @param {string|null} encoded  - Cell value from the sheet
+ * @param {string}      keyHex   - 64-char hex AES-256 key
+ * @returns {string|null} Decrypted plaintext, original value if not encrypted,
+ *                         or null if decryption fails (wrong key / corrupt data)
+ */
+function decryptCell(encoded, keyHex) {
+    if (!encoded) return encoded;
+    if (!encoded.startsWith(ENCRYPT_PREFIX)) return encoded;  // plaintext passthrough
+    try {
+        const key     = Buffer.from(keyHex, "hex");
+        const combined = Buffer.from(encoded.slice(ENCRYPT_PREFIX.length), "base64");
+        const iv      = combined.subarray(0, 12);
+        const tag     = combined.subarray(combined.length - 16);
+        const data    = combined.subarray(12, combined.length - 16);
+        const decipher = createDecipheriv("aes-256-gcm", key, iv);
+        decipher.setAuthTag(tag);
+        return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+    } catch {
+        return null;  // Wrong key or corrupted ciphertext
+    }
+}
 
 /* ---------- Protocol constants (mirrors WaymarkConfig.kt) ---------- */
 
@@ -58,24 +114,27 @@ const STUN_SERVERS = [
  * Participates in a Waymark WebRTC peer mesh using Google Sheets for signaling.
  *
  * @param {object} opts
- * @param {string}              opts.sheetId      - Google Sheets spreadsheet ID
+ * @param {string}              opts.sheetId       - Google Sheets spreadsheet ID (public signaling sheet)
  * @param {import('google-auth-library').GoogleAuth} opts.auth - Authenticated GoogleAuth
- * @param {string}              opts.peerId       - 8-char hex peer ID for this instance
- * @param {string}              opts.displayName  - Human-readable name shown in peer lists
- * @param {function}            [opts.onMessage]  - (remotePeerId, message) callback
- * @param {function}            [opts.onConnect]  - (remotePeerId) called on DataChannel open
- * @param {string}              [opts.bufferFile] - Optional path to persist the notification queue across restarts
+ * @param {string}              opts.peerId        - 8-char hex peer ID for this instance
+ * @param {string}              opts.displayName   - Human-readable name shown in peer lists
+ * @param {function}            [opts.getToken]    - () => Promise<string> — preferred over auth when provided
+ * @param {string}              [opts.encryptionKey] - 64-char hex AES-256 key from the private key sheet
+ * @param {function}            [opts.onMessage]   - (remotePeerId, message) callback
+ * @param {function}            [opts.onConnect]   - (remotePeerId) called on DataChannel open
+ * @param {string}              [opts.bufferFile]  - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect, bufferFile }) {
-        this.sheetId      = sheetId;
-        this.auth         = auth;
-        this._getTokenFn  = getToken || null;  // preferred over auth when provided
-        this.peerId       = peerId;
-        this.displayName  = displayName;
-        this.onMessage    = onMessage;
-        this.onConnect    = onConnect;
-        this._bufferFile  = bufferFile || null;
+    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, onMessage, onConnect, bufferFile }) {
+        this.sheetId       = sheetId;
+        this.auth          = auth;
+        this._getTokenFn   = getToken || null;
+        this.peerId        = peerId;
+        this.displayName   = displayName;
+        this._encKey       = encryptionKey || null;  // 64-char hex AES-256 key; null = no encryption
+        this.onMessage     = onMessage;
+        this.onConnect     = onConnect;
+        this._bufferFile   = bufferFile || null;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
         this.peers = new Map();
@@ -261,7 +320,9 @@ export class SheetWebRtcPeer {
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             if (row && row.length > 0 && row[0] !== "") {
-                result[i + BLOCK_START] = row[0];
+                const raw = row[0];
+                // Decrypt cell if a key is available; passthrough if no key or no prefix
+                result[i + BLOCK_START] = this._encKey ? (decryptCell(raw, this._encKey) ?? raw) : raw;
             }
         }
         return result;
@@ -271,10 +332,12 @@ export class SheetWebRtcPeer {
         const token = await this._getToken();
         const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
         const range = `Sheet1!T${sheetsRow}`;
+        // Encrypt non-empty values when a key is available
+        const cellValue = (value && this._encKey) ? encryptCell(value, this._encKey) : (value ?? "");
         const body = JSON.stringify({
             range,
             majorDimension: "ROWS",
-            values: [[value ?? ""]],
+            values: [[cellValue]],
         });
         const res = await fetch(
             `${SHEETS_BASE}/${this.sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
@@ -675,3 +738,6 @@ export class SheetWebRtcPeer {
         process.stderr.write(`sheet-peer [${this.peerId}]: ${msg}\n`);
     }
 }
+
+/* ---------- Module-level exports for testing ---------- */
+export { encryptCell, decryptCell, ENCRYPT_PREFIX };

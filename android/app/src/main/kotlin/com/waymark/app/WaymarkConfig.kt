@@ -61,18 +61,14 @@ object WaymarkConfig {
     const val PREF_ACCESS_TOKEN = "access_token"
     const val PREF_ACTIVE_SHEET = "active_sheet"
     const val PREF_DISPLAY_NAME = "display_name"
-    /** Cached signaling sheet ID resolved at runtime — no build-time config needed. */
+    /** Cached PRIVATE signaling sheet ID (OAuth-gated, stores the AES key in col A). */
     const val PREF_SIGNALING_SHEET_ID = "signaling_sheet_id"
-    /** Epoch-ms timestamp recorded each time PREF_ACCESS_TOKEN is saved. */
-    const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
-    /** Access tokens are valid for 3600 s; treat as stale after 55 min (Tier 1 window). */
-    const val ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000L
-    /**
-     * Start the Tier 2 silent refresh this many ms before the Tier 1 token
-     * would expire.  This gives a 5-minute window to obtain a new token
-     * from the server before any active signaling cycle is interrupted.
-     */
-    const val ACCESS_TOKEN_PREEMPT_MS = 5 * 60 * 1000L
+    /** Cached PUBLIC P2P signaling sheet ID (encrypted with the AES key from private sheet). */
+    const val PREF_PUBLIC_SIGNALING_ID = "public_signaling_sheet_id"
+    /** Cached AES-256 signal key hex (64 chars) fetched from the private key sheet. */
+    const val PREF_SIGNAL_KEY = "signal_key"
+    /** Epoch-ms when the cached signal key was last fetched — used to detect key cycling. */
+    const val PREF_SIGNAL_KEY_VERSION = "signal_key_version"
     /**
      * Stable 8-char hex peer ID for this device, generated once on first run
      * and preserved forever.  Never regenerated — a stable ID means remote
@@ -80,4 +76,12 @@ object WaymarkConfig {
      * the service restarts.
      */
     const val PREF_PEER_ID = "peer_id"
+
+    /* ---------- Private key sheet access ---------- */
+
+    /** Sheets range for the AES signal key stored in column A of the private sheet. */
+    const val KEY_RANGE = "Sheet1!A1:A2"
+
+    /** Prefix identifying an encrypted signaling cell — must match SignalingEncryption. */
+    const val SIG_ENCRYPT_PREFIX = "\uD83D\uDD10SIG:"
 }

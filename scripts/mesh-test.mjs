@@ -2,15 +2,15 @@
 /* ============================================================
    mesh-test.mjs — WebRTC P2P mesh E2E testing jig
 
-   Runs against the REAL signaling sheet and the REAL Android app
-   over ADB wireless debugging. Tests every connection edge case
-   that can break notification delivery.
+   Tests the encrypted public-signaling architecture:
+     1. Private sheet (.waymark-signaling): stores AES-256 key in Sheet1!A1
+     2. Public sheet (.waymark-public-signaling): WebRTC signaling, cells
+        encrypted with the key from the private sheet.
 
-   Architecture:
-     Node.js (SheetWebRtcPeer) ←→ Google Sheets ←→ Android (OrchestratorPeer)
-                                                              ↓
-                                                    adb logcat (read logcat stream
-                                                    to observe Android state)
+   Node.js (SheetWebRtcPeer) ←→ Encrypted public Google Sheet ←→ Android (OrchestratorPeer)
+                                                                         ↓
+                                                               adb logcat (read logcat stream
+                                                               to observe Android state)
 
    Usage:
      node scripts/mesh-test.mjs [--scenario <name>] [--all] [--adb <ip:port>]
@@ -22,7 +22,8 @@
    Optional env:
      ADB_DEVICE    IP:port of Android for wireless debugging  (e.g. 192.168.1.42:5555)
                    If unset, logcat observation is skipped but all Node-side scenarios still run.
-     SIGNAL_SHEET  Override signaling sheet ID directly (skip Drive lookup)
+     SIGNAL_SHEET  Override the PUBLIC signaling sheet ID directly (skip Drive lookup)
+     PRIV_SHEET    Override the PRIVATE key sheet ID directly (skip Drive lookup)
 
    Scenarios:
      fresh-join          New Node peer joins empty mesh, Android connects
@@ -31,6 +32,7 @@
      stale-offer         Age an offer past OFFER_MAX_AGE, verify rebuild
      sustained-ping      Confirm ping/pong keepalive over 2 intervals
      notification        Send waymark-notification, verify Android logcat shows it
+     key-cycling         Verify peers detect + handle a cycled encryption key
      full-roundtrip      All of the above in sequence (the regression suite)
 
    Exit codes:
@@ -46,7 +48,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 // SheetWebRtcPeer — the real Node.js WebRTC peer (same code the orchestrator uses)
-import { SheetWebRtcPeer } from "../mcp/sheet-webrtc-peer.mjs";
+import { SheetWebRtcPeer, encryptCell, decryptCell } from "../mcp/sheet-webrtc-peer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.resolve(__dirname, "..");
@@ -75,6 +77,20 @@ const OAUTH_TOKEN_PATH = process.env.WAYMARK_OAUTH_TOKEN_PATH
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
 
+// Resolved once in main(), used by all helper functions that read/write the sheet
+let _encKey         = null;  // AES-256 GCM key hex from private sheet
+let _privateSheetId = null;  // private (.waymark-signaling) sheet ID
+
+/** Encrypt a cell value if we have a key; pass through otherwise */
+function encryptOrRaw(value) {
+    return (_encKey && value) ? encryptCell(value, _encKey) : value;
+}
+/** Decrypt a cell value if we have a key; pass through otherwise */
+function decryptOrRaw(value) {
+    if (!value || !_encKey) return value;
+    return decryptCell(value, _encKey) ?? value;
+}
+
 async function getOAuthToken() {
     let tok;
     try { tok = JSON.parse(readFileSync(OAUTH_TOKEN_PATH, "utf8")); }
@@ -101,8 +117,8 @@ async function getOAuthToken() {
     return tok.access_token;
 }
 
-async function resolveSignalingSheet() {
-    if (process.env.SIGNAL_SHEET) return process.env.SIGNAL_SHEET;
+/** Fetch .waymark-data.json from Drive and return parsed object */
+async function _loadWaymarkData() {
     const token = await getOAuthToken();
     const q = encodeURIComponent("name='.waymark-data.json' and mimeType='application/json' and trashed=false");
     const res = await fetch(`${DRIVE_FILES}?q=${q}&fields=files(id)&pageSize=1`, {
@@ -114,9 +130,39 @@ async function resolveSignalingSheet() {
     const fileRes = await fetch(`${DRIVE_FILES}/${files[0].id}?alt=media`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await fileRes.json();
+    return fileRes.json();
+}
+
+/** Resolve the PUBLIC signaling sheet ID (AES-encrypted cells, no OAuth needed at runtime) */
+async function resolveSignalingSheet() {
+    if (process.env.SIGNAL_SHEET) return process.env.SIGNAL_SHEET;
+    const data = await _loadWaymarkData();
+    const id = data.publicSignalingSheetId || data.signalingSheetId;
+    if (!id) die("Neither publicSignalingSheetId nor signalingSheetId found in .waymark-data.json — open the web app to initialize it");
+    return id;
+}
+
+/** Resolve the PRIVATE key sheet ID (stores AES-256 key in Sheet1!A1) */
+async function resolvePrivateSheetId() {
+    if (process.env.PRIV_SHEET) return process.env.PRIV_SHEET;
+    const data = await _loadWaymarkData();
     if (!data.signalingSheetId) die("signalingSheetId missing in .waymark-data.json — open the web app to initialize it");
     return data.signalingSheetId;
+}
+
+/** Read AES-256 key hex from private sheet Sheet1!A1 */
+async function resolveEncryptionKey(privateSheetId) {
+    if (process.env.SIGNAL_KEY) return process.env.SIGNAL_KEY;
+    const token = await getOAuthToken();
+    const range = encodeURIComponent("Sheet1!A1:A2");
+    const res = await fetch(`${SHEETS_BASE}/${privateSheetId}/values/${range}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Key sheet read failed: " + res.status);
+    const d = await res.json();
+    const key = d.values?.[0]?.[0]?.trim();
+    if (!key || key.length !== 64) throw new Error("Signal key missing or wrong length in private sheet — run cycleSignalKey() in the web app");
+    return key;
 }
 
 /* ============================================================
@@ -263,6 +309,7 @@ function makePeer(sheetId, suffix = "", extraOpts = {}) {
     const peer = new SheetWebRtcPeer({
         sheetId,
         getToken: getOAuthToken,
+        encryptionKey: _encKey || undefined,
         peerId,
         displayName: `TestPeer-${suffix}`,
         onMessage(remotePeerId, msg) { messages.push({ from: remotePeerId, msg }); },
@@ -353,8 +400,8 @@ async function readSignalingColumn(sheetId) {
     const rows = data.values || [];
     const result = new Array(TOTAL_ROWS + 2).fill(null);
     for (let i = 0; i < rows.length; i++) {
-        const cell = rows[i]?.[0];
-        if (cell != null && cell !== "") result[i + BLOCK_START] = cell;
+        const raw = rows[i]?.[0];
+        if (raw != null && raw !== "") result[i + BLOCK_START] = decryptOrRaw(raw);
     }
     return result;
 }
@@ -506,7 +553,7 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
             // Inject a stale presence for fakeId so the poll loop sees it as alive
             const token = await getOAuthToken();
             const fakeSlot = BLOCK_START + 2 * BLOCK_SIZE;
-            const fakePresence = JSON.stringify({ peerId: fakeId, name: "FakePeer", ts: Date.now() });
+            const fakePresence = encryptOrRaw(JSON.stringify({ peerId: fakeId, name: "FakePeer", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${fakeSlot}`)}?valueInputOption=RAW`,
                 {
@@ -586,7 +633,7 @@ async function scenarioStaleOffer(runner, sheetId, logcat) {
 
             // Give fakeRemoteId a live-looking presence in a slot so it appears alive
             const fakeSlot = BLOCK_START + 3 * BLOCK_SIZE;
-            const fakePresenceJson = JSON.stringify({ peerId: fakeRemoteId, name: "FakeRemote", ts: Date.now() });
+            const fakePresenceJson = encryptOrRaw(JSON.stringify({ peerId: fakeRemoteId, name: "FakeRemote", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${fakeSlot}`)}?valueInputOption=RAW`,
                 {
@@ -597,12 +644,12 @@ async function scenarioStaleOffer(runner, sheetId, logcat) {
             );
 
             // Write a stale offer (older than OFFER_MAX_AGE) into our offers row
-            const staleOffer = JSON.stringify({
+            const staleOffer = encryptOrRaw(JSON.stringify({
                 [fakeRemoteId]: {
                     sdp: "v=0\r\no=fake 12345 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n",
                     ts:  Date.now() - OFFER_MAX_AGE - 5_000,
                 },
-            });
+            }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${offersRow}`)}?valueInputOption=RAW`,
                 {
@@ -977,7 +1024,7 @@ async function scenarioMeshFull(runner, sheetId) {
         const occupied = freeSlots.slice(0, Math.min(freeSlots.length, MAX_SLOTS - liveSlots.length));
         // Write synthetic alive presence to fill slots
         for (const row of occupied) {
-            const fakeP = JSON.stringify({ peerId: "fake" + row, name: "FakeFull", ts: Date.now() });
+            const fakeP = encryptOrRaw(JSON.stringify({ peerId: "fake" + row, name: "FakeFull", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${row}`)}?valueInputOption=RAW`,
                 {
@@ -1292,6 +1339,100 @@ async function scenarioNotifBuffer(runner, sheetId, logcat) {
 }
 
 /* ============================================================
+   Key cycling — verify peers detect + re-key cleanly
+   ============================================================ */
+
+async function scenarioKeyCycling(runner, sheetId, logcat) {
+    await runner.run("key-cycling: new key written to private sheet is picked up next cycle", async () => {
+        if (!_privateSheetId) {
+            return { pass: true, detail: "SKIP — private sheet ID not resolved (no PRIV_SHEET env and no .waymark-data.json)" };
+        }
+
+        // Start a Node peer with the CURRENT key
+        const { peer: pA, peerId: idA } = makePeer(sheetId, "cycle-A");
+        try {
+            await pA.start();
+            await sleep(1500);
+
+            const slotClaimed = pA.block >= BLOCK_START;
+            if (!slotClaimed) return { pass: false, detail: "Peer A could not claim a slot before key cycle" };
+
+            // Generate a new key and write it to the private sheet
+            const { randomBytes } = await import("node:crypto");
+            const newKeyHex = randomBytes(32).toString("hex");
+            const token = await getOAuthToken();
+            const keyRange = encodeURIComponent("Sheet1!A1:A2");
+            const writeRes = await fetch(
+                `${SHEETS_BASE}/${_privateSheetId}/values/${keyRange}?valueInputOption=RAW`,
+                {
+                    method: "PUT",
+                    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        range: "Sheet1!A1:A2",
+                        majorDimension: "ROWS",
+                        values: [[newKeyHex], [String(Date.now())]],
+                    }),
+                }
+            );
+            if (!writeRes.ok) return { pass: false, detail: "Failed to write new key to private sheet: " + writeRes.status };
+
+            // Update module-level key so subsequent reads/writes use the new key
+            const oldKey = _encKey;
+            _encKey = newKeyHex;
+
+            // Start a NEW peer with the new key — it should be able to join
+            const { peer: pB, peerId: idB } = makePeer(sheetId, "cycle-B");
+            try {
+                await pB.start();
+                await sleep(1500);
+                const bClaimed = pB.block >= BLOCK_START;
+
+                // Peer A (old key) cannot decrypt new-key cells — its poll will
+                // produce null presence entries, which is the expected degraded state.
+                // We verify it does NOT crash (block still ≥ BLOCK_START from before).
+                const aSurvived = pA.block >= BLOCK_START;
+
+                return {
+                    pass: bClaimed && aSurvived,
+                    detail: `pA survived=${aSurvived} (slot ${pA.block}), pB joined with new key (slot ${pB.block}) oldKey=${oldKey?.slice(0, 8)}... newKey=${newKeyHex.slice(0, 8)}...`,
+                };
+            } finally {
+                pB.stop();
+            }
+        } finally {
+            pA.stop();
+        }
+    });
+
+    await runner.run("key-cycling: Android re-establishes DC after key cycle (requires ADB)", async () => {
+        const android = await findAndroidPresence(sheetId);
+        if (!android) {
+            return { pass: true, detail: "SKIP — Android not in signaling sheet" };
+        }
+        if (!_privateSheetId) {
+            return { pass: true, detail: "SKIP — private sheet ID not resolved" };
+        }
+        // After the key was cycled in the prior sub-test, Android will need OAuth
+        // to fetch the new key from the private sheet and reconnect.
+        // We just verify that Android eventually shows up with a freshened ts.
+        const tsBefore = android.ts || 0;
+        const deadline = Date.now() + 120_000;
+        let androidAfter = null;
+        while (Date.now() < deadline) {
+            const p = await findAndroidPresence(sheetId);
+            if (p && (p.ts || 0) > tsBefore + 5_000) { androidAfter = p; break; }
+            await sleep(3_000);
+        }
+        return {
+            pass: androidAfter !== null,
+            detail: androidAfter
+                ? `Android refreshed presence (ts=${androidAfter.ts})`
+                : "Android did not refresh presence within 120s after key cycle",
+        };
+    });
+}
+
+/* ============================================================
    CLI entry point
    ============================================================ */
 
@@ -1309,6 +1450,7 @@ const SCENARIO_MAP = {
     "poll-guard":            scenarioPollConcurrency,
     "heartbeat":             scenarioHeartbeatFreshness,
     "android-visibility":    scenarioAndroidPeerVisibility,
+    "key-cycling":           scenarioKeyCycling,
 };
 
 const FULL_ROUNDTRIP_ORDER = [
@@ -1325,6 +1467,7 @@ const FULL_ROUNDTRIP_ORDER = [
     "notif-buffer",          // delivery guarantee: buffer + reconnect + TTL + Android flush
     "sustained-ping",
     "mesh-full",
+    "key-cycling",           // verify encrypted key rotation: write new key, verify peers adapt
 ];
 
 function usage() {
@@ -1390,9 +1533,19 @@ async function main() {
     }
 
     // ── Resolve signaling sheet ────────────────────────────────────
-    log("\n  Resolving signaling sheet…");
+    log("\n  Resolving signaling sheets…");
     const sheetId = await resolveSignalingSheet();
-    log(`  Sheet: ${sheetId}`);
+    log(`  Public sheet : ${sheetId}`);
+
+    try {
+        _privateSheetId = await resolvePrivateSheetId();
+        log(`  Private sheet: ${_privateSheetId}`);
+        _encKey = await resolveEncryptionKey(_privateSheetId);
+        log(`  Encryption key: ${_encKey.slice(0, 8)}… (AES-256-GCM)`);
+    } catch (err) {
+        log(`  ⚠  Key not found: ${err.message}`);
+        log("     Signaling cells will be read/written WITHOUT encryption.\n     Run cycleSignalKey() in the web app to initialise the private key sheet.");
+    }
 
     // ── Show current mesh state ────────────────────────────────────
     const livePeers = await listLivePeers(sheetId);

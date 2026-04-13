@@ -1,5 +1,5 @@
 /* ============================================================
-   SignalingClient.kt — Google Sheets WebRTC signaling
+   SignalingClient.kt — Google Sheets WebRTC signaling (encrypted)
 
    Replicates the row-based signaling protocol from webrtc.js.
    Each peer claims a 5-row block in signaling column 20.  Peers
@@ -10,6 +10,12 @@
      Block+0  PRESENCE  { peerId, name, ts }
      Block+1  OFFERS    { targetPeerId: { sdp, ts }, ... }
      Block+2  ANSWERS   { toPeerId: { sdp, ts }, ... }
+
+   All cell values written to the PUBLIC signaling sheet are
+   AES-256-GCM encrypted using the key from [getKey].  Cells
+   read from the sheet are decrypted transparently.  Cells that
+   do not carry the encryption prefix are passed through as-is
+   (backward compatibility during key provisioning).
 
    The client is stateless between polls; all data is fetched
    fresh on each poll cycle. Writes are single-cell updates.
@@ -27,15 +33,21 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Reads and writes to the WebRTC signaling band (column 20) of a
- * Google Sheet using the Sheets REST v4 API.
+ * Reads and writes to the WebRTC signaling band (column 20) of the
+ * PUBLIC Google Sheet using the Sheets REST v4 API.
  *
- * @param sheetId   The Google Sheets spreadsheet ID
- * @param getToken  A lambda that returns the current OAuth access token
+ * Cell values are AES-256-GCM encrypted/decrypted transparently using
+ * the key supplied by [getKey].  When [getKey] returns null the client
+ * falls back to writing plaintext (key not yet provisioned).
+ *
+ * @param sheetId   The public Google Sheets spreadsheet ID
+ * @param getToken  Lambda returning the current OAuth access token (for Sheets API auth)
+ * @param getKey    Lambda returning the 64-char hex AES-256 signal key, or null if not set
  */
 class SignalingClient(
     private val sheetId: String,
-    private val getToken: () -> String
+    private val getToken: () -> String,
+    private val getKey: () -> String? = { null }
 ) {
 
     /* ---------- HTTP client ---------- */
@@ -62,6 +74,7 @@ class SignalingClient(
      * Reads the entire signaling column and returns it as a list
      * of nullable string values, indexed by 0-based row number.
      * Rows that are empty in the sheet appear as null.
+     * Values are AES-256-GCM decrypted if a key is available.
      *
      * @throws IOException if the Sheets request fails
      */
@@ -82,13 +95,19 @@ class SignalingClient(
 
         val root = JSONObject(body)
         val rows = root.optJSONArray("values") ?: JSONArray()
+        val keyHex = getKey()
 
         // Pad the list to TOTAL_ROWS so callers can index safely
         val result = MutableList<String?>(TOTAL_ROWS + 2) { null }
         for (i in 0 until rows.length()) {
             val row = rows.getJSONArray(i)
             if (row.length() > 0) {
-                result[i + WaymarkConfig.BLOCK_START] = row.getString(0)
+                val raw = row.getString(0)
+                result[i + WaymarkConfig.BLOCK_START] = if (keyHex != null) {
+                    SignalingEncryption.decrypt(raw, keyHex)
+                } else {
+                    raw
+                }
             }
         }
         return result
@@ -96,12 +115,21 @@ class SignalingClient(
 
     /**
      * Writes [value] to the signaling column at [row] (0-based index).
-     * An empty [value] clears the cell.
+     * An empty [value] clears the cell (never encrypted).
+     * Non-empty values are AES-256-GCM encrypted if a key is available.
      *
      * @throws IOException if the Sheets request fails
      */
     fun writeCell(row: Int, value: String) {
         val token = getToken().ifBlank { throw IOException("No access token") }
+
+        // Encrypt non-empty values when a key is available
+        val keyHex = getKey()
+        val cellValue = if (value.isNotEmpty() && keyHex != null) {
+            SignalingEncryption.encrypt(value, keyHex)
+        } else {
+            value
+        }
 
         // Row indices are already 1-based (BLOCK_START=1)
         val sheetsRow = row
@@ -111,7 +139,7 @@ class SignalingClient(
             put("range", range)
             put("majorDimension", "ROWS")
             put("values", JSONArray().apply {
-                put(JSONArray().apply { put(value) })
+                put(JSONArray().apply { put(cellValue) })
             })
         }.toString()
 
