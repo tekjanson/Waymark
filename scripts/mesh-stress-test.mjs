@@ -9,8 +9,8 @@
      • latency histogram drift (p50/p95/p99 over time)
      • rapid disconnect/reconnect storm under load
      • notification delivery reliability under sustained traffic
-     • key cycling — live AES-256 key rotation while peers are connected; Node and Android recover automatically
-     • key loss + rebuild — key deleted from private sheet; re-provisioned with --force-key and verified
+     • key cycling — live AES-256 key rotation while peers are connected; write to local key file, push to Android via adb; Node and Android recover automatically
+     • key loss + rebuild — local key file deleted; re-provisioned with --force-key and verified
 
    Usage:
      node scripts/mesh-stress-test.mjs [options]
@@ -131,48 +131,59 @@ async function resolvePrivateSheetId() {
     return d.signalingSheetId;
 }
 
-async function resolveEncryptionKey(privateSheetId) {
+async function resolveEncryptionKey() {
     if (process.env.SIGNAL_KEY) return process.env.SIGNAL_KEY;
-    const token = await getOAuthToken();
-    const res = await fetch(
-        `${SHEETS_BASE}/${privateSheetId}/values/${encodeURIComponent("Sheet1!A1:A2")}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    try {
+        const key = readFileSync(keyFile, "utf8").trim();
+        if (key.length === 64) return key;
+    } catch {}
+    throw new Error(
+        `Signal key not found — run 'node scripts/provision-signaling.mjs' to generate it\n` +
+        `  or set SIGNAL_KEY env var`
     );
-    if (!res.ok) throw new Error("Key sheet read failed: " + res.status);
-    const d = await res.json();
-    const key = d.values?.[0]?.[0]?.trim();
-    if (!key || key.length !== 64) throw new Error("Signal key missing — run provision-signaling.mjs");
-    return key;
 }
 
-/** Write a fresh AES-256 key to Sheet1!A1:A2 on the private sheet. Returns the new key hex. */
-async function rotateKeyOnPrivateSheet(privId) {
+/** Rotate the AES-256 key: write a fresh key to the local key file.
+ *  Also pushes the new key to Android via adb broadcast if an adb serial is available.
+ *  Returns the new key hex. */
+function rotateKeyLocally(adbSerial) {
     const newKey = randomBytes(32).toString("hex");
-    const token  = await getOAuthToken();
-    const res = await fetch(
-        `${SHEETS_BASE}/${privId}/values/${encodeURIComponent("Sheet1!A1:A2")}?valueInputOption=RAW`,
-        {
-            method:  "PUT",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body:    JSON.stringify({
-                range:          "Sheet1!A1:A2",
-                majorDimension: "ROWS",
-                values:         [[newKey], [String(Date.now())]],
-            }),
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    writeFileSync(keyFile, newKey + "\n", { mode: 0o600 });
+    if (adbSerial) {
+        try {
+            const cmd = adbSerial
+                ? `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${newKey}`
+                : `adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${newKey}`;
+            execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] });
+            log(`Key rotated → pushed to Android via adb`);
+        } catch (e) {
+            log(`Key rotated locally (adb push failed: ${e.message})`);
         }
-    );
-    if (!res.ok) throw new Error(`Key rotation write failed: ${res.status} ${await res.text()}`);
+    }
     return newKey;
 }
 
-/** Clear Sheet1!A1:A2 on the private sheet, simulating key deletion / corruption. */
-async function clearKeyOnPrivateSheet(privId) {
-    const token = await getOAuthToken();
-    const res = await fetch(
-        `${SHEETS_BASE}/${privId}/values/${encodeURIComponent("Sheet1!A1:A2")}:clear`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) throw new Error(`Key clear failed: ${res.status} ${await res.text()}`);
+/** Clear the local key file, simulating key loss / corruption.
+ *  Also clears the key on Android via adb broadcast if available. */
+function clearKeyLocally(adbSerial) {
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    try { writeFileSync(keyFile, "", { mode: 0o600 }); } catch {}
+    if (adbSerial) {
+        try {
+            const cmd = adbSerial
+                ? `adb -s ${adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`
+                : `adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.CLEAR_SIGNAL_KEY`;
+            execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] });
+            log(`Key cleared locally + Android notified via adb`);
+        } catch (e) {
+            log(`Key cleared locally (adb clear failed: ${e.message})`);
+        }
+    }
 }
 
 /* ---------- ADB ---------- */
@@ -785,11 +796,11 @@ async function phaseKeyCycle(report, privId) {
     }
     log(`  Pre-cycle pings: ${preCycleOk}/3 ponged`);
 
-    // ── Rotate key on private sheet ────────────────────────────────────
-    log("  Rotating AES-256 key on private sheet…");
+    // ── Rotate key (local key file, NOT any Google Sheet) ─────────────
+    log("  Rotating AES-256 key (local key file)…");
     let newKey;
     try {
-        newKey = await rotateKeyOnPrivateSheet(privId);
+        newKey = rotateKeyLocally(_adbSerial);
     } catch (e) {
         A.stop(); B.stop();
         m.fail();
@@ -913,10 +924,10 @@ async function phaseKeyLoss(report, privId) {
     }
     log(`  Pre-loss pings: ${preOk}/3 ponged`);
 
-    // ── Delete key from private sheet ─────────────────────────────────
-    log("  Clearing key from private sheet (simulating loss)…");
+    // ── Delete key from local file (simulating loss) ──────────────────
+    log("  Clearing local key file (simulating loss)…");
     try {
-        await clearKeyOnPrivateSheet(privId);
+        clearKeyLocally(_adbSerial);
         log("  Key cleared ✓");
     } catch (e) {
         A.stop(); B.stop();
@@ -976,7 +987,7 @@ async function phaseKeyLoss(report, privId) {
     // ── Read rebuilt key and update closures ──────────────────────────
     let rebuiltKey;
     try {
-        rebuiltKey = await resolveEncryptionKey(privId);
+        rebuiltKey = await resolveEncryptionKey();
         log(`  Rebuilt key: ${rebuiltKey.slice(0, 16)}… fetched`);
     } catch (e) {
         A.stop(); B.stop();
@@ -1072,7 +1083,7 @@ async function main() {
     log(`Private sheet: ${privId}`);
 
     try {
-        _encKey = await resolveEncryptionKey(privId);
+        _encKey = await resolveEncryptionKey();
         log(`Encryption: AES-256-GCM key ${_encKey.slice(0, 16)}…`);
     } catch (e) {
         log(`⚠  No encryption key: ${e.message}`);

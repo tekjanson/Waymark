@@ -319,26 +319,38 @@ export class SheetWebRtcPeer {
     }
 
     async _readAll() {
-        const token = await this._getToken();
-        const res = await fetch(`${SHEETS_BASE}/${this.sheetId}/values/${SIG_RANGE}`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`Sheets read ${res.status}: ${await res.text()}`);
-        const data = await res.json();
-        const rows = data.values || [];
-
-        // Pad to TOTAL_ROWS so callers can index by 0-based row safely
-        const result = new Array(TOTAL_ROWS + 2).fill(null);
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            if (row && row.length > 0 && row[0] !== "") {
-                const raw = row[0];
-                // Decrypt cell if a key is available; passthrough if no key or no prefix
-                const key = this._getKeyFn ? this._getKeyFn() : null;
-                result[i + BLOCK_START] = key ? (decryptCell(raw, key) ?? raw) : raw;
+        // Retry with exponential backoff on 429 (quota exhausted) up to 4 attempts.
+        // Delays: 2s, 4s, 8s — well within the 60-req/min quota reset window.
+        let lastErr;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 2_000 * attempt));
+            const token = await this._getToken();
+            const res = await fetch(`${SHEETS_BASE}/${this.sheetId}/values/${SIG_RANGE}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.status === 429) {
+                lastErr = new Error(`Sheets read 429: ${await res.text()}`);
+                this._log(`quota 429 — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+                continue;
             }
+            if (!res.ok) throw new Error(`Sheets read ${res.status}: ${await res.text()}`);
+            const data = await res.json();
+            const rows = data.values || [];
+
+            // Pad to TOTAL_ROWS so callers can index by 0-based row safely
+            const result = new Array(TOTAL_ROWS + 2).fill(null);
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                if (row && row.length > 0 && row[0] !== "") {
+                    const raw = row[0];
+                    // Decrypt cell if a key is available; passthrough if no key or no prefix
+                    const key = this._getKeyFn ? this._getKeyFn() : null;
+                    result[i + BLOCK_START] = key ? (decryptCell(raw, key) ?? raw) : raw;
+                }
+            }
+            return result;
         }
-        return result;
+        throw lastErr;
     }
 
     async _writeCell(rowIdx, value) {

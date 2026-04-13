@@ -3,9 +3,14 @@
    mesh-test.mjs — WebRTC P2P mesh E2E testing jig
 
    Tests the encrypted public-signaling architecture:
-     1. Private sheet (.waymark-signaling): stores AES-256 key in Sheet1!A1
+     1. Private sheet (.waymark-signaling): plain text config only (NO key)
      2. Public sheet (.waymark-public-signaling): WebRTC signaling, cells
-        encrypted with the key from the private sheet.
+        encrypted with the AES-256 key stored locally on each device.
+
+   The AES-256 key is NEVER in any Google Sheet.  It lives in:
+     • ~/.config/gcloud/waymark-signal.key  (Node / this machine)
+     • Android SharedPreferences (PREF_SIGNAL_KEY)
+     • SIGNAL_KEY env var (override for CI)
 
    Node.js (SheetWebRtcPeer) ←→ Encrypted public Google Sheet ←→ Android (OrchestratorPeer)
                                                                          ↓
@@ -23,7 +28,8 @@
      ADB_DEVICE    IP:port of Android for wireless debugging  (e.g. 192.168.1.42:5555)
                    If unset, logcat observation is skipped but all Node-side scenarios still run.
      SIGNAL_SHEET  Override the PUBLIC signaling sheet ID directly (skip Drive lookup)
-     PRIV_SHEET    Override the PRIVATE key sheet ID directly (skip Drive lookup)
+     PRIV_SHEET    Override the PRIVATE config sheet ID directly (skip Drive lookup)
+     SIGNAL_KEY    Override AES-256 key hex (skip local key file)
 
    Scenarios:
      fresh-join          New Node peer joins empty mesh, Android connects
@@ -150,19 +156,19 @@ async function resolvePrivateSheetId() {
     return data.signalingSheetId;
 }
 
-/** Read AES-256 key hex from private sheet Sheet1!A1 */
-async function resolveEncryptionKey(privateSheetId) {
+/** Read AES-256 key hex from local key file (never from any sheet) */
+async function resolveEncryptionKey() {
     if (process.env.SIGNAL_KEY) return process.env.SIGNAL_KEY;
-    const token = await getOAuthToken();
-    const range = encodeURIComponent("Sheet1!A1:A2");
-    const res = await fetch(`${SHEETS_BASE}/${privateSheetId}/values/${range}`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Key sheet read failed: " + res.status);
-    const d = await res.json();
-    const key = d.values?.[0]?.[0]?.trim();
-    if (!key || key.length !== 64) throw new Error("Signal key missing or wrong length in private sheet — run cycleSignalKey() in the web app");
-    return key;
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    try {
+        const key = readFileSync(keyFile, "utf8").trim();
+        if (key.length === 64) return key;
+    } catch {}
+    throw new Error(
+        `Signal key not found — run 'node scripts/provision-signaling.mjs' to generate it\n` +
+        `  or set SIGNAL_KEY env var`
+    );
 }
 
 /* ============================================================
@@ -388,14 +394,44 @@ class TestRunner {
    (same query as SheetWebRtcPeer._readAll, returned as sparse array)
    ============================================================ */
 
-async function readSignalingColumn(sheetId) {
+/** Fetch with automatic exponential backoff on 429 (up to 4 attempts, 2/4/8 s). */
+async function sheetsGet(url) {
+    let lastErr;
+    for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0) await sleep(2_000 * attempt);
+        const token = await getOAuthToken();
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 429) {
+            lastErr = new Error(`Sheets read failed: 429 (quota — retrying)`);
+            log(`  ⚠  quota 429 — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+            continue;
+        }
+        if (!res.ok) throw new Error("Sheets read failed: " + res.status);
+        return res;
+    }
+    throw lastErr;
+}
+
+/**
+ * Wipe every cell in column T of the public signaling sheet.
+ * This gives every test run a guaranteed blank slate.
+ */
+async function cleanPublicSheet(sheetId) {
+    const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START + 1;
     const token = await getOAuthToken();
+    const url = `${SHEETS_BASE}/${sheetId}/values:batchClear`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ranges: [`Sheet1!T1:T${TOTAL_ROWS}`] }),
+    });
+    if (!res.ok) throw new Error(`Sheet clear failed: ${res.status} ${await res.text()}`);
+}
+
+async function readSignalingColumn(sheetId) {
     const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
     const range = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
-    const res = await fetch(`${SHEETS_BASE}/${sheetId}/values/${range}`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Sheets read failed: " + res.status);
+    const res = await sheetsGet(`${SHEETS_BASE}/${sheetId}/values/${range}`);
     const data = await res.json();
     const rows = data.values || [];
     const result = new Array(TOTAL_ROWS + 2).fill(null);
@@ -1481,6 +1517,7 @@ function usage() {
     log("  --scenario <name>       Run one scenario (see list below)");
     log("  --adb <ip:port>         ADB wireless address (or set ADB_DEVICE env)");
     log("  --sheet <id>            Override signaling sheet ID (or set SIGNAL_SHEET env)");
+    log("  --no-clean              Skip wiping the public sheet before running");
     log("  --list                  List available scenarios");
     log("");
     log("Scenarios:");
@@ -1542,11 +1579,42 @@ async function main() {
     try {
         _privateSheetId = await resolvePrivateSheetId();
         log(`  Private sheet: ${_privateSheetId}`);
-        _encKey = await resolveEncryptionKey(_privateSheetId);
-        log(`  Encryption key: ${_encKey.slice(0, 8)}… (AES-256-GCM)`);
+        _encKey = await resolveEncryptionKey();
+        log(`  Encryption key: ${_encKey.slice(0, 8)}… (AES-256-GCM) [from local file]`);
+        // Push the key to Android via adb so it uses the same key as the test
+        if (_adbSerial && _encKey) {
+            try {
+                execSync(
+                    `adb -s ${_adbSerial} shell am broadcast -n com.waymark.app/.SignalKeyReceiver ` +
+                    `-a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${_encKey}`,
+                    { stdio: ["pipe", "pipe", "pipe"] }
+                );
+                log(`  ✓ Signal key pushed to Android (${_adbSerial})`);
+            } catch (e) {
+                log(`  ⚠ adb key push failed: ${e.message}`);
+            }
+        }
     } catch (err) {
         log(`  ⚠  Key not found: ${err.message}`);
-        log("     Signaling cells will be read/written WITHOUT encryption.\n     Run cycleSignalKey() in the web app to initialise the private key sheet.");
+        log("     Signaling cells will be read/written WITHOUT encryption.\n     Run 'node scripts/provision-signaling.mjs' to generate a key.");
+    }
+
+    // ── Clean public sheet before every run ──────────────────────
+    // Stale presence rows, offers, and answers from prior runs cause spurious
+    // slot conflicts and wrong-peer assertions. Always start from blank column T.
+    const skipClean = args.includes("--no-clean");
+    if (skipClean) {
+        log("  ⚡ --no-clean: skipping sheet wipe");
+    } else {
+        process.stdout.write("  Wiping public signaling sheet… ");
+        try {
+            await cleanPublicSheet(sheetId);
+            log("done ✓");
+            // Give Android a moment to notice the cleared presence and rejoin
+            await sleep(3_000);
+        } catch (e) {
+            log(`WARN: ${e.message} — continuing anyway`);
+        }
     }
 
     // ── Show current mesh state ────────────────────────────────────

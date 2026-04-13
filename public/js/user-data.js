@@ -170,12 +170,15 @@ async function _doInit() {
 }
 
 /**
- * Find or create the private .waymark-signaling spreadsheet (key storage) and the
+ * Find or create the private .waymark-signaling spreadsheet (plain text config) and the
  * public .waymark-public-signaling spreadsheet (encrypted P2P signaling).
  *
- * The private sheet stores the AES-256 signal key in Sheet1!A1 (key hex string).
- * The public sheet uses the same column-T signaling protocol as the private sheet,
- * but all cell values are AES-256-GCM encrypted with the key from the private sheet.
+ * The private sheet stores ONLY plain text config — NO encryption key.
+ * The AES-256 key lives exclusively in localStorage['waymark_signal_key'].
+ * Key distribution between peers happens ONLY over the WebRTC DataChannel.
+ *
+ * The public sheet uses column-T signaling cells; ALL cell values are
+ * AES-256-GCM encrypted with the key from localStorage.
  *
  * Called once after init. Idempotent — skips creation for sheets already recorded.
  * @returns {Promise<void>}
@@ -185,18 +188,22 @@ async function ensureSignalingSheet() {
 
   const updates = {};
 
-  // Create the private key sheet if missing
+  // Create the private config sheet if missing
   if (!_userData?.signalingSheetId) {
     const created = await api.sheets.createSpreadsheet(
       '.waymark-signaling', [], _rootFolderId
     );
     updates.signalingSheetId = created.spreadsheetId;
-    // Write an initial AES-256 signal key into Sheet1!A1
-    const keyHex = _generateSignalKeyHex();
+    // No key is written here — only a plain-text JSON config marker
     try {
-      await _writeSignalKey(created.spreadsheetId, keyHex);
+      await _writePrivateConfig(created.spreadsheetId, { version: 1, createdAt: new Date().toISOString() });
     } catch (e) {
-      console.warn('[user-data] Failed to write initial signal key:', e);
+      console.warn('[user-data] Failed to write private config marker:', e);
+    }
+    // Generate and store the AES-256 key in localStorage ONLY
+    if (!localStorage.getItem('waymark_signal_key')) {
+      const keyHex = _generateSignalKeyHex();
+      localStorage.setItem('waymark_signal_key', keyHex);
     }
   }
 
@@ -231,22 +238,22 @@ function _generateSignalKeyHex() {
 }
 
 /**
- * Write the AES-256 signal key to Sheet1!A1:A2 of the private sheet.
- * A1 = hex key, A2 = key version epoch ms.
+ * Write a plain-text JSON config object to Sheet1!A1 of the private sheet.
+ * This sheet never stores any encryption key.
  * @param {string} sheetId
- * @param {string} keyHex
+ * @param {object} config
  * @returns {Promise<void>}
  */
-async function _writeSignalKey(sheetId, keyHex) {
+async function _writePrivateConfig(sheetId, config) {
   const token = await api.auth.getToken();
-  const range = 'Sheet1!A1:A2';
+  const range = 'Sheet1!A1';
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
   const res = await fetch(url, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range, majorDimension: 'ROWS', values: [[keyHex], [String(Date.now())]] }),
+    body: JSON.stringify({ range, majorDimension: 'ROWS', values: [[JSON.stringify(config)]] }),
   });
-  if (!res.ok) throw new Error(`Signal key write failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Private config write failed: ${res.status}`);
 }
 
 /* ---------- Folder helpers ---------- */
@@ -855,16 +862,23 @@ export function getPublicSignalingSheetId() {
 /**
  * Cycle the AES-256 signal key by generating a fresh key and writing it to
  * the private signaling sheet.  All connected peers will detect the key change
- * via decryption failures and re-fetch the new key on their next OAuth session.
+/**
+ * Rotate the AES-256 signal key.
+ *
+ * Generates a fresh key and stores it ONLY in localStorage['waymark_signal_key'].
+ * The key is NEVER written to any Google Sheet.
+ * Peers receive the new key via the WebRTC DataChannel.
  *
  * @returns {Promise<void>}
  */
 export async function cycleSignalKey() {
-  await init();
-  const sheetId = _userData?.signalingSheetId;
-  if (!sheetId) throw new Error('Private signaling sheet not yet created');
   const newKey = _generateSignalKeyHex();
-  await _writeSignalKey(sheetId, newKey);
+  localStorage.setItem('waymark_signal_key', newKey);
+  // Peers will receive the new key over the WebRTC DataChannel.
+  // Trigger a DataChannel key-push if the P2P mesh is active.
+  if (typeof window !== 'undefined' && window._waymarkMeshPeer?.broadcastSignalKey) {
+    window._waymarkMeshPeer.broadcastSignalKey(newKey);
+  }
 }
 
 /* ---------- Lock-on-Submit ---------- */

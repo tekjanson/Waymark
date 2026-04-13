@@ -24,7 +24,7 @@ class WatchdogWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         val prefs = applicationContext.getSharedPreferences(
             WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE
         )
-        val sheetId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+        val sheetId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
 
         if (sheetId.isBlank()) {
             Log.d(TAG, "No sheet ID cached — skipping watchdog restart")

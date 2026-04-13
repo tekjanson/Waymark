@@ -6,30 +6,31 @@
 
    Encrypted public-sheet architecture
    ------------------------------------
-   1. At service startup, the user's OAuth access token is used
-      ONCE to fetch the AES-256 signal key from the PRIVATE key
-      sheet (Sheet1!A1:A2 of the .waymark-signaling spreadsheet).
+   1. The AES-256 signal key is stored ONLY in SharedPreferences
+      (PREF_SIGNAL_KEY).  It is NEVER fetched from any Google Sheet.
+      Key distribution happens exclusively over the WebRTC DataChannel.
 
-   2. The signal key is cached in SharedPreferences.  All ongoing
-      WebRTC signaling is performed on the PUBLIC signaling sheet
-      (.waymark-public-signaling), with every cell value
-      AES-256-GCM encrypted/decrypted using that key.
+   2. At service startup, OAuth is used ONCE to read .waymark-data.json
+      from Google Drive so we can discover the publicSignalingSheetId.
 
-   3. Once a direct WebRTC DataChannel is established between
-      Android and the orchestrator, notifications flow over the
-      P2P channel without any further dependency on OAuth or
-      Google Sheets.
+   3. All ongoing WebRTC signaling is performed on the PUBLIC sheet
+      (.waymark-public-signaling), with every cell value AES-256-GCM
+      encrypted/decrypted using the key from SharedPreferences.
 
-   4. If the OAuth token expires while the app is backgrounded,
-      the existing DataChannel connection stays alive.  If it drops,
-      reconnection requires the user to re-open the app so the
-      WebView can refresh the token.  No background token refresh
-      loop is needed or desired.
+   4. If no key is in SharedPreferences, the peer connects without
+      encryption (bootstrap mode) until a key is received over the
+      DataChannel from another authenticated peer.
+
+   5. Once a direct WebRTC DataChannel is established between Android
+      and the orchestrator, notifications flow over the P2P channel
+      without any further dependency on OAuth or Google Sheets.
 
    Actions:
-     ACTION_CONNECT       — Start or switch to a new sheetId
-     ACTION_UPDATE_TOKEN  — Refresh the access token in-place
-     ACTION_STOP          — Disconnect and stop the service
+     ACTION_CONNECT          — Start or switch to a new sheetId
+     ACTION_UPDATE_TOKEN     — Refresh the access token in-place
+     ACTION_STOP             — Disconnect and stop the service
+     ACTION_SET_SIGNAL_KEY   — (debug/test) Set the AES key via adb broadcast
+     ACTION_CLEAR_SIGNAL_KEY — (debug/test) Clear the AES key via adb broadcast
    ============================================================ */
 
 package com.waymark.app
@@ -58,12 +59,17 @@ class WebRtcService : LifecycleService() {
     /* ---------- Intent actions ---------- */
 
     companion object {
-        const val ACTION_CONNECT      = "com.waymark.app.action.CONNECT"
-        const val ACTION_UPDATE_TOKEN = "com.waymark.app.action.UPDATE_TOKEN"
-        const val ACTION_STOP         = "com.waymark.app.action.STOP"
+        const val ACTION_CONNECT            = "com.waymark.app.action.CONNECT"
+        const val ACTION_UPDATE_TOKEN       = "com.waymark.app.action.UPDATE_TOKEN"
+        const val ACTION_STOP               = "com.waymark.app.action.STOP"
+        /** Debug/test: set AES key via  adb shell am broadcast -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey <hex> */
+        const val ACTION_SET_SIGNAL_KEY     = "com.waymark.app.action.SET_SIGNAL_KEY"
+        /** Debug/test: clear AES key via adb shell am broadcast -a com.waymark.app.action.CLEAR_SIGNAL_KEY */
+        const val ACTION_CLEAR_SIGNAL_KEY   = "com.waymark.app.action.CLEAR_SIGNAL_KEY"
 
-        const val EXTRA_SHEET_ID = "sheet_id"
-        const val EXTRA_TOKEN    = "token"
+        const val EXTRA_SHEET_ID  = "sheet_id"
+        const val EXTRA_TOKEN     = "token"
+        const val EXTRA_SIGNAL_KEY = "signalKey"
     }
 
     /* ---------- State ---------- */
@@ -104,10 +110,9 @@ class WebRtcService : LifecycleService() {
                 networkCallback
             )
 
-        // Attempt to connect using cached credentials.  Fetches the AES signal
-        // key from the private sheet (one-time OAuth call) then connects to the
-        // public signaling sheet with encryption.  Once the DataChannel is open,
-        // no further OAuth access to Google Sheets is needed.
+        // Attempt to connect using cached credentials.  Key comes from SharedPreferences only —
+        // NEVER fetched from any Google Sheet.  Once the DataChannel is open, no further
+        // OAuth access to Google Sheets is needed.
         scope.launch { resolveAndConnect() }
     }
 
@@ -144,6 +149,39 @@ class WebRtcService : LifecycleService() {
                 disconnectPeer()
                 stopSelf()
             }
+            ACTION_SET_SIGNAL_KEY -> {
+                // Debug/test helper: push the AES key directly via adb broadcast.
+                // adb shell am broadcast -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey <hex>
+                val keyHex = intent.getStringExtra(EXTRA_SIGNAL_KEY) ?: ""
+                if (keyHex.length == 64) {
+                    val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
+                        .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
+                        .apply()
+                    Log.i(TAG, "Signal key updated via adb broadcast (${keyHex.length / 2} bytes)")
+                    // Reconnect so the peer picks up the new key
+                    currentSheetId?.let { sheetId ->
+                        disconnectPeer()
+                        currentSheetId = null
+                        connectToSheet(sheetId)
+                    } ?: scope.launch { resolveAndConnect() }
+                } else {
+                    Log.w(TAG, "ACTION_SET_SIGNAL_KEY: invalid key length ${keyHex.length} (expected 64 hex chars)")
+                }
+            }
+            ACTION_CLEAR_SIGNAL_KEY -> {
+                // Debug/test helper: clear the AES key via adb broadcast.
+                // adb shell am broadcast -a com.waymark.app.action.CLEAR_SIGNAL_KEY
+                val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
+                Log.i(TAG, "Signal key cleared via adb broadcast — reconnecting in bootstrap mode")
+                currentSheetId?.let { sheetId ->
+                    disconnectPeer()
+                    currentSheetId = null
+                    connectToSheet(sheetId)
+                } ?: scope.launch { resolveAndConnect() }
+            }
         }
         return START_STICKY
     }
@@ -165,38 +203,38 @@ class WebRtcService : LifecycleService() {
     /* ---------- Auto-discovery ---------- */
 
     /**
-     * Resolves the AES-256 signal key and public signaling sheet ID, then connects.
+     * Resolves the public signaling sheet ID (via Drive) and connects.
+     * The AES key comes ONLY from SharedPreferences — never from any Google Sheet.
      *
      * Discovery order:
-     *  1. Return immediately if already connected to the public sheet.
-     *  2. If key + public sheet ID are cached, connect immediately.
-     *  3. Use OAuth to fetch sheet IDs from Drive and key from private sheet.
-     *  4. Connect to the public sheet with AES-256-GCM encrypted signaling.
-     *
-     * OAuth is used ONLY for this initial setup phase.  Once the WebRTC
-     * DataChannel is established, no further OAuth is needed.
+     *  1. Return immediately if already connected to the correct public sheet.
+     *  2. If public sheet ID is cached in SharedPreferences, connect immediately.
+     *  3. Use OAuth to fetch the public sheet ID from .waymark-data.json on Drive.
+     *  4. Connect; if no key is in SharedPreferences, connect in bootstrap (unencrypted) mode.
      */
     private suspend fun resolveAndConnect() = withContext(Dispatchers.IO) {
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
-        val cachedPublicId  = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
-        val cachedKeyHex    = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
-        val cachedPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+        val cachedPublicId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
+        val cachedKeyHex   = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
 
-        // Already on the correct public sheet with a key — nothing to do.
-        if (currentSheetId != null && cachedPublicId.isNotBlank() && currentSheetId == cachedPublicId && cachedKeyHex.isNotBlank()) {
+        // Already on the correct public sheet — nothing to do.
+        if (currentSheetId != null && cachedPublicId.isNotBlank() && currentSheetId == cachedPublicId) {
             return@withContext
         }
 
-        // On the wrong sheet (e.g. migrating from private to public after first provisioning).
-        // Disconnect so we re-join on the correct sheet below.
+        // On the wrong sheet (e.g. migrating after first provisioning).
         if (currentSheetId != null && cachedPublicId.isNotBlank() && currentSheetId != cachedPublicId) {
             Log.i(TAG, "Migrating: was on $currentSheetId, switching to public sheet $cachedPublicId")
             disconnectPeer()
         }
 
-        if (cachedPublicId.isNotBlank() && cachedKeyHex.isNotBlank()) {
-            Log.i(TAG, "Using cached public sheet: $cachedPublicId (key cached)")
+        if (cachedPublicId.isNotBlank()) {
+            if (cachedKeyHex.isNotBlank()) {
+                Log.i(TAG, "Using cached public sheet: $cachedPublicId (key cached)")
+            } else {
+                Log.w(TAG, "Using cached public sheet: $cachedPublicId (no key — bootstrap mode)")
+            }
             connectToSheet(cachedPublicId)
             return@withContext
         }
@@ -208,37 +246,25 @@ class WebRtcService : LifecycleService() {
         }
 
         try {
-            // Discover the private + public sheet IDs from Drive
-            val (privateId, publicId) = if (cachedPrivateId.isNotBlank() && cachedPublicId.isNotBlank()) {
-                Pair(cachedPrivateId, cachedPublicId)
-            } else {
-                fetchSheetIdsFromDrive(token)
-            }
+            // Discover the public sheet ID from Drive (.waymark-data.json).
+            // Key is NOT fetched from any sheet — it lives in SharedPreferences only.
+            val publicId = fetchPublicSheetIdFromDrive(token)
 
-            if (privateId.isBlank() || publicId.isBlank()) {
-                Log.d(TAG, "Sheet IDs not set — user may not have opened the web app yet")
+            if (publicId.isBlank()) {
+                Log.d(TAG, "publicSignalingSheetId not set — open the web app to initialise signaling")
                 return@withContext
             }
 
             prefs.edit()
-                .putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, privateId)
                 .putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, publicId)
                 .apply()
 
-            // Fetch the AES signal key from the private sheet (one-time OAuth call)
-            val keyHex = fetchSignalKey(token, privateId)
+            val keyHex = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
             if (keyHex.isBlank()) {
-                Log.w(TAG, "Signal key not provisioned — connecting without encryption")
-                connectToSheet(publicId)
-                return@withContext
+                Log.w(TAG, "No signal key in SharedPreferences — connecting in bootstrap mode")
+            } else {
+                Log.i(TAG, "Signal key found (${keyHex.length / 2} bytes) — connecting to public sheet with encryption")
             }
-
-            prefs.edit()
-                .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
-                .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
-                .apply()
-
-            Log.i(TAG, "Signal key fetched (${keyHex.length / 2} bytes) — connecting to public sheet")
             connectToSheet(publicId)
 
         } catch (e: Exception) {
@@ -248,12 +274,11 @@ class WebRtcService : LifecycleService() {
 
     /**
      * Reads .waymark-data.json from the user's Google Drive and returns
-     * (signalingSheetId, publicSignalingSheetId) — the private key sheet
-     * and the public P2P signaling sheet.
+     * the publicSignalingSheetId.
      *
      * @throws IOException if Drive is unreachable or the file is missing/malformed
      */
-    private fun fetchSheetIdsFromDrive(token: String): Pair<String, String> {
+    private fun fetchPublicSheetIdFromDrive(token: String): String {
         val drive = WaymarkConfig.DRIVE_BASE
 
         val q = "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
@@ -271,9 +296,9 @@ class WebRtcService : LifecycleService() {
         val searchBody = searchConn.inputStream.bufferedReader().readText()
         searchConn.disconnect()
 
-        val files = JSONObject(searchBody).optJSONArray("files") ?: return Pair("", "")
-        if (files.length() == 0) return Pair("", "")
-        val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return Pair("", "") }
+        val files = JSONObject(searchBody).optJSONArray("files") ?: return ""
+        if (files.length() == 0) return ""
+        val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return "" }
 
         val dlUrl = URL("$drive/files/$fileId?alt=media")
         val dlConn = dlUrl.openConnection() as HttpURLConnection
@@ -288,50 +313,16 @@ class WebRtcService : LifecycleService() {
         dlConn.disconnect()
 
         val data = JSONObject(content)
-        return Pair(
-            data.optString("signalingSheetId", ""),
-            data.optString("publicSignalingSheetId", "")
-        )
-    }
-
-    /**
-     * Reads the AES-256 signal key from the PRIVATE key sheet.
-     *
-     * The web app writes the key to Sheet1!A1:A2:
-     *   A1 = 64-char hex AES-256 key
-     *   A2 = key version epoch ms
-     *
-     * @param token          Current OAuth access token
-     * @param privateSheetId ID of the private .waymark-signaling sheet
-     * @return 64-char hex key string, or empty string if not yet provisioned
-     */
-    private fun fetchSignalKey(token: String, privateSheetId: String): String {
-        val url = URL(
-            "${WaymarkConfig.SHEETS_BASE}/$privateSheetId/values/${WaymarkConfig.KEY_RANGE}"
-        )
-        val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("Authorization", "Bearer $token")
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 10_000
-        if (conn.responseCode != 200) {
-            conn.disconnect()
-            throw IOException("Signal key fetch returned ${conn.responseCode}")
-        }
-        val body = conn.inputStream.bufferedReader().readText()
-        conn.disconnect()
-
-        val rows = JSONObject(body).optJSONArray("values") ?: return ""
-        val keyRow = if (rows.length() > 0) rows.optJSONArray(0) else null
-        if (keyRow == null || keyRow.length() == 0) return ""
-        return keyRow.optString(0, "").trim()
+        return data.optString("publicSignalingSheetId", "")
     }
 
     /**
      * Called when OrchestratorPeer detects decryption failures indicating the
-     * signal key has been cycled.  Clears the cached key and reconnects.
+     * signal key has been cycled.  Clears the cached key and reconnects in
+     * bootstrap mode until the new key is received over the DataChannel.
      */
     fun onSignalKeyStale() {
-        Log.i(TAG, "Signal key stale — clearing cache and reconnecting")
+        Log.i(TAG, "Signal key stale — clearing cache and reconnecting in bootstrap mode")
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
         disconnectPeer()

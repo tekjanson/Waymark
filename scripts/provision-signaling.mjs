@@ -7,40 +7,51 @@
    Architecture:
      Private sheet  (.waymark-signaling)        → signalingSheetId
        OAuth-protected — only accessible to authenticated peers.
-       Sheet1!A1 = 64-char hex AES-256 key
-       Sheet1!A2 = key version epoch ms
-       Peers exchange / verify the shared secret here over the OAuth channel.
+       Plain text JSON config: { version, createdAt }
+       NO encryption key is ever stored here.
 
      Public sheet   (.waymark-public-signaling)  → publicSignalingSheetId
        Publicly writable (anyone with the link can edit).
        Column T = WebRTC signaling cells (PRESENCE / OFFERS / ANSWERS)
-       ALL cell values are AES-256-GCM encrypted with the key from the private
-       sheet. Privacy is enforced by encryption, not by sheet-level auth.
+       ALL cell values are AES-256-GCM encrypted with the key that lives
+       ONLY in device-local storage.  Privacy is enforced by encryption,
+       not by sheet-level auth.
+
+   The AES-256 key is NEVER written to any Google Sheet.
+   It lives only in:
+     • This machine:   KEY_FILE (see below)
+     • Android device: SharedPreferences (PREF_SIGNAL_KEY)
+     • Browser:        localStorage['waymark_signal_key']
+   Key distribution between peers happens ONLY over the WebRTC DataChannel.
 
    This script is idempotent — if either sheet already exists it is
-   left unchanged.  Run it whenever the web app has not yet created
-   the public sheet (publicSignalingSheetId missing from .waymark-data.json).
+   left unchanged.
 
    Usage:
      node scripts/provision-signaling.mjs [--force-key]
 
    Flags:
-     --force-key   Rotate the AES key even if one already exists.
+     --force-key   Rotate the AES key (regenerate and overwrite KEY_FILE).
 
    Required env:
      WAYMARK_OAUTH_TOKEN_PATH   path to OAuth token JSON
                                 (default: ~/.config/gcloud/waymark-oauth-token.json)
    ============================================================ */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const HOME = process.env.HOME || "/root";
 
 const OAUTH_TOKEN_PATH = process.env.WAYMARK_OAUTH_TOKEN_PATH
-    || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-oauth-token.json");
+    || path.join(HOME, ".config/gcloud/waymark-oauth-token.json");
+
+// The AES-256 key lives HERE on this machine — never in any Google Sheet.
+const KEY_FILE = process.env.WAYMARK_KEY_FILE
+    || path.join(HOME, ".config/gcloud/waymark-signal.key");
 
 const DRIVE_BASE  = "https://www.googleapis.com/drive/v3";
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -150,20 +161,20 @@ async function setPublicWritable(fileId, token) {
     }
 }
 
-/** Read Sheet1!A1:A2 from a spreadsheet. Returns [a1, a2] or [null, null]. */
+/** Read Sheet1!A1 from a spreadsheet. Returns the cell value or null. */
 async function readCell(sheetId, token) {
-    const range = encodeURIComponent("Sheet1!A1:A2");
+    const range = encodeURIComponent("Sheet1!A1");
     const res = await fetch(`${SHEETS_BASE}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return [null, null];
+    if (!res.ok) return null;
     const d = await res.json();
-    return [d.values?.[0]?.[0] ?? null, d.values?.[1]?.[0] ?? null];
+    return d.values?.[0]?.[0] ?? null;
 }
 
-/** Write keyHex + version to Sheet1!A1:A2. */
-async function writeKey(sheetId, keyHex, token) {
-    const range = "Sheet1!A1:A2";
+/** Write plain-text JSON config to Sheet1!A1 of the private sheet. */
+async function writePrivateConfig(sheetId, config, token) {
+    const range = "Sheet1!A1";
     const url = `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
     const res = await fetch(url, {
         method: "PUT",
@@ -171,15 +182,24 @@ async function writeKey(sheetId, keyHex, token) {
         body: JSON.stringify({
             range,
             majorDimension: "ROWS",
-            values: [[keyHex], [String(Date.now())]],
+            values: [[JSON.stringify(config)]],
         }),
     });
-    if (!res.ok) throw new Error(`Key write → ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`Private config write → ${res.status}: ${await res.text()}`);
 }
 
-/** Generate a fresh 64-char hex AES-256 key. */
-function genKey() {
-    return randomBytes(32).toString("hex");
+/** Read the local AES-256 key hex, or null if not yet generated. */
+function readLocalKey() {
+    try { return readFileSync(KEY_FILE, "utf8").trim(); } catch { return null; }
+}
+
+/** Generate and save a fresh 64-char hex AES-256 key to KEY_FILE. */
+function generateAndSaveKey() {
+    const keyHex = randomBytes(32).toString("hex");
+    const dir = path.dirname(KEY_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(KEY_FILE, keyHex + "\n", { mode: 0o600 });
+    return keyHex;
 }
 
 /* ---------- Main ---------- */
@@ -200,10 +220,10 @@ async function main() {
     log(`Current signalingSheetId    : ${data.signalingSheetId ?? "(none)"}`);
     log(`Current publicSignalingSheetId: ${data.publicSignalingSheetId ?? "(none)"}`);
 
-    // ── Private sheet ─────────────────────────────────────────────────────
+    // ── Private sheet (plain text config only — NO key) ───────────────────
     let privateId = data.signalingSheetId;
     if (!privateId) {
-        log("Creating private key sheet (.waymark-signaling)…");
+        log("Creating private config sheet (.waymark-signaling)…");
         privateId = await createSpreadsheet(".waymark-signaling", token);
         updates.signalingSheetId = privateId;
         log(`  Created: ${privateId}`);
@@ -211,16 +231,26 @@ async function main() {
         log(`Private sheet exists: ${privateId}`);
     }
 
+    // Write / verify plain-text config in Sheet1!A1 (no key stored here)
+    const existingConfig = await readCell(privateId, token);
+    let configObj;
+    try { configObj = existingConfig ? JSON.parse(existingConfig) : null; } catch { configObj = null; }
+    const wantsPublicId = updates.publicSignalingSheetId || data.publicSignalingSheetId || "";
+    if (!configObj || configObj.version !== 1) {
+        log("Writing plain-text config to private sheet Sheet1!A1…");
+        await writePrivateConfig(privateId, { version: 1, createdAt: new Date().toISOString(), publicSignalingSheetId: wantsPublicId }, token);
+    }
 
-    // ── AES-256 key ───────────────────────────────────────────────────────
-    const [existingKey] = await readCell(privateId, token);
+    // ── AES-256 key — local file ONLY (never in any sheet) ───────────────
+    const existingKey = readLocalKey();
     if (!existingKey || existingKey.length !== 64 || FORCE_KEY) {
-        const keyHex = genKey();
-        log(`${!existingKey ? "Writing initial" : "Rotating"} AES-256 key → ${privateId}/Sheet1!A1…`);
-        await writeKey(privateId, keyHex, token);
-        log(`  Key: ${keyHex.slice(0, 16)}…`);
+        const keyHex = generateAndSaveKey();
+        log(`${!existingKey ? "Generated initial" : "Rotated"} AES-256 key → ${KEY_FILE}`);
+        log(`  Key (first 16 chars): ${keyHex.slice(0, 16)}…`);
+        log(`  IMPORTANT: push this key to Android via adb before running tests:`);
+        log(`    adb shell am broadcast -n com.waymark.app/.SignalKeyReceiver -a com.waymark.app.action.SET_SIGNAL_KEY --es signalKey ${keyHex}`);
     } else {
-        log(`Key already present: ${existingKey.slice(0, 16)}…`);
+        log(`Key already present at ${KEY_FILE}: ${existingKey.slice(0, 16)}…`);
     }
 
     // ── Public sheet ──────────────────────────────────────────────────────
@@ -230,6 +260,9 @@ async function main() {
         publicId = await createSpreadsheet(".waymark-public-signaling", token);
         updates.publicSignalingSheetId = publicId;
         log(`  Created: ${publicId}`);
+        // Back-fill the publicSignalingSheetId into the private config now that we have it
+        const key = readLocalKey() || "";
+        await writePrivateConfig(privateId, { version: 1, createdAt: new Date().toISOString(), publicSignalingSheetId: publicId }, token);
     } else {
         log(`Public sheet exists: ${publicId}`);
     }
@@ -257,11 +290,13 @@ async function main() {
 
     log("");
     log("=== Signaling setup complete ===");
-    log(`Private key sheet : ${privateId}`);
-    log(`Public signal sheet: ${publicId}`);
+    log(`Private config sheet : ${privateId}  (plain text — no key stored here)`);
+    log(`Public signal sheet  : ${publicId}    (100% AES-256-GCM encrypted)`);
+    log(`Local key file       : ${KEY_FILE}`);
     log("");
-    log("Next step: open the Waymark web app and run  cycleSignalKey()  in the console");
-    log("(or re-run this script with --force-key) to push a fresh key to the Android app.");
+    log("The AES key lives ONLY in the local key file and on each device's");
+    log("secure storage (Android SharedPreferences / browser localStorage).");
+    log("Key distribution between peers happens ONLY over the WebRTC DataChannel.");
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
