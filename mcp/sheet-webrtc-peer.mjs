@@ -151,6 +151,12 @@ export class SheetWebRtcPeer {
         /** @type {Array<{ json: string, ts: number, deliveredTo: Set<string> }>} */
         this._notifQueue = [];
 
+        /** Unique 8-char hex nonce generated each time this peer starts.
+         *  Written into the heartbeat so remote peers (Android) can detect a
+         *  restart and rebuild the DataChannel immediately rather than waiting
+         *  for the pong timeout.  Mirrors OrchestratorPeer.kt#sessionNonce. */
+        this._sessionNonce = randomBytes(4).toString("hex");
+
         this.block     = -1;
         this.destroyed = false;
         this._polling        = false;  // guard: prevent concurrent poll cycles
@@ -401,7 +407,21 @@ export class SheetWebRtcPeer {
 
     async _join() {
         const vals = await this._readAll();
-        this.block = this._findSlot(vals);
+
+        // Reclaim own slot if a previous session's presence is still alive
+        // (e.g. quick restart within ALIVE_TTL).  Matches Android
+        // OrchestratorPeer.kt join() reclaim logic.
+        let reclaimedBlock = -1;
+        for (let slot = 0; slot < MAX_SLOTS; slot++) {
+            const row = BLOCK_START + slot * BLOCK_SIZE;
+            const p = this._parseJson(vals[row]);
+            if (p && p.peerId === this.peerId) {
+                this._log(`reclaiming stale slot ${row} from previous session (crash recovery)`);
+                reclaimedBlock = row;
+                break;
+            }
+        }
+        this.block = reclaimedBlock >= 0 ? reclaimedBlock : this._findSlot(vals);
         if (this.block < 0) return;
 
         // Write presence immediately to claim slot
@@ -441,6 +461,7 @@ export class SheetWebRtcPeer {
             peerId: this.peerId,
             name:   this.displayName,
             ts:     Date.now(),
+            nonce:  this._sessionNonce,
         }));
     }
 

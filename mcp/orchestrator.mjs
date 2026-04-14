@@ -852,8 +852,14 @@ function interpolate(template, ctx) {
  * @param {object} ctx    - context variables for condition matching and template interpolation
  */
 async function fireNotifications(event, ctx) {
-    if (!_notifRules.length) return;
-    if (!_signalingPeer) return;
+    if (!_notifRules.length) {
+        process.stderr.write(`orchestrator: notification skipped for '${event}' — no rules loaded (rulesSheetId=${_rulesSheetId ?? 'not set'})\n`);
+        return;
+    }
+    if (!_signalingPeer) {
+        process.stderr.write(`orchestrator: notification skipped for '${event}' — signaling peer not started\n`);
+        return;
+    }
     const matching = _notifRules.filter(r =>
         r.enabled &&
         (r.event === event || r.event === "*") &&

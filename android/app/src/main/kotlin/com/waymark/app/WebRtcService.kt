@@ -395,20 +395,25 @@ class WebRtcService : LifecycleService() {
         )
 
         // When the orchestrator sends the key over the DataChannel:
+        // The callback fires on a WebRTC thread, so post the Phase 1→2
+        // transition to our IO scope to avoid calling disconnectPeer() /
+        // connectToSheet() / startForeground() from the DC callback thread.
         newPeer.onKeyReceived = { keyHex ->
-            Log.i(TAG, "Phase 1: received signal key (${keyHex.length / 2} bytes) — switching to public sheet")
-            prefs.edit()
-                .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
-                .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
-                .apply()
-            // Disconnect from private sheet and connect to public sheet (Phase 2)
-            disconnectPeer()
-            val publicId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
-            if (publicId.isNotBlank()) {
-                connectToSheet(publicId)
-            } else {
-                // Public sheet ID not cached yet — re-run full resolution
-                scope.launch { resolveAndConnect() }
+            scope.launch {
+                Log.i(TAG, "Phase 1: received signal key (${keyHex.length / 2} bytes) — switching to public sheet")
+                prefs.edit()
+                    .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
+                    .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
+                    .apply()
+                // Disconnect from private sheet and connect to public sheet (Phase 2)
+                disconnectPeer()
+                val publicId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
+                if (publicId.isNotBlank()) {
+                    connectToSheet(publicId)
+                } else {
+                    // Public sheet ID not cached yet — re-run full resolution
+                    resolveAndConnect()
+                }
             }
         }
 
