@@ -165,6 +165,8 @@ export class SheetWebRtcPeer {
         this._pingTimer      = null;   // DataChannel keepalive interval
         this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
         this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
+        this._lastDecryptFailures  = 0;  // encrypted cells that failed GCM on last _readAll
+        this._lastDecryptSuccesses = 0;  // encrypted cells that succeeded GCM on last _readAll
 
         // Load persisted buffer after all fields are initialized (survives process restarts)
         if (this._bufferFile) {
@@ -211,8 +213,10 @@ export class SheetWebRtcPeer {
         clearInterval(this._pingTimer);
         this._lastPong.clear();
         this._peerNonces.clear();
-        if (this.block >= 0) {
-            this._clearPresence().catch(() => {});
+        const savedBlock = this.block;
+        this.block = -1; // prevent in-flight poll from re-joining
+        if (savedBlock >= 0) {
+            this._clearPresence(savedBlock).catch(() => {});
         }
         for (const id of [...this.peers.keys()]) {
             this._closeOne(id);
@@ -328,6 +332,31 @@ export class SheetWebRtcPeer {
             .map(([id]) => id);
     }
 
+    /**
+     * Send a message to a specific peer via DataChannel.
+     * @param {string} remotePeerId
+     * @param {object|string} message
+     * @returns {boolean} true if sent successfully
+     */
+    sendTo(remotePeerId, message) {
+        const json = typeof message === "string" ? message : JSON.stringify(message);
+        const entry = this.peers.get(remotePeerId);
+        if (!entry?.dc || entry.dc.readyState !== "open") return false;
+        try { entry.dc.send(json); return true; } catch { return false; }
+    }
+
+    /**
+     * Send a waymark-key-exchange message to a specific peer.
+     * Used by the orchestrator to distribute the AES-256 key
+     * to a single newly-connected peer on the private sheet.
+     * @param {string} remotePeerId
+     * @param {string} keyHex - 64-char hex AES-256 key
+     * @returns {boolean} true if sent
+     */
+    sendKeyExchangeTo(remotePeerId, keyHex) {
+        return this.sendTo(remotePeerId, { type: "waymark-key-exchange", key: keyHex });
+    }
+
     /* ---------- Sheets helpers ---------- */
 
     async _getToken() {
@@ -358,15 +387,27 @@ export class SheetWebRtcPeer {
 
             // Pad to TOTAL_ROWS so callers can index by 0-based row safely
             const result = new Array(TOTAL_ROWS + 2).fill(null);
+            let _decryptFailures = 0;
+            let _decryptSuccesses = 0;
             for (let i = 0; i < rows.length; i++) {
                 const row = rows[i];
                 if (row && row.length > 0 && row[0] !== "") {
                     const raw = row[0];
                     // Decrypt cell if a key is available; passthrough if no key or no prefix
                     const key = this._getKeyFn ? this._getKeyFn() : null;
-                    result[i + BLOCK_START] = key ? (decryptCell(raw, key) ?? raw) : raw;
+                    if (key) {
+                        const dec = decryptCell(raw, key);
+                        if (raw.startsWith(ENCRYPT_PREFIX)) {
+                            if (dec === null) _decryptFailures++; else _decryptSuccesses++;
+                        }
+                        result[i + BLOCK_START] = dec;  // null on failure, not raw ciphertext
+                    } else {
+                        result[i + BLOCK_START] = raw;
+                    }
                 }
             }
+            this._lastDecryptFailures  = _decryptFailures;
+            this._lastDecryptSuccesses = _decryptSuccesses;
             return result;
         }
         throw lastErr;
@@ -465,9 +506,10 @@ export class SheetWebRtcPeer {
         }));
     }
 
-    async _clearPresence() {
-        if (this.block < 0) return;
-        await this._writeCell(this.block + OFF_PRESENCE, "");
+    async _clearPresence(blockOverride) {
+        const b = blockOverride ?? this.block;
+        if (b < 0) return;
+        await this._writeCell(b + OFF_PRESENCE, "");
     }
 
     /* ---------- Poll cycle ---------- */
@@ -484,6 +526,7 @@ export class SheetWebRtcPeer {
             // immediately rather than silently operating on a clobbered block.
             const myPresence = this._parseJson(vals[this.block]);
             if (!myPresence || myPresence.peerId !== this.peerId) {
+                if (this.destroyed) return; // stop() cleared our presence — don't rejoin
                 this._log(`slot ${this.block} was taken by ${myPresence?.peerId ?? '(empty)'} — re-joining mesh`);
                 // Close all connections — they were built with the old block's signal rows
                 for (const id of [...this.peers.keys()]) this._closeOne(id);

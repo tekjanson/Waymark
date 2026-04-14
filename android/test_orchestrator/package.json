@@ -1,0 +1,14 @@
+{
+  "name": "waymark-test-orchestrator",
+  "version": "1.0.0",
+  "description": "Test orchestrator for Waymark Android P2P notification E2E tests",
+  "type": "module",
+  "scripts": {
+    "start": "node test_orchestrator.mjs",
+    "test": "node test_orchestrator.mjs --mode=e2e"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.14.0",
+    "werift": "^0.19.1"
+  }
+}

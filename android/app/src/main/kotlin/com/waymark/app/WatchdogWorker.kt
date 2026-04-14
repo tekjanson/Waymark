@@ -24,21 +24,23 @@ class WatchdogWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         val prefs = applicationContext.getSharedPreferences(
             WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE
         )
-        val sheetId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
+        // Check that we have at least SOME sheet ID (public or private) or an
+        // access token — meaning the user has logged in at least once.
+        val hasPublic = (prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: "").isNotBlank()
+        val hasPrivate = (prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: "").isNotBlank()
+        val hasToken = (prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: "").isNotBlank()
 
-        if (sheetId.isBlank()) {
-            Log.d(TAG, "No sheet ID cached — skipping watchdog restart")
+        if (!hasPublic && !hasPrivate && !hasToken) {
+            Log.d(TAG, "No credentials cached — skipping watchdog restart")
             return Result.success()
         }
 
         Log.i(TAG, "Watchdog tick — ensuring WebRtcService is alive")
-        val intent = Intent(applicationContext, WebRtcService::class.java).apply {
-            action = WebRtcService.ACTION_CONNECT
-            putExtra(WebRtcService.EXTRA_SHEET_ID, sheetId)
-        }
+        // Use an actionless intent so the service re-runs resolveAndConnect()
+        // through ConnectionManager, which always refreshes from Drive.
+        // Using ACTION_CONNECT with a stale cached ID would bypass Drive refresh.
+        val intent = Intent(applicationContext, WebRtcService::class.java)
 
-        // startForegroundService is exempt from background-start restrictions when
-        // invoked from a JobScheduler-backed WorkManager worker (Android docs §10.3.5).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             applicationContext.startForegroundService(intent)
         } else {

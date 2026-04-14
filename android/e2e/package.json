@@ -1,0 +1,27 @@
+{
+  "name": "waymark-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade E2E test suite for Waymark Android P2P notifications",
+  "type": "module",
+  "scripts": {
+    "test":          "mocha --timeout 0 --slow 30000 --exit 'tests/**/*.test.mjs'",
+    "test:happy":    "mocha --timeout 0 --slow 30000 --exit 'tests/01-happy-path.test.mjs'",
+    "test:network":  "mocha --timeout 0 --slow 30000 --exit 'tests/02-network-resilience.test.mjs'",
+    "test:orch":     "mocha --timeout 0 --slow 30000 --exit 'tests/03-orchestrator-failure.test.mjs'",
+    "test:lifecycle": "mocha --timeout 0 --slow 30000 --exit 'tests/04-app-lifecycle.test.mjs'",
+    "test:soak":     "mocha --timeout 0 --slow 60000 --exit 'tests/05-soak.test.mjs'",
+    "test:full":     "node runner.mjs",
+    "setup":         "node setup.mjs"
+  },
+  "dependencies": {
+    "appium": "^2.12.0",
+    "appium-uiautomator2-driver": "^3.8.0",
+    "webdriverio": "^9.0.0",
+    "google-auth-library": "^9.14.0",
+    "googleapis": "^144.0.0",
+    "werift": "^0.19.1",
+    "mocha": "^10.7.0",
+    "chai": "^5.1.0"
+  }
+}

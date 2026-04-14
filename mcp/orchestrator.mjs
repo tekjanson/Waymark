@@ -501,14 +501,14 @@ async function startSignalingPeer() {
             onConnect: (remotePeerId) => {
                 const key = currentKey();
                 process.stderr.write(`orchestrator: peer ${remotePeerId} connected on private sheet — sending key (${key?.slice(0, 8)}…)\n`);
-                if (key) _privateSignalingPeer.broadcastKeyExchange(key);
+                if (key) _privateSignalingPeer.sendKeyExchangeTo(remotePeerId, key);
             },
             onMessage: (remotePeerId, msg) => {
                 // Peers may request a key re-send
                 if (msg.type === "waymark-key-request") {
                     const key = currentKey();
                     process.stderr.write(`orchestrator: key-request from ${remotePeerId} on private sheet\n`);
-                    if (key) _privateSignalingPeer.broadcastKeyExchange(key);
+                    if (key) _privateSignalingPeer.sendKeyExchangeTo(remotePeerId, key);
                 }
             },
         });

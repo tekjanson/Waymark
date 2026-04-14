@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,6 +24,8 @@ object NotificationHelper {
 
     const val CHANNEL_MESSAGES = "waymark_messages"
     const val CHANNEL_SERVICE  = "waymark_service"
+
+    private const val TAG = "NotificationHelper"
 
     /* ---------- Notification IDs ---------- */
 
@@ -96,16 +99,9 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
-        try {
-            NotificationManagerCompat.from(context)
-                .notify(_nextId.getAndIncrement(), notification)
-        } catch (ignored: SecurityException) {
-            // POST_NOTIFICATIONS permission not granted — fail silently
-        }
-
-        // Acquire a brief partial wake lock so the CPU stays awake long enough
-        // to post the notification to the status bar.  Without this, Doze can
-        // put the CPU to sleep before NotificationManager delivers the notification.
+        // Acquire a brief partial wake lock BEFORE posting so the CPU stays
+        // awake long enough to render the notification in the status bar.
+        // Without this, Doze can sleep the CPU between notify() and delivery.
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         @Suppress("DEPRECATION")
         val wl = pm.newWakeLock(
@@ -113,6 +109,13 @@ object NotificationHelper {
             "waymark:notif_delivery"
         )
         wl.acquire(2_000L) // auto-releases after 2 s
+
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(_nextId.getAndIncrement(), notification)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "POST_NOTIFICATIONS denied — notification dropped: title=\"$title\"")
+        }
     }
 
     /* ---------- Foreground service notification ---------- */
@@ -183,8 +186,8 @@ object NotificationHelper {
         try {
             NotificationManagerCompat.from(context)
                 .notify(NOTIFICATION_ID_SERVICE, buildServiceNotification(context, connected, peerCount))
-        } catch (ignored: SecurityException) {
-            // POST_NOTIFICATIONS permission not granted — fail silently
+        } catch (e: SecurityException) {
+            Log.w(TAG, "POST_NOTIFICATIONS denied — service notification update dropped")
         }
     }
 }

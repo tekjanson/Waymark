@@ -22,6 +22,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -45,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
         requestBatteryOptimizationExemption()
+        scheduleWatchdog()
 
         bridge = WaymarkBridge(this)
         webView = findViewById(R.id.webView)
@@ -189,5 +194,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Schedule a periodic watchdog that restarts [WebRtcService] every 15 minutes.
+     * Survives aggressive OEM process kills where START_STICKY doesn't fire.
+     * KEEP policy ensures we don't reset the schedule on every activity launch.
+     */
+    private fun scheduleWatchdog() {
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "waymark_watchdog",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()
+        )
     }
 }
