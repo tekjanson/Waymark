@@ -213,6 +213,19 @@ export async function findFile(token, name, parentId) {
 }
 
 /**
+ * Search Drive globally for a file by exact name (any location, no parent filter).
+ * Returns the first match, or null if not found.
+ * @param {string} token
+ * @param {string} name
+ * @returns {Promise<{id: string, name: string}|null>}
+ */
+export async function findFileGlobal(token, name) {
+  const q = `name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
+  const result = await list(token, { q });
+  return result.files?.[0] || null;
+}
+
+/**
  * Create a file with JSON content (multipart upload).
  * Used for storing app data (settings, pins, etc.) in Drive.
  * @param {string} token

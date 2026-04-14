@@ -220,6 +220,18 @@ async function createSpreadsheet(title, token) {
     return d.spreadsheetId;
 }
 
+/** Search Drive for a file by exact name (first match, any location). */
+async function driveFindByName(name, token) {
+    const q = encodeURIComponent(`name='${name}' and trashed=false`);
+    const res = await fetch(
+        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return null;
+    const { files } = await res.json();
+    return files?.[0]?.id ?? null;
+}
+
 /** Grant "anyone with the link can edit" on a Drive file. */
 async function setPublicWritable(fileId, token) {
     const res = await fetch(`${DRIVE_FILES_URL}/${fileId}/permissions`, {
@@ -312,11 +324,18 @@ async function ensureSignalingInfra() {
         privateId = null;
     }
     if (!privateId) {
-        process.stderr.write("orchestrator: auto-provisioning private signaling sheet (.waymark-signaling)\n");
-        privateId = await createSpreadsheet(".waymark-signaling", token);
+        // Search Drive by name first to avoid creating duplicates
+        const found = await driveFindByName(".waymark-signaling", token);
+        if (found && (await sheetExists(found, token))) {
+            process.stderr.write(`orchestrator: found orphaned private sheet on Drive: ${found}\n`);
+            privateId = found;
+        } else {
+            process.stderr.write("orchestrator: auto-provisioning private signaling sheet (.waymark-signaling)\n");
+            privateId = await createSpreadsheet(".waymark-signaling", token);
+            process.stderr.write(`orchestrator: created private sheet: ${privateId}\n`);
+        }
         data.signalingSheetId = privateId;
         dirty = true;
-        process.stderr.write(`orchestrator: created private sheet: ${privateId}\n`);
     }
 
     // ── Public sheet — AES-256-GCM encrypted, publicly writable ──
@@ -326,11 +345,18 @@ async function ensureSignalingInfra() {
         publicId = null;
     }
     if (!publicId) {
-        process.stderr.write("orchestrator: auto-provisioning public signaling sheet (.waymark-public-signaling)\n");
-        publicId = await createSpreadsheet(".waymark-public-signaling", token);
+        // Search Drive by name first to avoid creating duplicates
+        const found = await driveFindByName(".waymark-public-signaling", token);
+        if (found && (await sheetExists(found, token))) {
+            process.stderr.write(`orchestrator: found orphaned public sheet on Drive: ${found}\n`);
+            publicId = found;
+        } else {
+            process.stderr.write("orchestrator: auto-provisioning public signaling sheet (.waymark-public-signaling)\n");
+            publicId = await createSpreadsheet(".waymark-public-signaling", token);
+            process.stderr.write(`orchestrator: created public sheet: ${publicId}\n`);
+        }
         data.publicSignalingSheetId = publicId;
         dirty = true;
-        process.stderr.write(`orchestrator: created public sheet: ${publicId}\n`);
     }
 
     // Always ensure public write permission (idempotent — safe to call if already set)

@@ -186,37 +186,63 @@ async function _doInit() {
 async function ensureSignalingSheet() {
   if (!_rootFolderId) return;
 
+  // Re-read .waymark-data.json from Drive to pick up signaling IDs that may
+  // have been written by the orchestrator (which runs outside the browser).
+  // Without this, the in-memory _userData can clobber the IDs on the next save().
+  if (_dataFileId) {
+    try {
+      const freshData = await api.drive.readJsonFile(_dataFileId);
+      if (freshData?.signalingSheetId && !_userData?.signalingSheetId) {
+        _userData.signalingSheetId = freshData.signalingSheetId;
+      }
+      if (freshData?.publicSignalingSheetId && !_userData?.publicSignalingSheetId) {
+        _userData.publicSignalingSheetId = freshData.publicSignalingSheetId;
+      }
+    } catch (e) {
+      console.warn('[user-data] ensureSignalingSheet: re-read Drive failed:', e);
+    }
+  }
+
   const updates = {};
 
   // Create the private config sheet if missing
   if (!_userData?.signalingSheetId) {
-    const created = await api.sheets.createSpreadsheet(
-      '.waymark-signaling', [], _rootFolderId
-    );
-    updates.signalingSheetId = created.spreadsheetId;
-    // No key is written here — only a plain-text JSON config marker
-    try {
-      await _writePrivateConfig(created.spreadsheetId, { version: 1, createdAt: new Date().toISOString() });
-    } catch (e) {
-      console.warn('[user-data] Failed to write private config marker:', e);
+    // Search globally by name to find a sheet created by the orchestrator
+    const token = await api.auth.getToken();
+    const drive = await import('./drive.js');
+    const existing = await drive.findFileGlobal(token, '.waymark-signaling');
+    if (existing) {
+      updates.signalingSheetId = existing.id;
+    } else {
+      const created = await api.sheets.createSpreadsheet(
+        '.waymark-signaling', [], _rootFolderId
+      );
+      updates.signalingSheetId = created.spreadsheetId;
+      try {
+        await _writePrivateConfig(created.spreadsheetId, { version: 1, createdAt: new Date().toISOString() });
+      } catch (e) {
+        console.warn('[user-data] Failed to write private config marker:', e);
+      }
     }
-    // Key is NOT generated here — it is created at runtime by the orchestrator
-    // and distributed to peers exclusively over the WebRTC DataChannel.
   }
 
   // Create the public signaling sheet if missing
   if (!_userData?.publicSignalingSheetId) {
-    const pub = await api.sheets.createSpreadsheet(
-      '.waymark-public-signaling', [], _rootFolderId
-    );
-    updates.publicSignalingSheetId = pub.spreadsheetId;
-    // Grant public write access — all cells are AES-256-GCM encrypted so there
-    // is no privacy risk. This is required for cross-device P2P signaling.
-    try {
-      const token = await api.auth.getToken();
-      await import('./drive.js').then(d => d.setPublicWritable(token, pub.spreadsheetId));
-    } catch (e) {
-      console.warn('[user-data] Could not set public signaling sheet writable:', e);
+    const token = await api.auth.getToken();
+    const drive = await import('./drive.js');
+    const existing = await drive.findFileGlobal(token, '.waymark-public-signaling');
+    if (existing) {
+      updates.publicSignalingSheetId = existing.id;
+    } else {
+      const pub = await api.sheets.createSpreadsheet(
+        '.waymark-public-signaling', [], _rootFolderId
+      );
+      updates.publicSignalingSheetId = pub.spreadsheetId;
+      try {
+        await drive.setPublicWritable(token, pub.spreadsheetId);
+      } catch (e) {
+        console.warn('[user-data] Could not set public signaling sheet writable:', e);
+      }
     }
   }
 
@@ -323,6 +349,19 @@ async function save(data) {
 
   if (_dataFileId) {
     try {
+      // Guard: if we're about to write without signaling IDs, try to preserve
+      // them from the current Drive state (may have been set by the orchestrator).
+      if (!_userData.publicSignalingSheetId || !_userData.signalingSheetId) {
+        try {
+          const current = await api.drive.readJsonFile(_dataFileId);
+          if (current?.signalingSheetId && !_userData.signalingSheetId) {
+            _userData.signalingSheetId = current.signalingSheetId;
+          }
+          if (current?.publicSignalingSheetId && !_userData.publicSignalingSheetId) {
+            _userData.publicSignalingSheetId = current.publicSignalingSheetId;
+          }
+        } catch (_) { /* best-effort — don't block saves */ }
+      }
       await api.drive.updateJsonFile(_dataFileId, _userData);
     } catch (err) {
       console.warn('[user-data] Drive save failed:', err);
