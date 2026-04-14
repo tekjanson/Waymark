@@ -131,6 +131,29 @@ class WaymarkBridge(private val context: Context) {
         }
     }
 
+    /* ---------- Key cycling ---------- */
+
+    /**
+     * Clears the cached AES-256 signal key and triggers a Phase 1 re-bootstrap
+     * so the Android peer fetches a fresh key from the orchestrator over the
+     * WebRTC DataChannel. Call from the web app's debug/settings UI:
+     *
+     *   window.Android?.cycleSignalKey()
+     */
+    @JavascriptInterface
+    fun cycleSignalKey() {
+        Log.i("WaymarkBridge", "cycleSignalKey requested from web app — clearing key and rebootstrapping")
+        context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(WaymarkConfig.PREF_SIGNAL_KEY)
+            .remove(WaymarkConfig.PREF_SIGNAL_KEY_VERSION)
+            .apply()
+        val intent = Intent(context, WebRtcService::class.java).apply {
+            action = WebRtcService.ACTION_REBOOTSTRAP
+        }
+        context.startService(intent)
+    }
+
     /* ---------- Theme sync ---------- */
 
     /**

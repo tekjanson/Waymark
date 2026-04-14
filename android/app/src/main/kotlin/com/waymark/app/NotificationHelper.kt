@@ -142,6 +142,18 @@ object NotificationHelper {
             PendingIntent.FLAG_IMMUTABLE
         )
 
+        // "Cycle Key" action — clears the cached AES key and triggers Phase 1
+        // re-bootstrap so a fresh key is fetched over the DataChannel.
+        val cycleKeyIntent = Intent(context, WebRtcService::class.java).apply {
+            action = WebRtcService.ACTION_CLEAR_SIGNAL_KEY
+        }
+        val cycleKeyPending = PendingIntent.getService(
+            context,
+            1,
+            cycleKeyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val body = if (connected)
             context.getString(R.string.service_notif_connected, peerCount)
         else
@@ -155,6 +167,7 @@ object NotificationHelper {
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .addAction(0, "Cycle Key", cycleKeyPending)
             .build()
     }
 
