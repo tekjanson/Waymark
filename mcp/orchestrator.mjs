@@ -197,14 +197,22 @@ let _dataFileId = null;
 
 /* ---------- Auto-provisioning helpers ---------- */
 
-/** Check if a Google Sheet still exists (not deleted/trashed). */
+/** Check if a Google Sheet still exists AND is not in the Trash.
+ *  Uses the Drive API instead of Sheets API because the Sheets API
+ *  can still successfully access trashed spreadsheets (returns 200),
+ *  which would make us skip recreation after the user deletes a sheet. */
 async function sheetExists(sheetId, token) {
     try {
         const res = await fetch(
-            `${SHEETS_BASE_URL}/${sheetId}?fields=spreadsheetId`,
+            `${DRIVE_FILES_URL}/${sheetId}?fields=id,trashed`,
             { headers: { Authorization: `Bearer ${token}` } }
         );
-        return res.ok;
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (data.trashed) {
+            process.stderr.write(`orchestrator: sheet ${sheetId} is in Trash — treating as deleted\n`);
+        }
+        return data.trashed !== true;
     } catch { return false; }
 }
 
@@ -1088,12 +1096,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Store alongside session; re-use sessions map with augmented object
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null, peerWaitMs, peerWaitUsed: false });
 
-        // Start the Android WebRTC signaling peer on first boot
-        if (!_signalingPeer) {
-            startSignalingPeer().catch(err =>
-                process.stderr.write(`orchestrator: signaling peer start failed: ${err.message}\n`)
-            );
+        // (Re-)start signaling peers with fresh infrastructure validation.
+        // Tear down any existing peers first — sheets may have been deleted
+        // between boots while the MCP process stayed alive.
+        if (_signalingPeer || _privateSignalingPeer) {
+            process.stderr.write("orchestrator: tearing down existing signaling peers for clean re-provision\n");
+            if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
+            if (_privateSignalingPeer) { _privateSignalingPeer.stop(); _privateSignalingPeer = null; }
+            if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
+            invalidateSignalingCache();
         }
+        startSignalingPeer().catch(err =>
+            process.stderr.write(`orchestrator: signaling peer start failed: ${err.message}\n`)
+        );
 
         return {
             content: [{ type: "text", text: JSON.stringify({
