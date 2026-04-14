@@ -58,8 +58,12 @@ class WebRtcService : LifecycleService() {
         override fun onAvailable(network: Network) {
             if (networkLost) {
                 networkLost = false
-                Log.i(TAG, "Network recovered after loss — re-bootstrapping to rebuild WebRTC")
-                connectionManager.requestRebootstrap()
+                // Don't re-bootstrap — the existing peer keeps its slot and resumes
+                // polling once HTTP calls succeed.  Re-bootstrapping would create a
+                // new peer (new sessionNonce) which triggers a nonce-flap loop on
+                // the remote side while the new peer is still joining the mesh.
+                Log.i(TAG, "Network recovered after loss — requesting reconnect")
+                connectionManager.requestConnect()
                 return
             }
             val peer = connectionManager.state.activePeer

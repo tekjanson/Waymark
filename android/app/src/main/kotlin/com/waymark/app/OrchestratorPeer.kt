@@ -189,21 +189,29 @@ class OrchestratorPeer(
             var retryDelay = 10_000L // 10 s initial, doubles each attempt up to 60 s
             while (!destroyed) {
                 try {
-                    block = -1 // reset before each join attempt
-                    join()
+                    // Only join if we don't already have a slot.
+                    // On poll() failures (transient Sheets errors) we keep our slot
+                    // so that isInMesh stays true — preventing ConnectionManager from
+                    // tearing us down and creating a new peer (which changes the
+                    // sessionNonce and triggers a nonce-flap loop on the remote side).
                     if (block < 0) {
-                        Log.w(TAG, "No free signaling slot — mesh full")
-                        return@launch
+                        join()
+                        if (block < 0) {
+                            Log.w(TAG, "No free signaling slot — mesh full")
+                            return@launch
+                        }
+                        Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
+                        retryDelay = 10_000L
+                        delay(peerIdJitter())
                     }
-                    Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
-                    retryDelay = 10_000L // reset backoff on success
-                    delay(peerIdJitter())
                     while (!destroyed) {
                         poll()
                         delay(WaymarkConfig.POLL_MS)
                     }
                 } catch (e: CancellationException) { return@launch }
                 catch (e: Exception) {
+                    // Don't reset block — keep existing slot so isInMesh stays true.
+                    // If our slot was evicted, poll()'s eviction check handles re-join.
                     Log.e(TAG, "Mesh loop error — retrying in ${retryDelay / 1000}s", e)
                     if (!destroyed) {
                         delay(retryDelay)
