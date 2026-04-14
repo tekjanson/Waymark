@@ -95,6 +95,9 @@ class OrchestratorPeer(
         private const val SHEETS_FAILURE_THRESHOLD = 3
         /** Consecutive decrypt-failure polls before deciding the AES key has been cycled. */
         private const val DECRYPT_FAILURE_THRESHOLD = 3
+        /** If alone (zero alive peers) for this many ms, invoke [onAloneTimeout] to
+         *  trigger a re-bootstrap that re-reads Drive sheet IDs. */
+        private const val ALONE_TIMEOUT_MS = 60_000L
     }
 
     /* ---------- State ---------- */
@@ -116,6 +119,8 @@ class OrchestratorPeer(
      *  When this exceeds [DECRYPT_FAILURE_THRESHOLD] the AES key has been cycled remotely
      *  and [onSignalKeyStale] is invoked to trigger a key re-fetch. */
     private val _decryptFailures = AtomicInteger(0)
+    /** Epoch-ms when the peer first observed zero alive peers.  Reset when ≥1 peer is found. */
+    @Volatile private var _aloneSince = 0L
 
     /**
      * Called when consecutive GCM decryption failures indicate the signal key was cycled.
@@ -148,6 +153,13 @@ class OrchestratorPeer(
      * @param peerCount Number of peers with an OPEN DataChannel
      */
     var onConnectionStateChanged: ((connected: Boolean, peerCount: Int) -> Unit)? = null
+
+    /**
+     * Invoked when the peer has been polling for [ALONE_TIMEOUT_MS] with zero
+     * alive remote peers.  WebRtcService uses this to trigger a full
+     * re-bootstrap (re-read Drive sheet IDs) to recover from stale sheets.
+     */
+    var onAloneTimeout: (() -> Unit)? = null
 
     /** Assigned signaling block row (0-based index into signaling column). */
     @Volatile private var block = -1
@@ -288,7 +300,6 @@ class OrchestratorPeer(
     private suspend fun poll() = withContext(Dispatchers.IO) {
         if (destroyed || block < 0) return@withContext
         try {
-            Log.d(TAG, "poll() tick — block=$block peers=${peers.size}")
             val vals     = signalingClient.readAll()
             _sheetsFailures.set(0)  // successful Sheets read — reset error count
 
@@ -333,7 +344,20 @@ class OrchestratorPeer(
 
             val alive    = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
-            Log.d(TAG, "poll: alive=${aliveIds.size} ids=${aliveIds.joinToString(",")}")
+
+            // ── Alone timeout: if zero alive peers for ALONE_TIMEOUT_MS, trigger re-bootstrap ──
+            if (aliveIds.isEmpty()) {
+                val now = System.currentTimeMillis()
+                if (_aloneSince == 0L) _aloneSince = now
+                if (now - _aloneSince >= ALONE_TIMEOUT_MS) {
+                    Log.w(TAG, "No alive peers for ${(now - _aloneSince) / 1000}s — requesting re-bootstrap")
+                    _aloneSince = 0L // reset so it doesn't fire again immediately after re-join
+                    onAloneTimeout?.invoke()
+                    return@withContext
+                }
+            } else {
+                _aloneSince = 0L
+            }
 
             // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
             val now = System.currentTimeMillis()

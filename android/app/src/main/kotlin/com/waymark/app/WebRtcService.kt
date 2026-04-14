@@ -78,6 +78,8 @@ class WebRtcService : LifecycleService() {
     /* ---------- State ---------- */
 
     @Volatile private var currentSheetId: String? = null
+    /** True when the current peer is on the private (plaintext) sheet for key exchange. */
+    @Volatile private var isPhase1 = false
     @Volatile private var peer: OrchestratorPeer? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -149,19 +151,20 @@ class WebRtcService : LifecycleService() {
                 Log.d(TAG, "Token updated")
                 val cachedSheet = currentSheetId
                 val livePeer    = peer
+                val wasPhase1   = isPhase1
                 when {
                     cachedSheet != null && (livePeer == null || livePeer.destroyed) -> {
                         // Peer died — restart with the fresh token
                         Log.i(TAG, "Peer was dead — restarting with fresh token")
                         currentSheetId = null
-                        connectToSheet(cachedSheet)
+                        if (wasPhase1) connectToPrivateSheet(cachedSheet) else connectToSheet(cachedSheet)
                     }
                     cachedSheet != null && livePeer != null && !livePeer.isInMesh -> {
                         // Peer is alive but never joined the mesh — likely stuck in a retry
                         // backoff because the previous token was expired.  Reconnect now.
                         Log.i(TAG, "Peer not in mesh — reconnecting immediately with fresh token")
                         currentSheetId = null
-                        connectToSheet(cachedSheet)
+                        if (wasPhase1) connectToPrivateSheet(cachedSheet) else connectToSheet(cachedSheet)
                     }
                     else -> scope.launch { resolveAndConnect() }
                 }
@@ -399,6 +402,7 @@ class WebRtcService : LifecycleService() {
 
         disconnectPeer()
         currentSheetId = sheetId
+        isPhase1 = true
 
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -452,6 +456,12 @@ class WebRtcService : LifecycleService() {
             )
         }
 
+        newPeer.onAloneTimeout = {
+            Log.i(TAG, "Alone timeout on private sheet — re-reading Drive and reconnecting")
+            disconnectPeer()
+            scope.launch { resolveAndConnect() }
+        }
+
         peer = newPeer
         newPeer.start()
     }
@@ -462,6 +472,7 @@ class WebRtcService : LifecycleService() {
 
         disconnectPeer()
         currentSheetId = sheetId
+        isPhase1 = false
 
         val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -491,6 +502,12 @@ class WebRtcService : LifecycleService() {
                 NotificationHelper.NOTIFICATION_ID_SERVICE,
                 NotificationHelper.buildServiceNotification(applicationContext, connected, count)
             )
+        }
+
+        newPeer.onAloneTimeout = {
+            Log.i(TAG, "Alone timeout on public sheet — re-reading Drive and reconnecting")
+            disconnectPeer()
+            scope.launch { resolveAndConnect() }
         }
 
         peer = newPeer
