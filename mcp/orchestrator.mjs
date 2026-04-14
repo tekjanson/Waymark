@@ -981,12 +981,14 @@ const wakeServer = createServer((req, res) => {
                 block: _signalingPeer.block,
                 destroyed: _signalingPeer.destroyed,
                 connectedPeers: _signalingPeer.connectedPeers(),
+                sheetId: _signalingPeer.sheetId,
             } : null,
             privatePeer: _privateSignalingPeer ? {
                 peerId: _privateSignalingPeer.peerId,
                 block: _privateSignalingPeer.block,
                 destroyed: _privateSignalingPeer.destroyed,
                 connectedPeers: _privateSignalingPeer.connectedPeers(),
+                sheetId: _privateSignalingPeer.sheetId,
             } : null,
             keyPrefix: _resolvedSignalKeyHex?.slice(0, 8) ?? null,
         };
