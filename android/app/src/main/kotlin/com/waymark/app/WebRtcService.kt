@@ -280,12 +280,40 @@ class WebRtcService : LifecycleService() {
             return@withContext
         }
 
+        // ── Phase 2 blocked: have key but no public sheet ID yet ──
+        // The orchestrator may still be provisioning the public sheet and
+        // hasn't written the ID to .waymark-data.json on Drive yet.
+        // Retry with backoff (3 attempts, 5s apart) before falling back to Phase 1.
+        if (cachedKeyHex.isNotBlank() && cachedPublicId.isBlank() && token.isNotBlank()) {
+            Log.w(TAG, "Have signal key but no public sheet ID — waiting for orchestrator to provision")
+            for (attempt in 1..3) {
+                delay(5_000L)
+                try {
+                    val (freshPublicId, _) = fetchSheetIdsFromDrive(token)
+                    if (freshPublicId.isNotBlank()) {
+                        prefs.edit().putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, freshPublicId).apply()
+                        Log.i(TAG, "Phase 2: public sheet appeared on Drive after ${attempt * 5}s: $freshPublicId")
+                        connectToSheet(freshPublicId)
+                        return@withContext
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Drive retry $attempt/3 failed: ${e.message}")
+                }
+            }
+            // Still no public sheet — fall through to Phase 1 (re-fetch key will also get sheet)
+            Log.w(TAG, "Public sheet still missing after 15s — clearing key, falling back to Phase 1")
+            prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
+        }
+
+        // Re-read after potential key clear above
+        val finalPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+
         // ── Phase 1: No key — connect to private sheet for key exchange ──
-        if (cachedPrivateId.isNotBlank()) {
-            if (currentSheetId == cachedPrivateId) return@withContext  // already waiting for key
+        if (finalPrivateId.isNotBlank()) {
+            if (currentSheetId == finalPrivateId) return@withContext  // already waiting for key
             if (currentSheetId != null) disconnectPeer()
-            Log.i(TAG, "Phase 1: connecting to private sheet $cachedPrivateId for key exchange")
-            connectToPrivateSheet(cachedPrivateId)
+            Log.i(TAG, "Phase 1: connecting to private sheet $finalPrivateId for key exchange")
+            connectToPrivateSheet(finalPrivateId)
             return@withContext
         }
 

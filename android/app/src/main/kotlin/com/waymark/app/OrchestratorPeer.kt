@@ -288,6 +288,7 @@ class OrchestratorPeer(
     private suspend fun poll() = withContext(Dispatchers.IO) {
         if (destroyed || block < 0) return@withContext
         try {
+            Log.d(TAG, "poll() tick — block=$block peers=${peers.size}")
             val vals     = signalingClient.readAll()
             _sheetsFailures.set(0)  // successful Sheets read — reset error count
 
@@ -305,8 +306,34 @@ class OrchestratorPeer(
                 _decryptFailures.set(0)
             }
 
+            // ── Slot eviction check ──
+            // If another peer overwrote our presence cell (collision), our
+            // heartbeat is gone.  Detect this and re-join on a different slot
+            // immediately rather than silently operating on a clobbered block.
+            val myPresence = parseJson(vals.getOrNull(block))
+            if (myPresence == null || myPresence.optString("peerId") != peerId) {
+                val evictedBy = myPresence?.optString("peerId") ?: "(empty)"
+                Log.w(TAG, "Slot $block was taken by $evictedBy — re-joining mesh")
+                // Close all connections — they were built with the old block's signal rows
+                for ((rId, entry) in peers.entries.toList()) {
+                    peers.remove(rId)?.pc?.dispose()
+                    lastPong.remove(rId)
+                }
+                remoteNonces.clear()
+                fireConnectionState()
+                block = findSlot(vals)
+                if (block < 0) {
+                    Log.e(TAG, "No free slot after eviction — mesh full")
+                    return@withContext
+                }
+                Log.i(TAG, "Re-joined mesh at block=$block")
+                heartbeat()
+                return@withContext // skip rest of poll — next cycle discovers peers
+            }
+
             val alive    = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
+            Log.d(TAG, "poll: alive=${aliveIds.size} ids=${aliveIds.joinToString(",")}")
 
             // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
             val now = System.currentTimeMillis()

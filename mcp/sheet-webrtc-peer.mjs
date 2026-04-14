@@ -477,6 +477,26 @@ export class SheetWebRtcPeer {
         this._polling = true;
         try {
             const vals  = await this._readAll();
+
+            // ── Slot eviction check ──
+            // If another peer overwrote our presence cell (collision), our
+            // heartbeat is gone.  Detect this and re-join on a different slot
+            // immediately rather than silently operating on a clobbered block.
+            const myPresence = this._parseJson(vals[this.block]);
+            if (!myPresence || myPresence.peerId !== this.peerId) {
+                this._log(`slot ${this.block} was taken by ${myPresence?.peerId ?? '(empty)'} — re-joining mesh`);
+                // Close all connections — they were built with the old block's signal rows
+                for (const id of [...this.peers.keys()]) this._closeOne(id);
+                this.block = this._findSlot(vals);
+                if (this.block < 0) {
+                    this._log("no free slot after eviction — mesh full");
+                    return;
+                }
+                this._log(`re-joined at block=${this.block}`);
+                await this._heartbeat();
+                return; // skip rest of this poll cycle — next cycle will discover peers
+            }
+
             const alive = this._scanAlive(vals);
             const aliveIds = new Set(alive.map(p => p.peerId));
             const buildJobs = []; // { type: 'offer'|'answer', remoteId, offerSdp? }
