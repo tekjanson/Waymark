@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "test":          "mocha --timeout 0 --slow 30000 --exit 'tests/**/*.test.mjs'",
+    "test:connection": "mocha --timeout 0 --slow 30000 --exit 'tests/00-connection.test.mjs'",
     "test:happy":    "mocha --timeout 0 --slow 30000 --exit 'tests/01-happy-path.test.mjs'",
     "test:network":  "mocha --timeout 0 --slow 30000 --exit 'tests/02-network-resilience.test.mjs'",
     "test:orch":     "mocha --timeout 0 --slow 30000 --exit 'tests/03-orchestrator-failure.test.mjs'",
     "test:lifecycle": "mocha --timeout 0 --slow 30000 --exit 'tests/04-app-lifecycle.test.mjs'",
     "test:soak":     "mocha --timeout 0 --slow 60000 --exit 'tests/05-soak.test.mjs'",
+    "test:lte":      "mocha --timeout 0 --slow 60000 --exit 'tests/06-lte-stability.test.mjs'",
     "test:full":     "node runner.mjs",
     "setup":         "node setup.mjs"
   },

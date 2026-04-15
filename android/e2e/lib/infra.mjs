@@ -286,7 +286,9 @@ function grantNotificationPermission() {
 }
 
 function installApk(apkPath) {
-    adb(`install -r -g "${apkPath}"`, { timeout: 120_000 });
+    // Push then install locally — avoids slow USB streamed install on some devices
+    adb(`push "${apkPath}" /data/local/tmp/waymark.apk`, { timeout: 300_000 });
+    adbShell(`pm install -r -g /data/local/tmp/waymark.apk`);
 }
 
 function isAppInstalled() {
@@ -491,6 +493,7 @@ export async function bootstrap(opts = {}) {
     // Safety: restore network in case a previous failed test left it off
     try { setAirplaneMode(false); } catch { /* ok */ }
     try { setWifi(true); } catch { /* ok */ }
+    try { setMobileData(true); } catch { /* ok */ }
 
     // 1. Resolve signaling infra using the REAL production flow
     console.log("  Resolving signaling infrastructure (same as orchestrator)...");
@@ -629,6 +632,20 @@ export class TestInfra {
                     const m = line.match(/\[([0-9a-f]{8})\]/);
                     if (m) this._receivedNonces.add(m[1]);
                 }
+                // Surface ICE diagnostics from Android to test output
+                if (line.includes("ICE ") && (line.includes("pair[") || line.includes("pair-changed") || line.includes("DISCONNECTED") || line.includes("FAILED") || line.includes("→"))) {
+                    const payload = line.replace(/^.*?OrchestratorPeer:\s*/, "      [android] ");
+                    process.stdout.write(payload + "\n");
+                }
+                // Surface ConnectionManager / WebRtcService lifecycle events
+                if (line.includes("ConnectionManager") && (line.includes("State:") || line.includes("nudging") || line.includes("Sheet ID changed") || line.includes("tearDown") || line.includes("Connecting"))) {
+                    const payload = line.replace(/^.*?ConnectionManager:\s*/, "      [connmgr] ");
+                    process.stdout.write(payload + "\n");
+                }
+                if (line.includes("WebRtcService") && (line.includes("Network") || line.includes("reconnect") || line.includes("Re-bootstrap") || line.includes("Token"))) {
+                    const payload = line.replace(/^.*?WebRtcService:\s*/, "      [service] ");
+                    process.stdout.write(payload + "\n");
+                }
             }
         });
     }
@@ -764,6 +781,7 @@ export class TestInfra {
         // Restore network
         try { setAirplaneMode(false); } catch { /* ok */ }
         try { setWifi(true); } catch { /* ok */ }
+        try { setMobileData(true); } catch { /* ok */ }
 
         // Stop app
         forceStopApp();

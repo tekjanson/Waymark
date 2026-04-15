@@ -245,13 +245,28 @@ class ConnectionManager(
         val cachedSheetId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
 
         if (cachedSheetId.isNotBlank()) {
-            // Already connected to this sheet with a healthy peer — no-op
+            // If the existing peer is alive, never tear it down during a Drive refresh.
+            // The peer's own poll loop handles ICE rebuilds after network disruption.
+            // Tearing down here creates a new OrchestratorPeer (new sessionNonce),
+            // which triggers a nonce-flap loop on the remote side.  Sheet changes
+            // are handled exclusively by requestRebootstrap().
+            //
+            // NOTE: we intentionally do NOT require peer.isInMesh here.
+            // A freshly-created peer that hasn't joined yet (block=-1) is
+            // still starting up — tearing it down prematurely creates a
+            // second peer that races with the first, causing nonce thrash.
             val peer = previousState.activePeer
             if (previousState is ConnectionState.Connected
-                && previousState.activeSheetId == cachedSheetId
-                && peer != null && !peer.destroyed && peer.isInMesh
+                && peer != null && !peer.destroyed
             ) {
-                Log.d(TAG, "Already connected to sheet $cachedSheetId — no-op")
+                // Nudge the peer's retry loop — if it's sleeping in an exponential
+                // backoff after a Sheets IO failure (e.g., WiFi was off), this wakes
+                // it immediately so polls resume fast.
+                if (previousState.activeSheetId != cachedSheetId) {
+                    Log.w(TAG, "Sheet ID changed (${previousState.activeSheetId} → $cachedSheetId) but peer is in mesh — deferring until rebootstrap")
+                }
+                Log.d(TAG, "Peer alive (inMesh=${peer.isInMesh}) — nudging retry")
+                peer.nudgeRetry()
                 return@withLock
             }
             transitionTo(ConnectionState.Connecting)

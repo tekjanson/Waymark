@@ -36,6 +36,7 @@ const SUITES = [
     { name: "orchestrator-failure",file: "03-orchestrator-failure.test.mjs", soak: false },
     { name: "app-lifecycle",       file: "04-app-lifecycle.test.mjs",        soak: false },
     { name: "soak",                file: "05-soak.test.mjs",                 soak: true  },
+    { name: "lte-stability",       file: "06-lte-stability.test.mjs",        soak: true  },
 ];
 
 function filterSuites() {

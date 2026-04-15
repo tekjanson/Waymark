@@ -159,8 +159,13 @@ class WebRtcService : LifecycleService() {
 
     private fun updateForegroundNotification(state: ConnectionState) {
         val peer = state.activePeer
-        val connected = peer != null && !peer.destroyed && peer.isInMesh
+        val inMesh = peer != null && !peer.destroyed && peer.isInMesh
         val peerCount = peer?.openDataChannelCount ?: 0
+        // Show "Connected" only when we actually have open DataChannels.
+        // isInMesh alone just means we have a signaling slot — not that we
+        // can actually reach anyone. Showing "Connected · 0 peer(s)" is
+        // misleading; show "Waiting" instead so the user knows we're trying.
+        val connected = inMesh && peerCount > 0
 
         try {
             startForeground(
