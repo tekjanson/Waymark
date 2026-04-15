@@ -142,13 +142,11 @@ const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-/** @type {string|null} resolved sheet ID, cached in memory once resolved */
+/** @type {string|null} resolved signaling sheet ID, cached in memory once resolved */
 let _resolvedSignalingSheetId = null;
-/** @type {SheetWebRtcPeer|null} Public-sheet peer for encrypted notification traffic */
+/** @type {SheetWebRtcPeer|null} Signaling peer on the OAuth-protected sheet */
 let _signalingPeer = null;
-/** @type {SheetWebRtcPeer|null} Private-sheet peer for key distribution (plaintext, OAuth-protected) */
-let _privateSignalingPeer = null;
-/** @type {ReturnType<typeof setInterval>|null} Health check timer for signaling peers */
+/** @type {ReturnType<typeof setInterval>|null} Health check timer for signaling peer */
 let _signalingHealthTimer = null;
 
 /**
@@ -188,10 +186,6 @@ async function getUserOAuthToken() {
     return tokenData.access_token;
 }
 
-/** Resolved public signaling sheet ID — separate from the private key sheet */
-let _resolvedPublicSignalingSheetId = null;
-/** Resolved AES-256 signal key hex from the local key file */
-let _resolvedSignalKeyHex = null;
 /** Cached Drive file ID for .waymark-data.json (avoids repeat searches) */
 let _dataFileId = null;
 
@@ -268,21 +262,20 @@ async function driveUpdateJson(fileId, data, token) {
 }
 
 /**
- * Ensure all signaling infrastructure exists. Reads .waymark-data.json once,
- * validates both sheet IDs (checking the actual sheets still exist on Drive),
- * auto-creates any missing sheets, sets public write permission, and saves
- * changes back to .waymark-data.json.
+ * Ensure signaling infrastructure exists. Reads .waymark-data.json once,
+ * validates the signaling sheet ID (checking it still exists on Drive),
+ * auto-creates if missing, and saves changes back to .waymark-data.json.
  *
- * Returns { privateSheetId, publicSheetId } or null on failure.
- * Caches both IDs so subsequent calls are instant.
+ * Single-sheet architecture: one OAuth-protected Google Sheet, no encryption.
+ * Matches the E2E test infra and Android ConnectionManager.
+ *
+ * Returns { signalingSheetId } or null on failure.
+ * Caches the ID so subsequent calls are instant.
  */
 async function ensureSignalingInfra() {
-    // Fast path: both already validated and cached
-    if (_resolvedSignalingSheetId && _resolvedPublicSignalingSheetId) {
-        return {
-            privateSheetId: _resolvedSignalingSheetId,
-            publicSheetId:  _resolvedPublicSignalingSheetId,
-        };
+    // Fast path: already validated and cached
+    if (_resolvedSignalingSheetId) {
+        return { signalingSheetId: _resolvedSignalingSheetId };
     }
 
     const token = await getUserOAuthToken();
@@ -325,50 +318,26 @@ async function ensureSignalingInfra() {
     const data = await fileRes.json();
     let dirty = false;
 
-    // ── Private sheet — plaintext, OAuth-protected key exchange ──
-    let privateId = data.signalingSheetId || null;
-    if (privateId && !(await sheetExists(privateId, token))) {
-        process.stderr.write(`orchestrator: private sheet ${privateId} deleted from Drive — recreating\n`);
-        privateId = null;
+    // ── Signaling sheet — OAuth-protected ──
+    let sheetId = data.signalingSheetId || null;
+    if (sheetId && !(await sheetExists(sheetId, token))) {
+        process.stderr.write(`orchestrator: signaling sheet ${sheetId} deleted from Drive — recreating\n`);
+        sheetId = null;
     }
-    if (!privateId) {
+    if (!sheetId) {
         // Search Drive by name first to avoid creating duplicates
         const found = await driveFindByName(".waymark-signaling", token);
         if (found && (await sheetExists(found, token))) {
-            process.stderr.write(`orchestrator: found orphaned private sheet on Drive: ${found}\n`);
-            privateId = found;
+            process.stderr.write(`orchestrator: found orphaned signaling sheet on Drive: ${found}\n`);
+            sheetId = found;
         } else {
-            process.stderr.write("orchestrator: auto-provisioning private signaling sheet (.waymark-signaling)\n");
-            privateId = await createSpreadsheet(".waymark-signaling", token);
-            process.stderr.write(`orchestrator: created private sheet: ${privateId}\n`);
+            process.stderr.write("orchestrator: auto-provisioning signaling sheet (.waymark-signaling)\n");
+            sheetId = await createSpreadsheet(".waymark-signaling", token);
+            process.stderr.write(`orchestrator: created signaling sheet: ${sheetId}\n`);
         }
-        data.signalingSheetId = privateId;
+        data.signalingSheetId = sheetId;
         dirty = true;
     }
-
-    // ── Public sheet — AES-256-GCM encrypted, publicly writable ──
-    let publicId = data.publicSignalingSheetId || null;
-    if (publicId && !(await sheetExists(publicId, token))) {
-        process.stderr.write(`orchestrator: public sheet ${publicId} deleted from Drive — recreating\n`);
-        publicId = null;
-    }
-    if (!publicId) {
-        // Search Drive by name first to avoid creating duplicates
-        const found = await driveFindByName(".waymark-public-signaling", token);
-        if (found && (await sheetExists(found, token))) {
-            process.stderr.write(`orchestrator: found orphaned public sheet on Drive: ${found}\n`);
-            publicId = found;
-        } else {
-            process.stderr.write("orchestrator: auto-provisioning public signaling sheet (.waymark-public-signaling)\n");
-            publicId = await createSpreadsheet(".waymark-public-signaling", token);
-            process.stderr.write(`orchestrator: created public sheet: ${publicId}\n`);
-        }
-        data.publicSignalingSheetId = publicId;
-        dirty = true;
-    }
-
-    // Always ensure public write permission (idempotent — safe to call if already set)
-    await setPublicWritable(publicId, token);
 
     // Persist any changes back to Drive
     if (dirty) {
@@ -377,11 +346,10 @@ async function ensureSignalingInfra() {
         process.stderr.write("orchestrator: saved updated sheet IDs to .waymark-data.json on Drive\n");
     }
 
-    // Cache resolved IDs
-    _resolvedSignalingSheetId = privateId;
-    _resolvedPublicSignalingSheetId = publicId;
-    process.stderr.write(`orchestrator: signaling infra ready — private=${privateId} public=${publicId}\n`);
-    return { privateSheetId: privateId, publicSheetId: publicId };
+    // Cache resolved ID
+    _resolvedSignalingSheetId = sheetId;
+    process.stderr.write(`orchestrator: signaling infra ready — sheet=${sheetId}\n`);
+    return { signalingSheetId: sheetId };
 }
 
 /**
@@ -390,71 +358,19 @@ async function ensureSignalingInfra() {
  */
 function invalidateSignalingCache() {
     _resolvedSignalingSheetId = null;
-    _resolvedPublicSignalingSheetId = null;
     process.stderr.write("orchestrator: signaling sheet cache invalidated\n");
 }
 
 /**
- * Reads the AES-256 signal key from the local key file.
+ * Single-sheet WebRTC signaling startup.
  *
- * The key is NEVER stored in any Google Sheet. It lives only in:
- *   - Browser: localStorage['waymark_signal_key']
- *   - Android: SharedPreferences PREF_SIGNAL_KEY
- *   - Node:    ~/.config/gcloud/waymark-signal.key (or WAYMARK_KEY_FILE env)
- *
- * Returns the 64-char hex key, or null if not yet provisioned.
- */
-function resolveSignalKey() {
-    if (_resolvedSignalKeyHex) return _resolvedSignalKeyHex;
-
-    const keyFile = process.env.WAYMARK_KEY_FILE
-        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
-    try {
-        const key = readFileSync(keyFile, "utf8").trim();
-        if (key.length !== 64) return null;
-        _resolvedSignalKeyHex = key;
-        process.stderr.write(`orchestrator: signal key resolved from ${keyFile} (${key.length / 2} bytes)\n`);
-        return key;
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Generate a new AES-256 signal key, save to the local key file, and cache in memory.
- * @returns {string} 64-char hex key
- */
-async function generateAndSaveSignalKey() {
-    const { randomBytes: rb } = await import("node:crypto");
-    const keyHex = rb(32).toString("hex");
-    const keyFile = process.env.WAYMARK_KEY_FILE
-        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
-    const dir = path.dirname(keyFile);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(keyFile, keyHex + "\n", { mode: 0o600 });
-    _resolvedSignalKeyHex = keyHex;
-    process.stderr.write(`orchestrator: generated new signal key → ${keyFile} (32 bytes)\n`);
-    return keyHex;
-}
-
-/**
- * Two-phase WebRTC signaling startup.
- *
- * Phase 1 — Private sheet (plaintext, OAuth-protected):
- *   Connects to .waymark-signaling for key distribution. When any peer joins
- *   via DataChannel, the orchestrator sends them the AES key. This peer stays
- *   alive so late-joining or rekeyed peers can always fetch the current key.
- *
- * Phase 2 — Public sheet (AES-256-GCM encrypted):
- *   Connects to .waymark-public-signaling with the key. Normal notification
- *   traffic flows here. Also sends the key if a peer requests it over DC.
+ * Connects to the OAuth-protected .waymark-signaling sheet — the same
+ * sheet that Android discovers from .waymark-data.json. No encryption,
+ * no key exchange.  Matches the E2E test infra and Android app.
  *
  * Resilience:
- *   - The public peer uses getEncryptionKey() so key rotations take effect
- *     immediately without reconnecting.
- *   - The private peer always reads the CURRENT key from _resolvedSignalKeyHex
- *     when distributing, so a rotated key is distributed correctly.
- *   - A periodic health check restarts any peer that has lost its mesh slot.
+ *   - A periodic health check restarts the peer if it loses its mesh slot
+ *     or has 0 connections for an extended period.
  */
 async function startSignalingPeer() {
     let infra;
@@ -465,69 +381,23 @@ async function startSignalingPeer() {
         return;
     }
     if (!infra) return;
-    const { privateSheetId, publicSheetId } = infra;
-
-    // Read or generate the AES-256 signal key
-    let signalKey = resolveSignalKey();
-    if (!signalKey) {
-        signalKey = await generateAndSaveSignalKey();
-    }
+    const { signalingSheetId } = infra;
 
     // Stable 8-char hex peer ID for this MCP server instance
     const { createHash } = await import("node:crypto");
-    const basePeerId = createHash("sha256")
-        .update("orchestrator-mcp-" + publicSheetId)
+    const peerId = createHash("sha256")
+        .update("orchestrator-mcp-" + signalingSheetId)
         .digest("hex")
         .slice(0, 8);
 
-    /** Always return the freshest key — reads from cached memory variable
-     *  which is updated by resolveSignalKey() / generateAndSaveSignalKey(). */
-    const currentKey = () => _resolvedSignalKeyHex;
-
-    // ── Phase 1: Private sheet — key distribution (plaintext, OAuth-protected) ──
-    if (privateSheetId) {
-        // Use a distinct peerId for the private sheet so both peers can coexist
-        const privatePeerId = createHash("sha256")
-            .update("orchestrator-mcp-private-" + privateSheetId)
-            .digest("hex")
-            .slice(0, 8);
-
-        _privateSignalingPeer = new SheetWebRtcPeer({
-            sheetId:     privateSheetId,
-            getToken:    getUserOAuthToken,
-            peerId:      privatePeerId,
-            displayName: "Orchestrator MCP (Key Exchange)",
-            // NO encryptionKey — plaintext signaling on the OAuth-protected private sheet
-            onConnect: (remotePeerId) => {
-                const key = currentKey();
-                process.stderr.write(`orchestrator: peer ${remotePeerId} connected on private sheet — sending key (${key?.slice(0, 8)}…)\n`);
-                if (key) _privateSignalingPeer.sendKeyExchangeTo(remotePeerId, key);
-            },
-            onMessage: (remotePeerId, msg) => {
-                // Peers may request a key re-send
-                if (msg.type === "waymark-key-request") {
-                    const key = currentKey();
-                    process.stderr.write(`orchestrator: key-request from ${remotePeerId} on private sheet\n`);
-                    if (key) _privateSignalingPeer.sendKeyExchangeTo(remotePeerId, key);
-                }
-            },
-        });
-        await _privateSignalingPeer.start();
-        process.stderr.write(`orchestrator: Phase 1 — private sheet peer started (key distribution)\n`);
-    } else {
-        process.stderr.write("orchestrator: private sheet not found — skipping Phase 1 key distribution\n");
-    }
-
-    // ── Phase 2: Public sheet — encrypted notification traffic ──
     _signalingPeer = new SheetWebRtcPeer({
-        sheetId:          publicSheetId,
-        getToken:         getUserOAuthToken,
-        peerId:           basePeerId,
-        displayName:      "Orchestrator MCP",
-        getEncryptionKey: currentKey,
-        bufferFile:       `${LOG_DIR}/notif-buffer.json`,
+        sheetId:     signalingSheetId,
+        getToken:    getUserOAuthToken,
+        peerId,
+        displayName: "Orchestrator MCP",
+        bufferFile:  `${LOG_DIR}/notif-buffer.json`,
         onConnect: (remotePeerId) => {
-            process.stderr.write(`orchestrator: peer ${remotePeerId} connected on public sheet\n`);
+            process.stderr.write(`orchestrator: peer ${remotePeerId} connected\n`);
             if (_wakeResolve) _wakeResolve("peer-connected");
         },
         onMessage: (remotePeerId, msg) => {
@@ -535,35 +405,27 @@ async function startSignalingPeer() {
         },
     });
     await _signalingPeer.start();
-    process.stderr.write(`orchestrator: Phase 2 — public sheet peer started (encrypted)\n`);
+    process.stderr.write(`orchestrator: signaling peer started on sheet=${signalingSheetId}\n`);
 
-    // ── Health check: restart peers that lost their slot ──
-    // Also detects peers that have a slot but are stuck with no connections
-    // for an extended period (e.g. after a network transition killed all ICE).
-    let _publicPeerEmptySince  = 0; // epoch when public peer first had 0 connections
-    let _privatePeerEmptySince = 0;
+    // ── Health check: restart peer if it lost its slot ──
+    let _peerEmptySince = 0;
     const STALE_PEER_MS = 3 * 60_000; // restart if 0 connections for 3 min
 
-    async function restartPeer(peer, label) {
+    async function restartPeer(label) {
         process.stderr.write(`orchestrator: ${label} — restarting\n`);
-        peer.stop();
-        peer.destroyed = false;
-        peer.block = -1;
+        _signalingPeer.stop();
+        _signalingPeer.destroyed = false;
+        _signalingPeer.block = -1;
         try {
-            await peer.start();
+            await _signalingPeer.start();
             process.stderr.write(`orchestrator: ${label} — restarted successfully\n`);
         } catch (e) {
             process.stderr.write(`orchestrator: ${label} restart failed: ${e.message}\n`);
-            // Sheet may have been deleted — invalidate caches so the next
-            // health tick re-provisions via ensureSignalingInfra() and
-            // calls startSignalingPeer() from scratch.
             invalidateSignalingCache();
             process.stderr.write(`orchestrator: scheduling full signaling re-provision in 30s\n`);
             setTimeout(async () => {
                 try {
-                    // Stop both peers before re-provisioning
                     if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
-                    if (_privateSignalingPeer) { _privateSignalingPeer.stop(); _privateSignalingPeer = null; }
                     if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
                     await startSignalingPeer();
                 } catch (e2) {
@@ -574,28 +436,19 @@ async function startSignalingPeer() {
     }
 
     _signalingHealthTimer = setInterval(() => {
-        // Public peer health
         if (_signalingPeer && !_signalingPeer.destroyed) {
             if (_signalingPeer.block < 0) {
-                restartPeer(_signalingPeer, "public peer lost slot");
-                _publicPeerEmptySince = 0;
+                restartPeer("peer lost slot");
+                _peerEmptySince = 0;
             } else if (_signalingPeer.connectedPeers().length === 0) {
-                if (!_publicPeerEmptySince) _publicPeerEmptySince = Date.now();
-                else if (Date.now() - _publicPeerEmptySince > STALE_PEER_MS) {
-                    restartPeer(_signalingPeer, "public peer 0 connections for 3min");
-                    _publicPeerEmptySince = 0;
+                if (!_peerEmptySince) _peerEmptySince = Date.now();
+                else if (Date.now() - _peerEmptySince > STALE_PEER_MS) {
+                    restartPeer("peer 0 connections for 3min");
+                    _peerEmptySince = 0;
                 }
             } else {
-                _publicPeerEmptySince = 0;
+                _peerEmptySince = 0;
             }
-        }
-        // Private peer health
-        if (_privateSignalingPeer && !_privateSignalingPeer.destroyed) {
-            if (_privateSignalingPeer.block < 0) {
-                restartPeer(_privateSignalingPeer, "private peer lost slot");
-                _privatePeerEmptySince = 0;
-            }
-            // Private peer doesn't need the stale-empty check — it's only for key exchange
         }
     }, 60_000);
 }
@@ -976,37 +829,16 @@ const wakeServer = createServer((req, res) => {
         // Detailed signaling peer status
         const status = {
             ok: true,
-            publicPeer: _signalingPeer ? {
+            peer: _signalingPeer ? {
                 peerId: _signalingPeer.peerId,
                 block: _signalingPeer.block,
                 destroyed: _signalingPeer.destroyed,
                 connectedPeers: _signalingPeer.connectedPeers(),
                 sheetId: _signalingPeer.sheetId,
             } : null,
-            privatePeer: _privateSignalingPeer ? {
-                peerId: _privateSignalingPeer.peerId,
-                block: _privateSignalingPeer.block,
-                destroyed: _privateSignalingPeer.destroyed,
-                connectedPeers: _privateSignalingPeer.connectedPeers(),
-                sheetId: _privateSignalingPeer.sheetId,
-            } : null,
-            keyPrefix: _resolvedSignalKeyHex?.slice(0, 8) ?? null,
         };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(status));
-    } else if (req.method === "POST" && req.url === "/rekey") {
-        // Re-read the key file and push to all private-sheet peers.
-        // Used after provision-signaling.mjs --force-key or manual key rotation.
-        _resolvedSignalKeyHex = null; // clear cache
-        const key = resolveSignalKey();
-        if (key && _privateSignalingPeer) {
-            const sent = _privateSignalingPeer.broadcastKeyExchange(key);
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: true, keyPrefix: key.slice(0, 8), sentTo: sent }));
-        } else {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: false, reason: !key ? "no key file" : "no private peer" }));
-        }
     } else {
         res.writeHead(404);
         res.end();
@@ -1101,10 +933,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // (Re-)start signaling peers with fresh infrastructure validation.
         // Tear down any existing peers first — sheets may have been deleted
         // between boots while the MCP process stayed alive.
-        if (_signalingPeer || _privateSignalingPeer) {
-            process.stderr.write("orchestrator: tearing down existing signaling peers for clean re-provision\n");
-            if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
-            if (_privateSignalingPeer) { _privateSignalingPeer.stop(); _privateSignalingPeer = null; }
+        if (_signalingPeer) {
+            process.stderr.write("orchestrator: tearing down existing signaling peer for clean re-provision\n");
+            _signalingPeer.stop(); _signalingPeer = null;
             if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
             invalidateSignalingCache();
         }
