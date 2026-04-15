@@ -15,11 +15,17 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.webkit.*
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +48,8 @@ class MainActivity : AppCompatActivity() {
 
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
+        requestBatteryOptimizationExemption()
+        scheduleWatchdog()
 
         bridge = WaymarkBridge(this)
         webView = findViewById(R.id.webView)
@@ -162,5 +170,42 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * Ask the user to exempt Waymark from battery optimization (Doze).
+     *
+     * Without this exemption, Android can block network access for foreground
+     * services during Doze windows, which silently kills the P2P connection.
+     * The system dialog is shown at most once — Android remembers the choice.
+     */
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                    )
+                } catch (_: Exception) {
+                    // Some OEMs remove this dialog — fail silently
+                }
+            }
+        }
+    }
+
+    /**
+     * Schedule a periodic watchdog that restarts [WebRtcService] every 15 minutes.
+     * Survives aggressive OEM process kills where START_STICKY doesn't fire.
+     * KEEP policy ensures we don't reset the schedule on every activity launch.
+     */
+    private fun scheduleWatchdog() {
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "waymark_watchdog",
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build()
+        )
     }
 }

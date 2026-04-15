@@ -2,15 +2,20 @@
 /* ============================================================
    mesh-test.mjs — WebRTC P2P mesh E2E testing jig
 
-   Runs against the REAL signaling sheet and the REAL Android app
-   over ADB wireless debugging. Tests every connection edge case
-   that can break notification delivery.
+   Tests the encrypted public-signaling architecture:
+     1. Private sheet (.waymark-signaling): plain text config only (NO key)
+     2. Public sheet (.waymark-public-signaling): WebRTC signaling, cells
+        encrypted with the AES-256 key stored locally on each device.
 
-   Architecture:
-     Node.js (SheetWebRtcPeer) ←→ Google Sheets ←→ Android (OrchestratorPeer)
-                                                              ↓
-                                                    adb logcat (read logcat stream
-                                                    to observe Android state)
+   The AES-256 key is NEVER in any Google Sheet.  It lives in:
+     • ~/.config/gcloud/waymark-signal.key  (Node / this machine)
+     • Android SharedPreferences (PREF_SIGNAL_KEY)
+     • SIGNAL_KEY env var (override for CI)
+
+   Node.js (SheetWebRtcPeer) ←→ Encrypted public Google Sheet ←→ Android (OrchestratorPeer)
+                                                                         ↓
+                                                               adb logcat (read logcat stream
+                                                               to observe Android state)
 
    Usage:
      node scripts/mesh-test.mjs [--scenario <name>] [--all] [--adb <ip:port>]
@@ -22,7 +27,9 @@
    Optional env:
      ADB_DEVICE    IP:port of Android for wireless debugging  (e.g. 192.168.1.42:5555)
                    If unset, logcat observation is skipped but all Node-side scenarios still run.
-     SIGNAL_SHEET  Override signaling sheet ID directly (skip Drive lookup)
+     SIGNAL_SHEET  Override the PUBLIC signaling sheet ID directly (skip Drive lookup)
+     PRIV_SHEET    Override the PRIVATE config sheet ID directly (skip Drive lookup)
+     SIGNAL_KEY    Override AES-256 key hex (skip local key file)
 
    Scenarios:
      fresh-join          New Node peer joins empty mesh, Android connects
@@ -31,6 +38,7 @@
      stale-offer         Age an offer past OFFER_MAX_AGE, verify rebuild
      sustained-ping      Confirm ping/pong keepalive over 2 intervals
      notification        Send waymark-notification, verify Android logcat shows it
+     key-cycling         Verify peers detect + handle a cycled encryption key
      full-roundtrip      All of the above in sequence (the regression suite)
 
    Exit codes:
@@ -41,12 +49,12 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { spawn, execSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 // SheetWebRtcPeer — the real Node.js WebRTC peer (same code the orchestrator uses)
-import { SheetWebRtcPeer } from "../mcp/sheet-webrtc-peer.mjs";
+import { SheetWebRtcPeer, encryptCell, decryptCell } from "../mcp/sheet-webrtc-peer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.resolve(__dirname, "..");
@@ -75,6 +83,20 @@ const OAUTH_TOKEN_PATH = process.env.WAYMARK_OAUTH_TOKEN_PATH
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
 
+// Resolved once in main(), used by all helper functions that read/write the sheet
+let _encKey         = null;  // AES-256 GCM key hex from local key file
+let _privateSheetId = null;  // private (.waymark-signaling) sheet ID
+
+/** Encrypt a cell value if we have a key; pass through otherwise */
+function encryptOrRaw(value) {
+    return (_encKey && value) ? encryptCell(value, _encKey) : value;
+}
+/** Decrypt a cell value if we have a key; pass through otherwise */
+function decryptOrRaw(value) {
+    if (!value || !_encKey) return value;
+    return decryptCell(value, _encKey) ?? value;
+}
+
 async function getOAuthToken() {
     let tok;
     try { tok = JSON.parse(readFileSync(OAUTH_TOKEN_PATH, "utf8")); }
@@ -101,8 +123,8 @@ async function getOAuthToken() {
     return tok.access_token;
 }
 
-async function resolveSignalingSheet() {
-    if (process.env.SIGNAL_SHEET) return process.env.SIGNAL_SHEET;
+/** Fetch .waymark-data.json from Drive and return parsed object */
+async function _loadWaymarkData() {
     const token = await getOAuthToken();
     const q = encodeURIComponent("name='.waymark-data.json' and mimeType='application/json' and trashed=false");
     const res = await fetch(`${DRIVE_FILES}?q=${q}&fields=files(id)&pageSize=1`, {
@@ -114,9 +136,46 @@ async function resolveSignalingSheet() {
     const fileRes = await fetch(`${DRIVE_FILES}/${files[0].id}?alt=media`, {
         headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await fileRes.json();
+    return fileRes.json();
+}
+
+/** Resolve the PUBLIC signaling sheet ID (AES-encrypted cells, no OAuth needed at runtime) */
+async function resolveSignalingSheet() {
+    if (process.env.SIGNAL_SHEET) return process.env.SIGNAL_SHEET;
+    const data = await _loadWaymarkData();
+    const id = data.publicSignalingSheetId;
+    if (!id) die("publicSignalingSheetId missing — run node scripts/provision-signaling.mjs first");
+    if (!id) die("Neither publicSignalingSheetId nor signalingSheetId found in .waymark-data.json — open the web app to initialize it");
+    return id;
+}
+
+/** Resolve the PRIVATE config sheet ID (stores JSON config marker only — never any key) */
+async function resolvePrivateSheetId() {
+    if (process.env.PRIV_SHEET) return process.env.PRIV_SHEET;
+    const data = await _loadWaymarkData();
     if (!data.signalingSheetId) die("signalingSheetId missing in .waymark-data.json — open the web app to initialize it");
     return data.signalingSheetId;
+}
+
+/** Read AES-256 key hex from local key file (never from any sheet) */
+async function resolveEncryptionKey() {
+    if (process.env.SIGNAL_KEY) return process.env.SIGNAL_KEY;
+    const keyFile = process.env.WAYMARK_KEY_FILE
+        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+    try {
+        const key = readFileSync(keyFile, "utf8").trim();
+        if (key.length === 64) return key;
+    } catch {}
+    // Generate a key if one doesn't exist (same as orchestrator first-boot)
+    const newKey = randomBytes(32).toString("hex");
+    const dir = path.dirname(keyFile);
+    if (!existsSync(dir)) {
+        const { mkdirSync } = await import("node:fs");
+        mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(keyFile, newKey + "\n", { mode: 0o600 });
+    log(`  Generated new signal key → ${keyFile}`);
+    return newKey;
 }
 
 /* ============================================================
@@ -263,6 +322,7 @@ function makePeer(sheetId, suffix = "", extraOpts = {}) {
     const peer = new SheetWebRtcPeer({
         sheetId,
         getToken: getOAuthToken,
+        encryptionKey: _encKey || undefined,
         peerId,
         displayName: `TestPeer-${suffix}`,
         onMessage(remotePeerId, msg) { messages.push({ from: remotePeerId, msg }); },
@@ -341,20 +401,50 @@ class TestRunner {
    (same query as SheetWebRtcPeer._readAll, returned as sparse array)
    ============================================================ */
 
-async function readSignalingColumn(sheetId) {
+/** Fetch with automatic exponential backoff on 429 (up to 4 attempts, 2/4/8 s). */
+async function sheetsGet(url) {
+    let lastErr;
+    for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0) await sleep(2_000 * attempt);
+        const token = await getOAuthToken();
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 429) {
+            lastErr = new Error(`Sheets read failed: 429 (quota — retrying)`);
+            log(`  ⚠  quota 429 — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+            continue;
+        }
+        if (!res.ok) throw new Error("Sheets read failed: " + res.status);
+        return res;
+    }
+    throw lastErr;
+}
+
+/**
+ * Wipe every cell in column T of the public signaling sheet.
+ * This gives every test run a guaranteed blank slate.
+ */
+async function cleanPublicSheet(sheetId) {
+    const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START + 1;
     const token = await getOAuthToken();
+    const url = `${SHEETS_BASE}/${sheetId}/values:batchClear`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ranges: [`Sheet1!T1:T${TOTAL_ROWS}`] }),
+    });
+    if (!res.ok) throw new Error(`Sheet clear failed: ${res.status} ${await res.text()}`);
+}
+
+async function readSignalingColumn(sheetId) {
     const TOTAL_ROWS = MAX_SLOTS * BLOCK_SIZE + BLOCK_START;
     const range = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
-    const res = await fetch(`${SHEETS_BASE}/${sheetId}/values/${range}`, {
-        headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Sheets read failed: " + res.status);
+    const res = await sheetsGet(`${SHEETS_BASE}/${sheetId}/values/${range}`);
     const data = await res.json();
     const rows = data.values || [];
     const result = new Array(TOTAL_ROWS + 2).fill(null);
     for (let i = 0; i < rows.length; i++) {
-        const cell = rows[i]?.[0];
-        if (cell != null && cell !== "") result[i + BLOCK_START] = cell;
+        const raw = rows[i]?.[0];
+        if (raw != null && raw !== "") result[i + BLOCK_START] = decryptOrRaw(raw);
     }
     return result;
 }
@@ -393,6 +483,106 @@ async function listLivePeers(sheetId) {
 }
 
 /* ============================================================
+   Android bootstrap: Phase 1 → DataChannel key exchange → Phase 2
+
+   This is the PRODUCTION flow. No adb key injection.
+   1. Launch app → Android discovers sheets from Drive → no key → Phase 1
+   2. Node peer joins private sheet (plaintext) → DC opens → sends key
+   3. Android receives key → disconnects private → joins public (Phase 2)
+   ============================================================ */
+
+async function bootstrapAndroid(publicSheetId, privateSheetId, encKey) {
+    if (!_adbSerial) return null;
+
+    log("\n  ── Android bootstrap: Phase 1 → key exchange → Phase 2 ──");
+
+    // Step 1: Launch the app (ensures process is alive for the CLEAR broadcast)
+    log("    Launching app…");
+    try {
+        adb("shell", "am", "start", "-n", "com.waymark.app/.MainActivity");
+    } catch {
+        try { adb("shell", "monkey", "-p", "com.waymark.app", "-c", "android.intent.category.LAUNCHER", "1"); }
+        catch { log("    ✗ Could not launch app"); return null; }
+    }
+    await sleep(3_000);
+
+    // Step 2: Clear the signal key — forces Phase 1 key exchange flow
+    // This is the ONLY adb interaction: it clears state, never injects a key.
+    log("    Clearing signal key → forcing Phase 1…");
+    try {
+        adb("shell", "am", "broadcast", "-n", "com.waymark.app/.SignalKeyReceiver",
+            "-a", "com.waymark.app.action.CLEAR_SIGNAL_KEY");
+    } catch (e) {
+        log(`    ⚠ Clear broadcast failed: ${e.message}`);
+    }
+
+    // Step 3: Wipe both signaling sheets (clean slate)
+    log("    Wiping signaling sheets…");
+    try { await cleanPublicSheet(privateSheetId); } catch (e) { log(`    ⚠ Private wipe: ${e.message}`); }
+    try { await cleanPublicSheet(publicSheetId); } catch (e) { log(`    ⚠ Public wipe: ${e.message}`); }
+
+    // Step 4: Wait for Android to appear on the private sheet (Phase 1)
+    log("    Waiting for Android on private sheet (Phase 1)…");
+    const deadline1 = Date.now() + 90_000;
+    let androidOnPrivate = null;
+    while (Date.now() < deadline1) {
+        androidOnPrivate = await findAndroidPresence(privateSheetId);
+        if (androidOnPrivate) break;
+        await sleep(5_000);
+    }
+    if (!androidOnPrivate) {
+        log("    ✗ Android did not join private sheet in 90s");
+        return null;
+    }
+    log(`    ✓ Android on private sheet: peerId=${androidOnPrivate.peerId}`);
+
+    // Step 5: Node peer joins private sheet (PLAINTEXT — no encryption)
+    //         Opens a DataChannel with Android and sends the AES key.
+    const { peer: keyPeer, connected } = makePeer(privateSheetId, "key-exchange", {
+        encryptionKey: undefined,
+    });
+
+    try {
+        await keyPeer.start();
+        log(`    Node key-exchange peer joined (block=${keyPeer.block})`);
+
+        const dcOpen = await waitUntil(
+            () => connected.has(androidOnPrivate.peerId),
+            POLL_MS * 8 + ICE_TIMEOUT_MS,
+        );
+        if (!dcOpen) {
+            log("    ✗ DataChannel to Android never opened on private sheet");
+            return null;
+        }
+        log("    ✓ DataChannel open — sending key exchange");
+
+        const sent = keyPeer.broadcastKeyExchange(encKey);
+        log(`    ✓ Key sent to ${sent} peer(s) — waiting for Phase 2 switch…`);
+        await sleep(5_000);
+    } finally {
+        keyPeer.stop();
+    }
+
+    // Step 6: Verify Android appears on the public sheet (Phase 2)
+    log("    Waiting for Android on public sheet (Phase 2)…");
+    const deadline2 = Date.now() + 90_000;
+    let androidOnPublic = null;
+    while (Date.now() < deadline2) {
+        androidOnPublic = await findAndroidPresence(publicSheetId);
+        if (androidOnPublic) break;
+        await sleep(5_000);
+    }
+    if (!androidOnPublic) {
+        log("    ✗ Android did not join public sheet after key exchange");
+        return null;
+    }
+    log(`    ✓ Android on public sheet: peerId=${androidOnPublic.peerId}`);
+    log("  ── Bootstrap complete ──\n");
+
+    return androidOnPublic;
+}
+
+/* ============================================================
    Scenarios
    ============================================================ */
 
@@ -420,7 +610,7 @@ async function scenarioFreshJoin(runner, sheetId, logcat) {
     await runner.run("fresh-join: Android logs DataChannel open (requires ADB)", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not in signaling sheet (open the Waymark app first)" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not in signaling sheet (open the Waymark app first)" };
         }
         const { peer } = makePeer(sheetId, "fresh2");
         try {
@@ -469,7 +659,7 @@ async function scenarioWorkerRestart(runner, sheetId, logcat) {
     await runner.run("worker-restart: Android reconnects to restarted worker (requires ADB)", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not in signaling sheet" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not in signaling sheet" };
         }
         logcat.lines.length = 0;
         const { peer } = makePeer(sheetId, "restart3");
@@ -506,7 +696,7 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
             // Inject a stale presence for fakeId so the poll loop sees it as alive
             const token = await getOAuthToken();
             const fakeSlot = BLOCK_START + 2 * BLOCK_SIZE;
-            const fakePresence = JSON.stringify({ peerId: fakeId, name: "FakePeer", ts: Date.now() });
+            const fakePresence = encryptOrRaw(JSON.stringify({ peerId: fakeId, name: "FakePeer", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${fakeSlot}`)}?valueInputOption=RAW`,
                 {
@@ -547,7 +737,7 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
     await runner.run("ice-failure: Android logs ICE DISCONNECTED → CLOSED recovery (requires ADB)", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not in signaling sheet" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not in signaling sheet" };
         }
         // Verify Android can reconnect to a fresh peer — exercises the same ICE
         // re-negotiation path as a real ICE failure + recovery cycle.
@@ -561,10 +751,12 @@ async function scenarioIceFailure(runner, sheetId, logcat) {
             if (!dcOpened) {
                 return { pass: false, detail: "DC to Android never opened in ice-failure recovery test" };
             }
-            const logLine = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 3_000);
+            // Require Android to confirm reconnect — without this the test only proves
+            // Node recovered, not that Android actually re-established the channel.
+            const logLine = await logcat.waitForLine(/DC .{6,} → OPEN|DataChannel open/, 8_000);
             return {
-                pass: true,
-                detail: logLine ? logLine.trim() : `DC opened at Node side (Android logcat not captured in 3s)`,
+                pass: logLine !== null,
+                detail: logLine ? logLine.trim() : "DC opened at Node side but Android did not confirm reconnect within 8s",
             };
         } finally {
             peer.stop();
@@ -586,7 +778,7 @@ async function scenarioStaleOffer(runner, sheetId, logcat) {
 
             // Give fakeRemoteId a live-looking presence in a slot so it appears alive
             const fakeSlot = BLOCK_START + 3 * BLOCK_SIZE;
-            const fakePresenceJson = JSON.stringify({ peerId: fakeRemoteId, name: "FakeRemote", ts: Date.now() });
+            const fakePresenceJson = encryptOrRaw(JSON.stringify({ peerId: fakeRemoteId, name: "FakeRemote", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${fakeSlot}`)}?valueInputOption=RAW`,
                 {
@@ -597,12 +789,12 @@ async function scenarioStaleOffer(runner, sheetId, logcat) {
             );
 
             // Write a stale offer (older than OFFER_MAX_AGE) into our offers row
-            const staleOffer = JSON.stringify({
+            const staleOffer = encryptOrRaw(JSON.stringify({
                 [fakeRemoteId]: {
                     sdp: "v=0\r\no=fake 12345 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n",
                     ts:  Date.now() - OFFER_MAX_AGE - 5_000,
                 },
-            });
+            }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${offersRow}`)}?valueInputOption=RAW`,
                 {
@@ -655,7 +847,7 @@ async function scenarioSustainedPing(runner, sheetId, logcat) {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
             return {
-                pass: true,
+                pass: !ADB_DEVICE,
                 detail: "SKIP — Android not connected to signaling sheet (no live presence)",
             };
         }
@@ -698,7 +890,7 @@ async function scenarioNotification(runner, sheetId, logcat) {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
             return {
-                pass: true,
+                pass: !ADB_DEVICE,
                 detail: "SKIP — Android not connected to signaling sheet",
             };
         }
@@ -740,7 +932,7 @@ async function scenarioNotification(runner, sheetId, logcat) {
     await runner.run("notification: Android logs notification title and body", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not connected" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not connected" };
         }
 
         const { peer, connected } = makePeer(sheetId, "notif2");
@@ -811,7 +1003,7 @@ async function scenarioNotificationLive(runner, sheetId, logcat) {
             while (Date.now() < deadline) {
                 const p = await findAndroidPresence(sheetId);
                 if (p) { android = p; break; }
-                await sleep(1000);
+                await sleep(5_000);  // 5s between polls to reduce Sheets API quota pressure
             }
         }
         if (!android) {
@@ -977,7 +1169,7 @@ async function scenarioMeshFull(runner, sheetId) {
         const occupied = freeSlots.slice(0, Math.min(freeSlots.length, MAX_SLOTS - liveSlots.length));
         // Write synthetic alive presence to fill slots
         for (const row of occupied) {
-            const fakeP = JSON.stringify({ peerId: "fake" + row, name: "FakeFull", ts: Date.now() });
+            const fakeP = encryptOrRaw(JSON.stringify({ peerId: "fake" + row, name: "FakeFull", ts: Date.now() }));
             await fetch(
                 `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(`Sheet1!T${row}`)}?valueInputOption=RAW`,
                 {
@@ -1089,7 +1281,7 @@ async function scenarioAndroidPeerVisibility(runner, sheetId, logcat) {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
             return {
-                pass: true,
+                pass: !ADB_DEVICE,
                 detail: "SKIP — Android not present in signaling sheet (open the Waymark app first)",
             };
         }
@@ -1115,7 +1307,7 @@ async function scenarioAndroidPeerVisibility(runner, sheetId, logcat) {
     await runner.run("android-connection: Node peer opens DataChannel with Android", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not present" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not present" };
         }
 
         const { peer, connected } = makePeer(sheetId, "dc-to-android");
@@ -1257,7 +1449,7 @@ async function scenarioNotifBuffer(runner, sheetId, logcat) {
     await runner.run("notif-buffer: Android receives notification buffered before DC opened (requires ADB)", async () => {
         const android = await findAndroidPresence(sheetId);
         if (!android) {
-            return { pass: true, detail: "SKIP — Android not in signaling sheet" };
+            return { pass: !ADB_DEVICE, detail: "SKIP — Android not in signaling sheet" };
         }
 
         const { peer, connected } = makePeer(sheetId, "nbuf-android");
@@ -1292,6 +1484,130 @@ async function scenarioNotifBuffer(runner, sheetId, logcat) {
 }
 
 /* ============================================================
+   Key cycling — verify peers detect + re-key cleanly
+   ============================================================ */
+
+async function scenarioKeyCycling(runner, sheetId, logcat) {
+    await runner.run("key-cycling: new key written to local file is picked up by new peer", async () => {
+        // Start a Node peer with the CURRENT key
+        const { peer: pA, peerId: idA } = makePeer(sheetId, "cycle-A");
+        try {
+            await pA.start();
+            await sleep(1500);
+
+            const slotClaimed = pA.block >= BLOCK_START;
+            if (!slotClaimed) return { pass: false, detail: "Peer A could not claim a slot before key cycle" };
+
+            // Generate a new key and write it to the LOCAL key file (never to any sheet)
+            const { randomBytes } = await import("node:crypto");
+            const newKeyHex = randomBytes(32).toString("hex");
+            const keyFile = process.env.WAYMARK_KEY_FILE
+                || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
+            try {
+                writeFileSync(keyFile, newKeyHex + "\n");
+            } catch (e) {
+                return { pass: false, detail: `Failed to write new key to ${keyFile}: ${e.message}` };
+            }
+
+            // Deliver the new key to Android via the DataChannel (private sheet),
+            // exactly how it works in production — no adb key injection.
+            if (_adbSerial && _privateSheetId) {
+                try {
+                    // Clear Android's key → forces Phase 1 on private sheet
+                    adb("shell", "am", "broadcast", "-n", "com.waymark.app/.SignalKeyReceiver",
+                        "-a", "com.waymark.app.action.CLEAR_SIGNAL_KEY");
+                    await sleep(2_000);
+                    // Wipe private sheet so Android gets a fresh slot
+                    await cleanPublicSheet(_privateSheetId);
+                    // Wait for Android on private sheet
+                    const deadline = Date.now() + 60_000;
+                    let androidPriv = null;
+                    while (Date.now() < deadline) {
+                        androidPriv = await findAndroidPresence(_privateSheetId);
+                        if (androidPriv) break;
+                        await sleep(3_000);
+                    }
+                    if (androidPriv) {
+                        // Node peer on private sheet → key exchange with new key
+                        const { peer: kp, connected: kc } = makePeer(_privateSheetId, "cycle-key", {
+                            encryptionKey: undefined,
+                        });
+                        try {
+                            await kp.start();
+                            const dcOpen = await waitUntil(
+                                () => kc.has(androidPriv.peerId),
+                                POLL_MS * 8 + ICE_TIMEOUT_MS,
+                            );
+                            if (dcOpen) {
+                                kp.broadcastKeyExchange(newKeyHex);
+                                log(`   New key sent to Android via DataChannel`);
+                                await sleep(3_000);
+                                // Wipe public sheet so Android doesn't see old-key data
+                                // and falsely detect another key cycle
+                                await cleanPublicSheet(sheetId);
+                            }
+                        } finally { kp.stop(); }
+                    } else {
+                        log(`   ⚠ Android did not join private sheet for key cycle`);
+                    }
+                } catch (e) {
+                    log(`   ⚠ Key cycle exchange failed: ${e.message}`);
+                }
+            }
+
+            // Update module-level key so subsequent reads/writes use the new key
+            const oldKey = _encKey;
+            _encKey = newKeyHex;
+
+            // Record pA survival before stopping — pA (old key) would re-write
+            // old-key data that triggers Android's stale-key detection.
+            const aSurvived = pA.block >= BLOCK_START;
+            const aSlot = pA.block;
+            pA.stop();
+
+            // Start a NEW peer with the new key — it should be able to join
+            const { peer: pB, peerId: idB } = makePeer(sheetId, "cycle-B");
+            try {
+                await pB.start();
+                await sleep(1500);
+                const bClaimed = pB.block >= BLOCK_START;
+
+                return {
+                    pass: bClaimed && aSurvived,
+                    detail: `pA survived=${aSurvived} (slot ${aSlot}), pB joined with new key (slot ${pB.block}) oldKey=${oldKey?.slice(0, 8)}... newKey=${newKeyHex.slice(0, 8)}...`,
+                };
+            } finally {
+                pB.stop();
+            }
+        } finally {
+            // pA already stopped above; safe to call again (noop)
+            pA.stop();
+        }
+    });
+
+    await runner.run("key-cycling: Android re-establishes DC after key cycle (requires ADB)", async () => {
+        if (!_adbSerial) {
+            return { pass: false, detail: "SKIP — no ADB device" };
+        }
+        // After key cycle + public sheet wipe, Android needs time to re-write
+        // its presence with the new key. Wait up to 120s for it to appear.
+        const deadline = Date.now() + 120_000;
+        let androidAfter = null;
+        while (Date.now() < deadline) {
+            const p = await findAndroidPresence(sheetId);
+            if (p) { androidAfter = p; break; }
+            await sleep(3_000);
+        }
+        return {
+            pass: androidAfter !== null,
+            detail: androidAfter
+                ? `Android re-established on public sheet with new key (ts=${androidAfter.ts})`
+                : "Android did not appear on public sheet within 120s after key cycle",
+        };
+    });
+}
+
+/* ============================================================
    CLI entry point
    ============================================================ */
 
@@ -1309,6 +1625,7 @@ const SCENARIO_MAP = {
     "poll-guard":            scenarioPollConcurrency,
     "heartbeat":             scenarioHeartbeatFreshness,
     "android-visibility":    scenarioAndroidPeerVisibility,
+    "key-cycling":           scenarioKeyCycling,
 };
 
 const FULL_ROUNDTRIP_ORDER = [
@@ -1325,6 +1642,7 @@ const FULL_ROUNDTRIP_ORDER = [
     "notif-buffer",          // delivery guarantee: buffer + reconnect + TTL + Android flush
     "sustained-ping",
     "mesh-full",
+    "key-cycling",           // verify encrypted key rotation: write new key, verify peers adapt
 ];
 
 function usage() {
@@ -1336,6 +1654,7 @@ function usage() {
     log("  --scenario <name>       Run one scenario (see list below)");
     log("  --adb <ip:port>         ADB wireless address (or set ADB_DEVICE env)");
     log("  --sheet <id>            Override signaling sheet ID (or set SIGNAL_SHEET env)");
+    log("  --no-clean              Skip wiping the public sheet before running");
     log("  --list                  List available scenarios");
     log("");
     log("Scenarios:");
@@ -1390,9 +1709,39 @@ async function main() {
     }
 
     // ── Resolve signaling sheet ────────────────────────────────────
-    log("\n  Resolving signaling sheet…");
+    log("\n  Resolving signaling sheets…");
     const sheetId = await resolveSignalingSheet();
-    log(`  Sheet: ${sheetId}`);
+    log(`  Public sheet : ${sheetId}`);
+
+    try {
+        _privateSheetId = await resolvePrivateSheetId();
+        log(`  Private sheet: ${_privateSheetId}`);
+        _encKey = await resolveEncryptionKey();
+        log(`  Encryption key: ${_encKey.slice(0, 8)}… (AES-256-GCM) [from local file]`);
+    } catch (err) {
+        log(`  ⚠  Key not found: ${err.message}`);
+        log("     Signaling cells will be read/written WITHOUT encryption.\n     Run 'node scripts/provision-signaling.mjs' to generate a key.");
+    }
+
+    // ── Dynamic Android bootstrap (Phase 1 → key exchange → Phase 2) ──
+    // No adb key injection — key is exchanged over the DataChannel,
+    // exactly as it works in production for real users.
+    const skipClean = args.includes("--no-clean");
+    if (_adbSerial && _encKey && _privateSheetId) {
+        const android = await bootstrapAndroid(sheetId, _privateSheetId, _encKey);
+        if (!android) {
+            log("  ⚠  Android bootstrap failed — Android tests will fail");
+        }
+    } else if (!skipClean) {
+        // No ADB — just wipe the public sheet
+        process.stdout.write("  Wiping public signaling sheet… ");
+        try {
+            await cleanPublicSheet(sheetId);
+            log("done ✓");
+        } catch (e) {
+            log(`WARN: ${e.message} — continuing anyway`);
+        }
+    }
 
     // ── Show current mesh state ────────────────────────────────────
     const livePeers = await listLivePeers(sheetId);
@@ -1431,6 +1780,13 @@ async function main() {
     for (const name of scenariosToRun) {
         const fn = SCENARIO_MAP[name];
         if (!fn) { log(`Unknown scenario: ${name}`); continue; }
+        // Pause before Android-heavy scenarios to let Sheets API quota recover.
+        // Earlier Node-only tests can exhaust the 60-req/min limit, causing
+        // Android's SignalingClient to 429 for the entire notification-live window.
+        if (name === "notification-live" && scenariosToRun.length > 1) {
+            log("\n  ⏳ Quota cooldown (15 s) before notification-live…");
+            await sleep(15_000);
+        }
         await fn(runner, sheetId, logcat);
     }
 

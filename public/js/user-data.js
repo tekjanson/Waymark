@@ -81,7 +81,8 @@ function defaultUserData() {
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
 
     /* ── WebRTC Signaling ── */
-    signalingSheetId: null,     // spreadsheetId of user-owned .waymark-signaling sheet
+    signalingSheetId: null,          // spreadsheetId of the private .waymark-signaling sheet (key storage)
+    publicSignalingSheetId: null,    // spreadsheetId of the public .waymark-public-signaling sheet (encrypted P2P)
 
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
@@ -169,16 +170,113 @@ async function _doInit() {
 }
 
 /**
- * Find or create the user-owned .waymark-signaling spreadsheet.
- * Called once after init. Idempotent — skips if already recorded.
+ * Find or create the private .waymark-signaling spreadsheet (plain text config) and the
+ * public .waymark-public-signaling spreadsheet (encrypted P2P signaling).
+ *
+ * The private sheet stores ONLY plain text config — NO encryption key.
+ * The AES-256 key lives exclusively in localStorage['waymark_signal_key'].
+ * Key distribution between peers happens ONLY over the WebRTC DataChannel.
+ *
+ * The public sheet uses column-T signaling cells; ALL cell values are
+ * AES-256-GCM encrypted with the key from localStorage.
+ *
+ * Called once after init. Idempotent — skips creation for sheets already recorded.
  * @returns {Promise<void>}
  */
 async function ensureSignalingSheet() {
-  if (!_rootFolderId || _userData?.signalingSheetId) return;
-  const created = await api.sheets.createSpreadsheet(
-    '.waymark-signaling', [], _rootFolderId
-  );
-  await save({ signalingSheetId: created.spreadsheetId });
+  if (!_rootFolderId) return;
+
+  // Re-read .waymark-data.json from Drive to pick up signaling IDs that may
+  // have been written by the orchestrator (which runs outside the browser).
+  // Without this, the in-memory _userData can clobber the IDs on the next save().
+  if (_dataFileId) {
+    try {
+      const freshData = await api.drive.readJsonFile(_dataFileId);
+      if (freshData?.signalingSheetId && !_userData?.signalingSheetId) {
+        _userData.signalingSheetId = freshData.signalingSheetId;
+      }
+      if (freshData?.publicSignalingSheetId && !_userData?.publicSignalingSheetId) {
+        _userData.publicSignalingSheetId = freshData.publicSignalingSheetId;
+      }
+    } catch (e) {
+      console.warn('[user-data] ensureSignalingSheet: re-read Drive failed:', e);
+    }
+  }
+
+  const updates = {};
+
+  // Create the private config sheet if missing
+  if (!_userData?.signalingSheetId) {
+    // Search globally by name to find a sheet created by the orchestrator
+    const token = await api.auth.getToken();
+    const drive = await import('./drive.js');
+    const existing = await drive.findFileGlobal(token, '.waymark-signaling');
+    if (existing) {
+      updates.signalingSheetId = existing.id;
+    } else {
+      const created = await api.sheets.createSpreadsheet(
+        '.waymark-signaling', [], _rootFolderId
+      );
+      updates.signalingSheetId = created.spreadsheetId;
+      try {
+        await _writePrivateConfig(created.spreadsheetId, { version: 1, createdAt: new Date().toISOString() });
+      } catch (e) {
+        console.warn('[user-data] Failed to write private config marker:', e);
+      }
+    }
+  }
+
+  // Create the public signaling sheet if missing
+  if (!_userData?.publicSignalingSheetId) {
+    const token = await api.auth.getToken();
+    const drive = await import('./drive.js');
+    const existing = await drive.findFileGlobal(token, '.waymark-public-signaling');
+    if (existing) {
+      updates.publicSignalingSheetId = existing.id;
+    } else {
+      const pub = await api.sheets.createSpreadsheet(
+        '.waymark-public-signaling', [], _rootFolderId
+      );
+      updates.publicSignalingSheetId = pub.spreadsheetId;
+      try {
+        await drive.setPublicWritable(token, pub.spreadsheetId);
+      } catch (e) {
+        console.warn('[user-data] Could not set public signaling sheet writable:', e);
+      }
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await save(updates);
+  }
+}
+
+/**
+ * Generate a 64-char hex AES-256 key using the Web Crypto API.
+ * @returns {string}
+ */
+function _generateSignalKeyHex() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Write a plain-text JSON config object to Sheet1!A1 of the private sheet.
+ * This sheet never stores any encryption key.
+ * @param {string} sheetId
+ * @param {object} config
+ * @returns {Promise<void>}
+ */
+async function _writePrivateConfig(sheetId, config) {
+  const token = await api.auth.getToken();
+  const range = 'Sheet1!A1';
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ range, majorDimension: 'ROWS', values: [[JSON.stringify(config)]] }),
+  });
+  if (!res.ok) throw new Error(`Private config write failed: ${res.status}`);
 }
 
 /* ---------- Folder helpers ---------- */
@@ -251,6 +349,19 @@ async function save(data) {
 
   if (_dataFileId) {
     try {
+      // Guard: if we're about to write without signaling IDs, try to preserve
+      // them from the current Drive state (may have been set by the orchestrator).
+      if (!_userData.publicSignalingSheetId || !_userData.signalingSheetId) {
+        try {
+          const current = await api.drive.readJsonFile(_dataFileId);
+          if (current?.signalingSheetId && !_userData.signalingSheetId) {
+            _userData.signalingSheetId = current.signalingSheetId;
+          }
+          if (current?.publicSignalingSheetId && !_userData.publicSignalingSheetId) {
+            _userData.publicSignalingSheetId = current.publicSignalingSheetId;
+          }
+        } catch (_) { /* best-effort — don't block saves */ }
+      }
       await api.drive.updateJsonFile(_dataFileId, _userData);
     } catch (err) {
       console.warn('[user-data] Drive save failed:', err);
@@ -769,11 +880,39 @@ export async function clearAll() {
 /* ---------- WebRTC Signaling Sheet ---------- */
 
 /**
- * Get the user-owned signaling sheet ID, or null if not yet created.
+ * Get the user-owned private signaling sheet ID (key storage), or null if not yet created.
  * @returns {string|null}
  */
 export function getSignalingSheetId() {
   return _userData?.signalingSheetId ?? null;
+}
+
+/**
+ * Get the public P2P signaling sheet ID (encrypted WebRTC handshake), or null if not yet created.
+ * @returns {string|null}
+ */
+export function getPublicSignalingSheetId() {
+  return _userData?.publicSignalingSheetId ?? null;
+}
+
+/**
+ * Rotate the AES-256 signal key.
+ *
+ * Generates a fresh key and stores it in localStorage['waymark_signal_key'].
+ * The key is NEVER written to any Google Sheet.
+ * The orchestrator is the key authority — it generates and distributes keys
+ * at runtime over the WebRTC DataChannel.  This browser-side function is a
+ * convenience for manual key rotation when the mesh peer is active.
+ *
+ * @returns {Promise<void>}
+ */
+export async function cycleSignalKey() {
+  const newKey = _generateSignalKeyHex();
+  localStorage.setItem('waymark_signal_key', newKey);
+  // Trigger a DataChannel key-push if the P2P mesh is active.
+  if (typeof window !== 'undefined' && window._waymarkMeshPeer?.broadcastKeyExchange) {
+    window._waymarkMeshPeer.broadcastKeyExchange(newKey);
+  }
 }
 
 /* ---------- Lock-on-Submit ---------- */

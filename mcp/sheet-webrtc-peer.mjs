@@ -18,7 +18,8 @@
    ============================================================ */
 
 import { RTCPeerConnection } from "werift";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 
 /* ---------- Protocol constants (mirrors WaymarkConfig.kt) ---------- */
 
@@ -58,24 +59,29 @@ const STUN_SERVERS = [
  * Participates in a Waymark WebRTC peer mesh using Google Sheets for signaling.
  *
  * @param {object} opts
- * @param {string}              opts.sheetId      - Google Sheets spreadsheet ID
+ * @param {string}              opts.sheetId       - Google Sheets spreadsheet ID (signaling sheet)
  * @param {import('google-auth-library').GoogleAuth} opts.auth - Authenticated GoogleAuth
- * @param {string}              opts.peerId       - 8-char hex peer ID for this instance
- * @param {string}              opts.displayName  - Human-readable name shown in peer lists
- * @param {function}            [opts.onMessage]  - (remotePeerId, message) callback
- * @param {function}            [opts.onConnect]  - (remotePeerId) called on DataChannel open
- * @param {string}              [opts.bufferFile] - Optional path to persist the notification queue across restarts
+ * @param {string}              opts.peerId        - 8-char hex peer ID for this instance
+ * @param {string}              opts.displayName   - Human-readable name shown in peer lists
+ * @param {function}            [opts.getToken]    - () => Promise<string> — preferred over auth when provided
+ * @param {Array}               [opts.iceServers]   - RTCIceServer array; include TURN entries here for
+ *                                                   hard-NAT / symmetric-NAT fallback. Defaults to
+ *                                                   Google STUN only.
+ * @param {function}            [opts.onMessage]   - (remotePeerId, message) callback
+ * @param {function}            [opts.onConnect]   - (remotePeerId) called on DataChannel open
+ * @param {string}              [opts.bufferFile]  - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, onMessage, onConnect, bufferFile }) {
-        this.sheetId      = sheetId;
-        this.auth         = auth;
-        this._getTokenFn  = getToken || null;  // preferred over auth when provided
-        this.peerId       = peerId;
-        this.displayName  = displayName;
-        this.onMessage    = onMessage;
-        this.onConnect    = onConnect;
-        this._bufferFile  = bufferFile || null;
+    constructor({ sheetId, auth, getToken, peerId, displayName, iceServers, onMessage, onConnect, bufferFile }) {
+        this.sheetId       = sheetId;
+        this.auth          = auth;
+        this._getTokenFn   = getToken || null;
+        this.peerId        = peerId;
+        this.displayName   = displayName;
+        this._iceServers   = iceServers || STUN_SERVERS;  // pass TURN entries here for hard-NAT fallback
+        this.onMessage     = onMessage;
+        this.onConnect     = onConnect;
+        this._bufferFile   = bufferFile || null;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
         this.peers = new Map();
@@ -83,7 +89,22 @@ export class SheetWebRtcPeer {
         /** @type {Array<{ json: string, ts: number, deliveredTo: Set<string> }>} */
         this._notifQueue = [];
 
-        // Load persisted buffer (survives process restarts)
+        /** Unique 8-char hex nonce generated each time this peer starts.
+         *  Written into the heartbeat so remote peers (Android) can detect a
+         *  restart and rebuild the DataChannel immediately rather than waiting
+         *  for the pong timeout.  Mirrors OrchestratorPeer.kt#sessionNonce. */
+        this._sessionNonce = randomBytes(4).toString("hex");
+
+        this.block     = -1;
+        this.destroyed = false;
+        this._polling        = false;  // guard: prevent concurrent poll cycles
+        this._heartbeatTimer = null;
+        this._pollTimer      = null;
+        this._pingTimer      = null;   // DataChannel keepalive interval
+        this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
+        this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
+
+        // Load persisted buffer after all fields are initialized (survives process restarts)
         if (this._bufferFile) {
             try {
                 const saved = JSON.parse(readFileSync(this._bufferFile, "utf8"));
@@ -94,15 +115,6 @@ export class SheetWebRtcPeer {
                 this._log(`loaded ${this._notifQueue.length} buffered notification(s) from ${this._bufferFile}`);
             } catch { /* start fresh */ }
         }
-
-        this.block     = -1;
-        this.destroyed = false;
-        this._polling        = false;  // guard: prevent concurrent poll cycles
-        this._heartbeatTimer = null;
-        this._pollTimer      = null;
-        this._pingTimer      = null;   // DataChannel keepalive interval
-        this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
-        this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
     }
 
     /* ---------- Lifecycle ---------- */
@@ -137,8 +149,10 @@ export class SheetWebRtcPeer {
         clearInterval(this._pingTimer);
         this._lastPong.clear();
         this._peerNonces.clear();
-        if (this.block >= 0) {
-            this._clearPresence().catch(() => {});
+        const savedBlock = this.block;
+        this.block = -1; // prevent in-flight poll from re-joining
+        if (savedBlock >= 0) {
+            this._clearPresence(savedBlock).catch(() => {});
         }
         for (const id of [...this.peers.keys()]) {
             this._closeOne(id);
@@ -161,6 +175,14 @@ export class SheetWebRtcPeer {
         for (const [id, entry] of this.peers) {
             try {
                 if (entry.dc && entry.dc.readyState === "open") {
+                    // Don't send into a dead SCTP buffer — if ICE is disconnected
+                    // the message won't actually be delivered, yet we'd mark the
+                    // peer as "delivered" and the notif-buffer flush would skip it
+                    // after rebuild.  Let the buffer hold it instead.
+                    const ice = entry.pc?.iceConnectionState;
+                    if (ice === "disconnected" || ice === "failed" || ice === "closed") {
+                        continue;
+                    }
                     entry.dc.send(json);
                     deliveredTo.add(id);
                     sent++;
@@ -172,8 +194,6 @@ export class SheetWebRtcPeer {
         if (isNotif) this._enqueueNotif(json, deliveredTo);
         return sent;
     }
-
-    /* ---------- Notification buffer ---------- */
 
     /**
      * Add a notification to the buffer with the set of peers already delivered.
@@ -217,7 +237,10 @@ export class SheetWebRtcPeer {
         }
     }
 
-    /** Persist the current queue to disk (no-op if bufferFile not set). */
+    /** Persist the current queue to disk (no-op if bufferFile not set).
+     *  Uses a write-to-temp + rename pattern so a crash mid-write never corrupts
+     *  the buffer — the rename is atomic on POSIX filesystems.
+     */
     _persistBuffer() {
         if (!this._bufferFile) return;
         try {
@@ -226,7 +249,9 @@ export class SheetWebRtcPeer {
                 ts:          n.ts,
                 deliveredTo: [...n.deliveredTo],
             }));
-            writeFileSync(this._bufferFile, JSON.stringify(toSave));
+            const tmp = `${this._bufferFile}.tmp`;
+            writeFileSync(tmp, JSON.stringify(toSave));
+            renameSync(tmp, this._bufferFile);
         } catch (e) {
             this._log(`buffer persist failed: ${e.message}`);
         }
@@ -234,8 +259,27 @@ export class SheetWebRtcPeer {
 
     connectedPeers() {
         return [...this.peers.entries()]
-            .filter(([, e]) => e.state === "connected")
+            .filter(([, e]) => {
+                if (e.state !== "connected") return false;
+                if (e.dc?.readyState !== "open") return false;
+                const ice = e.pc?.iceConnectionState;
+                if (ice === "disconnected" || ice === "failed" || ice === "closed") return false;
+                return true;
+            })
             .map(([id]) => id);
+    }
+
+    /**
+     * Send a message to a specific peer via DataChannel.
+     * @param {string} remotePeerId
+     * @param {object|string} message
+     * @returns {boolean} true if sent successfully
+     */
+    sendTo(remotePeerId, message) {
+        const json = typeof message === "string" ? message : JSON.stringify(message);
+        const entry = this.peers.get(remotePeerId);
+        if (!entry?.dc || entry.dc.readyState !== "open") return false;
+        try { entry.dc.send(json); return true; } catch { return false; }
     }
 
     /* ---------- Sheets helpers ---------- */
@@ -248,33 +292,46 @@ export class SheetWebRtcPeer {
     }
 
     async _readAll() {
-        const token = await this._getToken();
-        const res = await fetch(`${SHEETS_BASE}/${this.sheetId}/values/${SIG_RANGE}`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`Sheets read ${res.status}: ${await res.text()}`);
-        const data = await res.json();
-        const rows = data.values || [];
-
-        // Pad to TOTAL_ROWS so callers can index by 0-based row safely
-        const result = new Array(TOTAL_ROWS + 2).fill(null);
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            if (row && row.length > 0 && row[0] !== "") {
-                result[i + BLOCK_START] = row[0];
+        // Retry with exponential backoff on 429 (quota exhausted) up to 4 attempts.
+        // Delays: 2s, 4s, 8s — well within the 60-req/min quota reset window.
+        let lastErr;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 2_000 * attempt));
+            const token = await this._getToken();
+            const res = await fetch(`${SHEETS_BASE}/${this.sheetId}/values/${SIG_RANGE}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.status === 429) {
+                lastErr = new Error(`Sheets read 429: ${await res.text()}`);
+                this._log(`quota 429 — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+                continue;
             }
+            if (!res.ok) throw new Error(`Sheets read ${res.status}: ${await res.text()}`);
+            const data = await res.json();
+            const rows = data.values || [];
+
+            // Pad to TOTAL_ROWS so callers can index by 0-based row safely
+            const result = new Array(TOTAL_ROWS + 2).fill(null);
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                if (row && row.length > 0 && row[0] !== "") {
+                    result[i + BLOCK_START] = row[0];
+                }
+            }
+            return result;
         }
-        return result;
+        throw lastErr;
     }
 
     async _writeCell(rowIdx, value) {
         const token = await this._getToken();
         const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
         const range = `Sheet1!T${sheetsRow}`;
+        const cellValue = value ?? "";
         const body = JSON.stringify({
             range,
             majorDimension: "ROWS",
-            values: [[value ?? ""]],
+            values: [[cellValue]],
         });
         const res = await fetch(
             `${SHEETS_BASE}/${this.sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
@@ -299,7 +356,21 @@ export class SheetWebRtcPeer {
 
     async _join() {
         const vals = await this._readAll();
-        this.block = this._findSlot(vals);
+
+        // Reclaim own slot if a previous session's presence is still alive
+        // (e.g. quick restart within ALIVE_TTL).  Matches Android
+        // OrchestratorPeer.kt join() reclaim logic.
+        let reclaimedBlock = -1;
+        for (let slot = 0; slot < MAX_SLOTS; slot++) {
+            const row = BLOCK_START + slot * BLOCK_SIZE;
+            const p = this._parseJson(vals[row]);
+            if (p && p.peerId === this.peerId) {
+                this._log(`reclaiming stale slot ${row} from previous session (crash recovery)`);
+                reclaimedBlock = row;
+                break;
+            }
+        }
+        this.block = reclaimedBlock >= 0 ? reclaimedBlock : this._findSlot(vals);
         if (this.block < 0) return;
 
         // Write presence immediately to claim slot
@@ -339,12 +410,14 @@ export class SheetWebRtcPeer {
             peerId: this.peerId,
             name:   this.displayName,
             ts:     Date.now(),
+            nonce:  this._sessionNonce,
         }));
     }
 
-    async _clearPresence() {
-        if (this.block < 0) return;
-        await this._writeCell(this.block + OFF_PRESENCE, "");
+    async _clearPresence(blockOverride) {
+        const b = blockOverride ?? this.block;
+        if (b < 0) return;
+        await this._writeCell(b + OFF_PRESENCE, "");
     }
 
     /* ---------- Poll cycle ---------- */
@@ -354,8 +427,30 @@ export class SheetWebRtcPeer {
         this._polling = true;
         try {
             const vals  = await this._readAll();
+
+            // ── Slot eviction check ──
+            // If another peer overwrote our presence cell (collision), our
+            // heartbeat is gone.  Detect this and re-join on a different slot
+            // immediately rather than silently operating on a clobbered block.
+            const myPresence = this._parseJson(vals[this.block]);
+            if (!myPresence || myPresence.peerId !== this.peerId) {
+                if (this.destroyed) return; // stop() cleared our presence — don't rejoin
+                this._log(`slot ${this.block} was taken by ${myPresence?.peerId ?? '(empty)'} — re-joining mesh`);
+                // Close all connections — they were built with the old block's signal rows
+                for (const id of [...this.peers.keys()]) this._closeOne(id);
+                this.block = this._findSlot(vals);
+                if (this.block < 0) {
+                    this._log("no free slot after eviction — mesh full");
+                    return;
+                }
+                this._log(`re-joined at block=${this.block}`);
+                await this._heartbeat();
+                return; // skip rest of this poll cycle — next cycle will discover peers
+            }
+
             const alive = this._scanAlive(vals);
             const aliveIds = new Set(alive.map(p => p.peerId));
+            const buildJobs = []; // { type: 'offer'|'answer', remoteId, offerSdp? }
 
             // Evict entries still in 'connecting' state after HANDSHAKE_TIMEOUT_MS.
             // Only applies while state === 'connecting' — once a DC successfully opens
@@ -445,11 +540,7 @@ export class SheetWebRtcPeer {
                             this._log(`stale offer for ${remoteId} (age ${Math.round((Date.now() - existingOffer.ts) / 1000)}s) — rebuilding`);
                             this._closeOne(remoteId);
                         }
-                        // Build offer
-                        await this._createOffer(remoteId, myOffers).catch(e =>
-                            this._log(`createOffer for ${remoteId} failed: ${e.message}`)
-                        );
-                        offDirty = false; // _writeOffers called inside _createOffer
+                        buildJobs.push({ type: "offer", remoteId });
                     } else if (entry.state !== "connected") {
                         // Look for answer from remote
                         const remoteAnswers = this._parseJson(vals[remoteBlock + OFF_ANSWERS]) || {};
@@ -474,11 +565,34 @@ export class SheetWebRtcPeer {
                         const remoteOffers = this._parseJson(vals[remoteBlock + OFF_OFFERS]) || {};
                         const offer = remoteOffers[this.peerId];
                         if (offer) {
-                            await this._createAnswer(remoteId, offer.sdp, myAnswers).catch(e =>
-                                this._log(`createAnswer for ${remoteId} failed: ${e.message}`)
-                            );
-                            ansDirty = false; // _writeAnswers called inside _createAnswer
+                            buildJobs.push({ type: "answer", remoteId, offerSdp: offer.sdp });
                         }
+                    }
+                }
+            }
+
+            // Run all ICE-gathering builds in parallel — avoids serialising each peer's
+            // ICE gathering phase (1-12 s each) when multiple peers need renegotiation.
+            if (buildJobs.length) {
+                const results = await Promise.allSettled(
+                    buildJobs.map(job => job.type === "offer"
+                        ? this._gatherOffer(job.remoteId)
+                        : this._gatherAnswer(job.remoteId, job.offerSdp)
+                    )
+                );
+                for (let i = 0; i < results.length; i++) {
+                    const r   = results[i];
+                    const job = buildJobs[i];
+                    if (r.status === "fulfilled" && r.value) {
+                        if (job.type === "offer") {
+                            myOffers[job.remoteId] = r.value;
+                            offDirty = true;
+                        } else {
+                            myAnswers[job.remoteId] = r.value;
+                            ansDirty = true;
+                        }
+                    } else if (r.status === "rejected") {
+                        this._log(`${job.type} build for ${job.remoteId} failed: ${r.reason?.message ?? "unknown"}`);
                     }
                 }
             }
@@ -537,8 +651,9 @@ export class SheetWebRtcPeer {
 
     /* ---------- Offer / Answer builders ---------- */
 
-    async _createOffer(remotePeerId, myOffers) {
-        const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    /** Gather ICE for an offer and return { sdp, ts } without writing to the sheet. */
+    async _gatherOffer(remotePeerId) {
+        const pc = new RTCPeerConnection({ iceServers: this._iceServers });
         const dc = pc.createDataChannel("waymark");
         this.peers.set(remotePeerId, { pc, dc, state: "connecting", createdAt: Date.now() });
         this._monitorIce(pc, remotePeerId);
@@ -548,12 +663,12 @@ export class SheetWebRtcPeer {
         await pc.setLocalDescription(offer);
         await this._waitForIceGathering(pc);
 
-        myOffers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
-        await this._writeOffers(myOffers);
+        return { sdp: pc.localDescription.sdp, ts: Date.now() };
     }
 
-    async _createAnswer(remotePeerId, offerSdp, myAnswers) {
-        const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    /** Gather ICE for an answer and return { sdp, ts } without writing to the sheet. */
+    async _gatherAnswer(remotePeerId, offerSdp) {
+        const pc = new RTCPeerConnection({ iceServers: this._iceServers });
         this.peers.set(remotePeerId, { pc, dc: null, state: "connecting", createdAt: Date.now() });
         this._monitorIce(pc, remotePeerId);
 
@@ -569,8 +684,7 @@ export class SheetWebRtcPeer {
         await pc.setLocalDescription(answer);
         await this._waitForIceGathering(pc);
 
-        myAnswers[remotePeerId] = { sdp: pc.localDescription.sdp, ts: Date.now() };
-        await this._writeAnswers(myAnswers);
+        return { sdp: pc.localDescription.sdp, ts: Date.now() };
     }
 
     /**
@@ -675,3 +789,4 @@ export class SheetWebRtcPeer {
         process.stderr.write(`sheet-peer [${this.peerId}]: ${msg}\n`);
     }
 }
+

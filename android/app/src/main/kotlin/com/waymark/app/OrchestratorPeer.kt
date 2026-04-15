@@ -38,7 +38,7 @@ private data class BuildJob(
  * @param sheetId          The Google Sheet this peer mesh is tied to
  * @param peerId           8-char hex ID for this device in the mesh
  * @param displayName      Human-readable label shown in peer lists
- * @param signalingClient  Sheets signaling client for this sheet
+ * @param signalingClient  Signaling client (interface — accepts test doubles)
  * @param onNotification   Called when an orchestrator notification arrives
  */
 class OrchestratorPeer(
@@ -46,7 +46,7 @@ class OrchestratorPeer(
     private val sheetId: String,
     val peerId: String,
     private val displayName: String,
-    private val signalingClient: SignalingClient,
+    private val signalingClient: ISignalingClient,
     private val onNotification: (title: String, body: String) -> Unit
 ) {
 
@@ -93,6 +93,9 @@ class OrchestratorPeer(
         private const val ICE_DISCONNECT_GRACE_MS = 30_000L
         /** Consecutive Sheets IO failures before forcing a mesh reconnect (refreshes token). */
         private const val SHEETS_FAILURE_THRESHOLD = 3
+        /** If alone (zero alive peers) for this many ms, invoke [onAloneTimeout] to
+         *  trigger a re-bootstrap that re-reads Drive sheet IDs. */
+        private const val ALONE_TIMEOUT_MS = 60_000L
     }
 
     /* ---------- State ---------- */
@@ -110,6 +113,8 @@ class OrchestratorPeer(
     private val lastPong = ConcurrentHashMap<String, Long>()
     /** Counts consecutive Sheets API failures; resets on a successful read to detect token expiry. */
     private val _sheetsFailures = AtomicInteger(0)
+    /** Epoch-ms when the peer first observed zero alive peers.  Reset when ≥1 peer is found. */
+    @Volatile private var _aloneSince = 0L
 
     /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
      *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
@@ -121,6 +126,11 @@ class OrchestratorPeer(
     /** Last observed presence nonce per remote peerId — used to detect peer restarts. */
     private val remoteNonces = ConcurrentHashMap<String, String>()
 
+    /** Peers whose ICE connection failed — their stale offers/answers must be cleaned
+     *  from the signaling sheet on the next poll() cycle. Populated from the native
+     *  WebRTC ICE callback thread, consumed in poll() on Dispatchers.IO. */
+    private val _iceFailedPeers = ConcurrentHashMap.newKeySet<String>()
+
     /**
      * Invoked on the IO dispatcher whenever the number of open DataChannel
      * peers changes.  The service uses this to update the foreground
@@ -131,6 +141,13 @@ class OrchestratorPeer(
      */
     var onConnectionStateChanged: ((connected: Boolean, peerCount: Int) -> Unit)? = null
 
+    /**
+     * Invoked when the peer has been polling for [ALONE_TIMEOUT_MS] with zero
+     * alive remote peers.  WebRtcService uses this to trigger a full
+     * re-bootstrap (re-read Drive sheet IDs) to recover from stale sheets.
+     */
+    var onAloneTimeout: (() -> Unit)? = null
+
     /** Assigned signaling block row (0-based index into signaling column). */
     @Volatile private var block = -1
 
@@ -139,6 +156,10 @@ class OrchestratorPeer(
 
     /** True when this peer has successfully claimed a signaling slot and is active in the mesh. */
     val isInMesh: Boolean get() = block >= 0 && !destroyed
+
+    /** Number of DataChannels currently in the OPEN state. Thread-safe. */
+    val openDataChannelCount: Int
+        get() = peers.values.count { it.dc?.state() == DataChannel.State.OPEN }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -150,21 +171,29 @@ class OrchestratorPeer(
             var retryDelay = 10_000L // 10 s initial, doubles each attempt up to 60 s
             while (!destroyed) {
                 try {
-                    block = -1 // reset before each join attempt
-                    join()
+                    // Only join if we don't already have a slot.
+                    // On poll() failures (transient Sheets errors) we keep our slot
+                    // so that isInMesh stays true — preventing ConnectionManager from
+                    // tearing us down and creating a new peer (which changes the
+                    // sessionNonce and triggers a nonce-flap loop on the remote side).
                     if (block < 0) {
-                        Log.w(TAG, "No free signaling slot — mesh full")
-                        return@launch
+                        join()
+                        if (block < 0) {
+                            Log.w(TAG, "No free signaling slot — mesh full")
+                            return@launch
+                        }
+                        Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
+                        retryDelay = 10_000L
+                        delay(peerIdJitter())
                     }
-                    Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
-                    retryDelay = 10_000L // reset backoff on success
-                    delay(peerIdJitter())
                     while (!destroyed) {
                         poll()
                         delay(WaymarkConfig.POLL_MS)
                     }
                 } catch (e: CancellationException) { return@launch }
                 catch (e: Exception) {
+                    // Don't reset block — keep existing slot so isInMesh stays true.
+                    // If our slot was evicted, poll()'s eviction check handles re-join.
                     Log.e(TAG, "Mesh loop error — retrying in ${retryDelay / 1000}s", e)
                     if (!destroyed) {
                         delay(retryDelay)
@@ -189,7 +218,9 @@ class OrchestratorPeer(
         }
     }
 
-    /** Leave the mesh and release all resources. */
+    /** Leave the mesh and release all resources.
+     *  clearPresence runs synchronously (best-effort) so a replacement peer
+     *  does not race to reclaim the same slot before the old presence is wiped. */
     fun stop() {
         destroyed = true
         scope.cancel()
@@ -201,14 +232,23 @@ class OrchestratorPeer(
         peers.clear()
         lastPong.clear()
         remoteNonces.clear()
-        // clearPresence and dispose run on a background thread so stop() never
-        // blocks the calling thread (onStartCommand / onDestroy run on main thread).
-        CoroutineScope(Dispatchers.IO).launch {
-            if (block >= 0) signalingClient.clearPresence(block)
-            snapshot.forEach { entry ->
-                try { entry.dc?.dispose() } catch (_: Exception) {}
-                try { entry.pc.dispose()  } catch (_: Exception) {}
+        _iceFailedPeers.clear()
+        // Clear all signaling rows inline on a fresh scope — the caller (ConnectionManager)
+        // holds the Mutex and will not create a replacement peer until this returns.
+        // Clearing offers + answers (not just presence) prevents stale SDP from blocking
+        // new handshakes for up to OFFER_MAX_AGE_MS (3 min) after a peer teardown.
+        val savedBlock = block
+        block = -1
+        runBlocking(Dispatchers.IO) {
+            if (savedBlock >= 0) {
+                signalingClient.clearPresence(savedBlock)
+                try { signalingClient.writeCell(savedBlock + WaymarkConfig.OFF_OFFERS, "") } catch (_: Exception) {}
+                try { signalingClient.writeCell(savedBlock + WaymarkConfig.OFF_ANSWERS, "") } catch (_: Exception) {}
             }
+        }
+        snapshot.forEach { entry ->
+            try { entry.dc?.dispose() } catch (_: Exception) {}
+            try { entry.pc.dispose()  } catch (_: Exception) {}
         }
     }
 
@@ -272,8 +312,48 @@ class OrchestratorPeer(
         try {
             val vals     = signalingClient.readAll()
             _sheetsFailures.set(0)  // successful Sheets read — reset error count
+
+            // ── Slot eviction check ──
+            // If another peer overwrote our presence cell (collision), our
+            // heartbeat is gone.  Detect this and re-join on a different slot
+            // immediately rather than silently operating on a clobbered block.
+            val myPresence = parseJson(vals.getOrNull(block))
+            if (myPresence == null || myPresence.optString("peerId") != peerId) {
+                val evictedBy = myPresence?.optString("peerId") ?: "(empty)"
+                Log.w(TAG, "Slot $block was taken by $evictedBy — re-joining mesh")
+                // Close all connections — they were built with the old block's signal rows
+                for ((rId, entry) in peers.entries.toList()) {
+                    peers.remove(rId)?.pc?.dispose()
+                    lastPong.remove(rId)
+                }
+                remoteNonces.clear()
+                fireConnectionState()
+                block = findSlot(vals)
+                if (block < 0) {
+                    Log.e(TAG, "No free slot after eviction — mesh full")
+                    return@withContext
+                }
+                Log.i(TAG, "Re-joined mesh at block=$block")
+                heartbeat()
+                return@withContext // skip rest of poll — next cycle discovers peers
+            }
+
             val alive    = scanAlive(vals)
             val aliveIds = alive.map { it.optString("peerId") }.toSet()
+
+            // ── Alone timeout: if zero alive peers for ALONE_TIMEOUT_MS, trigger re-bootstrap ──
+            if (aliveIds.isEmpty()) {
+                val now = System.currentTimeMillis()
+                if (_aloneSince == 0L) _aloneSince = now
+                if (now - _aloneSince >= ALONE_TIMEOUT_MS) {
+                    Log.w(TAG, "No alive peers for ${(now - _aloneSince) / 1000}s — requesting re-bootstrap")
+                    _aloneSince = 0L // reset so it doesn't fire again immediately after re-join
+                    onAloneTimeout?.invoke()
+                    return@withContext
+                }
+            } else {
+                _aloneSince = 0L
+            }
 
             // Evict stuck handshakes — entries where DC never opened within HANDSHAKE_TIMEOUT_MS
             val now = System.currentTimeMillis()
@@ -300,13 +380,19 @@ class OrchestratorPeer(
             var offDirty  = false
             var ansDirty  = false
 
-            // Clean stale entries
+            // Clean stale entries: dead peers + ICE-failed peers + alive peers with no connection
             for (key in myOffers.keys().asSequence().toList()) {
-                if (key !in aliveIds) { myOffers.remove(key); offDirty = true }
+                if (key !in aliveIds || _iceFailedPeers.contains(key) || !peers.containsKey(key)) {
+                    myOffers.remove(key); offDirty = true
+                }
             }
             for (key in myAnswers.keys().asSequence().toList()) {
-                if (key !in aliveIds) { myAnswers.remove(key); ansDirty = true }
+                if (key !in aliveIds || _iceFailedPeers.contains(key) || !peers.containsKey(key)) {
+                    myAnswers.remove(key); ansDirty = true
+                }
             }
+            // Drain the ICE-failed set now that we've cleaned their signaling data
+            _iceFailedPeers.clear()
 
             // Collect ICE-building jobs; handle fast (non-ICE) ops inline
             val buildJobs = mutableListOf<BuildJob>()
@@ -332,13 +418,32 @@ class OrchestratorPeer(
                     remoteNonces[remotePeerId] = remoteNonce
                 }
 
-                val entry = peers[remotePeerId]
+                var entry = peers[remotePeerId]
 
-                // Skip already-connected peers
+                // Skip already-connected peers — but verify ICE is healthy.
+                // After airplane mode the DataChannel may locally report OPEN even
+                // though the underlying ICE transport is disconnected/failed (stale
+                // STUN bindings).  Tear down the zombie entry so the loop below
+                // rebuilds the connection this cycle.
                 if (entry?.dc?.state() == DataChannel.State.OPEN) {
-                    if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
-                    if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
-                    continue
+                    val ice = entry.pc.iceConnectionState()
+                    if (ice == PeerConnection.IceConnectionState.DISCONNECTED ||
+                        ice == PeerConnection.IceConnectionState.FAILED ||
+                        ice == PeerConnection.IceConnectionState.CLOSED
+                    ) {
+                        Log.w(TAG, "ICE $remotePeerId is $ice despite OPEN DC — dropping for rebuild")
+                        _iceFailedPeers.add(remotePeerId)
+                        peers.remove(remotePeerId)?.pc?.dispose()
+                        lastPong.remove(remotePeerId)
+                        fireConnectionState()
+                        if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
+                        if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
+                        entry = null  // cleared — fall through to rebuild
+                    } else {
+                        if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
+                        if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
+                        continue
+                    }
                 }
 
                 val weInit = peerId < remotePeerId
@@ -549,6 +654,9 @@ class OrchestratorPeer(
                 when (state) {
                     PeerConnection.IceConnectionState.FAILED,
                     PeerConnection.IceConnectionState.CLOSED -> {
+                        // Mark for signaling cleanup — next poll() will clear stale
+                        // offers/answers from the sheet so fresh handshakes aren't blocked.
+                        _iceFailedPeers.add(remotePeerId)
                         peers.remove(remotePeerId)?.pc?.dispose()
                         lastPong.remove(remotePeerId)
                         fireConnectionState()
@@ -561,6 +669,7 @@ class OrchestratorPeer(
                             if (entry.pc.iceConnectionState() ==
                                     PeerConnection.IceConnectionState.DISCONNECTED) {
                                 Log.w(TAG, "ICE $remotePeerId still DISCONNECTED after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing")
+                                _iceFailedPeers.add(remotePeerId)
                                 peers.remove(remotePeerId)?.pc?.dispose()
                                 lastPong.remove(remotePeerId)
                                 fireConnectionState()

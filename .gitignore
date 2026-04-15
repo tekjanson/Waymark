@@ -49,6 +49,11 @@ server/.github-cache
 .idea/
 *.swp
 *.swo
+*.bak
+
+# E2E test runtime data (sheet IDs + AES key — never commit)
+android/e2e/.waymark-data.json
+android/test_orchestrator/.waymark-data.json
 Mimi_s Kitchen_ Gluten Free & Dairy Free Cooking for the Whole Family/
 full-deploy.sh
 agent-logs/

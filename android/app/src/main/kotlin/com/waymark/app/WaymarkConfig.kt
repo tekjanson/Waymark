@@ -59,14 +59,20 @@ object WaymarkConfig {
 
     const val PREFS_NAME = "waymark_prefs"
     const val PREF_ACCESS_TOKEN = "access_token"
+    /** Epoch-ms when the access token was last stored — used for expiry checks. */
+    const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
+    /** Epoch-ms when the access token expires (absolute), as reported by the OAuth server. */
+    const val PREF_TOKEN_EXPIRY_MS = "token_expiry_ms"
+    /** OAuth refresh token — enables native background token refresh when the WebView is closed. */
+    const val PREF_REFRESH_TOKEN = "refresh_token"
+    /** OAuth client_id — needed for native refresh_token exchange. */
+    const val PREF_CLIENT_ID = "client_id"
+    /** OAuth client_secret — needed for native refresh_token exchange. */
+    const val PREF_CLIENT_SECRET = "client_secret"
     const val PREF_ACTIVE_SHEET = "active_sheet"
     const val PREF_DISPLAY_NAME = "display_name"
-    /** Cached signaling sheet ID resolved at runtime — no build-time config needed. */
+    /** Cached PRIVATE signaling sheet ID (OAuth-gated). */
     const val PREF_SIGNALING_SHEET_ID = "signaling_sheet_id"
-    /** Epoch-ms timestamp recorded each time PREF_ACCESS_TOKEN is saved. */
-    const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
-    /** Access tokens are valid for 3600 s; treat as stale after 55 min. */
-    const val ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000L
     /**
      * Stable 8-char hex peer ID for this device, generated once on first run
      * and preserved forever.  Never regenerated — a stable ID means remote
