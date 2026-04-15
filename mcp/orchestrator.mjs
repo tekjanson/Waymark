@@ -407,30 +407,28 @@ async function startSignalingPeer() {
     await _signalingPeer.start();
     process.stderr.write(`orchestrator: signaling peer started on sheet=${signalingSheetId}\n`);
 
-    // ── Health check: restart peer if it lost its slot ──
+    // ── Health check: full teardown + fresh instance on failure ──
+    // Matches E2E test pattern: stopOrchestrator() → startOrchestrator()
+    // Never reuse a stopped SheetWebRtcPeer — stop() leaves internal state
+    // (_polling flag, fire-and-forget _clearPresence, session nonce) that
+    // cannot be safely reset for a new start().
     let _peerEmptySince = 0;
     const STALE_PEER_MS = 3 * 60_000; // restart if 0 connections for 3 min
 
-    async function restartPeer(label) {
-        process.stderr.write(`orchestrator: ${label} — restarting\n`);
-        _signalingPeer.stop();
-        _signalingPeer.destroyed = false;
-        _signalingPeer.block = -1;
+    async function rebuildPeer(label) {
+        process.stderr.write(`orchestrator: ${label} — tearing down and rebuilding\n`);
+        if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
+        if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
         try {
-            await _signalingPeer.start();
-            process.stderr.write(`orchestrator: ${label} — restarted successfully\n`);
+            await startSignalingPeer();
+            process.stderr.write(`orchestrator: ${label} — rebuilt successfully\n`);
         } catch (e) {
-            process.stderr.write(`orchestrator: ${label} restart failed: ${e.message}\n`);
+            process.stderr.write(`orchestrator: ${label} rebuild failed: ${e.message}\n`);
             invalidateSignalingCache();
-            process.stderr.write(`orchestrator: scheduling full signaling re-provision in 30s\n`);
+            process.stderr.write(`orchestrator: scheduling retry in 30s\n`);
             setTimeout(async () => {
-                try {
-                    if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
-                    if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
-                    await startSignalingPeer();
-                } catch (e2) {
-                    process.stderr.write(`orchestrator: re-provision failed: ${e2.message}\n`);
-                }
+                try { await startSignalingPeer(); }
+                catch (e2) { process.stderr.write(`orchestrator: retry failed: ${e2.message}\n`); }
             }, 30_000);
         }
     }
@@ -438,12 +436,12 @@ async function startSignalingPeer() {
     _signalingHealthTimer = setInterval(() => {
         if (_signalingPeer && !_signalingPeer.destroyed) {
             if (_signalingPeer.block < 0) {
-                restartPeer("peer lost slot");
+                rebuildPeer("peer lost slot");
                 _peerEmptySince = 0;
             } else if (_signalingPeer.connectedPeers().length === 0) {
                 if (!_peerEmptySince) _peerEmptySince = Date.now();
                 else if (Date.now() - _peerEmptySince > STALE_PEER_MS) {
-                    restartPeer("peer 0 connections for 3min");
+                    rebuildPeer("peer 0 connections for 3min");
                     _peerEmptySince = 0;
                 }
             } else {
