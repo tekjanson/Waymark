@@ -14,6 +14,7 @@ package com.waymark.app
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import org.json.JSONObject
 import org.webrtc.*
 import java.io.IOException
@@ -154,6 +155,9 @@ class OrchestratorPeer(
     @Volatile var destroyed = false
         private set
 
+    /** Signal channel for [nudgeRetry] — wakes the retry-delay sleep in [start]. */
+    private val retrySignal = Channel<Unit>(Channel.CONFLATED)
+
     /** True when this peer has successfully claimed a signaling slot and is active in the mesh. */
     val isInMesh: Boolean get() = block >= 0 && !destroyed
 
@@ -196,8 +200,21 @@ class OrchestratorPeer(
                     // If our slot was evicted, poll()'s eviction check handles re-join.
                     Log.e(TAG, "Mesh loop error — retrying in ${retryDelay / 1000}s", e)
                     if (!destroyed) {
-                        delay(retryDelay)
-                        retryDelay = minOf(retryDelay * 2, 60_000L)
+                        // Wait for either the retry delay OR an external nudge (network recovery).
+                        // nudgeRetry() sends to retrySignal, waking this immediately
+                        // and resetting the backoff so polls resume fast.
+                        val nudged = withTimeoutOrNull(retryDelay) {
+                            retrySignal.receive()
+                            true
+                        } ?: false
+                        if (nudged) {
+                            Log.i(TAG, "Retry nudged — resetting backoff")
+                            retryDelay = 10_000L
+                        } else if (e is IOException) {
+                            // Network errors are transient — don't escalate backoff
+                        } else {
+                            retryDelay = minOf(retryDelay * 2, 60_000L)
+                        }
                     }
                 }
             }
@@ -252,6 +269,16 @@ class OrchestratorPeer(
         }
     }
 
+    /**
+     * Wake the retry-delay sleep in [start] so polls resume immediately.
+     * Called by [ConnectionManager] when network recovers after a loss —
+     * prevents the existing retry backoff from delaying reconnection by
+     * up to 60 s when WiFi comes back.
+     */
+    fun nudgeRetry() {
+        retrySignal.trySend(Unit)
+    }
+
     /* ---------- Signaling: join ---------- */
 
     private suspend fun join() = withContext(Dispatchers.IO) {
@@ -261,14 +288,23 @@ class OrchestratorPeer(
         // expected block — avoids a slot mismatch that delays reconnection by a full
         // ALIVE_TTL window.
         var reclaimedBlock = -1
+        val extraSlots = mutableListOf<Int>()
         for (i in 0 until WaymarkConfig.MAX_SLOTS) {
             val row = WaymarkConfig.BLOCK_START + i * WaymarkConfig.BLOCK_SIZE
             val p = parseJson(vals.getOrNull(row)) ?: continue
             if (p.optString("peerId") == peerId) {
-                reclaimedBlock = row
-                Log.i(TAG, "Reclaiming stale slot $row from previous session (crash recovery)")
-                break
+                if (reclaimedBlock < 0) {
+                    reclaimedBlock = row
+                    Log.i(TAG, "Reclaiming stale slot $row from previous session (crash recovery)")
+                } else {
+                    extraSlots.add(row)
+                }
             }
+        }
+        // Clear any duplicate zombie slots left by previous crash/rebootstrap
+        for (extra in extraSlots) {
+            Log.w(TAG, "Clearing zombie duplicate slot $extra for peerId=$peerId")
+            signalingClient.clearPresence(extra)
         }
         block = if (reclaimedBlock >= 0) reclaimedBlock else findSlot(vals)
         if (block < 0) return@withContext
@@ -654,18 +690,23 @@ class OrchestratorPeer(
                 when (state) {
                     PeerConnection.IceConnectionState.FAILED,
                     PeerConnection.IceConnectionState.CLOSED -> {
-                        // Mark for signaling cleanup — next poll() will clear stale
-                        // offers/answers from the sheet so fresh handshakes aren't blocked.
+                        // Guard: only act if this PC is still the active one for this peer.
+                        // A stale ICE callback from a previously-disposed PeerConnection
+                        // must NOT close the replacement that now occupies the same key.
+                        val thisPc = pcRef ?: return
+                        val entry = peers[remotePeerId] ?: return
+                        if (entry.pc !== thisPc) return
                         _iceFailedPeers.add(remotePeerId)
                         peers.remove(remotePeerId)?.pc?.dispose()
                         lastPong.remove(remotePeerId)
                         fireConnectionState()
                     }
                     PeerConnection.IceConnectionState.DISCONNECTED -> {
-                        // Give ICE a short window to self-heal before forcing a reconnect
+                        val thisPc = pcRef
                         scope.launch {
                             delay(ICE_DISCONNECT_GRACE_MS)
                             val entry = peers[remotePeerId] ?: return@launch
+                            if (entry.pc !== thisPc) return@launch // stale callback
                             if (entry.pc.iceConnectionState() ==
                                     PeerConnection.IceConnectionState.DISCONNECTED) {
                                 Log.w(TAG, "ICE $remotePeerId still DISCONNECTED after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing")
@@ -829,6 +870,7 @@ class OrchestratorPeer(
     }
 
     private fun scanAlive(vals: List<String?>): List<JSONObject> {
+        val seen = mutableMapOf<String, Int>()  // peerId → index in result
         val result = mutableListOf<JSONObject>()
         for (i in 0 until WaymarkConfig.MAX_SLOTS) {
             val row = WaymarkConfig.BLOCK_START + i * WaymarkConfig.BLOCK_SIZE
@@ -836,7 +878,17 @@ class OrchestratorPeer(
             val p = parseJson(vals.getOrNull(row)) ?: continue
             val ts = p.optLong("ts", 0L)
             if (System.currentTimeMillis() - ts < WaymarkConfig.ALIVE_TTL) {
-                result.add(p.apply { put("block", row) })
+                val pid = p.optString("peerId", "")
+                val prev = seen[pid]
+                if (prev != null) {
+                    // Keep the fresher entry
+                    if (ts > result[prev].optLong("ts", 0L)) {
+                        result[prev] = p.apply { put("block", row) }
+                    }
+                } else {
+                    seen[pid] = result.size
+                    result.add(p.apply { put("block", row) })
+                }
             }
         }
         return result

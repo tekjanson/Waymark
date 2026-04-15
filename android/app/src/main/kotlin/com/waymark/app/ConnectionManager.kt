@@ -251,7 +251,11 @@ class ConnectionManager(
                 && previousState.activeSheetId == cachedSheetId
                 && peer != null && !peer.destroyed && peer.isInMesh
             ) {
-                Log.d(TAG, "Already connected to sheet $cachedSheetId — no-op")
+                // Nudge the peer's retry loop instead of doing nothing — if the peer
+                // is sleeping in an exponential backoff after a Sheets IO failure
+                // (e.g., WiFi was off), this wakes it immediately so polls resume.
+                Log.d(TAG, "Already connected to sheet $cachedSheetId — nudging retry")
+                peer.nudgeRetry()
                 return@withLock
             }
             transitionTo(ConnectionState.Connecting)

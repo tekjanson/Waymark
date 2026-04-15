@@ -103,6 +103,8 @@ export class SheetWebRtcPeer {
         this._pingTimer      = null;   // DataChannel keepalive interval
         this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
         this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
+        this._consecutivePollFailures = 0; // track repeated failures for health check
+        this._consecutiveHeartbeatFailures = 0;
 
         // Load persisted buffer after all fields are initialized (survives process restarts)
         if (this._bufferFile) {
@@ -130,12 +132,22 @@ export class SheetWebRtcPeer {
         // Immediate first heartbeat then on interval
         await this._heartbeat().catch(e => this._log(`heartbeat error: ${e.message}`));
         this._heartbeatTimer = setInterval(() => {
-            this._heartbeat().catch(e => this._log(`heartbeat error: ${e.message}`));
+            this._heartbeat()
+                .then(() => { this._consecutiveHeartbeatFailures = 0; })
+                .catch(e => {
+                    this._consecutiveHeartbeatFailures++;
+                    this._log(`heartbeat error (${this._consecutiveHeartbeatFailures} consecutive): ${e.message}`);
+                });
         }, HEART_MS);
 
         // Poll loop
         this._pollTimer = setInterval(() => {
-            this._poll().catch(e => this._log(`poll error: ${e.message}`));
+            this._poll()
+                .then(() => { this._consecutivePollFailures = 0; })
+                .catch(e => {
+                    this._consecutivePollFailures++;
+                    this._log(`poll error (${this._consecutivePollFailures} consecutive): ${e.message}`);
+                });
         }, POLL_MS);
 
         // DataChannel keepalive — detect dead Android connections within DC_PONG_TIMEOUT_MS
@@ -292,18 +304,23 @@ export class SheetWebRtcPeer {
     }
 
     async _readAll() {
-        // Retry with exponential backoff on 429 (quota exhausted) up to 4 attempts.
-        // Delays: 2s, 4s, 8s — well within the 60-req/min quota reset window.
+        // Retry with exponential backoff on transient errors:
+        //   429 (quota exhausted), 401/403 (token expired — _getToken refreshes on next call)
         let lastErr;
         for (let attempt = 0; attempt < 4; attempt++) {
             if (attempt > 0) await new Promise(r => setTimeout(r, 2_000 * attempt));
             const token = await this._getToken();
+            if (!token) {
+                lastErr = new Error('OAuth token unavailable');
+                this._log(`no token — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+                continue;
+            }
             const res = await fetch(`${SHEETS_BASE}/${this.sheetId}/values/${SIG_RANGE}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            if (res.status === 429) {
-                lastErr = new Error(`Sheets read 429: ${await res.text()}`);
-                this._log(`quota 429 — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+            if (res.status === 429 || res.status === 401 || res.status === 403) {
+                lastErr = new Error(`Sheets read ${res.status}: ${await res.text()}`);
+                this._log(`read ${res.status} — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
                 continue;
             }
             if (!res.ok) throw new Error(`Sheets read ${res.status}: ${await res.text()}`);
@@ -324,27 +341,46 @@ export class SheetWebRtcPeer {
     }
 
     async _writeCell(rowIdx, value) {
-        const token = await this._getToken();
-        const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
-        const range = `Sheet1!T${sheetsRow}`;
-        const cellValue = value ?? "";
-        const body = JSON.stringify({
-            range,
-            majorDimension: "ROWS",
-            values: [[cellValue]],
-        });
-        const res = await fetch(
-            `${SHEETS_BASE}/${this.sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
-            {
-                method: "PUT",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-                body,
+        // Retry with exponential backoff on transient errors:
+        //   429 (quota exhausted), 401/403 (token expired — _getToken refreshes on next call)
+        // Critical for heartbeat writes that keep the peer alive in the mesh.
+        let lastErr;
+        for (let attempt = 0; attempt < 4; attempt++) {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 2_000 * attempt));
+            const token = await this._getToken();
+            if (!token) {
+                lastErr = new Error('OAuth token unavailable');
+                this._log(`no token for write — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+                continue;
             }
-        );
-        if (!res.ok) throw new Error(`Sheets write ${res.status}: ${await res.text()}`);
+            const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
+            const range = `Sheet1!T${sheetsRow}`;
+            const cellValue = value ?? "";
+            const body = JSON.stringify({
+                range,
+                majorDimension: "ROWS",
+                values: [[cellValue]],
+            });
+            const res = await fetch(
+                `${SHEETS_BASE}/${this.sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+                {
+                    method: "PUT",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                    },
+                    body,
+                }
+            );
+            if (res.status === 429 || res.status === 401 || res.status === 403) {
+                lastErr = new Error(`Sheets write ${res.status}: ${await res.text()}`);
+                this._log(`write ${res.status} — backoff ${2 * attempt}s (attempt ${attempt + 1}/4)`);
+                continue;
+            }
+            if (!res.ok) throw new Error(`Sheets write ${res.status}: ${await res.text()}`);
+            return;
+        }
+        throw lastErr;
     }
 
     _parseJson(str) {
@@ -608,12 +644,24 @@ export class SheetWebRtcPeer {
 
     _scanAlive(vals) {
         const alive = [];
+        const seen = new Map(); // peerId → index in alive[]
         for (let slot = 0; slot < MAX_SLOTS; slot++) {
             const row = BLOCK_START + slot * BLOCK_SIZE;
             const p = this._parseJson(vals[row]);
             if (!p || !p.peerId) continue;
             if (Date.now() - (p.ts || 0) > ALIVE_TTL) continue;
-            alive.push({ ...p, block: row });
+            const entry = { ...p, block: row };
+            const prev = seen.get(p.peerId);
+            if (prev !== undefined) {
+                // Duplicate peerId — keep the freshest (highest ts), discard the stale slot
+                if ((entry.ts || 0) > (alive[prev].ts || 0)) {
+                    alive[prev] = entry;
+                }
+                // else keep existing — it's fresher
+            } else {
+                seen.set(p.peerId, alive.length);
+                alive.push(entry);
+            }
         }
         return alive;
     }
@@ -752,8 +800,15 @@ export class SheetWebRtcPeer {
         };
         dc.onclose = () => {
             this._log(`DataChannel closed with ${remotePeerId}`);
-            // Clean up immediately so next _poll() cycle rebuilds the connection
-            this._closeOne(remotePeerId);
+            // Guard: only act if this DC is still the active one for this peer.
+            // A stale onclose from a previously-disposed DataChannel must NOT
+            // close the replacement PeerConnection that now occupies the same
+            // peers-map key.  This was the root cause of post-WiFi-reconnect
+            // thrashing: old DC close events would destroy newly-built PCs.
+            const entry = this.peers.get(remotePeerId);
+            if (entry?.dc === dc) {
+                this._closeOne(remotePeerId);
+            }
         };
         dc.onmessage = (event) => {
             try {
@@ -773,6 +828,18 @@ export class SheetWebRtcPeer {
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
         };
+    }
+
+    /**
+     * True if any peer entry is still in the 'connecting' state (ICE handshake
+     * in progress).  Used by the orchestrator health check to avoid destructive
+     * rebuilds while a handshake might still succeed.
+     */
+    hasActiveHandshakes() {
+        for (const [, entry] of this.peers) {
+            if (entry.state === "connecting") return true;
+        }
+        return false;
     }
 
     async _writeOffers(offers) {
