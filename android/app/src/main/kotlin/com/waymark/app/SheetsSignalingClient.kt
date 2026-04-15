@@ -28,27 +28,22 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * Reads and writes the WebRTC signaling band (column T) of a Google Sheet
- * using the Sheets REST v4 API with AES-256-GCM transparent encryption.
+ * using the Sheets REST v4 API.
  *
  * All public methods are suspend functions — they use OkHttp's async
  * [enqueue] internally so they never block a dispatcher thread during
  * backoff or network waits.
  *
- * @param sheetId   The Google Sheets spreadsheet ID
- * @param getToken  Lambda returning the current OAuth access token
- * @param getKey    Lambda returning the 64-char hex AES key, or null if not set
+ * @param sheetId       The Google Sheets spreadsheet ID
+ * @param getToken      Lambda returning the current OAuth access token
+ * @param onAuthExpired Callback invoked on HTTP 401/403 to trigger a token refresh.
+ *                      Returns true if the token was refreshed (caller will retry).
  */
 class SheetsSignalingClient(
     private val sheetId: String,
     private val getToken: () -> String,
-    private val getKey: () -> String? = { null }
+    private val onAuthExpired: () -> Boolean = { false }
 ) : ISignalingClient {
-
-    override var decryptFailureCount: Int = 0
-        private set
-
-    override var decryptSuccessCount: Int = 0
-        private set
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -67,10 +62,11 @@ class SheetsSignalingClient(
     }
 
     override suspend fun readAll(): List<String?> {
-        val token = getToken().ifBlank { throw IOException("No access token") }
+        var token = getToken().ifBlank { throw IOException("No access token") }
         val url = "${WaymarkConfig.SHEETS_BASE}/$sheetId/values/$RANGE"
 
         var lastErr: IOException? = null
+        var authRetried = false
         for (attempt in 0 until MAX_RETRIES) {
             if (attempt > 0) delay(2000L * attempt) // non-blocking unlike Thread.sleep
 
@@ -93,6 +89,16 @@ class SheetsSignalingClient(
                 continue
             }
 
+            // Auth expired — try to refresh the token once
+            if ((resp.code == 401 || resp.code == 403) && !authRetried) {
+                resp.close()
+                authRetried = true
+                if (onAuthExpired()) {
+                    token = getToken().ifBlank { throw IOException("No access token after refresh") }
+                    continue // retry with fresh token
+                }
+            }
+
             val body = resp.use { r ->
                 if (!r.isSuccessful) throw IOException("Sheets read ${r.code}")
                 r.body?.string() ?: throw IOException("Empty Sheets response")
@@ -100,42 +106,21 @@ class SheetsSignalingClient(
 
             val root = JSONObject(body)
             val rows = root.optJSONArray("values") ?: JSONArray()
-            val keyHex = getKey()
 
             val result = MutableList<String?>(TOTAL_ROWS + 2) { null }
-            var failures = 0
-            var successes = 0
             for (i in 0 until rows.length()) {
                 val row = rows.getJSONArray(i)
                 if (row.length() > 0) {
-                    val raw = row.getString(0)
-                    if (keyHex != null) {
-                        val dec = SignalingEncryption.decrypt(raw, keyHex)
-                        if (raw.startsWith(SignalingEncryption.ENCRYPT_PREFIX)) {
-                            if (dec == null) failures++ else successes++
-                        }
-                        result[i + WaymarkConfig.BLOCK_START] = dec
-                    } else {
-                        result[i + WaymarkConfig.BLOCK_START] = raw
-                    }
+                    result[i + WaymarkConfig.BLOCK_START] = row.getString(0)
                 }
             }
-            decryptFailureCount = failures
-            decryptSuccessCount = successes
             return result
         }
         throw lastErr ?: IOException("Sheets read failed after $MAX_RETRIES attempts")
     }
 
     override suspend fun writeCell(row: Int, value: String) {
-        val token = getToken().ifBlank { throw IOException("No access token") }
-
-        val keyHex = getKey()
-        val cellValue = if (value.isNotEmpty() && keyHex != null) {
-            SignalingEncryption.encrypt(value, keyHex)
-        } else {
-            value
-        }
+        var token = getToken().ifBlank { throw IOException("No access token") }
 
         val sheetsRow = row
         val range = "Sheet1!T$sheetsRow"
@@ -143,13 +128,14 @@ class SheetsSignalingClient(
             put("range", range)
             put("majorDimension", "ROWS")
             put("values", JSONArray().apply {
-                put(JSONArray().apply { put(cellValue) })
+                put(JSONArray().apply { put(value) })
             })
         }.toString()
 
         val url = "${WaymarkConfig.SHEETS_BASE}/$sheetId/values/$range?valueInputOption=RAW"
 
         var lastErr: IOException? = null
+        var authRetried = false
         for (attempt in 0 until MAX_RETRIES) {
             if (attempt > 0) delay(2000L * attempt)
 
@@ -171,6 +157,17 @@ class SheetsSignalingClient(
                 lastErr = IOException("Sheets write 429")
                 continue
             }
+
+            // Auth expired — try to refresh the token once
+            if ((resp.code == 401 || resp.code == 403) && !authRetried) {
+                resp.close()
+                authRetried = true
+                if (onAuthExpired()) {
+                    token = getToken().ifBlank { throw IOException("No access token after refresh") }
+                    continue
+                }
+            }
+
             resp.use { r ->
                 if (!r.isSuccessful) throw IOException("Sheets write ${r.code}")
             }

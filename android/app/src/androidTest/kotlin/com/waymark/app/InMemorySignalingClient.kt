@@ -40,14 +40,7 @@ class InMemorySignalingClient(
     private val store: SignalingStore
 ) : ISignalingClient {
 
-    override var decryptFailureCount: Int = 0
-        private set
-    override var decryptSuccessCount: Int = 0
-        private set
-
     override suspend fun readAll(): List<String?> {
-        decryptFailureCount = 0
-        decryptSuccessCount = 0
         return store.readAll()
     }
 

@@ -27,25 +27,29 @@ describe("Network Resilience", function () {
     });
 
     /**
-     * Helper: run Phase 1 key exchange, then establish Phase 2
-     * connection + orchestrator for the actual test.
+     * Helper: establish connection to signaling sheet + orchestrator
+     * for the actual test.
      */
-    async function setupPhase2(infra) {
-        // Phase 1: negotiate AES key over the private sheet
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
-        // Phase 2: refresh token, app uses cached sheet IDs + key
+    async function setupConnection(infra) {
         infra.forceStopApp();
         await infra.refreshToken();
         infra.startLogcatMonitor();
         infra.launchApp();
 
-        const peer = await infra.startOrchestrator({ phase: 2 });
+        const peer = await infra.startOrchestrator();
         const connected = await waitForPeerConnection(peer, 120_000);
-        expect(connected, "Initial Phase 2 connection should succeed").to.be.true;
+        expect(connected, "Initial connection should succeed").to.be.true;
         await sleep(10_000); // stabilize
+
+        // Verify connection survived stabilization — if ICE dropped during the
+        // sleep, wait for the automatic rebuild before starting the test.
+        if (peer.connectedPeers().length === 0) {
+            console.log("    ⚠ Connection dropped during stabilization — waiting for rebuild...");
+            const rebuilt = await waitForPeerConnection(peer, 120_000);
+            expect(rebuilt, "Connection should rebuild after early drop").to.be.true;
+            await sleep(5_000);
+        }
+
         return peer;
     }
 
@@ -53,7 +57,7 @@ describe("Network Resilience", function () {
         this.timeout(300_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Confirm baseline: send a notification before disruption
         const baseline = makeTestNotification(0);
@@ -74,9 +78,10 @@ describe("Network Resilience", function () {
         await sleep(5_000);
         expect(infra.hasNonce(during._testNonce), "Should not arrive while WiFi is off").to.be.false;
 
-        // Restore WiFi — the app's WebRtcService.onAvailable() should detect
-        // networkLost=true and call requestRebootstrap(), which tears down the
-        // stale OrchestratorPeer and builds a fresh one that reconnects to us.
+        // Restore WiFi — the app's WebRtcService.onAvailable() detects networkLost=true
+        // and calls requestConnect().  resolveAndConnect() sees the peer is still in-mesh
+        // and short-circuits.  The peer's own poll() loop resumes polling once HTTP works;
+        // the ICE zombie check handles any stale STUN bindings and rebuilds if needed.
         console.log("    Restoring WiFi...");
         infra.setWifi(true);
 
@@ -101,7 +106,7 @@ describe("Network Resilience", function () {
         this.timeout(300_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Enable airplane mode (kills all radios)
         console.log("    Enabling airplane mode...");
@@ -133,7 +138,7 @@ describe("Network Resilience", function () {
         this.timeout(600_000); // 10 min — needs time to stabilize
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Rapid flap WiFi 5 times
         console.log("    Starting network flap sequence...");
@@ -146,10 +151,9 @@ describe("Network Resilience", function () {
         }
 
         // The app should autonomously recover after the flapping stops.
-        // Each onAvailable after networkLost=true triggers requestRebootstrap(),
-        // which tears down the stale peer and builds fresh. The production code
-        // also cleans stale offers/answers from the signaling sheet (ICE failure
-        // cleanup + stop() cleanup).
+        // onAvailable calls requestConnect() → resolveAndConnect() no-ops (peer still in mesh).
+        // The peer's poll() loop resumes; the ICE zombie check detects any stale STUN
+        // bindings and rebuilds the connection within the same signaling slot.
         console.log("    Waiting for app to autonomously recover...");
         const reconnected = await waitForPeerConnection(peer, 180_000);
         expect(reconnected, "App should autonomously recover after network flapping").to.be.true;
@@ -168,7 +172,7 @@ describe("Network Resilience", function () {
         this.timeout(600_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Go offline
         console.log("    Going offline for 2 minutes...");
@@ -201,7 +205,7 @@ describe("Network Resilience", function () {
         this.timeout(300_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Send notification and IMMEDIATELY kill WiFi
         const notif = makeTestNotification(40);

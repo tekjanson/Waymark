@@ -64,7 +64,7 @@ describe("Soak / Long-running Stability", function () {
                     console.log("      ⚡ Disruption: Orchestrator restart");
                     infra.stopOrchestrator();
                     await sleep(10_000);
-                    currentPeer = await infra.startOrchestrator({ phase: 2 });
+                    currentPeer = await infra.startOrchestrator();
                     console.log("      ⚡ Orchestrator restarted");
                 },
             },
@@ -109,17 +109,13 @@ describe("Soak / Long-running Stability", function () {
             return disruptions[Math.floor(Math.random() * disruptions.length)];
         }
 
-        /* ---- Bootstrap: Phase 1 key exchange then Phase 2 ---- */
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
+        /* ---- Bootstrap ---- */
         infra.forceStopApp();
         await infra.refreshToken();
         infra.startLogcatMonitor();
         infra.launchApp();
 
-        let currentPeer = await infra.startOrchestrator({ phase: 2 });
+        let currentPeer = await infra.startOrchestrator();
         const peerOk = await waitForPeerConnection(currentPeer, 120_000);
         expect(peerOk, "Initial connection should succeed").to.be.true;
         await sleep(10_000);

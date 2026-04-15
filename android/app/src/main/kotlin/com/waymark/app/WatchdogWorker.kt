@@ -24,13 +24,12 @@ class WatchdogWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         val prefs = applicationContext.getSharedPreferences(
             WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE
         )
-        // Check that we have at least SOME sheet ID (public or private) or an
-        // access token — meaning the user has logged in at least once.
-        val hasPublic = (prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: "").isNotBlank()
-        val hasPrivate = (prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: "").isNotBlank()
+        // Check that we have a signaling sheet ID or an access token —
+        // meaning the user has logged in at least once.
+        val hasSheet = (prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: "").isNotBlank()
         val hasToken = (prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: "").isNotBlank()
 
-        if (!hasPublic && !hasPrivate && !hasToken) {
+        if (!hasSheet && !hasToken) {
             Log.d(TAG, "No credentials cached — skipping watchdog restart")
             return Result.success()
         }

@@ -21,7 +21,6 @@ class ConnectionStateTest {
         val state = ConnectionState.Idle
         assertNull(state.activePeer)
         assertNull(state.activeSheetId)
-        assertFalse(state.isPhase1)
     }
 
     @Test
@@ -29,11 +28,10 @@ class ConnectionStateTest {
         val state = ConnectionState.Connecting
         assertNull(state.activePeer)
         assertNull(state.activeSheetId)
-        assertFalse(state.isPhase1)
     }
 
     @Test
-    fun phase1_hasActivePeer() {
+    fun connected_hasActivePeer() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val store = SignalingStore()
         val client = InMemorySignalingClient(store)
@@ -46,32 +44,9 @@ class ConnectionStateTest {
             onNotification = { _, _ -> }
         )
 
-        val state = ConnectionState.Phase1("test-sheet-id", peer)
+        val state = ConnectionState.Connected("test-sheet-id", peer)
         assertSame(peer, state.activePeer)
         assertEquals("test-sheet-id", state.activeSheetId)
-        assertTrue(state.isPhase1)
-
-        peer.stop()
-    }
-
-    @Test
-    fun phase2_hasActivePeer() {
-        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val store = SignalingStore()
-        val client = InMemorySignalingClient(store)
-        val peer = OrchestratorPeer(
-            context = ctx,
-            sheetId = "test",
-            peerId = "aaaa0001",
-            displayName = "Test",
-            signalingClient = client,
-            onNotification = { _, _ -> }
-        )
-
-        val state = ConnectionState.Phase2("public-sheet-id", peer)
-        assertSame(peer, state.activePeer)
-        assertEquals("public-sheet-id", state.activeSheetId)
-        assertFalse(state.isPhase1)
 
         peer.stop()
     }
@@ -81,6 +56,5 @@ class ConnectionStateTest {
         val state = ConnectionState.Reconnecting
         assertNull(state.activePeer)
         assertNull(state.activeSheetId)
-        assertFalse(state.isPhase1)
     }
 }

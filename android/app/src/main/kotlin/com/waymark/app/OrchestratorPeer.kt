@@ -93,8 +93,6 @@ class OrchestratorPeer(
         private const val ICE_DISCONNECT_GRACE_MS = 30_000L
         /** Consecutive Sheets IO failures before forcing a mesh reconnect (refreshes token). */
         private const val SHEETS_FAILURE_THRESHOLD = 3
-        /** Consecutive decrypt-failure polls before deciding the AES key has been cycled. */
-        private const val DECRYPT_FAILURE_THRESHOLD = 3
         /** If alone (zero alive peers) for this many ms, invoke [onAloneTimeout] to
          *  trigger a re-bootstrap that re-reads Drive sheet IDs. */
         private const val ALONE_TIMEOUT_MS = 60_000L
@@ -115,24 +113,8 @@ class OrchestratorPeer(
     private val lastPong = ConcurrentHashMap<String, Long>()
     /** Counts consecutive Sheets API failures; resets on a successful read to detect token expiry. */
     private val _sheetsFailures = AtomicInteger(0)
-    /** Counts consecutive polls where GCM decryption fails on all encrypted cells.
-     *  When this exceeds [DECRYPT_FAILURE_THRESHOLD] the AES key has been cycled remotely
-     *  and [onSignalKeyStale] is invoked to trigger a key re-fetch. */
-    private val _decryptFailures = AtomicInteger(0)
     /** Epoch-ms when the peer first observed zero alive peers.  Reset when ≥1 peer is found. */
     @Volatile private var _aloneSince = 0L
-
-    /**
-     * Called when consecutive GCM decryption failures indicate the signal key was cycled.
-     * Default: no-op.  [WebRtcService] overrides this to clear the cached key and reconnect.
-     */
-    var onSignalKeyStale: (() -> Unit)? = null
-
-    /**
-     * Called when a waymark-key-exchange message arrives over the DataChannel.
-     * WebRtcService overrides this to store the key and switch to the public sheet.
-     */
-    var onKeyReceived: ((keyHex: String) -> Unit)? = null
 
     /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
      *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
@@ -331,22 +313,6 @@ class OrchestratorPeer(
             val vals     = signalingClient.readAll()
             _sheetsFailures.set(0)  // successful Sheets read — reset error count
 
-            // Detect cycled AES key: if encrypted cells consistently fail GCM decryption
-            // AND no encrypted cells succeed, the key has been rotated.
-            // When some cells decrypt fine (successes > 0) the key is correct — failures
-            // are from stale cells written with a previous key by dead peers.
-            if (signalingClient.decryptFailureCount > 0 && signalingClient.decryptSuccessCount == 0) {
-                val failRow = _decryptFailures.incrementAndGet()
-                if (failRow >= DECRYPT_FAILURE_THRESHOLD) {
-                    Log.w(TAG, "Signal key appears cycled ($failRow consecutive polls with 0 decrypt successes) — notifying service")
-                    _decryptFailures.set(0)
-                    onSignalKeyStale?.invoke()
-                    return@withContext
-                }
-            } else {
-                _decryptFailures.set(0)
-            }
-
             // ── Slot eviction check ──
             // If another peer overwrote our presence cell (collision), our
             // heartbeat is gone.  Detect this and re-join on a different slot
@@ -452,13 +418,32 @@ class OrchestratorPeer(
                     remoteNonces[remotePeerId] = remoteNonce
                 }
 
-                val entry = peers[remotePeerId]
+                var entry = peers[remotePeerId]
 
-                // Skip already-connected peers
+                // Skip already-connected peers — but verify ICE is healthy.
+                // After airplane mode the DataChannel may locally report OPEN even
+                // though the underlying ICE transport is disconnected/failed (stale
+                // STUN bindings).  Tear down the zombie entry so the loop below
+                // rebuilds the connection this cycle.
                 if (entry?.dc?.state() == DataChannel.State.OPEN) {
-                    if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
-                    if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
-                    continue
+                    val ice = entry.pc.iceConnectionState()
+                    if (ice == PeerConnection.IceConnectionState.DISCONNECTED ||
+                        ice == PeerConnection.IceConnectionState.FAILED ||
+                        ice == PeerConnection.IceConnectionState.CLOSED
+                    ) {
+                        Log.w(TAG, "ICE $remotePeerId is $ice despite OPEN DC — dropping for rebuild")
+                        _iceFailedPeers.add(remotePeerId)
+                        peers.remove(remotePeerId)?.pc?.dispose()
+                        lastPong.remove(remotePeerId)
+                        fireConnectionState()
+                        if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
+                        if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
+                        entry = null  // cleared — fall through to rebuild
+                    } else {
+                        if (myOffers.has(remotePeerId))  { myOffers.remove(remotePeerId);  offDirty = true }
+                        if (myAnswers.has(remotePeerId)) { myAnswers.remove(remotePeerId); ansDirty = true }
+                        continue
+                    }
                 }
 
                 val weInit = peerId < remotePeerId
@@ -804,15 +789,6 @@ class OrchestratorPeer(
                 }
                 "waymark-pong" -> {
                     lastPong[remotePeerId] = System.currentTimeMillis()
-                }
-                "waymark-key-exchange" -> {
-                    val keyHex = obj.optString("key", "")
-                    if (keyHex.length == 64) {
-                        Log.i(TAG, "Key exchange received from $remotePeerId (${keyHex.length / 2} bytes)")
-                        onKeyReceived?.invoke(keyHex)
-                    } else {
-                        Log.w(TAG, "Key exchange from $remotePeerId: invalid key length ${keyHex.length}")
-                    }
                 }
                 "waymark-notification", "orchestrator-alert" -> {
                     val title = obj.optString("title", "Waymark")

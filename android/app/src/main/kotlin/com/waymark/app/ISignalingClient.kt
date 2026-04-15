@@ -19,16 +19,9 @@ package com.waymark.app
  */
 interface ISignalingClient {
 
-    /** Number of encrypted cells that failed GCM decryption on the most recent [readAll]. */
-    val decryptFailureCount: Int
-
-    /** Number of encrypted cells successfully decrypted on the most recent [readAll]. */
-    val decryptSuccessCount: Int
-
     /**
      * Read the entire signaling column, returning a list of nullable strings
      * indexed by 0-based row number.  Empty rows appear as null.
-     * Encrypted values are transparently decrypted when a key is available.
      *
      * @throws java.io.IOException on network/API failure after all retries
      */
@@ -36,7 +29,7 @@ interface ISignalingClient {
 
     /**
      * Write [value] to the signaling column at [row] (0-based index).
-     * Empty values clear the cell.  Non-empty values are encrypted when a key is set.
+     * Empty values clear the cell.
      *
      * @throws java.io.IOException on network/API failure after all retries
      */

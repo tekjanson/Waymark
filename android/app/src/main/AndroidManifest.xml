@@ -77,19 +77,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Debug/test helper: set or clear the AES signal key via adb broadcast.
-             NOT exported — uses adb shell am broadcast with explicit component name.
-             This prevents other apps from setting/clearing the encryption key. -->
-        <receiver
-            android:name=".SignalKeyReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.waymark.app.action.SET_SIGNAL_KEY" />
-                <action android:name="com.waymark.app.action.CLEAR_SIGNAL_KEY" />
-            </intent-filter>
-        </receiver>
-
     </application>
 
 </manifest>

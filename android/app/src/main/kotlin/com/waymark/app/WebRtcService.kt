@@ -8,15 +8,12 @@
    [ConnectionManager] which provides Mutex-protected, debounced
    state management.
 
-   Two-phase encrypted architecture
-   ---------------------------------
-   Phase 1 — Key Exchange (private sheet, plaintext, OAuth-protected):
-     No AES key → connect to the PRIVATE sheet in plaintext.
-     Orchestrator sends the AES-256 key over the DataChannel.
-
-   Phase 2 — Encrypted Notifications (public sheet, AES-256-GCM):
-     Key cached → connect to the PUBLIC sheet with encryption.
-     Notifications flow over the P2P DataChannel.
+   Single-sheet architecture
+   -------------------------
+   The app connects to one OAuth-protected signaling sheet
+   (resolved from .waymark-data.json on Drive) and exchanges
+   WebRTC signaling in plaintext.  OAuth token refresh keeps
+   the connection alive indefinitely.
    ============================================================ */
 
 package com.waymark.app
@@ -40,13 +37,10 @@ class WebRtcService : LifecycleService() {
         const val ACTION_CONNECT          = "com.waymark.app.action.CONNECT"
         const val ACTION_UPDATE_TOKEN     = "com.waymark.app.action.UPDATE_TOKEN"
         const val ACTION_STOP             = "com.waymark.app.action.STOP"
-        const val ACTION_SET_SIGNAL_KEY   = "com.waymark.app.action.SET_SIGNAL_KEY"
-        const val ACTION_CLEAR_SIGNAL_KEY = "com.waymark.app.action.CLEAR_SIGNAL_KEY"
         const val ACTION_REBOOTSTRAP      = "com.waymark.app.action.REBOOTSTRAP"
 
         const val EXTRA_SHEET_ID   = "sheet_id"
         const val EXTRA_TOKEN      = "token"
-        const val EXTRA_SIGNAL_KEY = "signalKey"
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -132,28 +126,6 @@ class WebRtcService : LifecycleService() {
                     connectionManager.disconnect()
                     stopSelf()
                 }
-            }
-
-            ACTION_SET_SIGNAL_KEY -> {
-                val keyHex = intent.getStringExtra(EXTRA_SIGNAL_KEY) ?: ""
-                if (keyHex.length == 64) {
-                    val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-                    prefs.edit()
-                        .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
-                        .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
-                        .apply()
-                    Log.i(TAG, "Signal key updated via intent (${keyHex.length / 2} bytes)")
-                    connectionManager.requestRebootstrap()
-                } else {
-                    Log.w(TAG, "ACTION_SET_SIGNAL_KEY: invalid key length ${keyHex.length}")
-                }
-            }
-
-            ACTION_CLEAR_SIGNAL_KEY -> {
-                val prefs = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-                prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
-                Log.i(TAG, "Signal key cleared — re-bootstrapping via Phase 1")
-                connectionManager.requestRebootstrap()
             }
 
             ACTION_REBOOTSTRAP -> {

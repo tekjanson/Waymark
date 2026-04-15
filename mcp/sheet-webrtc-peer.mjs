@@ -14,67 +14,12 @@
      block + 1  OFFERS    { targetPeerId: { sdp, ts }, ... }
      block + 2  ANSWERS   { toPeerId: { sdp, ts }, ... }
 
-   All cell values are AES-256-GCM encrypted when an encryptionKey is
-   provided.  The format is compatible with SignalingEncryption.kt on Android:
-     ENCRYPT_PREFIX + Base64( iv[12] + ciphertext + authTag[16] )
-
    Signaling column: T (index 19, 1-based 20) — to match the Android + web app.
    ============================================================ */
 
 import { RTCPeerConnection } from "werift";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-
-/* ---------- Cell encryption helpers (mirrors SignalingEncryption.kt) ---------- */
-
-/** Prefix identifying an encrypted signaling cell. Matches Android ENCRYPT_PREFIX. */
-const ENCRYPT_PREFIX = "\uD83D\uDD10SIG:";
-
-/**
- * Encrypt a signaling cell value with AES-256-GCM.
- *
- * @param {string} plaintext  - JSON string to encrypt
- * @param {string} keyHex     - 64-char hex AES-256 key
- * @returns {string}           ENCRYPT_PREFIX + Base64(iv[12] + ciphertext + authTag[16])
- */
-function encryptCell(plaintext, keyHex) {
-    const key = Buffer.from(keyHex, "hex");
-    const iv  = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, iv);
-    const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const tag = cipher.getAuthTag();                    // 16 bytes
-    const combined = Buffer.concat([iv, encrypted, tag]);
-    return ENCRYPT_PREFIX + combined.toString("base64");
-}
-
-/**
- * Decrypt a signaling cell value encrypted by [encryptCell] or
- * SignalingEncryption.kt#encrypt().
- *
- * Cells that do not start with ENCRYPT_PREFIX are returned unchanged
- * (backward compatibility with any unencrypted rows).
- *
- * @param {string|null} encoded  - Cell value from the sheet
- * @param {string}      keyHex   - 64-char hex AES-256 key
- * @returns {string|null} Decrypted plaintext, original value if not encrypted,
- *                         or null if decryption fails (wrong key / corrupt data)
- */
-function decryptCell(encoded, keyHex) {
-    if (!encoded) return encoded;
-    if (!encoded.startsWith(ENCRYPT_PREFIX)) return encoded;  // plaintext passthrough
-    try {
-        const key     = Buffer.from(keyHex, "hex");
-        const combined = Buffer.from(encoded.slice(ENCRYPT_PREFIX.length), "base64");
-        const iv      = combined.subarray(0, 12);
-        const tag     = combined.subarray(combined.length - 16);
-        const data    = combined.subarray(12, combined.length - 16);
-        const decipher = createDecipheriv("aes-256-gcm", key, iv);
-        decipher.setAuthTag(tag);
-        return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
-    } catch {
-        return null;  // Wrong key or corrupted ciphertext
-    }
-}
+import { randomBytes } from "node:crypto";
 
 /* ---------- Protocol constants (mirrors WaymarkConfig.kt) ---------- */
 
@@ -114,35 +59,28 @@ const STUN_SERVERS = [
  * Participates in a Waymark WebRTC peer mesh using Google Sheets for signaling.
  *
  * @param {object} opts
- * @param {string}              opts.sheetId       - Google Sheets spreadsheet ID (public signaling sheet)
+ * @param {string}              opts.sheetId       - Google Sheets spreadsheet ID (signaling sheet)
  * @param {import('google-auth-library').GoogleAuth} opts.auth - Authenticated GoogleAuth
  * @param {string}              opts.peerId        - 8-char hex peer ID for this instance
  * @param {string}              opts.displayName   - Human-readable name shown in peer lists
  * @param {function}            [opts.getToken]    - () => Promise<string> — preferred over auth when provided
- * @param {string}              [opts.encryptionKey] - 64-char hex AES-256 key from the private key sheet
  * @param {Array}               [opts.iceServers]   - RTCIceServer array; include TURN entries here for
  *                                                   hard-NAT / symmetric-NAT fallback. Defaults to
  *                                                   Google STUN only.
  * @param {function}            [opts.onMessage]   - (remotePeerId, message) callback
  * @param {function}            [opts.onConnect]   - (remotePeerId) called on DataChannel open
- * @param {function}            [opts.onKeyExchange] - (remotePeerId, keyHex) called when a waymark-key-exchange message arrives
  * @param {string}              [opts.bufferFile]  - Optional path to persist the notification queue across restarts
  */
 export class SheetWebRtcPeer {
-    constructor({ sheetId, auth, getToken, peerId, displayName, encryptionKey, getEncryptionKey, iceServers, onMessage, onConnect, onKeyExchange, bufferFile }) {
+    constructor({ sheetId, auth, getToken, peerId, displayName, iceServers, onMessage, onConnect, bufferFile }) {
         this.sheetId       = sheetId;
         this.auth          = auth;
         this._getTokenFn   = getToken || null;
         this.peerId        = peerId;
         this.displayName   = displayName;
-        // getEncryptionKey() is called on every read/write so the key can be rotated live.
-        // Fall back to the static encryptionKey string for backwards compatibility.
-        this._getKeyFn     = getEncryptionKey || (encryptionKey ? () => encryptionKey : null);
-        this._encKey       = encryptionKey || null;  // kept for read-only callers that inspect it directly
         this._iceServers   = iceServers || STUN_SERVERS;  // pass TURN entries here for hard-NAT fallback
         this.onMessage     = onMessage;
         this.onConnect     = onConnect;
-        this.onKeyExchange = onKeyExchange || null;
         this._bufferFile   = bufferFile || null;
 
         /** @type {Map<string, { pc: RTCPeerConnection, dc: RTCDataChannel|null, state: string }>} */
@@ -165,8 +103,6 @@ export class SheetWebRtcPeer {
         this._pingTimer      = null;   // DataChannel keepalive interval
         this._lastPong       = new Map(); // remotePeerId → epoch-ms of last pong received
         this._peerNonces     = new Map(); // remotePeerId → last observed presence nonce
-        this._lastDecryptFailures  = 0;  // encrypted cells that failed GCM on last _readAll
-        this._lastDecryptSuccesses = 0;  // encrypted cells that succeeded GCM on last _readAll
 
         // Load persisted buffer after all fields are initialized (survives process restarts)
         if (this._bufferFile) {
@@ -239,6 +175,14 @@ export class SheetWebRtcPeer {
         for (const [id, entry] of this.peers) {
             try {
                 if (entry.dc && entry.dc.readyState === "open") {
+                    // Don't send into a dead SCTP buffer — if ICE is disconnected
+                    // the message won't actually be delivered, yet we'd mark the
+                    // peer as "delivered" and the notif-buffer flush would skip it
+                    // after rebuild.  Let the buffer hold it instead.
+                    const ice = entry.pc?.iceConnectionState;
+                    if (ice === "disconnected" || ice === "failed" || ice === "closed") {
+                        continue;
+                    }
                     entry.dc.send(json);
                     deliveredTo.add(id);
                     sent++;
@@ -250,19 +194,6 @@ export class SheetWebRtcPeer {
         if (isNotif) this._enqueueNotif(json, deliveredTo);
         return sent;
     }
-
-    /**
-     * Send a waymark-key-exchange message to all connected peers.
-     * Used by the orchestrator to distribute the AES-256 key
-     * to peers on the private (key-exchange) sheet.
-     * @param {string} keyHex - 64-char hex AES-256 key
-     * @returns {number} count of peers the key was sent to
-     */
-    broadcastKeyExchange(keyHex) {
-        return this.broadcast({ type: "waymark-key-exchange", key: keyHex });
-    }
-
-    /* ---------- Notification buffer ---------- */
 
     /**
      * Add a notification to the buffer with the set of peers already delivered.
@@ -328,7 +259,13 @@ export class SheetWebRtcPeer {
 
     connectedPeers() {
         return [...this.peers.entries()]
-            .filter(([, e]) => e.state === "connected")
+            .filter(([, e]) => {
+                if (e.state !== "connected") return false;
+                if (e.dc?.readyState !== "open") return false;
+                const ice = e.pc?.iceConnectionState;
+                if (ice === "disconnected" || ice === "failed" || ice === "closed") return false;
+                return true;
+            })
             .map(([id]) => id);
     }
 
@@ -343,18 +280,6 @@ export class SheetWebRtcPeer {
         const entry = this.peers.get(remotePeerId);
         if (!entry?.dc || entry.dc.readyState !== "open") return false;
         try { entry.dc.send(json); return true; } catch { return false; }
-    }
-
-    /**
-     * Send a waymark-key-exchange message to a specific peer.
-     * Used by the orchestrator to distribute the AES-256 key
-     * to a single newly-connected peer on the private sheet.
-     * @param {string} remotePeerId
-     * @param {string} keyHex - 64-char hex AES-256 key
-     * @returns {boolean} true if sent
-     */
-    sendKeyExchangeTo(remotePeerId, keyHex) {
-        return this.sendTo(remotePeerId, { type: "waymark-key-exchange", key: keyHex });
     }
 
     /* ---------- Sheets helpers ---------- */
@@ -387,27 +312,12 @@ export class SheetWebRtcPeer {
 
             // Pad to TOTAL_ROWS so callers can index by 0-based row safely
             const result = new Array(TOTAL_ROWS + 2).fill(null);
-            let _decryptFailures = 0;
-            let _decryptSuccesses = 0;
             for (let i = 0; i < rows.length; i++) {
                 const row = rows[i];
                 if (row && row.length > 0 && row[0] !== "") {
-                    const raw = row[0];
-                    // Decrypt cell if a key is available; passthrough if no key or no prefix
-                    const key = this._getKeyFn ? this._getKeyFn() : null;
-                    if (key) {
-                        const dec = decryptCell(raw, key);
-                        if (raw.startsWith(ENCRYPT_PREFIX)) {
-                            if (dec === null) _decryptFailures++; else _decryptSuccesses++;
-                        }
-                        result[i + BLOCK_START] = dec;  // null on failure, not raw ciphertext
-                    } else {
-                        result[i + BLOCK_START] = raw;
-                    }
+                    result[i + BLOCK_START] = row[0];
                 }
             }
-            this._lastDecryptFailures  = _decryptFailures;
-            this._lastDecryptSuccesses = _decryptSuccesses;
             return result;
         }
         throw lastErr;
@@ -417,9 +327,7 @@ export class SheetWebRtcPeer {
         const token = await this._getToken();
         const sheetsRow = rowIdx; // already 1-based (BLOCK_START=1)
         const range = `Sheet1!T${sheetsRow}`;
-        // Encrypt non-empty values when a key is available
-        const key = this._getKeyFn ? this._getKeyFn() : null;
-        const cellValue = (value && key) ? encryptCell(value, key) : (value ?? "");
+        const cellValue = value ?? "";
         const body = JSON.stringify({
             range,
             majorDimension: "ROWS",
@@ -862,11 +770,6 @@ export class SheetWebRtcPeer {
                     this._lastPong.set(remotePeerId, Date.now()); // update keepalive clock
                     return;
                 }
-                if (msg.type === "waymark-key-exchange" && msg.key) {
-                    this._log(`key-exchange received from ${remotePeerId} (${msg.key.length / 2} bytes)`);
-                    if (this.onKeyExchange) this.onKeyExchange(remotePeerId, msg.key);
-                    return;
-                }
                 if (this.onMessage) this.onMessage(remotePeerId, msg);
             } catch {}
         };
@@ -887,5 +790,3 @@ export class SheetWebRtcPeer {
     }
 }
 
-/* ---------- Module-level exports for testing ---------- */
-export { encryptCell, decryptCell, ENCRYPT_PREFIX };

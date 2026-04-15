@@ -61,16 +61,18 @@ object WaymarkConfig {
     const val PREF_ACCESS_TOKEN = "access_token"
     /** Epoch-ms when the access token was last stored — used for expiry checks. */
     const val PREF_ACCESS_TOKEN_SET_MS = "access_token_set_ms"
+    /** Epoch-ms when the access token expires (absolute), as reported by the OAuth server. */
+    const val PREF_TOKEN_EXPIRY_MS = "token_expiry_ms"
+    /** OAuth refresh token — enables native background token refresh when the WebView is closed. */
+    const val PREF_REFRESH_TOKEN = "refresh_token"
+    /** OAuth client_id — needed for native refresh_token exchange. */
+    const val PREF_CLIENT_ID = "client_id"
+    /** OAuth client_secret — needed for native refresh_token exchange. */
+    const val PREF_CLIENT_SECRET = "client_secret"
     const val PREF_ACTIVE_SHEET = "active_sheet"
     const val PREF_DISPLAY_NAME = "display_name"
-    /** Cached PRIVATE signaling sheet ID (OAuth-gated, stores the AES key in col A). */
+    /** Cached PRIVATE signaling sheet ID (OAuth-gated). */
     const val PREF_SIGNALING_SHEET_ID = "signaling_sheet_id"
-    /** Cached PUBLIC P2P signaling sheet ID (encrypted with the AES key from private sheet). */
-    const val PREF_PUBLIC_SIGNALING_ID = "public_signaling_sheet_id"
-    /** Cached AES-256 signal key hex (64 chars) fetched from the private key sheet. */
-    const val PREF_SIGNAL_KEY = "signal_key"
-    /** Epoch-ms when the cached signal key was last fetched — used to detect key cycling. */
-    const val PREF_SIGNAL_KEY_VERSION = "signal_key_version"
     /**
      * Stable 8-char hex peer ID for this device, generated once on first run
      * and preserved forever.  Never regenerated — a stable ID means remote
@@ -78,12 +80,4 @@ object WaymarkConfig {
      * the service restarts.
      */
     const val PREF_PEER_ID = "peer_id"
-
-    /* ---------- Private key sheet access ---------- */
-
-    /** Sheets range for the AES signal key stored in column A of the private sheet. */
-    const val KEY_RANGE = "Sheet1!A1:A2"
-
-    /** Prefix identifying an encrypted signaling cell — must match SignalingEncryption. */
-    const val SIG_ENCRYPT_PREFIX = "\uD83D\uDD10SIG:"
 }

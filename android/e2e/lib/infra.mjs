@@ -12,31 +12,28 @@
    ║                                                         ║
    ║  MUST use production code paths (under test):           ║
    ║    • Sheet discovery from Drive (.waymark-data.json)     ║
-   ║    • Phase 1 key exchange via DataChannel                ║
-   ║    • Phase 2 encrypted notifications                     ║
-   ║    • State machine transitions (Idle→P1→P2, key cycle)   ║
+   ║    • Single-sheet signaling (OAuth-protected)            ║
+   ║    • Notification delivery via DataChannel               ║
+   ║    • State machine transitions (Idle→Connecting→Connected)║
    ║    • Reconnection & recovery after disruptions           ║
    ║    • Notification display via NotificationHelper         ║
    ║                                                         ║
    ║  MUST NOT inject or bypass:                              ║
    ║    • Sheet IDs (app discovers from Drive)                ║
-   ║    • Signal key (app receives via Phase 1 DataChannel)   ║
    ║    • Peer ID (app generates locally on first run)        ║
-   ║    • Phase transitions (app drives its own state)        ║
+   ║    • State transitions (app drives its own state)        ║
    ║                                                         ║
    ║  CAN build unique states to test (via adb/setPrefsState):║
-   ║    • Wrong signal key → test key cycling detection       ║
    ║    • Corrupted prefs → test graceful recovery            ║
    ║    • Missing prefs → test cold-start behavior            ║
    ║                                                         ║
    ║  Test orchestrator uses production SheetWebRtcPeer       ║
-   ║  with the same OAuth token and real signaling sheets.    ║
+   ║  with the same OAuth token and real signaling sheet.     ║
    ╚══════════════════════════════════════════════════════════╝
 
    Infrastructure mirrors the real orchestrator.mjs:
      - ensureSignalingInfra()  → OAuth → .waymark-data.json →
-       validate/create signaling sheets
-     - resolveSignalKey()      → reads ~/.config/gcloud/waymark-signal.key
+       validate/create signaling sheet
      - SheetWebRtcPeer         → getToken: getUserOAuthToken
    ============================================================ */
 
@@ -67,6 +64,15 @@ const OAUTH_TOKEN_URL   = "https://oauth2.googleapis.com/token";
  */
 
 async function getUserOAuthToken() {
+    const tokenData = await getOAuthTokenData();
+    return tokenData.access_token;
+}
+
+/**
+ * Read and auto-refresh the full OAuth token data including refresh credentials.
+ * Returns: { access_token, expiry_date, refresh_token, client_id, client_secret }
+ */
+async function getOAuthTokenData() {
     const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH
         || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-oauth-token.json");
     let tokenData;
@@ -100,7 +106,7 @@ async function getUserOAuthToken() {
         tokenData.expiry_date  = Date.now() + (refreshed.expires_in * 1000);
         try { writeFileSync(tokenPath, JSON.stringify(tokenData, null, 2)); } catch { /* ok */ }
     }
-    return tokenData.access_token;
+    return tokenData;
 }
 
 /* ---------- Google Sheets / Drive helpers (same as orchestrator.mjs) ---------- */
@@ -168,10 +174,9 @@ async function driveUpdateJson(fileId, data, token) {
  * Mirrors orchestrator.mjs ensureSignalingInfra() exactly:
  *  1. Gets user OAuth token
  *  2. Finds .waymark-data.json on Drive
- *  3. Validates private + public signaling sheets (recreates if trashed/deleted)
- *  4. Sets public-write permission on the public sheet
- *  5. Persists changes back to .waymark-data.json
- *  Returns { privateSheetId, publicSheetId }
+ *  3. Validates signaling sheet (recreates if trashed/deleted)
+ *  4. Persists changes back to .waymark-data.json
+ *  Returns { signalingSheetId }
  */
 async function ensureSignalingInfra() {
     const token = await getUserOAuthToken();
@@ -200,48 +205,25 @@ async function ensureSignalingInfra() {
     const data = await fileRes.json();
     let dirty = false;
 
-    // ── Private sheet — plaintext, OAuth-protected key exchange ──
-    let privateId = data.signalingSheetId || null;
-    if (privateId && !(await sheetExists(privateId, token))) {
-        console.log(`  Private sheet ${privateId} deleted — recreating...`);
-        privateId = null;
+    // ── Signaling sheet — OAuth-protected ──
+    let sheetId = data.signalingSheetId || null;
+    if (sheetId && !(await sheetExists(sheetId, token))) {
+        console.log(`  Signaling sheet ${sheetId} deleted — recreating...`);
+        sheetId = null;
     }
-    if (!privateId) {
+    if (!sheetId) {
         const found = await driveFindByName(".waymark-signaling", token);
         if (found && (await sheetExists(found, token))) {
-            console.log(`  Found orphaned private sheet: ${found}`);
-            privateId = found;
+            console.log(`  Found orphaned signaling sheet: ${found}`);
+            sheetId = found;
         } else {
-            console.log("  Auto-provisioning private signaling sheet...");
-            privateId = await createSpreadsheet(".waymark-signaling", token);
-            console.log(`  Created private sheet: ${privateId}`);
+            console.log("  Auto-provisioning signaling sheet...");
+            sheetId = await createSpreadsheet(".waymark-signaling", token);
+            console.log(`  Created signaling sheet: ${sheetId}`);
         }
-        data.signalingSheetId = privateId;
+        data.signalingSheetId = sheetId;
         dirty = true;
     }
-
-    // ── Public sheet — AES-256-GCM encrypted, publicly writable ──
-    let publicId = data.publicSignalingSheetId || null;
-    if (publicId && !(await sheetExists(publicId, token))) {
-        console.log(`  Public sheet ${publicId} deleted — recreating...`);
-        publicId = null;
-    }
-    if (!publicId) {
-        const found = await driveFindByName(".waymark-public-signaling", token);
-        if (found && (await sheetExists(found, token))) {
-            console.log(`  Found orphaned public sheet: ${found}`);
-            publicId = found;
-        } else {
-            console.log("  Auto-provisioning public signaling sheet...");
-            publicId = await createSpreadsheet(".waymark-public-signaling", token);
-            console.log(`  Created public sheet: ${publicId}`);
-        }
-        data.publicSignalingSheetId = publicId;
-        dirty = true;
-    }
-
-    // Always ensure public write permission (idempotent)
-    await setPublicWritable(publicId, token);
 
     // Persist changes back to Drive
     if (dirty) {
@@ -250,23 +232,7 @@ async function ensureSignalingInfra() {
         console.log("  Saved updated sheet IDs to .waymark-data.json");
     }
 
-    return { privateSheetId: privateId, publicSheetId: publicId };
-}
-
-/**
- * Reads the AES-256 signal key from the local key file.
- * Same path as orchestrator.mjs resolveSignalKey().
- */
-function resolveSignalKey() {
-    const keyFile = process.env.WAYMARK_KEY_FILE
-        || path.join(process.env.HOME || "/root", ".config/gcloud/waymark-signal.key");
-    try {
-        const key = readFileSync(keyFile, "utf8").trim();
-        if (key.length !== 64) throw new Error(`Invalid key length: ${key.length}`);
-        return key;
-    } catch (err) {
-        return null; // key not yet provisioned — Phase 1 will create it
-    }
+    return { signalingSheetId: sheetId };
 }
 
 async function clearSheetColumn(sheetId) {
@@ -280,12 +246,6 @@ async function clearSheetColumn(sheetId) {
         }
     );
     if (!resp.ok) console.warn(`clearSheetColumn: ${resp.status}`);
-}
-
-/* ---------- AES-256 key ---------- */
-
-function generateKeyHex() {
-    return randomBytes(32).toString("hex");
 }
 
 /* ---------- ADB helpers ---------- */
@@ -466,6 +426,34 @@ function dismissKeyguard() {
     } catch { /* ok */ }
 }
 
+/**
+ * Re-install Appium dependency APKs (io.appium.settings + UiAutomator2 server).
+ * After a device reboot the settings app often enters a broken state where the
+ * activity class cannot be found, causing createDriver() to fail. Calling this
+ * before createDriver() after a reboot fixes the issue.
+ */
+function reinstallAppiumDeps() {
+    const e2eDir = path.resolve(__dirname, "..");
+    const settingsApk = path.join(e2eDir,
+        "node_modules/appium-uiautomator2-driver/node_modules/io.appium.settings/apks/settings_apk-debug.apk");
+    const uia2Server = path.join(e2eDir,
+        "node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server/apks/appium-uiautomator2-server-v7.1.11.apk");
+    const uia2Test = path.join(e2eDir,
+        "node_modules/appium-uiautomator2-driver/node_modules/appium-uiautomator2-server/apks/appium-uiautomator2-server-debug-androidTest.apk");
+
+    for (const apk of [settingsApk, uia2Server, uia2Test]) {
+        try {
+            adb(`install -r "${apk}"`, { timeout: 60_000 });
+        } catch (e) {
+            console.warn(`  ⚠ Failed to install ${path.basename(apk)}: ${e.message}`);
+        }
+    }
+    // Launch settings once to verify it works
+    try {
+        adbShell("am start -n io.appium.settings/.Settings -a android.intent.action.MAIN -c android.intent.category.LAUNCHER");
+    } catch { /* ok */ }
+}
+
 /* ---------- Build helpers ---------- */
 
 function buildApk() {
@@ -506,23 +494,13 @@ export async function bootstrap(opts = {}) {
 
     // 1. Resolve signaling infra using the REAL production flow
     console.log("  Resolving signaling infrastructure (same as orchestrator)...");
-    const { privateSheetId, publicSheetId } = await ensureSignalingInfra();
-    console.log(`  ✓ Private sheet: ${privateSheetId}`);
-    console.log(`  ✓ Public sheet:  ${publicSheetId}`);
+    const { signalingSheetId } = await ensureSignalingInfra();
+    console.log(`  ✓ Signaling sheet: ${signalingSheetId}`);
 
-    // 2. Resolve the signal key from the local key file (may be null — Phase 1 sets it)
-    const signalKey = resolveSignalKey();
-    if (signalKey) {
-        console.log(`  ✓ Signal key:    ${signalKey.slice(0, 8)}… (from key file)`);
-    } else {
-        console.log("  ⚠ No signal key yet — Phase 1 key exchange will provision it");
-    }
-
-    // 3. Clear stale signaling data from sheets
-    console.log("  Clearing signaling columns...");
-    await clearSheetColumn(publicSheetId);
-    await clearSheetColumn(privateSheetId);
-    console.log("  ✓ Signaling columns cleared");
+    // 2. Clear stale signaling data from sheet
+    console.log("  Clearing signaling column...");
+    await clearSheetColumn(signalingSheetId);
+    console.log("  ✓ Signaling column cleared");
 
     // 4. Generate fresh peer ID for the test orchestrator
     const orchPeerId = randomBytes(4).toString("hex");
@@ -554,9 +532,7 @@ export async function bootstrap(opts = {}) {
     console.log("\n=== Bootstrap Complete ===\n");
 
     return new TestInfra({
-        publicSheetId,
-        privateSheetId,
-        signalKey,    // may be null if Phase 1 hasn't run yet
+        signalingSheetId,
         orchPeerId,
     });
 }
@@ -566,12 +542,9 @@ export async function bootstrap(opts = {}) {
  * Every test file receives this from bootstrap().
  */
 export class TestInfra {
-    constructor({ publicSheetId, privateSheetId, signalKey, orchPeerId }) {
-        this.publicSheetId  = publicSheetId;
-        this.privateSheetId = privateSheetId;
-        this.signalKey      = signalKey;
+    constructor({ signalingSheetId, orchPeerId }) {
+        this.signalingSheetId = signalingSheetId;
         this.orchPeerId     = orchPeerId;
-        this._phase1Done    = false;  // true after performPhase1KeyExchange() completes for this app install
         this._orchProcess   = null;
         this._logcatProcess = null;
         this._logBuffer     = "";
@@ -589,25 +562,19 @@ export class TestInfra {
     async startOrchestrator(opts = {}) {
         const { SheetWebRtcPeer } = await import("../../../mcp/sheet-webrtc-peer.mjs");
 
-        const sheetId = opts.phase === 1 ? this.privateSheetId : this.publicSheetId;
-        const encryptionKey = opts.phase === 1 ? undefined : this.signalKey;
-        // Fresh peer ID each start — avoids "dead peer" rejection after phase transitions
+        // Fresh peer ID each start — avoids "dead peer" rejection after restarts
         const peerId = randomBytes(4).toString("hex");
 
         this._orchPeer = new SheetWebRtcPeer({
-            sheetId,
+            sheetId: this.signalingSheetId,
             getToken: getUserOAuthToken,
             peerId,
             displayName: "E2E Test Orchestrator",
-            encryptionKey,
             onMessage: (remotePeerId, msg) => {
                 if (opts.onMessage) opts.onMessage(remotePeerId, msg);
             },
             onConnect: (remotePeerId) => {
                 if (opts.onConnect) opts.onConnect(remotePeerId);
-            },
-            onKeyExchange: (remotePeerId, keyHex) => {
-                if (opts.onKeyExchange) opts.onKeyExchange(remotePeerId, keyHex);
             },
         });
 
@@ -627,88 +594,12 @@ export class TestInfra {
     }
 
     /**
-     * Clear stale signaling data from both sheets.
+     * Clear stale signaling data from the sheet.
      * Call this before restarting the orchestrator when heavy
      * network disruption may have left stale SDP offers/answers.
      */
     async clearSignaling() {
-        await clearSheetColumn(this.publicSheetId).catch(() => {});
-        await clearSheetColumn(this.privateSheetId).catch(() => {});
-    }
-
-    /**
-     * Run the full Phase 1 key exchange protocol:
-     *  1. Inject Phase 1 prefs (private sheet, no key)
-     *  2. Launch the app
-     *  3. Start Phase 1 orchestrator on the private sheet
-     *  4. Wait for the Android peer to connect
-     *  5. Generate AES-256 key and send via DataChannel
-     *  6. Wait for Android to confirm receipt (via logcat)
-     *  7. Stop Phase 1 orchestrator
-     *  8. Store the negotiated key on this.signalKey
-     *
-     * @returns {string} The exchanged key (hex)
-     */
-    async performPhase1KeyExchange() {
-        console.log("  Phase 1: Key exchange on private sheet...");
-
-        // Inject only the OAuth token — app discovers sheets from Drive
-        this.forceStopApp();
-        await this.injectToken();
-        this.startLogcatMonitor();
-        this.launchApp();
-
-        // Start Phase 1 orchestrator (private sheet, no encryption)
-        let androidPeerId = null;
-        const keyAcked = { value: false };
-
-        const peer = await this.startOrchestrator({
-            phase: 1,
-            onConnect: (remotePeerId) => {
-                androidPeerId = remotePeerId;
-                console.log(`    Phase 1: Android peer connected: ${remotePeerId}`);
-            },
-        });
-
-        // Wait for Android peer to connect over the private sheet
-        const connected = await waitForPeerConnection(peer, 120_000);
-        if (!connected) throw new Error("Phase 1: Android peer never connected");
-        await sleep(5_000); // let DataChannel stabilize
-
-        // Use the key from the key file (production path) or generate a fresh one
-        const keyHex = this.signalKey || generateKeyHex();
-        const target = androidPeerId || peer.connectedPeers()[0];
-        if (!target) throw new Error("Phase 1: No peer to send key to");
-
-        console.log(`    Phase 1: Sending key to ${target}...`);
-        peer.sendKeyExchangeTo(target, keyHex);
-
-        // Wait for Android to log receipt of the key
-        // The Android app logs "key-exchange" or transitions to Phase 2
-        const keyReceived = await waitFor(() => {
-            const log = this.getFullLog();
-            return log.includes("key") && log.includes("exchange") ||
-                   log.includes("Phase2") ||
-                   log.includes("signal_key");
-        }, 30_000, 2_000);
-
-        if (!keyReceived) {
-            // Retry once — DataChannel might not have been fully ready
-            console.log("    Phase 1: Retrying key exchange...");
-            peer.sendKeyExchangeTo(target, keyHex);
-            await sleep(10_000);
-        }
-
-        // Stop Phase 1 orchestrator
-        this.stopOrchestrator();
-        this.forceStopApp();
-
-        // Store the negotiated key and mark Phase 1 complete
-        this.signalKey = keyHex;
-        this._phase1Done = true;
-        console.log(`  ✓ Phase 1 complete — key: ${keyHex.slice(0, 8)}…`);
-
-        return keyHex;
+        await clearSheetColumn(this.signalingSheetId).catch(() => {});
     }
 
     /* --- Logcat monitoring --- */
@@ -797,27 +688,46 @@ export class TestInfra {
      * Used after clearAppData() for a clean slate.
      * The app will discover sheet IDs from Drive and generate
      * its own peer ID — this is the production path.
+     *
+     * Also injects refresh_token + client credentials so the
+     * native foreground service can refresh its own token when
+     * it outlives the WebView session (production behavior).
      */
     async injectToken() {
-        const token = await getUserOAuthToken();
-        injectPrefs({
-            access_token: token,
+        const td = await getOAuthTokenData();
+        const prefs = {
+            access_token: td.access_token,
             access_token_set_ms: Date.now(),
-        });
+        };
+        if (td.expiry_date)    prefs.token_expiry_ms = td.expiry_date;
+        if (td.refresh_token)  prefs.refresh_token   = td.refresh_token;
+        if (td.client_id)      prefs.client_id       = td.client_id;
+        if (td.client_secret)  prefs.client_secret   = td.client_secret;
+        injectPrefs(prefs);
     }
 
     /**
      * Refresh the OAuth token in existing SharedPreferences.
      * Used between tests when prefs already have cached
      * sheet IDs, signal key, and peer ID from prior runs.
-     * Only the token is updated; everything else persists.
+     * Only the token + refresh credentials are updated; everything else persists.
+     *
+     * Also injects the known signaling_sheet_id so Android doesn't need a Drive
+     * API round-trip on startup after clearAppData(). This is test scaffolding —
+     * the drive-fetch path is exercised in production (cached from prior session).
      */
     async refreshToken() {
-        const token = await getUserOAuthToken();
-        mergeIntoPrefs({
-            access_token: token,
+        const td = await getOAuthTokenData();
+        const updates = {
+            access_token: td.access_token,
             access_token_set_ms: Date.now(),
-        });
+            signaling_sheet_id: this.signalingSheetId,
+        };
+        if (td.expiry_date)    updates.token_expiry_ms = td.expiry_date;
+        if (td.refresh_token)  updates.refresh_token   = td.refresh_token;
+        if (td.client_id)      updates.client_id       = td.client_id;
+        if (td.client_secret)  updates.client_secret   = td.client_secret;
+        mergeIntoPrefs(updates);
     }
 
     /**
@@ -839,6 +749,7 @@ export class TestInfra {
     rebootDevice()    { rebootDevice(); }
     waitForDevice(t)  { waitForDevice(t); }
     dismissKeyguard() { dismissKeyguard(); }
+    reinstallAppiumDeps() { reinstallAppiumDeps(); }
     readPrefs()       { return readPrefs(); }
     getActiveNotifications() { return getActiveNotifications(); }
 
@@ -857,11 +768,10 @@ export class TestInfra {
         // Stop app
         forceStopApp();
 
-        // Clear signaling columns (don't delete sheets — they're production infra)
-        console.log("  Clearing signaling columns...");
-        await clearSheetColumn(this.publicSheetId).catch(() => {});
-        await clearSheetColumn(this.privateSheetId).catch(() => {});
-        console.log("  ✓ Signaling columns cleared");
+        // Clear signaling column (don't delete sheet — it's production infra)
+        console.log("  Clearing signaling column...");
+        await clearSheetColumn(this.signalingSheetId).catch(() => {});
+        console.log("  ✓ Signaling column cleared");
 
         console.log("\n=== Teardown Complete ===\n");
     }

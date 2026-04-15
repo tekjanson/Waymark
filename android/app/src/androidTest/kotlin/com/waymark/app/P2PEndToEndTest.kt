@@ -168,58 +168,6 @@ class P2PEndToEndTest {
         )
     }
 
-    @Test
-    fun keyExchange_receivedViaDataChannel() = runBlocking {
-        val keyReceived = CountDownLatch(1)
-        var receivedKey = ""
-
-        val localClient = InMemorySignalingClient(store)
-        val remoteClient = InMemorySignalingClient(store)
-
-        remotePeer = OrchestratorPeer(
-            context = ctx,
-            sheetId = "key-test",
-            peerId = "aaaa0001",
-            displayName = "Key Provider",
-            signalingClient = remoteClient,
-            onNotification = { _, _ -> }
-        )
-
-        localPeer = OrchestratorPeer(
-            context = ctx,
-            sheetId = "key-test",
-            peerId = "zzzz0002",
-            displayName = "Key Receiver",
-            signalingClient = localClient,
-            onNotification = { _, _ -> }
-        )
-
-        localPeer!!.onKeyReceived = { keyHex ->
-            receivedKey = keyHex
-            keyReceived.countDown()
-        }
-
-        val dcOpen = CountDownLatch(1)
-        remotePeer!!.onConnectionStateChanged = { connected, _ ->
-            if (connected) dcOpen.countDown()
-        }
-
-        remotePeer!!.start()
-        delay(1500)
-        localPeer!!.start()
-
-        assertTrue("DataChannel should open", dcOpen.await(60, TimeUnit.SECONDS))
-        delay(2000)
-
-        // Send key exchange
-        val testKey = SignalingEncryption.generateKeyHex()
-        val keyExchangeJson = """{"type":"waymark-key-exchange","key":"$testKey"}"""
-        sendViaDataChannel(remotePeer!!, "zzzz0002", keyExchangeJson)
-
-        assertTrue("Key should be received within 10s", keyReceived.await(10, TimeUnit.SECONDS))
-        assertEquals(testKey, receivedKey)
-    }
-
     /**
      * Sends a message through an OrchestratorPeer's DataChannel to a specific remote.
      * Uses reflection to access the internal peers map — this is a test-only utility.

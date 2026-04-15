@@ -5,11 +5,9 @@
    Validates:
      - Orchestrator killed → Android stays alive → orchestrator
        restarts → Android reconnects → notifications flow
-     - Orchestrator key rotation during live connection
      - Orchestrator process bouncing (rapid restart)
      - Android alone on mesh (no orchestrator) → orchestrator
        joins late → connection established
-     - Stale signal key detection and re-bootstrap
    ============================================================ */
 
 import { expect } from "chai";
@@ -19,22 +17,26 @@ import { sleep, waitFor, waitForPeerConnection, makeTestNotification } from "../
 describe("Orchestrator Failure & Recovery", function () {
     setupSuite();
 
-    async function setupPhase2(infra) {
-        // Phase 1: negotiate AES key over the private sheet
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
-        // Phase 2: refresh token, app uses cached sheet IDs + key
+    async function setupConnection(infra) {
         infra.forceStopApp();
         await infra.refreshToken();
         infra.startLogcatMonitor();
         infra.launchApp();
 
-        const peer = await infra.startOrchestrator({ phase: 2 });
+        const peer = await infra.startOrchestrator();
         const connected = await waitForPeerConnection(peer, 120_000);
         expect(connected).to.be.true;
         await sleep(10_000);
+
+        // Verify connection survived stabilization — if ICE dropped during the
+        // sleep, wait for the automatic rebuild before starting the test.
+        if (peer.connectedPeers().length === 0) {
+            console.log("    ⚠ Connection dropped during stabilization — waiting for rebuild...");
+            const rebuilt = await waitForPeerConnection(peer, 120_000);
+            expect(rebuilt, "Connection should rebuild after early drop").to.be.true;
+            await sleep(5_000);
+        }
+
         return peer;
     }
 
@@ -44,7 +46,7 @@ describe("Orchestrator Failure & Recovery", function () {
         const driver = getDriver();
 
         // Establish connection
-        const peer1 = await setupPhase2(infra);
+        const peer1 = await setupConnection(infra);
 
         // Send baseline notification
         const baseline = makeTestNotification(1);
@@ -61,9 +63,9 @@ describe("Orchestrator Failure & Recovery", function () {
         console.log("    Android alone on mesh for 30s...");
         await sleep(30_000);
 
-        // Restart orchestrator — same sheets, same key
+        // Restart orchestrator — same sheet
         console.log("    Restarting orchestrator...");
-        const peer2 = await infra.startOrchestrator({ phase: 2 });
+        const peer2 = await infra.startOrchestrator();
 
         // Wait for Android to reconnect
         const reconnected = await waitForPeerConnection(peer2, 120_000);
@@ -100,7 +102,7 @@ describe("Orchestrator Failure & Recovery", function () {
         // Bounce orchestrator 3 times
         for (let i = 1; i <= 3; i++) {
             console.log(`    Bounce ${i}/3: starting orchestrator...`);
-            const peer = await infra.startOrchestrator({ phase: 2 });
+            const peer = await infra.startOrchestrator();
             await sleep(10_000);
             console.log(`    Bounce ${i}/3: killing orchestrator...`);
             infra.stopOrchestrator();
@@ -109,7 +111,7 @@ describe("Orchestrator Failure & Recovery", function () {
 
         // Start final stable orchestrator
         console.log("    Starting final stable orchestrator...");
-        const peer = await infra.startOrchestrator({ phase: 2 });
+        const peer = await infra.startOrchestrator();
         const connected = await waitForPeerConnection(peer, 120_000);
         expect(connected, "Should connect after repeated bouncing").to.be.true;
         await sleep(10_000);
@@ -129,11 +131,6 @@ describe("Orchestrator Failure & Recovery", function () {
         const infra  = getInfra();
         const driver = getDriver();
 
-        // Ensure we have the AES key from Phase 1
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
         // Start Android FIRST with no orchestrator on the mesh
         infra.forceStopApp();
         await infra.refreshToken();
@@ -146,7 +143,7 @@ describe("Orchestrator Failure & Recovery", function () {
 
         // Now start orchestrator
         console.log("    Starting orchestrator (joining late)...");
-        const peer = await infra.startOrchestrator({ phase: 2 });
+        const peer = await infra.startOrchestrator();
 
         // They should find each other
         const connected = await waitForPeerConnection(peer, 120_000);
@@ -159,44 +156,6 @@ describe("Orchestrator Failure & Recovery", function () {
         const arrived = await waitFor(() => infra.hasNonce(notif._testNonce), 30_000);
         expect(arrived).to.be.true;
         console.log("    ✓ Late-join orchestrator notification delivered");
-
-        infra.stopOrchestrator();
-    });
-
-    it("stale signal key → Android detects and re-bootstraps", async function () {
-        this.timeout(600_000);
-        const infra  = getInfra();
-        const driver = getDriver();
-
-        // Ensure we have the AES key from Phase 1
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
-        // Inject a WRONG signal key into Android, but orchestrator has the REAL key
-        infra.forceStopApp();
-        const wrongKey = "0000000000000000000000000000000000000000000000000000000000000000";
-        await infra.setPrefsState({ signal_key: wrongKey });
-        infra.startLogcatMonitor();
-        infra.launchApp();
-
-        // Start orchestrator with the real key on the public sheet
-        const peer = await infra.startOrchestrator({ phase: 2 });
-        console.log("    Started orchestrator with real key");
-
-        // Android will try Phase 2 with wrong key, see decryption failures,
-        // invoke onSignalKeyStale, clear the key, and re-bootstrap to Phase 1
-        console.log("    Waiting for Android to detect stale key...");
-
-        // After detecting stale key, it should clear signal_key from prefs
-        const keyCleared = await waitFor(() => {
-            const prefs = infra.readPrefs();
-            return prefs.includes("signal_key") === false || !prefs.includes(wrongKey);
-        }, 180_000, 5_000);
-
-        // This is a detection test — we can't fully complete re-bootstrap
-        // without a Phase 1 orchestrator, but we verify the detection works
-        console.log("    ✓ Android detected stale key and initiated re-bootstrap");
 
         infra.stopOrchestrator();
     });

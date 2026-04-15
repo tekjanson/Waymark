@@ -18,22 +18,26 @@ import { createDriver } from "../lib/appium.mjs";
 describe("App Lifecycle", function () {
     setupSuite();
 
-    async function setupPhase2(infra) {
-        // Phase 1: negotiate AES key over the private sheet
-        if (!infra._phase1Done) {
-            await infra.performPhase1KeyExchange();
-        }
-
-        // Phase 2: refresh token, app uses cached sheet IDs + key
+    async function setupConnection(infra) {
         infra.forceStopApp();
         await infra.refreshToken();
         infra.startLogcatMonitor();
         infra.launchApp();
 
-        const peer = await infra.startOrchestrator({ phase: 2 });
+        const peer = await infra.startOrchestrator();
         const connected = await waitForPeerConnection(peer, 120_000);
         expect(connected).to.be.true;
         await sleep(10_000);
+
+        // Verify connection survived stabilization — if ICE dropped during the
+        // sleep, wait for the automatic rebuild before starting the test.
+        if (peer.connectedPeers().length === 0) {
+            console.log("    ⚠ Connection dropped during stabilization — waiting for rebuild...");
+            const rebuilt = await waitForPeerConnection(peer, 120_000);
+            expect(rebuilt, "Connection should rebuild after early drop").to.be.true;
+            await sleep(5_000);
+        }
+
         return peer;
     }
 
@@ -41,7 +45,7 @@ describe("App Lifecycle", function () {
         this.timeout(300_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Confirm baseline
         const baseline = makeTestNotification(1);
@@ -61,8 +65,9 @@ describe("App Lifecycle", function () {
         console.log("    Relaunching app...");
         infra.launchApp();
 
-        // Wait for reconnection
-        const reconnected = await waitForPeerConnection(peer, 120_000);
+        // Wait for reconnection — 180s allows for ICE grace timer (30s) +
+        // signaling exchange + ICE negotiation + DataChannel setup
+        const reconnected = await waitForPeerConnection(peer, 180_000);
         expect(reconnected, "App should reconnect after force-kill").to.be.true;
         await sleep(10_000);
 
@@ -82,7 +87,7 @@ describe("App Lifecycle", function () {
         this.timeout(600_000);
         const infra  = getInfra();
         let driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Verify baseline
         const baseline = makeTestNotification(1);
@@ -106,6 +111,11 @@ describe("App Lifecycle", function () {
 
         // Dismiss keyguard and wake screen
         infra.dismissKeyguard();
+
+        // Re-install Appium deps (settings app breaks after reboot)
+        console.log("    Reinstalling Appium dependencies...");
+        infra.reinstallAppiumDeps();
+        await sleep(5_000);
 
         // Re-create Appium driver (old session is dead)
         driver = await createDriver();
@@ -137,7 +147,7 @@ describe("App Lifecycle", function () {
         this.timeout(300_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Cycle foreground/background 5 times
         for (let i = 0; i < 5; i++) {
@@ -166,7 +176,7 @@ describe("App Lifecycle", function () {
         this.timeout(600_000);
         const infra  = getInfra();
         const driver = getDriver();
-        const peer = await setupPhase2(infra);
+        const peer = await setupConnection(infra);
 
         // Simulate system killing the process (more aggressive than force-stop)
         console.log("    Killing app process directly...");

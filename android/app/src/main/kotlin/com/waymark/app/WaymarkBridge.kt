@@ -62,6 +62,44 @@ class WaymarkBridge(private val context: Context) {
         context.startService(intent)
     }
 
+    /**
+     * Called by the web app to provide OAuth refresh credentials so the
+     * native foreground service can refresh its own access token when
+     * the WebView is not active.
+     *
+     * Expected JSON: { "refresh_token": "...", "client_id": "...", "client_secret": "..." }
+     * Optionally also: { "access_token": "...", "expiry_date": 1234567890000 }
+     */
+    @JavascriptInterface
+    fun onAuthCredentials(credentialsJson: String) {
+        try {
+            val json = JSONObject(credentialsJson)
+            val editor = context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE).edit()
+
+            json.optString("refresh_token", "").takeIf { it.isNotBlank() }?.let {
+                editor.putString(WaymarkConfig.PREF_REFRESH_TOKEN, it)
+            }
+            json.optString("client_id", "").takeIf { it.isNotBlank() }?.let {
+                editor.putString(WaymarkConfig.PREF_CLIENT_ID, it)
+            }
+            json.optString("client_secret", "").takeIf { it.isNotBlank() }?.let {
+                editor.putString(WaymarkConfig.PREF_CLIENT_SECRET, it)
+            }
+            json.optString("access_token", "").takeIf { it.isNotBlank() }?.let {
+                editor.putString(WaymarkConfig.PREF_ACCESS_TOKEN, it)
+                editor.putLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, System.currentTimeMillis())
+            }
+            json.optLong("expiry_date", 0).takeIf { it > 0 }?.let {
+                editor.putLong(WaymarkConfig.PREF_TOKEN_EXPIRY_MS, it)
+            }
+
+            editor.apply()
+            Log.i("WaymarkBridge", "onAuthCredentials stored refresh credentials")
+        } catch (e: Exception) {
+            Log.e("WaymarkBridge", "Failed to parse auth credentials: ${e.message}")
+        }
+    }
+
     /* ---------- Active sheet tracking ---------- */
 
     /**
@@ -129,29 +167,6 @@ class WaymarkBridge(private val context: Context) {
         } catch (ignored: Exception) {
             // Malformed JSON — discard silently
         }
-    }
-
-    /* ---------- Key cycling ---------- */
-
-    /**
-     * Clears the cached AES-256 signal key and triggers a Phase 1 re-bootstrap
-     * so the Android peer fetches a fresh key from the orchestrator over the
-     * WebRTC DataChannel. Call from the web app's debug/settings UI:
-     *
-     *   window.Android?.cycleSignalKey()
-     */
-    @JavascriptInterface
-    fun cycleSignalKey() {
-        Log.i("WaymarkBridge", "cycleSignalKey requested from web app — clearing key and rebootstrapping")
-        context.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .remove(WaymarkConfig.PREF_SIGNAL_KEY)
-            .remove(WaymarkConfig.PREF_SIGNAL_KEY_VERSION)
-            .apply()
-        val intent = Intent(context, WebRtcService::class.java).apply {
-            action = WebRtcService.ACTION_REBOOTSTRAP
-        }
-        context.startService(intent)
     }
 
     /* ---------- Theme sync ---------- */

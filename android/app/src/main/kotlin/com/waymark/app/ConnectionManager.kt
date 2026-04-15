@@ -30,9 +30,17 @@ import java.security.SecureRandom
 
 private const val TAG = "ConnectionManager"
 
+/** Google's OAuth2 token endpoint for refresh_token exchange. */
+private const val OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+/** Refresh the access token if it's within this many ms of expiry. */
+private const val TOKEN_REFRESH_MARGIN_MS = 5 * 60_000L  // 5 minutes before expiry
+
 /**
- * Manages the Waymark P2P connection lifecycle — Phase 1 (key exchange) and
- * Phase 2 (encrypted notifications) — on behalf of [WebRtcService].
+ * Manages the Waymark P2P connection lifecycle on behalf of [WebRtcService].
+ *
+ * Single-sheet architecture: all signaling happens on one OAuth-protected
+ * Google Sheet discovered from `.waymark-data.json` on Drive.
  *
  * Thread-safe: all state transitions go through [mutex]. External callers
  * use [requestConnect] which debounces rapid-fire triggers.
@@ -60,6 +68,117 @@ class ConnectionManager(
 
     private val prefs get() = appContext.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
+    /* ---------- Token management ---------- */
+
+    /**
+     * Returns the current access token, refreshing it first if it's near-expiry
+     * and stored refresh credentials are available.
+     *
+     * Called by [SheetsSignalingClient] on every API request via the getToken lambda.
+     */
+    private fun getTokenWithRefresh(): String {
+        val p = prefs
+        val token = p.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
+        val expiryMs = p.getLong(WaymarkConfig.PREF_TOKEN_EXPIRY_MS, 0L)
+
+        // Proactive refresh: if we know the expiry time and we're within the margin, refresh now
+        if (expiryMs > 0 && System.currentTimeMillis() > expiryMs - TOKEN_REFRESH_MARGIN_MS) {
+            val refreshed = refreshTokenNatively()
+            if (refreshed != null) return refreshed
+        }
+
+        // Fallback: if no expiry stored, use the set-time heuristic (tokens live ~60 min)
+        if (expiryMs == 0L && token.isNotBlank()) {
+            val setMs = p.getLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, 0L)
+            if (setMs > 0 && System.currentTimeMillis() - setMs > 55 * 60_000L) {
+                val refreshed = refreshTokenNatively()
+                if (refreshed != null) return refreshed
+            }
+        }
+
+        return token
+    }
+
+    /**
+     * Callback for [SheetsSignalingClient] when it receives HTTP 401/403.
+     * Attempts a native token refresh using stored credentials.
+     * Returns true if the token was refreshed (caller should retry).
+     */
+    private fun handleAuthExpired(): Boolean {
+        val refreshed = refreshTokenNatively()
+        return refreshed != null
+    }
+
+    /**
+     * Exchange the stored refresh_token for a fresh access_token via
+     * Google's OAuth2 token endpoint.  Updates SharedPreferences atomically
+     * on success so both the signaling client and Drive calls pick up the
+     * new token immediately.
+     *
+     * @return the new access token, or null if refresh credentials aren't stored
+     *         or the refresh request failed.
+     */
+    @Synchronized
+    private fun refreshTokenNatively(): String? {
+        val p = prefs
+        val refreshToken = p.getString(WaymarkConfig.PREF_REFRESH_TOKEN, "") ?: ""
+        val clientId     = p.getString(WaymarkConfig.PREF_CLIENT_ID, "") ?: ""
+        val clientSecret = p.getString(WaymarkConfig.PREF_CLIENT_SECRET, "") ?: ""
+
+        if (refreshToken.isBlank() || clientId.isBlank() || clientSecret.isBlank()) {
+            Log.d(TAG, "No refresh credentials stored — cannot refresh token natively")
+            return null
+        }
+
+        return try {
+            val conn = (URL(OAUTH_TOKEN_URL).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            }
+
+            val body = "grant_type=refresh_token" +
+                "&refresh_token=${java.net.URLEncoder.encode(refreshToken, "UTF-8")}" +
+                "&client_id=${java.net.URLEncoder.encode(clientId, "UTF-8")}" +
+                "&client_secret=${java.net.URLEncoder.encode(clientSecret, "UTF-8")}"
+
+            conn.outputStream.use { it.write(body.toByteArray()) }
+
+            if (conn.responseCode != 200) {
+                Log.w(TAG, "Token refresh failed: HTTP ${conn.responseCode}")
+                conn.disconnect()
+                return null
+            }
+
+            val respBody = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+
+            val json = JSONObject(respBody)
+            val newToken = json.optString("access_token", "")
+            val expiresIn = json.optLong("expires_in", 3600)
+
+            if (newToken.isBlank()) {
+                Log.w(TAG, "Token refresh returned empty access_token")
+                return null
+            }
+
+            val now = System.currentTimeMillis()
+            p.edit()
+                .putString(WaymarkConfig.PREF_ACCESS_TOKEN, newToken)
+                .putLong(WaymarkConfig.PREF_ACCESS_TOKEN_SET_MS, now)
+                .putLong(WaymarkConfig.PREF_TOKEN_EXPIRY_MS, now + expiresIn * 1000)
+                .apply()
+
+            Log.i(TAG, "Token refreshed natively — expires in ${expiresIn}s")
+            newToken
+        } catch (e: Exception) {
+            Log.w(TAG, "Token refresh error: ${e.message}")
+            null
+        }
+    }
+
     /* ---------- Public API ---------- */
 
     /**
@@ -76,7 +195,7 @@ class ConnectionManager(
 
     /**
      * Request an immediate connect (no debounce). Used for first boot and
-     * situations where latency matters (e.g., Phase 1→2 transition).
+     * situations where latency matters (e.g., ACTION_TOKEN_UPDATED).
      */
     fun requestConnectNow() {
         connectJob?.cancel()
@@ -93,8 +212,8 @@ class ConnectionManager(
     }
 
     /**
-     * Disconnect and then resolve fresh sheet IDs. Used by onAloneTimeout,
-     * onSignalKeyStale, ACTION_REBOOTSTRAP, etc.
+     * Disconnect and then resolve fresh sheet IDs. Used by onAloneTimeout
+     * and ACTION_REBOOTSTRAP.
      */
     fun requestRebootstrap() {
         connectJob?.cancel()
@@ -107,85 +226,37 @@ class ConnectionManager(
     /* ---------- Core resolution logic (Mutex-protected) ---------- */
 
     private suspend fun resolveAndConnect() = mutex.withLock {
-        // Save the previous state BEFORE any transition — needed for idempotency checks
         val previousState = state
+        val token = getTokenWithRefresh()
 
-        val token = prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: ""
-
-        // Always re-fetch sheet IDs from Drive when we have a token
+        // Fetch the signaling sheet ID from Drive
         if (token.isNotBlank()) {
             try {
-                val (freshPublicId, freshPrivateId) = fetchSheetIdsFromDrive(token)
-                if (freshPublicId.isNotBlank() || freshPrivateId.isNotBlank()) {
-                    prefs.edit().apply {
-                        if (freshPublicId.isNotBlank()) putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, freshPublicId)
-                        if (freshPrivateId.isNotBlank()) putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, freshPrivateId)
-                        apply()
-                    }
-                    Log.i(TAG, "Drive refresh: public=$freshPublicId private=$freshPrivateId")
+                val freshId = fetchSignalingSheetId(token)
+                if (freshId.isNotBlank()) {
+                    prefs.edit().putString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, freshId).apply()
+                    Log.i(TAG, "Drive refresh: signalingSheet=$freshId")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Drive refresh failed (using cache): ${e.message}")
             }
         }
 
-        val cachedPublicId = prefs.getString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, "") ?: ""
-        // cachedPrivateId not currently needed for routing
-        val cachedKeyHex = prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, "") ?: ""
+        val cachedSheetId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
 
-        // Phase 2: have key + public sheet
-        if (cachedKeyHex.isNotBlank() && cachedPublicId.isNotBlank()) {
+        if (cachedSheetId.isNotBlank()) {
+            // Already connected to this sheet with a healthy peer — no-op
             val peer = previousState.activePeer
-            if (previousState is ConnectionState.Phase2
-                && previousState.activeSheetId == cachedPublicId
+            if (previousState is ConnectionState.Connected
+                && previousState.activeSheetId == cachedSheetId
                 && peer != null && !peer.destroyed && peer.isInMesh
             ) {
-                Log.d(TAG, "Already on Phase 2 sheet $cachedPublicId \u2014 no-op")
+                Log.d(TAG, "Already connected to sheet $cachedSheetId — no-op")
                 return@withLock
             }
             transitionTo(ConnectionState.Connecting)
             tearDownCurrentPeer()
-            startPhase2(cachedPublicId)
-            return@withLock
-        }
-
-        // Phase 2 blocked: have key but no public sheet yet — wait for orchestrator
-        if (cachedKeyHex.isNotBlank() && cachedPublicId.isBlank() && token.isNotBlank()) {
-            Log.w(TAG, "Have signal key but no public sheet ID — waiting for orchestrator")
-            transitionTo(ConnectionState.Connecting)
-            for (attempt in 1..3) {
-                delay(5_000L)
-                try {
-                    val (freshPublicId, _) = fetchSheetIdsFromDrive(token)
-                    if (freshPublicId.isNotBlank()) {
-                        prefs.edit().putString(WaymarkConfig.PREF_PUBLIC_SIGNALING_ID, freshPublicId).apply()
-                        Log.i(TAG, "Public sheet appeared on Drive: $freshPublicId")
-                        tearDownCurrentPeer()
-                        startPhase2(freshPublicId)
-                        return@withLock
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Drive retry $attempt/3 failed: ${e.message}")
-                }
-            }
-            Log.w(TAG, "Public sheet still missing — clearing key, falling back to Phase 1")
-            prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
-        }
-
-        // Phase 1: no key — connect to private sheet
-        val finalPrivateId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
-        if (finalPrivateId.isNotBlank()) {
-            val peer = previousState.activePeer
-            if (previousState is ConnectionState.Phase1
-                && previousState.activeSheetId == finalPrivateId
-                && peer != null && !peer.destroyed && peer.isInMesh
-            ) {
-                Log.d(TAG, "Already on Phase 1 sheet $finalPrivateId \u2014 no-op")
-                return@withLock
-            }
-            transitionTo(ConnectionState.Connecting)
-            tearDownCurrentPeer()
-            startPhase1(finalPrivateId)
+            startConnection(cachedSheetId)
             return@withLock
         }
 
@@ -193,20 +264,20 @@ class ConnectionManager(
         if (token.isBlank()) {
             Log.d(TAG, "No access token — waiting for user to open the app")
         } else {
-            Log.d(TAG, "No signaling sheets found — open the web app to initialise signaling")
+            Log.d(TAG, "No signaling sheet found — open the web app to initialise signaling")
         }
         transitionTo(ConnectionState.Idle)
     }
 
-    /* ---------- Phase 1: key exchange on private sheet ---------- */
+    /* ---------- Connection: signaling on OAuth-protected sheet ---------- */
 
-    private fun startPhase1(sheetId: String) {
-        Log.i(TAG, "Phase 1: connecting to private sheet $sheetId (plaintext, OAuth-protected)")
+    private fun startConnection(sheetId: String) {
+        Log.i(TAG, "Connecting to signaling sheet $sheetId (OAuth-protected)")
 
         val signalingClient = SheetsSignalingClient(
             sheetId = sheetId,
-            getToken = { prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: "" },
-            getKey = { null } // Phase 1: no encryption
+            getToken = { getTokenWithRefresh() },
+            onAuthExpired = { handleAuthExpired() }
         )
 
         val displayName = prefs.getString(WaymarkConfig.PREF_DISPLAY_NAME, "Waymark Android")
@@ -222,81 +293,18 @@ class ConnectionManager(
                 NotificationHelper.showMessage(appContext, title, body)
             }
         )
-
-        // Key received → store and transition to Phase 2
-        // Posted to the MANAGER'S scope (not the peer's) to avoid self-cancellation
-        var keyTransitionFired = false
-        newPeer.onKeyReceived = { keyHex ->
-            if (!keyTransitionFired) {
-                keyTransitionFired = true
-                scope.launch {
-                    Log.i(TAG, "Phase 1: received signal key (${keyHex.length / 2} bytes)")
-                    prefs.edit()
-                        .putString(WaymarkConfig.PREF_SIGNAL_KEY, keyHex)
-                        .putLong(WaymarkConfig.PREF_SIGNAL_KEY_VERSION, System.currentTimeMillis())
-                        .apply()
-                    resolveAndConnect()
-                }
-            } else {
-                Log.d(TAG, "Phase 1: ignoring duplicate key-exchange (transition already fired)")
-            }
-        }
-
-        newPeer.onConnectionStateChanged = { _, _ ->
-            onStateChange(state) // re-fire to update notification
-        }
-
-        newPeer.onAloneTimeout = {
-            Log.i(TAG, "Alone timeout on Phase 1 — re-bootstrapping")
-            requestRebootstrap()
-        }
-
-        newPeer.start()
-        transitionTo(ConnectionState.Phase1(sheetId, newPeer))
-    }
-
-    /* ---------- Phase 2: encrypted notifications on public sheet ---------- */
-
-    private fun startPhase2(sheetId: String) {
-        Log.i(TAG, "Phase 2: connecting to public sheet $sheetId (encrypted)")
-
-        val signalingClient = SheetsSignalingClient(
-            sheetId = sheetId,
-            getToken = { prefs.getString(WaymarkConfig.PREF_ACCESS_TOKEN, "") ?: "" },
-            getKey = { prefs.getString(WaymarkConfig.PREF_SIGNAL_KEY, null) }
-        )
-
-        val displayName = prefs.getString(WaymarkConfig.PREF_DISPLAY_NAME, "Waymark Android")
-            ?: "Waymark Android"
-
-        val newPeer = OrchestratorPeer(
-            context = appContext,
-            sheetId = sheetId,
-            peerId = getOrCreatePeerId(),
-            displayName = displayName,
-            signalingClient = signalingClient,
-            onNotification = { title, body ->
-                NotificationHelper.showMessage(appContext, title, body)
-            }
-        )
-
-        newPeer.onSignalKeyStale = {
-            Log.i(TAG, "Signal key stale — clearing cache, re-bootstrapping via Phase 1")
-            prefs.edit().remove(WaymarkConfig.PREF_SIGNAL_KEY).apply()
-            requestRebootstrap()
-        }
 
         newPeer.onConnectionStateChanged = { _, _ ->
             onStateChange(state)
         }
 
         newPeer.onAloneTimeout = {
-            Log.i(TAG, "Alone timeout on Phase 2 — re-bootstrapping")
+            Log.i(TAG, "Alone timeout — re-bootstrapping")
             requestRebootstrap()
         }
 
         newPeer.start()
-        transitionTo(ConnectionState.Phase2(sheetId, newPeer))
+        transitionTo(ConnectionState.Connected(sheetId, newPeer))
     }
 
     /* ---------- Teardown ---------- */
@@ -336,9 +344,9 @@ class ConnectionManager(
 
     /**
      * Reads .waymark-data.json from Google Drive and returns
-     * (publicSignalingSheetId, signalingSheetId).
+     * the signaling sheet ID.
      */
-    private suspend fun fetchSheetIdsFromDrive(token: String): Pair<String, String> =
+    private suspend fun fetchSignalingSheetId(token: String): String =
         withContext(Dispatchers.IO) {
             val drive = WaymarkConfig.DRIVE_BASE
             val q = "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
@@ -357,9 +365,9 @@ class ConnectionManager(
             val searchBody = searchConn.inputStream.bufferedReader().readText()
             searchConn.disconnect()
 
-            val files = JSONObject(searchBody).optJSONArray("files") ?: return@withContext Pair("", "")
-            if (files.length() == 0) return@withContext Pair("", "")
-            val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return@withContext Pair("", "") }
+            val files = JSONObject(searchBody).optJSONArray("files") ?: return@withContext ""
+            if (files.length() == 0) return@withContext ""
+            val fileId = files.getJSONObject(0).optString("id", "").ifBlank { return@withContext "" }
 
             val dlUrl = URL("$drive/files/$fileId?alt=media")
             val dlConn = (dlUrl.openConnection() as HttpURLConnection).apply {
@@ -375,9 +383,7 @@ class ConnectionManager(
             dlConn.disconnect()
 
             val data = JSONObject(content)
-            Pair(
-                data.optString("publicSignalingSheetId", ""),
-                data.optString("signalingSheetId", "")
-            )
+            // Support both old two-sheet format and new single-sheet format
+            data.optString("signalingSheetId", "")
         }
 }

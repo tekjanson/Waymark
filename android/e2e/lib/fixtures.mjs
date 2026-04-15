@@ -40,7 +40,15 @@ export function setupSuite(opts = {}) {
         // 2. Start Appium if needed
         if (needsAppium) {
             await startAppiumServer();
-            _driver = await createDriver();
+            try {
+                _driver = await createDriver();
+            } catch {
+                // io.appium.settings may be broken (e.g. after a prior device
+                // reboot). Reinstall Appium deps and retry once.
+                console.log("  ⚠ createDriver failed — reinstalling Appium deps and retrying...");
+                _infra.reinstallAppiumDeps();
+                _driver = await createDriver();
+            }
         }
     });
 
@@ -75,6 +83,8 @@ export function setupSuite(opts = {}) {
                 await _driver.raw.getWindowSize();
             } catch {
                 await _driver.close();
+                // After a device reboot, io.appium.settings may be broken.
+                if (_infra) _infra.reinstallAppiumDeps();
                 _driver = await createDriver();
             }
         }
