@@ -16,10 +16,12 @@ services:
     image: waymark-dev-worker:latest
     container_name: waymark-dev-worker
 
-    ports:
-      - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
-      - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
-      - "127.0.0.1:9111:9111"   # Orchestrator wake endpoint — POST /wake to skip sleep
+    # Use host networking so the orchestrator's WebRTC ICE candidates
+    # are real LAN IPs (not Docker-internal 172.x) that phones can reach.
+    network_mode: host
+
+    # Note: with network_mode: host, "ports" is ignored — all container
+    # ports are directly available on the host (6080, 5901, 9111, etc.).
 
     environment:
       # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
