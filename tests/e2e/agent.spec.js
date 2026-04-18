@@ -34,6 +34,21 @@ test('agent input is disabled when no API key is set', async ({ page }) => {
   await page.waitForSelector('.agent-input', { timeout: 5000 });
   await expect(page.locator('.agent-input')).toBeDisabled();
   await expect(page.locator('.agent-send-btn')).toBeDisabled();
+  await expect(page.locator('.agent-capture-image-btn')).toBeDisabled();
+  await expect(page.locator('.agent-attach-image-btn')).toBeDisabled();
+});
+
+test('agent shows image attach button when API key is configured', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key-123'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await expect(page.locator('.agent-capture-image-btn')).toBeVisible();
+  await expect(page.locator('.agent-capture-image-btn')).toBeEnabled();
+  await expect(page.locator('.agent-attach-image-btn')).toBeVisible();
+  await expect(page.locator('.agent-attach-image-btn')).toBeEnabled();
 });
 
 /* ---------- API Key Settings ---------- */
@@ -75,6 +90,34 @@ test('settings modal closes when clicking X button', async ({ page }) => {
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
   await page.click('.agent-settings-close');
   await expect(page.locator('#agent-settings-modal')).toHaveCount(0);
+});
+
+test('agent settings modal body is scrollable on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal .modal-body', { timeout: 3000 });
+
+  const scrollState = await page.evaluate(() => {
+    const body = document.querySelector('#agent-settings-modal .modal-body');
+    if (!body) return null;
+    const before = body.scrollTop;
+    body.scrollTop = 140;
+    return {
+      overflowY: window.getComputedStyle(body).overflowY,
+      before,
+      after: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+    };
+  });
+
+  expect(scrollState).not.toBeNull();
+  expect(['auto', 'scroll']).toContain(scrollState.overflowY);
+  expect(scrollState.scrollHeight).toBeGreaterThanOrEqual(scrollState.clientHeight);
+  expect(scrollState.after).toBeGreaterThanOrEqual(scrollState.before);
 });
 
 test('saving API key enables input and shows empty state with suggestions', async ({ page }) => {
@@ -294,6 +337,47 @@ test('conversation persists in localStorage after navigating away and back', asy
   await expect(messages).toHaveCount(2);
   await expect(messages.first()).toContainText('Hello agent');
   await expect(messages.nth(1)).toContainText('Hello! How can I help?');
+});
+
+test('user message renders attached photo previews in chat', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      {
+        role: 'user',
+        content: 'Please analyze this photo',
+        images: [{ name: 'photo-1.jpg', src: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/' }],
+      },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-message-user .agent-user-image', { timeout: 5000 });
+  await expect(page.locator('.agent-message-user .agent-user-image')).toHaveCount(1);
+  await expect(page.locator('.agent-message-user .agent-user-image').first()).toHaveAttribute('src', /data:image\/jpeg;base64/);
+});
+
+test('clicking user photo thumbnail opens lightbox', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      {
+        role: 'user',
+        content: 'Please analyze this photo',
+        images: [{ name: 'photo-1.jpg', src: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/' }],
+      },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-user-image-btn', { timeout: 5000 });
+  await page.click('.agent-user-image-btn');
+  await page.waitForSelector('.agent-image-lightbox', { timeout: 3000 });
+  await expect(page.locator('.agent-image-lightbox-image')).toBeVisible();
+  await page.click('.agent-image-lightbox-close');
+  await expect(page.locator('.agent-image-lightbox')).toHaveCount(0);
 });
 
 test('clearing conversation removes it from localStorage', async ({ page }) => {

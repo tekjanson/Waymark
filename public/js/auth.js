@@ -4,6 +4,8 @@
    an httpOnly cookie managed by the server.
    ============================================================ */
 
+import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
+
 let accessToken = null;
 let tokenExpiry  = 0;          // epoch ms
 let currentUser  = null;
@@ -17,7 +19,7 @@ export function login() {
   // Android WebView exposes window.Android — signal the server so it uses
   // the custom-scheme redirect URI (com.waymark.app://oauth2callback) instead
   // of the HTTPS callback, allowing the deep-link to return to the app.
-  const platform = (typeof window !== 'undefined' && window.Android) ? '?android=1' : '';
+  const platform = isTrustedAndroidWebView() ? '?android=1' : '';
   window.location.href = BASE + '/auth/login' + platform;
 }
 
@@ -67,8 +69,9 @@ async function _doRefresh() {
     tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
     console.log('[auth] refresh OK — handing token to Android bridge');
     // Hand fresh token to Android native WebRTC service (no-op in browser)
-    if (typeof window !== 'undefined' && window.Android?.onAuthToken) {
-      window.Android.onAuthToken(accessToken);
+    const bridge = getAndroidBridge(['onAuthToken']);
+    if (bridge) {
+      bridge.onAuthToken(accessToken);
     }
     return true;
   } catch (err) {

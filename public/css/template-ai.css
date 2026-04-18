@@ -353,6 +353,33 @@
   transition: background var(--transition);
 }
 
+.template-ai-capture-btn,
+.template-ai-attach-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.template-ai-capture-btn:hover:not(:disabled),
+.template-ai-attach-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.template-ai-capture-btn:disabled,
+.template-ai-attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .template-ai-send-btn:hover:not(:disabled) {
   background: var(--color-primary-dark);
 }
