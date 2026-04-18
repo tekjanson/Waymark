@@ -971,19 +971,27 @@ async function _prepareInlineImage(file) {
   };
 }
 
-function _loadImageBitmap(file) {
+async function _loadImageBitmap(file) {
+  // Prefer createImageBitmap to avoid blob: URLs, which are blocked by prod CSP.
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      // Fall through to data URL path.
+    }
+  }
+
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.src = String(reader.result || '');
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error(`Could not read image "${file.name}"`));
-    };
-    img.src = url;
+    reader.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+    reader.readAsDataURL(file);
   });
 }
 
