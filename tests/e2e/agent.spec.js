@@ -308,6 +308,25 @@ test('conversation persists in localStorage after navigating away and back', asy
   await expect(messages.nth(1)).toContainText('Hello! How can I help?');
 });
 
+test('user message renders attached photo previews in chat', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      {
+        role: 'user',
+        content: 'Please analyze this photo',
+        images: [{ name: 'photo-1.jpg', src: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/' }],
+      },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-message-user .agent-user-image', { timeout: 5000 });
+  await expect(page.locator('.agent-message-user .agent-user-image')).toHaveCount(1);
+  await expect(page.locator('.agent-message-user .agent-user-image').first()).toHaveAttribute('src', /data:image\/jpeg;base64/);
+});
+
 test('clearing conversation removes it from localStorage', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {

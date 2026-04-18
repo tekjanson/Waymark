@@ -138,6 +138,17 @@ export function buildMessage(msg) {
   const content = el('div', { className: 'agent-message-content' });
 
   if (isUser) {
+    if (Array.isArray(msg.images) && msg.images.length) {
+      const gallery = el('div', { className: 'agent-user-images' },
+        msg.images.map(img => el('img', {
+          className: 'agent-user-image',
+          src: img.src,
+          alt: img.name || 'Attached photo',
+          loading: 'lazy',
+        }))
+      );
+      content.appendChild(gallery);
+    }
     content.appendChild(el('p', {}, [msg.content]));
   } else {
     renderMarkdown(content, msg.content);

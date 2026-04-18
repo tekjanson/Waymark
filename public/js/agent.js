@@ -522,6 +522,10 @@ async function _sendMessage(text) {
   const userDisplayText = pendingImages.length
     ? `${userText}\n\n[Attached ${pendingImages.length} photo${pendingImages.length > 1 ? 's' : ''}]`
     : userText;
+  const messageImages = pendingImages.map(img => ({
+    name: img.name,
+    src: img.previewUrl,
+  }));
 
   // Clear empty state / suggestions
   const empty = _chatBody.querySelector('.agent-empty');
@@ -530,8 +534,8 @@ async function _sendMessage(text) {
   if (welcome) welcome.remove();
 
   // Add user message
-  _messages.push({ role: 'user', content: userDisplayText });
-  _chatBody.appendChild(_buildMessage({ role: 'user', content: userDisplayText }));
+  _messages.push({ role: 'user', content: userDisplayText, images: messageImages });
+  _chatBody.appendChild(_buildMessage({ role: 'user', content: userDisplayText, images: messageImages }));
   _pendingInlineImages = [];
 
   let preparedRequest;
@@ -968,7 +972,21 @@ async function _prepareInlineImage(file) {
     name: file.name,
     mimeType: 'image/jpeg',
     data: base64,
+    previewUrl: _buildPreviewDataUrl(canvas),
   };
+}
+
+function _buildPreviewDataUrl(sourceCanvas) {
+  const maxEdge = 320;
+  const scale = Math.min(1, maxEdge / Math.max(sourceCanvas.width, sourceCanvas.height));
+  const width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  const height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(sourceCanvas, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', 0.62);
 }
 
 async function _loadImageBitmap(file) {
