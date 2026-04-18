@@ -8,6 +8,8 @@ import { renderMarkdown } from './markdown.js';
 import { SLASH_COMMANDS } from './slash-commands.js';
 import * as storage from '../storage.js';
 
+let _imageLightbox = null;
+
 /* ---------- UI Rendering ---------- */
 
 /**
@@ -140,12 +142,21 @@ export function buildMessage(msg) {
   if (isUser) {
     if (Array.isArray(msg.images) && msg.images.length) {
       const gallery = el('div', { className: 'agent-user-images' },
-        msg.images.map(img => el('img', {
-          className: 'agent-user-image',
-          src: img.src,
-          alt: img.name || 'Attached photo',
-          loading: 'lazy',
-        }))
+        msg.images.map(img => el('button', {
+          className: 'agent-user-image-btn',
+          type: 'button',
+          title: img.name || 'Open attached photo',
+          on: {
+            click: () => openImageLightbox(img),
+          },
+        }, [
+          el('img', {
+            className: 'agent-user-image',
+            src: img.src,
+            alt: img.name || 'Attached photo',
+            loading: 'lazy',
+          }),
+        ]))
       );
       content.appendChild(gallery);
     }
@@ -157,6 +168,49 @@ export function buildMessage(msg) {
   wrapper.appendChild(avatar);
   wrapper.appendChild(content);
   return wrapper;
+}
+
+function openImageLightbox(image) {
+  if (!image?.src) return;
+  _imageLightbox?.remove();
+
+  const close = () => {
+    _imageLightbox?.remove();
+    _imageLightbox = null;
+    document.removeEventListener('keydown', onKeyDown);
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') close();
+  };
+
+  const backdrop = el('div', {
+    className: 'agent-image-lightbox',
+    on: {
+      click: (event) => {
+        if (event.target === backdrop) close();
+      },
+    },
+  }, [
+    el('div', { className: 'agent-image-lightbox-modal' }, [
+      el('button', {
+        className: 'agent-image-lightbox-close',
+        type: 'button',
+        title: 'Close photo preview',
+        on: { click: close },
+      }, ['✕']),
+      el('img', {
+        className: 'agent-image-lightbox-image',
+        src: image.src,
+        alt: image.name || 'Attached photo',
+      }),
+      image.name ? el('div', { className: 'agent-image-lightbox-caption' }, [image.name]) : null,
+    ]),
+  ]);
+
+  _imageLightbox = backdrop;
+  document.body.appendChild(backdrop);
+  document.addEventListener('keydown', onKeyDown);
 }
 
 /**

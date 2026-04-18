@@ -327,6 +327,28 @@ test('user message renders attached photo previews in chat', async ({ page }) =>
   await expect(page.locator('.agent-message-user .agent-user-image').first()).toHaveAttribute('src', /data:image\/jpeg;base64/);
 });
 
+test('clicking user photo thumbnail opens lightbox', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_api_key', JSON.stringify('test-key'));
+    localStorage.setItem('waymark_agent_conversation', JSON.stringify([
+      {
+        role: 'user',
+        content: 'Please analyze this photo',
+        images: [{ name: 'photo-1.jpg', src: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/' }],
+      },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-user-image-btn', { timeout: 5000 });
+  await page.click('.agent-user-image-btn');
+  await page.waitForSelector('.agent-image-lightbox', { timeout: 3000 });
+  await expect(page.locator('.agent-image-lightbox-image')).toBeVisible();
+  await page.click('.agent-image-lightbox-close');
+  await expect(page.locator('.agent-image-lightbox')).toHaveCount(0);
+});
+
 test('clearing conversation removes it from localStorage', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
