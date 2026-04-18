@@ -15,6 +15,7 @@ import {
   geminiUrl,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
+import { captureStillFromCamera } from './camera-capture.js';
 
 /* ---------- Constants ---------- */
 
@@ -690,9 +691,17 @@ async function _pickAndQueueImages() {
 
 async function _captureAndQueueImage() {
   try {
-    const files = await _pickImageFiles({ capture: 'environment', multiple: false });
-    await _queuePreparedImages(files, { sourceLabel: 'Captured' });
+    const file = await captureStillFromCamera({ title: 'Take Photo' });
+    if (!file) return;
+    await _queuePreparedImages([file], { sourceLabel: 'Captured' });
   } catch (err) {
+    try {
+      const files = await _pickImageFiles({ capture: 'environment', multiple: false });
+      await _queuePreparedImages(files, { sourceLabel: 'Captured' });
+      return;
+    } catch {
+      // Fall through to user-facing error below.
+    }
     showToast(err.message || 'Could not capture photo', 'error');
   }
 }
