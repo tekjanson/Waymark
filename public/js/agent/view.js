@@ -27,6 +27,7 @@ export function renderAgentUI(args) {
     onSendMessage,
     onRunSlashCommand,
     onAttachImage,
+    onCaptureImage,
   } = args;
 
   const header = el('div', { className: 'agent-header' }, [
@@ -64,6 +65,7 @@ export function renderAgentUI(args) {
     onSendMessage,
     onRunSlashCommand,
     onAttachImage,
+    onCaptureImage,
   });
 
   const contextBar = buildContextBar({
@@ -264,7 +266,7 @@ export function appendSheetPreviewCard(chatBody, result) {
  * @returns {HTMLElement}
  */
 function buildInputRow(args) {
-  const { hasKeys, chatBody, onSendMessage, onRunSlashCommand, onAttachImage } = args;
+  const { hasKeys, chatBody, onSendMessage, onRunSlashCommand, onAttachImage, onCaptureImage } = args;
   let paletteVisible = false;
   let selectedIdx = -1;
   const palette = el('div', { className: 'agent-slash-palette hidden' });
@@ -402,7 +404,18 @@ function buildInputRow(args) {
   }, ['🖼']);
   if (!hasKeys) attachImageBtn.setAttribute('disabled', 'disabled');
 
-  return el('div', { className: 'agent-input-row' }, [palette, input, attachImageBtn, sendBtn]);
+  const captureImageBtn = el('button', {
+    className: 'agent-capture-image-btn',
+    title: 'Take photo for the next message',
+    on: {
+      click: () => {
+        if (onCaptureImage) onCaptureImage();
+      },
+    },
+  }, ['📷']);
+  if (!hasKeys) captureImageBtn.setAttribute('disabled', 'disabled');
+
+  return el('div', { className: 'agent-input-row' }, [palette, input, captureImageBtn, attachImageBtn, sendBtn]);
 }
 
 /**

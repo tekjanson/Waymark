@@ -21,6 +21,9 @@ import { renderMarkdown } from './agent/markdown.js';
 const MAX_PREVIEW_ROWS = 5;
 const MAX_PREVIEW_CHARS = 600;
 const MAX_USER_MSG_CHARS = 600;
+const MAX_PENDING_IMAGES = 2;
+const MAX_IMAGE_EDGE = 1400;
+const MAX_IMAGE_BYTES = 900 * 1024;
 
 /** Tool declarations: only read_sheet and update_sheet (focused mode). */
 const OVERLAY_TOOL_DECLARATIONS = [{
@@ -82,6 +85,7 @@ let _chatBody = null;
 let _context = null;   // { id, title, sheetTitle, values, templateKey, onRefresh }
 let _isStreaming = false;
 let _abortController = null;
+let _pendingInlineImages = [];
 
 /* ---------- Public API ---------- */
 
@@ -245,7 +249,25 @@ function _buildInputRow(hasKeys) {
   }, ['➤']);
   sendBtn.disabled = !hasKeys;
 
-  return el('div', { className: 'template-ai-input-row' }, [input, sendBtn]);
+  const captureBtn = el('button', {
+    className: 'template-ai-capture-btn',
+    title: 'Take photo for this message',
+    on: {
+      click: () => { _captureAndQueueImage(); },
+    },
+  }, ['📷']);
+  captureBtn.disabled = !hasKeys;
+
+  const attachBtn = el('button', {
+    className: 'template-ai-attach-btn',
+    title: 'Attach photo(s) for this message',
+    on: {
+      click: () => { _pickAndQueueImages(); },
+    },
+  }, ['🖼']);
+  attachBtn.disabled = !hasKeys;
+
+  return el('div', { className: 'template-ai-input-row' }, [input, captureBtn, attachBtn, sendBtn]);
 }
 
 /* ---------- Close ---------- */
@@ -253,6 +275,7 @@ function _buildInputRow(hasKeys) {
 function _close() {
   if (!_panel) return;
   _isStreaming = false;
+  _pendingInlineImages = [];
   if (_abortController) _abortController.abort();
   document.removeEventListener('keydown', _handleKeyDown);
 
@@ -318,10 +341,18 @@ async function _sendMessage(text) {
   if (empty) empty.remove();
 
   const userText = compactContextText(text.trim(), MAX_USER_MSG_CHARS);
+  const pendingImages = [..._pendingInlineImages];
+  const userParts = pendingImages.length
+    ? _buildInlineImageParts(userText, pendingImages)
+    : [{ text: userText }];
+  const userDisplayText = pendingImages.length
+    ? `${userText}\n\n[Attached ${pendingImages.length} photo${pendingImages.length > 1 ? 's' : ''}]`
+    : userText;
 
   // Append user bubble
-  _chatBody.appendChild(_buildMessageEl('user', userText));
+  _chatBody.appendChild(_buildMessageEl('user', userDisplayText));
   _chatBody.scrollTop = _chatBody.scrollHeight;
+  _pendingInlineImages = [];
 
   // Clear input
   const input = _panel.querySelector('.template-ai-input');
@@ -367,7 +398,7 @@ async function _sendMessage(text) {
   const systemPrompt = _buildSystemPrompt();
   const contents = [{
     role: 'user',
-    parts: [{ text: userText }],
+    parts: userParts,
   }];
   const body = {
     contents,
@@ -644,4 +675,127 @@ function _buildMessageEl(role, content) {
   renderMarkdown(contentEl, content);
   wrapper.appendChild(contentEl);
   return wrapper;
+}
+
+/* ---------- Photo Attachments ---------- */
+
+async function _pickAndQueueImages() {
+  try {
+    const files = await _pickImageFiles();
+    await _queuePreparedImages(files, { sourceLabel: 'Attached' });
+  } catch (err) {
+    showToast(err.message || 'Could not attach photos', 'error');
+  }
+}
+
+async function _captureAndQueueImage() {
+  try {
+    const files = await _pickImageFiles({ capture: 'environment', multiple: false });
+    await _queuePreparedImages(files, { sourceLabel: 'Captured' });
+  } catch (err) {
+    showToast(err.message || 'Could not capture photo', 'error');
+  }
+}
+
+async function _queuePreparedImages(files, { sourceLabel }) {
+  if (!files || files.length === 0) return;
+
+  const selected = files.slice(0, MAX_PENDING_IMAGES);
+  const prepared = [];
+  for (const file of selected) {
+    prepared.push(await _prepareInlineImage(file));
+  }
+
+  _pendingInlineImages = prepared;
+  showToast(
+    `${sourceLabel} ${prepared.length} photo${prepared.length > 1 ? 's' : ''} for this message`,
+    'success'
+  );
+}
+
+function _pickImageFiles(options = {}) {
+  const { capture = '', multiple = true } = options;
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = !!multiple;
+    if (capture) input.setAttribute('capture', capture);
+    input.onchange = () => resolve(Array.from(input.files || []));
+    input.click();
+  });
+}
+
+async function _prepareInlineImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    throw new Error('Only image files can be attached');
+  }
+
+  const bitmap = await _loadImageBitmap(file);
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  let quality = 0.85;
+  let dataUrl = canvas.toDataURL('image/jpeg', quality);
+  let base64 = dataUrl.split(',')[1] || '';
+  let bytes = Math.floor((base64.length * 3) / 4);
+
+  while (bytes > MAX_IMAGE_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    dataUrl = canvas.toDataURL('image/jpeg', quality);
+    base64 = dataUrl.split(',')[1] || '';
+    bytes = Math.floor((base64.length * 3) / 4);
+  }
+
+  if (bytes > MAX_IMAGE_BYTES) {
+    throw new Error(`Image "${file.name}" is too large after compression. Try a smaller photo.`);
+  }
+
+  return {
+    name: file.name,
+    mimeType: 'image/jpeg',
+    data: base64,
+  };
+}
+
+async function _loadImageBitmap(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      // Fall through to data URL path.
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.src = String(reader.result || '');
+    };
+    reader.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function _buildInlineImageParts(userText, images) {
+  return [
+    { text: userText },
+    ...images.map(img => ({
+      inlineData: {
+        mimeType: img.mimeType,
+        data: img.data,
+      },
+    })),
+  ];
 }

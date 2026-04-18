@@ -340,6 +340,7 @@ function _renderUI() {
     onAttachFile: _openFilePicker,
     onRemoveFile: _removeContextFile,
     onAttachImage: _pickAndQueueImages,
+    onCaptureImage: _captureAndQueueImage,
   });
   _chatBody = rendered.chatBody;
   _contextBar = rendered.contextBar;
@@ -907,30 +908,45 @@ function _estimateInlineImageBytes(value) {
 async function _pickAndQueueImages() {
   try {
     const files = await _pickImageFiles();
-    if (!files.length) return;
-
-    const selected = files.slice(0, MAX_PENDING_IMAGES);
-    const prepared = [];
-    for (const file of selected) {
-      prepared.push(await _prepareInlineImage(file));
-    }
-
-    _pendingInlineImages = prepared;
-    showToast(
-      `Attached ${prepared.length} photo${prepared.length > 1 ? 's' : ''} for your next message`,
-      'success'
-    );
+    await _queuePreparedImages(files, { sourceLabel: 'Attached' });
   } catch (err) {
     showToast(err.message || 'Could not attach photos', 'error');
   }
 }
 
-function _pickImageFiles() {
+async function _captureAndQueueImage() {
+  try {
+    const files = await _pickImageFiles({ capture: 'environment', multiple: false });
+    await _queuePreparedImages(files, { sourceLabel: 'Captured' });
+  } catch (err) {
+    showToast(err.message || 'Could not capture photo', 'error');
+  }
+}
+
+async function _queuePreparedImages(files, { sourceLabel }) {
+  if (!files || files.length === 0) return;
+
+  const selected = files.slice(0, MAX_PENDING_IMAGES);
+  const prepared = [];
+  for (const file of selected) {
+    prepared.push(await _prepareInlineImage(file));
+  }
+
+  _pendingInlineImages = prepared;
+  showToast(
+    `${sourceLabel} ${prepared.length} photo${prepared.length > 1 ? 's' : ''} for your next message`,
+    'success'
+  );
+}
+
+function _pickImageFiles(options = {}) {
+  const { capture = '', multiple = true } = options;
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.multiple = true;
+    input.multiple = !!multiple;
+    if (capture) input.setAttribute('capture', capture);
     input.onchange = () => resolve(Array.from(input.files || []));
     input.click();
   });

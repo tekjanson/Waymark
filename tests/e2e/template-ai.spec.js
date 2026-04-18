@@ -110,6 +110,8 @@ test('text input is disabled in no-keys state', async ({ page }) => {
   await page.click('#template-ai-btn');
   await page.waitForSelector('.template-ai-input', { timeout: 3000 });
   await expect(page.locator('.template-ai-input')).toBeDisabled();
+  await expect(page.locator('.template-ai-capture-btn')).toBeDisabled();
+  await expect(page.locator('.template-ai-attach-btn')).toBeDisabled();
 });
 
 /* ---------- Ready state with API key ---------- */
@@ -166,6 +168,8 @@ test('text input is enabled when API key is configured', async ({ page }) => {
   await page.click('#template-ai-btn');
   await page.waitForSelector('.template-ai-input', { timeout: 3000 });
   await expect(page.locator('.template-ai-input')).toBeEnabled();
+  await expect(page.locator('.template-ai-capture-btn')).toBeEnabled();
+  await expect(page.locator('.template-ai-attach-btn')).toBeEnabled();
 });
 
 test('text input accepts typed text', async ({ page }) => {

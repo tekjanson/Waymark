@@ -34,6 +34,7 @@ test('agent input is disabled when no API key is set', async ({ page }) => {
   await page.waitForSelector('.agent-input', { timeout: 5000 });
   await expect(page.locator('.agent-input')).toBeDisabled();
   await expect(page.locator('.agent-send-btn')).toBeDisabled();
+  await expect(page.locator('.agent-capture-image-btn')).toBeDisabled();
   await expect(page.locator('.agent-attach-image-btn')).toBeDisabled();
 });
 
@@ -44,6 +45,8 @@ test('agent shows image attach button when API key is configured', async ({ page
     window.location.hash = '#/agent';
   });
   await page.waitForSelector('.agent-input', { timeout: 5000 });
+  await expect(page.locator('.agent-capture-image-btn')).toBeVisible();
+  await expect(page.locator('.agent-capture-image-btn')).toBeEnabled();
   await expect(page.locator('.agent-attach-image-btn')).toBeVisible();
   await expect(page.locator('.agent-attach-image-btn')).toBeEnabled();
 });
