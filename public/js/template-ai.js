@@ -695,13 +695,6 @@ async function _captureAndQueueImage() {
     if (!file) return;
     await _queuePreparedImages([file], { sourceLabel: 'Captured' });
   } catch (err) {
-    try {
-      const files = await _pickImageFiles({ capture: 'environment', multiple: false });
-      await _queuePreparedImages(files, { sourceLabel: 'Captured' });
-      return;
-    } catch {
-      // Fall through to user-facing error below.
-    }
     showToast(err.message || 'Could not capture photo', 'error');
   }
 }
