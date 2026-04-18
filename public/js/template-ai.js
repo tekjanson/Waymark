@@ -720,7 +720,10 @@ function _pickImageFiles(options = {}) {
     input.type = 'file';
     input.accept = 'image/*';
     input.multiple = !!multiple;
-    if (capture) input.setAttribute('capture', capture);
+    if (capture) {
+      input.setAttribute('capture', capture);
+      input.capture = capture;
+    }
     input.onchange = () => resolve(Array.from(input.files || []));
     input.click();
   });

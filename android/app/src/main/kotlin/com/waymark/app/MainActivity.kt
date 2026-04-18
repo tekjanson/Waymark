@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var bridge: WaymarkBridge
+    private lateinit var waymarkWebChromeClient: WaymarkWebChromeClient
 
     /* ---------- Lifecycle ---------- */
 
@@ -112,6 +113,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (::waymarkWebChromeClient.isInitialized &&
+            waymarkWebChromeClient.handleFileChooserResult(requestCode, resultCode, data)
+        ) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     /* ---------- WebView setup ---------- */
 
     @Suppress("SetJavaScriptEnabled")
@@ -153,7 +163,8 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(bridge, "Android")
 
         webView.webViewClient = WaymarkWebViewClient()
-        webView.webChromeClient = WaymarkWebChromeClient(this)
+        waymarkWebChromeClient = WaymarkWebChromeClient(this)
+        webView.webChromeClient = waymarkWebChromeClient
     }
 
     /* ---------- Permission helpers ---------- */

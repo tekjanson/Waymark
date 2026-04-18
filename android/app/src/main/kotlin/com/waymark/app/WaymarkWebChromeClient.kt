@@ -23,6 +23,18 @@ class WaymarkWebChromeClient(private val activity: Activity) : WebChromeClient()
         private const val FILE_CHOOSER_REQUEST = 1002
     }
 
+    /**
+     * Deliver activity results back to the active file chooser callback.
+     * Returns true when the request code belongs to this chrome client.
+     */
+    fun handleFileChooserResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != FILE_CHOOSER_REQUEST) return false
+        val results = FileChooserParams.parseResult(resultCode, data)
+        filePathCallback?.onReceiveValue(results)
+        filePathCallback = null
+        return true
+    }
+
     /* ---------- File chooser ---------- */
 
     override fun onShowFileChooser(
