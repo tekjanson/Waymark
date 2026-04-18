@@ -45,6 +45,26 @@ test('sign-out button is visible and within viewport at 375px', async ({ page })
   expect(rect.x + rect.width).toBeLessThanOrEqual(376);
 });
 
+test('search bar remains usable width at 375px', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+
+  const input = page.locator('#search-input');
+  await expect(input).toBeVisible();
+  const width = await input.evaluate(el => el.getBoundingClientRect().width);
+  expect(width).toBeGreaterThanOrEqual(150);
+});
+
+test('search bar remains usable width at 412px (Android class viewport)', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 915 });
+  await setupApp(page);
+
+  const input = page.locator('#search-input');
+  await expect(input).toBeVisible();
+  const width = await input.evaluate(el => el.getBoundingClientRect().width);
+  expect(width).toBeGreaterThanOrEqual(220);
+});
+
 test('tutorial button is hidden at 375px', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await setupApp(page);

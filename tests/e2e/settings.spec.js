@@ -5,7 +5,13 @@ const { setupApp, getCreatedRecords } = require('../helpers/test-utils');
 /* ---------- Helper: open settings modal ---------- */
 
 async function openSettings(page) {
-  await page.locator('#user-name').click();
+  const userName = page.locator('#user-name');
+  const avatar = page.locator('#user-avatar');
+  if (await userName.isVisible()) {
+    await userName.click();
+  } else {
+    await avatar.click();
+  }
   await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
 }
 
@@ -109,6 +115,31 @@ test('settings modal shows import folder with default', async ({ page }) => {
 
   const chooseBtn = page.locator('#settings-choose-folder');
   await expect(chooseBtn).toBeVisible();
+});
+
+test('settings modal body is scrollable on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await openSettings(page);
+
+  const scrollState = await page.evaluate(() => {
+    const body = document.querySelector('#settings-modal .settings-body');
+    if (!body) return null;
+    const before = body.scrollTop;
+    body.scrollTop = 120;
+    return {
+      overflowY: window.getComputedStyle(body).overflowY,
+      before,
+      after: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+    };
+  });
+
+  expect(scrollState).not.toBeNull();
+  expect(['auto', 'scroll']).toContain(scrollState.overflowY);
+  expect(scrollState.scrollHeight).toBeGreaterThanOrEqual(scrollState.clientHeight);
+  expect(scrollState.after).toBeGreaterThanOrEqual(scrollState.before);
 });
 
 test.skip('settings choose folder opens folder browser — replaced by Google Picker', async ({ page }) => {

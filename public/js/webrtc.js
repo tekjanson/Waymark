@@ -22,6 +22,8 @@
    Cross-device:  WebRTC DataChannel + MediaStream
    ============================================================ */
 
+import { getAndroidBridge } from './platform.js';
+
 /* ---------- Constants ---------- */
 
 const STUN_SERVERS = [
@@ -1039,8 +1041,9 @@ export class WaymarkConnect {
           case 'waymark-notification':
           case 'orchestrator-alert':
             // Forward orchestrator alerts to the Android native layer
-            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
-              window.Android.onPeerMessage(e.data);
+            {
+              const bridge = getAndroidBridge(['onPeerMessage']);
+              if (bridge) bridge.onPeerMessage(e.data);
             }
             break;
           default:
@@ -1051,8 +1054,9 @@ export class WaymarkConnect {
               console.warn(`[WC] DC arcade msg from ${remotePeerId} DROPPED — no onArcadeMessage handler:`, m.type);
             }
             // Forward unknown messages to Android for extensibility
-            if (typeof window !== 'undefined' && window.Android?.onPeerMessage) {
-              window.Android.onPeerMessage(e.data);
+            {
+              const bridge = getAndroidBridge(['onPeerMessage']);
+              if (bridge) bridge.onPeerMessage(e.data);
             }
             break;
         }

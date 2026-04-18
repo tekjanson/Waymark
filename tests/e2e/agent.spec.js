@@ -92,6 +92,34 @@ test('settings modal closes when clicking X button', async ({ page }) => {
   await expect(page.locator('#agent-settings-modal')).toHaveCount(0);
 });
 
+test('agent settings modal body is scrollable on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal .modal-body', { timeout: 3000 });
+
+  const scrollState = await page.evaluate(() => {
+    const body = document.querySelector('#agent-settings-modal .modal-body');
+    if (!body) return null;
+    const before = body.scrollTop;
+    body.scrollTop = 140;
+    return {
+      overflowY: window.getComputedStyle(body).overflowY,
+      before,
+      after: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+    };
+  });
+
+  expect(scrollState).not.toBeNull();
+  expect(['auto', 'scroll']).toContain(scrollState.overflowY);
+  expect(scrollState.scrollHeight).toBeGreaterThanOrEqual(scrollState.clientHeight);
+  expect(scrollState.after).toBeGreaterThanOrEqual(scrollState.before);
+});
+
 test('saving API key enables input and shows empty state with suggestions', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });

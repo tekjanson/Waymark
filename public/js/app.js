@@ -20,6 +20,11 @@ import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
+import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
+
+if (typeof document !== 'undefined') {
+  document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
+}
 
 /* ---------- DOM refs ---------- */
 const loginScreen   = document.getElementById('login-screen');
@@ -2339,8 +2344,9 @@ function applyTheme(pref) {
   });
 
   // Sync the Android status bar color with the web app theme
-  if (window.Android && typeof window.Android.onThemeChanged === 'function') {
-    window.Android.onThemeChanged(resolved);
+  const bridge = getAndroidBridge(['onThemeChanged']);
+  if (bridge) {
+    bridge.onThemeChanged(resolved);
   }
 }
 

@@ -1580,11 +1580,43 @@ ul { list-style: none; }
 
 /* ---------- Modal ---------- */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 500;
+  position: fixed; inset: 0; z-index: 2000;
   background: rgba(15, 23, 42, 0.5);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: fadeIn 200ms ease;
+}
+
+html.waymark-android {
+  --topbar-height: 104px;
+}
+
+html.waymark-android #top-bar {
+  gap: 8px;
+  padding: 8px 12px;
+  height: auto;
+  min-height: var(--topbar-height);
+  flex-wrap: wrap;
+  align-content: center;
+}
+
+html.waymark-android .top-bar-center {
+  order: 3;
+  width: 100%;
+  flex: 1 0 100%;
+  justify-content: stretch;
+}
+
+html.waymark-android .search-container {
+  width: 100%;
+  max-width: none;
+}
+
+html.waymark-android #search-input {
+  min-width: 180px;
+  min-height: 34px;
 }
 .modal {
   background: var(--color-surface);
@@ -1593,8 +1625,16 @@ ul { list-style: none; }
   width: 100%; max-width: 580px;
   max-height: 80vh;
   display: flex; flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   animation: modalSlideUp 250ms ease;
+}
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 24px 0;
 }
 @keyframes modalSlideUp {
   from { opacity: 0; transform: translateY(20px); }
@@ -2187,10 +2227,14 @@ ul { list-style: none; }
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
   /* Modal: full-height on mobile with reduced padding */
-  .modal-overlay { padding: 12px; }
+  .modal-overlay {
+    padding: 10px;
+    align-items: flex-start;
+  }
   .modal {
     max-height: calc(100vh - 24px);
     max-height: calc(100dvh - 24px);
+    margin: auto 0;
   }
   #sidebar {
     position: fixed; top: var(--topbar-height); bottom: 0; left: 0;
@@ -2203,9 +2247,41 @@ ul { list-style: none; }
   }
   #sidebar-overlay { display: block; pointer-events: none; }
   #sidebar-overlay.active { pointer-events: auto; }
-  .top-bar-right #user-name { display: none; }
-  .top-bar-right { gap: 6px; }
-  .search-container { max-width: 200px; }
+  .top-bar-right { gap: 4px; }
+  .top-bar-left { gap: 6px; }
+  .brand { font-size: 1rem; }
+  #user-name {
+    max-width: 88px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+  }
+  .search-container { max-width: none; }
+  #search-input {
+    font-size: 0.95rem;
+    min-height: 34px;
+  }
+  #search-btn {
+    width: 34px;
+    height: 34px;
+  }
+  #logout-btn {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
+    font-size: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #logout-btn::before {
+    content: '↗';
+    font-size: 0.95rem;
+    line-height: 1;
+    color: inherit;
+  }
   #content { padding: 16px; }
   .examples-grid { grid-template-columns: 1fr; }
   .tutorial-tooltip { width: calc(100vw - 32px); }
@@ -2265,13 +2341,58 @@ ul { list-style: none; }
   }
 }
 
+@media (max-width: 640px) {
+  :root {
+    --topbar-height: 104px;
+  }
+
+  #top-bar {
+    gap: 8px;
+    padding: 8px 12px;
+    height: auto;
+    min-height: var(--topbar-height);
+    flex-wrap: wrap;
+    align-content: center;
+  }
+
+  .top-bar-center {
+    order: 3;
+    width: 100%;
+    flex: 1 0 100%;
+    justify-content: stretch;
+  }
+
+  .search-container {
+    width: 100%;
+    max-width: none;
+  }
+
+  #search-input {
+    min-width: 180px;
+    min-height: 34px;
+    font-size: 0.95rem;
+  }
+}
+
 @media (max-width: 480px) {
   /* Compact top-bar: hide non-essential buttons, reduce gaps so user+sign-out remain visible */
   #tutorial-btn { display: none; }
   .top-bar-right { gap: 4px; }
-  #top-bar { gap: 8px; padding: 0 12px; }
   .avatar { width: 26px; height: 26px; }
-  .search-container { max-width: 140px; }
+  .brand {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #search-input {
+    font-size: 0.92rem;
+    min-height: 32px;
+  }
+  #theme-toggle-btn {
+    width: 32px;
+    height: 32px;
+  }
   .add-row-form { padding: 12px; }
   .add-row-actions { flex-direction: column; }
   .add-row-actions .btn { width: 100%; justify-content: center; }

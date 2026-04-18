@@ -14,6 +14,7 @@ import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks } from './storage.js';
 import * as encryption from './encryption.js';
+import { getAndroidBridge } from './platform.js';
 
 let currentSheetId = null;
 let currentSheetTitle = null;
@@ -554,8 +555,9 @@ export async function show(sheetId, sheetName) {
   const locked = localStorage.getItem(`waymark-lock-${sheetId}`) === '1';
   applyLockState(locked);
   // Notify Android native layer so it can connect WebRTC for this sheet
-  if (typeof window !== 'undefined' && window.Android?.onSheetOpened) {
-    window.Android.onSheetOpened(sheetId);
+  const bridge = getAndroidBridge(['onSheetOpened']);
+  if (bridge) {
+    bridge.onSheetOpened(sheetId);
   }
   await loadSheet(sheetId);
   resetTimer();
