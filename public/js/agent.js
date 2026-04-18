@@ -62,6 +62,13 @@ import {
 /** Cached context string — refreshed once per _sendMessage call. */
 let _cachedContext = '';
 
+/* ---------- Image Attachments ---------- */
+
+const MAX_PENDING_IMAGES = 2;
+const MAX_IMAGE_EDGE = 1400;
+const MAX_IMAGE_BYTES = 900 * 1024;
+const MAX_TOTAL_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+
 /**
  * Build a dynamic system prompt with fresh context.
  * Context is fetched once at the start of _sendMessage and cached.
@@ -101,7 +108,16 @@ function _shouldUsePlannerRound(userText) {
  * @param {string} phase
  */
 function _assertRequestWithinBudget(body, phase) {
-  const estimatedTokens = estimateRequestTokens(body);
+  const inlineBytes = _estimateInlineImageBytes(body);
+  if (inlineBytes > MAX_TOTAL_INLINE_IMAGE_BYTES) {
+    throw new Error(
+      `${phase} includes too much image data (${Math.round(inlineBytes / 1024)} KB). ` +
+      'Use up to 2 compressed photos or smaller files for free-tier keys.'
+    );
+  }
+
+  const budgetBody = inlineBytes > 0 ? _stripInlineDataForBudget(body) : body;
+  const estimatedTokens = estimateRequestTokens(budgetBody);
   if (estimatedTokens > MAX_ESTIMATED_REQUEST_TOKENS) {
     throw new Error(
       `${phase} would use about ${estimatedTokens} input tokens, which is above the local budget of ${MAX_ESTIMATED_REQUEST_TOKENS}. ` +
@@ -261,6 +277,7 @@ let _chatBody = null;
 let _contextBar = null;
 let _isStreaming = false;
 let _abortController = null;
+let _pendingInlineImages = [];
 
 /* ---------- Key Rotation ---------- */
 
@@ -322,6 +339,7 @@ function _renderUI() {
     onRunSlashCommand: _runSlashCommand,
     onAttachFile: _openFilePicker,
     onRemoveFile: _removeContextFile,
+    onAttachImage: _pickAndQueueImages,
   });
   _chatBody = rendered.chatBody;
   _contextBar = rendered.contextBar;
@@ -438,18 +456,18 @@ function _persistConversation() {
  * @param {string} userMessage
  * @returns {Promise<{model:string, url:string, contents:Array, body:Object}>}
  */
-async function _prepareModelRequest(apiKey, keyIdx, userMessage) {
+async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = null) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const baseUrl = _geminiUrl(model, 'generateContent');
   _assertConversationWithinBudget(userMessage);
   let plannedUserText = _buildPlannedUserMessage(userMessage);
 
   const buildBudgetedRequest = (text) => {
-    let contents = _buildContents(text, MAX_CONTEXT_MESSAGES);
+    let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
     let body = _buildRequestBody(contents);
 
     if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
-      contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES);
+      contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES, userParts);
       body = _buildRequestBody(contents);
     }
 
@@ -499,6 +517,11 @@ async function _sendMessage(text) {
   await _refreshContext();
 
   const userText = text.trim();
+  const pendingImages = [..._pendingInlineImages];
+  const userParts = pendingImages.length ? _buildInlineImageParts(userText, pendingImages) : null;
+  const userDisplayText = pendingImages.length
+    ? `${userText}\n\n[Attached ${pendingImages.length} photo${pendingImages.length > 1 ? 's' : ''}]`
+    : userText;
 
   // Clear empty state / suggestions
   const empty = _chatBody.querySelector('.agent-empty');
@@ -507,12 +530,13 @@ async function _sendMessage(text) {
   if (welcome) welcome.remove();
 
   // Add user message
-  _messages.push({ role: 'user', content: userText });
-  _chatBody.appendChild(_buildMessage({ role: 'user', content: userText }));
+  _messages.push({ role: 'user', content: userDisplayText });
+  _chatBody.appendChild(_buildMessage({ role: 'user', content: userDisplayText }));
+  _pendingInlineImages = [];
 
   let preparedRequest;
   try {
-    preparedRequest = await _prepareModelRequest(keyEntry.key, keyEntry.idx, userText);
+    preparedRequest = await _prepareModelRequest(keyEntry.key, keyEntry.idx, userText, userParts);
   } catch (err) {
     const errorMsg = { role: 'assistant', content: '⚠️ Error: ' + err.message };
     _messages.push(errorMsg);
@@ -787,7 +811,7 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
  * @param {number} [recentMessageLimit]
  * @returns {Array}
  */
-function _buildContents(userMessage, recentMessageLimit = MAX_CONTEXT_MESSAGES) {
+function _buildContents(userMessage, recentMessageLimit = MAX_CONTEXT_MESSAGES, userParts = null) {
   const contents = [];
   const finalUserText = _compactContextText(userMessage, MAX_PLANNED_USER_MESSAGE_CHARS);
   const history = _messages.slice(0, -1);
@@ -823,12 +847,144 @@ function _buildContents(userMessage, recentMessageLimit = MAX_CONTEXT_MESSAGES) 
   }
 
   contents.push(...selected);
-  contents.push({
+  contents.push(userParts ? {
+    role: 'user',
+    parts: userParts,
+  } : {
     role: 'user',
     parts: [{ text: finalUserText }],
   });
 
   return contents;
+}
+
+function _buildInlineImageParts(userText, pendingImages) {
+  const textPart = { text: _compactContextText(userText, MAX_PLANNED_USER_MESSAGE_CHARS) };
+  const imageParts = pendingImages.map(img => ({
+    inlineData: {
+      mimeType: img.mimeType,
+      data: img.data,
+    },
+  }));
+  return [textPart, ...imageParts];
+}
+
+function _stripInlineDataForBudget(value) {
+  if (Array.isArray(value)) return value.map(_stripInlineDataForBudget);
+  if (!value || typeof value !== 'object') return value;
+
+  if (value.inlineData && value.inlineData.data) {
+    return {
+      inlineData: {
+        mimeType: value.inlineData.mimeType || 'image/jpeg',
+        data: '[omitted]',
+      },
+    };
+  }
+
+  const out = {};
+  for (const [k, v] of Object.entries(value)) out[k] = _stripInlineDataForBudget(v);
+  return out;
+}
+
+function _estimateInlineImageBytes(value) {
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + _estimateInlineImageBytes(item), 0);
+  }
+  if (!value || typeof value !== 'object') return 0;
+  if (value.inlineData?.data) {
+    return Math.floor((String(value.inlineData.data).length * 3) / 4);
+  }
+  return Object.values(value).reduce((sum, item) => sum + _estimateInlineImageBytes(item), 0);
+}
+
+/* ---------- Photo Attachments ---------- */
+
+async function _pickAndQueueImages() {
+  try {
+    const files = await _pickImageFiles();
+    if (!files.length) return;
+
+    const selected = files.slice(0, MAX_PENDING_IMAGES);
+    const prepared = [];
+    for (const file of selected) {
+      prepared.push(await _prepareInlineImage(file));
+    }
+
+    _pendingInlineImages = prepared;
+    showToast(
+      `Attached ${prepared.length} photo${prepared.length > 1 ? 's' : ''} for your next message`,
+      'success'
+    );
+  } catch (err) {
+    showToast(err.message || 'Could not attach photos', 'error');
+  }
+}
+
+function _pickImageFiles() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = () => resolve(Array.from(input.files || []));
+    input.click();
+  });
+}
+
+async function _prepareInlineImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    throw new Error('Only image files can be attached');
+  }
+
+  const bitmap = await _loadImageBitmap(file);
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  let quality = 0.85;
+  let dataUrl = canvas.toDataURL('image/jpeg', quality);
+  let base64 = dataUrl.split(',')[1] || '';
+  let bytes = Math.floor((base64.length * 3) / 4);
+
+  while (bytes > MAX_IMAGE_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    dataUrl = canvas.toDataURL('image/jpeg', quality);
+    base64 = dataUrl.split(',')[1] || '';
+    bytes = Math.floor((base64.length * 3) / 4);
+  }
+
+  if (bytes > MAX_IMAGE_BYTES) {
+    throw new Error(`Image "${file.name}" is too large after compression. Try a smaller photo.`);
+  }
+
+  return {
+    name: file.name,
+    mimeType: 'image/jpeg',
+    data: base64,
+  };
+}
+
+function _loadImageBitmap(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`Could not read image "${file.name}"`));
+    };
+    img.src = url;
+  });
 }
 
 /**

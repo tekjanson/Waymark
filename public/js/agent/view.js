@@ -24,6 +24,7 @@ export function renderAgentUI(args) {
     onClearConversation,
     onSendMessage,
     onRunSlashCommand,
+    onAttachImage,
   } = args;
 
   const header = el('div', { className: 'agent-header' }, [
@@ -60,6 +61,7 @@ export function renderAgentUI(args) {
     chatBody,
     onSendMessage,
     onRunSlashCommand,
+    onAttachImage,
   });
 
   const contextBar = buildContextBar({
@@ -197,7 +199,7 @@ export function appendSheetPreviewCard(chatBody, result) {
  * @returns {HTMLElement}
  */
 function buildInputRow(args) {
-  const { hasKeys, chatBody, onSendMessage, onRunSlashCommand } = args;
+  const { hasKeys, chatBody, onSendMessage, onRunSlashCommand, onAttachImage } = args;
   let paletteVisible = false;
   let selectedIdx = -1;
   const palette = el('div', { className: 'agent-slash-palette hidden' });
@@ -323,7 +325,19 @@ function buildInputRow(args) {
   if (!hasKeys) sendAttrs.disabled = 'disabled';
 
   const sendBtn = el('button', sendAttrs, ['➤']);
-  return el('div', { className: 'agent-input-row' }, [palette, input, sendBtn]);
+
+  const attachImageBtn = el('button', {
+    className: 'agent-attach-image-btn',
+    title: 'Attach photo(s) for the next message',
+    on: {
+      click: () => {
+        if (onAttachImage) onAttachImage();
+      },
+    },
+  }, ['🖼']);
+  if (!hasKeys) attachImageBtn.setAttribute('disabled', 'disabled');
+
+  return el('div', { className: 'agent-input-row' }, [palette, input, attachImageBtn, sendBtn]);
 }
 
 /**
