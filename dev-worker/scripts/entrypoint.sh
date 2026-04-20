@@ -154,6 +154,7 @@ cat > /etc/agent-env.sh <<EOF
 # Written by entrypoint.sh — sourced by watchdog and inject scripts
 export AGENT_COMMAND="${AGENT_COMMAND}"
 export AGENT_NAME="${AGENT_NAME}"
+export AGENT_BASE_BRANCH="${AGENT_BASE_BRANCH:-feat/p2p-server-notification-pipeline}"
 export CONTAINER_NAME="${CONTAINER_NAME:-waymark-dev-worker}"
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/credentials/gsa-key.json}"
 export WAYMARK_WORKBOARD_URL="${WAYMARK_WORKBOARD_URL}"

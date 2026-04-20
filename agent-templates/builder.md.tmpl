@@ -15,6 +15,16 @@ tools: [execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal,
 
 1. **Read AI_LAWS** — Load `.github/instructions/AI_laws.instructions.md`. These rules are non-negotiable. Any violation is a hard reject.
 
+1a. **Reset to base branch** — Before touching any code, return to the integration branch so this task's work forks from the right place:
+   ```bash
+   BASE_BRANCH=$(cat /etc/agent-env.sh 2>/dev/null | grep AGENT_BASE_BRANCH | cut -d= -f2 | tr -d '"' || echo main)
+   git checkout -- . && git clean -fd
+   git fetch origin
+   git checkout "$BASE_BRANCH"
+   git reset --hard origin/"$BASE_BRANCH"
+   ```
+   If `BASE_BRANCH` is empty or the branch doesn't exist remotely, fall back to `main`. **Never skip this step.**
+
 2. **Parse your task from the prompt.** The orchestrator always passes:
    - `Task row: {N}` → your workboard row number `{ROW}`
    - `Task: {title}` → task title
@@ -35,7 +45,7 @@ When a task comes back from QA:
 
 1. **Read every note** — The human's feedback is the authority. Understand exactly what was wrong.
 2. **Reuse the existing branch** — `git fetch origin && git checkout feature/{branch-from-notes}`.
-3. **Rebase against latest main** — `git fetch origin && git rebase origin/main`.
+3. **Rebase against latest base branch** — `BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && git fetch origin && git rebase origin/$BASE_BRANCH`.
 4. **Address every piece of feedback** — Do NOT re-submit without fixing all noted issues.
 5. **Re-run full test suite** — `npm test` must pass before re-submitting.
 6. **Mark QA again** — Use the same workboard commands but note "Fixed per QA feedback: {summary}".
@@ -50,32 +60,35 @@ When a task comes back from QA:
 
 ### 1.0 Merge Collision Avoidance
 
-1. **Branch from latest main** — always sync before creating a branch; never branch from another feature branch.
+1. **Branch from `BASE_BRANCH`** — the container always starts on `BASE_BRANCH` (set by `AGENT_BASE_BRANCH` in the entrypoint). Read it once at the start of every task and use it for all branching. Never hard-reset to `origin/main`.
 2. **Rebase before pushing (MANDATORY):**
    ```bash
+   BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
    git fetch origin
-   git rebase origin/main
+   git rebase origin/$BASE_BRANCH
    # Resolve conflicts → git add . → git rebase --continue
    npm test   # Re-run after rebase
    ```
-3. **Worktree-safe main sync:**
+3. **Worktree-safe base sync:**
    ```bash
+   BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
    git checkout -- . && git clean -fd
    git fetch origin
-   git reset --hard origin/main
+   git reset --hard origin/$BASE_BRANCH
    git checkout -b feature/{branch-name}
    ```
 
 ### 1.1 Branch Before Any Code Change
 
 ```bash
+BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
 git checkout -- . && git clean -fd
 git fetch origin
-git reset --hard origin/main
+git reset --hard origin/$BASE_BRANCH
 git checkout -b feature/{kebab-case-task-name}
 ```
 
-Run `git branch --show-current` immediately after. If it shows `main`, **STOP** and create the branch first.
+Run `git branch --show-current` immediately after. If it shows `main` or `$BASE_BRANCH`, **STOP** and create the branch first.
 
 ### 1.2 Branch Naming
 
