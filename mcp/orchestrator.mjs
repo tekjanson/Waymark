@@ -37,6 +37,7 @@ let _notifRules = [];          // cached parsed rules
 let _rulesSheetId = process.env.WAYMARK_RULES_SHEET_ID || null; // env default; overridable at boot
 let _rulesLastFetched = 0;     // epoch ms
 const RULES_TTL_MS = 5 * 60 * 1000; // re-fetch every 5 min
+let _currentLogPath = null;    // set on each orchestrator_cycle call for fireNotifications logging
 
 /* ---------- Session state (automatic RETURNED detection) ---------- */
 const _sessions = new Map(); // sessionId → { lastAction, lastAgentName }
@@ -398,8 +399,12 @@ function interpolate(template, ctx) {
  * @param {object} ctx    - context variables for condition matching and template interpolation
  */
 async function fireNotifications(event, ctx) {
+    const logLine = (msg) => {
+        process.stderr.write(`orchestrator: ${msg}\n`);
+        if (_currentLogPath) try { appendFileSync(_currentLogPath, `[${iso()}] NOTIF/${event}: ${msg}\n`); } catch {}
+    };
     if (!_notifRules.length) {
-        process.stderr.write(`orchestrator: notification skipped for '${event}' — no rules loaded (rulesSheetId=${_rulesSheetId ?? 'not set'})\n`);
+        logLine(`skipped — no rules loaded (rulesSheetId=${_rulesSheetId ?? 'not set'})`);
         return;
     }
     const matching = _notifRules.filter(r =>
@@ -407,6 +412,7 @@ async function fireNotifications(event, ctx) {
         (r.event === event || r.event === "*") &&
         matchesCondition(r.condition, ctx)
     );
+    logLine(`matching=${matching.length} of ${_notifRules.length} rules for event '${event}'`);
     for (const rule of matching) {
         const title = interpolate(rule.title || event, ctx);
         const body  = interpolate(rule.body, ctx);
@@ -419,13 +425,12 @@ async function fireNotifications(event, ctx) {
             });
             const data = await res.json().catch(() => ({}));
             const sentCount = data.sent ?? 0;
-            process.stderr.write(
-                sentCount > 0
-                    ? `orchestrator: pushed '${title}' to ${sentCount} Android peer(s) via p2p-server\n`
-                    : `orchestrator: rule matched for '${event}' but no Android peers connected (${data.reason || 'p2p-server: 0 sent'})\n`
+            logLine(sentCount > 0
+                ? `pushed '${title}' to ${sentCount} peer(s)`
+                : `rule matched but 0 sent — ${data.reason || 'no connected peers'}`
             );
         } catch (err) {
-            process.stderr.write(`orchestrator: p2p-server unreachable for '${event}': ${err.message}\n`);
+            logLine(`p2p-server unreachable: ${err.message}`);
         }
     }
 }
@@ -609,6 +614,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "orchestrator_cycle") {
         const logPath = `${LOG_DIR}/${args.sessionId}.log`;
+        _currentLogPath = logPath;
         const sleepMs = (args.sleepSeconds || 60) * 1000;
 
         // Automatically detect RETURNED: if previous cycle dispatched an agent,
