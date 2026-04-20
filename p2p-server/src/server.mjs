@@ -180,6 +180,35 @@ app.post('/start', async (req, res) => {
     }
 });
 
+// Broadcast to all connected Android peers via every registered server peer.
+// No peerId needed — the server picks whichever peer(s) it manages.
+// Body: { title?, body, priority?, event?, type? }
+app.post('/broadcast', (req, res) => {
+    const { title, body, priority, event, type } = req.body || {};
+    if (!body && !title) return res.status(400).json({ error: 'title or body required' });
+    let totalSent = 0;
+    const results = [];
+    for (const peer of peers.values()) {
+        const sent = peer.broadcast({
+            type:     type || 'orchestrator-alert',
+            title:    title || event || 'Waymark',
+            body:     body || '',
+            priority: priority || 'normal',
+            event:    event || null,
+            ts:       Date.now(),
+        });
+        totalSent += sent;
+        results.push({ peerId: peer.peerId, sent });
+    }
+    res.json({
+        ok:          true,
+        sent:        totalSent,
+        serverPeers: peers.size,
+        results,
+        reason:      peers.size === 0 ? 'no server peers registered yet' : (totalSent === 0 ? 'no Android peers connected' : null),
+    });
+});
+
 app.post('/notify', async (req, res) => {
     const input = resolveNotificationInput(req.body || {});
     if (!input.peerId) return res.status(400).json({ error: 'peerId required' });
