@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waymark P2P Server</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; background: #0f0f0f; color: #e0e0e0; }
+    h1 { color: #7c9ef7; }
+    h2 { color: #aaa; font-size: 1rem; margin-top: 2rem; }
+    pre { background: #1e1e1e; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+    .ok { background: #1a4d2e; color: #4caf50; }
+    .warn { background: #4d3a1a; color: #ff9800; }
+    button { background: #2d4a8a; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px; }
+    button:hover { background: #3d5a9a; }
+    #status { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Waymark P2P Server</h1>
+  <div id="status">Loading...</div>
+
+  <h2>PEERS</h2>
+  <pre id="peers">—</pre>
+
+  <h2>NOTIFICATION BUFFER</h2>
+  <pre id="buffer">—</pre>
+
+  <h2>ACTIONS</h2>
+  <button onclick="broadcast()">Test Broadcast</button>
+  <button onclick="refresh()">Refresh</button>
+  <pre id="result"></pre>
+
+  <script>
+    async function refresh() {
+      try {
+        const [peersRes, bufRes] = await Promise.all([
+          fetch('/peers').then(r => r.json()),
+          fetch('/notifications/buffer').then(r => r.json()),
+        ]);
+        document.getElementById('status').innerHTML =
+          `<span class="badge ${peersRes.peers.length ? 'ok' : 'warn'}">${peersRes.peers.length} server peer(s)</span>`;
+        document.getElementById('peers').textContent = JSON.stringify(peersRes, null, 2);
+        document.getElementById('buffer').textContent = JSON.stringify(bufRes, null, 2);
+      } catch(e) {
+        document.getElementById('status').textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function broadcast() {
+      try {
+        const res = await fetch('/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Test', body: 'Hello from p2p-server UI', event: 'TEST' }),
+        });
+        document.getElementById('result').textContent = JSON.stringify(await res.json(), null, 2);
+      } catch(e) {
+        document.getElementById('result').textContent = 'Error: ' + e.message;
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
