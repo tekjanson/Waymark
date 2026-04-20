@@ -419,3 +419,157 @@ test('parseBranchName handles branches with dots and numbers', async ({ page }) 
   });
   expect(result).toBe('feature/v2.0-upgrade');
 });
+
+/* ================================================================
+   Section 8: calcCycleTime
+   ================================================================ */
+
+test('calcCycleTime returns 0 for empty notes array', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime } = await import('/js/templates/kanban/helpers.js');
+    return calcCycleTime([], 0, 1, 'In Progress');
+  });
+  expect(result).toBe(0);
+});
+
+test('calcCycleTime returns 0 when noteCol is negative', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime } = await import('/js/templates/kanban/helpers.js');
+    const notes = [{ row: ['⟳ To Do → In Progress', '2026-01-01 10:00'] }];
+    return calcCycleTime(notes, -1, 1, 'In Progress');
+  });
+  expect(result).toBe(0);
+});
+
+test('calcCycleTime returns 0 when dateCol is negative', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime } = await import('/js/templates/kanban/helpers.js');
+    const notes = [{ row: ['⟳ To Do → In Progress', '2026-01-01 10:00'] }];
+    return calcCycleTime(notes, 0, -1, 'In Progress');
+  });
+  expect(result).toBe(0);
+});
+
+test('calcCycleTime computes time between entry and exit of a stage', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime, STATUS_PREFIX } = await import('/js/templates/kanban/helpers.js');
+    // Card entered In Progress at 09:00, left at 11:00 (2 hours)
+    const notes = [
+      { row: [`${STATUS_PREFIX}To Do → In Progress`, '2026-01-01 09:00'] },
+      { row: [`${STATUS_PREFIX}In Progress → QA`, '2026-01-01 11:00'] },
+    ];
+    return calcCycleTime(notes, 0, 1, 'In Progress');
+  });
+  expect(result).toBeCloseTo(2, 1);
+});
+
+test('calcCycleTime ignores notes without STATUS_PREFIX', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime } = await import('/js/templates/kanban/helpers.js');
+    const notes = [
+      { row: ['regular note', '2026-01-01 09:00'] },
+      { row: ['another note', '2026-01-01 11:00'] },
+    ];
+    return calcCycleTime(notes, 0, 1, 'In Progress');
+  });
+  expect(result).toBe(0);
+});
+
+test('calcCycleTime returns 0 for null/missing targetStage', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { calcCycleTime, STATUS_PREFIX } = await import('/js/templates/kanban/helpers.js');
+    const notes = [
+      { row: [`${STATUS_PREFIX}To Do → In Progress`, '2026-01-01 09:00'] },
+    ];
+    return calcCycleTime(notes, 0, 1, '');
+  });
+  expect(result).toBe(0);
+});
+
+/* ================================================================
+   Section 9: matchesSearch
+   ================================================================ */
+
+test('matchesSearch returns true for empty query', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = { row: ['Fix Bug', 'description', 'In Progress'], subtasks: [], notes: [] };
+    const cols = { text: 0, description: 1, stage: 2, assignee: -1, label: -1, project: -1, reporter: -1, note: -1 };
+    return matchesSearch(group, cols, '');
+  });
+  expect(result).toBe(true);
+});
+
+test('matchesSearch matches task title (case-insensitive)', async ({ page }) => {
+  await setupApp(page);
+  const results = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = { row: ['Fix Authentication Bug', 'desc', 'To Do'], subtasks: [], notes: [] };
+    const cols = { text: 0, description: 1, stage: 2, assignee: -1, label: -1, project: -1, reporter: -1, note: -1 };
+    return {
+      lower: matchesSearch(group, cols, 'auth'),
+      upper: matchesSearch(group, cols, 'AUTH'),
+      mixed: matchesSearch(group, cols, 'Authentication'),
+      miss: matchesSearch(group, cols, 'xyz'),
+    };
+  });
+  expect(results.lower).toBe(true);
+  expect(results.upper).toBe(true);
+  expect(results.mixed).toBe(true);
+  expect(results.miss).toBe(false);
+});
+
+test('matchesSearch matches description field', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = { row: ['Task', 'detailed description text', 'Backlog'], subtasks: [], notes: [] };
+    const cols = { text: 0, description: 1, stage: 2, assignee: -1, label: -1, project: -1, reporter: -1, note: -1 };
+    return matchesSearch(group, cols, 'detailed');
+  });
+  expect(result).toBe(true);
+});
+
+test('matchesSearch matches assignee field', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = { row: ['Task', '', 'To Do', '', 'Alice'], subtasks: [], notes: [] };
+    const cols = { text: 0, description: 1, stage: 2, project: 3, assignee: 4, label: -1, reporter: -1, note: -1 };
+    return matchesSearch(group, cols, 'alice');
+  });
+  expect(result).toBe(true);
+});
+
+test('matchesSearch matches sub-task descriptions', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = {
+      row: ['Parent Task', '', 'To Do'],
+      subtasks: [{ row: ['', 'Write unit tests for login', 'To Do'] }],
+      notes: [],
+    };
+    const cols = { text: 0, description: 1, stage: 2, assignee: -1, label: -1, project: -1, reporter: -1, note: -1 };
+    return matchesSearch(group, cols, 'unit tests');
+  });
+  expect(result).toBe(true);
+});
+
+test('matchesSearch returns false for whitespace-only query', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { matchesSearch } = await import('/js/templates/kanban/helpers.js');
+    const group = { row: ['Task'], subtasks: [], notes: [] };
+    const cols = { text: 0, description: -1, stage: -1, assignee: -1, label: -1, project: -1, reporter: -1, note: -1 };
+    return matchesSearch(group, cols, '   ');
+  });
+  expect(result).toBe(true); // blank query = show all
+});

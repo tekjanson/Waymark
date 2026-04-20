@@ -79,6 +79,25 @@
 }
 .kanban-lane-vis-item input { margin: 0; cursor: pointer; }
 
+/* ---------- Card Search ---------- */
+
+.kanban-search-wrap {
+  display: flex; align-items: center; margin-left: auto;
+}
+
+.kanban-search-input {
+  font-size: 0.78rem; padding: 3px 8px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); background: var(--color-surface);
+  color: var(--color-text); min-width: 140px; max-width: 220px;
+  transition: border-color var(--transition);
+}
+
+.kanban-search-input:focus {
+  outline: none; border-color: var(--color-primary);
+}
+
+.kanban-search-input::placeholder { color: var(--color-text-muted); }
+
 /* ---------- AI Agent Status ---------- */
 
 .kanban-ai-status {
@@ -1140,6 +1159,7 @@ body.kanban-touch-dragging {
 [data-theme="dark"] .kanban-stage-dropdown { background: var(--color-surface); border-color: var(--color-border); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 [data-theme="dark"] .kanban-lane-vis-panel { background: var(--color-surface); border-color: var(--color-border); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 [data-theme="dark"] .kanban-lane-vis-btn { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text-muted); }
+[data-theme="dark"] .kanban-search-input { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text); }
 
 /* ---------- Print Layout (compact card grid) ---------- */
 @media print {

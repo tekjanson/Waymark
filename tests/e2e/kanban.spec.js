@@ -2037,3 +2037,109 @@ test('kanban branch copy badge not shown for regular notes', async ({ page }) =>
   await expect(badgesInCard).toHaveCount(0);
 });
 
+/* ---------- Text Search Filter ---------- */
+
+test('kanban search input is visible in toolbar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-search-input', { timeout: 5_000 });
+  await expect(page.locator('.kanban-search-input')).toBeVisible();
+});
+
+test('kanban search filters cards by title', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-search-input', { timeout: 5_000 });
+
+  const totalBefore = await page.locator('.kanban-card').count();
+  expect(totalBefore).toBeGreaterThan(2);
+
+  // Type a specific card title to filter
+  await page.locator('.kanban-search-input').fill('Fix Search Bug');
+  await page.waitForFunction(() => document.querySelectorAll('.kanban-card').length > 0);
+
+  const afterFilter = await page.locator('.kanban-card').count();
+  expect(afterFilter).toBeLessThan(totalBefore);
+  await expect(page.locator('.kanban-card').first()).toContainText('Fix Search Bug');
+});
+
+test('kanban search is case-insensitive', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-search-input', { timeout: 5_000 });
+
+  // Uppercase search should still find the card
+  await page.locator('.kanban-search-input').fill('FIX SEARCH BUG');
+  await page.waitForFunction(() => document.querySelectorAll('.kanban-card').length > 0);
+
+  await expect(page.locator('.kanban-card').first()).toContainText('Fix Search Bug');
+});
+
+test('kanban search shows no cards for unmatched query', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-search-input', { timeout: 5_000 });
+
+  await page.locator('.kanban-search-input').fill('xyzzy_nonexistent_task');
+  await page.waitForFunction(() => document.querySelectorAll('.kanban-card').length === 0);
+
+  expect(await page.locator('.kanban-card').count()).toBe(0);
+});
+
+test('kanban search clears to show all cards when emptied', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-search-input', { timeout: 5_000 });
+
+  const totalBefore = await page.locator('.kanban-card').count();
+
+  await page.locator('.kanban-search-input').fill('Fix Search Bug');
+  await page.waitForFunction(() => document.querySelectorAll('.kanban-card').length < 8);
+
+  // Clear the search
+  await page.locator('.kanban-search-input').fill('');
+  await page.waitForFunction((n) => document.querySelectorAll('.kanban-card').length === n, totalBefore);
+
+  expect(await page.locator('.kanban-card').count()).toBe(totalBefore);
+});
+
+test('kanban search and project filter can be combined', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-filter-bar', { timeout: 5_000 });
+
+  // Filter by project first
+  await page.locator('.kanban-filter-pill', { hasText: 'Backend' }).click();
+
+  // Then apply text search
+  await page.locator('.kanban-search-input').fill('API');
+  await page.waitForFunction(() => document.querySelectorAll('.kanban-card').length > 0);
+
+  const cards = await page.locator('.kanban-card').count();
+  expect(cards).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('.kanban-card').first()).toContainText('API');
+});
+
+/* ---------- Last Updated Sort ---------- */
+
+test('kanban sort select includes Last Updated option', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-sort-select', { timeout: 5_000 });
+
+  const options = await page.locator('.kanban-sort-select option').allTextContents();
+  expect(options).toContain('Last Updated');
+});
+
+test('kanban sort by last updated does not crash the board', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-sort-select', { timeout: 5_000 });
+
+  await page.locator('.kanban-sort-select').selectOption('updated');
+
+  // Board should still render cards
+  await page.waitForSelector('.kanban-card', { timeout: 3_000 });
+  expect(await page.locator('.kanban-card').count()).toBeGreaterThan(0);
+});
+

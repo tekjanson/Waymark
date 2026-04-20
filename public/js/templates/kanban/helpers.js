@@ -176,3 +176,106 @@ export function formatRelativeDate(dateStr) {
   if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
   return d.toLocaleDateString('en-US', opts);
 }
+
+/* ---------- Cycle Time ---------- */
+
+/**
+ * Compute the time (in fractional hours) that a card spent in a given stage,
+ * derived from STATUS_PREFIX note timestamps.
+ *
+ * Scans `notes` for pairs of auto-generated status-change notes
+ * (e.g. "⟳ To Do → In Progress") and sums the durations the card
+ * spent with `targetStage` as its current stage.
+ *
+ * @param {Object[]} notes    — array of note group-objects (each has `.row`)
+ * @param {number}   noteCol  — column index for the note text
+ * @param {number}   dateCol  — column index for the note timestamp
+ * @param {string}   targetStage — human-readable stage label (e.g. "In Progress")
+ * @returns {number} total hours spent in targetStage (0 if no data)
+ */
+export function calcCycleTime(notes, noteCol, dateCol, targetStage) {
+  if (!notes || notes.length === 0 || noteCol < 0 || dateCol < 0 || !targetStage) return 0;
+
+  // Build ordered list of status-change events with timestamps
+  const events = [];
+  for (const n of notes) {
+    const text = (n.row[noteCol] || '').trim();
+    if (!text.startsWith(STATUS_PREFIX)) continue;
+    const dateStr = (n.row[dateCol] || '').trim();
+    if (!dateStr) continue;
+    const hasTime = /\d{2}:\d{2}/.test(dateStr);
+    const d = hasTime ? new Date(dateStr.replace(' ', 'T')) : new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) continue;
+    // Parse "⟳ From → To"
+    const match = text.slice(STATUS_PREFIX.length).match(/^(.+?)\s*→\s*(.+)$/);
+    if (!match) continue;
+    events.push({ from: match[1].trim(), to: match[2].trim(), time: d.getTime() });
+  }
+
+  // Sort events chronologically
+  events.sort((a, b) => a.time - b.time);
+
+  // Accumulate time windows where the current stage equals targetStage
+  let totalMs = 0;
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.from === targetStage) {
+      // Stage was left at ev.time; find when it was entered (prior event that set it)
+      let enteredAt = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (events[j].to === targetStage) { enteredAt = events[j].time; break; }
+      }
+      // If we never saw an entry event, skip (can't compute the window)
+      if (enteredAt !== null) totalMs += ev.time - enteredAt;
+    }
+  }
+
+  return totalMs / (1000 * 60 * 60);
+}
+
+/* ---------- Text Search ---------- */
+
+/**
+ * Check whether a card group matches a case-insensitive text query.
+ * Searches the task title, description, assignee, label, project, and reporter fields.
+ *
+ * @param {Object} group   — parsed group object (has `.row`)
+ * @param {Object} cols    — column-index map from `columns()`
+ * @param {string} query   — raw search string (may be empty)
+ * @returns {boolean} true if the card matches (or query is blank)
+ */
+export function matchesSearch(group, cols, query) {
+  if (!query || !query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  const { row } = group;
+
+  const searchFields = [
+    cols.text,
+    cols.description,
+    cols.assignee,
+    cols.label,
+    cols.project,
+    cols.reporter,
+  ];
+
+  for (const colIdx of searchFields) {
+    if (colIdx >= 0) {
+      const val = (row[colIdx] || '').toLowerCase();
+      if (val.includes(q)) return true;
+    }
+  }
+
+  // Also check sub-task descriptions
+  for (const child of [...(group.subtasks || []), ...(group.notes || [])]) {
+    if (cols.description >= 0) {
+      const val = (child.row[cols.description] || '').toLowerCase();
+      if (val.includes(q)) return true;
+    }
+    if (cols.note >= 0) {
+      const val = (child.row[cols.note] || '').toLowerCase();
+      if (val.includes(q)) return true;
+    }
+  }
+
+  return false;
+}

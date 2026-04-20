@@ -14,7 +14,7 @@ import {
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
   buildDirSyncBtn, isEditLocked,
 } from '../shared.js';
-import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
+import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate, matchesSearch } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 
@@ -23,6 +23,7 @@ import { openCardModal } from './modal.js';
 let _activeProject = null;
 let _activeSort = 'default';
 let _showArchived = false;
+let _activeSearch = '';
 let _expandedCards = new Set();
 /** Collapsed lane keys */
 let _collapsedLanes = new Set();
@@ -386,7 +387,7 @@ const definition = {
 
     const sortLabel = el('label', { className: 'kanban-sort-label' }, ['Sort:']);
     const sortSelect = el('select', { className: 'kanban-sort-select' });
-    [['default', 'Default'], ['priority', 'Priority'], ['due', 'Due Date'], ['reporter', 'Reporter']].forEach(([val, txt]) => {
+    [['default', 'Default'], ['priority', 'Priority'], ['due', 'Due Date'], ['reporter', 'Reporter'], ['updated', 'Last Updated']].forEach(([val, txt]) => {
       const opt = el('option', { value: val }, [txt]);
       if (val === _activeSort) opt.selected = true;
       sortSelect.append(opt);
@@ -430,6 +431,21 @@ const definition = {
     });
     laneVisWrap.append(laneVisBtn, laneVisPanel);
     controls.append(laneVisWrap);
+
+    // Text search input
+    const searchWrap = el('div', { className: 'kanban-search-wrap' });
+    const searchInput = el('input', {
+      type: 'search',
+      className: 'kanban-search-input',
+      placeholder: 'Search cards…',
+      value: _activeSearch,
+    });
+    searchInput.addEventListener('input', () => {
+      _activeSearch = searchInput.value;
+      updateBoard();
+    });
+    searchWrap.append(searchInput);
+    controls.append(searchWrap);
 
     toolbar.append(controls);
 
@@ -854,15 +870,20 @@ const definition = {
         ? groups.filter(g => cell(g.row, cols.project) === _activeProject)
         : groups;
 
+      // Filter by text search
+      const searchFiltered = _activeSearch
+        ? filtered.filter(g => matchesSearch(g, cols, _activeSearch))
+        : filtered;
+
       // Progress stats
-      const totalParent = filtered.length;
-      const doneParent = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === 'done').length;
+      const totalParent = searchFiltered.length;
+      const doneParent = searchFiltered.filter(g => template.stageClass(cell(g.row, cols.stage)) === 'done').length;
 
       for (const laneKey of laneOrder) {
         const lane = laneEls[laneKey];
         const laneBody = laneBodyEls[laneKey];
 
-        let items = filtered.filter(g => template.stageClass(cell(g.row, cols.stage)) === laneKey);
+        let items = searchFiltered.filter(g => template.stageClass(cell(g.row, cols.stage)) === laneKey);
 
         // Sort
         if (_activeSort === 'priority') {
@@ -871,6 +892,25 @@ const definition = {
           items.sort((a, b) => (cell(a.row, cols.due) || 'z').localeCompare(cell(b.row, cols.due) || 'z'));
         } else if (_activeSort === 'reporter') {
           items.sort((a, b) => (cell(a.row, cols.reporter) || 'z').localeCompare(cell(b.row, cols.reporter) || 'z'));
+        } else if (_activeSort === 'updated') {
+          // Sort by most recent status-change note date (descending — newest first)
+          items.sort((a, b) => {
+            const latestNoteDate = (g) => {
+              if (cols.note < 0 || cols.due < 0) return '';
+              const statusNotes = g.notes.filter(n => (n.row[cols.note] || '').startsWith(STATUS_PREFIX));
+              if (statusNotes.length === 0) return '';
+              return statusNotes.reduce((best, n) => {
+                const d = n.row[cols.due] || '';
+                return d > best ? d : best;
+              }, '');
+            };
+            const da = latestNoteDate(a);
+            const db = latestNoteDate(b);
+            if (!da && !db) return 0;
+            if (!da) return 1;
+            if (!db) return -1;
+            return db.localeCompare(da);
+          });
         }
 
         // Update lane header: remove old header, insert new one
