@@ -16,10 +16,6 @@
     <!-- Post notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Camera capture + microphone for WebView media/capture flows -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
     <!-- Vibration for notification feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -68,16 +64,6 @@
             android:name=".WebRtcService"
             android:foregroundServiceType="remoteMessaging"
             android:exported="false" />
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
         <!-- Restart WebRtcService after a device reboot or app update -->
         <receiver

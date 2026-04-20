@@ -122,6 +122,13 @@ class WaymarkBridge(private val context: Context) {
             .edit()
             .putString(WaymarkConfig.PREF_ACTIVE_SHEET, sheetId)
             .apply()
+
+        // Prompt the service to re-resolve signaling immediately. This is a safe no-op
+        // when already connected, and it lets fresh installs recover quickly once a
+        // sheet is opened in the WebView.
+        context.startService(Intent(context, WebRtcService::class.java).apply {
+            action = WebRtcService.ACTION_CONNECT
+        })
     }
 
     /* ---------- Direct notification requests ---------- */

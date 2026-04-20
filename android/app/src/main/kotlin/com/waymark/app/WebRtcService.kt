@@ -18,13 +18,17 @@
 
 package com.waymark.app
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.*
@@ -46,7 +50,22 @@ class WebRtcService : LifecycleService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var connectionManager: ConnectionManager
 
+    private var cpuWakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
     @Volatile private var networkLost = false
+
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_SCREEN_ON) return
+            Log.i(TAG, "Screen on — checking mesh connection")
+            val peer = connectionManager.state.activePeer
+            if (peer == null || peer.destroyed || !peer.isInMesh) {
+                Log.i(TAG, "Screen on — peer unhealthy, requesting reconnect")
+                connectionManager.requestConnect()
+            }
+        }
+    }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -78,6 +97,8 @@ class WebRtcService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
 
+        acquireRuntimeLocks()
+
         connectionManager = ConnectionManager(
             appContext = applicationContext,
             scope = scope,
@@ -97,6 +118,8 @@ class WebRtcService : LifecycleService() {
                     .build(),
                 networkCallback
             )
+
+        registerReceiver(screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON))
 
         connectionManager.requestConnectNow()
     }
@@ -145,7 +168,9 @@ class WebRtcService : LifecycleService() {
         super.onDestroy()
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         try { cm.unregisterNetworkCallback(networkCallback) } catch (_: IllegalArgumentException) {}
+        try { unregisterReceiver(screenOnReceiver) } catch (_: IllegalArgumentException) {}
         runBlocking { connectionManager.disconnect() }
+        releaseRuntimeLocks()
         scope.cancel()
         Log.i(TAG, "Service destroyed")
     }
@@ -175,5 +200,45 @@ class WebRtcService : LifecycleService() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to update foreground notification: ${e.message}")
         }
+    }
+
+    /**
+     * Keep CPU + Wi-Fi stack alive while this foreground service owns the mesh.
+     * This mitigates OEM/background throttling that can starve sheet polling.
+     */
+    private fun acquireRuntimeLocks() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            cpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "waymark:webrtc-cpu").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.i(TAG, "CPU wake lock acquired")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire CPU wake lock: ${e.message}")
+        }
+
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "waymark:webrtc-wifi").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.i(TAG, "Wi-Fi high perf lock acquired")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire Wi-Fi lock: ${e.message}")
+        }
+    }
+
+    private fun releaseRuntimeLocks() {
+        try {
+            cpuWakeLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Exception) {}
+        cpuWakeLock = null
+
+        try {
+            wifiLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Exception) {}
+        wifiLock = null
     }
 }

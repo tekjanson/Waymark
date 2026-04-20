@@ -29,7 +29,8 @@ private const val TAG = "OrchestratorPeer"
 private data class BuildJob(
     val remotePeerId: String,
     val type: String,       // "offer" or "answer"
-    val offerSdp: String? = null
+    val offerSdp: String? = null,
+    val delayMs: Long = 0L
 )
 
 /**
@@ -84,9 +85,9 @@ class OrchestratorPeer(
         /** Drop a PeerEntry if DC never opened within this window. */
         private const val HANDSHAKE_TIMEOUT_MS = 90_000L
         /** How often to send a ping on open DataChannels. */
-        private const val DC_PING_MS           = 30_000L
+        private const val DC_PING_MS           = 10_000L
         /** Close peer if no pong received for this long. */
-        private const val DC_PONG_TIMEOUT_MS   = 90_000L
+        private const val DC_PONG_TIMEOUT_MS   = 45_000L
         /** Delay before forcing close after ICE DISCONNECTED.
          *  30 s gives ICE enough time to self-heal through WiFi blips (2.4 GHz channel
          *  noise, brief NAT rebinds) without tearing down a healthy connection.
@@ -97,6 +98,10 @@ class OrchestratorPeer(
         /** If alone (zero alive peers) for this many ms, invoke [onAloneTimeout] to
          *  trigger a re-bootstrap that re-reads Drive sheet IDs. */
         private const val ALONE_TIMEOUT_MS = 60_000L
+        /** Extra poll delay applied when this peer is acting as a slave (lower row). */
+        private const val MAX_SLAVE_POLL_OFFSET_MS = 2_000L
+        /** Upper bound for per-handshake slave delay (keeps retries responsive). */
+        private const val MAX_SLAVE_HANDSHAKE_DELAY_MS = 2_200L
     }
 
     /* ---------- State ---------- */
@@ -117,6 +122,12 @@ class OrchestratorPeer(
     /** Epoch-ms when the peer first observed zero alive peers.  Reset when ≥1 peer is found. */
     @Volatile private var _aloneSince = 0L
 
+    /**
+     * Consecutive poll cycles where our own presence row looked missing/clobbered.
+     * Debounces false-positive evictions from transient Sheets read inconsistencies.
+     */
+    @Volatile private var _slotEvictionMisses = 0
+
     /** Unique 8-char hex nonce generated each time this peer starts.  Written into the
      *  heartbeat so remote peers can detect a restart and rebuild the DataChannel
      *  immediately rather than waiting for ICE teardown (crash-recovery). */
@@ -131,6 +142,10 @@ class OrchestratorPeer(
      *  from the signaling sheet on the next poll() cycle. Populated from the native
      *  WebRTC ICE callback thread, consumed in poll() on Dispatchers.IO. */
     private val _iceFailedPeers = ConcurrentHashMap.newKeySet<String>()
+    /** Per-remote thrash score used to adapt slave handshake timing. */
+    private val _slaveThrashScore = ConcurrentHashMap<String, Int>()
+    /** Dynamic poll offset applied while we are the lower-row (slave) peer. */
+    @Volatile private var _slavePollOffsetMs = 0L
 
     /**
      * Invoked on the IO dispatcher whenever the number of open DataChannel
@@ -192,7 +207,7 @@ class OrchestratorPeer(
                     }
                     while (!destroyed) {
                         poll()
-                        delay(WaymarkConfig.POLL_MS)
+                        delay(WaymarkConfig.POLL_MS + _slavePollOffsetMs)
                     }
                 } catch (e: CancellationException) { return@launch }
                 catch (e: Exception) {
@@ -355,7 +370,13 @@ class OrchestratorPeer(
             // immediately rather than silently operating on a clobbered block.
             val myPresence = parseJson(vals.getOrNull(block))
             if (myPresence == null || myPresence.optString("peerId") != peerId) {
+                _slotEvictionMisses += 1
                 val evictedBy = myPresence?.optString("peerId") ?: "(empty)"
+                if (_slotEvictionMisses < 3) {
+                    Log.w(TAG, "Slot $block looked taken by $evictedBy (miss ${_slotEvictionMisses}/3) — waiting")
+                    return@withContext
+                }
+                _slotEvictionMisses = 0
                 Log.w(TAG, "Slot $block was taken by $evictedBy — re-joining mesh")
                 // Close all connections — they were built with the old block's signal rows
                 for ((rId, entry) in peers.entries.toList()) {
@@ -372,6 +393,8 @@ class OrchestratorPeer(
                 Log.i(TAG, "Re-joined mesh at block=$block")
                 heartbeat()
                 return@withContext // skip rest of poll — next cycle discovers peers
+            } else {
+                _slotEvictionMisses = 0
             }
 
             val alive    = scanAlive(vals)
@@ -432,6 +455,13 @@ class OrchestratorPeer(
 
             // Collect ICE-building jobs; handle fast (non-ICE) ops inline
             val buildJobs = mutableListOf<BuildJob>()
+            val highestRemoteBlock = alive.maxOfOrNull { it.optInt("block", -1) } ?: -1
+            _slavePollOffsetMs = if (highestRemoteBlock > block) {
+                val worst = _slaveThrashScore.values.maxOrNull() ?: 0
+                (150L + (worst * 120L)).coerceAtMost(MAX_SLAVE_POLL_OFFSET_MS)
+            } else {
+                0L
+            }
             for (remote in alive) {
                 val remotePeerId = remote.optString("peerId")
                 val remoteBlock  = remote.optInt("block", -1)
@@ -458,21 +488,18 @@ class OrchestratorPeer(
 
                 // Skip already-connected peers — but verify ICE is healthy.
                 // After airplane mode the DataChannel may locally report OPEN even
-                // though the underlying ICE transport is failed/closed (stale STUN
-                // bindings).  Tear down the zombie entry so the loop below rebuilds.
-                // Note: DISCONNECTED is NOT torn down here — the grace timer in
-                // onIceConnectionChange handles it via ICE restart.
+                // though the underlying ICE transport is disconnected/failed (stale
+                // STUN bindings).  Tear down the zombie entry so the loop below
+                // rebuilds the connection this cycle.
                 if (entry?.dc?.state() == DataChannel.State.OPEN) {
                     val ice = entry.pc.iceConnectionState()
-                    // Only tear down FAILED/CLOSED immediately. DISCONNECTED is
-                    // handled by the grace timer → ICE restart in onIceConnectionChange;
-                    // tearing it down here would kill the connection before ICE restart
-                    // has a chance to recover it (poll runs every 7s, grace timer is 30s).
-                    if (ice == PeerConnection.IceConnectionState.FAILED ||
+                    if (ice == PeerConnection.IceConnectionState.DISCONNECTED ||
+                        ice == PeerConnection.IceConnectionState.FAILED ||
                         ice == PeerConnection.IceConnectionState.CLOSED
                     ) {
                         Log.w(TAG, "ICE $remotePeerId is $ice despite OPEN DC — dropping for rebuild")
                         _iceFailedPeers.add(remotePeerId)
+                        markSlaveThrash(remotePeerId)
                         peers.remove(remotePeerId)?.pc?.dispose()
                         lastPong.remove(remotePeerId)
                         fireConnectionState()
@@ -486,7 +513,7 @@ class OrchestratorPeer(
                     }
                 }
 
-                val weInit = peerId < remotePeerId
+                val weInit = shouldInitiateHandshake(remotePeerId, remoteBlock)
 
                 if (weInit) {
                     // Drop stale pending offers — mirrors Node.js OFFER_MAX_AGE check
@@ -495,6 +522,7 @@ class OrchestratorPeer(
                         val age = System.currentTimeMillis() - pendingOffer.optLong("ts", 0)
                         if (age > WaymarkConfig.OFFER_MAX_AGE_MS) {
                             Log.w(TAG, "Stale offer for $remotePeerId (${age / 1000}s) — dropping, will rebuild next poll")
+                            markSlaveThrash(remotePeerId)
                             peers.remove(remotePeerId)?.pc?.dispose()
                             lastPong.remove(remotePeerId)
                             myOffers.remove(remotePeerId)
@@ -516,9 +544,11 @@ class OrchestratorPeer(
                                     SessionDescription(SessionDescription.Type.ANSWER, ans.getString("sdp"))
                                 )
                                 entry.state = "connected"
+                                markSlaveStable(remotePeerId)
                                 myOffers.remove(remotePeerId); offDirty = true
                             } catch (e: Exception) {
                                 Log.e(TAG, "setRemoteDescription(answer) failed for $remotePeerId", e)
+                                markSlaveThrash(remotePeerId)
                                 peers.remove(remotePeerId)?.pc?.dispose()
                             }
                         }
@@ -529,7 +559,14 @@ class OrchestratorPeer(
                         val remoteOff = parseJson(vals.getOrNull(remoteBlock + WaymarkConfig.OFF_OFFERS)) ?: JSONObject()
                         val offer = remoteOff.optJSONObject(peerId)
                         if (offer != null) {
-                            buildJobs.add(BuildJob(remotePeerId, "answer", offer.getString("sdp")))
+                            buildJobs.add(
+                                BuildJob(
+                                    remotePeerId = remotePeerId,
+                                    type = "answer",
+                                    offerSdp = offer.getString("sdp"),
+                                    delayMs = slaveHandshakeDelayMs(remotePeerId, remoteBlock)
+                                )
+                            )
                         }
                     }
                 }
@@ -541,6 +578,7 @@ class OrchestratorPeer(
                     buildJobs.map { job ->
                         async {
                             try {
+                                if (job.delayMs > 0L) delay(job.delayMs)
                                 when (job.type) {
                                     "offer" -> {
                                         val sdp = buildOffer(job.remotePeerId)
@@ -553,11 +591,13 @@ class OrchestratorPeer(
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Build ${job.type} for ${job.remotePeerId} failed", e)
+                                markSlaveThrash(job.remotePeerId)
                                 peers.remove(job.remotePeerId)?.pc?.dispose()
                                 null
                             }
                         }
                     }.awaitAll().filterNotNull().forEach { (rId, type, sdp) ->
+                        markSlaveStable(rId)
                         when (type) {
                             "offer"  -> { myOffers.put(rId, JSONObject().apply { put("sdp", sdp); put("ts", System.currentTimeMillis()) }); offDirty = true }
                             "answer" -> { myAnswers.put(rId, JSONObject().apply { put("sdp", sdp); put("ts", System.currentTimeMillis()) }); ansDirty = true }
@@ -674,76 +714,6 @@ class OrchestratorPeer(
         withTimeoutOrNull(timeoutMs) { done.await() }
     }
 
-    /**
-     * Attempt an ICE restart on an existing PeerConnection.
-     * Creates a new offer with iceRestart: true and writes it to the signaling
-     * sheet.  The remote peer's next poll sees the new offer, generates an answer,
-     * and ICE re-establishes using fresh candidates — much faster than full teardown
-     * because the DTLS session is reused.
-     *
-     * @throws Exception if the restart fails (caller falls back to full rebuild)
-     */
-    private suspend fun attemptIceRestart(pc: PeerConnection, remotePeerId: String) = withContext(Dispatchers.IO) {
-        Log.i(TAG, "Attempting ICE restart for $remotePeerId")
-
-        // Create offer with iceRestart
-        val constraints = MediaConstraints().apply {
-            mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
-        }
-        val offerSdp = suspendCancellableCoroutine { cont: CancellableContinuation<SessionDescription?> ->
-            pc.createOffer(object : SdpObserver {
-                override fun onCreateSuccess(sdp: SessionDescription) { cont.resume(sdp) {} }
-                override fun onSetSuccess() {}
-                override fun onCreateFailure(s: String?) { cont.resume(null) {} }
-                override fun onSetFailure(s: String?) { cont.resume(null) {} }
-            }, constraints)
-        } ?: throw Exception("ICE restart createOffer failed")
-
-        suspendCancellableCoroutine { cont: CancellableContinuation<Boolean> ->
-            pc.setLocalDescription(object : SdpObserver {
-                override fun onCreateSuccess(p0: SessionDescription?) {}
-                override fun onSetSuccess() { cont.resume(true) {} }
-                override fun onCreateFailure(s: String?) { cont.resume(false) {} }
-                override fun onSetFailure(s: String?) { cont.resume(false) {} }
-            }, offerSdp)
-        }
-
-        // Wait for ICE gathering to complete by polling (the original observer's
-        // CompletableDeferred is already used/completed from initial connection)
-        withTimeoutOrNull(12_000) {
-            while (pc.iceGatheringState() != PeerConnection.IceGatheringState.COMPLETE) {
-                delay(200)
-            }
-        }
-        val localSdp = pc.localDescription?.description ?: throw Exception("No local SDP after ICE restart")
-
-        // Write the restart offer to signaling sheet
-        val vals = signalingClient.readAll()
-        val myOffers = parseJson(vals.getOrNull(block + WaymarkConfig.OFF_OFFERS)) ?: JSONObject()
-        myOffers.put(remotePeerId, JSONObject().apply {
-            put("sdp", localSdp)
-            put("ts", System.currentTimeMillis())
-        })
-        writeOffers(myOffers)
-        Log.i(TAG, "ICE restart offer written for $remotePeerId — waiting for reconnection")
-
-        // Wait up to 30s for ICE to reconnect
-        val reconnected = withTimeoutOrNull(30_000) {
-            while (true) {
-                val ice = pc.iceConnectionState()
-                if (ice == PeerConnection.IceConnectionState.CONNECTED ||
-                    ice == PeerConnection.IceConnectionState.COMPLETED) break
-                if (ice == PeerConnection.IceConnectionState.FAILED ||
-                    ice == PeerConnection.IceConnectionState.CLOSED) {
-                    throw Exception("ICE restart failed: $ice")
-                }
-                delay(500)
-            }
-        }
-        if (reconnected == null) throw Exception("ICE restart timeout")
-        Log.i(TAG, "ICE restart succeeded for $remotePeerId")
-    }
-
     /* ---------- PeerConnection factory ---------- */
 
     private fun createPeerConnection(remotePeerId: String, iceGatheringDone: CompletableDeferred<Unit>): PeerConnection? {
@@ -760,42 +730,7 @@ class OrchestratorPeer(
                 }
             }
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-                Log.i(TAG, "ICE $remotePeerId → $state")
-                // Dump candidate pair stats on non-trivial transitions
-                if (state == PeerConnection.IceConnectionState.DISCONNECTED ||
-                    state == PeerConnection.IceConnectionState.FAILED ||
-                    state == PeerConnection.IceConnectionState.CONNECTED ||
-                    state == PeerConnection.IceConnectionState.COMPLETED) {
-                    pcRef?.getStats { report ->
-                        val pairs = report.statsMap.values.filter {
-                            it.type == "candidate-pair" && it.members.containsKey("state")
-                        }
-                        for (pair in pairs) {
-                            val pairState = pair.members["state"] ?: "?"
-                            val localId = pair.members["localCandidateId"] ?: ""
-                            val remoteId = pair.members["remoteCandidateId"] ?: ""
-                            val local = report.statsMap[localId]
-                            val remote = report.statsMap[remoteId]
-                            val localType = local?.members?.get("candidateType") ?: "?"
-                            val localProto = local?.members?.get("protocol") ?: "?"
-                            val localAddr = local?.members?.get("address") ?: local?.members?.get("ip") ?: "?"
-                            val localPort = local?.members?.get("port") ?: "?"
-                            val remoteType = remote?.members?.get("candidateType") ?: "?"
-                            val remoteProto = remote?.members?.get("protocol") ?: "?"
-                            val remoteAddr = remote?.members?.get("address") ?: remote?.members?.get("ip") ?: "?"
-                            val remotePort = remote?.members?.get("port") ?: "?"
-                            val rtt = pair.members["currentRoundTripTime"] ?: "?"
-                            val bytesSent = pair.members["bytesSent"] ?: "?"
-                            val bytesRecv = pair.members["bytesReceived"] ?: "?"
-                            val consentReqs = pair.members["consentRequestsSent"] ?: "?"
-                            Log.i(TAG, "ICE $remotePeerId pair[$pairState] " +
-                                "local=$localType/$localProto/$localAddr:$localPort " +
-                                "remote=$remoteType/$remoteProto/$remoteAddr:$remotePort " +
-                                "rtt=${rtt}s sent=$bytesSent recv=$bytesRecv consent=$consentReqs")
-                        }
-                        if (pairs.isEmpty()) Log.i(TAG, "ICE $remotePeerId diag: no candidate pairs")
-                    }
-                }
+                Log.d(TAG, "ICE $remotePeerId → $state")
                 when (state) {
                     PeerConnection.IceConnectionState.FAILED,
                     PeerConnection.IceConnectionState.CLOSED -> {
@@ -818,9 +753,7 @@ class OrchestratorPeer(
                             if (entry.pc !== thisPc) return@launch // stale callback
                             if (entry.pc.iceConnectionState() ==
                                     PeerConnection.IceConnectionState.DISCONNECTED) {
-                                // Close for full rebuild — poll loop will rediscover
-                                // the remote peer's heartbeat and create a fresh offer.
-                                Log.w(TAG, "ICE $remotePeerId still DISCONNECTED after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing for rebuild")
+                                Log.w(TAG, "ICE $remotePeerId still DISCONNECTED after ${ICE_DISCONNECT_GRACE_MS / 1000}s — closing")
                                 _iceFailedPeers.add(remotePeerId)
                                 peers.remove(remotePeerId)?.pc?.dispose()
                                 lastPong.remove(remotePeerId)
@@ -852,12 +785,7 @@ class OrchestratorPeer(
             override fun onRenegotiationNeeded() {}
             override fun onAddTrack(p0: RtpReceiver?, p1: Array<out MediaStream>?) {}
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {}
-            override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent?) {
-                Log.i(TAG, "ICE $remotePeerId pair-changed: " +
-                    "local=${event?.local?.sdp} " +
-                    "remote=${event?.remote?.sdp} " +
-                    "reason=${event?.reason}")
-            }
+            override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent?) {}
             override fun onTrack(transceiver: RtpTransceiver?) {}
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
         })
@@ -1014,6 +942,33 @@ class OrchestratorPeer(
         var hash = 0
         for (ch in peerId) hash = (hash * 31 + ch.code) and 0xffff
         return (hash % 200).toLong()
+    }
+
+    /** Highest row is master (offerer), lower row is slave (answerer with adaptive timing). */
+    private fun shouldInitiateHandshake(remotePeerId: String, remoteBlock: Int): Boolean {
+        return when {
+            block > remoteBlock -> true
+            block < remoteBlock -> false
+            else -> peerId < remotePeerId
+        }
+    }
+
+    private fun markSlaveThrash(remotePeerId: String) {
+        _slaveThrashScore.compute(remotePeerId) { _, cur -> ((cur ?: 0) + 1).coerceAtMost(10) }
+    }
+
+    private fun markSlaveStable(remotePeerId: String) {
+        _slaveThrashScore.compute(remotePeerId) { _, cur -> ((cur ?: 0) - 2).coerceAtLeast(0) }
+    }
+
+    private fun slaveHandshakeDelayMs(remotePeerId: String, remoteBlock: Int): Long {
+        if (block >= remoteBlock) return 0L
+        val rowGap = ((remoteBlock - block) / WaymarkConfig.BLOCK_SIZE).coerceAtLeast(1)
+        val score = _slaveThrashScore[remotePeerId] ?: 0
+        val base = 120L * rowGap
+        val adaptive = (score * 150L).coerceAtMost(1_800L)
+        val jitter = peerIdJitter() % 120L
+        return (base + adaptive + jitter).coerceAtMost(MAX_SLAVE_HANDSHAKE_DELAY_MS)
     }
 
     private fun parseJson(s: String?): JSONObject? {
