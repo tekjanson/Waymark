@@ -7,6 +7,7 @@ RUN npm install --production
 
 # Copy source
 COPY src ./src
+COPY public ./public
 
 # data/ volume mount point for persistent notification buffer + history
 RUN mkdir -p /app/data
