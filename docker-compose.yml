@@ -22,14 +22,14 @@ services:
       - PORT=8090
       - SHEET_ID=${WAYMARK_SIGNALING_SHEET_ID:-}
       - DISPLAY_NAME=web-server
-      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/service_account_key
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/service_account_key.json
       - NOTIFICATION_BUFFER_FILE=/app/data/notification-buffer.json
       - NOTIFICATION_HISTORY_FILE=/app/data/notification-history.jsonl
       - NOTIFICATION_AUTO_PUSH_INTERVAL_MS=2000
       - NOTIFICATION_STABLE_GRACE_MS=1500
     volumes:
       - p2p_data:/app/data
-      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/run/secrets/service_account_key:ro
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/run/secrets/service_account_key.json:ro
     ports:
       - "8090:8090"
     restart: unless-stopped
