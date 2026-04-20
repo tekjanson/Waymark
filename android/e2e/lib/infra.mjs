@@ -753,6 +753,65 @@ export class TestInfra {
     readPrefs()       { return readPrefs(); }
     getActiveNotifications() { return getActiveNotifications(); }
 
+    /**
+     * Write a single value to a specific row of the signaling column (T).
+     * Used to inject or overwrite presence/offer/answer cells in test scenarios
+     * (e.g., slot eviction simulation, mesh-full setup).
+     *
+     * @param {number} rowNumber  1-based row number in the sheet
+     * @param {string} value      Cell value to write (JSON string or empty string to clear)
+     */
+    async writeSignalingRow(rowNumber, value) {
+        const token = await getUserOAuthToken();
+        const range = `Sheet1!T${rowNumber}`;
+        const res = await fetch(
+            `${SHEETS_BASE_URL}/${this.signalingSheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+            {
+                method: "PUT",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ range, majorDimension: "ROWS", values: [[value]] }),
+            }
+        );
+        if (!res.ok) console.warn(`writeSignalingRow(${rowNumber}): ${res.status}`);
+    }
+
+    /**
+     * Fill signaling slots with fake peer presences so the mesh appears full.
+     * Slots whose current presence belongs to an excluded peer ID are skipped.
+     *
+     * @param {object} [opts]
+     * @param {string[]} [opts.excludePeerIds=[]]  Peer IDs whose slots are not overwritten
+     * @param {number}  [opts.tsOffset=0]  Applied to Date.now() for the ts field.
+     *                  Use a negative value (e.g. -48000) to make presences near-expiry.
+     */
+    async fillSignalingSlots(opts = {}) {
+        const { excludePeerIds = [], tsOffset = 0 } = opts;
+        const token = await getUserOAuthToken();
+        const slotRows = [1, 6, 11, 16, 21, 26, 31, 36]; // rows for 8 slots
+        // Read current column to skip slots belonging to excluded peers
+        const readRes = await fetch(
+            `${SHEETS_BASE_URL}/${this.signalingSheetId}/values/${encodeURIComponent(`Sheet1!T1:T${MAX_ROWS}`)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const rows = readRes.ok ? ((await readRes.json()).values || []) : [];
+        for (let i = 0; i < slotRows.length; i++) {
+            const slotRow = slotRows[i];
+            const existing = rows[slotRow - 1]?.[0];
+            if (existing) {
+                try {
+                    const obj = JSON.parse(existing);
+                    if (excludePeerIds.includes(obj.peerId)) continue;
+                } catch { /* overwrite unparseable cell */ }
+            }
+            await this.writeSignalingRow(slotRow, JSON.stringify({
+                peerId: `faketest${String(i).padStart(6, "0")}`,
+                name:   `Fake Test Peer ${i}`,
+                ts:     Date.now() + tsOffset,
+                nonce:  randomBytes(4).toString("hex"),
+            }));
+        }
+    }
+
     /* --- Teardown --- */
 
     async teardown() {

@@ -198,8 +198,13 @@ class OrchestratorPeer(
                     if (block < 0) {
                         join()
                         if (block < 0) {
-                            Log.w(TAG, "No free signaling slot — mesh full")
-                            return@launch
+                            // Mesh is full — stale slots may clear soon; retry with backoff.
+                            // Supports nudge (network recovery) so recovery is immediate when
+                            // the signal arrives rather than waiting out the full delay.
+                            Log.w(TAG, "No free signaling slot — mesh full, retrying in ${retryDelay / 1000}s")
+                            withTimeoutOrNull(retryDelay) { retrySignal.receive() }
+                            retryDelay = minOf(retryDelay * 2, 60_000L)
+                            continue // restart outer loop → try join() again
                         }
                         Log.i(TAG, "Joined mesh — block=$block peerId=$peerId")
                         retryDelay = 10_000L
@@ -207,6 +212,9 @@ class OrchestratorPeer(
                     }
                     while (!destroyed) {
                         poll()
+                        // If poll() lost our signaling slot (eviction with no free slot),
+                        // break to the outer loop so join() is called again.
+                        if (block < 0) break
                         delay(WaymarkConfig.POLL_MS + _slavePollOffsetMs)
                     }
                 } catch (e: CancellationException) { return@launch }
