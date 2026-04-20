@@ -32,9 +32,9 @@ AGENT_NAME         ?=
 AGENT_MODEL        ?= copilot/claude-sonnet-4.6
 BOARD_URL          ?=
 # Branch the agent container checks out on start so all feature branches
-# fork from it instead of main.  Change this when you want agent work to
-# build on a specific integration branch.
-AGENT_BASE_BRANCH  ?= feat/p2p-server-notification-pipeline
+# fork from it instead of main.  Defaults to whatever branch is checked
+# out on the host when make is invoked — override explicitly if needed.
+AGENT_BASE_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
 
 # Allow passing a URL as a positional argument, e.g.: make run https://...
 # Extract any http(s):// goal and treat it as BOARD_URL if not already set
