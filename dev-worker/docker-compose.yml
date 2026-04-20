@@ -19,7 +19,7 @@ services:
     ports:
       - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
       - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
-      - "127.0.0.1:9111:9111"   # Orchestrator wake endpoint — POST /wake to skip sleep
+      - "127.0.0.1:9112:9111"   # Orchestrator wake endpoint — POST localhost:9112/wake to skip sleep
 
     environment:
       # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
