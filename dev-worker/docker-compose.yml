@@ -49,6 +49,12 @@ services:
       # Leave unset for single-agent use (defaults to "AI" in workboard scripts).
       - AGENT_NAME=${AGENT_NAME:-}
 
+      # ── Base branch for agent work ─────────────────────────────────────────
+      # When set, the container checks out this branch on startup so all agent
+      # feature branches fork from it instead of main.
+      # Example: AGENT_BASE_BRANCH=feat/p2p-server-notification-pipeline
+      - AGENT_BASE_BRANCH=${AGENT_BASE_BRANCH:-}
+
       # Language model for the agent (as it appears in VS Code's model picker)
       - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}
 

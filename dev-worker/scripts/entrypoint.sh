@@ -134,6 +134,16 @@ git config --global user.name  "$GIT_NAME"
 git config --global safe.directory /workspace
 log "Git identity: ${GIT_NAME} <${GIT_EMAIL}>"
 
+# ── 4b. Checkout base branch (so agent work forks from it, not main) ─────────
+if [[ -n "${AGENT_BASE_BRANCH:-}" ]]; then
+    if git -C /workspace rev-parse --verify "${AGENT_BASE_BRANCH}" >/dev/null 2>&1; then
+        git -C /workspace checkout "${AGENT_BASE_BRANCH}" 2>&1 || true
+        log "Checked out base branch: ${AGENT_BASE_BRANCH}"
+    else
+        log "WARN: AGENT_BASE_BRANCH=${AGENT_BASE_BRANCH} not found — staying on current branch"
+    fi
+fi
+
 # ── 5. Write /etc/agent-env.sh for child scripts ─────────────────────────────
 # supervisord doesn't forward the container's environment to child processes,
 # so we write the dynamic vars to a file that all scripts source at runtime.
