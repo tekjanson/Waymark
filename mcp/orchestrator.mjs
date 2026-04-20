@@ -418,9 +418,10 @@ async function fireNotifications(event, ctx) {
                 signal:  AbortSignal.timeout(3000),
             });
             const data = await res.json().catch(() => ({}));
+            const sentCount = data.sent ?? 0;
             process.stderr.write(
-                (data.sent ?? 0) > 0
-                    ? `orchestrator: pushed '${title}' to ${data.sent} Android peer(s) via p2p-server\n`
+                sentCount > 0
+                    ? `orchestrator: pushed '${title}' to ${sentCount} Android peer(s) via p2p-server\n`
                     : `orchestrator: rule matched for '${event}' but no Android peers connected (${data.reason || 'p2p-server: 0 sent'})\n`
             );
         } catch (err) {
@@ -749,6 +750,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Board is clear
         const reason = `board is clear — todo=0, qa=${board.qa ?? 0}, done=${board.done ?? 0}`;
         appendFileSync(logPath, `[${iso()}] IDLE: ${reason}\n`);
+        appendFileSync(logPath, `[${iso()}] NOTIF: rules=${_notifRules.length} rulesSheetId=${_rulesSheetId ?? 'not set'}\n`);
         await fireNotifications("IDLE", { reason, sessionId: args.sessionId });
         return {
             content: [{ type: "text", text: JSON.stringify({ action: "IDLE", reason }) }],

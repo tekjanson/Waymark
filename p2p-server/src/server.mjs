@@ -186,6 +186,7 @@ app.post('/start', async (req, res) => {
 app.post('/broadcast', (req, res) => {
     const { title, body, priority, event, type } = req.body || {};
     if (!body && !title) return res.status(400).json({ error: 'title or body required' });
+    console.log(`[broadcast] event=${event || 'none'} title="${title || ''}" body="${(body || '').slice(0, 60)}"`);
     let totalSent = 0;
     const results = [];
     for (const peer of peers.values()) {
