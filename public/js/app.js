@@ -16,6 +16,7 @@ import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
+import { scanRecipeFromImage } from './recipe-vision.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
@@ -111,6 +112,14 @@ const importModalTitle      = document.getElementById('import-modal-title');
 const recipeUrlInput       = document.getElementById('recipe-url-input');
 const recipeUrlImportBtn   = document.getElementById('recipe-url-import-btn');
 const recipeUrlStatus      = document.getElementById('recipe-url-status');
+
+/* ---------- Recipe Photo Scan refs ---------- */
+const recipePhotoInput     = document.getElementById('recipe-photo-input');
+const recipePhotoScanBtn   = document.getElementById('recipe-photo-scan-btn');
+const recipePhotoStatus    = document.getElementById('recipe-photo-status');
+const recipePhotoPreview   = document.getElementById('recipe-photo-preview');
+const recipePhotoPreviewImg  = document.getElementById('recipe-photo-preview-img');
+const recipePhotoPreviewName = document.getElementById('recipe-photo-preview-name');
 
 /* ---------- Create Sheet Modal refs ---------- */
 const createSheetModal          = document.getElementById('create-sheet-modal');
@@ -1808,6 +1817,29 @@ function initImportModal() {
       if (e.key === 'Enter') { e.preventDefault(); handleRecipeUrlImport(); }
     });
   }
+
+  // Recipe photo scan (AI vision)
+  if (recipePhotoInput) {
+    recipePhotoInput.addEventListener('change', () => {
+      const file = recipePhotoInput.files?.[0];
+      if (!file) {
+        recipePhotoScanBtn.disabled = true;
+        recipePhotoPreview.classList.add('hidden');
+        return;
+      }
+      // Show thumbnail preview
+      const objectUrl = URL.createObjectURL(file);
+      recipePhotoPreviewImg.src = objectUrl;
+      recipePhotoPreviewImg.onload = () => URL.revokeObjectURL(objectUrl);
+      recipePhotoPreviewName.textContent = file.name;
+      recipePhotoPreview.classList.remove('hidden');
+      recipePhotoScanBtn.disabled = false;
+      if (recipePhotoStatus) recipePhotoStatus.classList.add('hidden');
+    });
+  }
+  if (recipePhotoScanBtn) {
+    recipePhotoScanBtn.addEventListener('click', handleRecipePhotoScan);
+  }
 }
 
 async function openImportModal() {
@@ -1820,6 +1852,10 @@ async function openImportModal() {
   importSearchInput.value = '';
   if (recipeUrlInput) recipeUrlInput.value = '';
   if (recipeUrlStatus) recipeUrlStatus.classList.add('hidden');
+  if (recipePhotoInput) recipePhotoInput.value = '';
+  if (recipePhotoScanBtn) recipePhotoScanBtn.disabled = true;
+  if (recipePhotoPreview) recipePhotoPreview.classList.add('hidden');
+  if (recipePhotoStatus) recipePhotoStatus.classList.add('hidden');
 
   showImportStep(0);
   importModal.classList.remove('hidden');
@@ -1905,28 +1941,7 @@ async function handleRecipeUrlImport() {
     // Qty and Unit are separate columns for recipe scaling and conversion.
     // Notes column for recipe-level notes.
     // Source column stores the URL for attribution and re-sync.
-    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
-    const ingredients = recipe.ingredients || [];
-    const steps = recipe.instructions || [];
-    const maxRows = Math.max(ingredients.length, steps.length, 1);
-    const dataRows = [];
-    for (let i = 0; i < maxRows; i++) {
-      const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
-      dataRows.push([
-        i === 0 ? (recipe.name || 'Imported Recipe') : '',
-        i === 0 ? (recipe.servings || '') : '',
-        i === 0 ? (recipe.prepTime || '') : '',
-        i === 0 ? (recipe.cookTime || '') : '',
-        i === 0 ? (recipe.category || '') : '',
-        i === 0 ? (recipe.difficulty || '') : '',
-        ingr.qty || '',
-        ingr.unit || '',
-        ingr.name || '',
-        steps[i] || '',
-        i === 0 ? (recipe.description || '') : '',
-        i === 0 ? url : '',
-      ]);
-    }
+    const { headers, dataRows } = buildRecipeRows(recipe, url);
 
     importSheetData = {
       id: 'url-import-' + Date.now(),
@@ -1963,6 +1978,92 @@ async function handleRecipeUrlImport() {
 }
 
 /**
+ * Build sheet rows from a scraped/scanned recipe object.
+ * Shared by URL import, photo scan, and re-sync.
+ * @param {Object} recipe
+ * @param {string} [sourceUrl]
+ * @returns {{ headers: string[], dataRows: string[][] }}
+ */
+function buildRecipeRows(recipe, sourceUrl) {
+  const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
+  const ingredients = recipe.ingredients || [];
+  const steps = recipe.instructions || [];
+  const maxRows = Math.max(ingredients.length, steps.length, 1);
+  const dataRows = [];
+  for (let i = 0; i < maxRows; i++) {
+    const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
+    dataRows.push([
+      i === 0 ? (recipe.name || 'Imported Recipe') : '',
+      i === 0 ? (recipe.servings || '') : '',
+      i === 0 ? (recipe.prepTime || '') : '',
+      i === 0 ? (recipe.cookTime || '') : '',
+      i === 0 ? (recipe.category || '') : '',
+      i === 0 ? (recipe.difficulty || '') : '',
+      ingr.qty || '',
+      ingr.unit || '',
+      ingr.name || '',
+      steps[i] || '',
+      i === 0 ? (recipe.description || '') : '',
+      i === 0 ? (sourceUrl || '') : '',
+    ]);
+  }
+  return { headers, dataRows };
+}
+
+/**
+ * Handle scanning a recipe from an uploaded photo using AI vision.
+ * Sends the image to Gemini Vision API, extracts recipe data, and
+ * forwards into the import configure step — same flow as URL import.
+ */
+async function handleRecipePhotoScan() {
+  const file = recipePhotoInput?.files?.[0];
+  if (!file) {
+    showToast('Please select a photo first', 'error');
+    return;
+  }
+
+  recipePhotoScanBtn.disabled = true;
+  recipePhotoScanBtn.textContent = 'Scanning…';
+  recipePhotoStatus.classList.remove('hidden');
+  recipePhotoStatus.textContent = 'Sending image to AI vision — this may take a few seconds…';
+
+  try {
+    const recipe = await scanRecipeFromImage(file);
+
+    const { headers, dataRows } = buildRecipeRows(recipe, '');
+
+    importSheetData = {
+      id: 'photo-import-' + Date.now(),
+      title: recipe.name || 'Scanned Recipe',
+      values: [headers, ...dataRows],
+    };
+
+    importAnalysis = importer.analyzeWithCode(importSheetData);
+    userTemplateOverride = 'recipe';
+    importAnalysis.suggestedTemplate = 'recipe';
+    importAnalysis.templateName = 'Recipe';
+    importAnalysis.confidence = 0.95;
+    importAnalysis.summary = `Extracted via AI vision. Found ${recipe.ingredients?.length || 0} ingredients and ${recipe.instructions?.length || 0} instructions.`;
+
+    recipePhotoStatus.textContent = `✅ Found: "${recipe.name}" — ${recipe.ingredients?.length || 0} ingredients, ${recipe.instructions?.length || 0} steps`;
+
+    renderImportPreview(importSheetData);
+    populateTemplatePicker(importAnalysis);
+    renderColumnMapEditor(importAnalysis);
+    updateDetectBadge(importAnalysis);
+    showImportStep(1);
+
+    showToast(`Recipe "${recipe.name}" extracted from photo`, 'success');
+  } catch (err) {
+    recipePhotoStatus.textContent = `❌ ${err.message}`;
+    showToast(`Photo scan failed: ${err.message}`, 'error');
+  } finally {
+    recipePhotoScanBtn.disabled = false;
+    recipePhotoScanBtn.textContent = 'Scan Recipe';
+  }
+}
+
+/**
  * Handle re-syncing a recipe from its source URL.
  * Triggered by the 'waymark:recipe-resync' custom event from the
  * recipe template.  Re-scrapes the original URL and replaces the
@@ -1987,28 +2088,7 @@ async function handleRecipeResync(e) {
   try {
     const recipe = await scrapeRecipe(url);
 
-    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
-    const ingredients = recipe.ingredients || [];
-    const steps = recipe.instructions || [];
-    const maxRows = Math.max(ingredients.length, steps.length, 1);
-    const dataRows = [];
-    for (let i = 0; i < maxRows; i++) {
-      const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
-      dataRows.push([
-        i === 0 ? (recipe.name || 'Imported Recipe') : '',
-        i === 0 ? (recipe.servings || '') : '',
-        i === 0 ? (recipe.prepTime || '') : '',
-        i === 0 ? (recipe.cookTime || '') : '',
-        i === 0 ? (recipe.category || '') : '',
-        i === 0 ? (recipe.difficulty || '') : '',
-        ingr.qty || '',
-        ingr.unit || '',
-        ingr.name || '',
-        steps[i] || '',
-        i === 0 ? (recipe.description || '') : '',
-        i === 0 ? url : '',
-      ]);
-    }
+    const { headers, dataRows } = buildRecipeRows(recipe, url);
 
     const allRows = [headers, ...dataRows];
 

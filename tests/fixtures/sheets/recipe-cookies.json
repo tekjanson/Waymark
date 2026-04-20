@@ -1,0 +1,17 @@
+{
+  "id": "sheet-069",
+  "title": "Grandma's Chocolate Chip Cookies",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Recipe", "Servings", "Prep Time", "Cook Time", "Category", "Difficulty", "Qty", "Unit", "Ingredient", "Step", "Notes", "Source"],
+    ["Grandma's Chocolate Chip Cookies", "24", "15 min", "12 min", "Dessert", "Easy", "2.25", "cups", "all-purpose flour", "Preheat oven to 375°F (190°C)", "Best served warm from the oven", ""],
+    ["", "", "", "", "", "", "1", "tsp", "baking soda", "Whisk together flour, baking soda and salt", "", ""],
+    ["", "", "", "", "", "", "1", "tsp", "salt", "Beat butter and sugars until creamy", "", ""],
+    ["", "", "", "", "", "", "1", "cup", "butter, softened", "Add eggs and vanilla, mix well", "", ""],
+    ["", "", "", "", "", "", "0.75", "cup", "granulated sugar", "Gradually blend in flour mixture", "", ""],
+    ["", "", "", "", "", "", "0.75", "cup", "brown sugar, packed", "Stir in chocolate chips", "", ""],
+    ["", "", "", "", "", "", "2", "", "large eggs", "Drop rounded tablespoons onto ungreased baking sheets", "", ""],
+    ["", "", "", "", "", "", "2", "tsp", "vanilla extract", "Bake 9–11 minutes or until golden brown", "", ""],
+    ["", "", "", "", "", "", "2", "cups", "chocolate chips", "Cool on baking sheets for 2 minutes", "", ""]
+  ]
+}

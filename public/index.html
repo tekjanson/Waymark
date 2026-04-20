@@ -537,7 +537,7 @@
       <div id="import-step-pick" class="import-step">
         <p class="modal-description">Select a file from your Drive to import into Waymark, or import a recipe from a URL.</p>
 
-        <!-- Recipe URL Import -->
+        <!-- Recipe AI Import (URL + Photo) -->
         <div class="recipe-import-url-section">
           <h4 style="margin:0 0 8px; font-size:0.85rem; color: #ea580c;">📖 Import Recipe from URL</h4>
           <p class="text-muted" style="margin:0 0 8px; font-size:0.82rem;">Paste a link to a recipe page and WayMark will extract the ingredients and instructions.</p>
@@ -546,6 +546,22 @@
             <button id="recipe-url-import-btn" class="btn btn-primary btn-sm">Import Recipe</button>
           </div>
           <div id="recipe-url-status" class="recipe-import-status hidden"></div>
+        </div>
+
+        <!-- Recipe Photo Scan (AI Vision) -->
+        <div class="recipe-import-photo-section">
+          <h4 style="margin:0 0 8px; font-size:0.85rem; color: #ea580c;">📸 Scan Recipe from Photo</h4>
+          <p class="text-muted" style="margin:0 0 8px; font-size:0.82rem;">Upload a photo of a recipe card, cookbook page, or handwritten recipe — AI will extract the ingredients and steps.</p>
+          <div class="recipe-import-photo-bar">
+            <label for="recipe-photo-input" class="btn btn-secondary btn-sm recipe-photo-label" id="recipe-photo-label">📷 Choose Photo</label>
+            <input type="file" id="recipe-photo-input" accept="image/*" class="hidden" aria-label="Recipe photo">
+            <button id="recipe-photo-scan-btn" class="btn btn-primary btn-sm" disabled>Scan Recipe</button>
+          </div>
+          <div id="recipe-photo-preview" class="recipe-photo-preview hidden">
+            <img id="recipe-photo-preview-img" src="" alt="Recipe photo preview" class="recipe-photo-thumb">
+            <span id="recipe-photo-preview-name" class="recipe-photo-preview-name"></span>
+          </div>
+          <div id="recipe-photo-status" class="recipe-import-status hidden"></div>
         </div>
 
         <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--color-border);">

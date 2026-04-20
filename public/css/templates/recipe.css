@@ -451,6 +451,40 @@
   color: var(--color-text-muted);
 }
 
+/* Import from Photo (AI Vision) */
+.recipe-import-photo-section {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.recipe-import-photo-bar {
+  display: flex; gap: 8px; align-items: center;
+}
+.recipe-photo-label {
+  cursor: pointer;
+  white-space: nowrap;
+}
+.recipe-photo-preview {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px; padding: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.recipe-photo-thumb {
+  width: 56px; height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.recipe-photo-preview-name {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
 /* Recipe URL import preview */
 .recipe-import-preview {
   margin-top: 16px; padding: 16px;

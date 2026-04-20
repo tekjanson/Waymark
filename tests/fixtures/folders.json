@@ -829,6 +829,11 @@
           "id": "sheet-068",
           "name": "Client Invoices 2026",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-069",
+          "name": "Grandma's Chocolate Chip Cookies",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     }
