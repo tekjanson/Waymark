@@ -20,7 +20,8 @@
 #   make qa-status                              # Show QA items with verdicts#
 # ═══════════════════════════════════════════════════════════════════════
 
-COMPOSE   := docker compose -f dev-worker/docker-compose.yml
+COMPOSE     := docker compose -f dev-worker/docker-compose.yml
+P2P_COMPOSE := docker compose -f docker-compose.yml
 CONTAINER := waymark-dev-worker
 CYCLE_HOURS := 4
 PIDFILE   := .agent-cycle.pid
@@ -43,6 +44,8 @@ endif
 
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
+# Signaling sheet ID consumed by the p2p-server container (can also be set in .env)
+export WAYMARK_SIGNALING_SHEET_ID ?=
 
 .PHONY: help run start stop restart build logs status vnc test mesh-test auth ensure-auth workboard qa-patrol qa-status clean
 
@@ -96,6 +99,8 @@ start: ensure-auth ## Start the agent container
 	AGENT_MODEL="$(AGENT_MODEL)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@echo ""
 	@echo "  ✓ Agent started"
 	@echo "    Desktop: http://localhost:6080/vnc.html"
@@ -108,6 +113,8 @@ qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
 	AGENT_MODEL="$(AGENT_MODEL)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@echo ""
 	@echo "  ✓ QA Patrol agent started"
 	@echo "    Desktop: http://localhost:6080/vnc.html"
@@ -127,11 +134,15 @@ run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: m
 	AGENT_MODEL="$(AGENT_MODEL)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@# Background loop: sleep CYCLE_HOURS then rebuild+restart
 	@nohup bash -c 'while true; do sleep $$(($(CYCLE_HOURS) * 3600)); \
 		echo "[cycle $$(date)] Restarting agent ($(CYCLE_HOURS)h cycle)..."; \
 		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 		$(COMPOSE) up -d --build; \
+		WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+		$(P2P_COMPOSE) up -d --build p2p-server; \
 	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
 	@echo ""
 	@echo "  ✓ Orchestrator started (restarts every $(CYCLE_HOURS)h)"
@@ -141,18 +152,20 @@ run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: m
 	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"
 	@echo ""
 
-stop: ## Stop the agent container
+stop: ## Stop the agent container and p2p-server
 	@# Kill cycle loop if running
 	@if [ -f $(PIDFILE) ]; then \
 		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
 		rm -f $(PIDFILE); \
 	fi
 	$(COMPOSE) down
-	@echo "  ✓ Agent stopped"
+	$(P2P_COMPOSE) rm -sf p2p-server
+	@echo "  ✓ Agent and p2p-server stopped"
 
-restart: ## Restart the agent container
+restart: ## Restart the agent container and p2p-server
 	$(COMPOSE) restart
-	@echo "  ✓ Agent restarted"
+	$(P2P_COMPOSE) restart p2p-server
+	@echo "  ✓ Agent and p2p-server restarted"
 
 build: ## Rebuild the container image (no cache)
 	$(COMPOSE) build --no-cache
@@ -264,8 +277,9 @@ qa-status: ## Show QA items with verdict status (pass/fail/pending)
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop container, remove image and auth volume (full reset)
-	@echo "This will remove the container, image, and auth tokens."
+	@echo "This will remove the container, image, auth tokens, and p2p-server container."
 	@echo "You will need to re-authenticate GitHub Copilot after this."
 	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
 	$(COMPOSE) down --rmi local -v
+	$(P2P_COMPOSE) rm -sf p2p-server
 	@echo "  ✓ Cleaned (re-run: make auth && make start)"

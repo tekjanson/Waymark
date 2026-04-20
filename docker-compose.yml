@@ -16,6 +16,9 @@ services:
     build:
       context: ./p2p-server
     container_name: waymark_p2p_server
+    env_file:
+      - path: .env
+        required: false
     environment:
       - PORT=8090
       - SHEET_ID=${WAYMARK_SIGNALING_SHEET_ID:-}
