@@ -1,0 +1,15 @@
+{
+  "name": "waymark-p2p-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Containerized WebRTC P2P bridge and notification push server for Waymark",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.18.2",
+    "google-auth-library": "^9.0.0",
+    "werift": "^0.22.9"
+  }
+}

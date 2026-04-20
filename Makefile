@@ -20,16 +20,21 @@
 #   make qa-status                              # Show QA items with verdicts#
 # ═══════════════════════════════════════════════════════════════════════
 
-COMPOSE   := docker compose -f dev-worker/docker-compose.yml
+COMPOSE     := docker compose -f dev-worker/docker-compose.yml
+P2P_COMPOSE := docker compose -f docker-compose.yml
 CONTAINER := waymark-dev-worker
 CYCLE_HOURS := 4
 PIDFILE   := .agent-cycle.pid
 
 # Overridable from the command line or environment
-AGENT_COMMAND ?= @waymark-orchestrator start
-AGENT_NAME    ?=
-AGENT_MODEL   ?= copilot/claude-sonnet-4.6
-BOARD_URL     ?=
+AGENT_COMMAND      ?= @waymark-orchestrator start
+AGENT_NAME         ?=
+AGENT_MODEL        ?= copilot/claude-sonnet-4.6
+BOARD_URL          ?=
+# Branch the agent container checks out on start so all feature branches
+# fork from it instead of main.  Defaults to whatever branch is checked
+# out on the host when make is invoked — override explicitly if needed.
+AGENT_BASE_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
 
 # Allow passing a URL as a positional argument, e.g.: make run https://...
 # Extract any http(s):// goal and treat it as BOARD_URL if not already set
@@ -43,8 +48,10 @@ endif
 
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
+# Signaling sheet ID consumed by the p2p-server container (can also be set in .env)
+export WAYMARK_SIGNALING_SHEET_ID ?=1oHfqlGmbKovZgLNaVCCd3QeGBWbaJNiIVCJsS7ZFCCQ
 
-.PHONY: help run start stop restart build logs status vnc test mesh-test auth ensure-auth workboard qa-patrol qa-status clean
+.PHONY: help run start stop restart build logs status vnc test test-p2p mesh-test auth ensure-auth workboard qa-patrol qa-status p2p-logs clean
 
 # ── Core commands ─────────────────────────────────────────────────────
 
@@ -57,10 +64,11 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  Variables (override with VAR=value):"
-	@echo "    AGENT_COMMAND   Command sent to Copilot Chat (default: @waymark-orchestrator start)"
-	@echo "    AGENT_NAME      Named agent identity for multi-agent (default: unset)"
-	@echo "    AGENT_MODEL     LLM model (default: copilot/claude-sonnet-4.6)"
-	@echo "    BOARD_URL       Google Sheets URL to target (persisted to workboard-config.json)"
+	@echo "    AGENT_COMMAND       Command sent to Copilot Chat (default: @waymark-orchestrator start)"
+	@echo "    AGENT_NAME          Named agent identity for multi-agent (default: unset)"
+	@echo "    AGENT_MODEL         LLM model (default: copilot/claude-sonnet-4.6)"
+	@echo "    AGENT_BASE_BRANCH   Branch the container checks out on start (default: feat/p2p-server-notification-pipeline)"
+	@echo "    BOARD_URL           Google Sheets URL to target (persisted to workboard-config.json)"
 	@echo ""
 	@echo "  Examples:"
 	@echo "    make run https://docs.google.com/spreadsheets/d/SHEET_ID/edit  # Orchestrator on board"
@@ -94,8 +102,11 @@ start: ensure-auth ## Start the agent container
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@echo ""
 	@echo "  ✓ Agent started"
 	@echo "    Desktop: http://localhost:6080/vnc.html"
@@ -106,8 +117,11 @@ qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
 	AGENT_COMMAND="@waymark-manual-qa qa patrol" \
 	AGENT_NAME="QA" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@echo ""
 	@echo "  ✓ QA Patrol agent started"
 	@echo "    Desktop: http://localhost:6080/vnc.html"
@@ -125,13 +139,18 @@ run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: m
 	AGENT_COMMAND="$(AGENT_COMMAND)" \
 	AGENT_NAME="$(AGENT_NAME)" \
 	AGENT_MODEL="$(AGENT_MODEL)" \
+	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
 	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 	$(COMPOSE) up -d --build
+	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+	$(P2P_COMPOSE) up -d --build p2p-server
 	@# Background loop: sleep CYCLE_HOURS then rebuild+restart
 	@nohup bash -c 'while true; do sleep $$(($(CYCLE_HOURS) * 3600)); \
 		echo "[cycle $$(date)] Restarting agent ($(CYCLE_HOURS)h cycle)..."; \
-		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
+		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
 		$(COMPOSE) up -d --build; \
+		WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
+		$(P2P_COMPOSE) up -d --build p2p-server; \
 	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
 	@echo ""
 	@echo "  ✓ Orchestrator started (restarts every $(CYCLE_HOURS)h)"
@@ -141,18 +160,20 @@ run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: m
 	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"
 	@echo ""
 
-stop: ## Stop the agent container
+stop: ## Stop the agent container and p2p-server
 	@# Kill cycle loop if running
 	@if [ -f $(PIDFILE) ]; then \
 		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
 		rm -f $(PIDFILE); \
 	fi
 	$(COMPOSE) down
-	@echo "  ✓ Agent stopped"
+	$(P2P_COMPOSE) rm -sf p2p-server
+	@echo "  ✓ Agent and p2p-server stopped"
 
-restart: ## Restart the agent container
+restart: ## Restart the agent container and p2p-server
 	$(COMPOSE) restart
-	@echo "  ✓ Agent restarted"
+	$(P2P_COMPOSE) restart p2p-server
+	@echo "  ✓ Agent and p2p-server restarted"
 
 build: ## Rebuild the container image (no cache)
 	$(COMPOSE) build --no-cache
@@ -218,6 +239,36 @@ vnc: ## Open the VNC desktop in your browser
 test: ## Run the container diagnostic test suite
 	bash dev-worker/test.sh
 
+test-p2p: ## Smoke-test the p2p-server notification pipeline (container must be running)
+	@echo "── p2p-server health ──"
+	@curl -sf http://localhost:8090/peers | node -e "\
+		const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
+		console.log('  peers online: '+d.peers.length); \
+		d.peers.forEach(p=>console.log('    '+p.peerId+' block='+p.block+' connected='+JSON.stringify(p.connectedPeers))); \
+	" || (echo "  ERROR: p2p-server not reachable on :8090 — is it running? (make start)" && exit 1)
+	@echo ""
+	@echo "── buffered notifications ──"
+	@curl -sf http://localhost:8090/notifications/buffer | node -e "\
+		const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
+		console.log('  buffered: '+d.count); \
+	" || echo "  (buffer endpoint unavailable)"
+	@echo ""
+	@echo "── send test notification (broadcast) ──"
+	@P=$$(curl -sf http://localhost:8090/peers | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).peers[0]?.peerId||'')"); \
+	if [ -z "$$P" ]; then \
+		echo "  SKIP: no peers registered yet — start the app and wait for it to join the mesh"; \
+	else \
+		RESP=$$(curl -sf -X POST http://localhost:8090/notify \
+			-H 'Content-Type: application/json' \
+			-d "{\"peerId\":\"$$P\",\"title\":\"Waymark Test\",\"body\":\"make test-p2p smoke test\"}"); \
+		echo "  notify response: $$RESP"; \
+	fi
+	@echo ""
+	@echo "  ✓ p2p-server smoke test complete"
+
+p2p-logs: ## Tail live p2p-server logs (Ctrl+C to stop)
+	docker logs -f waymark_p2p_server 2>&1
+
 mesh-test: ## Run the WebRTC P2P mesh E2E test jig against the real signaling sheet + Android (usage: make mesh-test [ADB_DEVICE=ip:port] [SCENARIO=fresh-join])
 	@WAYMARK_OAUTH_TOKEN_PATH=~/.config/gcloud/waymark-oauth-token.json \
 	GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
@@ -264,8 +315,9 @@ qa-status: ## Show QA items with verdict status (pass/fail/pending)
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop container, remove image and auth volume (full reset)
-	@echo "This will remove the container, image, and auth tokens."
+	@echo "This will remove the container, image, auth tokens, and p2p-server container."
 	@echo "You will need to re-authenticate GitHub Copilot after this."
 	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
 	$(COMPOSE) down --rmi local -v
+	$(P2P_COMPOSE) rm -sf p2p-server
 	@echo "  ✓ Cleaned (re-run: make auth && make start)"

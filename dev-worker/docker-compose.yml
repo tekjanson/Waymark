@@ -19,7 +19,7 @@ services:
     ports:
       - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
       - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
-      - "127.0.0.1:9111:9111"   # Orchestrator wake endpoint — POST /wake to skip sleep
+      - "127.0.0.1:9112:9111"   # Orchestrator wake endpoint — POST localhost:9112/wake to skip sleep
 
     environment:
       # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
@@ -38,6 +38,11 @@ services:
       # Loaded automatically at orchestrator startup — no need to pass rulesSheetId as arg.
       - WAYMARK_RULES_SHEET_ID=10Vmn84-7sqyQtCLqy7b-rFrHFbXWiB7InGPl4uQ53XA
 
+      # ── p2p-server URL ────────────────────────────────────────────────────
+      # The p2p-server runs on the HOST at port 8090 — use host.docker.internal
+      # (mapped to the host gateway via extra_hosts below).
+      - P2P_SERVER_URL=http://host.docker.internal:8090
+
       # ── Kanban board URL (Google Sheets) ──────────────────────────────────
       # When set, overrides the default spreadsheet ID in workboard scripts.
       # Pass via: make run BOARD_URL="https://docs.google.com/spreadsheets/d/..."
@@ -48,6 +53,12 @@ services:
       # Each container MUST have a unique AGENT_NAME when running multiple agents.
       # Leave unset for single-agent use (defaults to "AI" in workboard scripts).
       - AGENT_NAME=${AGENT_NAME:-}
+
+      # ── Base branch for agent work ─────────────────────────────────────────
+      # When set, the container checks out this branch on startup so all agent
+      # feature branches fork from it instead of main.
+      # Example: AGENT_BASE_BRANCH=feat/p2p-server-notification-pipeline
+      - AGENT_BASE_BRANCH=${AGENT_BASE_BRANCH:-}
 
       # Language model for the agent (as it appears in VS Code's model picker)
       - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}
@@ -69,6 +80,11 @@ services:
       # VS Code is also launched with --password-store=basic (see start-vscode.sh)
       # so tokens are written to a file in globalStorage/ (not gnome-keyring).
       - BROWSER=
+
+    # On Linux, host.docker.internal is not added automatically — map it to the
+    # host gateway so the container can reach host services like p2p-server:8090.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     devices:
       # Required for ydotoold kernel-level input daemon

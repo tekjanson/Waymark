@@ -33,13 +33,13 @@ object WaymarkConfig {
     const val OFF_ANSWERS = 2
 
     /** Signaling poll interval in milliseconds. */
-    const val POLL_MS = 7_000L
+    const val POLL_MS = 5_000L
 
     /** Heartbeat write interval in milliseconds. */
-    const val HEART_MS = 20_000L
+    const val HEART_MS = 15_000L
 
     /** Age threshold (ms) after which a peer is considered gone. */
-    const val ALIVE_TTL = 120_000L
+    const val ALIVE_TTL = 50_000L
 
     /** Age threshold after which an unanswered offer is stale and must be rebuilt (mirrors sheet-webrtc-peer.mjs OFFER_MAX_AGE). */
     const val OFFER_MAX_AGE_MS = 3 * 60 * 1000L

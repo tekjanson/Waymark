@@ -29,6 +29,7 @@ import java.net.URL
 import java.security.SecureRandom
 
 private const val TAG = "ConnectionManager"
+private const val REBOOTSTRAP_MIN_INTERVAL_MS = 120_000L
 
 /** Google's OAuth2 token endpoint for refresh_token exchange. */
 private const val OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -65,6 +66,10 @@ class ConnectionManager(
 
     /** Current debounced connect job — cancelled when a newer request arrives. */
     private var connectJob: Job? = null
+
+    /** Last time we accepted a full re-bootstrap, to prevent callback thrash loops. */
+    @Volatile
+    private var lastRebootstrapMs: Long = 0L
 
     private val prefs get() = appContext.getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -216,6 +221,12 @@ class ConnectionManager(
      * and ACTION_REBOOTSTRAP.
      */
     fun requestRebootstrap() {
+        val now = System.currentTimeMillis()
+        if (now - lastRebootstrapMs < REBOOTSTRAP_MIN_INTERVAL_MS) {
+            Log.i(TAG, "Re-bootstrap suppressed (cooldown)")
+            return
+        }
+        lastRebootstrapMs = now
         connectJob?.cancel()
         connectJob = scope.launch {
             mutex.withLock { tearDownCurrentPeer() }
@@ -243,43 +254,37 @@ class ConnectionManager(
         }
 
         val cachedSheetId = prefs.getString(WaymarkConfig.PREF_SIGNALING_SHEET_ID, "") ?: ""
+        val activeSheetId = prefs.getString(WaymarkConfig.PREF_ACTIVE_SHEET, "") ?: ""
+        val effectiveSheetId = cachedSheetId.ifBlank { activeSheetId }
 
-        if (cachedSheetId.isNotBlank()) {
-            // If the existing peer is alive, never tear it down during a Drive refresh.
-            // The peer's own poll loop handles ICE rebuilds after network disruption.
-            // Tearing down here creates a new OrchestratorPeer (new sessionNonce),
-            // which triggers a nonce-flap loop on the remote side.  Sheet changes
-            // are handled exclusively by requestRebootstrap().
-            //
-            // NOTE: we intentionally do NOT require peer.isInMesh here.
-            // A freshly-created peer that hasn't joined yet (block=-1) is
-            // still starting up — tearing it down prematurely creates a
-            // second peer that races with the first, causing nonce thrash.
+        if (effectiveSheetId.isNotBlank()) {
+            // Already connected to this sheet with a healthy peer — no-op
             val peer = previousState.activePeer
             if (previousState is ConnectionState.Connected
-                && peer != null && !peer.destroyed
+                && previousState.activeSheetId == effectiveSheetId
+                && peer != null && !peer.destroyed && peer.isInMesh
             ) {
-                // Nudge the peer's retry loop — if it's sleeping in an exponential
-                // backoff after a Sheets IO failure (e.g., WiFi was off), this wakes
-                // it immediately so polls resume fast.
-                if (previousState.activeSheetId != cachedSheetId) {
-                    Log.w(TAG, "Sheet ID changed (${previousState.activeSheetId} → $cachedSheetId) but peer is in mesh — deferring until rebootstrap")
-                }
-                Log.d(TAG, "Peer alive (inMesh=${peer.isInMesh}) — nudging retry")
+                // Nudge the peer's retry loop instead of doing nothing — if the peer
+                // is sleeping in an exponential backoff after a Sheets IO failure
+                // (e.g., WiFi was off), this wakes it immediately so polls resume.
+                Log.d(TAG, "Already connected to sheet $effectiveSheetId — nudging retry")
                 peer.nudgeRetry()
                 return@withLock
             }
+            if (cachedSheetId.isBlank() && activeSheetId.isNotBlank()) {
+                Log.w(TAG, "No signaling sheet ID cached; falling back to active sheet ID")
+            }
             transitionTo(ConnectionState.Connecting)
             tearDownCurrentPeer()
-            startConnection(cachedSheetId)
+            startConnection(effectiveSheetId)
             return@withLock
         }
 
         // Nothing to connect to
         if (token.isBlank()) {
-            Log.d(TAG, "No access token — waiting for user to open the app")
+            Log.i(TAG, "No access token — waiting for web auth handoff")
         } else {
-            Log.d(TAG, "No signaling sheet found — open the web app to initialise signaling")
+            Log.i(TAG, "No signaling sheet found yet — open a sheet in the app to initialize signaling")
         }
         transitionTo(ConnectionState.Idle)
     }
@@ -313,7 +318,17 @@ class ConnectionManager(
             onStateChange(state)
         }
 
-        newPeer.onAloneTimeout = {
+        newPeer.onAloneTimeout = aloneTimeout@ {
+            // Ignore stale callbacks from a peer that is no longer the active one.
+            if (state.activePeer !== newPeer) {
+                Log.d(TAG, "Ignoring alone-timeout from stale peer instance")
+                return@aloneTimeout
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastRebootstrapMs < REBOOTSTRAP_MIN_INTERVAL_MS) {
+                Log.i(TAG, "Alone timeout ignored (cooldown active)")
+                return@aloneTimeout
+            }
             Log.i(TAG, "Alone timeout — re-bootstrapping")
             requestRebootstrap()
         }

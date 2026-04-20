@@ -39,7 +39,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var bridge: WaymarkBridge
-    private lateinit var waymarkWebChromeClient: WaymarkWebChromeClient
 
     /* ---------- Lifecycle ---------- */
 
@@ -55,11 +54,6 @@ class MainActivity : AppCompatActivity() {
         bridge = WaymarkBridge(this)
         webView = findViewById(R.id.webView)
         setupWebView()
-
-        // Ensure the WebView picks up latest frontend camera-flow changes
-        // instead of stale cached JS/CSS from older app sessions.
-        webView.clearCache(true)
-        WebStorage.getInstance().deleteAllData()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
 
@@ -96,6 +90,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Ensure WebRtcService is running whenever the app comes to the foreground.
+        // The service may have been killed by Doze/battery optimization while in background,
+        // so we restart it here to guarantee reconnection attempts resume.
+        startService(Intent(this, WebRtcService::class.java))
+    }
+
     override fun onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack()
@@ -109,11 +111,6 @@ class MainActivity : AppCompatActivity() {
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
-        if (::waymarkWebChromeClient.isInitialized &&
-            waymarkWebChromeClient.handlePermissionResult(requestCode, permissions, grantResults)
-        ) {
-            return
-        }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_NOTIFICATIONS &&
             grantResults.isNotEmpty() &&
@@ -121,15 +118,6 @@ class MainActivity : AppCompatActivity() {
         ) {
             Toast.makeText(this, getString(R.string.notification_denied), Toast.LENGTH_LONG).show()
         }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (::waymarkWebChromeClient.isInitialized &&
-            waymarkWebChromeClient.handleFileChooserResult(requestCode, resultCode, data)
-        ) {
-            return
-        }
-        super.onActivityResult(requestCode, resultCode, data)
     }
 
     /* ---------- WebView setup ---------- */
@@ -158,8 +146,8 @@ class MainActivity : AppCompatActivity() {
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
 
-        // Always fetch fresh frontend assets; this app relies on server-hosted JS.
-        settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        // Cache
+        settings.cacheMode = WebSettings.LOAD_DEFAULT
 
         // Media: allow auto-play (needed for WebRTC in the web app)
         settings.mediaPlaybackRequiresUserGesture = false
@@ -173,8 +161,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(bridge, "Android")
 
         webView.webViewClient = WaymarkWebViewClient()
-        waymarkWebChromeClient = WaymarkWebChromeClient(this)
-        webView.webChromeClient = waymarkWebChromeClient
+        webView.webChromeClient = WaymarkWebChromeClient(this)
     }
 
     /* ---------- Permission helpers ---------- */

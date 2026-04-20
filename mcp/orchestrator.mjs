@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -37,6 +37,7 @@ let _notifRules = [];          // cached parsed rules
 let _rulesSheetId = process.env.WAYMARK_RULES_SHEET_ID || null; // env default; overridable at boot
 let _rulesLastFetched = 0;     // epoch ms
 const RULES_TTL_MS = 5 * 60 * 1000; // re-fetch every 5 min
+let _currentLogPath = null;    // set on each orchestrator_cycle call for fireNotifications logging
 
 /* ---------- Session state (automatic RETURNED detection) ---------- */
 const _sessions = new Map(); // sessionId → { lastAction, lastAgentName }
@@ -117,7 +118,6 @@ const TEMPLATE_KEY_TO_AGENT = {
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
 import { GoogleAuth } from "google-auth-library";
-import { SheetWebRtcPeer } from "./sheet-webrtc-peer.mjs";
 
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let sheetsAuth = null;
@@ -130,357 +130,15 @@ if (credPath) {
     });
 }
 
-/* ---------- WebRTC signaling peer — user-owned sheet discovery ----------
- * The .waymark-signaling sheet is created client-side (user-data.js) on
- * the user's first web-app boot and stored in their .waymark-data.json.
- * The orchestrator reads that file via the user's OAuth token to discover
- * the sheet ID — no service-account ownership or sharing required.
- */
-
-const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
-const DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files";
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
-const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-/** @type {string|null} resolved signaling sheet ID, cached in memory once resolved */
-let _resolvedSignalingSheetId = null;
-/** @type {SheetWebRtcPeer|null} Signaling peer on the OAuth-protected sheet */
-let _signalingPeer = null;
-/** @type {ReturnType<typeof setInterval>|null} Health check timer for signaling peer */
-let _signalingHealthTimer = null;
-
-/**
- * Get a fresh user OAuth access token, refreshing if expired.
- * Reads from WAYMARK_OAUTH_TOKEN_PATH (same as waymark.mjs).
- * Returns null if the token file is missing or unusable.
+/* ---------- p2p-server — containerised WebRTC notification bridge ----------
+ * All WebRTC mesh logic lives in the p2p-server container (port 8090).
+ * The orchestrator sends a simple POST /broadcast — no werift, no OAuth
+ * token juggling, no signaling-sheet slot management here.
  */
-async function getUserOAuthToken() {
-    const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-        `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
-    let tokenData;
-    try {
-        tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
-    } catch {
-        return null;
-    }
-    if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
-        if (!tokenData.refresh_token) return null;
-        const res = await fetch(OAUTH_TOKEN_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                grant_type:    "refresh_token",
-                refresh_token: tokenData.refresh_token,
-                client_id:     tokenData.client_id,
-                client_secret: tokenData.client_secret,
-            }),
-        });
-        const refreshed = await res.json();
-        if (refreshed.error || !refreshed.access_token) return null;
-        tokenData.access_token = refreshed.access_token;
-        tokenData.expiry_date  = Date.now() + (refreshed.expires_in * 1000);
-        try {
-            writeFileSync(tokenPath, JSON.stringify(tokenData, null, 2));
-        } catch { /* read-only mount — ignore, token still usable this session */ }
-    }
-    return tokenData.access_token;
-}
+const P2P_SERVER_URL = process.env.P2P_SERVER_URL || "http://localhost:8090";
 
-/** Cached Drive file ID for .waymark-data.json (avoids repeat searches) */
-let _dataFileId = null;
-
-/* ---------- Auto-provisioning helpers ---------- */
-
-/** Check if a Google Sheet still exists AND is not in the Trash.
- *  Uses the Drive API instead of Sheets API because the Sheets API
- *  can still successfully access trashed spreadsheets (returns 200),
- *  which would make us skip recreation after the user deletes a sheet. */
-async function sheetExists(sheetId, token) {
-    try {
-        const res = await fetch(
-            `${DRIVE_FILES_URL}/${sheetId}?fields=id,trashed`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) return false;
-        const data = await res.json();
-        if (data.trashed) {
-            process.stderr.write(`orchestrator: sheet ${sheetId} is in Trash — treating as deleted\n`);
-        }
-        return data.trashed !== true;
-    } catch { return false; }
-}
-
-/** Create a new empty Google Spreadsheet. Returns the spreadsheetId. */
-async function createSpreadsheet(title, token) {
-    const res = await fetch(SHEETS_BASE_URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ properties: { title } }),
-    });
-    if (!res.ok) throw new Error(`createSpreadsheet(${title}) → ${res.status}: ${await res.text()}`);
-    const d = await res.json();
-    return d.spreadsheetId;
-}
-
-/** Search Drive for a file by exact name (first match, any location). */
-async function driveFindByName(name, token) {
-    const q = encodeURIComponent(`name='${name}' and trashed=false`);
-    const res = await fetch(
-        `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return null;
-    const { files } = await res.json();
-    return files?.[0]?.id ?? null;
-}
-
-/** Grant "anyone with the link can edit" on a Drive file. */
-async function setPublicWritable(fileId, token) {
-    const res = await fetch(`${DRIVE_FILES_URL}/${fileId}/permissions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "writer", type: "anyone" }),
-    });
-    if (!res.ok) {
-        process.stderr.write(`orchestrator: setPublicWritable(${fileId}) → ${res.status}\n`);
-    }
-}
-
-/** Update a Drive file's JSON content in-place. */
-async function driveUpdateJson(fileId, data, token) {
-    const body = JSON.stringify(data, null, 2);
-    const res = await fetch(`${DRIVE_UPLOAD_URL}/${fileId}?uploadType=media`, {
-        method: "PATCH",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "Content-Length": String(Buffer.byteLength(body)),
-        },
-        body,
-    });
-    if (!res.ok) throw new Error(`driveUpdateJson(${fileId}) → ${res.status}: ${await res.text()}`);
-}
-
-/**
- * Ensure signaling infrastructure exists. Reads .waymark-data.json once,
- * validates the signaling sheet ID (checking it still exists on Drive),
- * auto-creates if missing, and saves changes back to .waymark-data.json.
- *
- * Single-sheet architecture: one OAuth-protected Google Sheet, no encryption.
- * Matches the E2E test infra and Android ConnectionManager.
- *
- * Returns { signalingSheetId } or null on failure.
- * Caches the ID so subsequent calls are instant.
- */
-async function ensureSignalingInfra() {
-    // Fast path: already validated and cached
-    if (_resolvedSignalingSheetId) {
-        return { signalingSheetId: _resolvedSignalingSheetId };
-    }
-
-    const token = await getUserOAuthToken();
-    if (!token) {
-        process.stderr.write("orchestrator: OAuth token unavailable — signaling disabled\n");
-        return null;
-    }
-
-    // Find .waymark-data.json in Drive (cache the file ID)
-    if (!_dataFileId) {
-        const q = encodeURIComponent(
-            "name='.waymark-data.json' and mimeType='application/json' and trashed=false"
-        );
-        const searchRes = await fetch(
-            `${DRIVE_FILES_URL}?q=${q}&fields=files(id)&pageSize=1&spaces=drive`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!searchRes.ok) {
-            process.stderr.write(`orchestrator: Drive search failed: ${searchRes.status}\n`);
-            return null;
-        }
-        const { files } = await searchRes.json();
-        if (!files?.length) {
-            process.stderr.write("orchestrator: .waymark-data.json not found — user must open web app first\n");
-            return null;
-        }
-        _dataFileId = files[0].id;
-    }
-
-    // Read current config
-    const fileRes = await fetch(
-        `${DRIVE_FILES_URL}/${_dataFileId}?alt=media`,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!fileRes.ok) {
-        process.stderr.write(`orchestrator: Drive read .waymark-data.json failed: ${fileRes.status}\n`);
-        _dataFileId = null; // invalidate — might have been deleted
-        return null;
-    }
-    const data = await fileRes.json();
-    let dirty = false;
-
-    // ── Signaling sheet — OAuth-protected ──
-    let sheetId = data.signalingSheetId || null;
-    if (sheetId && !(await sheetExists(sheetId, token))) {
-        process.stderr.write(`orchestrator: signaling sheet ${sheetId} deleted from Drive — recreating\n`);
-        sheetId = null;
-    }
-    if (!sheetId) {
-        // Search Drive by name first to avoid creating duplicates
-        const found = await driveFindByName(".waymark-signaling", token);
-        if (found && (await sheetExists(found, token))) {
-            process.stderr.write(`orchestrator: found orphaned signaling sheet on Drive: ${found}\n`);
-            sheetId = found;
-        } else {
-            process.stderr.write("orchestrator: auto-provisioning signaling sheet (.waymark-signaling)\n");
-            sheetId = await createSpreadsheet(".waymark-signaling", token);
-            process.stderr.write(`orchestrator: created signaling sheet: ${sheetId}\n`);
-        }
-        data.signalingSheetId = sheetId;
-        dirty = true;
-    }
-
-    // Persist any changes back to Drive
-    if (dirty) {
-        data.updatedAt = new Date().toISOString();
-        await driveUpdateJson(_dataFileId, data, token);
-        process.stderr.write("orchestrator: saved updated sheet IDs to .waymark-data.json on Drive\n");
-    }
-
-    // Cache resolved ID
-    _resolvedSignalingSheetId = sheetId;
-    process.stderr.write(`orchestrator: signaling infra ready — sheet=${sheetId}\n`);
-    return { signalingSheetId: sheetId };
-}
-
-/**
- * Invalidate cached sheet IDs so the next ensureSignalingInfra() call
- * re-reads Drive and re-validates (or re-creates) the sheets.
- */
-function invalidateSignalingCache() {
-    _resolvedSignalingSheetId = null;
-    process.stderr.write("orchestrator: signaling sheet cache invalidated\n");
-}
-
-/**
- * Single-sheet WebRTC signaling startup.
- *
- * Connects to the OAuth-protected .waymark-signaling sheet — the same
- * sheet that Android discovers from .waymark-data.json. No encryption,
- * no key exchange.  Matches the E2E test infra and Android app.
- *
- * Resilience:
- *   - A periodic health check restarts the peer if it loses its mesh slot
- *     or has 0 connections for an extended period.
- */
-async function startSignalingPeer() {
-    let infra;
-    try {
-        infra = await ensureSignalingInfra();
-    } catch (err) {
-        process.stderr.write(`orchestrator: signaling infra setup failed: ${err.message}\n`);
-        return;
-    }
-    if (!infra) return;
-    const { signalingSheetId } = infra;
-
-    // Stable 8-char hex peer ID for this MCP server instance
-    const { createHash } = await import("node:crypto");
-    const peerId = createHash("sha256")
-        .update("orchestrator-mcp-" + signalingSheetId)
-        .digest("hex")
-        .slice(0, 8);
-
-    _signalingPeer = new SheetWebRtcPeer({
-        sheetId:     signalingSheetId,
-        getToken:    getUserOAuthToken,
-        peerId,
-        displayName: "Orchestrator MCP",
-        bufferFile:  `${LOG_DIR}/notif-buffer.json`,
-        onConnect: (remotePeerId) => {
-            process.stderr.write(`orchestrator: peer ${remotePeerId} connected\n`);
-            if (_wakeResolve) _wakeResolve("peer-connected");
-        },
-        onMessage: (remotePeerId, msg) => {
-            process.stderr.write(`orchestrator: message from peer ${remotePeerId}: ${JSON.stringify(msg)}\n`);
-        },
-    });
-    await _signalingPeer.start();
-    process.stderr.write(`orchestrator: signaling peer started on sheet=${signalingSheetId}\n`);
-
-    // ── Health check: full teardown + fresh instance on failure ──
-    // Matches E2E test pattern: stopOrchestrator() → startOrchestrator()
-    // Never reuse a stopped SheetWebRtcPeer — stop() leaves internal state
-    // (_polling flag, fire-and-forget _clearPresence, session nonce) that
-    // cannot be safely reset for a new start().
-    let _peerEmptySince = 0;
-    const STALE_PEER_MS = 180_000; // restart if 0 connections for 3 min (was 60s)
-
-    async function rebuildPeer(label) {
-        process.stderr.write(`orchestrator: ${label} — tearing down and rebuilding\n`);
-        if (_signalingPeer) { _signalingPeer.stop(); _signalingPeer = null; }
-        if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
-        invalidateSignalingCache(); // always re-read Drive on rebuild — sheet ID may have changed
-        // Retry chain: attempt immediately, then 10s, 20s, 30s backoff.
-        // Each retry invalidates the cache so a stale/expired token is re-fetched.
-        for (let attempt = 0; attempt <= 3; attempt++) {
-            if (attempt > 0) {
-                const delay = attempt * 10_000;
-                process.stderr.write(`orchestrator: ${label} — retry ${attempt}/3 in ${delay / 1000}s\n`);
-                await new Promise(r => setTimeout(r, delay));
-                invalidateSignalingCache();
-            }
-            try {
-                await startSignalingPeer();
-                process.stderr.write(`orchestrator: ${label} — rebuilt successfully${attempt > 0 ? ` (retry ${attempt})` : ""}\n`);
-                return; // success — startSignalingPeer sets up its own health timer
-            } catch (e) {
-                process.stderr.write(`orchestrator: ${label} attempt ${attempt} failed: ${e.message}\n`);
-            }
-        }
-        process.stderr.write(`orchestrator: ${label} — all retries exhausted, will try again on next health tick\n`);
-        // Re-arm the health timer so next tick retries; startSignalingPeer would have
-        // set its own timer on success, but since we failed, start a minimal one.
-        _signalingHealthTimer = setInterval(() => {
-            if (!_signalingPeer) {
-                clearInterval(_signalingHealthTimer);
-                _signalingHealthTimer = null;
-                rebuildPeer("retry after exhausted retries");
-            }
-        }, 60_000);
-    }
-
-    _signalingHealthTimer = setInterval(() => {
-        if (_signalingPeer && !_signalingPeer.destroyed) {
-            // Detect repeated Sheets API failures (token expired, quota, network down)
-            // 3 consecutive poll failures ≈ 15s of no signaling → rebuild with fresh auth
-            const pollFails = _signalingPeer._consecutivePollFailures || 0;
-            const heartFails = _signalingPeer._consecutiveHeartbeatFailures || 0;
-            if (pollFails >= 3 || heartFails >= 3) {
-                rebuildPeer(`Sheets API failing (poll=${pollFails}, heartbeat=${heartFails})`);
-                _peerEmptySince = 0;
-                return;
-            }
-
-            if (_signalingPeer.block < 0) {
-                rebuildPeer("peer lost slot");
-                _peerEmptySince = 0;
-            } else if (_signalingPeer.connectedPeers().length === 0) {
-                // Suppress rebuild while handshakes are actively in progress —
-                // ICE checking may take 30-90s and a destructive rebuild (new nonce)
-                // just restarts the entire handshake from scratch.
-                if (_signalingPeer.hasActiveHandshakes()) {
-                    _peerEmptySince = 0; // reset — handshake might still succeed
-                } else if (!_peerEmptySince) _peerEmptySince = Date.now();
-                else if (Date.now() - _peerEmptySince > STALE_PEER_MS) {
-                    rebuildPeer("peer 0 connections for 60s");
-                    _peerEmptySince = 0;
-                }
-            } else {
-                _peerEmptySince = 0;
-            }
-        }
-    }, 30_000);
-}
 
 const SHEETS_BASE = SHEETS_BASE_URL;  // alias for getSheetHeaders below
 
@@ -735,19 +393,18 @@ function interpolate(template, ctx) {
 
 /**
  * Check rules for a given event and push matching notifications to the
- * Android app via WebRTC DataChannel.  No third-party services (ntfy,
- * Pushover, etc.) — delivery is purely peer-to-peer through the signaling
- * sheet.
+ * Android app via the p2p-server container (POST /broadcast).
+ * Fire-and-forget — delivery is handled by the container's buffer+drain loop.
  * @param {string} event  - uppercase event name e.g. "DISPATCH"
  * @param {object} ctx    - context variables for condition matching and template interpolation
  */
 async function fireNotifications(event, ctx) {
+    const logLine = (msg) => {
+        process.stderr.write(`orchestrator: ${msg}\n`);
+        if (_currentLogPath) try { appendFileSync(_currentLogPath, `[${iso()}] NOTIF/${event}: ${msg}\n`); } catch {}
+    };
     if (!_notifRules.length) {
-        process.stderr.write(`orchestrator: notification skipped for '${event}' — no rules loaded (rulesSheetId=${_rulesSheetId ?? 'not set'})\n`);
-        return;
-    }
-    if (!_signalingPeer) {
-        process.stderr.write(`orchestrator: notification skipped for '${event}' — signaling peer not started\n`);
+        logLine(`skipped — no rules loaded (rulesSheetId=${_rulesSheetId ?? 'not set'})`);
         return;
     }
     const matching = _notifRules.filter(r =>
@@ -755,22 +412,26 @@ async function fireNotifications(event, ctx) {
         (r.event === event || r.event === "*") &&
         matchesCondition(r.condition, ctx)
     );
+    logLine(`matching=${matching.length} of ${_notifRules.length} rules for event '${event}'`);
     for (const rule of matching) {
         const title = interpolate(rule.title || event, ctx);
         const body  = interpolate(rule.body, ctx);
-        const sent = _signalingPeer.broadcast({
-            type:     "orchestrator-alert",
-            title,
-            body,
-            priority: rule.priority,
-            event,
-            ts:       Date.now(),
-        });
-        process.stderr.write(
-            sent > 0
-                ? `orchestrator: pushed '${title}' to ${sent} Android peer(s) via WebRTC\n`
-                : `orchestrator: rule matched for '${event}' but no Android peers connected\n`
-        );
+        try {
+            const res = await fetch(`${P2P_SERVER_URL}/broadcast`, {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ title, body, priority: rule.priority, event }),
+                signal:  AbortSignal.timeout(3000),
+            });
+            const data = await res.json().catch(() => ({}));
+            const sentCount = data.sent ?? 0;
+            logLine(sentCount > 0
+                ? `pushed '${title}' to ${sentCount} peer(s)`
+                : `rule matched but 0 sent — ${data.reason || 'no connected peers'}`
+            );
+        } catch (err) {
+            logLine(`p2p-server unreachable: ${err.message}`);
+        }
     }
 }
 
@@ -855,17 +516,8 @@ const wakeServer = createServer((req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, sleeping: !!_wakeResolve }));
     } else if (req.method === "GET" && req.url === "/status") {
-        // Detailed signaling peer status
-        const status = {
-            ok: true,
-            peer: _signalingPeer ? {
-                peerId: _signalingPeer.peerId,
-                block: _signalingPeer.block,
-                destroyed: _signalingPeer.destroyed,
-                connectedPeers: _signalingPeer.connectedPeers(),
-                sheetId: _signalingPeer.sheetId,
-            } : null,
-        };
+        // p2p-server status is queried directly at :8090/peers
+        const status = { ok: true, p2pServerUrl: P2P_SERVER_URL };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(status));
     } else {
@@ -900,10 +552,6 @@ const TOOLS = [
                 rulesSheetId: {
                     type: "string",
                     description: "Optional Google Sheets ID of a notification rules sheet. Columns: Event, Condition, Title, Body, Priority, Enabled. Omit to disable notifications.",
-                },
-                waitForPeerSeconds: {
-                    type: "number",
-                    description: "Optional seconds to wait for an Android peer to connect before dispatching the first task. Useful when the Android app is known to be opening shortly after the orchestrator starts. Default 0 (no wait). Recommended: 30–60.",
                 },
             },
         },
@@ -954,52 +602,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
         _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
 
-        // peerWaitMs — how long to wait for Android before first dispatch
-        const peerWaitMs = Math.max(0, (args.waitForPeerSeconds || 0)) * 1000;
-        // Store alongside session; re-use sessions map with augmented object
-        _sessions.set(sessionId, { lastAction: null, lastAgentName: null, peerWaitMs, peerWaitUsed: false });
-
-        // (Re-)start signaling peers with fresh infrastructure validation.
-        // Tear down any existing peers first — sheets may have been deleted
-        // between boots while the MCP process stayed alive.
-        if (_signalingPeer) {
-            process.stderr.write("orchestrator: tearing down existing signaling peer for clean re-provision\n");
-            _signalingPeer.stop(); _signalingPeer = null;
-            if (_signalingHealthTimer) { clearInterval(_signalingHealthTimer); _signalingHealthTimer = null; }
-            invalidateSignalingCache();
-        }
-        startSignalingPeer().catch(async (err) => {
-            process.stderr.write(`orchestrator: signaling peer start failed: ${err.message}\n`);
-            // Retry with backoff — the initial failure is often a transient OAuth/Drive issue
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                const delay = attempt * 10_000;
-                process.stderr.write(`orchestrator: retrying signaling start in ${delay / 1000}s (attempt ${attempt}/3)\n`);
-                await new Promise(r => setTimeout(r, delay));
-                try {
-                    invalidateSignalingCache();
-                    await startSignalingPeer();
-                    process.stderr.write(`orchestrator: signaling peer started on retry ${attempt}\n`);
-                    return;
-                } catch (e2) {
-                    process.stderr.write(`orchestrator: retry ${attempt} failed: ${e2.message}\n`);
-                }
-            }
-        });
-
         return {
             content: [{ type: "text", text: JSON.stringify({
                 sessionId,
                 logPath,
                 rulesLoaded: _notifRules.length,
-                signalingSheet: _resolvedSignalingSheetId ?? null,
-                signalingPeerId: _signalingPeer?.peerId ?? null,
-                peerWaitMs,
+                p2pServerUrl: P2P_SERVER_URL,
             }) }],
         };
     }
 
     if (name === "orchestrator_cycle") {
         const logPath = `${LOG_DIR}/${args.sessionId}.log`;
+        _currentLogPath = logPath;
         const sleepMs = (args.sleepSeconds || 60) * 1000;
 
         // Automatically detect RETURNED: if previous cycle dispatched an agent,
@@ -1109,29 +724,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const routeResult = await routeTask(task);
             const prompt = buildPrompt(task, routeResult);
 
-            // If notifications are configured but no Android peer is connected yet,
-            // wait up to peerWaitMs for one to connect (sleep is interrupted by onConnect).
-            // Only applies once per session (peerWaitUsed flag) to avoid per-task delays.
-            const sess2 = _sessions.get(args.sessionId) || {};
-            if (
-                _signalingPeer &&
-                _notifRules.length > 0 &&
-                !sess2.peerWaitUsed &&
-                (sess2.peerWaitMs || 0) > 0 &&
-                _signalingPeer.connectedPeers().length === 0
-            ) {
-                const waitMs = sess2.peerWaitMs;
-                appendFileSync(logPath, `[${iso()}] PEER_WAIT: waiting up to ${waitMs / 1000}s for Android peer...\n`);
-                process.stderr.write(`orchestrator: waiting up to ${waitMs / 1000}s for Android peer before dispatch\n`);
-                _sessions.set(args.sessionId, { ...sess2, peerWaitUsed: true });
-                const pw = await sleep(waitMs);
-                if (pw.interrupted) {
-                    appendFileSync(logPath, `[${iso()}] PEER_WAIT: woke early — ${pw.reason}\n`);
-                }
-            } else {
-                _sessions.set(args.sessionId, { ...sess2, peerWaitUsed: true });
-            }
-
             appendFileSync(logPath, `[${iso()}] ROUTE: ${routeResult.agent} (${routeResult.method}) | ${task.task}\n`);
             await fireNotifications("DISPATCH", {
                 agentName:   routeResult.agent,
@@ -1164,6 +756,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Board is clear
         const reason = `board is clear — todo=0, qa=${board.qa ?? 0}, done=${board.done ?? 0}`;
         appendFileSync(logPath, `[${iso()}] IDLE: ${reason}\n`);
+        appendFileSync(logPath, `[${iso()}] NOTIF: rules=${_notifRules.length} rulesSheetId=${_rulesSheetId ?? 'not set'}\n`);
         await fireNotifications("IDLE", { reason, sessionId: args.sessionId });
         return {
             content: [{ type: "text", text: JSON.stringify({ action: "IDLE", reason }) }],

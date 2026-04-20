@@ -51,12 +51,31 @@ echo -e "\n${YELLOW}Building app and test APKs...${NC}"
 cd "$ANDROID_DIR"
 ./gradlew assembleDebug assembleDebugAndroidTest 2>&1 | tail -5
 echo -e "${GREEN}✓${NC} Build complete"
+LOG_DIR="$PROJECT_DIR/.e2e-logs"
+mkdir -p "$LOG_DIR"
 
-# Install both APKs
-echo -e "\n${YELLOW}Installing APKs on device...${NC}"
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-echo -e "${GREEN}✓${NC} APKs installed"
+# Start persistent logcat capture so we can inspect hangs
+echo -e "\n${YELLOW}Starting adb logcat capture -> ${LOG_DIR}/logcat.log${NC}"
+adb logcat -v time >"$LOG_DIR/logcat.log" 2>&1 &
+LOGCAT_PID=$!
+echo "Logcat PID=$LOGCAT_PID"
+
+# Install both APKs using push + pm install to avoid hanging on streamed installs
+echo -e "\n${YELLOW}Installing APKs on device (push + pm install)...${NC}"
+APP_APK=app/build/outputs/apk/debug/app-debug.apk
+TEST_APK=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+echo "Pushing $APP_APK -> /data/local/tmp/app-debug.apk" | tee "$LOG_DIR/install.log"
+adb push "$APP_APK" /data/local/tmp/app-debug.apk 2>&1 | tee -a "$LOG_DIR/install.log"
+echo "Running pm install -r /data/local/tmp/app-debug.apk" | tee -a "$LOG_DIR/install.log"
+adb shell pm install -r /data/local/tmp/app-debug.apk 2>&1 | tee -a "$LOG_DIR/install.log"
+
+echo "Pushing $TEST_APK -> /data/local/tmp/app-debug-androidTest.apk" | tee -a "$LOG_DIR/install.log"
+adb push "$TEST_APK" /data/local/tmp/app-debug-androidTest.apk 2>&1 | tee -a "$LOG_DIR/install.log"
+echo "Running pm install -r /data/local/tmp/app-debug-androidTest.apk" | tee -a "$LOG_DIR/install.log"
+adb shell pm install -r /data/local/tmp/app-debug-androidTest.apk 2>&1 | tee -a "$LOG_DIR/install.log"
+
+echo -e "${GREEN}✓${NC} APKs installed (logs: $LOG_DIR/install.log)"
 
 # Grant notification permission (Android 13+)
 echo -e "\n${YELLOW}Granting POST_NOTIFICATIONS permission...${NC}"
@@ -71,9 +90,14 @@ if $WITH_ORCHESTRATOR; then
     if [ ! -d "node_modules" ]; then
         npm install
     fi
-    node test_orchestrator.mjs --mode=e2e --count=3 --timeout=180 &
+    ORCH_LOG="$LOG_DIR/orchestrator.log"
+    echo "Starting orchestrator, logging to $ORCH_LOG"
+    node test_orchestrator.mjs --mode=e2e --count=3 --timeout=180 >"$ORCH_LOG" 2>&1 &
     ORCH_PID=$!
     echo -e "${GREEN}✓${NC} Test orchestrator started (PID=$ORCH_PID)"
+    # tail orchestrator logs so user sees live progress
+    (tail -n +1 -f "$ORCH_LOG" &) ; TAIL_PID=$!
+    echo "Orchestrator log tail PID=$TAIL_PID"
     cd "$ANDROID_DIR"
 
     # Give it a moment to join the mesh
@@ -112,6 +136,14 @@ RESULT5=$?
 if [ -n "$ORCH_PID" ]; then
     kill "$ORCH_PID" 2>/dev/null || true
     wait "$ORCH_PID" 2>/dev/null || true
+fi
+
+# Kill background log processes
+if [ -n "${TAIL_PID:-}" ]; then
+    kill "$TAIL_PID" 2>/dev/null || true
+fi
+if [ -n "${LOGCAT_PID:-}" ]; then
+    kill "$LOGCAT_PID" 2>/dev/null || true
 fi
 
 # Summary
