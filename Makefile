@@ -45,7 +45,7 @@ endif
 # Service-account key path for host-side Google Sheets API calls
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 # Signaling sheet ID consumed by the p2p-server container (can also be set in .env)
-export WAYMARK_SIGNALING_SHEET_ID ?=
+export WAYMARK_SIGNALING_SHEET_ID ?=1oHfqlGmbKovZgLNaVCCd3QeGBWbaJNiIVCJsS7ZFCCQ
 
 .PHONY: help run start stop restart build logs status vnc test mesh-test auth ensure-auth workboard qa-patrol qa-status clean
 
