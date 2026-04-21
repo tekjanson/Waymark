@@ -1,0 +1,19 @@
+{
+  "id": "sheet-069",
+  "title": "Content Calendar",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Title", "Type", "Status", "Scheduled", "Published", "Author", "Category", "Notes"],
+    ["How to Build a Morning Routine", "Blog Post", "Published", "2026-01-10", "2026-01-10", "Alex Chen", "Productivity", "Evergreen content"],
+    ["Q1 Product Newsletter", "Newsletter", "Published", "2026-01-20", "2026-01-20", "Jamie Levine", "Product", "Quarterly update"],
+    ["Announcing Our New Dashboard", "Announcement", "Published", "2026-02-01", "2026-02-01", "Sam Rivera", "Product", "Feature launch"],
+    ["5 Tips for Remote Work Focus", "Blog Post", "Published", "2026-02-15", "2026-02-15", "Alex Chen", "Productivity", ""],
+    ["March Community Roundup", "Newsletter", "Scheduled", "2026-04-28", "", "Jamie Levine", "Community", "Include Q1 stats"],
+    ["Deep Dive: Template System", "Blog Post", "Scheduled", "2026-05-05", "", "Sam Rivera", "Engineering", "Technical audience"],
+    ["Spring Feature Drop", "Announcement", "Scheduled", "2026-04-23", "", "Alex Chen", "Product", "Social blast too"],
+    ["Getting Started Guide v2", "Page", "Draft", "", "", "Jamie Levine", "Documentation", "Needs review"],
+    ["AI Writing Tips Video", "Video", "Draft", "", "", "Sam Rivera", "Content", "Script in progress"],
+    ["Q2 Product Roadmap Post", "Blog Post", "Draft", "", "", "Alex Chen", "Product", "Pending approval"],
+    ["Archived: Old Launch Post", "Announcement", "Archived", "2025-06-01", "2025-06-01", "Jamie Levine", "Product", "Superseded"]
+  ]
+}

@@ -49,6 +49,7 @@ import './blog.js';
 import './photos.js';
 import './ledger/index.js';
 import './invoice/index.js';
+import './cms.js';
 
 /* ---------- Detection ---------- */
 

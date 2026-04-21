@@ -1021,4 +1021,20 @@ export const EXAMPLE_SHEETS = {
       ['',        '',               '',           '',           '',     'Content Calendar - 3 months',    '1',  '1200', ''],
     ],
   },
+
+  /* ---- CMS examples ---- */
+  'Content Calendar': {
+    folder: 'Content',
+    headers: ['Title', 'Type', 'Status', 'Scheduled', 'Published', 'Author', 'Category', 'Notes'],
+    rows: [
+      ['Getting Started with Our Platform', 'Blog Post',    'Published',  '2026-01-10', '2026-01-10', 'Alex Chen',   'Tutorial',    'Evergreen'],
+      ['Product Update — January',          'Newsletter',   'Published',  '2026-01-20', '2026-01-20', 'Jamie Levine','Product',     ''],
+      ['5 Tips to Work Smarter',            'Blog Post',    'Published',  '2026-02-14', '2026-02-14', 'Alex Chen',   'Productivity','High traffic'],
+      ['Spring Feature Launch',             'Announcement', 'Scheduled',  '2026-04-25', '',           'Sam Rivera',  'Product',     'Coordinate with social'],
+      ['Q2 Newsletter',                     'Newsletter',   'Scheduled',  '2026-05-01', '',           'Jamie Levine','Product',     'Include roadmap'],
+      ['Behind the Scenes: Engineering',    'Blog Post',    'Draft',      '',           '',           'Sam Rivera',  'Engineering', 'Tech deep-dive'],
+      ['Community FAQ Update',              'Page',         'Draft',      '',           '',           'Jamie Levine','Documentation','Needs legal review'],
+      ['Year in Review 2025',               'Blog Post',    'Archived',   '2026-01-01', '2026-01-01', 'Alex Chen',   'Company',     ''],
+    ],
+  },
 };

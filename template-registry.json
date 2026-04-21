@@ -1419,11 +1419,54 @@
       "fixtureFiles": [
         "invoice-sample"
       ]
+    },
+    {
+      "key": "cms",
+      "name": "CMS",
+      "icon": "📝",
+      "color": "#0ea5e9",
+      "priority": 21,
+      "category": "Marketing",
+      "detectSignals": [
+        "scheduled",
+        "scheduled date",
+        "published",
+        "published date",
+        "title",
+        "type",
+        "status"
+      ],
+      "columnRoles": [
+        "title",
+        "type",
+        "status",
+        "scheduled",
+        "published",
+        "author",
+        "category",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Draft",
+        "Scheduled",
+        "Published",
+        "Archived"
+      ],
+      "hasDirectoryView": true,
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-069"
+      ],
+      "fixtureFiles": [
+        "cms-content-calendar"
+      ]
     }
 
   ],
-  "nextSheetId": "sheet-069",
-  "totalTemplates": 37,
+  "nextSheetId": "sheet-070",
+  "totalTemplates": 38,
   "categories": [
     "Productivity",
     "Engineering",

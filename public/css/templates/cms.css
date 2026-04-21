@@ -1,0 +1,390 @@
+/* CMS Template — Content Scheduling and Publishing */
+
+.cms-container {
+  padding: 16px;
+  max-width: 1400px;
+}
+
+/* Alerts */
+.cms-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.cms-alert {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.cms-alert-overdue {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+[data-theme="dark"] .cms-alert-overdue {
+  background: #450a0a;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.cms-alert-soon {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+[data-theme="dark"] .cms-alert-soon {
+  background: #422006;
+  border-color: #713f12;
+  color: #fde68a;
+}
+
+/* Header */
+.cms-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.cms-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cms-icon {
+  font-size: 1.3rem;
+}
+
+.cms-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Filter toolbar */
+.cms-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cms-filter-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.cms-filter-btn:hover {
+  border-color: #0ea5e9;
+  color: #0ea5e9;
+}
+
+.cms-filter-btn.cms-filter-active {
+  background: #0ea5e9;
+  color: #fff;
+  border-color: #0ea5e9;
+}
+
+/* Table wrapper */
+.cms-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.cms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.cms-th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+/* Rows */
+.cms-row {
+  transition: background var(--transition);
+}
+
+.cms-row:hover {
+  background: var(--color-bg);
+}
+
+.cms-row-overdue {
+  background: #fff5f5;
+}
+
+[data-theme="dark"] .cms-row-overdue {
+  background: #2d1a1a;
+}
+
+.cms-row-overdue:hover {
+  background: #fee2e2;
+}
+
+[data-theme="dark"] .cms-row-overdue:hover {
+  background: #3f1f1f;
+}
+
+.cms-row-soon {
+  background: #fffdf0;
+}
+
+[data-theme="dark"] .cms-row-soon {
+  background: #2a2010;
+}
+
+.cms-row-archived {
+  opacity: 0.6;
+}
+
+/* Cells */
+.cms-cell {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.cms-cell-title {
+  min-width: 200px;
+  max-width: 340px;
+}
+
+.cms-title-text {
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cms-cell-type {
+  min-width: 120px;
+}
+
+.cms-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  font-size: 0.75rem;
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Status badge */
+.cms-cell-status {
+  min-width: 110px;
+}
+
+.cms-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.cms-status-draft {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.cms-status-scheduled {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cms-status-published {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.cms-status-archived {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .cms-status-draft {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .cms-status-scheduled {
+  background: #422006;
+  color: #fde68a;
+}
+
+[data-theme="dark"] .cms-status-published {
+  background: #052e16;
+  color: #86efac;
+}
+
+[data-theme="dark"] .cms-status-archived {
+  background: #1e293b;
+  color: #475569;
+}
+
+/* Date cells */
+.cms-cell-date {
+  min-width: 130px;
+  white-space: nowrap;
+}
+
+.cms-date-text {
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+/* Schedule flags */
+.cms-sched-flag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.cms-sched-overdue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.cms-sched-soon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme="dark"] .cms-sched-overdue {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .cms-sched-soon {
+  background: #422006;
+  color: #fde68a;
+}
+
+/* Author / Category / Notes */
+.cms-cell-author,
+.cms-cell-category {
+  min-width: 100px;
+}
+
+.cms-author-text,
+.cms-category-badge,
+.cms-notes-text {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #64748b);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.cms-category-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--color-bg);
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: #0ea5e9;
+  border: 1px solid #bae6fd;
+  max-width: none;
+}
+
+[data-theme="dark"] .cms-category-badge {
+  background: #0c2236;
+  border-color: #0369a1;
+  color: #7dd3fc;
+}
+
+.cms-cell-notes {
+  min-width: 140px;
+  max-width: 240px;
+}
+
+/* Empty state */
+.cms-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.9rem;
+}
+
+/* Directory view */
+.cms-dir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  padding: 14px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .cms-table {
+    font-size: 0.8rem;
+  }
+
+  .cms-cell {
+    padding: 6px 8px;
+  }
+
+  .cms-cell-notes {
+    display: none;
+  }
+
+  .cms-cell-author {
+    display: none;
+  }
+
+  .cms-filter-btn {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cms-cell-category {
+    display: none;
+  }
+
+  .cms-cell-date:last-of-type {
+    display: none;
+  }
+}

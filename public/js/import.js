@@ -277,6 +277,15 @@ const ROLE_LABELS = {
   'ledger.amount': 'Amount ($)',
   'ledger.reference': 'Reference / Journal Entry # / Check #',
   'ledger.balance': 'Running Balance',
+  // CMS — Content Scheduling and Publishing
+  'cms.title': 'Post Title',
+  'cms.type': 'Content Type (Blog Post, Newsletter, Page...)',
+  'cms.status': 'Status (Draft, Scheduled, Published, Archived)',
+  'cms.scheduled': 'Scheduled Publish Date',
+  'cms.published': 'Actual Publish Date',
+  'cms.author': 'Author / Writer',
+  'cms.category': 'Category / Topic',
+  'cms.notes': 'Notes',
   // Invoice
   'invoice.invoice': 'Invoice # / Quote # (primary row only)',
   'invoice.client': 'Client / Customer / Bill To',
@@ -433,6 +442,11 @@ const CANONICAL_HEADERS = {
   'invoice.status': 'Status', 'invoice.item': 'Item',
   'invoice.qty': 'Qty', 'invoice.unitPrice': 'Unit Price',
   'invoice.notes': 'Notes',
+  // CMS
+  'cms.title': 'Title', 'cms.type': 'Type',
+  'cms.status': 'Status', 'cms.scheduled': 'Scheduled',
+  'cms.published': 'Published', 'cms.author': 'Author',
+  'cms.category': 'Category', 'cms.notes': 'Notes',
 };
 
 /**
