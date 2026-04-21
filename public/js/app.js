@@ -414,6 +414,9 @@ async function showApp(user) {
   // Initialize Drive-backed user data (pins, prefs, Waymark folder)
   try {
     await userData.init();
+    // Re-apply theme now that Drive prefs are loaded — localStorage may have
+    // defaulted to 'light' on first visit; Drive holds the real preference.
+    applyTheme(userData.getTheme());
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
