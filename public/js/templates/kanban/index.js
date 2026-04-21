@@ -708,6 +708,17 @@ const definition = {
         if (group) openCardModal(group, ctx);
       });
 
+      // Click on card preview (description + badges area) opens focus modal
+      // Guard: skip if target is a button, input, link, or an editable cell
+      delegateEvent(lane, 'click', '.kanban-card-preview', (e, preview) => {
+        if (e.target.closest('button, input, textarea, a, .editable-cell, select')) return;
+        const card = preview.closest('.kanban-card');
+        if (!card) return;
+        const rowIdx = Number(card.dataset.rowIdx);
+        const group = groupMap.get(rowIdx);
+        if (group) openCardModal(group, ctx);
+      });
+
       // Expand/collapse button
       delegateEvent(lane, 'click', '.kanban-card-expand', (e, btn) => {
         e.stopPropagation();

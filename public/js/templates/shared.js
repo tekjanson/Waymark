@@ -505,6 +505,126 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
+/* ---------- Date-picker cell ---------- */
+
+/**
+ * Parse a date string (YYYY-MM-DD, or any parseable format) to YYYY-MM-DD.
+ * Returns '' when the input is unrecognisable.
+ * @param {string} str
+ * @returns {string}
+ */
+function _parseIsoDate(str) {
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str.trim())) return str.trim();
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return '';
+}
+
+/**
+ * Format a YYYY-MM-DD date string for compact display.
+ * Shows "Today", "Tomorrow", "Yesterday", relative days within a week,
+ * or "Apr 21" style for further dates.
+ * @param {string} isoStr — YYYY-MM-DD
+ * @returns {string}
+ */
+function _formatDateShort(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return isoStr;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const diff = Math.round((d - now) / (1000 * 60 * 60 * 24));
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  if (diff < -1 && diff > -8) return `${Math.abs(diff)}d ago`;
+  if (diff > 1 && diff < 8) return `in ${diff}d`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+}
+
+/**
+ * Create a cell that opens a native date-picker (<input type="date">) on click.
+ * Displays a compact, human-readable date label in resting state.
+ * Commits the value as YYYY-MM-DD.
+ *
+ * @param {string}  tag        — wrapper element tag (e.g. 'span', 'div')
+ * @param {Object}  attrs      — attributes forwarded to el() (className, style, etc.)
+ * @param {string}  text       — initial date value (any parseable format)
+ * @param {number}  rowIdx     — 1-based data-row index for emitEdit()
+ * @param {number}  colIdx     — 0-based column index for emitEdit()
+ * @param {Object}  [opts]     — extra options
+ * @param {function} [opts.onCommit] — called(newValue, element) after a successful edit
+ * @returns {HTMLElement}
+ */
+export function datepickerCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+  const isoInit = _parseIsoDate(text);
+  const display = isoInit ? _formatDateShort(isoInit) : (text || '—');
+
+  const wrapper = el(tag, {
+    ...attrs,
+    className: `${attrs.className || ''} editable-cell date-cell`.trim(),
+    tabindex: '0',
+    title: attrs.title || 'Click to set date',
+  });
+  wrapper.textContent = display;
+  wrapper.dataset.rowIdx = String(rowIdx);
+  wrapper.dataset.colIdx = String(colIdx);
+
+  function startEdit() {
+    if (_editLocked) return;
+    if (_protectedRows.has(rowIdx)) {
+      showToast('This row is locked — editing is disabled', 'warn');
+      return;
+    }
+    if (wrapper.querySelector('input')) return;
+
+    const current = isoInit || '';
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.className = 'editable-cell-input date-cell-input';
+    if (current) input.value = current;
+
+    wrapper.textContent = '';
+    wrapper.append(input);
+    input.focus();
+    /* Open picker immediately on supporting browsers */
+    try { input.showPicker(); } catch (_) {}
+
+    function commit() {
+      const newValue = input.value; // YYYY-MM-DD or ''
+      input.removeEventListener('blur', commit);
+      const newDisplay = newValue ? _formatDateShort(newValue) : (text || '—');
+      wrapper.textContent = newDisplay;
+      if (newValue && newValue !== current) {
+        emitEdit(rowIdx, colIdx, newValue);
+        if (opts.onCommit) opts.onCommit(newValue, wrapper);
+      } else if (!newValue) {
+        wrapper.textContent = text || '—';
+      }
+    }
+
+    function cancel() {
+      input.removeEventListener('blur', commit);
+      wrapper.textContent = display;
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+  }
+
+  wrapper.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startEdit();
+  });
+
+  return wrapper;
+}
+
 /* Re-export el and showToast for convenience — templates only need to import from shared */
 export { el, showToast };
 

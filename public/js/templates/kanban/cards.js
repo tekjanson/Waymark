@@ -6,7 +6,7 @@
    sub-tasks, and notes.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, comboCell, textareaCell, getUserName, showToast } from '../shared.js';
+import { el, cell, editableCell, emitEdit, comboCell, textareaCell, datepickerCell, getUserName, showToast } from '../shared.js';
 import { projectColor, dueBadgeClass, formatDue, isStatusNote, formatNoteDate, formatRelativeDate, nowTimestamp, STATUS_PREFIX, parseBranchName } from './helpers.js';
 
 /* ---------- Card builder (lightweight — no detail panel, no per-card listeners) ---------- */
@@ -215,7 +215,7 @@ export function buildCardDetail(group, ctx) {
   if (cols.due >= 0) {
     metaGrid.append(el('div', { className: 'kanban-detail-field' }, [
       el('span', { className: 'kanban-detail-field-label' }, ['Due']),
-      editableCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.due), rowIdx, cols.due),
+      datepickerCell('span', { className: 'kanban-detail-field-value' }, cell(row, cols.due), rowIdx, cols.due),
     ]));
   }
   if (cols.label >= 0) {

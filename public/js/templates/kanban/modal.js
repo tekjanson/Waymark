@@ -7,8 +7,8 @@
    closes the modal instead of navigating away.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, cycleStatus, getUserName, isEditLocked } from '../shared.js';
-import { projectColor, dueBadgeClass, formatDue, STATUS_PREFIX, nowTimestamp } from './helpers.js';
+import { el, cell, editableCell, emitEdit, cycleStatus, getUserName, isEditLocked, datepickerCell } from '../shared.js';
+import { projectColor, dueBadgeClass, STATUS_PREFIX, nowTimestamp } from './helpers.js';
 import { buildCardDetail } from './cards.js';
 
 /* ---------- History-aware modal state ---------- */
@@ -143,11 +143,15 @@ export function openCardModal(group, ctx) {
     headerMeta.append(priDot);
   }
 
-  if (due) {
-    headerMeta.append(el('span', {
-      className: `kanban-card-due ${dueBadgeClass(due)}`,
-      title: due,
-    }, [formatDue(due)]));
+  if (cols.due >= 0) {
+    headerMeta.append(datepickerCell('span', {
+      className: `kanban-card-due kanban-modal-due-field ${dueBadgeClass(due)}`,
+      title: 'Click to change due date',
+    }, due, rowIdx, cols.due, {
+      onCommit(newVal, el) {
+        el.className = `kanban-card-due kanban-modal-due-field editable-cell date-cell ${dueBadgeClass(newVal)}`;
+      },
+    }));
   }
 
   if (labelVal) {

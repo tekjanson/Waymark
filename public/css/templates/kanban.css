@@ -709,6 +709,50 @@ body.kanban-touch-dragging {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
+/* ---------- Date picker cell ---------- */
+
+.date-cell {
+  cursor: pointer;
+}
+
+.date-cell-input {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: inherit;
+  font-family: inherit;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  cursor: pointer;
+  /* Keep date input compact within badge contexts */
+  max-width: 130px;
+}
+
+.date-cell-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* In modal header: due date badge that is also editable */
+.kanban-modal-due-field {
+  cursor: pointer;
+}
+.kanban-modal-due-field:hover {
+  filter: brightness(0.92);
+}
+
+/* ---------- Card preview — click affordance ---------- */
+
+.kanban-card-preview {
+  cursor: pointer;
+}
+
+/* Subtle highlight to signal clickability on hover */
+.kanban-card:hover .kanban-card-preview .kanban-card-desc {
+  color: var(--color-text);
+}
+
 /* ---------- Focus Modal ---------- */
 
 .kanban-modal-overlay {
