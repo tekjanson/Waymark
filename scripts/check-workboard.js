@@ -182,6 +182,17 @@ const auth = new GoogleAuth({
       } else if (stage === 'In Progress') {
         // When filtering by agent, only show own in-progress tasks
         if (AGENT_NAME && assignee !== AGENT_NAME) continue;
+
+        // Collect sub-row notes so the orchestrator can pass context on restart
+        const nextTaskIdx = t + 1 < taskIndices.length ? taskIndices[t + 1] : rows.length;
+        const notes = [];
+        for (let j = i + 1; j < nextTaskIdx; j++) {
+          const note = (rows[j][8] || '').trim();
+          const noteAuthor = (rows[j][4] || '').trim();
+          if (note) notes.push({ row: j + 1, author: noteAuthor, text: note });
+        }
+        if (notes.length) item.notes = notes;
+
         inProgress.push(item);
       }
       else if (stage === 'QA') {
