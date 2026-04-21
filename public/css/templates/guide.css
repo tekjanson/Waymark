@@ -71,6 +71,7 @@
 .guide-card-body {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
+  align-items: start;
   gap: 18px;
   padding: 18px;
 }
@@ -79,6 +80,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: min(560px, calc(100vh - 260px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .guide-thumb {

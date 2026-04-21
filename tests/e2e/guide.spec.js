@@ -97,3 +97,42 @@ test('guide directoryView shows folder refresh button in header', async ({ page 
   await page.waitForSelector('.guide-directory', { timeout: 8_000 });
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
+
+/* ---------- Many-slides scroll behaviour ---------- */
+
+test('guide rail has overflow-y set so it scrolls independently with many slides', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const overflowY = await page.locator('.guide-rail').evaluate(el => getComputedStyle(el).overflowY);
+  expect(['auto', 'scroll']).toContain(overflowY);
+});
+
+test('guide rail has a capped height on the many-slides fixture', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const railBox = await page.locator('.guide-rail').boundingBox();
+  const cardBodyBox = await page.locator('.guide-card-body').first().boundingBox();
+  // Rail must not overflow the viewport vertically
+  expect(railBox.height).toBeLessThan(page.viewportSize().height);
+  // Stage (second grid child) must start near the top of the card body, not be pushed far down
+  expect(railBox.y).toBeCloseTo(cardBodyBox.y, -2);
+});
+
+test('guide many-slides fixture renders 12 thumbnails in the rail', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const thumbCount = await page.locator('.guide-card').first().locator('.guide-thumb').count();
+  expect(thumbCount).toBe(12);
+});
+
+test('guide many-slides rail does not cause page overflow', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-card', { timeout: 5_000 });
+  const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
+  const viewportWidth = page.viewportSize().width;
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth + 2);
+});
