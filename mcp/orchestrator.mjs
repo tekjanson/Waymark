@@ -274,13 +274,17 @@ async function routeTask(task) {
 
 /**
  * Build the prompt to pass to the dispatched agent.
+ * @param {boolean} isRestart  True when resuming a task interrupted by a container restart.
  */
-function buildPrompt(task, routeResult) {
+function buildPrompt(task, routeResult, isRestart = false) {
     const parts = [];
     if (task.sheetId) parts.push(`Spreadsheet: ${task.sheetId}`);
     parts.push(`Task row: ${task.row}`);
     parts.push(`Task: ${task.task}`);
     if (task.desc) parts.push(`Details: ${task.desc}`);
+    if (isRestart) {
+        parts.push(`Restart: Container restarted mid-task. Run: git fetch origin && git branch -r | grep feature/ to check for an existing branch. If found, check it out and continue from where work left off. If not found, start fresh from the base branch.`);
+    }
     if (task.notes?.length) {
         const noteText = task.notes.map(n => `[${n.author}] ${n.text}`).join("; ");
         parts.push(`Notes: ${noteText}`);
@@ -697,6 +701,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Step 3: Route
         // Check inProgress first
         if (board.inProgress && board.inProgress.length > 0) {
+            // On a fresh session (container restart / no prior dispatch), the In Progress
+            // task was abandoned mid-flight — dispatch it to resume rather than waiting.
+            if (!sess.lastAction) {
+                const task = board.inProgress[0];
+                // Use the assignee as the target agent if it's a known agent name;
+                // otherwise re-route deterministically.
+                let routeResult;
+                const knownAssignee = (task.assignee || "").trim().toLowerCase();
+                if (knownAssignee && KNOWN_AGENTS.has(knownAssignee)) {
+                    routeResult = { agent: knownAssignee, method: "restart-resume" };
+                } else {
+                    routeResult = await routeTask(task);
+                    routeResult = { ...routeResult, method: "restart-reroute" };
+                }
+                const prompt = buildPrompt(task, routeResult, true);
+                appendFileSync(logPath, `[${iso()}] RESTART: resuming row ${task.row} → ${routeResult.agent} (${routeResult.method}) | ${task.task}\n`);
+                await fireNotifications("DISPATCH", {
+                    agentName:   routeResult.agent,
+                    taskTitle:   task.task,
+                    task:        task.task,
+                    desc:        task.desc || "",
+                    routeMethod: routeResult.method,
+                    sessionId:   args.sessionId,
+                });
+                const sessRestart = _sessions.get(args.sessionId) || {};
+                _sessions.set(args.sessionId, { ...sessRestart, lastAction: "DISPATCH", lastAgentName: routeResult.agent });
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            action:      "DISPATCH",
+                            agentName:   routeResult.agent,
+                            prompt,
+                            taskTitle:   task.task,
+                            routeMethod: routeResult.method,
+                        }),
+                    }],
+                };
+            }
+
+            // An agent dispatched by this session is still running — wait
             const titles = board.inProgress.map(t => t.task).join(", ");
             const reason = `inProgress has ${board.inProgress.length} task(s) — "${titles}"`;
             appendFileSync(logPath, `[${iso()}] WAIT: ${reason}\n`);
