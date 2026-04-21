@@ -98,6 +98,24 @@ export function setTutorialStep(step) {
   set('tutorial_step', step);
 }
 
+/* --- Drive Sync Timestamp --- */
+
+/**
+ * ISO timestamp of the last time Drive data was successfully synced to localStorage.
+ * Used to detect when localStorage is ahead of Drive (failed Drive save).
+ * @returns {string}
+ */
+export function getLastSyncedAt() {
+  return get('last_synced_at') || '';
+}
+
+/**
+ * @param {string} timestamp  ISO date string
+ */
+export function setLastSyncedAt(timestamp) {
+  set('last_synced_at', timestamp || '');
+}
+
 /* --- Theme --- */
 
 /**

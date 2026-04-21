@@ -145,6 +145,41 @@ async function _doInit() {
         ..._userData,
         preferences: { ...defaults.preferences, ...(_userData.preferences || {}) },
       };
+
+      // ── Stale-Drive recovery ──────────────────────────────────────────────
+      // Drive saves can fail silently (token expiry, quota, network). When
+      // that happens localStorage is more recent than what Drive has stored.
+      // Read local state BEFORE syncToLocalStorage overwrites it so we can
+      // restore any data that Drive missed.
+
+      // tutorialCompleted is non-reversible: once true in either source keep
+      // it true regardless of what the stale Drive file says.
+      if (storage.getTutorialCompleted() && !_userData.tutorialCompleted) {
+        _userData.tutorialCompleted = true;
+      }
+
+      // For pins, compare the ISO timestamps to decide which source is newer.
+      // localSyncedAt is written by syncToLocalStorage on every successful
+      // save; if it is newer than Drive's updatedAt, Drive missed some saves.
+      const localSyncedAt = storage.getLastSyncedAt?.() || '';
+      const driveSavedAt  = _userData.updatedAt || '';
+      if (localSyncedAt && driveSavedAt && localSyncedAt > driveSavedAt) {
+        // localStorage is ahead — restore pins from it so they aren't wiped.
+        _userData.pinnedFolders = storage.getPinnedFolders();
+        _userData.pinnedSheets  = storage.getPinnedSheets?.() || [];
+        // Write the recovered state back to Drive so it catches up.
+        try {
+          await api.drive.updateJsonFile(_dataFileId, {
+            ..._userData,
+            updatedAt: new Date().toISOString(),
+          });
+          _userData.updatedAt = new Date().toISOString();
+          console.info('[user-data] Recovered stale Drive data from localStorage cache.');
+        } catch (e) {
+          console.warn('[user-data] Drive resync after stale-detection failed:', e);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
     } else {
       // Seed from localStorage for migration
       _userData = migrateFromLocalStorage();
@@ -859,6 +894,9 @@ function syncToLocalStorage(data) {
     if (storage.setGithubRef) storage.setGithubRef(data.preferences?.githubRef || 'main');
     if (storage.setMqttBridge) storage.setMqttBridge(data.preferences?.mqttBridge || false);
     if (storage.setMqttBrokerUrl) storage.setMqttBrokerUrl(data.preferences?.mqttBrokerUrl || '');
+    // Stale-Drive detection: record the updatedAt timestamp so the next init
+    // can compare it against Drive's stored timestamp.
+    if (storage.setLastSyncedAt && data.updatedAt) storage.setLastSyncedAt(data.updatedAt);
   } catch { /* localStorage quota / private mode */ }
 }
 

@@ -400,7 +400,10 @@ const TEMPLATE_TUTORIALS = {
  */
 function startTemplateTutorial(key, force = false) {
   const storageKey = `waymark_template-tutorial-${key}`;
+  const dismissKey = `template-tutorial-${key}`;
   if (!force) {
+    // Check Drive-backed dismissal (survives logout) and localStorage fallback
+    if (userData.isDismissed(dismissKey)) return;
     try { if (localStorage.getItem(storageKey)) return; } catch { /* ignore */ }
     try { if (localStorage.getItem('waymark_template_tutorials_auto') === 'false') return; } catch { /* ignore */ }
   }
@@ -418,6 +421,8 @@ function startTemplateTutorial(key, force = false) {
 
   _activeSteps = steps;
   _onComplete = () => {
+    // Persist via Drive-backed dismissedItems (survives logout) and localStorage
+    userData.dismissItem(dismissKey).catch(() => {});
     try { localStorage.setItem(storageKey, 'true'); } catch { /* ignore */ }
     _activeSteps = savedSteps;
     _onComplete = savedCallback;
