@@ -79,6 +79,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  max-height: 520px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
 }
 
 .guide-thumb {

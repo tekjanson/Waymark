@@ -217,6 +217,11 @@
               "mimeType": "application/vnd.google-apps.spreadsheet"
             },
             {
+              "id": "sheet-069",
+              "name": "Onboarding Playbook",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
               "id": "sheet-047",
               "name": "IoT Sensor Dashboard",
               "mimeType": "application/vnd.google-apps.spreadsheet"
@@ -645,6 +650,11 @@
         {
           "id": "sheet-049",
           "name": "Setup Guide",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-069",
+          "name": "Onboarding Playbook",
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]

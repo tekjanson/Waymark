@@ -135,6 +135,10 @@ const definition = {
           ]));
         }
 
+        // Scroll the active thumbnail into view within the rail
+        const activeThumb = rail.querySelector('.guide-thumb.active');
+        if (activeThumb) activeThumb.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
         stage.innerHTML = '';
         const stageFrame = el('div', { className: `guide-stage-frame guide-stage-${guideStatusKey(activeSlide.statusKey)}` });
         stageFrame.append(

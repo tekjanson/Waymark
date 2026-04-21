@@ -1,0 +1,23 @@
+{
+  "id": "sheet-069",
+  "title": "Onboarding Playbook",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Guide", "Slide", "Objective", "Instruction", "Visual", "Duration", "Status"],
+    ["Week 1 Orientation", "Welcome to the team", "Set expectations for day one", "Introduce the mission, values, and your direct manager before any tools are opened.", "Team photo wall", "5 min", "Done"],
+    ["Week 1 Orientation", "Workstation setup", "Get equipment ready to use", "Walk through laptop provisioning, VPN, and email configuration using the IT checklist.", "Setup checklist screenshot", "20 min", "Done"],
+    ["Week 1 Orientation", "Company handbook", "Understand policies", "Read the handbook sections on PTO, code of conduct, and expense policies.", "Handbook PDF link", "30 min", "Done"],
+    ["Week 1 Orientation", "Meet your team", "Build early relationships", "Book 15-minute intros with each direct teammate within the first three days.", "Org chart", "15 min", "Done"],
+    ["Week 1 Orientation", "First stand-up", "Join the daily rhythm", "Attend the team's daily standup and introduce yourself in one sentence.", "Calendar invite", "15 min", "Done"],
+    ["Week 1 Orientation", "Access permissions", "Get all tools provisioned", "Submit the access request form for Figma, GitHub, Notion, and the staging environment.", "Access form screenshot", "10 min", "Ready"],
+    ["Week 1 Orientation", "Security training", "Complete compliance", "Finish the mandatory security awareness module and forward the certificate to HR.", "Training portal screenshot", "45 min", "In Progress"],
+    ["Week 2 Deep Dives", "Product walkthrough", "Understand what we ship", "Watch the product demo recording and take notes on three things that surprised you.", "Demo recording link", "30 min", "Draft"],
+    ["Week 2 Deep Dives", "Codebase tour", "Get oriented in the repo", "Clone the monorepo, run the local setup, and read the top-level README.", "README screenshot", "60 min", "Draft"],
+    ["Week 2 Deep Dives", "Design system review", "Learn our component library", "Browse the Figma design system and match five components to their code equivalents.", "Figma file link", "20 min", "Draft"],
+    ["Week 2 Deep Dives", "Customer interviews", "Build user empathy", "Watch two recorded customer interviews and identify the top friction point each user mentions.", "Interview recordings", "40 min", "Draft"],
+    ["Week 2 Deep Dives", "Shadow a support call", "Understand real pain points", "Join a live or recorded support session and note the most common question.", "Zendesk link", "30 min", "Draft"],
+    ["Week 2 Deep Dives", "Data stack intro", "Learn where the numbers come from", "Sit with the data analyst and trace one key metric from raw event to dashboard.", "Looker screenshot", "45 min", "Draft"],
+    ["Week 2 Deep Dives", "OKR review", "Align on current priorities", "Read the current-quarter OKRs and write one sentence on how your role contributes to each.", "OKR doc", "20 min", "Draft"],
+    ["Week 2 Deep Dives", "30-day check-in", "Reflect and calibrate", "Meet with your manager to review first impressions, clarify expectations, and surface any blockers.", "Check-in template", "30 min", "Draft"]
+  ]
+}

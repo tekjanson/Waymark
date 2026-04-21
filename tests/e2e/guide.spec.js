@@ -97,3 +97,61 @@ test('guide directoryView shows folder refresh button in header', async ({ page 
   await page.waitForSelector('.guide-directory', { timeout: 8_000 });
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
+
+/* ---------- Scroll-independent rail (many slides) ---------- */
+
+test('guide rail has overflow-y scroll style with many slides', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-rail', { timeout: 5_000 });
+  const overflowY = await page.locator('.guide-rail').first().evaluate(el => getComputedStyle(el).overflowY);
+  expect(['auto', 'scroll']).toContain(overflowY);
+});
+
+test('guide rail has max-height constraint with many slides', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-rail', { timeout: 5_000 });
+  const maxHeight = await page.locator('.guide-rail').first().evaluate(el => getComputedStyle(el).maxHeight);
+  // maxHeight should be a finite pixel value (not "none")
+  expect(maxHeight).not.toBe('none');
+  const px = parseFloat(maxHeight);
+  expect(px).toBeGreaterThan(0);
+});
+
+test('guide rail does not overflow the viewport height with many slides', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-rail', { timeout: 5_000 });
+  const railHeight = await page.locator('.guide-rail').first().evaluate(el => el.getBoundingClientRect().height);
+  expect(railHeight).toBeLessThanOrEqual(page.viewportSize().height);
+});
+
+test('guide second deck shows all its slides in rail with many slides fixture', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const decks = await page.locator('.guide-card').count();
+  expect(decks).toBe(2);
+  // Week 2 deck has 8 slides
+  const secondDeckThumbs = await page.locator('.guide-card').nth(1).locator('.guide-thumb').count();
+  expect(secondDeckThumbs).toBe(8);
+});
+
+test('guide rail nav still advances slide with many slides', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const firstCard = page.locator('.guide-card').first();
+  await firstCard.locator('.guide-nav-next').click();
+  await expect(firstCard.locator('.guide-counter')).toContainText('2 / 7');
+});
+
+test('guide rail thumb click scrolls to correct slide in many-slides fixture', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-069');
+  await page.waitForSelector('.guide-thumb', { timeout: 5_000 });
+  const secondCard = page.locator('.guide-card').nth(1);
+  await secondCard.locator('.guide-thumb').last().click();
+  await expect(secondCard.locator('.guide-slide-title')).toContainText('30-day check-in');
+});
