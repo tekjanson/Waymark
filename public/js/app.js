@@ -15,12 +15,13 @@ import * as records  from './records.js';
 import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
-import { scrapeRecipe } from './recipe-scraper.js';
+import { scrapeRecipe, scanRecipeFromImage } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
+import { captureStillFromCamera } from './camera-capture.js';
 
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
@@ -111,6 +112,11 @@ const importModalTitle      = document.getElementById('import-modal-title');
 const recipeUrlInput       = document.getElementById('recipe-url-input');
 const recipeUrlImportBtn   = document.getElementById('recipe-url-import-btn');
 const recipeUrlStatus      = document.getElementById('recipe-url-status');
+
+/* ---------- Recipe Vision Scan refs ---------- */
+const recipeVisionCameraBtn = document.getElementById('recipe-vision-camera-btn');
+const recipeVisionUploadBtn = document.getElementById('recipe-vision-upload-btn');
+const recipeVisionStatus    = document.getElementById('recipe-vision-status');
 
 /* ---------- Create Sheet Modal refs ---------- */
 const createSheetModal          = document.getElementById('create-sheet-modal');
@@ -1808,6 +1814,14 @@ function initImportModal() {
       if (e.key === 'Enter') { e.preventDefault(); handleRecipeUrlImport(); }
     });
   }
+
+  // Recipe Vision Scan
+  if (recipeVisionCameraBtn) {
+    recipeVisionCameraBtn.addEventListener('click', () => handleRecipePhotoScan('camera'));
+  }
+  if (recipeVisionUploadBtn) {
+    recipeVisionUploadBtn.addEventListener('click', () => handleRecipePhotoScan('upload'));
+  }
 }
 
 async function openImportModal() {
@@ -1820,6 +1834,7 @@ async function openImportModal() {
   importSearchInput.value = '';
   if (recipeUrlInput) recipeUrlInput.value = '';
   if (recipeUrlStatus) recipeUrlStatus.classList.add('hidden');
+  if (recipeVisionStatus) recipeVisionStatus.classList.add('hidden');
 
   showImportStep(0);
   importModal.classList.remove('hidden');
@@ -1960,6 +1975,187 @@ async function handleRecipeUrlImport() {
     recipeUrlImportBtn.disabled = false;
     recipeUrlImportBtn.textContent = 'Import Recipe';
   }
+}
+
+/**
+ * Handle scanning a recipe from a photo using Gemini Vision.
+ * @param {'camera'|'upload'} source
+ */
+async function handleRecipePhotoScan(source) {
+  // Check for API key first
+  const keys = storage.getAgentKeys();
+  if (keys.length === 0) {
+    showToast('Add a Gemini API key in the AI agent settings to use vision scanning', 'error');
+    return;
+  }
+
+  const now = Date.now();
+  const available = keys
+    .map((k, i) => ({ ...k, idx: i }))
+    .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
+  const pool = available.length ? available : keys.map((k, i) => ({ ...k, idx: i }));
+  pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+  const keyEntry = pool[0];
+
+  // Get image from camera or file picker
+  let file;
+  try {
+    if (source === 'camera') {
+      file = await captureStillFromCamera({ title: 'Scan Recipe' });
+    } else {
+      file = await new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.multiple = false;
+        input.onchange = () => resolve(input.files?.[0] || null);
+        input.click();
+      });
+    }
+  } catch (err) {
+    showToast(err.message || 'Could not access camera', 'error');
+    return;
+  }
+
+  if (!file) return;
+
+  // Prepare image: resize to ≤1400px edge, compress to JPEG
+  recipeVisionStatus.classList.remove('hidden');
+  recipeVisionStatus.textContent = 'Processing image…';
+  recipeVisionCameraBtn.disabled = true;
+  recipeVisionUploadBtn.disabled = true;
+
+  let imageData;
+  try {
+    imageData = await _prepareVisionImage(file);
+  } catch (err) {
+    recipeVisionStatus.textContent = `❌ ${err.message}`;
+    showToast(`Image error: ${err.message}`, 'error');
+    recipeVisionCameraBtn.disabled = false;
+    recipeVisionUploadBtn.disabled = false;
+    return;
+  }
+
+  recipeVisionStatus.textContent = '🔍 AI is reading the recipe…';
+
+  try {
+    const model = storage.getAgentModel() || 'gemini-flash-latest';
+    const recipe = await scanRecipeFromImage(imageData, keyEntry.key, model);
+    storage.recordKeyUsage(keyEntry.idx);
+
+    // Build sheet-like values — same layout as URL import
+    const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
+    const ingredients = recipe.ingredients || [];
+    const steps = recipe.instructions || [];
+    const maxRows = Math.max(ingredients.length, steps.length, 1);
+    const dataRows = [];
+    for (let i = 0; i < maxRows; i++) {
+      const ingr = ingredients[i] || { qty: '', unit: '', name: '' };
+      dataRows.push([
+        i === 0 ? (recipe.name || 'Scanned Recipe') : '',
+        i === 0 ? (recipe.servings || '') : '',
+        i === 0 ? (recipe.prepTime || '') : '',
+        i === 0 ? (recipe.cookTime || '') : '',
+        i === 0 ? (recipe.category || '') : '',
+        i === 0 ? (recipe.difficulty || '') : '',
+        ingr.qty || '',
+        ingr.unit || '',
+        ingr.name || '',
+        steps[i] || '',
+        i === 0 ? (recipe.description || '') : '',
+        '',
+      ]);
+    }
+
+    importSheetData = {
+      id: 'vision-import-' + Date.now(),
+      title: recipe.name || 'Scanned Recipe',
+      values: [headers, ...dataRows],
+    };
+
+    importAnalysis = importer.analyzeWithCode(importSheetData);
+    userTemplateOverride = 'recipe';
+    importAnalysis.suggestedTemplate = 'recipe';
+    importAnalysis.templateName = 'Recipe';
+    importAnalysis.confidence = 0.95;
+    importAnalysis.summary = `Scanned from photo using AI vision. Found ${ingredients.length} ingredients and ${steps.length} steps.`;
+
+    recipeVisionStatus.textContent = `✅ Found: "${recipe.name}" — ${ingredients.length} ingredients, ${steps.length} steps`;
+
+    renderImportPreview(importSheetData);
+    populateTemplatePicker(importAnalysis);
+    renderColumnMapEditor(importAnalysis);
+    updateDetectBadge(importAnalysis);
+    showImportStep(1);
+
+    showToast(`Recipe "${recipe.name}" scanned from photo`, 'success');
+  } catch (err) {
+    if (err.message?.includes('API key') || err.message?.includes('rate') || err.message?.includes('quota')) {
+      storage.recordKeyError(keyEntry.idx);
+    }
+    recipeVisionStatus.textContent = `❌ ${err.message}`;
+    showToast(`Vision scan failed: ${err.message}`, 'error');
+  } finally {
+    recipeVisionCameraBtn.disabled = false;
+    recipeVisionUploadBtn.disabled = false;
+  }
+}
+
+/**
+ * Resize and compress an image File to ≤1400px edge and ≤900 KB JPEG.
+ * @param {File} file
+ * @returns {Promise<{ data: string, mimeType: string }>}
+ */
+async function _prepareVisionImage(file) {
+  if (!String(file.type || '').startsWith('image/')) {
+    throw new Error('Only image files are supported for vision scanning');
+  }
+
+  const MAX_EDGE = 1400;
+  const MAX_BYTES = 900 * 1024;
+
+  let bitmap;
+  if (typeof createImageBitmap === 'function') {
+    try { bitmap = await createImageBitmap(file); } catch { /* fall through */ }
+  }
+  if (!bitmap) {
+    bitmap = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+      const reader = new FileReader();
+      reader.onload = () => { img.src = String(reader.result || ''); };
+      reader.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+
+  let quality = 0.85;
+  let dataUrl = canvas.toDataURL('image/jpeg', quality);
+  let base64 = dataUrl.split(',')[1] || '';
+  let bytes = Math.floor((base64.length * 3) / 4);
+
+  while (bytes > MAX_BYTES && quality > 0.45) {
+    quality -= 0.1;
+    dataUrl = canvas.toDataURL('image/jpeg', quality);
+    base64 = dataUrl.split(',')[1] || '';
+    bytes = Math.floor((base64.length * 3) / 4);
+  }
+
+  if (bytes > MAX_BYTES) {
+    throw new Error(`Image is too large after compression. Please try a smaller photo.`);
+  }
+
+  return { data: base64, mimeType: 'image/jpeg' };
 }
 
 /**

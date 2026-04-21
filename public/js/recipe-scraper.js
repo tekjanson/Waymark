@@ -370,6 +370,138 @@ function recipeFromHeuristic(doc, html, sourceUrl) {
   return recipe;
 }
 
+// ---------- AI Vision extraction ----------
+
+/**
+ * Gemini API base URL for vision requests (browser-side, no server proxy needed).
+ */
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * System prompt for recipe vision extraction. Instructs the model to return
+ * a strictly valid JSON object that mirrors the scrapeRecipe() output shape.
+ */
+const VISION_SYSTEM_PROMPT = `You are a recipe extraction assistant. Analyze the provided image and extract the recipe information.
+Return ONLY a valid JSON object with these fields (no markdown, no explanation, just raw JSON):
+{
+  "name": "Recipe name",
+  "servings": "4",
+  "prepTime": "15 min",
+  "cookTime": "30 min",
+  "category": "Italian",
+  "difficulty": "Easy",
+  "description": "Brief description of the dish",
+  "ingredients": [
+    { "qty": "2", "unit": "cups", "name": "flour" }
+  ],
+  "instructions": [
+    "Step 1: ...",
+    "Step 2: ..."
+  ]
+}
+Rules:
+- ingredients: each item must have qty (string, may be empty), unit (string, may be empty), name (string).
+- instructions: array of plain step strings.
+- Use empty strings "" for missing fields. Never use null.
+- Infer reasonable values where clearly visible; leave blank otherwise.`;
+
+/**
+ * Extract a recipe from an image using the Gemini Vision API.
+ *
+ * @param {{ data: string, mimeType: string }} image  — base64-encoded image with MIME type
+ * @param {string} apiKey                             — Gemini API key
+ * @param {string} [model]                            — model name (defaults to gemini-flash-latest)
+ * @returns {Promise<Object>}  normalised recipe object (same shape as scrapeRecipe)
+ */
+export async function scanRecipeFromImage(image, apiKey, model = 'gemini-flash-latest') {
+  if (!image || !image.data || !image.mimeType) {
+    throw new Error('Image data is required for vision extraction');
+  }
+  if (!apiKey) {
+    throw new Error('A Gemini API key is required for AI vision scanning. Add one in the AI agent settings.');
+  }
+
+  const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: 'Extract the recipe from this image and return it as JSON as described.' },
+        { inlineData: { mimeType: image.mimeType, data: image.data } },
+      ],
+    }],
+    systemInstruction: { parts: [{ text: VISION_SYSTEM_PROMPT }] },
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.9,
+      maxOutputTokens: 2048,
+    },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-goog-api-key': apiKey,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const msg = errData?.error?.message || `Gemini API error ${res.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+
+  if (!text) {
+    throw new Error('No response from AI vision scan. Please try again with a clearer photo.');
+  }
+
+  // Strip markdown code fences if the model wrapped the JSON
+  const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  let recipe;
+  try {
+    recipe = JSON.parse(stripped);
+  } catch {
+    throw new Error('AI returned an unexpected format. Please try again with a clearer photo.');
+  }
+
+  // Normalise to match scrapeRecipe() output shape
+  const normalised = {
+    name: String(recipe.name || 'Scanned Recipe'),
+    servings: String(recipe.servings || ''),
+    prepTime: String(recipe.prepTime || ''),
+    cookTime: String(recipe.cookTime || ''),
+    category: String(recipe.category || ''),
+    difficulty: String(recipe.difficulty || ''),
+    description: String(recipe.description || ''),
+    ingredients: Array.isArray(recipe.ingredients)
+      ? recipe.ingredients.map(i => ({
+          qty: String(i.qty || ''),
+          unit: String(i.unit || ''),
+          name: String(i.name || ''),
+        })).filter(i => i.name)
+      : [],
+    instructions: Array.isArray(recipe.instructions)
+      ? recipe.instructions.map(s => String(s)).filter(Boolean)
+      : [],
+    sourceUrl: '',
+    method: 'vision',
+  };
+
+  if (normalised.ingredients.length === 0 && normalised.instructions.length === 0) {
+    throw new Error('AI could not find a recipe in this image. Please try a clearer photo of a recipe card or cookbook page.');
+  }
+
+  return normalised;
+}
+
 // ---------- Main public API ----------
 
 /**
