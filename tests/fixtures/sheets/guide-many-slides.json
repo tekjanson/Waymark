@@ -1,0 +1,20 @@
+{
+  "id": "sheet-069",
+  "title": "Onboarding Playbook",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Guide", "Slide", "Objective", "Instruction", "Visual", "Duration", "Status"],
+    ["Onboarding Playbook", "Welcome to the Team", "Set a warm first impression", "Greet new hires by name, share the team mission in one sentence, and let them know what the first week looks like.", "Welcome banner photo", "2 min", "Done"],
+    ["Onboarding Playbook", "Company History", "Establish cultural context", "Walk through the founding story, key milestones, and the core values that guide every decision.", "Timeline graphic", "5 min", "Done"],
+    ["Onboarding Playbook", "Org Chart Overview", "Clarify reporting structure", "Show the org chart, point out key leads, and explain how teams collaborate across functions.", "Org chart diagram", "3 min", "Done"],
+    ["Onboarding Playbook", "Your Role and Goals", "Align on expectations", "Review the job description, 30/60/90 day targets, and how success is measured in this role.", "Role summary card", "5 min", "Ready"],
+    ["Onboarding Playbook", "Tools and Access", "Get set up on day one", "Walk through the tool stack—email, Slack, Notion, Github—and confirm all access is provisioned.", "Screenshot montage", "4 min", "In Progress"],
+    ["Onboarding Playbook", "Communication Norms", "Set async-first expectations", "Explain response time SLAs, meeting culture, and how decisions get documented.", "Async workflow diagram", "3 min", "Draft"],
+    ["Onboarding Playbook", "Security and Compliance", "Protect company data", "Cover password policies, 2FA requirements, data handling rules, and how to report incidents.", "Security checklist", "4 min", "Draft"],
+    ["Onboarding Playbook", "Benefits Walkthrough", "Surface what employees are entitled to", "Review health, dental, PTO, learning budget, and how to enroll or make changes.", "Benefits portal screenshot", "6 min", "Draft"],
+    ["Onboarding Playbook", "Meet Your Buddy", "Build an early connection", "Introduce the onboarding buddy program—who their buddy is, weekly check-in cadence, and what to ask.", "Buddy profile card", "2 min", "Draft"],
+    ["Onboarding Playbook", "Week One Schedule", "Eliminate first-week confusion", "Share the detailed calendar for the first week including orientation calls, team intros, and ramp tasks.", "Week one calendar", "3 min", "Draft"],
+    ["Onboarding Playbook", "Resources and FAQs", "Make self-service easy", "Point to the internal wiki, HR handbook, IT help desk, and the new-hire FAQ doc.", "Resource links screenshot", "2 min", "Draft"],
+    ["Onboarding Playbook", "Next Steps", "Give a clear call to action", "Summarise the top three actions the new hire should complete before end of day and who to contact with questions.", "Action checklist", "2 min", "Draft"]
+  ]
+}

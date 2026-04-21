@@ -51,69 +51,36 @@ const REGISTRY = JSON.parse(
     readFileSync(path.join(__dirname, "../template-registry.json"), "utf8")
 );
 
-/* ---------- Keyword → agent routing table ---------- */
-// Derived from waymark-router.agent.md §3 table. Pure lookup — no LLM.
+/* ---------- Agent routing config — loaded from file, env-overridable ----------
+ *
+ * Default:  mcp/orchestrator-agents.json  (Waymark built-in agents)
+ * Override: set ORCHESTRATOR_AGENTS_CONFIG=/path/to/your-agents.json
+ *
+ * Config file schema:
+ *   fallbackAgent       string   — agent used when no rule matches
+ *   knownAgents         string[] — agent names that can be assignee/label routed
+ *   builderLabels       string[] — labels that force routing to fallbackAgent
+ *   codeKeywords        string[] — ≥2 matches → fallbackAgent (code tasks)
+ *   templateKeyToAgent  object   — template key → agent name
+ *   keywordRoutes       array    — [{ keywords: string[], agent: string }, ...]
+ */
 
-const KEYWORD_ROUTES = [
-    { keywords: ["trip", "vacation", "travel", "itinerary", "route", "hotel", "flight", "destination", "road trip"], agent: "waymark-travel" },
-    { keywords: ["budget", "expenses", "spending", "income", "costs", "money", "finance", "invoice"], agent: "waymark-budget" },
-    { keywords: ["recipe", "cooking", "ingredients", "servings", "cuisine"], agent: "waymark-recipe" },
-    { keywords: ["meal plan", "meal prep", "weekly meals", "eating schedule"], agent: "waymark-meal" },
-    { keywords: ["kanban", "board", "sprint", "backlog", "cards", "swim lanes"], agent: "waymark-kanban" },
-    { keywords: ["crm", "leads", "pipeline", "deals", "customers", "sales contacts"], agent: "waymark-crm" },
-    { keywords: ["contacts", "address book", "people", "phone book"], agent: "waymark-contacts" },
-    { keywords: ["inventory", "stock", "assets", "warehouse"], agent: "waymark-inventory" },
-    { keywords: ["tracker", "milestones", "progress bar", "goals progress"], agent: "waymark-tracker" },
-    { keywords: ["schedule", "calendar", "appointments", "shifts", "time slots"], agent: "waymark-schedule" },
-    { keywords: ["timesheet", "time tracking", "hours worked", "billing hours"], agent: "waymark-timesheet" },
-    { keywords: ["activity log", "event log", "journal", "diary"], agent: "waymark-log" },
-    { keywords: ["habits", "habit tracker", "daily routine", "streaks"], agent: "waymark-habit" },
-    { keywords: ["poll", "survey", "vote", "questionnaire", "responses"], agent: "waymark-poll" },
-    { keywords: ["changelog", "release notes", "version history"], agent: "waymark-changelog" },
-    { keywords: ["gantt", "timeline", "project phases", "dependencies"], agent: "waymark-gantt" },
-    { keywords: ["okr", "objectives", "key results", "goals", "targets"], agent: "waymark-okr" },
-    { keywords: ["roster", "team members", "staff list", "employees", "crew"], agent: "waymark-roster" },
-    { keywords: ["knowledge base", "faq", "documentation", "wiki", "articles"], agent: "waymark-knowledge" },
-    { keywords: ["guide", "tutorial", "how-to", "step-by-step"], agent: "waymark-guide" },
-    { keywords: ["flow diagram", "flowchart", "process map", "decision tree"], agent: "waymark-flow" },
-    { keywords: ["automation", "triggers", "workflows"], agent: "waymark-automation" },
-    { keywords: ["blog", "posts", "content calendar"], agent: "waymark-blog" },
-    { keywords: ["social feed", "community", "shares"], agent: "waymark-social" },
-    { keywords: ["marketing", "campaigns", "promotions"], agent: "waymark-marketing" },
-    { keywords: ["arcade", "games", "social game", "score"], agent: "waymark-arcade" },
-    { keywords: ["iot", "sensors", "readings", "telemetry", "device data"], agent: "waymark-iot" },
-    { keywords: ["grading", "gradebook", "scores", "assignments", "students"], agent: "waymark-grading" },
-    { keywords: ["passwords", "credentials", "logins", "vault"], agent: "waymark-passwords" },
-    { keywords: ["photos", "gallery", "images", "album"], agent: "waymark-photos" },
-    { keywords: ["community linker", "resource links", "curated links"], agent: "waymark-linker" },
-    { keywords: ["test cases", "qa cases", "test plan", "acceptance criteria"], agent: "waymark-testcases" },
-    { keywords: ["worker jobs", "tasks queue", "job management"], agent: "waymark-worker" },
-    { keywords: ["checklist", "todo list", "to-do"], agent: "waymark-checklist" },
-];
+const DEFAULT_AGENTS_CONFIG_PATH = path.join(__dirname, "orchestrator-agents.json");
+const AGENTS_CONFIG_PATH = process.env.ORCHESTRATOR_AGENTS_CONFIG || DEFAULT_AGENTS_CONFIG_PATH;
 
-// Code-related keywords that indicate waymark-builder (codebase work, not content)
-const CODE_KEYWORDS = [
-    "fix", "bug", "implement", "refactor", "pr", "branch", "deploy", "test",
-    "css", "javascript", "html", "api", "endpoint", "component", "function",
-    "module", "script", "database", "e2e", "playwright", "server", "frontend",
-    "backend", "node", "express", "docker", "ci", "lint", "typescript",
-];
+let _agentsConfig;
+try {
+    _agentsConfig = JSON.parse(readFileSync(AGENTS_CONFIG_PATH, "utf8"));
+    process.stderr.write(`orchestrator: loaded agents config from ${AGENTS_CONFIG_PATH}\n`);
+} catch (err) {
+    process.stderr.write(`orchestrator: failed to load agents config (${AGENTS_CONFIG_PATH}): ${err.message} — using empty config\n`);
+    _agentsConfig = {};
+}
 
-// templateKey → agent name
-const TEMPLATE_KEY_TO_AGENT = {
-    kanban: "waymark-kanban", budget: "waymark-budget", checklist: "waymark-checklist",
-    recipe: "waymark-recipe", travel: "waymark-travel", crm: "waymark-crm",
-    contacts: "waymark-contacts", inventory: "waymark-inventory", tracker: "waymark-tracker",
-    schedule: "waymark-schedule", timesheet: "waymark-timesheet", log: "waymark-log",
-    habit: "waymark-habit", poll: "waymark-poll", changelog: "waymark-changelog",
-    gantt: "waymark-gantt", okr: "waymark-okr", roster: "waymark-roster",
-    meal: "waymark-meal", knowledge: "waymark-knowledge", guide: "waymark-guide",
-    flow: "waymark-flow", automation: "waymark-automation", blog: "waymark-blog",
-    social: "waymark-social", marketing: "waymark-marketing",
-    arcade: "waymark-arcade", iot: "waymark-iot", grading: "waymark-grading",
-    passwords: "waymark-passwords", photos: "waymark-photos", linker: "waymark-linker",
-    testcases: "waymark-testcases", worker: "waymark-worker",
-};
+const KEYWORD_ROUTES        = _agentsConfig.keywordRoutes       || [];
+const CODE_KEYWORDS         = _agentsConfig.codeKeywords        || [];
+const TEMPLATE_KEY_TO_AGENT = _agentsConfig.templateKeyToAgent  || {};
+const FALLBACK_AGENT        = _agentsConfig.fallbackAgent        || "waymark-builder";
 
 /* ---------- Google Sheets API (for template detection from sheetId) ---------- */
 
@@ -195,23 +162,10 @@ function detectTemplate(headers) {
  * @returns {Promise<{ agent: string, method: string }>}
  */
 // Known agent names — any label or assignee exactly matching one routes directly to it.
-const KNOWN_AGENTS = new Set([
-    "waymark-builder", "waymark-travel", "waymark-budget", "waymark-recipe",
-    "waymark-meal", "waymark-kanban", "waymark-crm", "waymark-contacts",
-    "waymark-inventory", "waymark-tracker", "waymark-schedule", "waymark-timesheet",
-    "waymark-log", "waymark-habit", "waymark-poll", "waymark-changelog",
-    "waymark-gantt", "waymark-okr", "waymark-roster", "waymark-knowledge",
-    "waymark-guide", "waymark-flow", "waymark-automation", "waymark-blog",
-    "waymark-social", "waymark-marketing", "waymark-arcade",
-    "waymark-iot", "waymark-grading", "waymark-passwords", "waymark-photos",
-    "waymark-linker", "waymark-testcases", "waymark-worker", "waymark-checklist",
-]);
+const KNOWN_AGENTS = new Set(_agentsConfig.knownAgents || []);
 
-// Labels that always mean "this is a codebase task → waymark-builder"
-const BUILDER_LABELS = new Set([
-    "feature", "bug", "fix", "refactor", "chore", "infra", "test", "docs",
-    "enhancement", "improvement", "architecture",
-]);
+// Labels that always mean "this is a codebase task → fallback agent"
+const BUILDER_LABELS = new Set(_agentsConfig.builderLabels || []);
 
 async function routeTask(task) {
     const text = `${task.task} ${task.desc || ""}`.toLowerCase();
@@ -228,11 +182,11 @@ async function routeTask(task) {
         return { agent: label, method: "label-agent" };
     }
 
-    // Step 0c: Label marks this as a builder (codebase) task → waymark-builder wins
+    // Step 0c: Label marks this as a builder (codebase) task → fallback agent wins
     //          This fires BEFORE keyword matching so "feature" tasks with travel keywords
     //          (e.g. "update the itinerary template") go to the builder, not waymark-travel.
     if (label && BUILDER_LABELS.has(label)) {
-        return { agent: "waymark-builder", method: "label-feature" };
+        return { agent: FALLBACK_AGENT, method: "label-feature" };
     }
 
     // Step A: If sheetId present, detect template
@@ -265,11 +219,11 @@ async function routeTask(task) {
     // Step C: Is this a code task?
     const codeScore = CODE_KEYWORDS.filter(kw => text.includes(kw)).length;
     if (codeScore >= 2) {
-        return { agent: "waymark-builder", method: "code-task" };
+        return { agent: FALLBACK_AGENT, method: "code-task" };
     }
 
     // Step D: Fallback
-    return { agent: "waymark-builder", method: "fallback" };
+    return { agent: FALLBACK_AGENT, method: "fallback" };
 }
 
 /**
@@ -289,7 +243,7 @@ function buildPrompt(task, routeResult, isRestart = false) {
         const noteText = task.notes.map(n => `[${n.author}] ${n.text}`).join("; ");
         parts.push(`Notes: ${noteText}`);
     }
-    if (!task.sheetId && routeResult.agent !== "waymark-builder") {
+    if (!task.sheetId && routeResult.agent !== FALLBACK_AGENT) {
         const key = Object.entries(TEMPLATE_KEY_TO_AGENT).find(([, v]) => v === routeResult.agent)?.[0];
         if (key) {
             parts.push(`Note: No spreadsheet ID was found in the task. Create a new ${key} sheet, populate it with the requested content, and mark the workboard row QA.`);
@@ -549,7 +503,7 @@ const server = new Server(
 const TOOLS = [
     {
         name: "orchestrator_boot",
-        description: "Initialize the orchestrator session. Creates the log directory and returns a session ID and log path. Call this ONCE at the start. Pass rulesSheetId to enable phone notifications.",
+        description: "Initialize the orchestrator session. Creates the log directory and returns a session ID and log path. Call this ONCE at the start. Pass rulesSheetId to enable phone notifications. Agent routing is loaded from ORCHESTRATOR_AGENTS_CONFIG (env) or mcp/orchestrator-agents.json by default — copy that file and set the env var to use your own agents.",
         inputSchema: {
             type: "object",
             properties: {
@@ -606,12 +560,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         _sessions.set(sessionId, { lastAction: null, lastAgentName: null });
         _cycleState.set(sessionId, { lastQaCount: null, lastDoneCount: null, cycleTimestamps: [] });
 
+        appendFileSync(logPath, `[${iso()}] AGENTS CONFIG: ${AGENTS_CONFIG_PATH} (${KNOWN_AGENTS.size} agents, fallback=${FALLBACK_AGENT})\n`);
         return {
             content: [{ type: "text", text: JSON.stringify({
                 sessionId,
                 logPath,
                 rulesLoaded: _notifRules.length,
                 p2pServerUrl: P2P_SERVER_URL,
+                agentsConfigPath: AGENTS_CONFIG_PATH,
+                knownAgentsCount: KNOWN_AGENTS.size,
+                fallbackAgent: FALLBACK_AGENT,
             }) }],
         };
     }
