@@ -931,23 +931,27 @@
     },
     {
       "key": "notification",
-      "name": "Push Notification Rules",
-      "icon": "\ud83d\udcf2",
+      "name": "Notifications",
+      "icon": "\ud83d\udd14",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Productivity",
       "detectSignals": [
-        "event",
-        "condition",
-        "enabled"
+        "title",
+        "status",
+        "message"
       ],
       "columnRoles": [
-        "event",
-        "condition",
         "title",
-        "body",
+        "message",
+        "type",
+        "status",
+        "icon",
         "priority",
-        "enabled"
+        "created",
+        "expires",
+        "source",
+        "sheetRef"
       ],
       "hasDirectoryView": true
     },

@@ -206,6 +206,13 @@ async function boot() {
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
+  notifications.init(document.querySelector('.top-bar-right'));
+
+  // Evaluate notifications when a sheet is rendered
+  document.addEventListener('waymark:sheet-rendered', (e) => {
+    const { sheetId, title, templateKey, rows, cols, headers } = e.detail;
+    notifications.evaluateSheet(sheetId, title, templateKey, rows, cols, headers);
+  });
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());
@@ -417,6 +424,11 @@ async function showApp(user) {
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
+
+  // Ensure notification sheet exists in Waymark directory (fire-and-forget)
+  notifications.ensureSheet().catch(err => {
+    console.warn('[notifications] Sheet setup failed:', err);
+  });
 
   // Start MQTT bridge if enabled in settings OR via ?mqtt=1 URL param
   const mqttForced = new URLSearchParams(location.search).has('mqtt');

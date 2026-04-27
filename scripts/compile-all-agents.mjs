@@ -53,7 +53,7 @@ const DEFAULT_HEADERS = {
   automation:   ["Workflow", "Step", "Action", "Target", "Value", "Status"],
   guide:        ["Guide", "Slide", "Objective", "Instruction", "Visual", "Duration", "Status"],
   knowledge:    ["Title", "Category", "Content", "Tags", "Author", "Updated", "Status", "Source"],
-  notification: ["Title", "Body", "Type", "URL", "Published"],
+  notification: ["Title", "Message", "Type", "Status", "Icon", "Priority", "Created", "Expires", "Source", "Sheet"],
   iot:          ["Sensor", "Timestamp", "Reading", "Unit", "Min", "Max", "Alert"],
   okr:          ["Objective", "Key Result", "Progress", "Target", "Owner", "Quarter"],
   gantt:        ["Task", "Start Date", "End Date", "Progress", "Dependencies", "Assignee"],
