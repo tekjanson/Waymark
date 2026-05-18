@@ -34,9 +34,13 @@ import { BarrelWriter } from './BarrelWriter.mjs';
 import { CabalIndex } from './CabalIndex.mjs';
 import { IntegrationSmokeWriter } from './IntegrationSmokeWriter.mjs';
 import { EvalLoop } from '../eval/EvalLoop.mjs';
+import { MqttReporter } from '../adapters/MqttReporter.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
+
+/** Singleton MqttReporter shared across all DecomposeOrchestrator instances. */
+const _mqttReporter = new MqttReporter();
 
 const STAGE_DIR = '.waymark/stage';
 
@@ -180,6 +184,19 @@ export class DecomposeOrchestrator {
         const manifestPath = path.join(STAGE_DIR, `${job.jobId}.stage.json`);
         fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
 
+        // ── Broadcast stage-ready event to Neon-Map UI ───────────────────
+        // One event per unit so the UI can render individual unit cards.
+        const targetFile = path.basename(job.targetPath);
+        for (const record of unitRecords) {
+            await _mqttReporter.emitStageReady({
+                jobId:      `${job.jobId}_${record.unitName}`,
+                targetFile,
+                testPath:   record.testPath,
+                dagOrder:   record.dagOrder,
+                approved:   false,
+            }).catch(() => {}); // non-fatal
+        }
+
         console.log(`\n${'═'.repeat(60)}`);
         console.log(`  STAGE COMPLETE`);
         console.log(`  ${units.length} unit(s) staged for review.`);
@@ -239,7 +256,10 @@ export class DecomposeOrchestrator {
             console.log(`  Compiling: ${record.unitName} (${record.dagOrder + 1}/${ordered.length})`);
             console.log(`${'─'.repeat(60)}`);
 
+            const execJobId = `${manifest.jobId}_${record.unitName}`;
             try {
+                await _mqttReporter.emitExecutionUpdate(execJobId, 'COMPILING', { attempt: 1 }).catch(() => {});
+
                 const loop = new EvalLoop({
                     compiler: this.compiler,
                     state: this.state,
@@ -247,7 +267,7 @@ export class DecomposeOrchestrator {
                 });
 
                 const loopResult = await loop.run({
-                    jobId: `${manifest.jobId}_${record.unitName}`,
+                    jobId: execJobId,
                     config: {
                         target: path.relative(process.cwd(), record.targetPath),
                         test:   path.relative(process.cwd(), record.testPath),
@@ -262,11 +282,23 @@ export class DecomposeOrchestrator {
                 this.#updateManifest(manifestPath, manifest, record.unitName,
                     status, loopResult.finalScore, []);
 
+                if (loopResult.passed) {
+                    await _mqttReporter.emitExecutionUpdate(execJobId, 'SUCCESS', { score: loopResult.finalScore }).catch(() => {});
+                } else {
+                    const errSnippet = (loopResult.testErrors ?? loopResult.lspErrors ?? []).slice(0, 3).join(' | ');
+                    await _mqttReporter.emitExecutionUpdate(execJobId, 'RETRYING', {
+                        error: errSnippet || 'EvalLoop exhausted retries without passing.',
+                    }).catch(() => {});
+                }
+
                 console.log(`  ${loopResult.passed ? '✅' : '❌'} ${record.unitName} — ${status} (score: ${loopResult.finalScore}/10)`);
             } catch (err) {
                 statuses.set(record.unitName, 'failed');
                 this.#updateManifest(manifestPath, manifest, record.unitName,
                     'failed', null, [err.message]);
+                await _mqttReporter.emitExecutionUpdate(execJobId, 'RETRYING', {
+                    error: err.message,
+                }).catch(() => {});
                 console.error(`  ❌ ${record.unitName} — threw: ${err.message}`);
             }
         }
