@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waymark — Code City</title>
+
+  <!-- Three.js is self-hosted in /js/vendor/ so it satisfies script-src 'self' -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/js/vendor/three.module.min.js"
+    }
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --copper:    #b87333;
+      --brass:     #c8a832;
+      --neon-green:#00ff88;
+      --neon-amber:#ff9900;
+      --danger-red:#ff2244;
+      --panel-bg:  rgba(8, 10, 18, 0.88);
+      --border:    rgba(184, 115, 51, 0.5);
+      --text:      #d4c9a8;
+      --text-muted:#7a6f5a;
+      --radius:    6px;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #040810;
+      font-family: 'Courier New', Courier, monospace;
+      color: var(--text);
+    }
+
+    #city-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      cursor: grab;
+    }
+    #city-canvas:active { cursor: grabbing; }
+
+    /* ── Top status bar ─────────────────────────────────────────── */
+    #status-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 36px;
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 18px;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+    #status-bar .logo {
+      font-size: 0.8rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--brass);
+      flex-shrink: 0;
+    }
+    #status-bar .logo span { color: var(--neon-green); }
+    #mqtt-status {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #mqtt-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ff2244;
+      transition: background 0.4s;
+    }
+    #mqtt-dot.connected { background: var(--neon-green); box-shadow: 0 0 6px var(--neon-green); }
+    #mqtt-dot.connecting { background: var(--neon-amber); animation: pulse 1s infinite; }
+
+    #active-event {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #active-event b { color: var(--neon-amber); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Right HUD panel ────────────────────────────────────────── */
+    #hud-panel {
+      position: fixed;
+      top: 36px; right: 0; bottom: 0;
+      width: 300px;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+      z-index: 10;
+      backdrop-filter: blur(6px);
+      transition: transform 0.3s ease;
+      transform: translateX(100%);
+    }
+    #hud-panel.open { transform: translateX(0); }
+
+    #hud-panel h2 {
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--brass);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+      font-size: 0.75rem;
+      gap: 8px;
+    }
+    .hud-label { color: var(--text-muted); flex-shrink: 0; }
+    .hud-value {
+      color: var(--text);
+      font-weight: bold;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hud-value.green  { color: var(--neon-green); }
+    .hud-value.amber  { color: var(--neon-amber); }
+    .hud-value.red    { color: var(--danger-red); }
+
+    #hud-log {
+      margin-top: 12px;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    #hud-edge-cases {
+      margin-top: 10px;
+      font-size: 0.7rem;
+    }
+    #hud-edge-cases .edge-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-bottom: 4px;
+      color: var(--text-muted);
+    }
+    #hud-edge-cases .edge-item::before {
+      content: '▸';
+      color: var(--brass);
+      flex-shrink: 0;
+    }
+
+    /* ── Engage Lever button ────────────────────────────────────── */
+    #engage-btn {
+      display: none;
+      margin-top: 16px;
+      width: 100%;
+      padding: 10px 0;
+      background: linear-gradient(135deg, #1a0a00, #3d1f00);
+      border: 2px solid var(--copper);
+      border-radius: var(--radius);
+      color: var(--neon-amber);
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    #engage-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,153,0,0.15) 50%, transparent 100%);
+      animation: shine 2s linear infinite;
+    }
+    @keyframes shine {
+      from { transform: translateX(-100%); }
+      to   { transform: translateX(100%); }
+    }
+    #engage-btn:hover {
+      border-color: var(--neon-amber);
+      box-shadow: 0 0 12px rgba(255,153,0,0.4);
+      color: #fff;
+    }
+    #engage-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #engage-btn.open { display: block; }
+
+    /* ── Safety gauge ────────────────────────────────────────────── */
+    #hud-gauge {
+      margin: 10px 0;
+      height: 6px;
+      background: #1a1a2a;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    #hud-gauge-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s, background 0.5s;
+    }
+
+    /* ── Close button ───────────────────────────────────────────── */
+    #hud-close {
+      position: absolute;
+      top: 8px; right: 8px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 50%;
+      width: 22px; height: 22px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      line-height: 22px;
+      text-align: center;
+    }
+    #hud-close:hover { color: var(--text); border-color: var(--text-muted); }
+
+    /* ── Legend ─────────────────────────────────────────────────── */
+    #legend {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 0.68rem;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+    #legend h3 {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--brass);
+      margin-bottom: 7px;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .legend-dot.green  { background: var(--neon-green); box-shadow: 0 0 6px var(--neon-green); }
+    .legend-dot.amber  { background: var(--neon-amber); box-shadow: 0 0 4px var(--neon-amber); }
+    .legend-dot.dark   { background: #333; border: 1px solid #555; }
+    .legend-dot.orange { background: #ff6600; box-shadow: 0 0 6px #ff6600; }
+    .legend-dot.red    { background: var(--danger-red); box-shadow: 0 0 6px var(--danger-red); }
+
+    /* ── Loading overlay ────────────────────────────────────────── */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: #040810;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      transition: opacity 0.8s;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    #loader .loader-title {
+      font-size: 1.2rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--brass);
+      margin-bottom: 8px;
+    }
+    #loader .loader-sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+    }
+    #loader-bar {
+      margin-top: 20px;
+      width: 200px;
+      height: 3px;
+      background: #1a1a2a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    #loader-fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--brass), var(--neon-green));
+      animation: load-anim 1.5s ease forwards;
+    }
+    @keyframes load-anim { to { width: 100%; } }
+  </style>
+</head>
+
+<body>
+  <!-- Loading splash -->
+  <div id="loader">
+    <div class="loader-title">Waymark</div>
+    <div class="loader-sub">Initialising Code City…</div>
+    <div id="loader-bar"><div id="loader-fill"></div></div>
+  </div>
+
+  <!-- 3D canvas -->
+  <canvas id="city-canvas"></canvas>
+
+  <!-- Top status bar -->
+  <div id="status-bar">
+    <div class="logo">WAYMARK <span>CODE CITY</span></div>
+    <div id="mqtt-status">
+      <div id="mqtt-dot" class="connecting"></div>
+      <span id="mqtt-label">Connecting…</span>
+    </div>
+    <div id="active-event">Awaiting compiler events…</div>
+  </div>
+
+  <!-- Right side detail panel -->
+  <div id="hud-panel">
+    <button id="hud-close" title="Close panel">✕</button>
+    <h2 id="hud-title">Module Details</h2>
+
+    <div class="hud-row">
+      <span class="hud-label">Path</span>
+      <span class="hud-value" id="hud-path">—</span>
+    </div>
+    <div class="hud-row">
+      <span class="hud-label">Lines of Code</span>
+      <span class="hud-value" id="hud-loc">—</span>
+    </div>
+    <div class="hud-row">
+      <span class="hud-label">Safety Score</span>
+      <span class="hud-value" id="hud-safety">—</span>
+    </div>
+    <div id="hud-gauge"><div id="hud-gauge-fill"></div></div>
+
+    <div class="hud-row">
+      <span class="hud-label">Status</span>
+      <span class="hud-value" id="hud-status">IDLE</span>
+    </div>
+    <div class="hud-row">
+      <span class="hud-label">Tests</span>
+      <span class="hud-value" id="hud-tests">—</span>
+    </div>
+
+    <div id="hud-edge-cases"></div>
+
+    <div id="hud-log"></div>
+
+    <button id="engage-btn" title="Release compilation gate">
+      ⚙ Engage Compilation Lever
+    </button>
+  </div>
+
+  <!-- Bottom-left legend -->
+  <div id="legend">
+    <h3>Legend</h3>
+    <div class="legend-row"><div class="legend-dot green"></div><span>High coverage (&gt;80)</span></div>
+    <div class="legend-row"><div class="legend-dot amber"></div><span>Moderate (40–80)</span></div>
+    <div class="legend-row"><div class="legend-dot dark"></div><span>Legacy / untracked</span></div>
+    <div class="legend-row"><div class="legend-dot orange"></div><span>Compiling…</span></div>
+    <div class="legend-row"><div class="legend-dot red"></div><span>Retrying</span></div>
+  </div>
+
+  <script type="module" src="/city/city.mjs"></script>
+</body>
+</html>

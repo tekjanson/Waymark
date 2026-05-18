@@ -437,6 +437,15 @@ if (config.WAYMARK_LOCAL) {
 // Must come before express.static so the root '/' is handled here.
 router.get('/', serveIndex);
 
+// Code City 3D visualisation — serve the standalone HTML directly.
+// express.static has index:false so we need an explicit route for the dir.
+router.get('/city', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'city', 'index.html'));
+});
+router.get('/city/', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'city', 'index.html'));
+});
+
 /* ---------- Signaling sheet discovery — REMOVED ----------
  * The server must never touch user Drive data.
  * Android discovers the signaling sheet ID by reading .waymark-data.json
