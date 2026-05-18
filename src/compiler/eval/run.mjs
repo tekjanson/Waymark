@@ -52,6 +52,9 @@ if (!config.target || !config.test) {
 const promptText = rawContent.replace(/^---[\s\S]+?---/, '').trim();
 const jobId      = path.basename(resolvedPromptPath, '.prompt.md');
 
+// Attach the prompt file path so the Orchestrator can stamp it into the artifact.
+config._promptFile = path.relative(process.cwd(), resolvedPromptPath);
+
 const compiler = new GeminiCliAdapter();
 const state    = new StateAdapter();
 const loop     = new EvalLoop({ compiler, state, maxIterations });
