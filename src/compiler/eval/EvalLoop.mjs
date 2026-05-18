@@ -1,17 +1,24 @@
 /**
  * @module EvalLoop
- * The outer LLM-judge improvement loop. Sits above the Orchestrator.
+ * The outer compile-retry loop. Sits above the Orchestrator.
+ *
+ * Gate hierarchy (deterministic first, heuristic second):
+ *   1. Vitest (deterministic) — primary gate. Code must pass the test suite.
+ *   2. LSP (deterministic)   — secondary gate. Code must be type-clean.
+ *   3. Judge (heuristic)     — informational only. NEVER triggers a recompile.
  *
  * Algorithm:
  *   1. Run Orchestrator (which itself retries up to 3× on test/LSP failures).
- *   2. If the Orchestrator succeeded (tests + LSP clean), invoke the Judge.
- *   3. If Judge score >= threshold → done, ship it.
- *   4. If Judge score < threshold → extract improvement directives, append them
- *      as `extraSystemContext` into the next Orchestrator job, repeat.
- *   5. After MAX_EVAL_ITERATIONS the best-scoring result wins regardless.
+ *   2a. If Orchestrator SUCCEEDED (tests + LSP clean):
+ *       → Run Judge once as a quality report. Log score. EXIT — we are done.
+ *         The Judge score cannot reject code that already passed deterministic gates.
+ *   2b. If Orchestrator FAILED (tests still red after internal retries):
+ *       → Extract test/LSP errors as `extraSystemContext` for next outer attempt.
+ *       → Repeat up to MAX_EVAL_ITERATIONS.
+ *   3. After MAX_EVAL_ITERATIONS the best result (by test-pass count) is reported.
  *
- * This creates the "keep going and going" loop: even after a technically
- * passing result, we keep driving quality upward until the judge is satisfied.
+ * Rationale: letting the Judge loop on working code causes token burn, style
+ * churn, and eventual regression. Functional correctness == test suite green.
  */
 
 import fs from 'node:fs';
@@ -55,7 +62,6 @@ export class EvalLoop {
      */
     async run(baseJob) {
         let extraSystemContext = '';
-        let bestScore = 0;
         let bestSource = '';
         let iteration = 0;
 
@@ -69,7 +75,7 @@ export class EvalLoop {
             console.log(`  Eval Iteration ${iteration}/${this.maxIterations}`);
             console.log(`${'─'.repeat(60)}`);
 
-            // ── Phase 1: Compile ───────────────────────────────────────────
+            // ── Phase 1: Compile (deterministic gate) ─────────────────────
             const orchestrator = new Orchestrator(this.compiler, this.state);
             const job = { ...baseJob, extraSystemContext };
             const result = await orchestrator.run(job);
@@ -77,43 +83,41 @@ export class EvalLoop {
             const compiledSource = result.source || this.#readSourceFromDisk(baseJob.config.target);
             if (compiledSource) bestSource = compiledSource;
 
-            // ── Phase 2: Judge ─────────────────────────────────────────────
-            const astContract = await this.#readContractSummary(baseJob.config.test);
-
-            console.log(`\n[EvalLoop] Running judge evaluation…`);
-            const verdict = await this.judge.score({
-                promptText:     baseJob.promptText,
-                astContract,
-                compiledSource,
-                testErrors:     result.testErrors,
-                lspErrors:      result.lspErrors,
-            });
-
-            this.#logVerdict(iteration, verdict);
-
-            if (verdict.overall > bestScore) {
-                bestScore = verdict.overall;
-                bestSource = compiledSource;
-            }
-
-            // ── Phase 3: Decision ──────────────────────────────────────────
-            if (verdict.passed) {
+            // ── Phase 2: If tests passed → Judge runs ONCE as quality report ──
+            if (result.succeeded) {
+                const astContract = await this.#readContractSummary(baseJob.config.test);
+                console.log(`\n[EvalLoop] Tests passed — running judge (informational only)…`);
+                const verdict = await this.judge.score({
+                    promptText:     baseJob.promptText,
+                    astContract,
+                    compiledSource,
+                    testErrors:     [],   // clean — that's why we're here
+                    lspErrors:      result.lspErrors,
+                });
+                this.#logVerdict(iteration, verdict);
+                // NOTE: verdict.passed is logged but NEVER controls whether we loop.
+                // The deterministic gate already cleared — we are done.
                 console.log(`\n✅ EVAL LOOP PASSED on iteration ${iteration} (score: ${verdict.overall}/10)\n`);
-                return { passed: true, finalScore: verdict.overall, iterations: iteration, source: bestSource };
+                return {
+                    passed: true,
+                    finalScore: verdict.overall,
+                    iterations: iteration,
+                    source: bestSource,
+                };
             }
 
+            // ── Phase 3: Tests failed — build improvement context for next attempt ──
             if (iteration < this.maxIterations) {
-                // Feed judge's improvement directives into the next cycle.
-                extraSystemContext = this.#buildImprovementContext(verdict, iteration);
-                console.log(`\n[EvalLoop] Score ${verdict.overall}/10 — below threshold. Looping with improvements…`);
+                extraSystemContext = this.#buildFailureContext(result, iteration);
+                console.log(`\n[EvalLoop] Tests failed — injecting error context for iteration ${iteration + 1}…`);
             }
         }
 
-        // Exhausted all iterations — report the best we got.
-        console.log(`\n⚠️  EVAL LOOP EXHAUSTED after ${iteration - 1} iterations. Best score: ${bestScore}/10\n`);
+        // Exhausted all iterations without a green test run.
+        console.log(`\n❌ EVAL LOOP FAILED after ${iteration - 1} iterations — tests never passed.\n`);
         return {
-            passed: bestScore >= 7.5,
-            finalScore: bestScore,
+            passed: false,
+            finalScore: 0,
             iterations: iteration - 1,
             source: bestSource,
         };
@@ -122,41 +126,34 @@ export class EvalLoop {
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * Format judge improvements into a string that the Orchestrator can inject
-     * as additional system context on the next compilation request.
+     * Build improvement context from deterministic test/LSP failures only.
+     * This is what drives the outer retry — not the Judge's style opinions.
      *
-     * @param {import('./Judge.mjs').JudgeVerdict} verdict
+     * @param {import('../core/Orchestrator.mjs').OrchestratorResult} result
      * @param {number} iteration
      * @returns {string}
      */
-    #buildImprovementContext(verdict, iteration) {
-        const parts = [
-            `[Eval iteration ${iteration} — score ${verdict.overall}/10]`,
-        ];
+    #buildFailureContext(result, iteration) {
+        const parts = [`[Outer retry ${iteration} — tests failed]`];
 
-        if (verdict.issues.length > 0) {
-            parts.push('IDENTIFIED PROBLEMS:');
-            verdict.issues.forEach((issue, i) => parts.push(`  ${i + 1}. ${issue}`));
+        if (result.testErrors.length > 0) {
+            parts.push('TEST FAILURES (must be fixed — these are deterministic):');
+            result.testErrors.slice(0, 20).forEach((e, i) => parts.push(`  ${i + 1}. ${e}`));
         }
 
-        if (verdict.improvements.length > 0) {
-            parts.push('REQUIRED IMPROVEMENTS FOR THIS ATTEMPT:');
-            verdict.improvements.forEach((imp, i) => parts.push(`  ${i + 1}. ${imp}`));
-        }
-
-        // Low-scoring dimensions get explicit pressure.
-        const s = verdict.scores;
-        if ((s.robustness ?? 10) < 7) {
-            parts.push('PRIORITY: Add thorough error handling and edge-case guards.');
-        }
-        if ((s.security ?? 10) < 7) {
-            parts.push('PRIORITY: Eliminate any eval, dynamic require, or shell interpolation.');
-        }
-        if ((s.correctness ?? 10) < 7) {
-            parts.push('PRIORITY: Ensure every exported function returns the correct value type for all inputs.');
+        if (result.lspErrors.length > 0) {
+            parts.push('LSP DIAGNOSTICS (type errors):');
+            result.lspErrors.slice(0, 10).forEach((e, i) => parts.push(`  ${i + 1}. ${e}`));
         }
 
         return parts.join('\n');
+    }
+
+    /**
+     * @deprecated Use #buildFailureContext — Judge improvements no longer drive retries.
+     */
+    #buildImprovementContext(verdict, iteration) {
+        return this.#buildFailureContext({ testErrors: verdict.issues, lspErrors: [] }, iteration);
     }
 
     /**
