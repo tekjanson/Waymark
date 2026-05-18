@@ -23,12 +23,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { MockWriter } from './MockWriter.mjs';
 
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
 const execFileAsync = promisify(execFile);
 
 const UNSAFE_RE = /[^a-zA-Z0-9_-]/g;
+const mockWriter = new MockWriter();
 
 export class TestSplitter {
     /**
@@ -102,11 +104,19 @@ export class TestSplitter {
 
             if (blocks.length > 0) {
                 // Rebuild a clean test file from extracted blocks.
-                const content = this.#assembleTestFile(unit.name, blocks, header);
+                // Inject contract-derived mocks for any sibling deps.
+                const depUnits = (atomicPrompt?.depNames ?? []).map(d =>
+                    units.find(u => u.name === d)
+                ).filter(Boolean);
+                const content = this.#assembleTestFile(unit.name, blocks, depUnits);
                 fs.writeFileSync(testPath, content, 'utf-8');
             } else if (atomicPrompt) {
                 // No blocks found — generate from the unit spec.
-                await this.#generateTest(atomicPrompt, testPath);
+                // Pass dep units so Gemini is told to use vi.mock() for them.
+                const depUnits = (atomicPrompt.depNames ?? []).map(d =>
+                    units.find(u => u.name === d)
+                ).filter(Boolean);
+                await this.#generateTest(atomicPrompt, testPath, depUnits);
             } else {
                 console.warn(`[TestSplitter] No tests and no atomic prompt for "${unit.name}" — skipping.`);
                 continue;
@@ -121,13 +131,10 @@ export class TestSplitter {
     // ── Private ──────────────────────────────────────────────────────────────
 
     /**
-     * Extract the import/use-strict preamble from the test file so each split
-     * file can start with a correct import pointing at the right unit.
-     * We discard the original imports and replace them per unit.
+     * Extract the import/use-strict preamble from the test file.
+     * We discard original imports and generate fresh ones per unit.
      */
     #extractImportHeader(_sf, _source) {
-        // We intentionally throw away the old import lines and generate a fresh
-        // single-import per unit in #assembleTestFile. Return empty string here.
         return '';
     }
 
@@ -196,42 +203,75 @@ export class TestSplitter {
 
     /**
      * Assemble a standalone test file from extracted describe/it/test blocks.
-     * The import points at `./<unitName>.mjs` relative to the output directory.
+     *
+     * Dep units are mocked via contract-derived vi.mock() stubs (MockWriter).
+     * This keeps unit tests fast and isolated — the integration smoke test
+     * (IntegrationSmokeWriter) covers the real-import boundary afterwards.
+     *
+     * @param {string}   unitName  - The unit under test.
+     * @param {string[]} blocks    - Extracted test block source strings.
+     * @param {import('./UnitExtractor.mjs').UnitDescriptor[]} depUnits - Deps to mock.
      */
-    #assembleTestFile(unitName, blocks, _header) {
-        const importLine = `import { ${unitName} } from './${unitName}.mjs';\n`;
-        const vitestImport = `import { describe, it, expect, beforeEach, afterEach } from 'vitest';\n`;
+    #assembleTestFile(unitName, blocks, depUnits = []) {
+        const vitestImport = mockWriter.vitestImportLine();
+        const subjectImport = `import { ${unitName} } from './${unitName}.mjs';`;
+        const mockBlock = mockWriter.generateMockBlock(depUnits);
 
-        return [
+        const sections = [
             vitestImport,
-            importLine,
-            '',
-            ...blocks,
-            '',
-        ].join('\n');
+            subjectImport,
+        ];
+
+        if (mockBlock) {
+            sections.push('', '// Contract-derived mocks for sibling dependencies.');
+            sections.push('// These stubs match the AstParser contract, not the implementation.');
+            sections.push('// The integration smoke test validates real-import boundaries.');
+            sections.push(mockBlock);
+        }
+
+        sections.push('', ...blocks, '');
+        return sections.join('\n');
     }
 
     /**
      * Ask Gemini to generate a focused test file for a unit from its spec.
-     * Writes to `overridePath` when provided, otherwise to `atomicPrompt.testPath`.
+     * Contract-derived mocks are injected for any dep units — Gemini is
+     * instructed not to re-implement or re-import them as real modules.
+     *
+     * @param {import('./PromptSplitter.mjs').AtomicPrompt} atomicPrompt
+     * @param {string|null} overridePath
+     * @param {import('./UnitExtractor.mjs').UnitDescriptor[]} depUnits
      */
-    async #generateTest(atomicPrompt, overridePath = null) {
+    async #generateTest(atomicPrompt, overridePath = null, depUnits = []) {
         const testPath = overridePath ?? atomicPrompt.testPath;
 
+        const mockBlock = mockWriter.generateMockBlock(depUnits);
+        const mockInstructions = depUnits.length > 0
+            ? [
+                `  - Mock ALL sibling dependencies using vi.mock(). Do NOT import the real files.`,
+                `  - Paste these exact vi.mock() blocks after your imports (already contract-derived):`,
+                `    \`\`\`javascript`,
+                mockBlock.split('\n').map(l => `    ${l}`).join('\n'),
+                `    \`\`\``,
+                `  - NEVER use the real "${depUnits.map(d => d.name).join('", "')}" implementations in unit tests.`,
+                `  - The integration smoke test (run separately) validates real-import boundaries.`,
+            ].join('\n')
+            : '  - No sibling deps — no mocks needed.';
+
         const prompt = [
-            'You are a test engineer specialising in unit tests.',
+            'You are a test engineer specialising in vitest unit tests.',
             '',
             `Write a complete vitest test file for the function/export "${atomicPrompt.unitName}".`,
             '',
             `Implementation spec:`,
             atomicPrompt.promptBody,
             '',
-            `Requirements:`,
-            `  - Use vitest (import { describe, it, expect } from 'vitest')`,
+            `STRICT REQUIREMENTS:`,
+            `  - Use vitest: import { describe, it, expect, vi, beforeEach } from 'vitest'`,
             `  - Import ONLY "${atomicPrompt.unitName}" from './${atomicPrompt.unitName}.mjs'`,
-            `  - Cover: happy path, edge cases, invalid input (expect TypeError)`,
+            `  - Cover: happy path, edge cases, invalid input (expect TypeError for null/undefined)`,
             `  - At least 5 test cases`,
-            `  - Do NOT import from any other file`,
+            mockInstructions,
             '',
             'OUTPUT CONSTRAINT: Respond with ONLY the complete test file inside a',
             'single ```javascript code fence. No preamble. No explanation.',

@@ -32,7 +32,11 @@ import { PromptSplitter } from './PromptSplitter.mjs';
 import { TestSplitter } from './TestSplitter.mjs';
 import { BarrelWriter } from './BarrelWriter.mjs';
 import { CabalIndex } from './CabalIndex.mjs';
+import { IntegrationSmokeWriter } from './IntegrationSmokeWriter.mjs';
 import { EvalLoop } from '../eval/EvalLoop.mjs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 
 const STAGE_DIR = '.waymark/stage';
 
@@ -279,12 +283,46 @@ export class DecomposeOrchestrator {
         const barrel = new BarrelWriter({ outDir: manifest.outDir });
         barrel.write(allUnits, succeeded);
 
+        // ── Integration smoke test (real imports, no mocks) ───────────────
+        // Only runs when at least 2 units succeeded — single-unit stages have
+        // no boundaries to validate.
+        if (succeeded.size >= 2) {
+            console.log(`\n[DecomposeOrchestrator] Generating integration smoke test…`);
+            const smokeWriter = new IntegrationSmokeWriter({ outDir: manifest.outDir });
+            const smokePath = await smokeWriter.write(allUnits, succeeded);
+
+            // Run the smoke test immediately.
+            console.log(`[DecomposeOrchestrator] Running integration smoke…`);
+            try {
+                const { stdout: smokeOut } = await execFileAsync(
+                    'npx',
+                    ['vitest', 'run', '--reporter=verbose', smokePath],
+                    { env: { ...process.env, CI: 'true' }, timeout: 120_000, maxBuffer: 10_485_760 }
+                );
+                console.log(`[IntegrationSmoke] ✅ Passed\n${smokeOut.slice(-500)}`);
+                manifest.smokeStatus = 'passed';
+            } catch (err) {
+                const out = (err.stdout ?? '') + (err.stderr ?? '');
+                console.error(`[IntegrationSmoke] ❌ Failed — real-import boundaries have issues.`);
+                console.error(out.slice(-1000));
+                manifest.smokeStatus = 'failed';
+                manifest.smokeErrors = out.slice(-2000);
+            }
+
+            // Persist smoke result to manifest.
+            try { fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8'); } catch { /* nonfatal */ }
+        }
+
         // ── Final summary ────────────────────────────────────────────────
         console.log(`\n${'═'.repeat(60)}`);
         console.log(`  EXECUTE COMPLETE — ${manifest.jobId}`);
         for (const [name, status] of statuses) {
             const icon = { succeeded: '✅', failed: '❌', blocked: '⏭' }[status] ?? '?';
             console.log(`  ${icon} ${name} — ${status}`);
+        }
+        if (manifest.smokeStatus) {
+            const smokeIcon = manifest.smokeStatus === 'passed' ? '✅' : '❌';
+            console.log(`  ${smokeIcon} integration smoke — ${manifest.smokeStatus}`);
         }
         console.log(`  Barrel: ${manifest.barrelPath}`);
         console.log(`${'═'.repeat(60)}\n`);
