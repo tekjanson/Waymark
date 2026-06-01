@@ -354,19 +354,29 @@ function createGitHubSource(opts) {
     res.setHeader('X-GitHub-Ref', requestRef);
     res.setHeader('X-Served-From', 'github-source');
 
-    // Vary: Cookie — content differs per user's ref cookie.
-    // Ensures any caching proxy keys on cookie values, not just URL.
-    res.setHeader('Vary', 'Cookie');
+    // Cache headers depend on whether the user is on the default ref.
+    //
+    // DEFAULT REF (main): every user gets identical files for the same URL.
+    // Omitting Vary: Cookie lets Cloudflare cache assets per-URL.  Combined
+    // with ETag-based revalidation, Cloudflare answers 304s itself without
+    // forwarding to Node — eliminating the CPU spike on spam-refresh.
+    //
+    // PREVIEW REF (non-default branch): the same URL can return different
+    // content per user (their branch checkout).  Vary: Cookie is required for
+    // correctness; private cache prevents CDN caching of per-user content.
+    const isPreviewRef = requestRef !== defaultRef;
 
-    if (filePath.endsWith('.html')) {
-      // HTML contains injected runtime config (ref, API key, etc.) — never cache.
+    if (isPreviewRef) {
+      res.setHeader('Vary', 'Cookie');
+      res.setHeader('Cache-Control', 'private, no-cache');
+    } else if (filePath.endsWith('.html')) {
+      // HTML: injected runtime config differs per env — never cache.
       res.setHeader('Cache-Control', 'no-store');
     } else if (filePath.endsWith('.css') || filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
-      // JS/CSS: allow ETag-based conditional GET (If-None-Match → 304 Not Modified).
-      // res.sendFile() sets ETag from file mtime+size, which changes each time
-      // extractPublicDir re-extracts the checkout (i.e., on every ref switch or
-      // new push).  This reduces page-refresh CPU from "read+stream 100 files"
-      // to "answer 100 tiny 304s" — the primary fix for the per-refresh CPU spike.
+      // JS/CSS on default ref: ETag-based conditional GET.  No Vary: Cookie →
+      // Cloudflare caches the file and answers If-None-Match → 304 without
+      // hitting Node.  res.sendFile() sets ETag from mtime+size, which changes
+      // on every re-extract (ref switch or new push).
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=3600');
