@@ -191,15 +191,32 @@ help: ## Show this help
 
 
 dev: ## Start the Waymark dev server on localhost:3000
-	node server/index.js
+	GITHUB_SOURCE_LOCAL=true node server/index.js
 
 test: ## Run Playwright E2E suite (headless)
+	@# Kill any user-facing server so Playwright can start WAYMARK_LOCAL=true server
+	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
+		kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); sleep 1; \
+	fi
+	@# Kill any stray non-test server on port 3000
+	@for pid in $$(lsof -ti:3000 -sTCP:LISTEN 2>/dev/null); do \
+		cmd=$$(ps -p $$pid -o args= 2>/dev/null); \
+		if echo "$$cmd" | grep -qv "WAYMARK_LOCAL=true"; then \
+			kill $$pid 2>/dev/null || true; \
+		fi; \
+	done; sleep 1
 	npx playwright test --config tests/playwright.config.js
 
 test-watch: ## Run tests headed (see the browser)
+	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
+		kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); sleep 1; \
+	fi
 	npx playwright test --config tests/playwright.config.js --headed --workers 1
 
 test-full: ## Run full E2E suite including slow tests
+	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
+		kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); sleep 1; \
+	fi
 	npx playwright test --config tests/playwright.config.js --workers 4
 
 # ── Dev-worker: single agent ──────────────────────────────────────────
