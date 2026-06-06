@@ -617,6 +617,10 @@ ul { list-style: none; }
   background: var(--color-primary-light); color: var(--color-primary-dark);
   font-weight: 600;
 }
+.sidebar-nav-item.fleet-configured::after {
+  content: '●'; font-size: 0.45rem; color: var(--color-success);
+  vertical-align: middle; margin-left: auto; padding-right: 4px;
+}
 .sidebar-nav-item svg {
   flex-shrink: 0; stroke: currentColor;
 }

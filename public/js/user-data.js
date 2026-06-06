@@ -45,6 +45,7 @@ function defaultUserData() {
       sortOrder: 'name',        // explorer sort: 'name' | 'modified'
       importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
       importFolderName: null,   // display name of custom import folder
+      fleetSheetId: null,       // Agent Registry sheet ID (for the Dev Fleet sidebar button)
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       mqttBridge: false,          // MQTT debug bridge enabled
       mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
@@ -673,6 +674,25 @@ export function getImportFolderName() {
  */
 export async function setImportFolder(folderId, folderName) {
   const prefs = { ...(_userData?.preferences || {}), importFolderId: folderId, importFolderName: folderName };
+  await save({ preferences: prefs });
+}
+
+/* ---------- Dev Fleet (Agent Registry) ---------- */
+
+/**
+ * Get the configured Agent Registry sheet ID (used by the Fleet sidebar button).
+ * @returns {string|null}
+ */
+export function getFleetSheetId() {
+  return _userData?.preferences?.fleetSheetId || null;
+}
+
+/**
+ * Set the Agent Registry sheet ID.
+ * @param {string|null} sheetId
+ */
+export async function setFleetSheetId(sheetId) {
+  const prefs = { ...(_userData?.preferences || {}), fleetSheetId: sheetId || null };
   await save({ preferences: prefs });
 }
 
