@@ -119,24 +119,28 @@ if [[ -d "${DEFAULTS}/skills" ]]; then
     done
 fi
 
-# copilot-instructions.md — append defaults if none exists in repo
+# copilot-instructions.md — inject dev-worker context into ~/.copilot/ (not the repo)
+# We write to the agent's HOME config so the repo working tree stays clean.
+COPILOT_EXTRA="${HOME}/.copilot/dev-worker-instructions.md"
+{
+    echo "<!-- injected by dev-worker learn-repo.sh -- do not edit -->"
+    echo ""
+    if [[ -n "$FOUND_COPILOT_INSTRUCTIONS" ]]; then
+        cat "$FOUND_COPILOT_INSTRUCTIONS"
+        echo ""
+        echo "---"
+        echo ""
+    fi
+    grep -v "^#" "${DEFAULTS}/copilot-instructions.md" | tail -n +3
+} > "${COPILOT_EXTRA}" 2>/dev/null
+ok "Wrote dev-worker context to ${COPILOT_EXTRA} (repo unchanged)"
+
+# If repo has no copilot-instructions.md at all, create a minimal one
 if [[ -z "$FOUND_COPILOT_INSTRUCTIONS" ]]; then
     mkdir -p "${WORKSPACE}/.github"
     cp "${DEFAULTS}/copilot-instructions.md" "${WORKSPACE}/.github/copilot-instructions.md"
     FOUND_COPILOT_INSTRUCTIONS="${WORKSPACE}/.github/copilot-instructions.md"
-    ok "Injected default copilot-instructions.md"
-else
-    # Append dev-worker operator block if not already present
-    if ! grep -q "Dev Worker — Copilot Global Instructions" "$FOUND_COPILOT_INSTRUCTIONS" 2>/dev/null; then
-        {
-            echo ""
-            echo "---"
-            echo ""
-            echo "<!-- injected by dev-worker learn-repo.sh -->"
-            grep -v "^#" "${DEFAULTS}/copilot-instructions.md" | tail -n +3
-        } >> "$FOUND_COPILOT_INSTRUCTIONS"
-        ok "Appended dev-worker defaults to existing copilot-instructions.md"
-    fi
+    ok "Injected default copilot-instructions.md (no existing file found)"
 fi
 
 # Claude settings + commands → .claude/ in workspace
