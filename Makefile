@@ -52,7 +52,7 @@ endef
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
         fleet-start fleet-stop fleet-status \
-        auth-copilot auth-claude auth-check \
+        auth-copilot auth-claude auth-check token-extract \
         workboard clean
 
 # ── THE ONE COMMAND ───────────────────────────────────────────────────
@@ -64,10 +64,28 @@ up: ## Start everything and open the Waymark UI  (the only command you need)
 	@echo "  ╚══════════════════════════════════════════╝"
 	@echo ""
 	@# ── 1. Credentials check ──────────────────────────────────────────
+	@# Auto-extract Copilot token from keychain if not in .env
+	@if [ -z "$(COPILOT_GITHUB_TOKEN)" ] && python3 -c "import secretstorage" 2>/dev/null; then \
+		TOKEN=$$(python3 -c "\
+import secretstorage; \
+bus = secretstorage.dbus_init(); \
+coll = secretstorage.get_default_collection(bus); \
+[print(item.get_secret().decode()) for item in coll.get_all_items() if item.get_label() and 'copilot-cli' in item.get_label()]; \
+" 2>/dev/null | head -1); \
+		if [ -n "$$TOKEN" ]; then \
+			if grep -q "COPILOT_GITHUB_TOKEN=" .env 2>/dev/null; then \
+				sed -i "s|COPILOT_GITHUB_TOKEN=.*|COPILOT_GITHUB_TOKEN=$$TOKEN|" .env; \
+			else \
+				printf "\n# GitHub Copilot OAuth token (auto-extracted)\nCOPILOT_GITHUB_TOKEN=$$TOKEN\n" >> .env; \
+			fi; \
+			echo "  ✓  Auto-extracted Copilot token from keychain"; \
+			export COPILOT_GITHUB_TOKEN=$$TOKEN; \
+		fi; \
+	fi
 	@missing=0; \
-	test -f ~/.copilot/config.json || test -n "$(ANTHROPIC_API_KEY)" || { \
+	test -n "$(COPILOT_GITHUB_TOKEN)" || test -n "$(ANTHROPIC_API_KEY)" || { \
 		echo "  ✗  No AI credentials found."; \
-		echo "     Copilot: make auth-copilot"; \
+		echo "     Copilot: make auth-copilot  (or: make token-extract if already logged in)"; \
 		echo "     Claude:  export ANTHROPIC_API_KEY=sk-ant-... (add to .env)"; \
 		missing=1; \
 	}; \
@@ -79,6 +97,9 @@ up: ## Start everything and open the Waymark UI  (the only command you need)
 	[ "$$missing" = "0" ] || { echo ""; echo "  Fix the above and re-run: make up"; echo ""; exit 1; }
 	@echo "  ✓  Credentials OK"
 	@echo ""
+	@# ── Ensure Docker socket is accessible (rootless Docker) ─────────────
+	@SOCK=$${DOCKER_SOCKET_PATH:-/var/run/docker.sock}; \
+	if [ -S "$$SOCK" ]; then chmod o+rw "$$SOCK" 2>/dev/null || true; fi
 	@# ── 2. Waymark web server ─────────────────────────────────────────
 	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
 		echo "  ✓  Web server already running (PID $$(cat $(SERVER_PID)))"; \
@@ -283,10 +304,31 @@ fleet-status: ## Show status of every named dev-worker container
 
 # ── Auth ──────────────────────────────────────────────────────────────
 
-auth-copilot: ## Log in to GitHub Copilot (run on host, token saved to ~/.copilot/)
+token-extract: ## Auto-extract Copilot OAuth token from OS keychain → writes COPILOT_GITHUB_TOKEN to .env
+	@echo "  ⏳ Extracting Copilot token from OS keychain..."
+	@TOKEN=$$(python3 -c "\
+import secretstorage; \
+bus = secretstorage.dbus_init(); \
+coll = secretstorage.get_default_collection(bus); \
+[print(item.get_secret().decode()) for item in coll.get_all_items() if item.get_label() and 'copilot-cli' in item.get_label()]; \
+" 2>/dev/null | head -1) && \
+	if [ -z "$$TOKEN" ]; then \
+		echo "  ✗ No copilot-cli token found in keychain."; \
+		echo "    Run: copilot --login   (then re-run: make token-extract)"; \
+		exit 1; \
+	fi && \
+	if grep -q "COPILOT_GITHUB_TOKEN=" .env 2>/dev/null; then \
+		sed -i "s|COPILOT_GITHUB_TOKEN=.*|COPILOT_GITHUB_TOKEN=$$TOKEN|" .env; \
+	else \
+		printf "\n# GitHub Copilot OAuth token (auto-extracted from OS keychain)\nCOPILOT_GITHUB_TOKEN=$$TOKEN\n" >> .env; \
+	fi && \
+	echo "  ✓ COPILOT_GITHUB_TOKEN written to .env"
+
+auth-copilot: ## Log in to GitHub Copilot (run on host, token saved to OS keychain)
 	copilot --login
-	@echo "  ✓ Copilot auth saved to ~/.copilot/config.json"
-	@echo "    Restart container to pick up: make agent-restart"
+	@echo "  ✓ Copilot auth saved to keychain"
+	@echo "    Extract token for containers: make token-extract"
+	@$(MAKE) token-extract
 
 auth-claude: ## Show how to set ANTHROPIC_API_KEY for Claude Code
 	@echo ""
@@ -301,9 +343,11 @@ auth-claude: ## Show how to set ANTHROPIC_API_KEY for Claude Code
 
 auth-check: ## Check which AI credentials are available
 	@echo "── AI Credentials ──────────────────────────────────────"
-	@test -f ~/.copilot/config.json \
-		&& echo "  ✓ Copilot  ~/.copilot/config.json (OK)" \
-		|| echo "  ✗ Copilot  ~/.copilot/config.json (missing — run: make auth-copilot)"
+	@test -n "$(COPILOT_GITHUB_TOKEN)" \
+		&& echo "  ✓ Copilot  COPILOT_GITHUB_TOKEN is set" \
+		|| { test -f ~/.copilot/config.json \
+			&& echo "  ⚠ Copilot  config exists but no token in .env — run: make token-extract" \
+			|| echo "  ✗ Copilot  not set up — run: make auth-copilot"; }
 	@test -n "$$ANTHROPIC_API_KEY" \
 		&& echo "  ✓ Claude   ANTHROPIC_API_KEY is set" \
 		|| echo "  ✗ Claude   ANTHROPIC_API_KEY not set (see: make auth-claude)"

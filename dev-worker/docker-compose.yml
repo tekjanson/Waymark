@@ -62,6 +62,12 @@ services:
       # Model for Claude Code (uses Anthropic model IDs)
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
 
+      # ── GitHub Copilot CLI auth ──────────────────────────────────────────────
+      # Set COPILOT_GITHUB_TOKEN (or GH_TOKEN) to an OAuth token with Copilot access.
+      # Run `make token-extract` to auto-populate from the OS keychain.
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}
+      - GH_TOKEN=${GH_TOKEN:-${COPILOT_GITHUB_TOKEN:-}}
+
       # ── Claude Code auth ─────────────────────────────────────────────────────
       # Set ANTHROPIC_API_KEY in your shell or .env file.
       # The volume mount of ~/.claude below provides project settings.
@@ -124,4 +130,8 @@ services:
       # Security note: this grants the agent full Docker daemon access
       # (equivalent to root on the host). Only use on trusted networks.
       # For tighter isolation, consider a dedicated Docker socket proxy.
-      - /var/run/docker.sock:/var/run/docker.sock
+      #
+      # Rootless Docker: The socket path on the host may differ from the
+      # standard /var/run/docker.sock. Override with DOCKER_SOCKET_PATH:
+      #   DOCKER_SOCKET_PATH=/run/user/1000/docker.sock make up
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
