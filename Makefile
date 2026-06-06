@@ -1,323 +1,328 @@
 # ═══════════════════════════════════════════════════════════════════════
-# Waymark Agent — Makefile
+# Waymark — Makefile
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Quick start:
-#   make start          Start the agent container (default: @waymark-builder)
-#   make qa-patrol      Start the QA patrol agent (reviews workboard QA items)
-#   make stop           Stop the agent container
-#   make logs           Tail live agent logs
-#   make status         Show container + workboard status
-#   make qa-status      Show pending QA items with verdict status
-#   make test           Run diagnostic test suite
-#   make help           Show all available commands
+#   make up    ← THE ONE COMMAND. Starts everything, opens the UI.
+#   make down  ← Stops everything.
 #
-# Multi-agent:
-#   make start AGENT_NAME=alpha
-#   make start AGENT_NAME=beta AGENT_COMMAND="@waymark-builder-sub-board start"#
-#   QA patrol:
-#   make qa-patrol                              # Start QA patrol agent
-#   make qa-status                              # Show QA items with verdicts#
+# After `make up`, use the Waymark UI to drive everything:
+#   • Drop tasks in the kanban workboard → agents pick them up
+#   • Edit tuning strings in the Agent Registry → agents reload on restart
+#   • The UI IS the control plane. No more CLI flags needed.
+#
 # ═══════════════════════════════════════════════════════════════════════
 
-COMPOSE     := docker compose -f dev-worker/docker-compose.yml
-P2P_COMPOSE := docker compose -f docker-compose.yml
-CONTAINER := waymark-dev-worker
-CYCLE_HOURS := 4
-PIDFILE   := .agent-cycle.pid
+# Load .env if present (silently — don't fail if missing)
+-include .env
+export
 
-# Overridable from the command line or environment
-AGENT_COMMAND      ?= @waymark-orchestrator start
-AGENT_NAME         ?=
-AGENT_MODEL        ?= copilot/claude-sonnet-4.6
-BOARD_URL          ?=
-# Branch the agent container checks out on start so all feature branches
-# fork from it instead of main.  Defaults to whatever branch is checked
-# out on the host when make is invoked — override explicitly if needed.
-AGENT_BASE_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
+COMPOSE       := docker compose -f dev-worker/docker-compose.yml
+CONTAINER     ?= waymark-dev-worker
+SERVER_PID    := .server.pid
 
-# Allow passing a URL as a positional argument, e.g.: make run https://...
-# Extract any http(s):// goal and treat it as BOARD_URL if not already set
-_URL_GOAL := $(filter https://%,$(MAKECMDGOALS))$(filter http://%,$(MAKECMDGOALS))
-ifneq ($(_URL_GOAL),)
-  override BOARD_URL := $(_URL_GOAL)
-endif
+# Agent fleet config — comes from .env, not CLI flags
+# Set AGENT_NAMES in .env to control which agents start (space-separated)
+AGENT_NAMES   ?= Alex
+PROVIDER      ?= auto
+MODEL         ?= claude-sonnet-4.6
+CLAUDE_MODEL  ?= claude-opus-4-5
+COMMAND       ?= @waymark-builder start
+AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
 
-# Suppress "No rule to make target" for URL arguments (and any other non-target args)
-.DEFAULT: ; @true
+# Fleet alias: FLEET_NAMES falls back to AGENT_NAMES
+FLEET_NAMES   ?= $(AGENT_NAMES)
 
-# Service-account key path for host-side Google Sheets API calls
+# Service-account key
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
-# Signaling sheet ID consumed by the p2p-server container (can also be set in .env)
-export WAYMARK_SIGNALING_SHEET_ID ?=1oHfqlGmbKovZgLNaVCCd3QeGBWbaJNiIVCJsS7ZFCCQ
 
-.PHONY: help run start stop restart build logs status vnc test test-p2p mesh-test auth ensure-auth workboard qa-patrol qa-status p2p-logs clean
+# Derived compose env block
+define AGENT_ENV
+AGENT_HUMAN_NAME="$(NAME)" \
+AGENT_NAME="$(NAME)" \
+AI_PROVIDER="$(PROVIDER)" \
+AGENT_MODEL="$(MODEL)" \
+CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+AGENT_COMMAND="$(COMMAND)" \
+AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+CONTAINER_NAME="$(CONTAINER)"
+endef
 
-# ── Core commands ─────────────────────────────────────────────────────
+.PHONY: help up down \
+        dev test test-watch test-full \
+        agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
+        agent-test agent-test-boot agent-test-suite \
+        fleet-start fleet-stop fleet-status \
+        auth-copilot auth-claude auth-check \
+        workboard clean
+
+# ── THE ONE COMMAND ───────────────────────────────────────────────────
+
+up: ## Start everything and open the Waymark UI  (the only command you need)
+	@echo ""
+	@echo "  ╔══════════════════════════════════════════╗"
+	@echo "  ║         Starting Waymark                 ║"
+	@echo "  ╚══════════════════════════════════════════╝"
+	@echo ""
+	@# ── 1. Credentials check ──────────────────────────────────────────
+	@missing=0; \
+	test -f ~/.copilot/config.json || test -n "$(ANTHROPIC_API_KEY)" || { \
+		echo "  ✗  No AI credentials found."; \
+		echo "     Copilot: make auth-copilot"; \
+		echo "     Claude:  export ANTHROPIC_API_KEY=sk-ant-... (add to .env)"; \
+		missing=1; \
+	}; \
+	test -f "$(GOOGLE_APPLICATION_CREDENTIALS)" || { \
+		echo "  ✗  Google service-account key not found:"; \
+		echo "     $(GOOGLE_APPLICATION_CREDENTIALS)"; \
+		missing=1; \
+	}; \
+	[ "$$missing" = "0" ] || { echo ""; echo "  Fix the above and re-run: make up"; echo ""; exit 1; }
+	@echo "  ✓  Credentials OK"
+	@echo ""
+	@# ── 2. Waymark web server ─────────────────────────────────────────
+	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
+		echo "  ✓  Web server already running (PID $$(cat $(SERVER_PID)))"; \
+	else \
+		nohup node server/index.js > /tmp/waymark-server.log 2>&1 & echo $$! > $(SERVER_PID); \
+		sleep 1; \
+		kill -0 $$(cat $(SERVER_PID)) 2>/dev/null \
+			&& echo "  ✓  Web server started → http://localhost:$(PORT)" \
+			|| { echo "  ✗  Web server failed — check /tmp/waymark-server.log"; exit 1; }; \
+	fi
+	@echo ""
+	@# ── 3. Build image if needed ──────────────────────────────────────
+	@if docker image inspect waymark-dev-worker:latest > /dev/null 2>&1; then \
+		echo "  ✓  Container image ready"; \
+	else \
+		echo "  ⏳  Building container image (first time, ~2 min)..."; \
+		$(COMPOSE) build; \
+	fi
+	@echo ""
+	@# ── 4. Start agent fleet ──────────────────────────────────────────
+	@echo "  ⏳  Starting agents: $(AGENT_NAMES)"
+	@for name in $(AGENT_NAMES); do \
+		cname="dev-worker-$$(echo $$name | tr '[:upper:]' '[:lower:]')"; \
+		if docker ps --filter "name=^$$cname$$" --filter "status=running" \
+				--format "{{.Names}}" 2>/dev/null | grep -q "^$$cname$$"; then \
+			echo "  ✓  $$name ($$cname) already running"; \
+		else \
+			AGENT_HUMAN_NAME="$$name" \
+			AGENT_NAME="$$name" \
+			AI_PROVIDER="$(PROVIDER)" \
+			AGENT_MODEL="$(MODEL)" \
+			CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+			AGENT_COMMAND="$(COMMAND)" \
+			AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+			CONTAINER_NAME="$$cname" \
+			$(COMPOSE) up -d 2>/dev/null \
+			&& echo "  ✓  $$name started ($$cname)" \
+			|| echo "  ✗  $$name failed to start — run: make agent-logs CONTAINER=$$cname"; \
+		fi; \
+	done
+	@echo ""
+	@# ── 5. Open the UI ────────────────────────────────────────────────
+	@sleep 1
+	@xdg-open http://localhost:$(PORT) 2>/dev/null \
+		|| open http://localhost:$(PORT) 2>/dev/null \
+		|| true
+	@echo "  ════════════════════════════════════════════════"
+	@echo "  Waymark UI →  http://localhost:$(PORT)"
+	@echo ""
+	@echo "  Use the UI to drive everything from here:"
+	@echo "    • Kanban workboard → drop tasks → agents pick up"
+	@echo "    • Agent Registry   → edit tuning → agents reload"
+	@echo ""
+	@echo "  Logs:   make agent-logs"
+	@echo "  Stop:   make down"
+	@echo "  ════════════════════════════════════════════════"
+	@echo ""
+
+down: ## Stop everything (web server + all agent containers)
+	@echo "Stopping Waymark..."
+	@# Stop web server
+	@if [ -f $(SERVER_PID) ]; then \
+		kill $$(cat $(SERVER_PID)) 2>/dev/null && echo "  ✓  Web server stopped" || true; \
+		rm -f $(SERVER_PID); \
+	fi
+	@# Stop all dev-worker containers
+	@docker ps --filter "name=dev-worker" --format "{{.Names}}" | \
+		xargs -r -I{} sh -c 'docker stop {} && docker rm {} && echo "  ✓  {} stopped"'
+	@echo "  ✓  Done"
+
+# ── Help ──────────────────────────────────────────────────────────────
 
 help: ## Show this help
 	@echo ""
-	@echo "  Waymark Agent Commands"
-	@echo "  ══════════════════════"
+	@echo "  Waymark"
+	@echo "  ═══════════════════════════════════════"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-	@echo "  Variables (override with VAR=value):"
-	@echo "    AGENT_COMMAND       Command sent to Copilot Chat (default: @waymark-orchestrator start)"
-	@echo "    AGENT_NAME          Named agent identity for multi-agent (default: unset)"
-	@echo "    AGENT_MODEL         LLM model (default: copilot/claude-sonnet-4.6)"
-	@echo "    AGENT_BASE_BRANCH   Branch the container checks out on start (default: feat/p2p-server-notification-pipeline)"
-	@echo "    BOARD_URL           Google Sheets URL to target (persisted to workboard-config.json)"
-	@echo ""
-	@echo "  Examples:"
-	@echo "    make run https://docs.google.com/spreadsheets/d/SHEET_ID/edit  # Orchestrator on board"
-	@echo "    make run BOARD_URL=https://...                                  # Same, explicit var"
-	@echo "    make start                                                      # Default orchestrator"
-	@echo "    make qa-patrol                                                  # QA patrol agent"
-	@echo "    make start AGENT_NAME=alpha                                     # Named agent"
-	@echo "    make qa-status                                                  # Show QA verdicts"
-	@echo "    make logs                                                       # Tail live output"
+	@echo "  Configure in .env (not CLI flags):"
+	@echo "    AGENT_NAMES       Space-separated list of agent names  (default: Alex)"
+	@echo "    PROVIDER          copilot | claude | auto              (default: auto)"
+	@echo "    MODEL             Copilot model                        (default: claude-sonnet-4.6)"
+	@echo "    CLAUDE_MODEL      Anthropic model                      (default: claude-opus-4-5)"
+	@echo "    AGENTS_SHEET_ID   Google Sheet ID of Agent Registry"
+	@echo "    ANTHROPIC_API_KEY Claude API key (if using Claude)"
 	@echo ""
 
-ensure-auth: ## Check for Copilot auth tokens; run setup-auth.sh if missing
-	@AUTH_VOLUME_DATA="/home/$(USER)/.local/share/docker/volumes/dev-worker_waymark-vscode-auth/_data"; \
-	AUTH_DIR="$$AUTH_VOLUME_DATA/vscode.github-authentication"; \
-	VSCDB="$$AUTH_VOLUME_DATA/state.vscdb"; \
-	AUTH_OK=false; \
-	[ -d "$$AUTH_DIR" ] && AUTH_OK=true; \
-	if [ -f "$$VSCDB" ] && command -v sqlite3 >/dev/null 2>&1; then \
-		ROWS=$$(sqlite3 "$$VSCDB" "SELECT count(*) FROM ItemTable WHERE key LIKE 'secret://%github%';" 2>/dev/null || echo 0); \
-		[ "$$ROWS" -gt 0 ] && AUTH_OK=true; \
-	fi; \
-	if $$AUTH_OK; then \
-		echo "  ✓ Copilot auth tokens present — skipping setup"; \
-	else \
-		echo "  ⚠ No Copilot auth tokens found — running setup-auth.sh..."; \
-		bash dev-worker/setup-auth.sh; \
-	fi
 
-start: ensure-auth ## Start the agent container
-	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
-	AGENT_COMMAND="$(AGENT_COMMAND)" \
-	AGENT_NAME="$(AGENT_NAME)" \
-	AGENT_MODEL="$(AGENT_MODEL)" \
-	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
-	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
-	$(COMPOSE) up -d --build
-	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
-	$(P2P_COMPOSE) up -d --build p2p-server
+
+dev: ## Start the Waymark dev server on localhost:3000
+	node server/index.js
+
+test: ## Run Playwright E2E suite (headless)
+	npx playwright test --config tests/playwright.config.js
+
+test-watch: ## Run tests headed (see the browser)
+	npx playwright test --config tests/playwright.config.js --headed --workers 1
+
+test-full: ## Run full E2E suite including slow tests
+	npx playwright test --config tests/playwright.config.js --workers 4
+
+# ── Dev-worker: single agent ──────────────────────────────────────────
+
+agent-start: ## Start one agent container  [NAME=Alex PROVIDER=auto MODEL=...]
+	$(AGENT_ENV) $(COMPOSE) up -d --build
 	@echo ""
-	@echo "  ✓ Agent started"
-	@echo "    Desktop: http://localhost:6080/vnc.html"
-	@echo "    Logs:    make logs"
+	@echo "  ✓ Agent started — $(if $(NAME),$(NAME),<unnamed>) [$(PROVIDER)/$(MODEL)]"
+	@echo "    Logs:   make agent-logs"
+	@echo "    Shell:  make agent-shell"
+	@echo "    Stop:   make agent-stop"
 	@echo ""
 
-qa-patrol: ensure-auth ## Start the QA patrol agent (reviews workboard QA items)
-	AGENT_COMMAND="@waymark-manual-qa qa patrol" \
-	AGENT_NAME="QA" \
-	AGENT_MODEL="$(AGENT_MODEL)" \
-	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
-	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
-	$(COMPOSE) up -d --build
-	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
-	$(P2P_COMPOSE) up -d --build p2p-server
-	@echo ""
-	@echo "  ✓ QA Patrol agent started"
-	@echo "    Desktop: http://localhost:6080/vnc.html"
-	@echo "    Logs:    make logs"
-	@echo "    Status:  make qa-status"
-	@echo ""
+agent-stop: ## Stop the agent container
+	CONTAINER_NAME="$(CONTAINER)" $(COMPOSE) down
+	@echo "  ✓ $(CONTAINER) stopped"
 
-run: ensure-auth ## Start the orchestrator + restart it every 4 hours  (usage: make run BOARD_URL=https://...)
-	@# Persist board URL to workboard-config.json so host-side scripts use it too
-	@if [ -n "$(BOARD_URL)" ]; then node scripts/save-board-url.js "$(BOARD_URL)"; fi
-	@# Kill any existing cycle loop
-	@if [ -f $(PIDFILE) ] && kill -0 $$(cat $(PIDFILE)) 2>/dev/null; then \
-		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
-	fi
-	AGENT_COMMAND="$(AGENT_COMMAND)" \
-	AGENT_NAME="$(AGENT_NAME)" \
-	AGENT_MODEL="$(AGENT_MODEL)" \
-	AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" \
-	WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
-	$(COMPOSE) up -d --build
-	WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
-	$(P2P_COMPOSE) up -d --build p2p-server
-	@# Background loop: sleep CYCLE_HOURS then rebuild+restart
-	@nohup bash -c 'while true; do sleep $$(($(CYCLE_HOURS) * 3600)); \
-		echo "[cycle $$(date)] Restarting agent ($(CYCLE_HOURS)h cycle)..."; \
-		AGENT_COMMAND="$(AGENT_COMMAND)" AGENT_NAME="$(AGENT_NAME)" AGENT_MODEL="$(AGENT_MODEL)" AGENT_BASE_BRANCH="$(AGENT_BASE_BRANCH)" WAYMARK_WORKBOARD_URL="$(BOARD_URL)" \
-		$(COMPOSE) up -d --build; \
-		WAYMARK_SIGNALING_SHEET_ID="$(WAYMARK_SIGNALING_SHEET_ID)" \
-		$(P2P_COMPOSE) up -d --build p2p-server; \
-	done' > /tmp/waymark-cycle.log 2>&1 & echo $$! > $(PIDFILE)
-	@echo ""
-	@echo "  ✓ Orchestrator started (restarts every $(CYCLE_HOURS)h)"
-	@if [ -n "$(BOARD_URL)" ]; then echo "    Board:   $(BOARD_URL)"; fi
-	@echo "    Desktop: http://localhost:6080/vnc.html"
-	@echo "    Logs:    make logs"
-	@echo "    Cycle:   tail -f /tmp/waymark-cycle.log"
-	@echo ""
+agent-restart: ## Restart the agent (picks up new tuning from sheet)
+	CONTAINER_NAME="$(CONTAINER)" $(COMPOSE) restart
+	@echo "  ✓ $(CONTAINER) restarted — tuning will reload on next session"
 
-stop: ## Stop the agent container and p2p-server
-	@# Kill cycle loop if running
-	@if [ -f $(PIDFILE) ]; then \
-		kill $$(cat $(PIDFILE)) 2>/dev/null || true; \
-		rm -f $(PIDFILE); \
-	fi
-	$(COMPOSE) down
-	$(P2P_COMPOSE) rm -sf p2p-server
-	@echo "  ✓ Agent and p2p-server stopped"
-
-restart: ## Restart the agent container and p2p-server
-	$(COMPOSE) restart
-	$(P2P_COMPOSE) restart p2p-server
-	@echo "  ✓ Agent and p2p-server restarted"
-
-build: ## Rebuild the container image (no cache)
+agent-build: ## Rebuild the container image (no cache)
 	$(COMPOSE) build --no-cache
+	@echo "  ✓ Image rebuilt"
 
-# ── Observability ─────────────────────────────────────────────────────
+agent-rebuild: ## Stop → rebuild → start (full reset with new image)
+	$(AGENT_ENV) $(COMPOSE) down
+	$(COMPOSE) build --no-cache
+	$(AGENT_ENV) $(COMPOSE) up -d
+	@echo "  ✓ Rebuilt and started — $(if $(NAME),$(NAME),<unnamed>)"
+	@echo "    Logs: make agent-logs"
 
-logs: ## Tail live agent logs (Ctrl+C to stop)
+agent-logs: ## Tail live agent output (Ctrl+C to stop)
 	docker logs -f $(CONTAINER) 2>&1
 
-agent-logs: ## Tail the latest agent session log file from the container (Ctrl+C to stop)
-	@mkdir -p agent-logs
-	@LATEST=$$(ls -t agent-logs/session-*.log 2>/dev/null | head -1); \
-	if [ -z "$$LATEST" ]; then \
-		echo "  No agent session logs yet. Start the container and wait for the first cycle."; \
-	else \
-		echo "  Tailing $$LATEST (Ctrl+C to stop)"; \
-		tail -f "$$LATEST"; \
-	fi
-
-agent-logs-list: ## List all agent session log files
-	@ls -lht agent-logs/session-*.log 2>/dev/null || echo "  No session logs found."
-
-chat-logs: ## Tail the latest Copilot chat debug log from the container (Ctrl+C to stop)
-	@mkdir -p agent-logs/vscode-workspace-storage
-	@LATEST=$$(find agent-logs/vscode-workspace-storage -path '*/GitHub.copilot-chat/debug-logs/*' -name '*.txt' -o -name '*.log' 2>/dev/null | xargs ls -t 2>/dev/null | head -1); \
-	if [ -z "$$LATEST" ]; then \
-		echo "  No Copilot chat logs yet. Start the container and wait for the first agent turn."; \
-	else \
-		echo "  Tailing $$LATEST (Ctrl+C to stop)"; \
-		tail -f "$$LATEST"; \
-	fi
-
-chat-logs-list: ## List all Copilot chat debug log files from the container
-	@find agent-logs/vscode-workspace-storage -path '*/GitHub.copilot-chat/debug-logs/*' \( -name '*.txt' -o -name '*.log' \) 2>/dev/null \
-		| xargs ls -lht 2>/dev/null \
-		|| echo "  No Copilot chat logs found. Is the container running?"
-
-status: ## Show container status and workboard summary
-	@echo "── Container ──"
-	@docker ps --filter name=$(CONTAINER) --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "  Not running"
+agent-status: ## Show running agents + workboard summary
+	@echo "── Containers ──────────────────────────────────────────"
+	@docker ps --filter "name=dev-worker" \
+		--format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}" 2>/dev/null \
+		|| echo "  (none running)"
 	@echo ""
-	@echo "── Workboard ──"
-	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
-		node scripts/check-workboard.js --qa-details 2>/dev/null | \
-		node -e " \
-			const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
-			const qa=Array.isArray(d.qa)?d.qa:[]; \
-			const reviewed=qa.filter(i=>(i.notes||[]).some(n=>n.text.startsWith('QA VERDICT:'))).length; \
-			console.log('  To Do:        '+d.todo.length); \
-			console.log('  In Progress:  '+d.inProgress.length); \
-			console.log('  QA:           '+qa.length+' ('+reviewed+' reviewed, '+(qa.length-reviewed)+' pending)'); \
-			console.log('  Done:         '+d.done); \
-		" 2>/dev/null || echo "  (unavailable)"
+	@echo "── Workboard ───────────────────────────────────────────"
+	@node scripts/check-workboard.js 2>/dev/null \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+		  print(f'  To Do: {len(d.get(\"todo\",[]))}  In Progress: {len(d.get(\"inProgress\",[]))}  QA: {d.get(\"qa\",0)}  Done: {d.get(\"done\",0)}')" \
+		2>/dev/null || echo "  (workboard unavailable — check credentials)"
 	@echo ""
-	@echo "── QA Verdicts ──"
-	@ls -1 generated/qa-verdicts/*.md 2>/dev/null | wc -l | xargs -I{} echo "  {} local verdict reports" || echo "  None yet"
 
-vnc: ## Open the VNC desktop in your browser
-	xdg-open http://localhost:6080/vnc.html 2>/dev/null || open http://localhost:6080/vnc.html 2>/dev/null || echo "Open http://localhost:6080/vnc.html"
+agent-shell: ## Open a bash shell inside the running agent container
+	docker exec -it $(CONTAINER) bash
 
-# ── Testing & diagnostics ────────────────────────────────────────────
+# ── Dev-worker: tests ──────────────────────────────────────────────────
 
-test: ## Run the container diagnostic test suite
-	bash dev-worker/test.sh
+agent-test: ## Quick health check (boot + auth, ~30s, no AI calls)
+	bash dev-worker/tests/run-tests.sh --only boot,auth --container $(CONTAINER)
 
-test-p2p: ## Smoke-test the p2p-server notification pipeline (container must be running)
-	@echo "── p2p-server health ──"
-	@curl -sf http://localhost:8090/peers | node -e "\
-		const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
-		console.log('  peers online: '+d.peers.length); \
-		d.peers.forEach(p=>console.log('    '+p.peerId+' block='+p.block+' connected='+JSON.stringify(p.connectedPeers))); \
-	" || (echo "  ERROR: p2p-server not reachable on :8090 — is it running? (make start)" && exit 1)
+agent-test-boot: ## Just the boot suite (fastest, infra only)
+	bash dev-worker/tests/run-tests.sh --only boot --container $(CONTAINER)
+
+agent-test-suite: ## Full E2E suite — real AI creds, real browser, real workspace
+	bash dev-worker/tests/run-tests.sh --container $(CONTAINER) $(if $(ONLY),--only $(ONLY),) $(if $(SKIP),--skip $(SKIP),)
+
+
+
+fleet-start: ## Start all fleet agents in parallel  [FLEET_NAMES="Alex Sam Jordan" AGENTS_SHEET=...]
+	@echo "Starting fleet: $(FLEET_NAMES)"
+	@for name in $(FLEET_NAMES); do \
+		cname="dev-worker-$$(echo $$name | tr '[:upper:]' '[:lower:]')"; \
+		echo "  → Starting $$name ($$cname)..."; \
+		AGENT_HUMAN_NAME="$$name" \
+		AGENT_NAME="$$name" \
+		AI_PROVIDER="$(PROVIDER)" \
+		AGENT_MODEL="$(MODEL)" \
+		CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+		AGENT_COMMAND="$(COMMAND)" \
+		AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+		CONTAINER_NAME="$$cname" \
+		$(COMPOSE) up -d --build; \
+	done
 	@echo ""
-	@echo "── buffered notifications ──"
-	@curl -sf http://localhost:8090/notifications/buffer | node -e "\
-		const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
-		console.log('  buffered: '+d.count); \
-	" || echo "  (buffer endpoint unavailable)"
+	@echo "  ✓ Fleet started: $(FLEET_NAMES)"
+	@echo "    Status: make fleet-status"
+	@echo "    Stop:   make fleet-stop"
 	@echo ""
-	@echo "── send test notification (broadcast) ──"
-	@P=$$(curl -sf http://localhost:8090/peers | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).peers[0]?.peerId||'')"); \
-	if [ -z "$$P" ]; then \
-		echo "  SKIP: no peers registered yet — start the app and wait for it to join the mesh"; \
-	else \
-		RESP=$$(curl -sf -X POST http://localhost:8090/notify \
-			-H 'Content-Type: application/json' \
-			-d "{\"peerId\":\"$$P\",\"title\":\"Waymark Test\",\"body\":\"make test-p2p smoke test\"}"); \
-		echo "  notify response: $$RESP"; \
-	fi
+
+fleet-stop: ## Stop all dev-worker containers
+	@echo "Stopping all dev-worker containers..."
+	@docker ps --filter "name=dev-worker" --format "{{.Names}}" | \
+		xargs -r docker stop
+	@docker ps -a --filter "name=dev-worker" --format "{{.Names}}" | \
+		xargs -r docker rm
+	@echo "  ✓ All dev-worker containers stopped"
+
+fleet-status: ## Show status of every named dev-worker container
+	@echo "── Fleet status ────────────────────────────────────────"
+	@docker ps --filter "name=dev-worker" \
+		--format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}" 2>/dev/null \
+		|| echo "  (no dev-worker containers running)"
 	@echo ""
-	@echo "  ✓ p2p-server smoke test complete"
+	@echo "  Hint: make fleet-start FLEET_NAMES=\"Alex Sam Jordan\""
+	@echo ""
 
-p2p-logs: ## Tail live p2p-server logs (Ctrl+C to stop)
-	docker logs -f waymark_p2p_server 2>&1
+# ── Auth ──────────────────────────────────────────────────────────────
 
-mesh-test: ## Run the WebRTC P2P mesh E2E test jig against the real signaling sheet + Android (usage: make mesh-test [ADB_DEVICE=ip:port] [SCENARIO=fresh-join])
-	@WAYMARK_OAUTH_TOKEN_PATH=~/.config/gcloud/waymark-oauth-token.json \
-	GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
-	ADB_DEVICE="$(ADB_DEVICE)" \
-	SIGNAL_SHEET="$(SIGNAL_SHEET)" \
-	node scripts/mesh-test.mjs $(if $(SCENARIO),--scenario $(SCENARIO),--all)
+auth-copilot: ## Log in to GitHub Copilot (run on host, token saved to ~/.copilot/)
+	copilot --login
+	@echo "  ✓ Copilot auth saved to ~/.copilot/config.json"
+	@echo "    Restart container to pick up: make agent-restart"
 
-auth: ## Run GitHub Copilot auth setup for the container
-	bash dev-worker/setup-auth.sh
+auth-claude: ## Show how to set ANTHROPIC_API_KEY for Claude Code
+	@echo ""
+	@echo "  Claude Code auth uses an API key — no login flow needed."
+	@echo ""
+	@echo "  1. Get your key from https://console.anthropic.com"
+	@echo "  2. Add to your shell profile:"
+	@echo "     export ANTHROPIC_API_KEY=sk-ant-..."
+	@echo "  3. Start the agent:"
+	@echo "     make agent-start PROVIDER=claude NAME=Alex"
+	@echo ""
+
+auth-check: ## Check which AI credentials are available
+	@echo "── AI Credentials ──────────────────────────────────────"
+	@test -f ~/.copilot/config.json \
+		&& echo "  ✓ Copilot  ~/.copilot/config.json (OK)" \
+		|| echo "  ✗ Copilot  ~/.copilot/config.json (missing — run: make auth-copilot)"
+	@test -n "$$ANTHROPIC_API_KEY" \
+		&& echo "  ✓ Claude   ANTHROPIC_API_KEY is set" \
+		|| echo "  ✗ Claude   ANTHROPIC_API_KEY not set (see: make auth-claude)"
+	@test -f "$(GOOGLE_APPLICATION_CREDENTIALS)" \
+		&& echo "  ✓ Google   $(GOOGLE_APPLICATION_CREDENTIALS) (OK)" \
+		|| echo "  ✗ Google   $(GOOGLE_APPLICATION_CREDENTIALS) (missing)"
+	@echo ""
 
 # ── Workboard ─────────────────────────────────────────────────────────
 
-workboard: ## Show current workboard state (todo/in-progress counts)
-	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
-		node scripts/check-workboard.js
-
-compile-all: ## Compile all 35 template agents (skip unchanged; use FORCE=1 to recompile all)
-	@if [ "$(FORCE)" = "1" ]; then \
-		node scripts/compile-all-agents.mjs --force; \
-	else \
-		node scripts/compile-all-agents.mjs; \
-	fi
-
-qa-status: ## Show QA items with verdict status (pass/fail/pending)
-	@GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/waymark-service-account-key.json \
-		node scripts/check-workboard.js --qa-details 2>/dev/null | \
-		node -e " \
-			const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
-			const qa=Array.isArray(d.qa)?d.qa:[]; \
-			if(!qa.length){console.log('  No items in QA');process.exit(0)} \
-			console.log('  ── QA Items (' + qa.length + ') ──'); \
-			console.log(''); \
-			qa.forEach(i=>{ \
-				const v=(i.notes||[]).find(n=>n.text.startsWith('QA VERDICT:')); \
-				const icon=v?(v.text.includes('PASS')?'✅':v.text.includes('FAIL')?'❌':'⚠️'):'⏳'; \
-				const verdict=v?v.text.replace('QA VERDICT: ','').substring(0,80):'Pending review'; \
-				console.log('  '+icon+' Row '+i.row+': '+i.task); \
-				console.log('    Branch: '+(i.branch||'N/A')); \
-				console.log('    Verdict: '+verdict); \
-				console.log(''); \
-			}); \
-		" 2>/dev/null || echo "  (unavailable — check GOOGLE_APPLICATION_CREDENTIALS)"
+workboard: ## Print current workboard state as JSON
+	node scripts/check-workboard.js
 
 # ── Cleanup ───────────────────────────────────────────────────────────
 
-clean: ## Stop container, remove image and auth volume (full reset)
-	@echo "This will remove the container, image, auth tokens, and p2p-server container."
-	@echo "You will need to re-authenticate GitHub Copilot after this."
+clean: ## Stop all containers, remove images and volumes (full reset)
+	@echo "This removes all dev-worker containers, images, and mounted volumes."
 	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
-	$(COMPOSE) down --rmi local -v
-	$(P2P_COMPOSE) rm -sf p2p-server
-	@echo "  ✓ Cleaned (re-run: make auth && make start)"
+	@docker ps -a --filter "name=dev-worker" --format "{{.Names}}" | xargs -r docker rm -f
+	@$(COMPOSE) down --rmi local -v 2>/dev/null || true
+	@echo "  ✓ Cleaned — re-run: make agent-start"
+

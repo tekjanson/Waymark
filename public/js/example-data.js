@@ -867,6 +867,17 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Agent Registry example ---- */
+  'AI Agent Registry': {
+    folder: 'Dev Worker',
+    headers: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Workboard', 'Command'],
+    rows: [
+      ['Alex',   'claude-opus-4-5',    'claude',  'Online',  'Be direct and decisive. Prefer the cleanest implementation over the cleverest one. When in doubt, do less and do it well.',                              'Implementing feature branch', 'Waymark', '', '', '@waymark-builder'],
+      ['Sam',    'claude-sonnet-4.6',  'copilot', 'Idle',    'Think out loud before acting. Read the whole codebase section before editing any of it. Write tests before implementation when practical.',              '', 'Waymark', '', '', '@waymark-builder'],
+      ['Jordan', 'claude-sonnet-4.6',  'claude',  'Offline', 'Move fast. Take reasonable shortcuts on boilerplate. Prioritize shipping over perfect. Follow established patterns — no new abstractions.',             '', '', '', '', ''],
+    ],
+  },
+
   /* ---- Password Manager examples ---- */
   'Personal Vault': {
     folder: 'Security',
