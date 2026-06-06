@@ -34,7 +34,9 @@ android/local.properties
 server/build-info.json
 
 
-# GitHub source (bare clone + extracted checkouts)
+# Runtime PIDs (dev-worker container)
+.server.pid
+
 server/.git-repo/
 server/.git-checkout/
 server/.github-cache

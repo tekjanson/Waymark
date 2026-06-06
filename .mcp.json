@@ -1,0 +1,62 @@
+{
+  "mcpServers": {
+    "orchestrator": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/orchestrator.mjs"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/root/.config/gcloud/waymark-service-account-key.json",
+        "WAYMARK_OAUTH_TOKEN_PATH": "/root/.config/gcloud/waymark-oauth-token.json",
+        "ORCHESTRATOR_WAKE_PORT": "9111",
+        "WAYMARK_RULES_SHEET_ID": "10Vmn84-7sqyQtCLqy7b-rFrHFbXWiB7InGPl4uQ53XA"
+      }
+    },
+    "agent-compiler": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/agent-compiler.mjs"
+      ]
+    },
+    "google-sheets": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/google-sheets.mjs"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/root/.config/gcloud/waymark-service-account-key.json",
+        "WAYMARK_WORKBOARD_SHEET_ID": "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4"
+      }
+    },
+    "waymark": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/waymark.mjs"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/root/.config/gcloud/waymark-service-account-key.json",
+        "WAYMARK_WORKBOARD_SHEET_ID": "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4",
+        "WAYMARK_PARENT_FOLDER_ID": "1Jg9iDcTkyIhJFwFTTh1_3zW3v-0RyYVM",
+        "WAYMARK_OAUTH_TOKEN_PATH": "/root/.config/gcloud/waymark-oauth-token.json"
+      }
+    },
+    "mqtt-bridge": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/mqtt-bridge.mjs"
+      ],
+      "env": {
+        "MQTT_BROKER_URL": "mqtt://localhost:1883"
+      }
+    },
+    "bringup": {
+      "command": "node",
+      "args": [
+        "/workspace/mcp/bringup.mjs"
+      ],
+      "env": {
+        "WAYMARK_AUDIT_FILE": "/workspace/agent-logs/bringup-audit.jsonl"
+      }
+    }
+  }
+}
