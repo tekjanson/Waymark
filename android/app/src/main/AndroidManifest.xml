@@ -25,6 +25,9 @@
     <!-- Restart the P2P service after device reboot or app update -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Camera access — required for AI photo capture in the web app -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- Ask the user to exempt Waymark from Doze battery optimizations so the
          foreground service retains network access during idle windows -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -64,6 +67,17 @@
             android:name=".WebRtcService"
             android:foregroundServiceType="remoteMessaging"
             android:exported="false" />
+
+        <!-- FileProvider: exposes temp camera capture files to the camera app via content:// URIs -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Restart WebRtcService after a device reboot or app update -->
         <receiver
