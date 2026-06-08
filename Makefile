@@ -428,6 +428,14 @@ auth-check: ## Check which AI credentials are available
 workboard: ## Print current workboard state as JSON
 	node scripts/check-workboard.js
 
+# ── Alternative Revenue ───────────────────────────────────────────────
+
+copper-wire-report: ## Morgan's copper wire sourcing ROI report (no auth required)
+	@node scripts/copper-wire-sourcing.js
+
+copper-wire-csv: ## Export copper wire sites as CSV (pipe to file if needed)
+	@node scripts/copper-wire-sourcing.js --csv
+
 # ── Financials ────────────────────────────────────────────────────────
 
 create-financials-sheet: ## Create a Waymark Financials Google Spreadsheet (all tabs + headers)
