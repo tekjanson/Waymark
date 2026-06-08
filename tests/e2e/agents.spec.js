@@ -1,5 +1,64 @@
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet, getCreatedRecords } = require('../helpers/test-utils');
+
+/* ── Helper: compute contrast ratio between text color and effective background.
+ *  Walks up the DOM to find the nearest opaque background, alpha-blends
+ *  semi-transparent backgrounds along the way, then computes WCAG ratio.
+ * ──────────────────────────────────────────────────────────────────────────── */
+async function getContrastRatio(page, selector) {
+  return page.evaluate((sel) => {
+    function parseColor(css) {
+      const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+      if (!m) return null;
+      return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+    }
+    function blend(fg, bg) {
+      // Alpha-composite fg over bg
+      const a = fg.a;
+      return {
+        r: Math.round(fg.r * a + bg.r * (1 - a)),
+        g: Math.round(fg.g * a + bg.g * (1 - a)),
+        b: Math.round(fg.b * a + bg.b * (1 - a)),
+        a: 1,
+      };
+    }
+    function relativeLuminance({ r, g, b }) {
+      return [r, g, b].map(c => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+    }
+    function contrastRatio(c1, c2) {
+      const l1 = relativeLuminance(c1), l2 = relativeLuminance(c2);
+      const lighter = Math.max(l1, l2), darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    // Walk up DOM to find effective opaque background color
+    function effectiveBg(el) {
+      let composite = { r: 255, g: 255, b: 255, a: 1 }; // assume white root
+      const chain = [];
+      let cur = el;
+      while (cur && cur !== document.body.parentElement) {
+        chain.unshift(cur);
+        cur = cur.parentElement;
+      }
+      for (const node of chain) {
+        const bg = parseColor(window.getComputedStyle(node).backgroundColor);
+        if (bg && bg.a > 0) composite = blend(bg, composite);
+      }
+      return composite;
+    }
+
+    const target = document.querySelector(sel);
+    if (!target) return null;
+    const style = window.getComputedStyle(target);
+    const fg = parseColor(style.color);
+    if (!fg) return null;
+    const bg = effectiveBg(target);
+    return contrastRatio(fg, bg);
+  }, selector);
+}
 
 test('agents template detects and renders cards', async ({ page }) => {
   await setupApp(page);
@@ -76,4 +135,205 @@ test('Dev Fleet button navigates to fleet sheet after pin', async ({ page }) => 
   await page.click('#menu-fleet-btn');
   await page.waitForSelector('.agents-grid', { timeout: 10000 });
   await expect(page.locator('.agents-grid')).toBeVisible();
+});
+
+/* ── Dark mode contrast tests ─────────────────────────────────────────────── */
+
+test('agents dark mode: agent name has readable contrast', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-name').first()).toBeVisible();
+  // WCAG AA requires ≥4.5 for normal text
+  const ratio = await getContrastRatio(page, '.agents-name');
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
+test('agents dark mode: tuning cell text is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-tuning-cell').first()).toBeVisible();
+  const ratio = await getContrastRatio(page, '.agents-tuning-cell');
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
+test('agents dark mode: tuning label is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  const ratio = await getContrastRatio(page, '.agents-tuning-label');
+  // Large text (bold) only needs ≥3.0 (WCAG AA for large/bold)
+  expect(ratio).toBeGreaterThanOrEqual(3.0);
+});
+
+test('agents dark mode: workboard cell is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-workboard-cell').first()).toBeVisible();
+  const ratio = await getContrastRatio(page, '.agents-workboard-cell');
+  expect(ratio).toBeGreaterThanOrEqual(3.0);
+});
+
+test('agents dark mode: command cell is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-command-cell').first()).toBeVisible();
+  const ratio = await getContrastRatio(page, '.agents-command-cell');
+  expect(ratio).toBeGreaterThanOrEqual(3.0);
+});
+
+test('agents dark mode: copilot provider badge is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-provider-copilot').first()).toBeVisible();
+  const ratio = await getContrastRatio(page, '.agents-provider-copilot');
+  expect(ratio).toBeGreaterThanOrEqual(3.0);
+});
+
+test('agents dark mode: card background uses surface token not hardcoded white', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  // In dark mode, card background must NOT be near-white (#fafbfc = rgb(250,251,252))
+  const bgColor = await page.evaluate(() => {
+    const card = document.querySelector('.agents-card');
+    if (!card) return null;
+    return window.getComputedStyle(card).backgroundColor;
+  });
+  expect(bgColor).not.toBeNull();
+  // Near-white detection: all channels > 230
+  const m = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (m) {
+    const [r, g, b] = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+    const isNearWhite = r > 230 && g > 230 && b > 230;
+    expect(isNearWhite).toBe(false);
+  }
+});
+
+test('agents dark mode: tuning cell background is not near-white', async ({ page }) => {
+  await setupApp(page, { theme: 'dark' });
+  await navigateToSheet(page, 'sheet-057');
+  const effectiveBg = await page.evaluate(() => {
+    function parseColor(css) {
+      const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+      if (!m) return null;
+      return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+    }
+    function blend(fg, bg) {
+      const a = fg.a;
+      return { r: Math.round(fg.r * a + bg.r * (1 - a)), g: Math.round(fg.g * a + bg.g * (1 - a)), b: Math.round(fg.b * a + bg.b * (1 - a)), a: 1 };
+    }
+    let composite = { r: 255, g: 255, b: 255, a: 1 };
+    const cell = document.querySelector('.agents-tuning-cell');
+    if (!cell) return null;
+    const chain = [];
+    let cur = cell;
+    while (cur && cur !== document.body.parentElement) { chain.unshift(cur); cur = cur.parentElement; }
+    for (const node of chain) {
+      const bg = parseColor(window.getComputedStyle(node).backgroundColor);
+      if (bg && bg.a > 0) composite = blend(bg, composite);
+    }
+    return composite;
+  });
+  expect(effectiveBg).not.toBeNull();
+  const isNearWhite = effectiveBg.r > 230 && effectiveBg.g > 230 && effectiveBg.b > 230;
+  expect(isNearWhite).toBe(false);
+});
+
+test('agents light mode: agent name has readable contrast', async ({ page }) => {
+  await setupApp(page, { theme: 'light' });
+  await navigateToSheet(page, 'sheet-057');
+  const ratio = await getContrastRatio(page, '.agents-name');
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
+test('agents light mode: tuning cell text is readable', async ({ page }) => {
+  await setupApp(page, { theme: 'light' });
+  await navigateToSheet(page, 'sheet-057');
+  const ratio = await getContrastRatio(page, '.agents-tuning-cell');
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});
+
+/* ── Write-back propagation tests ────────────────────────────────────────────
+ * These verify that editing a field in the UI fires api.sheets.updateCell(),
+ * recorded in window.__WAYMARK_RECORDS as type 'cell-update'.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test('agents: editing agent name in UI fires a cell-update record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // Click the first agent name (editableCell)
+  const nameEl = page.locator('.agents-name').first();
+  await nameEl.click();
+  const input = nameEl.locator('input.editable-cell-input');
+  await expect(input).toBeVisible({ timeout: 3000 });
+  await input.fill('Alex-Updated');
+  await input.press('Enter');
+  // Verify a cell-update record was created
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'Alex-Updated')).toBe(true);
+});
+
+test('agents: editing tuning textarea in UI fires a cell-update record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // Click the first tuning cell (textareaCell)
+  const tuningEl = page.locator('.agents-tuning-cell').first();
+  await tuningEl.click();
+  const ta = tuningEl.locator('textarea.editable-cell-textarea');
+  await expect(ta).toBeVisible({ timeout: 3000 });
+  await ta.fill('Be extremely concise. Avoid repetition.');
+  // Commit via Ctrl+Enter
+  await ta.press('Control+Enter');
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'Be extremely concise. Avoid repetition.')).toBe(true);
+});
+
+test('agents: editing workboard cell in UI fires a cell-update record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const workboardEl = page.locator('.agents-workboard-cell').first();
+  await workboardEl.click();
+  const input = workboardEl.locator('input.editable-cell-input');
+  await expect(input).toBeVisible({ timeout: 3000 });
+  await input.fill('new-sheet-id-12345');
+  await input.press('Enter');
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'new-sheet-id-12345')).toBe(true);
+});
+
+/* ── Add Agent form tests ─────────────────────────────────────────────────────
+ * Verify the "Add Agent" form appears and submitting it fires a row-append record.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test('agents: Add Agent trigger button is visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // checklist.js renders .add-row-trigger for templates with addRowFields()
+  await expect(page.locator('.add-row-trigger')).toBeVisible();
+  await expect(page.locator('.add-row-trigger')).toContainText('Add Agent');
+});
+
+test('agents: clicking Add Agent button expands the form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.add-row-trigger');
+  await expect(page.locator('.add-row-form')).toBeVisible({ timeout: 3000 });
+  // Form must have at minimum a Name field
+  await expect(page.locator('.add-row-field-input').first()).toBeVisible();
+});
+
+test('agents: submitting Add Agent form fires a row-append record', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.add-row-trigger');
+  // Fill in agent name
+  const nameInput = page.locator('.add-row-field-input').first();
+  await expect(nameInput).toBeVisible({ timeout: 3000 });
+  await nameInput.fill('River');
+  // Submit
+  await page.click('.add-row-submit');
+  const records = await getCreatedRecords(page);
+  const appendRec = records.find(r => r.type === 'row-append');
+  expect(appendRec).toBeTruthy();
+  // The row data must include the agent name
+  const rowData = appendRec.rows?.[0] ?? [];
+  expect(rowData.some(v => v === 'River')).toBe(true);
 });

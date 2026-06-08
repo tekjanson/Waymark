@@ -69,6 +69,6 @@ COPY scripts/ /scripts/
 COPY defaults/ /defaults/
 COPY context/ /defaults/context/
 COPY supervisord.conf /etc/supervisord.conf
-RUN chmod +x /scripts/*.sh /defaults/hooks/*.sh
+RUN chmod +x /scripts/*.sh /scripts/handlers/*.sh /defaults/hooks/*.sh 2>/dev/null || chmod +x /scripts/*.sh /defaults/hooks/*.sh
 
 ENTRYPOINT ["/scripts/entrypoint.sh"]

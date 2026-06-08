@@ -51,7 +51,7 @@ endef
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
-        fleet-start fleet-stop fleet-status \
+        fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         auth-copilot auth-claude auth-check token-extract \
         workboard clean
 
@@ -318,6 +318,19 @@ fleet-status: ## Show status of every named dev-worker container
 	@echo ""
 	@echo "  Hint: make fleet-start FLEET_NAMES=\"Alex Sam Jordan\""
 	@echo ""
+
+fleet-sync: ## Sync containers with the Agent Registry sheet (starts missing, leaves existing alone)
+	@echo "── Syncing fleet with Agent Registry sheet ──────────────"
+	@if [ -z "$${AGENTS_SHEET_ID:-}" ] && [ -f .env ]; then \
+		set -a; source .env; set +a; fi; \
+	if [ -z "$${AGENTS_SHEET_ID:-}" ]; then \
+		echo "  ✗ AGENTS_SHEET_ID not set. Add to .env first."; exit 1; fi
+	@bash dev-worker/scripts/fleet-sync.sh
+
+fleet-build: ## Build (or rebuild) the dev-worker Docker image
+	@echo "── Building waymark-dev-worker image ───────────────────"
+	@docker build -t waymark-dev-worker:latest dev-worker/
+	@echo "  ✓ Image built: waymark-dev-worker:latest"
 
 # ── Auth ──────────────────────────────────────────────────────────────
 

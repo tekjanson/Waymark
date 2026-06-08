@@ -78,6 +78,30 @@ fi
 
 log "Identity: ${AGENT_HUMAN_NAME:-<unnamed>} | Provider: ${AI_PROVIDER} | Model: ${AGENT_MODEL}"
 
+# ── Sheet write-back helper ───────────────────────────────────────────────────
+# Writes status / heartbeat / task to the Agent Registry sheet.
+# Silently no-ops if AGENTS_SHEET_ID or AGENT_HUMAN_NAME is missing.
+sheet_write() {
+    if [[ -x /scripts/write-agent-sheet.sh ]]; then
+        /scripts/write-agent-sheet.sh "$@" 2>&1 | sed 's/^/  /' || true
+    fi
+}
+
+# ── Background heartbeat loop ─────────────────────────────────────────────────
+# Updates the Heartbeat column every 2 minutes so the fleet UI shows "last seen".
+heartbeat_loop() {
+    while true; do
+        sleep 120
+        sheet_write --heartbeat
+    done
+}
+heartbeat_loop &
+HEARTBEAT_PID=$!
+trap 'kill ${HEARTBEAT_PID} 2>/dev/null || true' EXIT
+
+# Write initial Online status + heartbeat
+sheet_write --status Online --heartbeat
+
 # ── Verify Docker socket (DooD) ───────────────────────────────────────────────
 if docker info >/dev/null 2>&1; then
     DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
@@ -193,6 +217,9 @@ while true; do
     SESSION=$(( SESSION + 1 ))
     log "━━━ Session ${SESSION} starting ━━━"
 
+    CURRENT_TASK="Session ${SESSION}: ${AGENT_COMMAND}"
+    sheet_write --status Busy --task "$CURRENT_TASK" --heartbeat
+
     case "$AI_PROVIDER" in
         copilot)
             if validate_copilot; then
@@ -215,5 +242,6 @@ while true; do
     esac
 
     log "━━━ Session ${SESSION} ended — restarting in ${RESTART_DELAY}s ━━━"
+    sheet_write --status Idle --task "Idle — last ran session ${SESSION}" --heartbeat
     sleep "${RESTART_DELAY}"
 done

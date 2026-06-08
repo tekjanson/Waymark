@@ -337,3 +337,83 @@
   .agents-card { padding: 16px; }
   .agents-avatar { width: 36px; height: 36px; font-size: 0.85rem; }
 }
+
+/* ---------- Dark mode ---------- */
+[data-theme="dark"] .agents-subtitle { color: var(--color-text-secondary); }
+[data-theme="dark"] .agents-stat-label { color: var(--color-text-muted); }
+[data-theme="dark"] .agents-meta-sep { color: var(--color-border); }
+
+/* Provider badges: swap hardcoded light tints → dark-safe tints */
+[data-theme="dark"] .agents-provider-badge {
+  background: var(--tint-gray-bg);
+  color: var(--color-text-secondary);
+}
+[data-theme="dark"] .agents-provider-claude {
+  background: var(--tint-purple-bg);
+  color: var(--tint-purple-text);
+}
+[data-theme="dark"] .agents-provider-copilot {
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-text);
+}
+[data-theme="dark"] .agents-provider-auto {
+  background: var(--tint-green-bg);
+  color: var(--tint-green-text);
+}
+
+/* Model cell */
+[data-theme="dark"] .agents-model-cell { color: var(--color-text-secondary); }
+
+/* Tuning section */
+[data-theme="dark"] .agents-tuning-label { color: var(--tint-purple-text); }
+[data-theme="dark"] .agents-tuning-hint { color: var(--color-text-muted); }
+[data-theme="dark"] .agents-tuning-cell {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+[data-theme="dark"] .agents-tuning-cell:hover {
+  border-color: var(--tint-purple-text);
+  background: var(--tint-purple-bg);
+}
+[data-theme="dark"] .agents-tuning-cell:empty::before { color: var(--color-text-muted); }
+
+/* Task display */
+[data-theme="dark"] .agents-task {
+  background: rgba(255, 255, 255, 0.05);
+  border-left-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+[data-theme="dark"] .agents-task-empty { color: var(--color-text-muted); }
+[data-theme="dark"] .agents-task-label { color: var(--color-text-secondary); }
+
+/* Field labels */
+[data-theme="dark"] .agents-field-label,
+[data-theme="dark"] .agents-project-label { color: var(--color-text-secondary); }
+
+/* Project / heartbeat / workboard / command */
+[data-theme="dark"] .agents-project,
+[data-theme="dark"] .agents-heartbeat,
+[data-theme="dark"] .agents-workboard,
+[data-theme="dark"] .agents-command { color: var(--color-text-muted); }
+
+/* Inline-editable cells */
+[data-theme="dark"] .agents-workboard-cell { color: var(--tint-purple-text); }
+[data-theme="dark"] .agents-command-cell   { color: var(--tint-blue-text); }
+[data-theme="dark"] .agents-project-cell:hover,
+[data-theme="dark"] .agents-workboard-cell:hover,
+[data-theme="dark"] .agents-command-cell:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-border);
+}
+
+/* Add-agent placeholder card */
+[data-theme="dark"] .agents-add-card {
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+[data-theme="dark"] .agents-add-card:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
