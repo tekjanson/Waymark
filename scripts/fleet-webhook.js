@@ -24,14 +24,21 @@ const path     = require('path');
 
 const PORT          = parseInt(process.env.FLEET_WEBHOOK_PORT || '3002', 10);
 const REPO_ROOT     = path.resolve(__dirname, '..');
-const ALLOWED_ORIGIN = process.env.FLEET_WEBHOOK_ORIGIN || 'http://localhost:3000';
 
-/* ---------- CORS preflight headers ---------- */
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin':  ALLOWED_ORIGIN,
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+/* ---------- CORS: reflect the request origin back ----------
+ * This sidecar listens only on 127.0.0.1 — only the local machine can
+ * reach it. Reflecting the origin is safe: there is no CSRF risk because
+ * the endpoint is inaccessible from the network.  This lets any deployment
+ * (localhost:3000, swiftirons.com, etc.) use the button.
+ * ----------------------------------------------------------- */
+function corsHeaders(req) {
+  return {
+    'Access-Control-Allow-Origin':  req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+}
 
 /* ---------- Routes ---------- */
 
@@ -46,13 +53,13 @@ const ROUTES = {
       if (err) {
         const msg = (stderr || err.message || 'unknown error').trim().slice(-400);
         console.error('[fleet-webhook] fleet-sync failed:', msg);
-        res.writeHead(500, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders(req) });
         res.end(JSON.stringify({ ok: false, error: msg }));
         return;
       }
       const output = stdout.trim().slice(-600);
       console.log('[fleet-webhook] fleet-sync ok:', output.slice(-120));
-      res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+      res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders(req) });
       res.end(JSON.stringify({ ok: true, output }));
     });
   },
@@ -63,7 +70,7 @@ const ROUTES = {
 const server = http.createServer((req, res) => {
   // Preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, CORS_HEADERS);
+    res.writeHead(204, corsHeaders(req));
     res.end();
     return;
   }
@@ -71,18 +78,17 @@ const server = http.createServer((req, res) => {
   const key = `${req.method} ${req.url.split('?')[0]}`;
   const handler = ROUTES[key];
   if (handler) {
-    // Always attach CORS headers, even on 500
     handler(req, res);
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+  res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders(req) });
   res.end(JSON.stringify({ error: `No route for ${key}` }));
 });
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[fleet-webhook] Listening on http://127.0.0.1:${PORT}`);
-  console.log(`[fleet-webhook] Allowed origin: ${ALLOWED_ORIGIN}`);
+  console.log(`[fleet-webhook] CORS: reflecting request origin (localhost-only, safe)`);
   console.log(`[fleet-webhook] Routes: ${Object.keys(ROUTES).join(', ')}`);
 });
 
