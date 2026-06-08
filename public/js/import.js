@@ -242,6 +242,17 @@ const ROLE_LABELS = {
   'gantt.progress': 'Progress (0%–100%)',
   'gantt.dependencies': 'Dependencies (comma-separated task names)',
   'gantt.assignee': 'Assignee / Owner',
+  // Agents
+  'agents.name': 'Agent Name (human name like Alex, Sam)',
+  'agents.model': 'AI Model ID (e.g. claude-opus-4-5)',
+  'agents.provider': 'Provider (claude / copilot / auto)',
+  'agents.status': 'Status (Online / Idle / Offline / Error)',
+  'agents.tuning': 'Tuning String (personality & behavior instructions)',
+  'agents.task': 'Current Task (set by agent — read-only)',
+  'agents.project': 'Project label',
+  'agents.heartbeat': 'Last Heartbeat (ISO timestamp set by agent)',
+  'agents.workboard': 'Workboard Sheet ID (Google Sheet the agent polls for tasks)',
+  'agents.command': 'Initial Command (overrides default @waymark-builder start)',
   // Password Manager
   'passwords.site': 'Site / Service name',
   'passwords.username': 'Username / Login',

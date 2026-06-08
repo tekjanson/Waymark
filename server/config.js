@@ -25,6 +25,8 @@ const config = {
   GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',  // optional PAT for higher rate limits
   GITHUB_SOURCE_LOCAL: process.env.GITHUB_SOURCE_LOCAL === 'true',  // serve from local public/ instead of git checkout
 
+  FLEET_WEBHOOK_URL: process.env.FLEET_WEBHOOK_URL || '',
+
   SCOPES: [
     'openid',
     'email',

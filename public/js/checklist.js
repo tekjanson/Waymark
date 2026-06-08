@@ -25,7 +25,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, printBtn;
-let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lockSubmitToggle;
+let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lockSubmitToggle, setFleetBtn;
 let currentTemplateKey = null;
 let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
@@ -54,6 +54,7 @@ export function init() {
   templateAiBtn     = document.getElementById('template-ai-btn');
   encryptBtn        = document.getElementById('encrypt-btn');
   lockSubmitToggle  = document.getElementById('lock-submit-toggle');
+  setFleetBtn       = document.getElementById('set-fleet-btn');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -79,6 +80,17 @@ export function init() {
       if (currentSheetId && currentHeaders) {
         notifications.showRuleBuilder(currentSheetId, currentDataTitle, currentHeaders);
       }
+    });
+  }
+
+  if (setFleetBtn) {
+    setFleetBtn.addEventListener('click', async () => {
+      if (!currentSheetId) return;
+      await userData.setFleetSheetId(currentSheetId);
+      // Update the Fleet sidebar button active state
+      const fleetBtn = document.getElementById('menu-fleet-btn');
+      if (fleetBtn) fleetBtn.classList.add('fleet-configured');
+      showToast('✅ Fleet Registry set — click "Dev Fleet" in the sidebar to return here.', 'success');
     });
   }
 
@@ -582,7 +594,7 @@ export async function showPublic(sheetId) {
   if (banner) banner.classList.remove('hidden');
 
   // Hide edit-related controls
-  const hideEls = [openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, moreActionsBtn, printBtn, encryptBtn, templateAiBtn, notifRulesBtn];
+  const hideEls = [openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, moreActionsBtn, printBtn, encryptBtn, templateAiBtn, notifRulesBtn, setFleetBtn];
   for (const el of hideEls) {
     if (el) el.classList.add('hidden');
   }
@@ -1220,6 +1232,14 @@ function renderWithTemplate(values) {
   currentTemplateKey = key;
   if (templateHelpBtn) {
     templateHelpBtn.classList.remove('hidden');
+  }
+  // Show "Set as Fleet Registry" only for the agents template
+  if (setFleetBtn) {
+    if (key === 'agents') {
+      setFleetBtn.classList.remove('hidden');
+    } else {
+      setFleetBtn.classList.add('hidden');
+    }
   }
   Tutorial.startTemplateTutorial(key);
 

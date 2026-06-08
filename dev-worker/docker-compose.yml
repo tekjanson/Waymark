@@ -1,159 +1,137 @@
-# Waymark Dev Worker — standalone Debian GUI container with VS Code + Copilot
+# Waymark Dev Worker — Copilot CLI headless agent container
+#
+# The agent runs directly via the GitHub Copilot CLI — no VS Code GUI,
+# no VNC, no xdotool injection. Just the CLI in autopilot mode.
+#
+# All paths are parameterized via environment variables so this compose file
+# works on any machine and for any repository/project.
+#
 # Usage:
 #   docker compose -f dev-worker/docker-compose.yml up -d
-#   AGENT_COMMAND="@waymark-builder-sub-board start" docker compose -f dev-worker/docker-compose.yml up -d
-#   AGENT_COMMAND="@waymark-manual-qa qa patrol" docker compose -f dev-worker/docker-compose.yml up -d
 #   AGENT_NAME=alpha docker compose -f dev-worker/docker-compose.yml up -d
-#   VNC_PASSWORD=mysecret AGENT_COMMAND="@waymark-builder pick next" docker compose ...
+#   REPO_URL=https://github.com/org/repo docker compose -f dev-worker/docker-compose.yml up -d
 #
-# Access the desktop at: http://localhost:6080/vnc.html (noVNC browser UI)
-# Raw VNC client: localhost:5901
+# Logs:
+#   docker logs -f waymark-dev-worker
+#
+# Re-auth when token expires:
+#   copilot --login   (on host, token auto-saves to ~/.copilot/config.json)
+#   docker compose -f dev-worker/docker-compose.yml restart
 
 services:
   waymark-dev-worker:
     build:
       context: .
     image: waymark-dev-worker:latest
-    container_name: waymark-dev-worker
+    container_name: ${CONTAINER_NAME:-waymark-dev-worker}
 
-    ports:
-      - "127.0.0.1:6080:6080"   # noVNC — browser desktop (localhost only for security)
-      - "127.0.0.1:5901:5901"   # Raw VNC — optional direct VNC client access
-      - "127.0.0.1:9112:9111"   # Orchestrator wake endpoint — POST localhost:9112/wake to skip sleep
+    # No ports — the agent runs headlessly. Use `docker logs` for output.
+    # Uncomment below to expose the Waymark dev server during test runs:
+    # ports:
+    #   - "127.0.0.1:3000:3000"
 
     environment:
-      # No VNC password — both ports are bound to 127.0.0.1 (see ports section),
-      # so only processes on this machine can connect. Safe for local dev use.
+      # ── AI Provider selection ────────────────────────────────────────────────
+      # copilot  → GitHub Copilot CLI (needs ~/.copilot/config.json volume)
+      # claude   → Anthropic Claude Code (needs ANTHROPIC_API_KEY below)
+      # auto     → learn-repo.sh detects from available credentials at startup
+      - AI_PROVIDER=${AI_PROVIDER:-auto}
 
-      # ── The agent command injected into Copilot Chat on every start/restart ──
-      # Override this to change which agent runs, or use a .env file.
-      # Examples:
-      #   @waymark-builder start               (persistent loop, pushes branches)
-      #   @waymark-builder-sub-board start     (local-only, never pushes)
-      #   @waymark-builder pick next           (single task then stops)
-      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-orchestrator start}
+      # ── Which custom agent / prompt to run ─────────────────────────────────
+      # Copilot: @-mention an agent from .github/agents/*.agent.md
+      - AGENT_COMMAND=${AGENT_COMMAND:-@waymark-builder start}
+      # Claude: raw prompt (defaults to AGENT_COMMAND if not set)
+      # Override this when using claude provider if you want different wording.
+      - CLAUDE_COMMAND=${CLAUDE_COMMAND:-}
 
-      # ── Phone notification rules sheet ─────────────────────────────────────
-      # Google Sheets ID of the rules sheet for WebRTC push notifications.
-      # Loaded automatically at orchestrator startup — no need to pass rulesSheetId as arg.
-      - WAYMARK_RULES_SHEET_ID=10Vmn84-7sqyQtCLqy7b-rFrHFbXWiB7InGPl4uQ53XA
-
-      # ── p2p-server URL ────────────────────────────────────────────────────
-      # The p2p-server runs on the HOST at port 8090 — use host.docker.internal
-      # (mapped to the host gateway via extra_hosts below).
-      - P2P_SERVER_URL=http://host.docker.internal:8090
-
-      # ── Kanban board URL (Google Sheets) ──────────────────────────────────
-      # When set, overrides the default spreadsheet ID in workboard scripts.
-      # Pass via: make run BOARD_URL="https://docs.google.com/spreadsheets/d/..."
-      - WAYMARK_WORKBOARD_URL=${WAYMARK_WORKBOARD_URL:-}
+      # ── Set to true to prevent learn-repo.sh from overwriting CLAUDE.md ───
+      # Useful if you've hand-crafted the project's CLAUDE.md and don't want
+      # the container to regenerate it on every boot.
+      - CLAUDE_MD_LOCKED=${CLAUDE_MD_LOCKED:-false}
 
       # ── Named agent identity for multi-agent setups ────────────────────────
-      # When set, the agent uses this name for task claiming and notes.
-      # Each container MUST have a unique AGENT_NAME when running multiple agents.
-      # Leave unset for single-agent use (defaults to "AI" in workboard scripts).
-      - AGENT_NAME=${AGENT_NAME:-}
+      # AGENT_HUMAN_NAME — human name shown in logs and the Agent Registry UI
+      #   (Alex, Sam, Jordan, Morgan…). Set a unique name per container.
+      # AGENT_NAME — legacy unique ID for workboard claiming (defaults to human name)
+      - AGENT_HUMAN_NAME=${AGENT_HUMAN_NAME:-}
+      - AGENT_NAME=${AGENT_NAME:-${AGENT_HUMAN_NAME:-}}
 
-      # ── Base branch for agent work ─────────────────────────────────────────
-      # When set, the container checks out this branch on startup so all agent
-      # feature branches fork from it instead of main.
-      # Example: AGENT_BASE_BRANCH=feat/p2p-server-notification-pipeline
-      - AGENT_BASE_BRANCH=${AGENT_BASE_BRANCH:-}
+      # ── Language models ──────────────────────────────────────────────────────
+      # Model for Copilot CLI (uses model names from copilot --list-models)
+      - AGENT_MODEL=${AGENT_MODEL:-claude-sonnet-4.6}
+      # Model for Claude Code (uses Anthropic model IDs)
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
 
-      # Language model for the agent (as it appears in VS Code's model picker)
-      - AGENT_MODEL=${AGENT_MODEL:-copilot/claude-sonnet-4.6}
+      # ── GitHub Copilot CLI auth ──────────────────────────────────────────────
+      # Set COPILOT_GITHUB_TOKEN (or GH_TOKEN) to an OAuth token with Copilot access.
+      # Run `make token-extract` to auto-populate from the OS keychain.
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}
+      - GH_TOKEN=${GH_TOKEN:-${COPILOT_GITHUB_TOKEN:-}}
 
-      # Virtual display — must match the TigerVNC display number
-      - DISPLAY=:1
+      # ── Claude Code auth ─────────────────────────────────────────────────────
+      # Set ANTHROPIC_API_KEY in your shell or .env file.
+      # The volume mount of ~/.claude below provides project settings.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
-      # Google service-account key path (inside container)
+      # ── If set, clone this repo into /workspace on first boot ──────────────
+      - REPO_URL=${REPO_URL:-}
+      - REPO_BRANCH=${REPO_BRANCH:-main}
+
+      # ── Virtual display for Playwright browser tests ─────────────────────
+      - DISPLAY=:99
+
+      # ── Google service-account key path (inside container) ───────────────
       - GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json
 
-      # Git identity for commits made inside the container
+      # ── Agent Registry sheet ID ──────────────────────────────────────────
+      # The Google Sheet ID of the Agent Registry sheet (agents template).
+      # Set this so agents can read their tuning strings from the Waymark UI.
+      # Operators edit tuning strings in the sheet; agents pick them up on boot.
+      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-}
+
+      # ── Git identity for commits made inside the container ───────────────
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 
-      # ── GitHub auth via host browser ───────────────────────────────────────
-      # Setting BROWSER to empty prevents VS Code from trying to open a browser
-      # inside the container. Instead it shows a "Copy Link" notification with
-      # the GitHub device-auth URL — paste it into your host browser to auth.
-      # VS Code is also launched with --password-store=basic (see start-vscode.sh)
-      # so tokens are written to a file in globalStorage/ (not gnome-keyring).
-      - BROWSER=
-
-    # On Linux, host.docker.internal is not added automatically — map it to the
-    # host gateway so the container can reach host services like p2p-server:8090.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    devices:
-      # Required for ydotoold kernel-level input daemon
-      - /dev/uinput
-
-    # VS Code needs extra shared memory for its Electron renderer processes
-    shm_size: 2g
-
-    # Restart on crash; stop manually with `docker compose down`
     restart: unless-stopped
 
     volumes:
       # ── Workspace ──────────────────────────────────────────────────────────
-      # The codebase the agent reads, edits, and commits to
-      - /home/tekjanson/Documents/Code/Waymark:/workspace
+      # Mount a local directory, or leave empty + set REPO_URL to clone.
+      # Set WORKSPACE_PATH on the host to use a different local directory.
+      - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace
 
-      # ── VS Code user config ────────────────────────────────────────────────
-      # Mounted read-only as a seed source; entrypoint.sh copies it into the
-      # container so VS Code can write freely (auth tokens, extension state, etc.)
-      - /home/tekjanson/.config/Code/User:/host-vscode-user:ro
+      # ── Copilot CLI auth ───────────────────────────────────────────────────
+      # Plain JSON file — no gnome-keyring, no SQLite, no password-store.
+      # Run `copilot --login` on the host once; container reuses the token.
+      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/root/.copilot
 
-      # ── VS Code extensions cache ───────────────────────────────────────────
-      # Mounted read-write: avoids re-downloading on each container restart.
-      # Safe because VS Code extension installs are idempotent.
-      - /home/tekjanson/.vscode/extensions:/root/.vscode/extensions
+      # ── Claude Code auth / config ──────────────────────────────────────────
+      # Claude Code uses ANTHROPIC_API_KEY (env) for auth and ~/.claude for
+      # project settings and global MCP config. Mount the host dir so the
+      # agent's Claude settings persist across container restarts.
+      # If you don't use Claude, this mount is a no-op (dir may be empty).
+      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/root/.claude
 
       # ── Google service-account key ─────────────────────────────────────────
-      # Needed by check-workboard.js, update-workboard.js, etc.
-      - /home/tekjanson/.config/gcloud/waymark-service-account-key.json:/credentials/gsa-key.json:ro
-
-      # ── Google OAuth user token ────────────────────────────────────────────
-      # Needed by generate-test-report.js --upload and generate-examples.js.
-      # Service accounts have no Drive quota; uploads use this user OAuth token.
-      # Generated once on the host with: node scripts/get-oauth-token.js
-      - /home/tekjanson/.config/gcloud/waymark-oauth-token.json:/root/.config/gcloud/waymark-oauth-token.json:ro
+      - ${GSA_KEY_PATH:-/home/tekjanson/.config/gcloud/waymark-service-account-key.json}:/credentials/gsa-key.json:ro
 
       # ── SSH keys ───────────────────────────────────────────────────────────
-      # Needed for git push / pull over SSH
-      - /home/tekjanson/.ssh:/root/.ssh:ro
+      - ${SSH_PATH:-/home/tekjanson/.ssh}:/root/.ssh:ro
 
-      # ── GitHub Copilot auth token storage ─────────────────────────────────
-      # Named volume: persists OAuth tokens across container rebuilds.
-      # VS Code writes here when --password-store=basic is set.
-      # First-run auth flow:
-      #   1. Open http://localhost:6080/vnc.html
-      #   2. VS Code shows a "Sign in to GitHub" notification
-      #   3. Click the notification or use the Copilot icon → copy the URL
-      #   4. Open that URL in your HOST browser and complete OAuth
-      #   5. Token saved here — no re-auth needed until token expires
-      # To force re-auth: docker volume rm waymark-vscode-auth
-      - waymark-vscode-auth:/root/.config/Code/User/globalStorage
-
-      # ── Agent session logs ─────────────────────────────────────────────────
-      # Host-mounted read-write so logs are visible from the host immediately.
-      # Agents append to /agent-logs/session-{timestamp}.log inside the container.
-      # View with: make agent-logs
-      - /home/tekjanson/Documents/Code/Waymark/agent-logs:/agent-logs
-
-      # ── VS Code workspace storage (Copilot chat history) ───────────────────
-      # Bind-mounted so VS Code writes chat sessions directly to the host.
-      # The container accumulates nothing — all workspaceStorage I/O goes straight
-      # to this host directory, making raw Copilot chat logs readable immediately.
-      # Copilot logs land at:
-      #   agent-logs/vscode-workspace-storage/{hash}/GitHub.copilot-chat/debug-logs/
-      # View with: make chat-logs
-      - /home/tekjanson/Documents/Code/Waymark/agent-logs/vscode-workspace-storage:/root/.config/Code/User/workspaceStorage
-
-volumes:
-  # Persists GitHub Copilot OAuth tokens across container rebuilds.
-  # Survives `docker compose down` and `up --build`.
-  # Only cleared by: docker volume rm waymark-vscode-auth
-  waymark-vscode-auth:
+      # ── Docker socket (Docker-outside-of-Docker) ───────────────────────────
+      # Mounts the HOST Docker daemon socket into the container.
+      # The agent can now run `docker` and `docker compose` commands to:
+      #   - Spawn parallel worker containers for different repos/tasks
+      #   - Start databases, services, or test environments on demand
+      #   - Scale itself: `docker compose up --scale agent=N`
+      #   - Manage the full container lifecycle from inside the agent
+      #
+      # Security note: this grants the agent full Docker daemon access
+      # (equivalent to root on the host). Only use on trusted networks.
+      # For tighter isolation, consider a dedicated Docker socket proxy.
+      #
+      # Rootless Docker: The socket path on the host may differ from the
+      # standard /var/run/docker.sock. Override with DOCKER_SOCKET_PATH:
+      #   DOCKER_SOCKET_PATH=/run/user/1000/docker.sock make up
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock

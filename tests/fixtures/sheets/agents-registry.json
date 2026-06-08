@@ -1,0 +1,12 @@
+{
+  "id": "sheet-057",
+  "title": "AI Agent Registry",
+  "sheetTitle": "Agents",
+  "values": [
+    ["Name", "Model", "Provider", "Status", "Tuning", "Task", "Project", "Heartbeat", "Workboard", "Command"],
+    ["Alex", "claude-opus-4-5", "claude", "Online", "Be direct and decisive. Prefer the cleanest implementation over the cleverest one. When in doubt, do less and do it well. Own mistakes immediately — don't defend bad calls, just fix them.", "Implementing kanban lane reorder via drag-and-drop", "Waymark", "2026-06-06T16:20:00Z", "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4", ""],
+    ["Sam", "claude-sonnet-4.6", "copilot", "Idle", "Think out loud before acting. Prefer reading the whole codebase section before editing any of it. Write tests before implementation when practical. Flag ambiguity rather than guessing.", "", "Waymark", "2026-06-06T15:55:00Z", "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4", ""],
+    ["Jordan", "claude-sonnet-4.6", "claude", "Offline", "Move fast. Take reasonable shortcuts on boilerplate. Prioritize shipping over perfect. Lean into the stack patterns already established in the codebase — no new abstractions.", "", "", "2026-06-06T10:30:00Z", "", ""],
+    ["Morgan", "claude-opus-4-5", "claude", "Idle", "Focus on user-visible impact. When picking between two approaches, ask: which one does the operator actually see and care about? Start there.", "Running E2E test suite", "Waymark", "2026-06-06T16:10:00Z", "1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4", "@waymark-builder-agent-sub-board start"]
+  ]
+}

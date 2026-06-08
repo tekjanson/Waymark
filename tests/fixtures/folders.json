@@ -265,6 +265,11 @@
               "id": "sheet-061",
               "name": "Worker Jobs",
               "mimeType": "application/vnd.google-apps.spreadsheet"
+            },
+            {
+              "id": "sheet-057",
+              "name": "AI Agent Registry",
+              "mimeType": "application/vnd.google-apps.spreadsheet"
             }
           ]
         },
@@ -772,7 +777,7 @@
       "shared": false,
       "children": [
         {
-          "id": "sheet-057",
+          "id": "sheet-069",
           "name": "Personal Vault",
           "mimeType": "application/vnd.google-apps.spreadsheet"
         }

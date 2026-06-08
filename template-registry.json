@@ -5,7 +5,7 @@
     {
       "key": "testcases",
       "name": "Test Cases",
-      "icon": "\ud83e\uddea",
+      "icon": "🧪",
       "color": "#7c3aed",
       "priority": 25,
       "category": "Engineering",
@@ -53,7 +53,7 @@
     {
       "key": "checklist",
       "name": "Checklist",
-      "icon": "\u2713",
+      "icon": "✓",
       "color": "#16a34a",
       "priority": 10,
       "category": "Productivity",
@@ -91,7 +91,7 @@
     {
       "key": "tracker",
       "name": "Progress Tracker",
-      "icon": "\ud83d\udcca",
+      "icon": "📊",
       "color": "#2563eb",
       "priority": 20,
       "category": "Goals",
@@ -125,7 +125,7 @@
     {
       "key": "schedule",
       "name": "Schedule",
-      "icon": "\ud83d\udcc5",
+      "icon": "📅",
       "color": "#8b5cf6",
       "priority": 20,
       "category": "Time",
@@ -160,7 +160,7 @@
     {
       "key": "inventory",
       "name": "Inventory",
-      "icon": "\ud83d\udce6",
+      "icon": "📦",
       "color": "#f59e0b",
       "priority": 15,
       "category": "Assets",
@@ -194,7 +194,7 @@
     {
       "key": "contacts",
       "name": "Contacts",
-      "icon": "\ud83d\udcc7",
+      "icon": "📇",
       "color": "#ec4899",
       "priority": 15,
       "category": "People",
@@ -226,7 +226,7 @@
     {
       "key": "log",
       "name": "Activity Log",
-      "icon": "\ud83d\udcdd",
+      "icon": "📝",
       "color": "#0891b2",
       "priority": 15,
       "category": "Tracking",
@@ -257,7 +257,7 @@
     {
       "key": "budget",
       "name": "Budget",
-      "icon": "\ud83d\udcb0",
+      "icon": "💰",
       "color": "#059669",
       "priority": 20,
       "category": "Finance",
@@ -291,7 +291,7 @@
     {
       "key": "kanban",
       "name": "Kanban Board",
-      "icon": "\ud83d\udccb",
+      "icon": "📋",
       "color": "#0284c7",
       "priority": 23,
       "category": "Project Management",
@@ -342,7 +342,7 @@
     {
       "key": "habit",
       "name": "Habit Tracker",
-      "icon": "\ud83d\udd04",
+      "icon": "🔄",
       "color": "#d97706",
       "priority": 22,
       "category": "Personal",
@@ -368,7 +368,7 @@
       "interactive": true,
       "interactionType": "toggle-grid",
       "interactionStates": [
-        "\u2713",
+        "✓",
         ""
       ],
       "exampleCount": 2,
@@ -385,7 +385,7 @@
     {
       "key": "grading",
       "name": "Gradebook",
-      "icon": "\ud83c\udf93",
+      "icon": "🎓",
       "color": "#7c2d12",
       "priority": 21,
       "category": "Education",
@@ -421,7 +421,7 @@
     {
       "key": "timesheet",
       "name": "Timesheet",
-      "icon": "\u23f1\ufe0f",
+      "icon": "⏱️",
       "color": "#4338ca",
       "priority": 20,
       "category": "Work",
@@ -454,7 +454,7 @@
     {
       "key": "poll",
       "name": "Poll / Survey",
-      "icon": "\ud83d\udcca",
+      "icon": "📊",
       "color": "#be185d",
       "priority": 18,
       "category": "Feedback",
@@ -489,7 +489,7 @@
     {
       "key": "changelog",
       "name": "Changelog",
-      "icon": "\ud83d\udccb",
+      "icon": "📋",
       "color": "#374151",
       "priority": 18,
       "category": "Engineering",
@@ -521,7 +521,7 @@
     {
       "key": "crm",
       "name": "CRM",
-      "icon": "\ud83e\udd1d",
+      "icon": "🤝",
       "color": "#b45309",
       "priority": 23,
       "category": "Sales",
@@ -564,7 +564,7 @@
     {
       "key": "meal",
       "name": "Meal Planner",
-      "icon": "\ud83c\udf7d\ufe0f",
+      "icon": "🍽️",
       "color": "#65a30d",
       "priority": 22,
       "category": "Health",
@@ -598,7 +598,7 @@
     {
       "key": "travel",
       "name": "Travel Itinerary",
-      "icon": "\u2708\ufe0f",
+      "icon": "✈️",
       "color": "#0891b2",
       "priority": 20,
       "category": "Travel",
@@ -635,7 +635,7 @@
     {
       "key": "roster",
       "name": "Roster",
-      "icon": "\ud83d\udc65",
+      "icon": "👥",
       "color": "#6366f1",
       "priority": 18,
       "category": "Operations",
@@ -675,7 +675,7 @@
     {
       "key": "recipe",
       "name": "Recipe",
-      "icon": "\ud83d\udcd6",
+      "icon": "📖",
       "color": "#ea580c",
       "priority": 24,
       "category": "Personal",
@@ -726,7 +726,7 @@
     {
       "key": "flow",
       "name": "Flow Diagram",
-      "icon": "\ud83d\udd00",
+      "icon": "🔀",
       "color": "#6366f1",
       "priority": 20,
       "category": "Engineering",
@@ -765,7 +765,7 @@
     {
       "key": "social",
       "name": "Social Feed",
-      "icon": "\ud83d\udcac",
+      "icon": "💬",
       "color": "#6366f1",
       "priority": 19,
       "category": "Social",
@@ -803,7 +803,7 @@
     {
       "key": "automation",
       "name": "Automation",
-      "icon": "\ud83e\udd16",
+      "icon": "🤖",
       "color": "#7c3aed",
       "priority": 21,
       "category": "Engineering",
@@ -844,7 +844,7 @@
     {
       "key": "guide",
       "name": "Instruction Guide",
-      "icon": "\ud83e\udeb4",
+      "icon": "🪴",
       "color": "#15803d",
       "priority": 22,
       "category": "Documentation",
@@ -885,7 +885,7 @@
     {
       "key": "knowledge",
       "name": "Knowledge Base",
-      "icon": "\ud83d\udcda",
+      "icon": "📚",
       "color": "#6366f1",
       "priority": 18,
       "category": "Documentation",
@@ -932,7 +932,7 @@
     {
       "key": "notification",
       "name": "Push Notification Rules",
-      "icon": "\ud83d\udcf2",
+      "icon": "📲",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Productivity",
@@ -954,7 +954,7 @@
     {
       "key": "iot",
       "name": "IoT Sensor Log",
-      "icon": "\ud83d\udce1",
+      "icon": "📡",
       "color": "#0f766e",
       "priority": 24,
       "category": "Monitoring",
@@ -1000,7 +1000,7 @@
     {
       "key": "okr",
       "name": "OKR / Goals",
-      "icon": "\ud83c\udfaf",
+      "icon": "🎯",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Goals",
@@ -1038,7 +1038,7 @@
     {
       "key": "gantt",
       "name": "Gantt Timeline",
-      "icon": "\ud83d\udcc5",
+      "icon": "📅",
       "color": "#059669",
       "priority": 23,
       "category": "Project Management",
@@ -1079,7 +1079,7 @@
     {
       "key": "passwords",
       "name": "Password Manager",
-      "icon": "\ud83d\udd11",
+      "icon": "🔑",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Security",
@@ -1104,10 +1104,10 @@
       "interactive": true,
       "interactionType": "inline-edit",
       "interactionStates": [],
-      "hasDirectoryView": false,
       "exampleCount": 2,
+      "hasDirectoryView": false,
       "fixtureIds": [
-        "sheet-057"
+        "sheet-069"
       ],
       "fixtureFiles": [
         "passwords-personal"
@@ -1116,7 +1116,7 @@
     {
       "key": "linker",
       "name": "Community Linker",
-      "icon": "\ud83d\udd17",
+      "icon": "🔗",
       "color": "#7c3aed",
       "priority": 22,
       "category": "Social",
@@ -1155,7 +1155,7 @@
     {
       "key": "marketing",
       "name": "Content Workbench",
-      "icon": "\ud83d\udce3",
+      "icon": "📣",
       "color": "#e11d48",
       "priority": 24,
       "category": "Marketing",
@@ -1210,7 +1210,7 @@
     {
       "key": "arcade",
       "name": "Arcade",
-      "icon": "\ud83c\udfae",
+      "icon": "🎮",
       "color": "#7c3aed",
       "priority": 20,
       "category": "Social",
@@ -1242,7 +1242,7 @@
     {
       "key": "worker",
       "name": "Worker Jobs",
-      "icon": "\u2699\ufe0f",
+      "icon": "⚙️",
       "color": "#0369a1",
       "priority": 20,
       "category": "Operations",
@@ -1306,7 +1306,7 @@
     {
       "key": "blog",
       "name": "Blog",
-      "icon": "\u270d\ufe0f",
+      "icon": "✍️",
       "color": "#0f766e",
       "priority": 20,
       "category": "Content",
@@ -1419,11 +1419,85 @@
       "fixtureFiles": [
         "invoice-sample"
       ]
+    },
+    {
+      "key": "passwords",
+      "name": "Password Manager",
+      "icon": "🔑",
+      "color": "#7c3aed",
+      "priority": 22,
+      "category": "Security",
+      "detectSignals": [
+        "password",
+        "passwd",
+        "secret",
+        "credential",
+        "site",
+        "service",
+        "username",
+        "login"
+      ],
+      "columnRoles": [
+        "site",
+        "username",
+        "password",
+        "url",
+        "category",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "exampleCount": 2,
+      "hasDirectoryView": false,
+      "fixtureIds": [
+        "sheet-069"
+      ],
+      "fixtureFiles": [
+        "passwords-personal"
+      ]
+    },
+    {
+      "key": "agents",
+      "name": "Agent Registry",
+      "icon": "🤖",
+      "color": "#7c3aed",
+      "priority": 24,
+      "category": "Engineering",
+      "detectSignals": [
+        "tuning",
+        "personality",
+        "agent",
+        "heartbeat",
+        "provider"
+      ],
+      "columnRoles": [
+        "name",
+        "model",
+        "provider",
+        "status",
+        "tuning",
+        "task",
+        "project",
+        "heartbeat",
+        "workboard",
+        "command"
+      ],
+      "interactive": true,
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "hasDirectoryView": false,
+      "exampleCount": 2,
+      "fixtureIds": [
+        "sheet-057"
+      ],
+      "fixtureFiles": [
+        "agents-registry"
+      ]
     }
-
   ],
-  "nextSheetId": "sheet-069",
-  "totalTemplates": 37,
+  "nextSheetId": "sheet-070",
+  "totalTemplates": 39,
   "categories": [
     "Productivity",
     "Engineering",

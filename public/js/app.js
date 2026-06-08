@@ -45,6 +45,7 @@ const menuExplorerBtn  = document.getElementById('menu-explorer-btn');
 const menuCreateBtn    = document.getElementById('menu-create-btn');
 const menuImportBtn    = document.getElementById('menu-import-btn');
 const menuExamplesBtn  = document.getElementById('menu-examples-btn');
+const menuFleetBtn     = document.getElementById('menu-fleet-btn');
 const menuAgentBtn     = document.getElementById('menu-agent-btn');
 const menuDashboardBtn = document.getElementById('menu-dashboard-btn');
 const explorerRefreshBtn = document.getElementById('explorer-refresh-btn');
@@ -256,6 +257,18 @@ async function boot() {
       autoCloseSidebarMobile();
     });
   }
+  if (menuFleetBtn) {
+    menuFleetBtn.addEventListener('click', () => {
+      const fleetId = userData.getFleetSheetId();
+      if (fleetId) {
+        window.location.hash = `#/sheet/${fleetId}`;
+        autoCloseSidebarMobile();
+      } else {
+        showToast('Open an Agent Registry sheet, then use "Set as Fleet Registry" to pin it here.', 'info');
+        autoCloseSidebarMobile();
+      }
+    });
+  }
   if (menuAgentBtn) {
     menuAgentBtn.addEventListener('click', () => {
       window.location.hash = '#/agent';
@@ -416,6 +429,11 @@ async function showApp(user) {
     await userData.init();
   } catch (err) {
     console.warn('user-data init failed, using localStorage fallback:', err);
+  }
+
+  // Mark Fleet sidebar button as configured if a registry sheet is saved
+  if (menuFleetBtn && userData.getFleetSheetId()) {
+    menuFleetBtn.classList.add('fleet-configured');
   }
 
   // Start MQTT bridge if enabled in settings OR via ?mqtt=1 URL param
