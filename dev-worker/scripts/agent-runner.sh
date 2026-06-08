@@ -66,7 +66,7 @@ AGENT_TUNING=""
 if [[ -n "$AGENT_HUMAN_NAME" && -n "$AGENTS_SHEET_ID" ]]; then
     log "Loading tuning for agent '${AGENT_HUMAN_NAME}' from sheet ${AGENTS_SHEET_ID}..."
     # source the output so exports (AGENT_TUNING, AGENT_MODEL, AI_PROVIDER) take effect
-    source <(bash /scripts/read-agent-tuning.sh 2>/dev/null) || true
+    source <(bash /workspace/dev-worker/scripts/read-agent-tuning.sh 2>/dev/null) || true
     if [[ -n "${AGENT_TUNING:-}" ]]; then
         log "Tuning loaded (${#AGENT_TUNING} chars)"
     else
@@ -82,8 +82,8 @@ log "Identity: ${AGENT_HUMAN_NAME:-<unnamed>} | Provider: ${AI_PROVIDER} | Model
 # Writes status / heartbeat / task to the Agent Registry sheet.
 # Silently no-ops if AGENTS_SHEET_ID or AGENT_HUMAN_NAME is missing.
 sheet_write() {
-    if [[ -x /scripts/write-agent-sheet.sh ]]; then
-        /scripts/write-agent-sheet.sh "$@" 2>&1 | sed 's/^/  /' || true
+    if [[ -x /workspace/dev-worker/scripts/write-agent-sheet.sh ]]; then
+        /workspace/dev-worker/scripts/write-agent-sheet.sh "$@" 2>&1 | sed 's/^/  /' || true
     fi
 }
 

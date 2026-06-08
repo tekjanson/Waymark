@@ -30,7 +30,11 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
     set -a; source "${REPO_ROOT}/.env"; set +a
 fi
 
+# SA key: prefer dev-worker/credentials/gsa-key.json, fall back to GOOGLE_APPLICATION_CREDENTIALS
 SA_KEY="${REPO_ROOT}/dev-worker/credentials/gsa-key.json"
+if [[ ! -f "$SA_KEY" && -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+    SA_KEY="$(readlink -f "${GOOGLE_APPLICATION_CREDENTIALS}")"
+fi
 SHEET_ID="${AGENTS_SHEET_ID:-}"
 SHEET_TAB="Sheet1"
 IMAGE_NAME="waymark-dev-worker:latest"
@@ -167,8 +171,8 @@ while IFS= read -r agent_json; do
         --env "COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}" \
         --env "GH_TOKEN=${COPILOT_GITHUB_TOKEN:-}" \
         --env "GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json" \
-        --volume "${REPO_ROOT}/dev-worker/credentials:/credentials:ro" \
-        --volume "${HOME}/.copilot:/root/.copilot:ro" \
+        --volume "${SA_KEY}:/credentials/gsa-key.json:ro" \
+        --volume "${HOME}/.copilot:/root/.copilot" \
         --volume "${DOCKER_SOCKET}:/var/run/docker.sock" \
         --volume "${REPO_ROOT}:/workspace" \
         --restart unless-stopped \

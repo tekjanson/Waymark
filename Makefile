@@ -342,11 +342,7 @@ fleet-status: ## Show status of every named dev-worker container
 
 fleet-sync: ## Sync containers with the Agent Registry sheet (starts missing, leaves existing alone)
 	@echo "── Syncing fleet with Agent Registry sheet ──────────────"
-	@if [ -z "$${AGENTS_SHEET_ID:-}" ] && [ -f .env ]; then \
-		set -a; source .env; set +a; fi; \
-	if [ -z "$${AGENTS_SHEET_ID:-}" ]; then \
-		echo "  ✗ AGENTS_SHEET_ID not set. Add to .env first."; exit 1; fi
-	@bash dev-worker/scripts/fleet-sync.sh
+	@env $$(grep -v '^#' .env | grep -v '^$$' | xargs) bash dev-worker/scripts/fleet-sync.sh
 
 fleet-build: ## Build (or rebuild) the dev-worker Docker image
 	@echo "── Building waymark-dev-worker image ───────────────────"
