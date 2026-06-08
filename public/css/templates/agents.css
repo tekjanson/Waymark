@@ -14,6 +14,13 @@
 
 .agents-header-left { flex: 1; min-width: 200px; }
 
+.agents-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .agents-title {
   font-size: 1.25rem;
   font-weight: 700;
@@ -54,6 +61,32 @@
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ---------- Sync Fleet button ---------- */
+.agents-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.agents-sync-btn:hover:not(:disabled) { opacity: 0.88; }
+.agents-sync-btn:active:not(:disabled) { transform: scale(0.97); }
+.agents-sync-btn:disabled { opacity: 0.55; cursor: default; }
+
+[data-theme="dark"] .agents-sync-btn {
+  background: var(--tint-purple-text, var(--color-primary));
 }
 
 /* ---------- Grid ---------- */

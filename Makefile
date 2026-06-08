@@ -19,6 +19,9 @@ export
 COMPOSE       := docker compose -f dev-worker/docker-compose.yml
 CONTAINER     ?= waymark-dev-worker
 SERVER_PID    := .server.pid
+WEBHOOK_PID   := .webhook.pid
+FLEET_WEBHOOK_PORT ?= 3002
+FLEET_WEBHOOK_URL  ?= http://localhost:$(FLEET_WEBHOOK_PORT)
 
 # Agent fleet config — comes from .env, not CLI flags
 # Set AGENT_NAMES in .env to control which agents start (space-separated)
@@ -52,6 +55,7 @@ endef
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
+        fleet-webhook fleet-webhook-stop \
         auth-copilot auth-claude auth-check token-extract \
         workboard clean
 
@@ -100,10 +104,22 @@ coll = secretstorage.get_default_collection(bus); \
 	@# ── Ensure Docker socket is accessible (rootless Docker) ─────────────
 	@SOCK=$${DOCKER_SOCKET_PATH:-/var/run/docker.sock}; \
 	if [ -S "$$SOCK" ]; then chmod o+rw "$$SOCK" 2>/dev/null || true; fi
-	@# ── 2. Waymark web server ─────────────────────────────────────────
+	@# ── 2. Fleet webhook sidecar ─────────────────────────────────────
+	@if [ -f $(WEBHOOK_PID) ] && kill -0 $$(cat $(WEBHOOK_PID)) 2>/dev/null; then \
+		echo "  ✓  Fleet webhook already running (PID $$(cat $(WEBHOOK_PID)))"; \
+	else \
+		FLEET_WEBHOOK_PORT=$(FLEET_WEBHOOK_PORT) \
+		nohup node scripts/fleet-webhook.js > /tmp/waymark-webhook.log 2>&1 & echo $$! > $(WEBHOOK_PID); \
+		sleep 1; \
+		kill -0 $$(cat $(WEBHOOK_PID)) 2>/dev/null \
+			&& echo "  ✓  Fleet webhook started → http://localhost:$(FLEET_WEBHOOK_PORT)" \
+			|| echo "  ✗  Fleet webhook failed — check /tmp/waymark-webhook.log"; \
+	fi
+	@# ── 3. Waymark web server ─────────────────────────────────────────
 	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \
 		echo "  ✓  Web server already running (PID $$(cat $(SERVER_PID)))"; \
 	else \
+		FLEET_WEBHOOK_URL=$(FLEET_WEBHOOK_URL) \
 		nohup node server/index.js > /tmp/waymark-server.log 2>&1 & echo $$! > $(SERVER_PID); \
 		sleep 1; \
 		kill -0 $$(cat $(SERVER_PID)) 2>/dev/null \
@@ -111,7 +127,7 @@ coll = secretstorage.get_default_collection(bus); \
 			|| { echo "  ✗  Web server failed — check /tmp/waymark-server.log"; exit 1; }; \
 	fi
 	@echo ""
-	@# ── 3. Build image if needed ──────────────────────────────────────
+	@# ── 4. Build image if needed ──────────────────────────────────────
 	@if docker image inspect waymark-dev-worker:latest > /dev/null 2>&1; then \
 		echo "  ✓  Container image ready"; \
 	else \
@@ -119,7 +135,7 @@ coll = secretstorage.get_default_collection(bus); \
 		$(COMPOSE) build; \
 	fi
 	@echo ""
-	@# ── 4. Start agent fleet ──────────────────────────────────────────
+	@# ── 5. Start agent fleet ──────────────────────────────────────────
 	@echo "  ⏳  Starting agents: $(AGENT_NAMES)"
 	@for name in $(AGENT_NAMES); do \
 		cname="dev-worker-$$(echo $$name | tr '[:upper:]' '[:lower:]')"; \
@@ -141,7 +157,7 @@ coll = secretstorage.get_default_collection(bus); \
 		fi; \
 	done
 	@echo ""
-	@# ── 5. Open the UI ────────────────────────────────────────────────
+	@# ── 6. Open the UI ────────────────────────────────────────────────
 	@sleep 1
 	@xdg-open http://localhost:$(PORT) 2>/dev/null \
 		|| open http://localhost:$(PORT) 2>/dev/null \
@@ -158,12 +174,17 @@ coll = secretstorage.get_default_collection(bus); \
 	@echo "  ════════════════════════════════════════════════"
 	@echo ""
 
-down: ## Stop everything (web server + all agent containers)
+down: ## Stop everything (web server + fleet webhook + all agent containers)
 	@echo "Stopping Waymark..."
 	@# Stop web server
 	@if [ -f $(SERVER_PID) ]; then \
 		kill $$(cat $(SERVER_PID)) 2>/dev/null && echo "  ✓  Web server stopped" || true; \
 		rm -f $(SERVER_PID); \
+	fi
+	@# Stop fleet webhook sidecar
+	@if [ -f $(WEBHOOK_PID) ]; then \
+		kill $$(cat $(WEBHOOK_PID)) 2>/dev/null && echo "  ✓  Fleet webhook stopped" || true; \
+		rm -f $(WEBHOOK_PID); \
 	fi
 	@# Stop all dev-worker containers
 	@docker ps --filter "name=dev-worker" --format "{{.Names}}" | \
@@ -331,6 +352,26 @@ fleet-build: ## Build (or rebuild) the dev-worker Docker image
 	@echo "── Building waymark-dev-worker image ───────────────────"
 	@docker build -t waymark-dev-worker:latest dev-worker/
 	@echo "  ✓ Image built: waymark-dev-worker:latest"
+
+fleet-webhook: ## Start the fleet webhook sidecar (enables Sync Fleet button in UI)
+	@if [ -f $(WEBHOOK_PID) ] && kill -0 $$(cat $(WEBHOOK_PID)) 2>/dev/null; then \
+		echo "  Fleet webhook already running (PID $$(cat $(WEBHOOK_PID)))"; \
+	else \
+		FLEET_WEBHOOK_PORT=$(FLEET_WEBHOOK_PORT) \
+		nohup node scripts/fleet-webhook.js > /tmp/waymark-webhook.log 2>&1 & echo $$! > $(WEBHOOK_PID); \
+		sleep 1; \
+		kill -0 $$(cat $(WEBHOOK_PID)) 2>/dev/null \
+			&& echo "  ✓  Fleet webhook running → http://localhost:$(FLEET_WEBHOOK_PORT)" \
+			|| { echo "  ✗  Fleet webhook failed — check /tmp/waymark-webhook.log"; exit 1; }; \
+	fi
+
+fleet-webhook-stop: ## Stop the fleet webhook sidecar
+	@if [ -f $(WEBHOOK_PID) ]; then \
+		kill $$(cat $(WEBHOOK_PID)) 2>/dev/null && echo "  ✓  Fleet webhook stopped" || true; \
+		rm -f $(WEBHOOK_PID); \
+	else \
+		echo "  Fleet webhook not running"; \
+	fi
 
 # ── Auth ──────────────────────────────────────────────────────────────
 

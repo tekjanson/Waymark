@@ -337,3 +337,74 @@ test('agents: submitting Add Agent form fires a row-append record', async ({ pag
   const rowData = appendRec.rows?.[0] ?? [];
   expect(rowData.some(v => v === 'River')).toBe(true);
 });
+
+/* ── Fleet webhook / Sync Fleet button tests ────────────────────────────────
+ * These inject window.__WAYMARK_FLEET_WEBHOOK via addInitScript so the
+ * button renders, then use page.route() to intercept the fetch without
+ * needing a real webhook server running.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test('agents: Sync Fleet button is hidden without webhook URL', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // No __WAYMARK_FLEET_WEBHOOK set → button must not exist
+  await expect(page.locator('.agents-sync-btn')).toHaveCount(0);
+});
+
+test('agents: Sync Fleet button appears when webhook URL is configured', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__WAYMARK_FLEET_WEBHOOK = 'http://localhost:3002';
+  });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-sync-btn')).toBeVisible();
+  await expect(page.locator('.agents-sync-btn')).toContainText('Sync Fleet');
+});
+
+test('agents: clicking Sync Fleet POSTs to the webhook /fleet-sync route', async ({ page }) => {
+  let capturedRequest = null;
+  await page.addInitScript(() => {
+    window.__WAYMARK_FLEET_WEBHOOK = 'http://localhost:3002';
+  });
+  // Intercept the fetch before it hits the network
+  await page.route('http://localhost:3002/fleet-sync', async (route) => {
+    capturedRequest = route.request();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, output: 'started: dev-worker-river' }) });
+  });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.agents-sync-btn');
+  // Wait for request to fire
+  await page.waitForTimeout(500);
+  expect(capturedRequest).not.toBeNull();
+  expect(capturedRequest.method()).toBe('POST');
+  expect(capturedRequest.url()).toBe('http://localhost:3002/fleet-sync');
+});
+
+test('agents: Sync Fleet shows success toast on 200 response', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__WAYMARK_FLEET_WEBHOOK = 'http://localhost:3002';
+  });
+  await page.route('http://localhost:3002/fleet-sync', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, output: 'done' }) })
+  );
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.agents-sync-btn');
+  await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('.toast')).toContainText('Fleet synced');
+});
+
+test('agents: Sync Fleet shows error toast on failure response', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__WAYMARK_FLEET_WEBHOOK = 'http://localhost:3002';
+  });
+  await page.route('http://localhost:3002/fleet-sync', route =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'make fleet-sync failed' }) })
+  );
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.agents-sync-btn');
+  await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('.toast')).toContainText('failed');
+});

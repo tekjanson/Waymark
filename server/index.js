@@ -174,6 +174,9 @@ function serveIndex(req, res) {
   if (gcpProject) {
     injections.push(`window.__WAYMARK_GCP_PROJECT=${safeJsString(gcpProject)};`);
   }
+  if (config.FLEET_WEBHOOK_URL) {
+    injections.push(`window.__WAYMARK_FLEET_WEBHOOK=${safeJsString(config.FLEET_WEBHOOK_URL)};`);
+  }
   if (config.GOOGLE_API_KEY) {
     injections.push(`window.__WAYMARK_API_KEY=${safeJsString(config.GOOGLE_API_KEY)};`);
   }

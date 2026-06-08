@@ -7,7 +7,7 @@
    agents read their row on boot and pick up the config.
    ============================================================ */
 
-import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate } from './shared.js';
+import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
 
 /* ---------- Status config ---------- */
 const STATUS_CYCLE  = ['Online', 'Idle', 'Offline', 'Error'];
@@ -84,6 +84,30 @@ const definition = {
   render(container, rows, cols) {
     container.innerHTML = '';
 
+    /* ---------- Sync Fleet button (only when webhook is configured) ---------- */
+    const webhookUrl = window.__WAYMARK_FLEET_WEBHOOK || null;
+    const syncBtn = webhookUrl
+      ? el('button', { className: 'agents-sync-btn', title: 'Start containers for agents not yet running' }, ['🔄 Sync Fleet'])
+      : null;
+
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        syncBtn.textContent = '⏳ Syncing…';
+        syncBtn.disabled = true;
+        try {
+          const res  = await fetch(`${webhookUrl}/fleet-sync`, { method: 'POST' });
+          const data = await res.json();
+          if (data.ok) showToast('Fleet synced — new agents started', 'success');
+          else         showToast(`Fleet sync failed: ${data.error}`, 'error');
+        } catch (err) {
+          showToast(`Fleet sync error: ${err.message}`, 'error');
+        } finally {
+          syncBtn.textContent = '🔄 Sync Fleet';
+          syncBtn.disabled = false;
+        }
+      });
+    }
+
     /* ---------- Header bar ---------- */
     const header = el('div', { className: 'agents-header' }, [
       el('div', { className: 'agents-header-left' }, [
@@ -92,10 +116,13 @@ const definition = {
           'Edit tuning strings and workboard targets. Agents read their row on boot.',
         ]),
       ]),
-      el('div', { className: 'agents-header-stats' }, [
-        _statBadge('Total', rows.length),
-        _statBadge('Online', rows.filter(r => /online/i.test(cell(r, cols.status))).length, '#16a34a'),
-        _statBadge('Idle', rows.filter(r => /idle/i.test(cell(r, cols.status))).length, '#ca8a04'),
+      el('div', { className: 'agents-header-actions' }, [
+        el('div', { className: 'agents-header-stats' }, [
+          _statBadge('Total', rows.length),
+          _statBadge('Online', rows.filter(r => /online/i.test(cell(r, cols.status))).length, '#16a34a'),
+          _statBadge('Idle', rows.filter(r => /idle/i.test(cell(r, cols.status))).length, '#ca8a04'),
+        ]),
+        ...(syncBtn ? [syncBtn] : []),
       ]),
     ]);
     container.append(header);
