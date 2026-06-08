@@ -428,6 +428,17 @@ auth-check: ## Check which AI credentials are available
 workboard: ## Print current workboard state as JSON
 	node scripts/check-workboard.js
 
+# ── Financials ────────────────────────────────────────────────────────
+
+create-financials-sheet: ## Create a Waymark Financials Google Spreadsheet (all tabs + headers)
+	@echo "── Creating Waymark Financials spreadsheet ──────────────"
+	@echo "   Auth: GOOGLE_TOKEN (user OAuth) or GOOGLE_APPLICATION_CREDENTIALS (SA)"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/create-financials-sheet.js $(if $(TITLE),--title "$(TITLE)") $(if $(FOLDER),--folder "$(FOLDER)")
+	@echo ""
+	@echo "  Open the URL above in your browser to see the new sheet."
+	@echo "  Share with your Waymark service account as Editor to enable write-back."
+
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop all containers, remove images and volumes (full reset)
