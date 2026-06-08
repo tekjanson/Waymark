@@ -37,6 +37,17 @@ set -uo pipefail
 
 source /etc/agent-env.sh 2>/dev/null || true
 
+# Resolve "auto" → detect available provider (same logic as learn-repo.sh)
+if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
+    if [[ -f /root/.copilot/config.json ]]; then
+        AI_PROVIDER="copilot"
+    elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        AI_PROVIDER="claude"
+    else
+        AI_PROVIDER="copilot"  # default — validate_copilot will surface a helpful error
+    fi
+    log "AI_PROVIDER=auto → resolved to '${AI_PROVIDER}'"
+fi
 AI_PROVIDER="${AI_PROVIDER:-copilot}"
 AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 # Claude gets its own command var because @-mentions are Copilot-specific.
@@ -206,6 +217,21 @@ run_claude() {
             || true
     )
 }
+
+# ── Resolve "auto" provider (after tuning may have re-exported AI_PROVIDER) ───
+# read-agent-tuning.sh exports AI_PROVIDER from the sheet value. Normalize to
+# lowercase and resolve "auto" here, after tuning has loaded.
+AI_PROVIDER="${AI_PROVIDER,,}"  # lowercase
+if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
+    if [[ -f /root/.copilot/config.json ]]; then
+        AI_PROVIDER="copilot"
+    elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        AI_PROVIDER="claude"
+    else
+        AI_PROVIDER="copilot"
+    fi
+    log "AI_PROVIDER=auto → resolved to '${AI_PROVIDER}'"
+fi
 
 # ── Main agent loop ───────────────────────────────────────────────────────────
 log "Starting agent loop — provider: ${AI_PROVIDER}"
