@@ -61,6 +61,7 @@ const DEFAULT_HEADERS = {
   passwords:  ["Site", "Username", "Password", "URL", "Category", "Notes"],
   marketing:  ["Post", "Platform", "Status", "Topic", "Posted Date", "Likes", "Shares", "Comments", "Views", "Link", "Takeaway"],
   linker:     ["Name", "Description", "Link", "Type", "Tags", "Icon"],
+  agents:     ["Name", "Model", "Provider", "Status", "Tuning", "Task", "Project", "Heartbeat", "Workboard", "Command"],
 };
 
 /* ---------- Auth ---------- */
