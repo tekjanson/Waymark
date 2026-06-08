@@ -9,6 +9,9 @@
 
 import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
 
+/* ---------- Fleet webhook config (localStorage key) ---------- */
+const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
+
 /* ---------- Status config ---------- */
 const STATUS_CYCLE  = ['Online', 'Idle', 'Offline', 'Error'];
 const STATUS_COLORS = {
@@ -84,29 +87,76 @@ const definition = {
   render(container, rows, cols) {
     container.innerHTML = '';
 
-    /* ---------- Sync Fleet button (only when webhook is configured) ---------- */
-    const webhookUrl = window.__WAYMARK_FLEET_WEBHOOK || null;
-    const syncBtn = webhookUrl
-      ? el('button', { className: 'agents-sync-btn', title: 'Start containers for agents not yet running' }, ['🔄 Sync Fleet'])
-      : null;
+    /* ---------- Fleet webhook URL (server-injected or user-configured) ---------- */
+    // window.__WAYMARK_FLEET_WEBHOOK is set by the server when FLEET_WEBHOOK_URL is in env.
+    // Users accessing via swiftirons.com can configure their local webhook URL via the ⚙️ button
+    // and it will be persisted in localStorage so the Sync Fleet button works for them too.
+    const webhookUrl = window.__WAYMARK_FLEET_WEBHOOK
+      || localStorage.getItem(LS_WEBHOOK_KEY)
+      || null;
 
-    if (syncBtn) {
-      syncBtn.addEventListener('click', async () => {
-        syncBtn.textContent = '⏳ Syncing…';
-        syncBtn.disabled = true;
-        try {
-          const res  = await fetch(`${webhookUrl}/fleet-sync`, { method: 'POST' });
-          const data = await res.json();
-          if (data.ok) showToast('Fleet synced — new agents started', 'success');
-          else         showToast(`Fleet sync failed: ${data.error}`, 'error');
-        } catch (err) {
-          showToast(`Fleet sync error: ${err.message}`, 'error');
-        } finally {
-          syncBtn.textContent = '🔄 Sync Fleet';
-          syncBtn.disabled = false;
-        }
-      });
+    /* -- Sync Fleet button (visible when webhook URL is known) -- */
+    const syncBtn = el('button', {
+      className: 'agents-sync-btn',
+      title: webhookUrl ? `Sync fleet via ${webhookUrl}` : 'Configure a webhook URL first (⚙️)',
+      style: webhookUrl ? '' : 'display:none',
+    }, ['🔄 Sync Fleet']);
+
+    syncBtn.addEventListener('click', async () => {
+      const url = window.__WAYMARK_FLEET_WEBHOOK || localStorage.getItem(LS_WEBHOOK_KEY);
+      if (!url) { showToast('No webhook URL configured — click ⚙️ to set one', 'error'); return; }
+      syncBtn.textContent = '⏳ Syncing…';
+      syncBtn.disabled = true;
+      try {
+        const res  = await fetch(`${url}/fleet-sync`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) showToast('Fleet synced — new agents started', 'success');
+        else         showToast(`Fleet sync failed: ${data.error}`, 'error');
+      } catch (err) {
+        showToast(`Fleet sync error: ${err.message}`, 'error');
+      } finally {
+        syncBtn.textContent = '🔄 Sync Fleet';
+        syncBtn.disabled = false;
+      }
+    });
+
+    /* -- Configure webhook button (⚙️) with inline input -- */
+    const cfgInput = el('input', {
+      type: 'text',
+      className: 'agents-cfg-input hidden',
+      value: webhookUrl || '',
+      placeholder: 'http://localhost:3002',
+    });
+
+    function _saveCfgUrl() {
+      const v = cfgInput.value.trim();
+      if (v) {
+        localStorage.setItem(LS_WEBHOOK_KEY, v);
+        syncBtn.style.display = '';
+        syncBtn.title = `Sync fleet via ${v}`;
+      } else {
+        localStorage.removeItem(LS_WEBHOOK_KEY);
+        if (!window.__WAYMARK_FLEET_WEBHOOK) syncBtn.style.display = 'none';
+      }
+      cfgInput.classList.add('hidden');
+      showToast(v ? 'Webhook URL saved' : 'Webhook URL cleared', 'success');
     }
+
+    cfgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  _saveCfgUrl();
+      if (e.key === 'Escape') cfgInput.classList.add('hidden');
+    });
+
+    const cfgBtn = el('button', {
+      className: 'agents-cfg-btn',
+      title: webhookUrl
+        ? `Fleet webhook: ${webhookUrl} — click to change`
+        : 'Configure fleet webhook URL',
+      on: { click() {
+        cfgInput.classList.toggle('hidden');
+        if (!cfgInput.classList.contains('hidden')) cfgInput.focus();
+      }},
+    }, ['⚙️']);
 
     /* ---------- Header bar ---------- */
     const header = el('div', { className: 'agents-header' }, [
@@ -122,7 +172,9 @@ const definition = {
           _statBadge('Online', rows.filter(r => /online/i.test(cell(r, cols.status))).length, '#16a34a'),
           _statBadge('Idle', rows.filter(r => /idle/i.test(cell(r, cols.status))).length, '#ca8a04'),
         ]),
-        ...(syncBtn ? [syncBtn] : []),
+        syncBtn,
+        cfgBtn,
+        cfgInput,
       ]),
     ]);
     container.append(header);
@@ -196,11 +248,22 @@ const definition = {
         ? el('div', { className: 'agents-heartbeat' }, ['⏱ Last seen: ', timeAgo(heartbeat)])
         : null;
 
-      /* -- Workboard target (inline edit) -- */
+      /* -- Workboard target: clickable link + inline edit -- */
+      const wbEdit = cols.workboard !== -1
+        ? editableCell('span', { className: 'agents-workboard-cell' }, workboard || '—', rowIdx, cols.workboard, { placeholder: 'Sheet ID' })
+        : null;
       const workboardEl = cols.workboard !== -1
         ? el('div', { className: 'agents-workboard' }, [
             el('span', { className: 'agents-field-label' }, ['📋 Workboard: ']),
-            editableCell('span', { className: 'agents-workboard-cell' }, workboard || '—', rowIdx, cols.workboard, { placeholder: 'Sheet ID' }),
+            el('span', { className: 'agents-workboard-value' }, [
+              ...(workboard ? [el('a', {
+                className: 'agents-workboard-open',
+                href: `#/sheet/${workboard}`,
+                title: `Open workboard in Waymark`,
+                on: { click(e) { e.stopPropagation(); } },
+              }, ['↗ Open'])] : []),
+              wbEdit,
+            ]),
           ])
         : null;
 

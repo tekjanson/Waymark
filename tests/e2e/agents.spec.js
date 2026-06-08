@@ -347,8 +347,13 @@ test('agents: submitting Add Agent form fires a row-append record', async ({ pag
 test('agents: Sync Fleet button is hidden without webhook URL', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  // No __WAYMARK_FLEET_WEBHOOK set → button must not exist
-  await expect(page.locator('.agents-sync-btn')).toHaveCount(0);
+  // No webhook URL configured → button renders but is display:none (still in DOM)
+  // The configure button (⚙️) is always visible
+  const syncBtn = page.locator('.agents-sync-btn');
+  await expect(syncBtn).toHaveCount(1);
+  const isVisible = await syncBtn.isVisible();
+  expect(isVisible).toBe(false);
+  await expect(page.locator('.agents-cfg-btn')).toBeVisible();
 });
 
 test('agents: Sync Fleet button appears when webhook URL is configured', async ({ page }) => {
@@ -407,4 +412,131 @@ test('agents: Sync Fleet shows error toast on failure response', async ({ page }
   await page.click('.agents-sync-btn');
   await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('.toast')).toContainText('failed');
+});
+
+/* ── Workboard link tests ────────────────────────────────────────────────────
+ * The Workboard cell renders as a clickable "↗ Open" link when the cell has
+ * a value, linking to #/sheet/{id} in the Waymark viewer.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test('agents: workboard field shows Open link when value is set', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // First agent (Alex) has a workboard Sheet ID in the fixture
+  const openLink = page.locator('.agents-workboard-open').first();
+  await expect(openLink).toBeVisible();
+  await expect(openLink).toContainText('↗ Open');
+});
+
+test('agents: workboard Open link href points to #/sheet/{id}', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const openLink = page.locator('.agents-workboard-open').first();
+  await expect(openLink).toBeVisible();
+  const href = await openLink.getAttribute('href');
+  expect(href).toMatch(/^#\/sheet\/.+/);
+  // Must contain the actual Sheet ID from the fixture
+  expect(href).toContain('1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4');
+});
+
+test('agents: workboard Open link navigates to the sheet', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const openLink = page.locator('.agents-workboard-open').first();
+  await expect(openLink).toBeVisible();
+  await openLink.click();
+  // Hash should now reference the workboard sheet ID
+  await page.waitForFunction(() => location.hash.includes('/sheet/'), { timeout: 3000 });
+  expect(page.url()).toContain('/sheet/1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4');
+});
+
+test('agents: workboard cell is still editable after Open link added', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const workboardCell = page.locator('.agents-workboard-cell').first();
+  await workboardCell.click();
+  const input = workboardCell.locator('input.editable-cell-input');
+  await expect(input).toBeVisible({ timeout: 3000 });
+  await input.fill('new-workboard-id-99');
+  await input.press('Enter');
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'new-workboard-id-99')).toBe(true);
+});
+
+/* ── Webhook configure button (⚙️) tests ────────────────────────────────────
+ * The ⚙️ button lets users on any deployment (e.g. swiftirons.com) configure
+ * their local webhook URL. It saves to localStorage and shows the Sync button.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test('agents: configure button (⚙️) is always visible', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-cfg-btn')).toBeVisible();
+});
+
+test('agents: configure button toggles the webhook URL input', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const cfgInput = page.locator('.agents-cfg-input');
+  // Initially hidden
+  await expect(cfgInput).toBeHidden();
+  // Click ⚙️ → input appears
+  await page.click('.agents-cfg-btn');
+  await expect(cfgInput).toBeVisible({ timeout: 2000 });
+  // Click again → input hides
+  await page.click('.agents-cfg-btn');
+  await expect(cfgInput).toBeHidden();
+});
+
+test('agents: saving webhook URL via configure makes Sync Fleet visible', async ({ page }) => {
+  // No server-injected URL — Sync Fleet starts hidden
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-sync-btn')).toBeHidden();
+
+  // Open cfg input and type a URL, then press Enter
+  await page.route('http://localhost:3002/fleet-sync', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, output: 'done' }) })
+  );
+  await page.click('.agents-cfg-btn');
+  await page.fill('.agents-cfg-input', 'http://localhost:3002');
+  await page.keyboard.press('Enter');
+
+  // Toast should confirm save
+  await expect(page.locator('.toast')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText('saved');
+
+  // Sync Fleet button should now be visible
+  await expect(page.locator('.agents-sync-btn')).toBeVisible({ timeout: 2000 });
+});
+
+test('agents: configured webhook URL persists in localStorage', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await page.click('.agents-cfg-btn');
+  await page.fill('.agents-cfg-input', 'http://localhost:3002');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.toast')).toBeVisible({ timeout: 3000 });
+
+  // Verify localStorage was written
+  const stored = await page.evaluate(() => localStorage.getItem('waymark_fleet_webhook_url'));
+  expect(stored).toBe('http://localhost:3002');
+});
+
+test('agents: Sync Fleet uses localStorage webhook URL when no server flag', async ({ page }) => {
+  let capturedUrl = null;
+  await page.addInitScript(() => {
+    localStorage.setItem('waymark_fleet_webhook_url', 'http://localhost:3002');
+  });
+  await page.route('http://localhost:3002/fleet-sync', async (route) => {
+    capturedUrl = route.request().url();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, output: 'done' }) });
+  });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  // Button should be visible (URL came from localStorage, no server flag)
+  await expect(page.locator('.agents-sync-btn')).toBeVisible({ timeout: 2000 });
+  await page.click('.agents-sync-btn');
+  await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
+  expect(capturedUrl).toBe('http://localhost:3002/fleet-sync');
 });
