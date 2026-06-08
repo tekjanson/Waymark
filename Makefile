@@ -459,6 +459,15 @@ import-statement: ## Import a bank/credit-card CSV into the Financials sheet (FI
 import-statement-dry: ## Preview what import-statement would write (FILE=, ENTITY= required)
 	@$(MAKE) import-statement DRY_RUN=1 SHEET_ID=preview
 
+setup-interlinking: ## Wire asset-liability equity formulas into the Dashboard tab (SHEET_ID= required)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Setting up interlinking formulas ─────────────────────"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/setup-interlinking.js --sheet-id "$(SHEET_ID)"
+
+setup-interlinking-dry: ## Preview interlinking formulas without writing (uses sample data)
+	@node scripts/setup-interlinking.js --dry-run
+
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop all containers, remove images and volumes (full reset)
