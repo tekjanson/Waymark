@@ -37,6 +37,9 @@ IMAGE_NAME="waymark-dev-worker:latest"
 DOCKER_SOCKET="${DOCKER_SOCKET_PATH:-/var/run/docker.sock}"
 CONTAINER_PREFIX="dev-worker-"
 
+# Point docker CLI at the correct daemon (rootless on Linux: /run/user/1000/docker.sock)
+export DOCKER_HOST="unix://${DOCKER_SOCKET}"
+
 log()  { echo "[fleet-sync $(date +%T)] $*"; }
 info() { echo "[fleet-sync] $*"; }
 
@@ -137,6 +140,12 @@ while IFS= read -r agent_json; do
         log "  ✓ ${NAME} — already running (${CONTAINER_NAME})"
         SKIPPED=$((SKIPPED + 1))
         continue
+    fi
+
+    # If container exists but is stopped, remove it so we can re-create with fresh config
+    if docker ps -a --filter "name=^/${CONTAINER_NAME}$" --format '{{.Names}}' | grep -qF "$CONTAINER_NAME"; then
+        log "  ♻️  Removing stopped container ${CONTAINER_NAME}..."
+        docker rm "${CONTAINER_NAME}" &>/dev/null || true
     fi
 
     # Default model per provider
