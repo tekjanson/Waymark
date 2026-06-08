@@ -2,4 +2,6 @@
 <paths>
     <cache-path name="cache" path="." />
     <external-cache-path name="external_cache" path="." />
+    <!-- Temp photo files created by the AI camera capture flow -->
+    <external-files-path name="pictures" path="Pictures/" />
 </paths>

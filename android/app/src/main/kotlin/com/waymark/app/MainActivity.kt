@@ -33,12 +33,16 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PERMISSION_REQUEST_NOTIFICATIONS = 1001
+        private const val PERMISSION_REQUEST_CAMERA = 1004
     }
 
     /* ---------- State ---------- */
 
     private lateinit var webView: WebView
     private lateinit var bridge: WaymarkBridge
+
+    /** Reference to the WebChromeClient so we can deliver file chooser results. */
+    private lateinit var chromeClient: WaymarkWebChromeClient
 
     /* ---------- Lifecycle ---------- */
 
@@ -48,6 +52,7 @@ class MainActivity : AppCompatActivity() {
 
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
+        requestCameraPermission()
         requestBatteryOptimizationExemption()
         scheduleWatchdog()
 
@@ -106,6 +111,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Deliver file-chooser results (including native camera captures) back to the WebView.
+     * Without this override the filePathCallback from WaymarkWebChromeClient is never called
+     * and every file/photo picker silently returns nothing.
+     */
+    @Deprecated("Required for file chooser — startActivityForResult is still the correct API here.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode != WaymarkWebChromeClient.FILE_CHOOSER_REQUEST) return
+
+        val callback = chromeClient.filePathCallback ?: return
+        chromeClient.filePathCallback = null
+
+        if (resultCode != RESULT_OK) {
+            callback.onReceiveValue(null)
+            return
+        }
+
+        val results: Array<Uri>? = when {
+            // Native camera wrote to a temp file — return that URI.
+            data?.data == null && chromeClient.cameraImageUri != null -> {
+                arrayOf(chromeClient.cameraImageUri!!)
+            }
+            // Single URI from gallery / camera chooser.
+            data?.data != null -> arrayOf(data.data!!)
+            // Multiple URIs from a multi-select.
+            data?.clipData != null -> {
+                val clip = data.clipData!!
+                Array(clip.itemCount) { clip.getItemAt(it).uri }
+            }
+            // Fallback: try WebChromeClient parse.
+            else -> WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+        }
+
+        chromeClient.cameraImageUri = null
+        callback.onReceiveValue(results)
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -161,7 +205,8 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(bridge, "Android")
 
         webView.webViewClient = WaymarkWebViewClient()
-        webView.webChromeClient = WaymarkWebChromeClient(this)
+        chromeClient = WaymarkWebChromeClient(this)
+        webView.webChromeClient = chromeClient
     }
 
     /* ---------- Permission helpers ---------- */
@@ -177,6 +222,18 @@ class MainActivity : AppCompatActivity() {
                     PERMISSION_REQUEST_NOTIFICATIONS
                 )
             }
+        }
+    }
+
+    private fun requestCameraPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                PERMISSION_REQUEST_CAMERA
+            )
         }
     }
 

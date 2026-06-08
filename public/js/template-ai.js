@@ -680,9 +680,12 @@ function _buildMessageEl(role, content) {
 
 /* ---------- Photo Attachments ---------- */
 
+/** True when running on a mobile/Android device where getUserMedia is unreliable. */
+const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 async function _pickAndQueueImages() {
   try {
-    const files = await _pickImageFiles();
+    const files = await _pickImageFiles({ multiple: true });
     await _queuePreparedImages(files, { sourceLabel: 'Attached' });
   } catch (err) {
     showToast(err.message || 'Could not attach photos', 'error');
@@ -691,7 +694,15 @@ async function _pickAndQueueImages() {
 
 async function _captureAndQueueImage() {
   try {
-    const file = await captureStillFromCamera({ title: 'Take Photo' });
+    let file;
+    if (_isMobile) {
+      // On Android/iOS, use the native camera via a capture file input.
+      // getUserMedia inside a WebView is unreliable — this is the correct path.
+      const files = await _pickImageFiles({ capture: 'environment', multiple: false });
+      file = files[0] || null;
+    } else {
+      file = await captureStillFromCamera({ title: 'Take Photo' });
+    }
     if (!file) return;
     await _queuePreparedImages([file], { sourceLabel: 'Captured' });
   } catch (err) {
@@ -723,10 +734,12 @@ function _pickImageFiles(options = {}) {
     input.accept = 'image/*';
     input.multiple = !!multiple;
     if (capture) {
+      // `capture` attribute triggers the native camera on Android/iOS.
       input.setAttribute('capture', capture);
-      input.capture = capture;
     }
+    // Resolve empty array if the user dismisses without picking.
     input.onchange = () => resolve(Array.from(input.files || []));
+    input.oncancel = () => resolve([]);
     input.click();
   });
 }
