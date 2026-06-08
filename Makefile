@@ -468,6 +468,87 @@ setup-interlinking: ## Wire asset-liability equity formulas into the Dashboard t
 setup-interlinking-dry: ## Preview interlinking formulas without writing (uses sample data)
 	@node scripts/setup-interlinking.js --dry-run
 
+setup-statement-folders: ## Create Google Drive folder hierarchy for statement attachments (GOOGLE_TOKEN= or GOOGLE_APPLICATION_CREDENTIALS=)
+	@echo "── Setting up statement folder hierarchy ────────────────"
+	@echo "   Creates: Financials/Statements/{YYYY}/{MM}/ in Google Drive"
+	@echo "   Saves folder IDs to: generated/statement-folder-ids.json"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/setup-statement-folders.js \
+	    $(if $(PARENT_ID),--parent-id "$(PARENT_ID)") \
+	    $(if $(YEARS),--years "$(YEARS)") \
+	    $(if $(DRY_RUN),--dry-run)
+
+setup-statement-folders-dry: ## Preview folder structure without creating (no auth required)
+	@node scripts/setup-statement-folders.js --dry-run
+
+attach-statement: ## Upload a statement file to Drive and link it to the Statements sheet (FILE=, ENTITY=, SHEET_ID=)
+	@if [ -z "$(FILE)" ]; then echo "ERROR: FILE= is required (path to PDF/image/CSV)"; exit 1; fi
+	@if [ -z "$(ENTITY)" ]; then echo "ERROR: ENTITY= is required (e.g. LIAB-001)"; exit 1; fi
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Attaching statement file ─────────────────────────────"
+	@echo "   File:   $(FILE)"
+	@echo "   Entity: $(ENTITY)"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/attach-statement-file.js \
+	    --file "$(FILE)" \
+	    --entity "$(ENTITY)" \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(STMT_DATE),--date "$(STMT_DATE)") \
+	    $(if $(STMT_ID),--stmt-id "$(STMT_ID)")
+
+attach-statement-dry: ## Preview attach-statement without uploading (FILE=, ENTITY= required)
+	@if [ -z "$(FILE)" ]; then echo "ERROR: FILE= is required"; exit 1; fi
+	@if [ -z "$(ENTITY)" ]; then echo "ERROR: ENTITY= is required"; exit 1; fi
+	@node scripts/attach-statement-file.js --file "$(FILE)" --entity "$(ENTITY)" --dry-run
+
+watch-inbox: ## Start automated _Inbox watcher — detects, renames, links uploaded statements (SHEET_ID=, INBOX_FOLDER= required)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@if [ -z "$(INBOX_FOLDER)" ] && [ ! -f generated/statement-folder-ids.json ]; then \
+	  echo "ERROR: INBOX_FOLDER= is required (or run: make setup-drive-folders first)"; exit 1; \
+	fi
+	@echo "── Starting _Inbox watcher ──────────────────────────────"
+	@echo "   Sheet:    $(SHEET_ID)"
+	@echo "   Inbox:    $(or $(INBOX_FOLDER),auto from generated/statement-folder-ids.json)"
+	@echo "   Interval: $(or $(POLL_INTERVAL),60)s"
+	@echo "   Press Ctrl-C to stop."
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/watch-inbox.js \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(INBOX_FOLDER),--inbox-folder "$(INBOX_FOLDER)") \
+	    $(if $(POLL_INTERVAL),--poll-interval "$(POLL_INTERVAL)")
+
+watch-inbox-once: ## Process _Inbox once and exit (SHEET_ID= required, INBOX_FOLDER= optional)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/watch-inbox.js \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(INBOX_FOLDER),--inbox-folder "$(INBOX_FOLDER)") \
+	    --once
+
+watch-inbox-dry: ## Preview what watch-inbox would do (no auth, no writes — uses sample filenames)
+	@node scripts/watch-inbox.js --dry-run
+
+build-dashboard: ## Build / refresh the Financials Dashboard tab and create NetWorthHistory tab (SHEET_ID=)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Building Dashboard & Net Worth Tracker ───────────────"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/build-dashboard.js --sheet-id "$(SHEET_ID)"
+	@echo ""
+	@echo "  Tabs updated: Dashboard, NetWorthHistory"
+
+build-dashboard-dry: ## Preview dashboard rows without writing (no auth required)
+	@node scripts/build-dashboard.js --dry-run
+
+snapshot-net-worth: ## Record a net worth snapshot to NetWorthHistory tab (SHEET_ID=, optional NOTES=, DATE=)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Snapshotting net worth ───────────────────────────────"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/snapshot-net-worth.js \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(NOTES),--notes "$(NOTES)") \
+	    $(if $(DATE),--date "$(DATE)")
+
+
 setup-drive-folders: ## Create Drive folder structure for statement attachments (SHEET_ID= required)
 	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
 	@echo "── Setting up Drive folder structure ────────────────────"
