@@ -21,6 +21,7 @@ import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
+import { initWebJSCLI } from './web-js-cli.js';
 
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
@@ -497,6 +498,9 @@ async function showApp(user) {
 
   // Start version checker for auto-update detection (production only)
   initUpdateChecker();
+
+  // Expose AI CLI facade — allows agents to drive Waymark via web-js-cli manifest
+  initWebJSCLI();
 }
 
 async function handleLogout() {
