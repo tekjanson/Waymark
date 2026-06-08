@@ -168,7 +168,7 @@ while IFS= read -r agent_json; do
         --env "GH_TOKEN=${COPILOT_GITHUB_TOKEN:-}" \
         --env "GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json" \
         --volume "${REPO_ROOT}/dev-worker/credentials:/credentials:ro" \
-        --volume "${HOME}/.copilot:/root/.copilot:ro" \
+        --volume "${HOME}/.copilot:/root/.copilot" \
         --volume "${DOCKER_SOCKET}:/var/run/docker.sock" \
         --volume "${REPO_ROOT}:/workspace" \
         --restart unless-stopped \
