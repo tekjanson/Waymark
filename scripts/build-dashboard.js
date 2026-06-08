@@ -148,7 +148,8 @@ function buildSummaryRows() {
 
 /**
  * § 2 — Monthly Cash Flow (last 12 months).
- * Uses SUMPRODUCT + TEXT() to filter Transactions by month string.
+ * Uses SUMPRODUCT on pre-computed Month index column (L) to filter Transactions by month.
+ * This avoids calling TEXT(A,"YYYY-MM") on every row per formula per recalculation.
  */
 function buildCashFlowRows() {
   const months = lastNMonths(12);

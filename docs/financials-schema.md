@@ -109,6 +109,15 @@ Active | Paid Off | Closed | In Collections
 | I | Statement ID | `STMT-NNN` | | `STMT-042` |
 | J | Reconciled | boolean | | `TRUE` |
 | K | Notes | text | | `Returned 2026-05-20` |
+| L | Month | `YYYY-MM` (index) | auto | `2026-05` |
+| M | Year | `YYYY` (index) | auto | `2026` |
+
+> **Columns L and M are query-index columns.** They are computed once on import
+> (`import-statement.js` writes them as literal strings) so that Dashboard
+> `SUMPRODUCT` formulas can do direct string comparisons instead of calling
+> `TEXT(A,"YYYY-MM")` on every cell per recalculation. This eliminates up to
+> 24,000 redundant TEXT() evaluations per Dashboard refresh (12 months × 2
+> formulas × 1000 rows). Do not edit these columns manually.
 
 **Amount sign convention:**
 - Positive = money in (deposit, payment received, credit)

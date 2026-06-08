@@ -334,8 +334,13 @@ const displayName = entityName || entityId;
 
 /* ---------- Build sheet rows ---------- */
 
-// Transactions tab columns (A–K):
-// Date | Entity ID | Entity Name | Description | Amount | Category | Type | Running Balance | Statement ID | Reconciled | Notes
+// Transactions tab columns (A–M):
+// Date | Entity ID | Entity Name | Description | Amount | Category | Type |
+// Running Balance | Statement ID | Reconciled | Notes | Month | Year
+//
+// Month (col L) and Year (col M) are pre-computed index values written as
+// literals so Dashboard SUMPRODUCT formulas compare plain strings instead of
+// computing TEXT(A,"YYYY-MM") on every cell per recalculation.
 const txRows = transactions.map(t => [
   t.date,
   entityId,
@@ -348,6 +353,8 @@ const txRows = transactions.map(t => [
   '', // Statement ID — filled after creating the statement row
   'FALSE',
   '',
+  t.date.slice(0, 7), // Month index: YYYY-MM
+  t.date.slice(0, 4), // Year  index: YYYY
 ]);
 
 // Statements tab columns (A–N):
@@ -454,7 +461,7 @@ async function sheetsPost(url, token, body) {
   // 3. Append transaction rows to Transactions tab
   process.stderr.write(`Writing ${txRows.length} transaction rows to Transactions tab...\n`);
   await sheetsPost(
-    `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent('Transactions!A:K')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent('Transactions!A:M')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     token,
     { values: txRows },
   );

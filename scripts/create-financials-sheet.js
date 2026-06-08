@@ -75,8 +75,12 @@ const SHEETS = [
       'Date', 'Entity ID', 'Entity Name', 'Description',
       'Amount', 'Category', 'Type', 'Running Balance',
       'Statement ID', 'Reconciled', 'Notes',
+      'Month', 'Year',
     ],
-    columnWidths: [110, 110, 200, 300, 110, 130, 100, 130, 110, 90, 250],
+    // Month (col L) and Year (col M) are pre-computed index columns written on
+    // import so Dashboard formulas can use direct string comparisons instead of
+    // TEXT() conversions on every recalculation.
+    columnWidths: [110, 110, 200, 300, 110, 130, 100, 130, 110, 90, 250, 90, 80],
   },
   {
     title: 'Statements',
