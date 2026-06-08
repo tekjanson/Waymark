@@ -27,6 +27,12 @@ const config = {
 
   FLEET_WEBHOOK_URL: process.env.FLEET_WEBHOOK_URL || '',
 
+  // Plaid API credentials — required for bank account OAuth link flow
+  PLAID_CLIENT_ID: process.env.PLAID_CLIENT_ID || '',
+  PLAID_SECRET:    process.env.PLAID_SECRET || '',
+  // Plaid environment: 'sandbox' | 'development' | 'production'
+  PLAID_ENV: process.env.PLAID_ENV || 'sandbox',
+
   SCOPES: [
     'openid',
     'email',

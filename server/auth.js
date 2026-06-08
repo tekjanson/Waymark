@@ -363,4 +363,154 @@ module.exports = function setupAuth(app) {
 
     res.json({ success: true });
   });
+
+  /* ================================================================
+     PLAID OAUTH LINK FLOW
+     The server acts as a stateless broker — no Plaid tokens are stored
+     server-side.  The client receives the access_token and stores it in
+     localStorage (same pattern as the Google access token in memory).
+     ================================================================ */
+
+  /* --- Plaid base URL helper --- */
+  function plaidUrl(path) {
+    const env = config.PLAID_ENV || 'sandbox';
+    return `https://${env}.plaid.com${path}`;
+  }
+
+  /* --- Plaid auth header helper --- */
+  function plaidHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      'PLAID-CLIENT-ID': config.PLAID_CLIENT_ID,
+      'PLAID-SECRET':    config.PLAID_SECRET,
+    };
+  }
+
+  /* --- POST /auth/plaid/link-token ---
+   * Creates a Plaid link token scoped to the current user.
+   * Requires the caller to be authenticated (waymark_refresh cookie present).
+   * Returns { link_token, expiration } to the client. */
+  app.post(bp + '/auth/plaid/link-token', async (req, res) => {
+    if (config.WAYMARK_LOCAL) {
+      // Mock response for local/test mode
+      return res.json({
+        link_token:  'link-sandbox-mock-token-' + Date.now(),
+        expiration:  new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        request_id:  'mock-request-id',
+      });
+    }
+
+    // Require an active Waymark session
+    if (!req.cookies.waymark_refresh) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const clientName = req.body?.client_name || 'Waymark';
+    const redirectUri = req.body?.redirect_uri || null;
+
+    try {
+      const plaidBody = {
+        client_id:    config.PLAID_CLIENT_ID,
+        secret:       config.PLAID_SECRET,
+        client_name:  clientName,
+        language:     'en',
+        country_codes: ['US'],
+        user: { client_user_id: 'waymark-user' },
+        products: ['transactions'],
+      };
+
+      if (redirectUri) {
+        // OAuth redirect mode — used by OAuth-enabled institutions (Chase, BofA, etc.)
+        plaidBody.redirect_uri = redirectUri;
+      }
+
+      const plaidRes = await fetch(plaidUrl('/link/token/create'), {
+        method:  'POST',
+        headers: plaidHeaders(),
+        body:    JSON.stringify(plaidBody),
+      });
+
+      const data = await plaidRes.json();
+
+      if (data.error_code) {
+        console.error('[plaid] link-token error:', data.error_message);
+        return res.status(400).json({ error: data.error_message || data.error_code });
+      }
+
+      res.json({
+        link_token:  data.link_token,
+        expiration:  data.expiration,
+        request_id:  data.request_id,
+      });
+    } catch (err) {
+      console.error('[plaid] link-token exception:', err);
+      res.status(500).json({ error: 'Failed to create Plaid link token' });
+    }
+  });
+
+  /* --- POST /auth/plaid/exchange ---
+   * Exchanges a Plaid public_token for an access_token.
+   * The access_token is returned to the client — never stored on the server.
+   * Body: { public_token: string } */
+  app.post(bp + '/auth/plaid/exchange', async (req, res) => {
+    const { public_token } = req.body || {};
+    if (!public_token || typeof public_token !== 'string') {
+      return res.status(400).json({ error: 'Missing public_token' });
+    }
+
+    if (config.WAYMARK_LOCAL) {
+      return res.json({
+        access_token: 'access-sandbox-mock-' + Date.now(),
+        item_id:      'mock-item-id',
+        request_id:   'mock-request-id',
+      });
+    }
+
+    if (!req.cookies.waymark_refresh) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    try {
+      const plaidRes = await fetch(plaidUrl('/item/public_token/exchange'), {
+        method:  'POST',
+        headers: plaidHeaders(),
+        body:    JSON.stringify({
+          client_id:    config.PLAID_CLIENT_ID,
+          secret:       config.PLAID_SECRET,
+          public_token,
+        }),
+      });
+
+      const data = await plaidRes.json();
+
+      if (data.error_code) {
+        console.error('[plaid] exchange error:', data.error_message);
+        return res.status(400).json({ error: data.error_message || data.error_code });
+      }
+
+      // Return the access_token to the client — it is stored in localStorage only.
+      res.json({
+        access_token: data.access_token,
+        item_id:      data.item_id,
+        request_id:   data.request_id,
+      });
+    } catch (err) {
+      console.error('[plaid] exchange exception:', err);
+      res.status(500).json({ error: 'Failed to exchange Plaid token' });
+    }
+  });
+
+  /* --- GET /auth/plaid/oauth-return ---
+   * Landing page for Plaid's OAuth redirect (when the user is redirected
+   * back from their bank's website).  The Plaid Link SDK re-initialises
+   * on this page using the stored oauth_state_id from localStorage and
+   * completes the flow automatically, then calls the onSuccess callback.
+   * The server just redirects to the app so the SPA can resume. */
+  app.get(bp + '/auth/plaid/oauth-return', (req, res) => {
+    // Redirect into the SPA — the hash tells the app to resume Plaid Link.
+    // The Plaid SDK reads oauth_state_id from the URL it was returned to.
+    const returnUrl = `${bp}/#/plaid-oauth-return?${new URLSearchParams(req.query)}`;
+    res.redirect(returnUrl);
+  });
 };
+
