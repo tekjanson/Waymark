@@ -233,18 +233,111 @@ if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
     log "AI_PROVIDER=auto → resolved to '${AI_PROVIDER}'"
 fi
 
+# ── Workboard polling: claim a task before starting a session ─────────────────
+# Queries check-workboard.js with --agent <name> to get only tasks for this agent
+# (unassigned To Do + assigned To Do + own In Progress). Claims the highest-priority
+# task, then passes "Task row: N | Task: <title> | Details: <desc>" to the session
+# so the LLM never needs to poll the workboard itself (prevents agent racing).
+#
+# Returns: sets CLAIMED_ROW, CLAIMED_TASK, CLAIMED_DESC
+# Returns 1 if no task is available (caller should sleep and retry).
+claim_next_task() {
+    CLAIMED_ROW=""
+    CLAIMED_TASK=""
+    CLAIMED_DESC=""
+
+    if [[ -z "${WAYMARK_WORKBOARD_ID:-}" ]]; then
+        log "WAYMARK_WORKBOARD_ID not set — cannot poll workboard"
+        return 1
+    fi
+
+    local wb_json
+    wb_json=$(
+        cd /workspace
+        GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json \
+        WAYMARK_WORKBOARD_ID="$WAYMARK_WORKBOARD_ID" \
+        node scripts/check-workboard.js --agent "${AGENT_HUMAN_NAME}" 2>/dev/null
+    ) || true
+
+    if [[ -z "$wb_json" ]]; then
+        log "Workboard query failed or returned empty"
+        return 1
+    fi
+
+    # Pick first In Progress task (resume interrupted work), then first To Do
+    local row task desc
+    row=$(echo "$wb_json" | jq -r '(.inProgress[0].row // .todo[0].row // empty)' 2>/dev/null)
+    task=$(echo "$wb_json" | jq -r '(.inProgress[0].task // .todo[0].task // empty)' 2>/dev/null)
+    desc=$(echo "$wb_json" | jq -r '(.inProgress[0].desc // .todo[0].desc // "")' 2>/dev/null)
+    local stage
+    stage=$(echo "$wb_json" | jq -r '(if .inProgress | length > 0 then "In Progress" else "To Do" end)' 2>/dev/null)
+    local assignee
+    assignee=$(echo "$wb_json" | jq -r '(.inProgress[0].assignee // .todo[0].assignee // "")' 2>/dev/null)
+
+    if [[ -z "$row" || -z "$task" ]]; then
+        local todo_count inprogress_count
+        todo_count=$(echo "$wb_json" | jq '.todo | length' 2>/dev/null || echo 0)
+        inprogress_count=$(echo "$wb_json" | jq '.inProgress | length' 2>/dev/null || echo 0)
+        log "No tasks available for ${AGENT_HUMAN_NAME} (todo=${todo_count} inprogress=${inprogress_count})"
+        return 1
+    fi
+
+    # Claim the task if it's To Do (not already In Progress / already ours)
+    if [[ "$stage" == "To Do" ]]; then
+        log "Claiming row ${row}: ${task}"
+        (
+            cd /workspace
+            GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json \
+            WAYMARK_WORKBOARD_ID="$WAYMARK_WORKBOARD_ID" \
+            node scripts/update-workboard.js claim "$row" --agent "${AGENT_HUMAN_NAME}" 2>&1
+        ) | sed 's/^/  [claim] /' || true
+    else
+        log "Resuming In Progress row ${row}: ${task} (assignee: ${assignee})"
+    fi
+
+    CLAIMED_ROW="$row"
+    CLAIMED_TASK="$task"
+    CLAIMED_DESC="$desc"
+    return 0
+}
+
 # ── Main agent loop ───────────────────────────────────────────────────────────
 log "Starting agent loop — provider: ${AI_PROVIDER}"
 log "  Copilot CLI: $(copilot --version 2>/dev/null || echo 'not available')"
 log "  Claude Code: $(claude --version 2>/dev/null || echo 'not available')"
+log "  Workboard:   ${WAYMARK_WORKBOARD_ID:-<not set>}"
 
 SESSION=0
+IDLE_CYCLES=0
 while true; do
-    SESSION=$(( SESSION + 1 ))
-    log "━━━ Session ${SESSION} starting ━━━"
+    # ── Poll workboard for next task ──────────────────────────────────────────
+    if [[ -n "${WAYMARK_WORKBOARD_ID:-}" ]]; then
+        if ! claim_next_task; then
+            IDLE_CYCLES=$(( IDLE_CYCLES + 1 ))
+            sheet_write --status Idle --task "Idle — no tasks for ${AGENT_HUMAN_NAME}" --heartbeat
+            log "No task available — sleeping 60s (idle cycle ${IDLE_CYCLES})"
+            sleep 60
+            continue
+        fi
+        IDLE_CYCLES=0
 
-    CURRENT_TASK="Session ${SESSION}: ${AGENT_COMMAND}"
-    sheet_write --status Busy --task "$CURRENT_TASK" --heartbeat
+        # Override AGENT_COMMAND with task-specific prompt for the session
+        TASK_PROMPT="@waymark-builder Task row: ${CLAIMED_ROW} | Task: ${CLAIMED_TASK} | Details: ${CLAIMED_DESC}"
+    else
+        # No workboard configured — fall through to generic AGENT_COMMAND
+        TASK_PROMPT="${AGENT_COMMAND}"
+        CLAIMED_TASK="${AGENT_COMMAND}"
+        CLAIMED_ROW=""
+    fi
+
+    SESSION=$(( SESSION + 1 ))
+    log "━━━ Session ${SESSION} starting — row ${CLAIMED_ROW:-?}: ${CLAIMED_TASK} ━━━"
+
+    sheet_write --status Busy --task "${CLAIMED_TASK}" --heartbeat
+
+    # Temporarily override AGENT_COMMAND so build_prompt() uses the task prompt
+    _orig_cmd="${AGENT_COMMAND}"
+    AGENT_COMMAND="${TASK_PROMPT}"
 
     case "$AI_PROVIDER" in
         copilot)
@@ -266,6 +359,8 @@ while true; do
             log "  Set AI_PROVIDER env var in docker-compose.yml or .env"
             ;;
     esac
+
+    AGENT_COMMAND="${_orig_cmd}"
 
     log "━━━ Session ${SESSION} ended — restarting in ${RESTART_DELAY}s ━━━"
     sheet_write --status Idle --task "Idle — last ran session ${SESSION}" --heartbeat
