@@ -468,6 +468,29 @@ setup-interlinking: ## Wire asset-liability equity formulas into the Dashboard t
 setup-interlinking-dry: ## Preview interlinking formulas without writing (uses sample data)
 	@node scripts/setup-interlinking.js --dry-run
 
+setup-drive-folders: ## Create Drive folder structure for statement attachments (SHEET_ID= required)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Setting up Drive folder structure ────────────────────"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/setup-drive-folders.js \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(PARENT_FOLDER),--parent-folder "$(PARENT_FOLDER)")
+
+setup-drive-folders-dry: ## Preview Drive folder structure without creating (uses sample data)
+	@node scripts/setup-drive-folders.js --dry-run
+
+attach-statement: ## Link a Drive PDF to a Statement row (SHEET_ID=, STMT_ID=, FILE_ID= required)
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@if [ -z "$(STMT_ID)" ]; then echo "ERROR: STMT_ID= is required (e.g. STMT-001)"; exit 1; fi
+	@if [ -z "$(FILE_ID)" ]; then echo "ERROR: FILE_ID= is required (Google Drive file ID)"; exit 1; fi
+	@echo "── Attaching statement PDF ──────────────────────────────"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/attach-statement.js \
+	    --sheet-id "$(SHEET_ID)" \
+	    --stmt-id "$(STMT_ID)" \
+	    --file-id "$(FILE_ID)" \
+	    $(if $(RENAME),--rename)
+
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop all containers, remove images and volumes (full reset)
