@@ -439,6 +439,26 @@ create-financials-sheet: ## Create a Waymark Financials Google Spreadsheet (all 
 	@echo "  Open the URL above in your browser to see the new sheet."
 	@echo "  Share with your Waymark service account as Editor to enable write-back."
 
+import-statement: ## Import a bank/credit-card CSV into the Financials sheet (FILE=, ENTITY=, SHEET_ID=)
+	@if [ -z "$(FILE)" ]; then echo "ERROR: FILE= is required"; exit 1; fi
+	@if [ -z "$(ENTITY)" ]; then echo "ERROR: ENTITY= is required (e.g. LIAB-001)"; exit 1; fi
+	@if [ -z "$(SHEET_ID)" ]; then echo "ERROR: SHEET_ID= is required"; exit 1; fi
+	@echo "── Importing statement ──────────────────────────────────"
+	@echo "   File:   $(FILE)"
+	@echo "   Entity: $(ENTITY)"
+	@GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+	  node scripts/import-statement.js \
+	    --file "$(FILE)" \
+	    --entity "$(ENTITY)" \
+	    --sheet-id "$(SHEET_ID)" \
+	    $(if $(ENTITY_NAME),--entity-name "$(ENTITY_NAME)") \
+	    $(if $(STMT_DATE),--statement-date "$(STMT_DATE)") \
+	    $(if $(DRY_RUN),--dry-run)
+	@echo ""
+
+import-statement-dry: ## Preview what import-statement would write (FILE=, ENTITY= required)
+	@$(MAKE) import-statement DRY_RUN=1 SHEET_ID=preview
+
 # ── Cleanup ───────────────────────────────────────────────────────────
 
 clean: ## Stop all containers, remove images and volumes (full reset)
