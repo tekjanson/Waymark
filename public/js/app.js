@@ -207,6 +207,7 @@ async function boot() {
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
+  notifications.initBell();
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());

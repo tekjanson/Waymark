@@ -1,7 +1,7 @@
 /* ============================================================
-   notifications.js — Per-sheet conditional notification rules
-   Provides a rule builder UI so users can define conditions
-   that should trigger notifications on any sheet.
+   notifications.js — Notification bell UI + per-sheet rule builder
+   Bell lives in the top-bar; clicking opens a panel with a settings
+   modal that manages the connected notification sheet and rules.
    ============================================================ */
 
 import { el } from './ui.js';
@@ -193,4 +193,170 @@ export function showRuleBuilder(sheetId, sheetTitle, headers) {
   }, [modal]);
 
   document.body.appendChild(overlay);
+}
+
+/* ---------- Bell UI ---------- */
+
+let _panel = null;
+
+/**
+ * Build and open the settings modal from the bell panel.
+ * Shows the configured notification sheet + custom rules summary.
+ */
+function _openSettingsModal() {
+  const existing = document.getElementById('notif-settings-modal-overlay');
+  if (existing) existing.remove();
+
+  // Count total rules across all sheets
+  const _countRules = () => {
+    try {
+      const rulesMap = JSON.parse(localStorage.getItem('waymark_notification_rules') || '{}');
+      return Object.values(rulesMap).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    } catch { return 0; }
+  };
+
+  /* -- Renders the sheet section content based on current state -- */
+  const _buildSheetContent = (container) => {
+    container.innerHTML = '';
+    const sheetId = storage.getNotifSheetId();
+    const labelEl = el('div', { className: 'notif-sheet-label' }, ['Notification Sheet']);
+    container.appendChild(labelEl);
+
+    if (sheetId) {
+      const statusEl = el('div', { className: 'notif-sheet-status' }, [
+        el('span', { className: 'notif-sheet-status-text' }, ['Connected to notification sheet']),
+        el('a', {
+          className: 'notif-sheet-view-link',
+          href: `#/sheet/${sheetId}`,
+          on: { click: () => overlay.remove() },
+        }, ['Open Sheet']),
+        el('button', { className: 'notif-sheet-clear', on: { click: () => {
+          storage.setNotifSheetId(null);
+          // Refresh in-place so modal stays open with updated state
+          _buildSheetContent(container);
+        } } }, ['Clear']),
+      ]);
+      container.appendChild(statusEl);
+    } else {
+      const introEl = el('p', { className: 'notif-sheet-status-text' }, [
+        'No notification sheet configured. Open a Push Notification sheet and click "Use as Notification Sheet".',
+      ]);
+      container.appendChild(introEl);
+    }
+  };
+
+  const sheetSection = el('div', { className: 'notif-sheet-section' }, []);
+  _buildSheetContent(sheetSection);
+
+  /* -- Custom rules section -- */
+  const totalRules = _countRules();
+  const rulesSection = el('div', { className: 'notif-custom-rules-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Custom Rules']),
+    el('p', { className: 'notif-settings-intro' }, [
+      totalRules > 0
+        ? `${totalRules} rule${totalRules !== 1 ? 's' : ''} configured across your sheets.`
+        : 'No custom notification rules configured.',
+    ]),
+  ]);
+
+  const modal = el('div', { className: 'modal notif-settings-modal' }, [
+    el('div', { className: 'modal-header' }, [
+      el('h3', {}, ['🔔 Notification Settings']),
+      el('button', {
+        className: 'btn-icon notif-settings-close',
+        on: { click: () => overlay.remove() },
+      }, ['✕']),
+    ]),
+    el('div', { className: 'modal-body' }, [sheetSection, rulesSection]),
+  ]);
+
+  const overlay = el('div', {
+    id: 'notif-settings-modal-overlay',
+    className: 'modal-overlay notif-settings-modal-overlay',
+    on: { click: (e) => { if (e.target === overlay) overlay.remove(); } },
+  }, [modal]);
+
+  document.body.appendChild(overlay);
+}
+
+/**
+ * Build the floating notification panel anchored to the bell element.
+ * @param {HTMLElement} bellEl
+ */
+function _openPanel(bellEl) {
+  if (_panel) { _panel.remove(); _panel = null; return; }
+
+  const sheetId = storage.getNotifSheetId();
+
+  const headerActions = el('div', { className: 'notif-panel-actions' }, [
+    el('button', {
+      className: 'notif-settings-btn',
+      title: 'Notification settings',
+      on: { click: () => _openSettingsModal() },
+    }, ['⚙']),
+  ]);
+
+  const header = el('div', { className: 'notif-panel-header' }, [
+    el('span', { className: 'notif-panel-title' }, ['Notifications']),
+    headerActions,
+  ]);
+
+  const children = [header];
+
+  if (sheetId) {
+    children.push(
+      el('a', {
+        className: 'notif-sheet-link',
+        href: `#/sheet/${sheetId}`,
+        on: { click: () => { _panel && (_panel.remove(), _panel = null); } },
+      }, ['View Notification Sheet'])
+    );
+  }
+
+  children.push(
+    el('div', { className: 'notif-empty' }, [
+      '🔔',
+      el('div', { className: 'notif-empty-hint' }, ['No recent notifications']),
+    ])
+  );
+
+  _panel = el('div', { className: 'notif-panel' }, children);
+
+  // Position below bell
+  const rect = bellEl.getBoundingClientRect();
+  _panel.style.top  = `${rect.bottom + 8}px`;
+  _panel.style.right = `${window.innerWidth - rect.right}px`;
+
+  document.body.appendChild(_panel);
+
+  // Close on outside click
+  const closeOutside = (e) => {
+    if (!_panel) { document.removeEventListener('click', closeOutside, true); return; }
+    if (!_panel.contains(e.target) && !bellEl.contains(e.target)) {
+      _panel.remove(); _panel = null;
+      document.removeEventListener('click', closeOutside, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeOutside, true), 0);
+}
+
+/**
+ * Initialize the notification bell in the top-bar.
+ * Call once during app boot after auth resolves.
+ */
+export function initBell() {
+  const existing = document.querySelector('.notif-bell');
+  if (existing) return;
+
+  const bellBtn = el('button', {
+    className: 'notif-bell btn-icon',
+    'aria-label': 'Notifications',
+    title: 'Notifications',
+    on: { click: (e) => { e.stopPropagation(); _openPanel(bellBtn); } },
+  }, [
+    el('span', { className: 'notif-bell-icon' }, ['🔔']),
+  ]);
+
+  const topBarRight = document.querySelector('.top-bar-right');
+  if (topBarRight) topBarRight.prepend(bellBtn);
 }
