@@ -1,36 +1,52 @@
 /* ============================================================
-   notification.js — Orchestrator Push Notification Rules template
+   notification.js — Notification History Viewer template
 
-   Renders a Google Sheet as a rules table for the WebRTC-based
-   Android push notification system. Each row configures which
-   orchestrator events trigger a notification to the phone.
-   Columns: Event | Condition | Title | Body | Priority | Enabled
+   Renders a Google Sheet as an interactive notification inbox.
+   Columns: Title | Message | Type | Status | Icon | Priority |
+            Created | Expires | Source | Sheet
    ============================================================ */
 
-import { el, showToast, editableCell, emitEdit, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
+import { el, emitEdit, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Constants ---------- */
 
+const STATUS_CYCLE = ['Active', 'Read', 'Dismissed'];
+
+const TYPE_META = {
+  alert:   { bg: '#fef2f2', color: '#dc2626' },
+  warning: { bg: '#fffbeb', color: '#d97706' },
+  info:    { bg: '#eff6ff', color: '#2563eb' },
+};
+
 const PRIORITY_META = {
-  urgent: { color: '#dc2626', bg: '#fef2f2' },
-  high:   { color: '#d97706', bg: '#fffbeb' },
-  normal: { color: '#2563eb', bg: '#eff6ff' },
-  low:    { color: '#6b7280', bg: '#f3f4f6' },
+  high:   { color: '#dc2626' },
+  medium: { color: '#d97706' },
+  low:    { color: '#6b7280' },
 };
 
 /* ---------- Helpers ---------- */
 
-function normPriority(val) {
-  const v = (val || '').toLowerCase().trim();
-  if (/urgent|critical/.test(v)) return 'urgent';
-  if (/high/.test(v)) return 'high';
-  if (/low|minor/.test(v)) return 'low';
-  return 'normal';
+function normStatus(val) {
+  const v = (val || '').trim();
+  return STATUS_CYCLE.includes(v) ? v : 'Active';
 }
 
-function normEnabled(val) {
-  const v = (val || '').toLowerCase().trim();
-  return !['no', 'false', '0', 'disabled'].includes(v);
+function nextStatus(current) {
+  const i = STATUS_CYCLE.indexOf(current);
+  return STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
+}
+
+function getCurrentSheetId() {
+  const m = (window.location.hash || '').match(/#\/sheet\/([^/?#]+)/);
+  return m ? m[1] : '';
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
 }
 
 /* ---------- Template definition ---------- */
@@ -40,149 +56,227 @@ const definition = {
   icon: '📲',
   color: '#7c3aed',
   priority: 22,
+  hasDirectoryView: true,
 
   detect(lower) {
     return (
-      lower.some(h => /\bevent\b/.test(h)) &&
-      lower.some(h => /\bcondition\b/.test(h)) &&
-      lower.some(h => /\benabled\b/.test(h))
+      lower.some(h => /\btitle\b/.test(h)) &&
+      lower.some(h => /\bmessage\b|\bbody\b/.test(h)) &&
+      lower.some(h => /\bstatus\b/.test(h)) &&
+      lower.some(h => /\btype\b/.test(h))
     );
   },
 
   columns(lower) {
-    const cols = {};
-    cols.event     = lower.findIndex(h => /\bevent\b/.test(h));
-    cols.condition = lower.findIndex(h => /\bcondition\b/.test(h));
-    cols.title     = lower.findIndex(h => /\btitle\b/.test(h));
-    cols.body      = lower.findIndex(h => /\bbody\b|\bmessage\b/.test(h));
-    cols.priority  = lower.findIndex(h => /\bpriority\b/.test(h));
-    cols.enabled   = lower.findIndex(h => /\benabled\b/.test(h));
-    return cols;
+    return {
+      title:    lower.findIndex(h => /\btitle\b/.test(h)),
+      message:  lower.findIndex(h => /\bmessage\b|\bbody\b/.test(h)),
+      type:     lower.findIndex(h => /\btype\b/.test(h)),
+      status:   lower.findIndex(h => /\bstatus\b/.test(h)),
+      icon:     lower.findIndex(h => /\bicon\b/.test(h)),
+      priority: lower.findIndex(h => /\bpriority\b/.test(h)),
+      created:  lower.findIndex(h => /\bcreated\b/.test(h)),
+      expires:  lower.findIndex(h => /\bexpires?\b/.test(h)),
+      source:   lower.findIndex(h => /\bsource\b/.test(h)),
+      sheet:    lower.findIndex(h => /\bsheet\b/.test(h)),
+    };
   },
 
   render(container, rows, cols) {
     container.innerHTML = '';
 
-    /* ---- Parse rules ---- */
-    const rules = rows.map((row, i) => ({
-      row,
+    /* ---- Parse notifications ---- */
+    const notifs = rows.map((row, i) => ({
       rowIndex: i + 1,
-      event:     cols.event     >= 0 ? (row[cols.event]     || '') : '',
-      condition: cols.condition >= 0 ? (row[cols.condition] || '') : 'always',
-      title:     cols.title     >= 0 ? (row[cols.title]     || '') : '',
-      body:      cols.body      >= 0 ? (row[cols.body]      || '') : '',
-      priority:  normPriority(cols.priority >= 0 ? row[cols.priority] : ''),
-      enabled:   normEnabled(cols.enabled >= 0 ? row[cols.enabled] : 'yes'),
-    })).filter(r => r.event);
+      title:    cols.title    >= 0 ? (row[cols.title]    || '') : '',
+      message:  cols.message  >= 0 ? (row[cols.message]  || '') : '',
+      type:     (cols.type    >= 0 ? (row[cols.type]     || 'info') : 'info').toLowerCase(),
+      status:   normStatus(cols.status >= 0 ? row[cols.status] : 'Active'),
+      icon:     cols.icon     >= 0 ? (row[cols.icon]     || '') : '',
+      priority: (cols.priority >= 0 ? (row[cols.priority] || 'Medium') : 'Medium').toLowerCase(),
+      created:  cols.created  >= 0 ? (row[cols.created]  || '') : '',
+      expires:  cols.expires  >= 0 ? (row[cols.expires]  || '') : '',
+      source:   cols.source   >= 0 ? (row[cols.source]   || '') : '',
+      sheet:    cols.sheet    >= 0 ? (row[cols.sheet]    || '') : '',
+    })).filter(n => n.title);
 
-    const enabledCount  = rules.filter(r => r.enabled).length;
-    const disabledCount = rules.length - enabledCount;
+    /* ---- State ---- */
+    let currentFilter = 'All';
+
+    /* ---- Connection state ---- */
+    const sheetId = getCurrentSheetId();
+    const configuredId = localStorage.getItem('waymark_notif_sheet_id') || '';
+    const isConnected = configuredId === sheetId && sheetId;
+
+    /* ---- Count helpers ---- */
+    function countByStatus(status) {
+      return notifs.filter(n => n.status === status).length;
+    }
+
+    /* ---- Build a notification card ---- */
+    function buildCard(n) {
+      const typeMeta = TYPE_META[n.type] || TYPE_META.info;
+      const priMeta  = PRIORITY_META[n.priority] || {};
+
+      /* Status badge — cycles on click */
+      const badge = el('span', {
+        className: `notification-type-badge notification-badge-${n.status.toLowerCase()}`,
+        style: 'cursor:pointer',
+        title: `Status: ${n.status} — click to cycle`,
+      }, [n.status]);
+
+      badge.addEventListener('click', () => {
+        n.status = nextStatus(n.status);
+        badge.textContent = n.status;
+        badge.className = `notification-type-badge notification-badge-${n.status.toLowerCase()}`;
+        emitEdit(n.rowIndex, cols.status, n.status);
+        // Update card class
+        card.className = `notification-card notification-status-${n.status.toLowerCase()}`;
+        // Update summary count
+        updateSummary();
+        // Re-filter if needed
+        if (currentFilter !== 'All') applyFilter(currentFilter);
+      });
+
+      /* Type pill */
+      const typePill = el('span', {
+        className: 'notification-type-pill',
+        style: `background:${typeMeta.bg};color:${typeMeta.color}`,
+      }, [n.type]);
+
+      /* Header row */
+      const header = el('div', { className: 'notification-card-header' }, [
+        n.icon ? el('span', { className: 'notification-icon' }, [n.icon]) : null,
+        el('span', { className: 'notification-card-title' }, [n.title]),
+        typePill,
+        badge,
+      ].filter(Boolean));
+
+      /* Body */
+      const body = el('div', { className: 'notification-card-body' }, [n.message]);
+
+      /* Meta row */
+      const metaChildren = [];
+      if (n.created) {
+        metaChildren.push(el('span', { className: 'notification-meta-date' }, [formatDate(n.created)]));
+      }
+      if (n.expires) {
+        metaChildren.push(el('span', { className: 'notification-expiry' }, [`Expires: ${n.expires}`]));
+      }
+      if (n.source) {
+        metaChildren.push(el('span', { className: 'notification-meta-source' }, [n.source]));
+      }
+      if (n.sheet) {
+        const link = el('a', {
+          className: 'notification-meta-link',
+          href: `#/sheet/${n.sheet}`,
+        }, ['Open Sheet']);
+        metaChildren.push(link);
+      }
+      if (n.priority && n.priority !== 'medium') {
+        const priColor = priMeta.color || '#6b7280';
+        metaChildren.push(el('span', {
+          className: 'notification-priority-tag',
+          style: `color:${priColor}`,
+        }, [n.priority]));
+      }
+
+      const meta = metaChildren.length
+        ? el('div', { className: 'notification-card-meta' }, metaChildren)
+        : null;
+
+      const card = el('div', {
+        className: `notification-card notification-status-${n.status.toLowerCase()}`,
+      }, [header, body, meta].filter(Boolean));
+
+      n._card = card;
+      return card;
+    }
+
+    /* ---- List container ---- */
+    const list = el('div', { className: 'notification-list' });
+    notifs.forEach(n => list.appendChild(buildCard(n)));
 
     /* ---- Summary bar ---- */
-    const summary = el('div', { className: 'notifr-summary' }, [
-      el('span', { className: 'notifr-summary-title' }, ['📲 Push Notification Rules']),
-      el('span', { className: 'notifr-summary-stat' }, [
-        el('span', { className: 'notifr-stat-on' }, [`${enabledCount} active`]),
-        disabledCount > 0 ? ` · ${disabledCount} disabled` : '',
-      ]),
-    ]);
+    const activeCountEl = el('span', { className: 'notification-active-count' }, [`${countByStatus('Active')}`]);
+    const summaryText   = el('span', { className: 'notification-summary-text' }, [' active notifications']);
 
-    /* ---- Table ---- */
-    const thead = el('thead', {}, [
-      el('tr', {}, [
-        el('th', {}, ['Event']),
-        el('th', {}, ['Condition']),
-        el('th', {}, ['Title']),
-        el('th', {}, ['Body / Template']),
-        el('th', {}, ['Priority']),
-        el('th', { title: 'Toggle to enable or disable this rule' }, ['On']),
-      ]),
-    ]);
-
-    const tbody = el('tbody', {});
-
-    for (const rule of rules) {
-      const priMeta = PRIORITY_META[rule.priority] || PRIORITY_META.normal;
-
-      const priBadge = el('span', {
-        className: 'notifr-pri-badge',
-        style: `background:${priMeta.bg};color:${priMeta.color}`,
-      }, [rule.priority]);
-
-      const enabledToggle = el('input', {
-        type: 'checkbox',
-        className: 'notifr-toggle',
-        title: rule.enabled ? 'Click to disable' : 'Click to enable',
+    /* ---- Connection badge / Use button ---- */
+    let connectionEl;
+    if (isConnected) {
+      connectionEl = el('span', { className: 'notification-connected-badge' }, ['🔔 Connected to Bell']);
+    } else {
+      const useBtn = el('button', { className: 'notification-use-btn' }, ['Use as Notification Sheet']);
+      useBtn.addEventListener('click', () => {
+        localStorage.setItem('waymark_notif_sheet_id', sheetId);
+        const badge = el('span', { className: 'notification-connected-badge' }, ['🔔 Connected to Bell']);
+        summary.replaceChild(badge, useBtn);
+        connectionEl = badge;
       });
-      enabledToggle.checked = rule.enabled;
-      enabledToggle.addEventListener('change', () => {
-        if (cols.enabled >= 0) {
-          const newVal = enabledToggle.checked ? 'yes' : 'no';
-          emitEdit(rule.rowIndex, cols.enabled, newVal);
-          row.classList.toggle('notifr-row-disabled', !enabledToggle.checked);
-        }
-      });
-
-      const eventCell = cols.event >= 0
-        ? editableCell('td', { className: 'notifr-cell-event' }, rule.event, rule.rowIndex, cols.event)
-        : el('td', { className: 'notifr-cell-event' }, [rule.event]);
-
-      const condCell = cols.condition >= 0
-        ? editableCell('td', { className: 'notifr-cell-condition' }, rule.condition, rule.rowIndex, cols.condition)
-        : el('td', { className: 'notifr-cell-condition' }, [rule.condition]);
-
-      const titleCell = cols.title >= 0
-        ? editableCell('td', { className: 'notifr-cell-title' }, rule.title, rule.rowIndex, cols.title)
-        : el('td', { className: 'notifr-cell-title' }, [rule.title]);
-
-      const bodyCell = cols.body >= 0
-        ? editableCell('td', { className: 'notifr-cell-body' }, rule.body, rule.rowIndex, cols.body)
-        : el('td', { className: 'notifr-cell-body' }, [rule.body]);
-
-      const row = el('tr', {
-        className: `notifr-row${rule.enabled ? '' : ' notifr-row-disabled'}`,
-      }, [
-        eventCell,
-        condCell,
-        titleCell,
-        bodyCell,
-        el('td', { className: 'notifr-cell-priority' }, [priBadge]),
-        el('td', { className: 'notifr-cell-enabled' }, [enabledToggle]),
-      ]);
-
-      tbody.appendChild(row);
+      connectionEl = useBtn;
     }
 
-    if (rules.length === 0) {
-      tbody.appendChild(
-        el('tr', {}, [
-          el('td', { colSpan: '6', className: 'notifr-empty' }, [
-            'No rules yet. Add rows: Event | Condition | Title | Body | Priority | Enabled',
-          ]),
-        ])
-      );
-    }
-
-    const table = el('table', { className: 'notifr-table' }, [thead, tbody]);
-
-    /* ---- Hint footer ---- */
-    const hint = el('div', { className: 'notifr-hint' }, [
-      el('strong', {}, ['Events: ']),
-      'DISPATCH, TASK_QA, TASK_DONE, BLOCKED, WAIT, IDLE, POLL_FAILED, CYCLE_RATE_HIGH',
-      el('br', {}),
-      el('strong', {}, ['Templates: ']),
-      'Use {{agentName}}, {{taskTitle}}, {{task}}, {{reason}}, {{doneCount}}, {{qaCount}}, {{delta}} in Title and Body.',
+    const summary = el('div', { className: 'notification-summary' }, [
+      el('div', { className: 'notification-summary-left' }, [activeCountEl, summaryText]),
+      connectionEl,
     ]);
 
-    const view = el('div', { className: 'notifr-view' }, [summary, table, hint]);
+    /* ---- Filter bar ---- */
+    function makePill(label, filter) {
+      const countVal = filter === 'All' ? notifs.length : countByStatus(filter);
+      const countSpan = el('span', { className: 'notification-pill-count' }, [`${countVal}`]);
+      const pill = el('button', {
+        className: `notification-filter-pill${currentFilter === filter ? ' active' : ''}`,
+        style: 'cursor:pointer',
+      }, [label, ' ', countSpan]);
+      pill.addEventListener('click', () => {
+        currentFilter = filter;
+        applyFilter(filter);
+        filterBar.querySelectorAll('.notification-filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+      });
+      pill._countSpan = countSpan;
+      pill._filter = filter;
+      return pill;
+    }
+
+    const filterBar = el('div', { className: 'notification-filter-bar' }, [
+      makePill('All', 'All'),
+      makePill('Active', 'Active'),
+      makePill('Read', 'Read'),
+      makePill('Dismissed', 'Dismissed'),
+    ]);
+
+    /* ---- Filter logic: remove/re-add cards so DOM count matches ---- */
+    function applyFilter(filter) {
+      list.innerHTML = '';
+      notifs
+        .filter(n => filter === 'All' || n.status === filter)
+        .forEach(n => list.appendChild(n._card));
+    }
+
+    /* ---- Update summary active count ---- */
+    function updateSummary() {
+      const active = countByStatus('Active');
+      activeCountEl.textContent = `${active}`;
+      // Update pill counts
+      filterBar.querySelectorAll('.notification-filter-pill').forEach(pill => {
+        const f = pill._filter;
+        const n = f === 'All' ? notifs.length : countByStatus(f);
+        if (pill._countSpan) pill._countSpan.textContent = `${n}`;
+      });
+    }
+
+    /* ---- Assemble view ---- */
+    const view = el('div', { className: 'notification-view' }, [summary, filterBar, list]);
     container.appendChild(view);
   },
 
   directoryView(container, sheets, navigateFn) {
-    const wrapper = el('div', { className: 'notifr-directory tmpl-directory' });
-    wrapper.append(el('div', { className: 'notifr-dir-title-bar tmpl-dir-title-bar' }, [
+    const wrapper = el('div', { className: 'notification-directory tmpl-directory' });
+    wrapper.append(el('div', { className: 'notification-dir-title-bar tmpl-dir-title-bar' }, [
       el('span', { className: 'tmpl-dir-icon' }, ['📲']),
-      el('span', { className: 'tmpl-dir-title' }, ['Push Notification Rules']),
+      el('span', { className: 'tmpl-dir-title' }, ['Notification Sheets']),
       el('span', { className: 'tmpl-dir-count' }, [`${sheets.length} sheet${sheets.length !== 1 ? 's' : ''}`]),
       buildDirSyncBtn(wrapper),
     ]));
@@ -195,9 +289,7 @@ const definition = {
         dataset: { entryId: sheet.id, entryName: sheet.name },
       }, [
         el('div', { className: 'tmpl-dir-card-name' }, [sheet.name]),
-        el('div', { className: 'tmpl-dir-card-stat' }, [
-          `${rows.length} rule${rows.length !== 1 ? 's' : ''}`,
-        ]),
+        el('div', { className: 'tmpl-dir-card-stat' }, [`${rows.length} notification${rows.length !== 1 ? 's' : ''}`]),
       ]));
     }
 

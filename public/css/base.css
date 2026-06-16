@@ -175,6 +175,24 @@ ul { list-style: none; }
 }
 .btn-text:hover { color: var(--color-text); background: var(--color-border); }
 
+/* Small inline link-style button used in modals (e.g. "Set as default") */
+.btn-link {
+  background: rgba(255,255,255,0.03);
+  color: var(--color-text-secondary);
+  border: 1px solid rgba(148,163,184,0.06);
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), transform 120ms ease;
+}
+.btn-link:hover {
+  background: rgba(148,163,184,0.06);
+  color: var(--color-text);
+  transform: translateY(-1px);
+}
+.btn-link[disabled] { opacity: 0.6; cursor: default; transform: none; }
+
 .btn-pin {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: 50%;
@@ -291,6 +309,16 @@ ul { list-style: none; }
 
 .wm-camera-btn-capture:hover {
   filter: brightness(1.04);
+}
+
+/* While the Google Picker is open we lower modal stacking so the picker appears above */
+.picker-open .modal-overlay {
+  z-index: 500 !important;
+}
+
+/* Ensure picker's container (if appended to body) is above everything */
+.g-picker-container {
+  z-index: 1200 !important;
 }
 
 /* ---------- Login Screen ---------- */

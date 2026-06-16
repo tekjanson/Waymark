@@ -949,7 +949,21 @@
         "priority",
         "enabled"
       ],
-      "hasDirectoryView": true
+      "hasDirectoryView": true,
+      "fixtureIds": [
+        "sheet-046"
+      ],
+      "fixtureFiles": [
+        "notification-waymark"
+      ],
+      "interactive": true,
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Active",
+        "Read",
+        "Dismissed"
+      ],
+      "exampleCount": 1
     },
     {
       "key": "iot",

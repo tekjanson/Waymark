@@ -45,6 +45,8 @@ function defaultUserData() {
       sortOrder: 'name',        // explorer sort: 'name' | 'modified'
       importFolderId: null,     // custom import target folder ID (null = Waymark/Imports)
       importFolderName: null,   // display name of custom import folder
+      // Map of templateKey -> { id, name } for default creation folder per template
+      defaultCreationFolderByTemplate: {},
       fleetSheetId: null,       // Agent Registry sheet ID (for the Dev Fleet sidebar button)
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       mqttBridge: false,          // MQTT debug bridge enabled
@@ -289,6 +291,36 @@ async function _writePrivateConfig(sheetId, config) {
 export async function getRootFolderId() {
   await init();
   return _rootFolderId;
+}
+
+/**
+ * Get the default creation folder for a specific template key.
+ * @param {string} templateKey
+ * @returns {{id:string,name:string}|null}
+ */
+export async function getDefaultFolderForTemplate(templateKey) {
+  await init();
+  const prefs = _userData?.preferences || {};
+  return (prefs.defaultCreationFolderByTemplate || {})[templateKey] || null;
+}
+
+/**
+ * Set the default creation folder for a specific template key.
+ * Persists the mapping to Drive.
+ * @param {string} templateKey
+ * @param {string} folderId
+ * @param {string} folderName
+ */
+export async function setDefaultFolderForTemplate(templateKey, folderId, folderName) {
+  await init();
+  _userData.preferences = _userData.preferences || {};
+  _userData.preferences.defaultCreationFolderByTemplate = _userData.preferences.defaultCreationFolderByTemplate || {};
+  if (!folderId) {
+    delete _userData.preferences.defaultCreationFolderByTemplate[templateKey];
+  } else {
+    _userData.preferences.defaultCreationFolderByTemplate[templateKey] = { id: folderId, name: folderName };
+  }
+  await save({ preferences: _userData.preferences });
 }
 
 /**
