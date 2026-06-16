@@ -247,12 +247,12 @@ const definition = {
       makePill('Dismissed', 'Dismissed'),
     ]);
 
-    /* ---- Filter logic ---- */
+    /* ---- Filter logic: remove/re-add cards so DOM count matches ---- */
     function applyFilter(filter) {
-      notifs.forEach(n => {
-        const visible = filter === 'All' || n.status === filter;
-        n._card.style.display = visible ? '' : 'none';
-      });
+      list.innerHTML = '';
+      notifs
+        .filter(n => filter === 'All' || n.status === filter)
+        .forEach(n => list.appendChild(n._card));
     }
 
     /* ---- Update summary active count ---- */
