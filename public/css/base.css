@@ -293,6 +293,16 @@ ul { list-style: none; }
   filter: brightness(1.04);
 }
 
+/* While the Google Picker is open we lower modal stacking so the picker appears above */
+.picker-open .modal-overlay {
+  z-index: 500 !important;
+}
+
+/* Ensure picker's container (if appended to body) is above everything */
+.g-picker-container {
+  z-index: 1200 !important;
+}
+
 /* ---------- Login Screen ---------- */
 .login-container {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

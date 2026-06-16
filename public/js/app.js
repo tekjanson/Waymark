@@ -1619,11 +1619,43 @@ function initCreateSheetModal() {
         createSheetChooseFolderBtn.disabled = true;
         createSheetChooseFolderBtn.textContent = 'Opening…';
         if (createSheetStatus) createSheetStatus.textContent = '';
-        const folder = await api.picker.pickFolder();
+        // Lower the modal z-index while picker opens so it doesn't appear behind
+        document.body.classList.add('picker-open');
+        let folder = null;
+        try {
+          folder = await api.picker.pickFolder();
+        } finally {
+          // Always remove the transient class so the modal returns to normal
+          document.body.classList.remove('picker-open');
+        }
+        // If user cancelled (picker returns null/undefined), do nothing silently
         if (folder) {
           createSheetParentId   = folder.id;
           createSheetParentName = folder.name;
           if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = folder.name;
+          // Offer to set as default for this template when a template is selected
+          if (selectedTemplateKey) {
+            // Small, non-blocking UI: show a prompt in status with clickable action
+            if (createSheetStatus) {
+              createSheetStatus.innerHTML = '';
+              const span = document.createElement('span');
+              span.textContent = 'Folder selected.';
+              const btn = document.createElement('button');
+              btn.className = 'btn-link';
+              btn.textContent = `Set as default for ${selectedTemplateKey}`;
+              btn.addEventListener('click', async () => {
+                try {
+                  await userData.setDefaultFolderForTemplate(selectedTemplateKey, folder.id, folder.name);
+                  createSheetStatus.textContent = `Default set for ${selectedTemplateKey}`;
+                } catch (e) {
+                  createSheetStatus.textContent = `Could not save default: ${e.message}`;
+                }
+              });
+              createSheetStatus.appendChild(span);
+              createSheetStatus.appendChild(document.createTextNode(' '));
+              createSheetStatus.appendChild(btn);
+            }
+          }
         }
       } catch (err) {
         if (createSheetStatus) {
@@ -1650,12 +1682,47 @@ function openCreateSheetModal() {
   createSheetCreateBtn.disabled = true;
   createSheetCreateBtn.textContent = 'Create Waymark';
   createSheetProgress.classList.add('hidden');
-  if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = 'Waymark (default)';
+  // Resolve template-specific or global default folder and display name
+  (async () => {
+    try {
+      // No template selected yet — show the global root folder name
+      const def = await userData.getDefaultFolderForTemplate('');
+      if (def && def.name) {
+        createSheetParentId = def.id;
+        createSheetParentName = def.name;
+        if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = def.name;
+        return;
+      }
+    } catch (e) {
+      // ignore
+    }
+    if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = 'Waymark (default)';
+  })();
   renderCreateSheetGrid('');
   createSheetModal.classList.remove('hidden');
   // Focus search input so user can immediately type to filter
   if (createSheetSearchInput) createSheetSearchInput.focus();
   else createSheetNameInput.focus();
+  // If a template is later selected, prefer its default folder mapping
+  // Listen for selection and update display accordingly
+  const observer = new MutationObserver(async () => {
+    if (!selectedTemplateKey) return;
+    try {
+      const def = await userData.getDefaultFolderForTemplate(selectedTemplateKey);
+      if (def && def.name) {
+        createSheetParentId = def.id;
+        createSheetParentName = def.name;
+        if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = def.name;
+      }
+    } catch (e) {
+      // ignore
+    }
+  });
+  // Observe class changes on grid to detect selection changes
+  if (createSheetGrid) observer.observe(createSheetGrid, { attributes: true, attributeFilter: ['class'], subtree: false });
+  // Stop observing when modal closes
+  const remover = () => { observer.disconnect(); createSheetModal.removeEventListener('click', remover); };
+  createSheetModal.addEventListener('click', remover);
 }
 
 function closeCreateSheetModal() {
@@ -1734,6 +1801,8 @@ async function handleCreateSheet() {
     if (!parentId) {
       try {
         parentId = await userData.getRootFolderId();
+        // persist resolved fallback to modal state so patchFolderIndex uses same id
+        createSheetParentId = parentId;
       } catch {
         parentId = null;
       }
