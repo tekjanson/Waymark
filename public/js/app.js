@@ -1637,24 +1637,23 @@ function initCreateSheetModal() {
           if (selectedTemplateKey) {
             // Small, non-blocking UI: show a prompt in status with clickable action
             if (createSheetStatus) {
-              createSheetStatus.innerHTML = '';
-              const span = document.createElement('span');
-              span.textContent = 'Folder selected.';
-              const btn = document.createElement('button');
-              btn.className = 'btn-link';
-              btn.textContent = `Set as default for ${selectedTemplateKey}`;
-              btn.addEventListener('click', async () => {
-                try {
-                  await userData.setDefaultFolderForTemplate(selectedTemplateKey, folder.id, folder.name);
-                  createSheetStatus.textContent = `Default set for ${selectedTemplateKey}`;
-                } catch (e) {
-                  createSheetStatus.textContent = `Could not save default: ${e.message}`;
-                }
-              });
-              createSheetStatus.appendChild(span);
-              createSheetStatus.appendChild(document.createTextNode(' '));
-              createSheetStatus.appendChild(btn);
-            }
+                createSheetStatus.innerHTML = '';
+                const span = el('span', {}, ['Folder selected.']);
+                const btn = el('button', {
+                  className: 'btn-link',
+                  on: { click: async () => {
+                    try {
+                      await userData.setDefaultFolderForTemplate(selectedTemplateKey, folder.id, folder.name);
+                      createSheetStatus.textContent = `Default set for ${selectedTemplateKey}`;
+                    } catch (e) {
+                      createSheetStatus.textContent = `Could not save default: ${e.message}`;
+                    }
+                  }},
+                }, [`Set as default for ${selectedTemplateKey}`]);
+                createSheetStatus.appendChild(span);
+                createSheetStatus.appendChild(document.createTextNode(' '));
+                createSheetStatus.appendChild(btn);
+              }
           }
         }
       } catch (err) {
@@ -1703,26 +1702,7 @@ function openCreateSheetModal() {
   // Focus search input so user can immediately type to filter
   if (createSheetSearchInput) createSheetSearchInput.focus();
   else createSheetNameInput.focus();
-  // If a template is later selected, prefer its default folder mapping
-  // Listen for selection and update display accordingly
-  const observer = new MutationObserver(async () => {
-    if (!selectedTemplateKey) return;
-    try {
-      const def = await userData.getDefaultFolderForTemplate(selectedTemplateKey);
-      if (def && def.name) {
-        createSheetParentId = def.id;
-        createSheetParentName = def.name;
-        if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = def.name;
-      }
-    } catch (e) {
-      // ignore
-    }
-  });
-  // Observe class changes on grid to detect selection changes
-  if (createSheetGrid) observer.observe(createSheetGrid, { attributes: true, attributeFilter: ['class'], subtree: false });
-  // Stop observing when modal closes
-  const remover = () => { observer.disconnect(); createSheetModal.removeEventListener('click', remover); };
-  createSheetModal.addEventListener('click', remover);
+  // Per-template defaults are applied immediately when a template card is selected.
 }
 
 function closeCreateSheetModal() {
@@ -1747,7 +1727,7 @@ function renderCreateSheetGrid(query = '') {
     const card = el('div', {
       className: 'create-sheet-card',
       on: {
-        click() {
+        async click() {
           // Deselect previous
           const prev = createSheetGrid.querySelector('.create-sheet-card.selected');
           if (prev) prev.classList.remove('selected');
@@ -1758,6 +1738,22 @@ function renderCreateSheetGrid(query = '') {
           if (!createSheetNameInput.value.trim()) {
             createSheetNameInput.value = `My ${tpl.name}`;
           }
+          // Clear any transient status
+          if (createSheetStatus) createSheetStatus.textContent = '';
+
+          // Attempt to load a per-template default folder and apply it immediately
+          try {
+            const def = await userData.getDefaultFolderForTemplate(key);
+            if (def && def.name) {
+              createSheetParentId = def.id;
+              createSheetParentName = def.name;
+              if (createSheetFolderDisplay) createSheetFolderDisplay.textContent = def.name;
+            }
+          } catch (e) {
+            // Non-fatal
+            console.warn('[create-sheet] could not load default folder for', key, e);
+          }
+
           updateCreateSheetButton();
         },
       },
