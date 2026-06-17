@@ -17,6 +17,7 @@ import * as encryption from './encryption.js';
 import { getAndroidBridge } from './platform.js';
 
 let currentSheetId = null;
+let currentNumericSheetId = null;
 let currentSheetTitle = null;
 let refreshTimer   = null;
 let lastFetchTime  = null;
@@ -849,7 +850,7 @@ function openDuplicateModal() {
 
 /* ---------- Data loading ---------- */
 
-async function loadSheet(sheetId) {
+  async function loadSheet(sheetId) {
   try {
     // Fire sheet data and protected-range metadata in parallel when authenticated.
     // Protected ranges are used to render lock icons and drive the background scan.
@@ -859,6 +860,9 @@ async function loadSheet(sheetId) {
         ? api.sheets.getProtectedRanges(sheetId).catch(() => [])
         : Promise.resolve([]),
     ]);
+
+    // Capture numeric sheet ID for templates (needed for row deletion, etc.)
+    currentNumericSheetId = data.numericSheetId ?? 0;
 
     // Build a Set of 0-based row indices that are server-side protected.
     // This is passed to shared.js so templates can render lock icons.
@@ -1215,6 +1219,10 @@ function renderWithTemplate(values) {
   };
 
   // Render using template-specific renderer
+  // Pass sheet metadata to templates for row operations like deletion
+  template._currentSheetId = currentSheetId;
+  template._currentNumericSheetId = currentNumericSheetId;
+  template._currentSheetTitle = currentSheetTitle;
   template.render(itemsEl, rows, cols, template);
   currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
 

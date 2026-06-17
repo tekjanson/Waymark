@@ -890,6 +890,35 @@ export const api = {
     },
 
     /**
+     * Delete rows from a spreadsheet.
+     * @param {string} spreadsheetId
+     * @param {number} sheetId      numeric Google Sheets tab ID
+     * @param {number} startRowIndex 0-based row index (first row to delete)
+     * @param {number} endRowIndex   0-based row index + 1 (exclusive)
+     * @returns {Promise<Object>}
+     */
+    async deleteRows(spreadsheetId, sheetId, startRowIndex, endRowIndex) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        const data = fix.sheets[spreadsheetId];
+        if (data && data.values) {
+          // Remove rows from startRowIndex to endRowIndex (exclusive)
+          data.values.splice(startRowIndex, endRowIndex - startRowIndex);
+        }
+        const record = {
+          type: 'row-delete',
+          spreadsheetId, sheetId, startRowIndex, endRowIndex,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await requireToken();
+      return sheetsApi.deleteRows(token, spreadsheetId, sheetId, startRowIndex, endRowIndex);
+    },
+
+    /**
      * Fetch all protected ranges for a spreadsheet.
      * Returns an array of protectedRange objects (flat, across all sheet tabs).
      * @param {string} spreadsheetId
