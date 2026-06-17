@@ -540,3 +540,110 @@ test('agents: Sync Fleet uses localStorage webhook URL when no server flag', asy
   await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
   expect(capturedUrl).toBe('http://localhost:3002/fleet-sync');
 });
+
+test('agents template renders delete button on hover', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const firstCard = page.locator('.agents-card').first();
+  const deleteBtn = firstCard.locator('.agents-delete-btn');
+  
+  // Button should be hidden initially
+  await expect(deleteBtn).toHaveCSS('opacity', '0');
+  
+  // Button should show on hover
+  await firstCard.hover();
+  await expect(deleteBtn).toHaveCSS('opacity', '1');
+});
+
+test('agents template delete button opens confirmation modal', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const firstCard = page.locator('.agents-card').first();
+  const deleteBtn = firstCard.locator('.agents-delete-btn');
+  
+  // Hover to reveal delete button
+  await firstCard.hover();
+  
+  // Click delete button
+  await deleteBtn.click();
+  
+  // Modal should be visible
+  await expect(page.locator('.agents-delete-modal')).not.toHaveClass(/hidden/);
+  await expect(page.locator('.agents-delete-modal')).toBeVisible();
+});
+
+test('agents template delete modal shows agent name', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const deleteBtn = page.locator('.agents-card').first().locator('.agents-delete-btn');
+  
+  // Hover and click delete
+  await page.locator('.agents-card').first().hover();
+  await deleteBtn.click();
+  
+  // Agent name should be in modal
+  await expect(page.locator('.agents-delete-agent-name')).toContainText('Alex');
+});
+
+test('agents template delete modal cancel button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const deleteBtn = page.locator('.agents-card').first().locator('.agents-delete-btn');
+  
+  await page.locator('.agents-card').first().hover();
+  await deleteBtn.click();
+  
+  // Click cancel
+  await page.locator('.agents-delete-modal-cancel').click();
+  
+  // Modal should be hidden
+  await expect(page.locator('.agents-delete-modal')).toHaveClass(/hidden/);
+});
+
+test('agents template delete button sends edit', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const deleteBtn = page.locator('.agents-card').first().locator('.agents-delete-btn');
+  
+  await page.locator('.agents-card').first().hover();
+  await deleteBtn.click();
+  
+  // Click confirm delete
+  await page.locator('.agents-confirm-delete-btn').click();
+  
+  // Check that an edit record was created (agent name cleared)
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  const deleteRecord = records.find(r => r.colIndex === 0 && r.value === '');
+  expect(deleteRecord).toBeTruthy();
+});
+
+test('agents template renders folder field when present', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Check that folder field is rendered
+  await expect(page.locator('.agents-folder')).toHaveCount(1);
+  await expect(page.locator('.agents-folder').first()).toContainText('📁 Folder');
+});
+
+test('agents template folder field displays agent folder', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // First agent should have "Engineering" folder
+  const firstCard = page.locator('.agents-card').first();
+  const folderField = firstCard.locator('.agents-folder');
+  await expect(folderField).toContainText('Engineering');
+});
+
+test('agents template folder field is editable', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Click on folder cell to edit
+  const folderCell = page.locator('.agents-folder-cell').first();
+  await folderCell.click();
+  
+  // Should be in edit mode with input
+  await expect(folderCell.locator('input.editable-cell-input')).toBeVisible();
+});
