@@ -58,7 +58,7 @@ services:
 
       # ── Language models ──────────────────────────────────────────────────────
       # Model for Copilot CLI (uses model names from copilot --list-models)
-      - AGENT_MODEL=${AGENT_MODEL:-claude-sonnet-4.6}
+      - AGENT_MODEL=${AGENT_MODEL:-claude-Haiku-4.5}
       # Model for Claude Code (uses Anthropic model IDs)
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
 
@@ -87,7 +87,7 @@ services:
       # The Google Sheet ID of the Agent Registry sheet (agents template).
       # Set this so agents can read their tuning strings from the Waymark UI.
       # Operators edit tuning strings in the sheet; agents pick them up on boot.
-      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-}
+      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-1egJZTEcy0Wh0rl98sO4Voz5LgntCAIBlxt1Ez8_8fqc}
 
       # ── Git identity for commits made inside the container ───────────────
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
@@ -134,4 +134,68 @@ services:
       # Rootless Docker: The socket path on the host may differ from the
       # standard /var/run/docker.sock. Override with DOCKER_SOCKET_PATH:
       #   DOCKER_SOCKET_PATH=/run/user/1000/docker.sock make up
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+
+  # ── Eval/QA Worker — Quinn ────────────────────────────────────────────────────
+  # A dedicated agent that monitors the QA stage of the workboard.
+  # For each task in QA: checks out the branch, runs E2E tests, does code review,
+  # writes a structured verdict, and posts it back. The human then decides
+  # whether to approve (→ Done) or reject (→ To Do with notes).
+  #
+  # Uses the same image as waymark-dev-worker. Runs as agent "Quinn".
+  # AGENT_ROLE=qa switches agent-runner.sh into QA patrol mode:
+  #   - polls --qa-details instead of the standard To Do queue
+  #   - dispatches @waymark-qa instead of @waymark-builder
+  #
+  # Usage:
+  #   make eval-start         → start Quinn
+  #   make eval-stop          → stop Quinn
+  #   make eval-logs          → tail Quinn's logs
+  waymark-eval-worker:
+    build:
+      context: .
+    image: waymark-dev-worker:latest
+    container_name: waymark-eval-worker
+
+    environment:
+      - AI_PROVIDER=${EVAL_AI_PROVIDER:-auto}
+
+      # QA-specific agent command — dispatches @waymark-qa for each QA task
+      - AGENT_COMMAND=@waymark-qa start
+      - CLAUDE_COMMAND=waymark-qa start
+
+      # QA patrol mode — agent-runner.sh polls --qa-details instead of To Do queue
+      - AGENT_ROLE=qa
+
+      # Quinn is the QA agent identity shown in the Agent Registry and workboard
+      - AGENT_HUMAN_NAME=${EVAL_AGENT_NAME:-Quinn}
+      - AGENT_NAME=${EVAL_AGENT_NAME:-Quinn}
+
+      - CLAUDE_MD_LOCKED=${CLAUDE_MD_LOCKED:-false}
+
+      # Use a higher-quality model for code review — Sonnet beats Haiku for QA
+      - AGENT_MODEL=${EVAL_MODEL:-claude-sonnet-4.6}
+      - CLAUDE_MODEL=${EVAL_CLAUDE_MODEL:-claude-opus-4-5}
+
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}
+      - GH_TOKEN=${GH_TOKEN:-${COPILOT_GITHUB_TOKEN:-}}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+      - REPO_URL=${REPO_URL:-}
+      - REPO_BRANCH=${REPO_BRANCH:-main}
+      - DISPLAY=:99
+      - GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json
+      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-1egJZTEcy0Wh0rl98sO4Voz5LgntCAIBlxt1Ez8_8fqc}
+      - WAYMARK_WORKBOARD_ID=${WAYMARK_WORKBOARD_ID:-}
+      - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
+      - GIT_NAME=${GIT_NAME:-Waymark Agent}
+
+    restart: unless-stopped
+
+    volumes:
+      - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace
+      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/root/.copilot
+      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/root/.claude
+      - ${GSA_KEY_PATH:-/home/tekjanson/.config/gcloud/waymark-service-account-key.json}:/credentials/gsa-key.json:ro
+      - ${SSH_PATH:-/home/tekjanson/.ssh}:/root/.ssh:ro
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock

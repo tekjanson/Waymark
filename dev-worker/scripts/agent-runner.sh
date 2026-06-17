@@ -32,6 +32,8 @@
 #   CLAUDE_MODEL     — model for Claude Code (e.g. "claude-opus-4-5")
 #   AGENT_HUMAN_NAME — human-readable name (Alex, Sam, Jordan…)
 #   AGENTS_SHEET_ID  — Google Sheet ID of the Agent Registry (for tuning reads)
+#   AGENT_ROLE       — "qa" enables QA patrol mode: polls --qa-details instead of
+#                      the standard To Do queue, dispatches @waymark-qa per task
 
 set -uo pipefail
 
@@ -301,8 +303,70 @@ claim_next_task() {
     return 0
 }
 
+# ── QA patrol: claim one task from the QA stage ───────────────────────────────
+# Used when AGENT_ROLE=qa. Polls --qa-details (QA stage only) instead of the
+# standard To Do queue. Sets the same CLAIMED_* variables as claim_next_task().
+# Returns 1 if no QA tasks are available so the caller can sleep and retry.
+claim_next_qa_task() {
+    CLAIMED_ROW=""
+    CLAIMED_TASK=""
+    CLAIMED_DESC=""
+    CLAIMED_BRANCH=""
+
+    if [[ -z "${WAYMARK_WORKBOARD_ID:-}" ]]; then
+        log "WAYMARK_WORKBOARD_ID not set — cannot poll workboard for QA tasks"
+        return 1
+    fi
+
+    local wb_json
+    wb_json=$(
+        cd /workspace
+        GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json \
+        WAYMARK_WORKBOARD_ID="$WAYMARK_WORKBOARD_ID" \
+        node scripts/check-workboard.js --qa-details 2>/dev/null
+    ) || true
+
+    if [[ -z "$wb_json" ]]; then
+        log "Workboard QA query failed or returned empty"
+        return 1
+    fi
+
+    # qa field is an array of {row, task, notes, branch?, testingInstructions?}
+    local qa_count
+    qa_count=$(echo "$wb_json" | jq 'if .qa | type == "array" then .qa | length else 0 end' 2>/dev/null || echo 0)
+
+    if [[ "$qa_count" -eq 0 ]]; then
+        log "No QA tasks available (qa_count=0)"
+        return 1
+    fi
+
+    local row task branch notes testing_instructions
+    row=$(echo "$wb_json" | jq -r '.qa[0].row // empty' 2>/dev/null)
+    task=$(echo "$wb_json" | jq -r '.qa[0].task // empty' 2>/dev/null)
+    branch=$(echo "$wb_json" | jq -r '.qa[0].branch // ""' 2>/dev/null)
+    notes=$(echo "$wb_json" | jq -r '.qa[0].notes // "" | if type == "array" then map(.text // .) | join(" | ") else . end' 2>/dev/null)
+    testing_instructions=$(echo "$wb_json" | jq -r '.qa[0].testingInstructions // ""' 2>/dev/null)
+
+    if [[ -z "$row" || -z "$task" ]]; then
+        log "QA task data incomplete — skipping"
+        return 1
+    fi
+
+    log "Picked up QA task row ${row}: ${task} (branch: ${branch:-unknown})"
+
+    CLAIMED_ROW="$row"
+    CLAIMED_TASK="$task"
+    CLAIMED_BRANCH="$branch"
+    # Combine notes + testing instructions into the desc passed to the agent
+    CLAIMED_DESC="${notes}"
+    [[ -n "$testing_instructions" ]] && CLAIMED_DESC="${CLAIMED_DESC} | ${testing_instructions}"
+    return 0
+}
+
+
 # ── Main agent loop ───────────────────────────────────────────────────────────
-log "Starting agent loop — provider: ${AI_PROVIDER}"
+AGENT_ROLE="${AGENT_ROLE:-}"
+log "Starting agent loop — provider: ${AI_PROVIDER} | role: ${AGENT_ROLE:-builder}"
 log "  Copilot CLI: $(copilot --version 2>/dev/null || echo 'not available')"
 log "  Claude Code: $(claude --version 2>/dev/null || echo 'not available')"
 log "  Workboard:   ${WAYMARK_WORKBOARD_ID:-<not set>}"
@@ -312,17 +376,30 @@ IDLE_CYCLES=0
 while true; do
     # ── Poll workboard for next task ──────────────────────────────────────────
     if [[ -n "${WAYMARK_WORKBOARD_ID:-}" ]]; then
-        if ! claim_next_task; then
-            IDLE_CYCLES=$(( IDLE_CYCLES + 1 ))
-            sheet_write --status Idle --task "Idle — no tasks for ${AGENT_HUMAN_NAME}" --heartbeat
-            log "No task available — sleeping 60s (idle cycle ${IDLE_CYCLES})"
-            sleep 60
-            continue
+        # QA patrol mode: poll the QA stage instead of To Do
+        if [[ "${AGENT_ROLE}" == "qa" ]]; then
+            if ! claim_next_qa_task; then
+                IDLE_CYCLES=$(( IDLE_CYCLES + 1 ))
+                sheet_write --status Idle --task "Idle — no QA tasks" --heartbeat
+                log "No QA tasks available — sleeping 60s (idle cycle ${IDLE_CYCLES})"
+                sleep 60
+                continue
+            fi
+            IDLE_CYCLES=0
+            # Build QA-specific prompt: branch field is extracted by claim_next_qa_task()
+            TASK_PROMPT="@waymark-qa Task row: ${CLAIMED_ROW} | Task: ${CLAIMED_TASK} | Branch: ${CLAIMED_BRANCH:-unknown} | Details: ${CLAIMED_DESC}"
+        else
+            if ! claim_next_task; then
+                IDLE_CYCLES=$(( IDLE_CYCLES + 1 ))
+                sheet_write --status Idle --task "Idle — no tasks for ${AGENT_HUMAN_NAME}" --heartbeat
+                log "No task available — sleeping 60s (idle cycle ${IDLE_CYCLES})"
+                sleep 60
+                continue
+            fi
+            IDLE_CYCLES=0
+            # Override AGENT_COMMAND with task-specific prompt for the session
+            TASK_PROMPT="@waymark-builder Task row: ${CLAIMED_ROW} | Task: ${CLAIMED_TASK} | Details: ${CLAIMED_DESC}"
         fi
-        IDLE_CYCLES=0
-
-        # Override AGENT_COMMAND with task-specific prompt for the session
-        TASK_PROMPT="@waymark-builder Task row: ${CLAIMED_ROW} | Task: ${CLAIMED_TASK} | Details: ${CLAIMED_DESC}"
     else
         # No workboard configured — fall through to generic AGENT_COMMAND
         TASK_PROMPT="${AGENT_COMMAND}"

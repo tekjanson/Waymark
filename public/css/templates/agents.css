@@ -412,7 +412,247 @@
   box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
 }
 
-[data-theme="dark"] .agents-workboard-open {
+/* ---------- Card actions (delete button) ---------- */
+.agents-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.agents-delete-btn {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.agents-card:hover .agents-delete-btn {
+  opacity: 1;
+}
+
+.agents-delete-btn:hover {
+  background: #fca5a5;
+  color: #7f1d1d;
+}
+
+.agents-delete-btn:active {
+  transform: scale(0.97);
+}
+
+/* ---------- Folder field ---------- */
+.agents-folder,
+.agents-folder-cell {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.agents-folder-cell {
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  font-family: monospace;
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+
+.agents-folder-cell:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-border);
+}
+
+/* ---------- Delete confirmation modal ---------- */
+.agents-delete-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.agents-delete-modal.hidden {
+  display: none;
+}
+
+.agents-delete-modal-content {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+  max-width: 400px;
+  width: 90%;
+}
+
+.agents-delete-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.agents-delete-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.agents-delete-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition);
+}
+
+.agents-delete-modal-close:hover {
+  color: var(--color-text);
+}
+
+.agents-delete-modal-body {
+  padding: 16px 20px;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.agents-delete-modal-body p {
+  margin: 0;
+}
+
+.agents-delete-agent-name {
+  color: #991b1b;
+  font-weight: 600;
+}
+
+.agents-delete-modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+  justify-content: flex-end;
+}
+
+.agents-delete-modal-cancel,
+.agents-confirm-delete-btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.agents-delete-modal-cancel {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.agents-delete-modal-cancel:hover {
+  background: #f1f5f9;
+}
+
+.agents-confirm-delete-btn {
+  background: #dc2626;
+  color: #fff;
+}
+
+.agents-confirm-delete-btn:hover {
+  background: #b91c1c;
+}
+
+.agents-confirm-delete-btn:active {
+  transform: scale(0.97);
+}
+
+[data-theme="dark"] .agents-delete-btn {
+  background: #7f1d1d;
+  color: #fecaca;
+  border-color: #991b1b;
+}
+
+[data-theme="dark"] .agents-delete-btn:hover {
+  background: #991b1b;
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .agents-delete-modal-content {
+  background: #1e1b2e;
+}
+
+[data-theme="dark"] .agents-delete-modal-header {
+  border-bottom-color: var(--color-border);
+}
+
+[data-theme="dark"] .agents-delete-modal-title {
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .agents-delete-modal-close {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .agents-delete-modal-close:hover {
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .agents-delete-modal-body {
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .agents-delete-agent-name {
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .agents-delete-modal-footer {
+  border-top-color: var(--color-border);
+}
+
+[data-theme="dark"] .agents-delete-modal-cancel {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .agents-delete-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .agents-confirm-delete-btn {
+  background: #dc2626;
+  color: #fff;
+}
+
+[data-theme="dark"] .agents-confirm-delete-btn:hover {
+  background: #b91c1c;
+}
+
+[data-theme="dark"] .agents-folder-cell { color: var(--color-text-secondary); }
+[data-theme="dark"] .agents-folder-cell:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-border);
+}
+
+
   background: #3b1f6e;
   border-color: #5b3aad;
   color: #c4b5fd;

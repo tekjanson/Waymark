@@ -56,6 +56,7 @@ endef
         agent-test agent-test-boot agent-test-suite \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
+        eval-start eval-stop eval-logs \
         auth-copilot auth-claude auth-check token-extract \
         workboard clean
 
@@ -348,6 +349,33 @@ fleet-build: ## Build (or rebuild) the dev-worker Docker image
 	@echo "── Building waymark-dev-worker image ───────────────────"
 	@docker build -t waymark-dev-worker:latest dev-worker/
 	@echo "  ✓ Image built: waymark-dev-worker:latest"
+
+# ── Eval/QA Worker (Quinn) ────────────────────────────────────────────────────
+
+eval-start: ## Start Quinn, the Eval/QA agent (monitors QA stage, validates before human review)
+	@echo "── Starting Eval/QA Worker (Quinn) ─────────────────────"
+	@if docker ps --filter "name=^waymark-eval-worker$$" --filter "status=running" \
+			--format "{{.Names}}" 2>/dev/null | grep -q "waymark-eval-worker"; then \
+		echo "  ✓  Quinn (waymark-eval-worker) is already running"; \
+	else \
+		if docker ps -a --filter "name=^waymark-eval-worker$$" --format "{{.Names}}" \
+				| grep -q "waymark-eval-worker"; then \
+			echo "  ♻️  Removing stopped container..."; \
+			docker rm waymark-eval-worker >/dev/null 2>&1 || true; \
+		fi; \
+		$(COMPOSE) up -d waymark-eval-worker; \
+		echo "  ✓  Quinn started — watching QA stage"; \
+		echo "  View logs: make eval-logs"; \
+	fi
+
+eval-stop: ## Stop the Eval/QA agent (Quinn)
+	@echo "── Stopping Eval/QA Worker (Quinn) ─────────────────────"
+	@$(COMPOSE) stop waymark-eval-worker 2>/dev/null \
+		&& echo "  ✓  Quinn stopped" \
+		|| echo "  Quinn was not running"
+
+eval-logs: ## Tail logs from the Eval/QA agent (Quinn)
+	@docker logs -f waymark-eval-worker 2>&1
 
 fleet-webhook: ## Start the fleet webhook sidecar (enables Sync Fleet button in UI)
 	@if [ -f $(WEBHOOK_PID) ] && kill -0 $$(cat $(WEBHOOK_PID)) 2>/dev/null; then \
