@@ -57,7 +57,7 @@ const definition = {
     const cols = {
       name: -1, model: -1, provider: -1, status: -1,
       tuning: -1, task: -1, project: -1, heartbeat: -1,
-      workboard: -1, command: -1,
+      workboard: -1, command: -1, folder: -1,
     };
     cols.name      = lower.findIndex(h => /^(name|agent|worker|identity)$/.test(h));
     if (cols.name === -1) cols.name = 0;
@@ -70,6 +70,7 @@ const definition = {
     cols.heartbeat = lower.findIndex(h => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h));
     cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
+    cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
     return cols;
   },
 
@@ -194,6 +195,7 @@ const definition = {
       const heartbeat = cell(row, cols.heartbeat)  || '';
       const workboard = cell(row, cols.workboard)  || '';
       const command   = cell(row, cols.command)    || '';
+      const folder    = cell(row, cols.folder)     || '';
 
       const statusKey   = STATUS_CYCLE.includes(statusVal) ? statusVal : 'Offline';
       const statusColor = STATUS_COLORS[statusKey];
@@ -283,12 +285,44 @@ const definition = {
           ])
         : null;
 
+      /* -- Folder (inline edit) -- */
+      const folderEl = (cols.folder !== -1 && folder)
+        ? el('div', { className: 'agents-folder' }, [
+            el('span', { className: 'agents-field-label' }, ['📁 Folder: ']),
+            editableCell('span', { className: 'agents-folder-cell' }, folder, rowIdx, cols.folder, { placeholder: 'Team/Group folder' }),
+          ])
+        : null;
+
+      /* -- Delete agent button -- */
+      const deleteBtn = el('button', {
+        className: 'agents-delete-btn',
+        title: `Delete agent "${name}"`,
+        on: { click() {
+          const deleteModal = document.querySelector('.agents-delete-modal');
+          const deleteAgentName = document.querySelector('.agents-delete-agent-name');
+          const deleteAgentRow = document.querySelector('.agents-delete-agent-row');
+          const confirmDeleteBtn = document.querySelector('.agents-confirm-delete-btn');
+
+          deleteAgentName.textContent = name;
+          deleteAgentRow.dataset.rowIdx = rowIdx;
+
+          confirmDeleteBtn.onclick = () => {
+            emitEdit(rowIdx, cols.name, '');
+            deleteModal.classList.add('hidden');
+          };
+
+          deleteModal.classList.remove('hidden');
+        }},
+      }, ['🗑️ Delete']);
+
       /* -- Card assembly -- */
       const metaRow = el('div', { className: 'agents-meta-row' }, [
         statusBadge,
         providerCell,
         ...(modelCell ? [el('span', { className: 'agents-meta-sep' }, ['·']), modelCell] : []),
       ]);
+
+      const cardActions = el('div', { className: 'agents-card-actions' }, [deleteBtn]);
 
       const card = el('div', {
         className: `agents-card agents-card-status-${statusKey.toLowerCase()}`,
@@ -300,6 +334,7 @@ const definition = {
             editableCell('h3', { className: 'agents-name' }, name, rowIdx, cols.name, { placeholder: 'Agent name' }),
             metaRow,
           ]),
+          cardActions,
         ]),
         el('div', { className: 'agents-tuning-section' }, [
           el('label', { className: 'agents-tuning-label' }, ['✏️ Tuning']),
@@ -312,6 +347,7 @@ const definition = {
         ...(commandEl   ? [commandEl]   : []),
         ...(taskDisplay ? [taskDisplay] : []),
         ...(projectEl   ? [projectEl]   : []),
+        ...(folderEl    ? [folderEl]    : []),
         ...(heartbeatEl ? [heartbeatEl] : []),
       ]);
 
@@ -319,6 +355,48 @@ const definition = {
     });
 
     container.append(grid);
+
+    /* ---------- Delete confirmation modal ---------- */
+    const deleteModal = el('div', {
+      className: 'agents-delete-modal hidden',
+      on: { click(e) {
+        if (e.target === deleteModal) deleteModal.classList.add('hidden');
+      }},
+    }, [
+      el('div', { className: 'agents-delete-modal-content' }, [
+        el('div', { className: 'agents-delete-modal-header' }, [
+          el('h3', { className: 'agents-delete-modal-title' }, ['Delete Agent']),
+          el('button', {
+            className: 'agents-delete-modal-close',
+            on: { click() { deleteModal.classList.add('hidden'); }},
+          }, ['×']),
+        ]),
+        el('div', { className: 'agents-delete-modal-body' }, [
+          el('p', {}, [
+            'Are you sure you want to delete ',
+            el('strong', { className: 'agents-delete-agent-name' }, ['Agent']),
+            '? This will remove them from the registry.',
+          ]),
+        ]),
+        el('div', { className: 'agents-delete-modal-footer' }, [
+          el('button', {
+            className: 'agents-delete-modal-cancel',
+            on: { click() { deleteModal.classList.add('hidden'); }},
+          }, ['Cancel']),
+          el('button', {
+            className: 'agents-confirm-delete-btn',
+          }, ['Delete']),
+        ]),
+      ]),
+    ]);
+
+    // Add data attribute to modal for storing row index
+    const deleteAgentRow = document.createElement('div');
+    deleteAgentRow.className = 'agents-delete-agent-row';
+    deleteAgentRow.style.display = 'none';
+    deleteModal.append(deleteAgentRow);
+
+    container.append(deleteModal);
   },
 };
 

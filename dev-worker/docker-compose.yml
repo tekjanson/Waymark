@@ -58,7 +58,7 @@ services:
 
       # ── Language models ──────────────────────────────────────────────────────
       # Model for Copilot CLI (uses model names from copilot --list-models)
-      - AGENT_MODEL=${AGENT_MODEL:-claude-sonnet-4.6}
+      - AGENT_MODEL=${AGENT_MODEL:-claude-Haiku-4.5}
       # Model for Claude Code (uses Anthropic model IDs)
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
 
@@ -87,7 +87,7 @@ services:
       # The Google Sheet ID of the Agent Registry sheet (agents template).
       # Set this so agents can read their tuning strings from the Waymark UI.
       # Operators edit tuning strings in the sheet; agents pick them up on boot.
-      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-}
+      - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-1egJZTEcy0Wh0rl98sO4Voz5LgntCAIBlxt1Ez8_8fqc}
 
       # ── Git identity for commits made inside the container ───────────────
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
