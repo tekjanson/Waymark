@@ -1472,47 +1472,6 @@
       ]
     },
     {
-      "key": "aivault",
-      "name": "AI Secrets Vault",
-      "icon": "🔐",
-      "color": "#d946ef",
-      "priority": 24,
-      "category": "Security",
-      "detectSignals": [
-        "ciphertext",
-        "encrypted",
-        "cryptotext",
-        "salt",
-        "nonce",
-        "iv",
-        "algversion",
-        "service",
-        "ai",
-        "provider"
-      ],
-      "columnRoles": [
-        "service",
-        "keyName",
-        "ciphertext",
-        "salt",
-        "nonce",
-        "algVersion",
-        "category",
-        "notes"
-      ],
-      "interactive": false,
-      "interactionType": "none",
-      "interactionStates": [],
-      "exampleCount": 1,
-      "hasDirectoryView": false,
-      "fixtureIds": [
-        "sheet-070"
-      ],
-      "fixtureFiles": [
-        "passwords-aivault"
-      ]
-    },
-    {
       "key": "agents",
       "name": "Agent Registry",
       "icon": "🤖",
@@ -1551,8 +1510,8 @@
       ]
     }
   ],
-  "nextSheetId": "sheet-071",
-  "totalTemplates": 40,
+  "nextSheetId": "sheet-070",
+  "totalTemplates": 39,
   "categories": [
     "Productivity",
     "Engineering",
