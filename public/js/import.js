@@ -260,6 +260,15 @@ const ROLE_LABELS = {
   'passwords.url': 'URL / Web address',
   'passwords.category': 'Category grouping',
   'passwords.notes': 'Notes',
+  // AI Secrets Vault
+  'aivault.service': 'AI Service / Provider name',
+  'aivault.keyName': 'Key Name / Description',
+  'aivault.ciphertext': 'Encrypted API Key',
+  'aivault.salt': 'Encryption Salt',
+  'aivault.nonce': 'Encryption Nonce',
+  'aivault.algVersion': 'Algorithm Version',
+  'aivault.category': 'Category / Service Type',
+  'aivault.notes': 'Notes / Usage',
   // Linker
   'linker.name': 'Entry Name / Community',
   'linker.description': 'Description / About',

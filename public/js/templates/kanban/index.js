@@ -18,6 +18,7 @@ import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowT
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 import * as brainstorm from './brainstorm.js';
+import * as plan from './plan.js';
 
 /* ---------- Module state (persists across auto-refresh) ---------- */
 
@@ -454,6 +455,31 @@ const definition = {
     });
     controls.append(brainstormBtn);
 
+    // Feature Plan mode toggle button
+    const planBtn = el('button', {
+      className: `kanban-plan-toggle ${plan.isPlanMode() ? 'active' : ''}`,
+      title: 'Toggle feature planning mode for roadmaps',
+    }, ['📋 Plan']);
+    planBtn.addEventListener('click', () => {
+      plan.togglePlanMode(container, cols, (taskRows, planTitle) => {
+        if (taskRows && taskRows.length > 0) {
+          // Add multiple task rows to the sheet via emitEdit
+          for (let rowIdx = 0; rowIdx < taskRows.length; rowIdx++) {
+            const taskRow = taskRows[rowIdx];
+            const newRowIdx = rows.length + 1 + rowIdx;
+            for (let colIdx = 0; colIdx < taskRow.length; colIdx++) {
+              if (taskRow[colIdx]) emitEdit(newRowIdx, colIdx, taskRow[colIdx]);
+            }
+          }
+          showToast(`${taskRows.length} tasks added to kanban from plan "${planTitle}"!`, 'success');
+          // Refresh the board after a small delay
+          setTimeout(() => updateBoard(), 100);
+        }
+      });
+      planBtn.classList.toggle('active');
+    });
+    controls.append(planBtn);
+
     toolbar.append(controls);
 
     /* ---- AI agent status indicator ---- */
@@ -518,6 +544,24 @@ const definition = {
           }
           showToast(`Task "${ideaTitle}" created from brainstorm idea!`, 'success');
           // Don't refresh board here; let the render cycle handle it
+        }
+      });
+      return;
+    }
+
+    /* ---- Check for feature plan mode ---- */
+    if (plan.isPlanMode()) {
+      plan.renderPlanView(container, cols, (taskRows, planTitle) => {
+        if (taskRows && taskRows.length > 0) {
+          // Add multiple task rows to the sheet via emitEdit
+          for (let rowIdx = 0; rowIdx < taskRows.length; rowIdx++) {
+            const taskRow = taskRows[rowIdx];
+            const newRowIdx = rows.length + 1 + rowIdx;
+            for (let colIdx = 0; colIdx < taskRow.length; colIdx++) {
+              if (taskRow[colIdx]) emitEdit(newRowIdx, colIdx, taskRow[colIdx]);
+            }
+          }
+          showToast(`Plan "${planTitle}" added to kanban!`, 'success');
         }
       });
       return; // Exit early — don't render the normal board

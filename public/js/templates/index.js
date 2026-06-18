@@ -44,6 +44,7 @@ import './agents.js';
 import './passwords.js';
 import './linker.js';
 import './marketing.js';
+import './aivault.js';
 import './arcade/index.js';
 import './worker.js';
 import './blog.js';
