@@ -12,11 +12,12 @@
 import {
   el, cell, emitEdit, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
-  buildDirSyncBtn, isEditLocked,
+  buildDirSyncBtn, isEditLocked, showToast,
 } from '../shared.js';
 import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
+import * as brainstorm from './brainstorm.js';
 
 /* ---------- Module state (persists across auto-refresh) ---------- */
 
@@ -431,6 +432,28 @@ const definition = {
     laneVisWrap.append(laneVisBtn, laneVisPanel);
     controls.append(laneVisWrap);
 
+    // Brainstorm mode toggle button
+    const brainstormBtn = el('button', {
+      className: `kanban-brainstorm-toggle ${brainstorm.isBrainstormMode() ? 'active' : ''}`,
+      title: 'Toggle brainstorming mode for ideas',
+    }, ['💭 Brainstorm']);
+    brainstormBtn.addEventListener('click', () => {
+      brainstorm.toggleBrainstormMode(container, cols, (taskRow, ideaTitle) => {
+        if (taskRow) {
+          // Add new task row to the sheet via emitEdit
+          const newRowIdx = rows.length + 1;
+          for (let i = 0; i < taskRow.length; i++) {
+            if (taskRow[i]) emitEdit(newRowIdx, i, taskRow[i]);
+          }
+          showToast(`Task "${ideaTitle}" created from brainstorm idea!`, 'success');
+          // Refresh the board after a small delay
+          setTimeout(() => updateBoard(), 100);
+        }
+      });
+      brainstormBtn.classList.toggle('active');
+    });
+    controls.append(brainstormBtn);
+
     toolbar.append(controls);
 
     /* ---- AI agent status indicator ---- */
@@ -483,6 +506,22 @@ const definition = {
     }
 
     container.append(toolbar);
+
+    /* ---- Check for brainstorm mode ---- */
+    if (brainstorm.isBrainstormMode()) {
+      brainstorm.renderBrainstormView(container, cols, (taskRow, ideaTitle) => {
+        if (taskRow) {
+          // Add new task row to the sheet via emitEdit
+          const newRowIdx = rows.length + 1;
+          for (let i = 0; i < taskRow.length; i++) {
+            if (taskRow[i]) emitEdit(newRowIdx, i, taskRow[i]);
+          }
+          showToast(`Task "${ideaTitle}" created from brainstorm idea!`, 'success');
+          // Don't refresh board here; let the render cycle handle it
+        }
+      });
+      return; // Exit early — don't render the normal board
+    }
 
     /* ---- Board element ---- */
 
