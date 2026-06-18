@@ -86,6 +86,36 @@ export function renderAgentUI(args) {
 }
 
 /**
+ * Build the overlay shown when the linked passwords sheet is locked.
+ * @param {Function} onUnlock — called when user submits password
+ * @returns {HTMLElement}
+ */
+export function buildVaultLock(onUnlock) {
+  const input = el('input', {
+    type: 'password',
+    className: 'agent-vault-input',
+    placeholder: 'Sheet password (leave empty if not encrypted)…',
+    on: {
+      keydown: (e) => { if (e.key === 'Enter') onUnlock(); },
+    },
+  });
+
+  return el('div', { className: 'agent-vault-lock' }, [
+    el('div', { className: 'agent-vault-lock-icon' }, ['🔑']),
+    el('h3', { className: 'agent-vault-lock-title' }, ['AI Keys Locked']),
+    el('p', { className: 'agent-vault-lock-desc' }, [
+      'Your API keys are stored in a Waymark Passwords sheet. Enter your sheet password to decrypt them.',
+    ]),
+    input,
+    el('button', {
+      className: 'agent-vault-unlock-btn',
+      type: 'button',
+      on: { click: onUnlock },
+    }, ['🔓 Unlock']),
+  ]);
+}
+
+/**
  * Build the welcome state shown before the user configures keys.
  * @param {Function} onShowSettings
  * @returns {HTMLElement}
@@ -96,12 +126,11 @@ export function buildWelcome(onShowSettings) {
     el('h3', {}, ['Welcome to Waymark AI']),
     el('p', {}, ['I can help you create and organise Google Sheets — budgets, project boards, meal plans, and more. Set up your API key to get started.']),
     el('p', { className: 'agent-welcome-hint' }, [
-      'Get a free API key at ',
-      el('a', {
-        href: 'https://aistudio.google.com/apikey',
-        target: '_blank',
-        rel: 'noopener',
-      }, ['aistudio.google.com/apikey']),
+      'Use a free Gemini key from ',
+      el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, ['aistudio.google.com']),
+      ' or a Claude key from ',
+      el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, ['console.anthropic.com']),
+      '.',
     ]),
     el('button', {
       className: 'agent-welcome-btn',

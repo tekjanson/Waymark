@@ -3414,3 +3414,507 @@ test('pinned context files are included in the system prompt context', async ({ 
   expect(systemText).toContain('sheet-budget-1');
   expect(systemText).toContain('My Budget');
 });
+
+/* ---------- Claude Provider ---------- */
+
+test('settings modal shows provider toggle with Gemini and Claude options', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-provider-toggle')).toBeVisible();
+  await expect(page.locator('.agent-provider-btn').nth(0)).toContainText('Gemini');
+  await expect(page.locator('.agent-provider-btn').nth(1)).toContainText('Claude');
+  // Gemini is active by default
+  await expect(page.locator('.agent-provider-btn.active')).toContainText('Gemini');
+});
+
+test('switching to Claude provider updates model dropdown to Claude models', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-provider-toggle', { timeout: 3000 });
+
+  // Switch to Claude
+  await page.click('.agent-provider-btn:nth-child(2)');
+  await expect(page.locator('.agent-provider-btn.active')).toContainText('Claude');
+
+  // Model dropdown should contain Claude models
+  const modelOptions = await page.locator('.agent-settings-select option').allTextContents();
+  expect(modelOptions.some(o => /claude/i.test(o))).toBe(true);
+  expect(modelOptions.some(o => /haiku|sonnet|opus/i.test(o))).toBe(true);
+});
+
+test('saving Claude provider persists provider setting', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-provider-toggle', { timeout: 3000 });
+
+  // Switch to Claude and add a key
+  await page.click('.agent-provider-btn:nth-child(2)');
+  await page.fill('.agent-settings-input[type=password]', 'sk-ant-test-key-abc123');
+  await page.click('.agent-keyring-add-btn');
+  await page.click('.agent-settings-save');
+
+  await page.waitForFunction(() => !document.getElementById('agent-settings-modal'), { timeout: 3000 });
+
+  // Verify provider was saved
+  const provider = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_provider') || '"gemini"'); } catch { return 'gemini'; }
+  });
+  expect(provider).toBe('claude');
+
+  // Verify Claude keys were saved
+  const claudeKeys = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_claude_keys') || '[]'); } catch { return []; }
+  });
+  expect(claudeKeys.length).toBeGreaterThan(0);
+});
+
+test('Claude provider routes messages to Anthropic API', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_provider', JSON.stringify('claude'));
+    localStorage.setItem('waymark_agent_claude_keys', JSON.stringify([{
+      key: 'sk-ant-test-key-123',
+      nickname: 'Test',
+      addedAt: new Date().toISOString(),
+      requestsToday: 0,
+      lastUsed: null,
+      lastError: null,
+      isBilled: false,
+    }]));
+    localStorage.setItem('waymark_agent_claude_model', JSON.stringify('claude-haiku-3-5'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input:not([disabled])', { timeout: 5000 });
+
+  let claudeCalled = false;
+  await page.route(/api\.anthropic\.com/, async route => {
+    claudeCalled = true;
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'msg_test',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hello from Claude!' }],
+        model: 'claude-haiku-3-5',
+        stop_reason: 'end_turn',
+      }),
+    });
+  });
+
+  await page.fill('.agent-input', 'Hello');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Claude');
+  }, { timeout: 10000 });
+
+  expect(claudeCalled).toBe(true);
+});
+
+/* ---------- Keys Sheet — passwords sheet as AI key store ---------- */
+
+test('lock overlay shown when keys sheet is linked but locked', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // Link the test passwords fixture sheet
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-lock', { timeout: 5000 });
+  await expect(page.locator('.agent-vault-lock')).toBeVisible();
+  await expect(page.locator('.agent-vault-input')).toBeVisible();
+  await expect(page.locator('.agent-vault-unlock-btn')).toBeVisible();
+  await expect(page.locator('.agent-vault-lock-title')).toContainText('Locked');
+  // Chat interface should not be visible while locked
+  await expect(page.locator('.agent-chat-body')).toHaveCount(0);
+});
+
+test('keys sheet unlocks with empty password (unencrypted sheet) and shows chat', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // sheet-070 fixture has plaintext passwords — no encryption needed
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+
+  // Leave password empty (sheet is not encrypted in fixture)
+  await page.click('.agent-vault-unlock-btn');
+
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+  await expect(page.locator('.agent-chat-body')).toBeVisible();
+  await expect(page.locator('.agent-vault-lock')).toHaveCount(0);
+});
+
+test('keys sheet classifies Gemini and Claude rows correctly', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  // Verify keys were loaded from sheet and classified
+  const result = await page.evaluate(() => {
+    return {
+      sheetId:    localStorage.getItem('waymark_agent_keys_sheet_id'),
+      sheetName:  localStorage.getItem('waymark_agent_keys_sheet_name'),
+    };
+  });
+  expect(result.sheetId).toContain('sheet-070');
+});
+
+test('keys sheet shows error when sheet cannot be read', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // Link a non-existent sheet ID
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-nonexistent'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+
+  await page.waitForSelector('.toast', { timeout: 5000 });
+  await expect(page.locator('.toast')).toContainText(/Incorrect|read/i);
+  await expect(page.locator('.agent-vault-lock')).toBeVisible();
+});
+
+test('Enter key on lock screen triggers unlock', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  // Press Enter without typing (empty password = unencrypted sheet)
+  await page.press('.agent-vault-input', 'Enter');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+  await expect(page.locator('.agent-chat-body')).toBeVisible();
+});
+
+test('keys sheet section appears in settings modal with Link Sheet option', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-vault-section')).toBeVisible();
+  await expect(page.locator('.agent-vault-section')).toContainText('Keys Sheet');
+});
+
+test('keys sheet section shows unlink option when sheet is linked', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+  // Unlock first so we can open settings without the lock overlay
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-section')).toContainText('AI API Keys');
+  await expect(page.locator('.agent-vault-clear-btn')).toBeVisible();
+});
+
+/* ---------- Dynamic model fetching ---------- */
+
+test('Gemini model dropdown fetches live models when key is present', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-gemini-key-live', nickname: 'G', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  // Mock the Gemini models list endpoint (GET, not POST generateContent)
+  await page.route(/generativelanguage\.googleapis\.com\/v1beta\/models(\?|$)/, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        models: [
+          { name: 'models/gemini-dynamic-a', displayName: 'Gemini Dynamic A', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-dynamic-b', displayName: 'Gemini Dynamic B', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-embed', displayName: 'Gemini Embed', supportedGenerationMethods: ['embedContent'] },
+        ],
+      }),
+    });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Wait for live models to replace hardcoded options
+  await page.waitForFunction(() => {
+    const opts = [...(document.querySelector('.agent-settings-select')?.options || [])].map(o => o.value);
+    return opts.includes('gemini-dynamic-a');
+  }, { timeout: 8000 });
+
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.some(o => o.includes('Gemini Dynamic A'))).toBe(true);
+  expect(options.some(o => o.includes('Gemini Dynamic B'))).toBe(true);
+  // Embed model (no generateContent) should be filtered out
+  expect(options.some(o => o.includes('Gemini Embed'))).toBe(false);
+});
+
+test('Claude model dropdown fetches live models when key is present', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_provider', JSON.stringify('claude'));
+    localStorage.setItem('waymark_agent_claude_keys', JSON.stringify([
+      { key: 'sk-ant-test-live', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.route('**/api.anthropic.com/v1/models*', async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: [
+          { id: 'claude-dynamic-fast', display_name: 'Claude Dynamic Fast', type: 'model' },
+          { id: 'claude-dynamic-pro', display_name: 'Claude Dynamic Pro', type: 'model' },
+        ],
+      }),
+    });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Switch to Claude tab if not already on it
+  const claudeBtn = page.locator('.agent-provider-btn').nth(1);
+  if (!(await claudeBtn.evaluate(el => el.classList.contains('active')))) {
+    await claudeBtn.click();
+  }
+
+  await page.waitForFunction(() => {
+    const opts = [...(document.querySelector('.agent-settings-select')?.options || [])].map(o => o.value);
+    return opts.includes('claude-dynamic-fast');
+  }, { timeout: 6000 });
+
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.some(o => o.includes('Claude Dynamic Fast'))).toBe(true);
+  expect(options.some(o => o.includes('Claude Dynamic Pro'))).toBe(true);
+});
+
+test('model dropdown falls back to hardcoded options on API error', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-key-fallback', nickname: 'T', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  // Block the Gemini models endpoint so it errors
+  await page.route('**/generativelanguage.googleapis.com/**models*', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({ status: 401, body: '{"error":{"message":"Invalid API key"}}' });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Should still show hardcoded fallback options
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.length).toBeGreaterThan(0);
+  expect(options.some(o => /gemini/i.test(o))).toBe(true);
+});
+
+/* ---------- Keys Sheet — Full Workflow Tests ---------- */
+
+test('adding a key via Settings writes to linked passwords sheet when unlocked', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // Link the test fixture sheet (unencrypted — unlock works with empty password)
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+
+  // Unlock the sheet first
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  // Open settings
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Add a new Gemini key
+  await page.fill('.agent-settings-input[type=password]', 'new-gemini-key-abc');
+  await page.click('.agent-keyring-add-btn');
+
+  // Should show success toast mentioning the passwords sheet
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText(/sheet|ring/i);
+
+  // Verify a row-append record was created (key written to sheet)
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  // The appended row should contain the key value
+  const rowData = appendRecord.rows?.[0] || [];
+  expect(rowData.some(cell => String(cell).includes('new-gemini-key-abc'))).toBe(true);
+});
+
+test('adding a Claude key writes a Claude row to the linked sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_provider', JSON.stringify('claude'));
+    window.location.hash = '#/agent';
+  });
+
+  // Unlock sheet
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Switch to Claude provider tab
+  await page.locator('.agent-provider-btn').nth(1).click();
+
+  // Add a Claude key
+  await page.fill('.agent-settings-input[type=password]', 'sk-ant-new-claude-key-xyz');
+  await page.click('.agent-keyring-add-btn');
+
+  await page.waitForSelector('.toast', { timeout: 3000 });
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  const rowData = appendRecord.rows?.[0] || [];
+  expect(rowData.some(cell => String(cell).includes('sk-ant-new-claude-key-xyz'))).toBe(true);
+  // Row should identify as Claude
+  expect(rowData.some(cell => /claude/i.test(String(cell)))).toBe(true);
+});
+
+test('adding a key without linked sheet saves to localStorage ring instead', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // No linked sheet
+    localStorage.removeItem('waymark_agent_keys_sheet_id');
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Add a Gemini key
+  await page.fill('.agent-settings-input[type=password]', 'local-key-fallback-test');
+  await page.click('.agent-keyring-add-btn');
+
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText(/ring/i);
+
+  // Verify localStorage was updated (no sheet append)
+  const keys = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_keys') || '[]'); } catch { return []; }
+  });
+  expect(keys.some(k => k.key === 'local-key-fallback-test')).toBe(true);
+
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
+  expect(records.some(r => r.type === 'row-append')).toBe(false);
+});
+
+test('settings shows keys from sheet when linked and unlocked', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Key ring list should show keys from the fixture sheet (2 Gemini keys in sheet-070)
+  const keyItems = await page.locator('.agent-keyring-row').count();
+  expect(keyItems).toBeGreaterThan(0);
+});
+
+test('linking sheet by pasting URL extracts spreadsheet ID', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.removeItem('waymark_agent_keys_sheet_id');
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Find the sheet URL input in the vault section
+  const urlInput = page.locator('.agent-vault-section input[type=text]');
+  await urlInput.fill('https://docs.google.com/spreadsheets/d/abc123spreadsheetid/edit');
+  await page.locator('.agent-vault-section button', { hasText: 'Link Sheet' }).click();
+
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText(/linked/i);
+
+  // Verify the extracted ID (not the full URL)
+  const sheetId = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_keys_sheet_id')); } catch { return null; }
+  });
+  expect(sheetId).toBe('abc123spreadsheetid');
+});
+
+test('unlinked keys sheet removes the link and lock state', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  // Click Unlink
+  await page.locator('.agent-vault-clear-btn', { hasText: 'Unlink' }).click();
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText(/unlinked/i);
+
+  // localStorage should be cleared
+  const sheetId = await page.evaluate(() => localStorage.getItem('waymark_agent_keys_sheet_id'));
+  expect(sheetId).toBeNull();
+});

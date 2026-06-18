@@ -7,13 +7,35 @@ import { TEMPLATES } from '../templates/index.js';
 import {
   getAgentKeys,
   getAgentModel,
+  getAgentProvider,
+  getClaudeKeys,
+  getClaudeModel,
   resetDailyKeyCounters,
 } from '../storage.js';
+import * as vault from './vault.js';
 
 /* ---------- Constants ---------- */
 
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const DEFAULT_MODEL = 'gemini-flash-latest';
+
+export const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
+export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
+export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
+
+export const GEMINI_MODEL_OPTIONS = [
+  { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast)' },
+  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (fastest)' },
+  { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash (balanced)' },
+  { value: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro (best)' },
+];
+
+export const CLAUDE_MODEL_OPTIONS = [
+  { value: 'claude-haiku-3-5', label: 'Claude Haiku 3.5 (fastest, cheapest)' },
+  { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5 (balanced)' },
+  { value: 'claude-opus-4-5', label: 'Claude Opus 4.5 (best)' },
+];
 
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
@@ -90,6 +112,27 @@ export function geminiHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
     'X-goog-api-key': apiKey,
+  };
+}
+
+/**
+ * Build a Claude API URL.
+ * @returns {string}
+ */
+export function claudeUrl() {
+  return `${CLAUDE_API_BASE}/messages`;
+}
+
+/**
+ * Build headers for Anthropic Claude API requests.
+ * @param {string} apiKey
+ * @returns {Object}
+ */
+export function claudeHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': CLAUDE_ANTHROPIC_VERSION,
   };
 }
 
@@ -414,6 +457,104 @@ export const TOOL_DECLARATIONS = [{
   }],
 }];
 
+/** Tool definitions for Claude (Anthropic) function calling */
+export const CLAUDE_TOOL_DECLARATIONS = [
+  {
+    name: 'create_sheet',
+    description: 'Create a new Google Sheet. Headers are auto-filled from the template. Provide data rows matching the column order.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        template: { type: 'string', description: 'Template key: checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading' },
+        title: { type: 'string', description: 'The title for the new spreadsheet' },
+        data: { type: 'array', description: 'Data rows (NO headers). Each row is an array of strings.', items: { type: 'array', items: { type: 'string' } } },
+      },
+      required: ['template', 'title', 'data'],
+    },
+  },
+  {
+    name: 'read_sheet',
+    description: 'Read the contents of an existing Google Sheet by its spreadsheet ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        spreadsheet_id: { type: 'string', description: 'The Google Sheets spreadsheet ID' },
+      },
+      required: ['spreadsheet_id'],
+    },
+  },
+  {
+    name: 'search_sheets',
+    description: "Search the user's Google Drive for spreadsheets by name.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search term to match against sheet names' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'update_sheet',
+    description: 'Update an existing Google Sheet. Use "append_rows" to add rows or "update_cells" to change specific cells.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        spreadsheet_id: { type: 'string', description: 'The spreadsheet ID' },
+        operation: { type: 'string', description: '"append_rows" or "update_cells"' },
+        rows: { type: 'array', description: 'Rows to add (for append_rows)', items: { type: 'array', items: { type: 'string' } } },
+        updates: {
+          type: 'array',
+          description: 'Cell updates (for update_cells)',
+          items: {
+            type: 'object',
+            properties: {
+              row: { type: 'number', description: '1-based data row number' },
+              column: { type: 'string', description: 'Column name or 0-based index' },
+              value: { type: 'string', description: 'New cell value' },
+            },
+          },
+        },
+      },
+      required: ['spreadsheet_id', 'operation'],
+    },
+  },
+];
+
+/**
+ * Convert Gemini-format contents array to Claude messages array.
+ * Handles simple user/model turns; skips function role entries.
+ * @param {Array<{role:string, parts:Array}>} geminiContents
+ * @returns {Array<{role:string, content:string}>}
+ */
+export function convertGeminiContentsToClaudeMessages(geminiContents) {
+  return geminiContents
+    .filter(c => c.role === 'user' || c.role === 'model')
+    .map(c => ({
+      role: c.role === 'model' ? 'assistant' : 'user',
+      content: (c.parts || []).map(p => p.text || '').join(''),
+    }))
+    .filter(m => m.content.length > 0);
+}
+
+/**
+ * Build a Claude API request body from Gemini-format contents.
+ * @param {Array} geminiContents
+ * @param {string} systemPrompt
+ * @param {string} model
+ * @returns {Object}
+ */
+export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
+  const messages = convertGeminiContentsToClaudeMessages(geminiContents);
+  return {
+    model,
+    system: systemPrompt,
+    messages,
+    tools: CLAUDE_TOOL_DECLARATIONS,
+    max_tokens: MAX_OUTPUT_TOKENS,
+  };
+}
+
 /* ---------- Key Rotation (shared by agent.js and templates via shared.js) ---------- */
 
 /** Module-level date cache to detect day rollovers without importing Date every call. */
@@ -489,6 +630,129 @@ export function pickBestKey(opts = {}) {
 
   return entries;
 }
+
+/**
+ * Return the best available Claude key using the same LRU strategy as pickBestKey.
+ * @returns {{ key: string, idx: number } | null}
+ */
+export function pickBestClaudeKey() {
+  const keys = getClaudeKeys();
+  if (!keys.length) return null;
+
+  const now = Date.now();
+  const annotated = keys.map((k, i) => ({
+    ...k,
+    idx: i,
+    hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000),
+  }));
+
+  const available = annotated.filter(k => !k.hasRecentError);
+  const pool = available.length > 0 ? available : annotated;
+  pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+  return { key: pool[0].key, idx: pool[0].idx };
+}
+
+/**
+ * Return the best key for the current provider and vault state.
+ * When vault is active and unlocked, returns from vault keys.
+ * Falls back to localStorage keys when no vault.
+ * @returns {{ key: string, idx: number } | null}
+ */
+export function pickBestActiveKey() {
+  const provider = getAgentProvider();
+  if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+    const keys = provider === 'claude' ? vault.getClaudeKeys() : vault.getGeminiKeys();
+    if (!keys.length) return null;
+    const now = Date.now();
+    const annotated = keys.map((k, i) => ({
+      ...k, idx: i,
+      hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000),
+    }));
+    const pool = annotated.filter(k => !k.hasRecentError);
+    const sorted = (pool.length > 0 ? pool : annotated)
+      .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+    return { key: sorted[0].key, idx: sorted[0].idx };
+  }
+  if (provider === 'claude') return pickBestClaudeKey();
+  const keys = pickBestKey();
+  return keys.length > 0 ? keys[0] : null;
+}
+
+/* ---------- Dynamic Model Fetching ---------- */
+
+/** In-memory model list cache — survives for the session only */
+const _modelCache = new Map();
+const MODEL_CACHE_MS = 3_600_000; // 1 hour
+
+/**
+ * Fetch the list of available Gemini models for a given API key.
+ * Caches results per key for the session. Falls back to GEMINI_MODEL_OPTIONS on error.
+ * @param {string} apiKey
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function fetchGeminiModels(apiKey) {
+  if (!apiKey) return GEMINI_MODEL_OPTIONS;
+  const cacheKey = `gemini:${apiKey.slice(-6)}`;
+  const hit = _modelCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < MODEL_CACHE_MS) return hit.models;
+
+  try {
+    const res = await fetch(`${GEMINI_API_BASE}?key=${encodeURIComponent(apiKey)}`);
+    if (!res.ok) return GEMINI_MODEL_OPTIONS;
+    const { models = [] } = await res.json();
+    const opts = models
+      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+      .map(m => ({ value: m.name.replace('models/', ''), label: m.displayName || _humanizeModelId(m.name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!opts.length) return GEMINI_MODEL_OPTIONS;
+    _modelCache.set(cacheKey, { models: opts, ts: Date.now() });
+    return opts;
+  } catch {
+    return GEMINI_MODEL_OPTIONS;
+  }
+}
+
+/**
+ * Fetch the list of available Claude models for a given API key.
+ * Caches results per key for the session. Falls back to CLAUDE_MODEL_OPTIONS on error.
+ * @param {string} apiKey
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function fetchClaudeModels(apiKey) {
+  if (!apiKey) return CLAUDE_MODEL_OPTIONS;
+  const cacheKey = `claude:${apiKey.slice(-6)}`;
+  const hit = _modelCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < MODEL_CACHE_MS) return hit.models;
+
+  try {
+    const res = await fetch(`${CLAUDE_API_BASE}/models`, {
+      headers: claudeHeaders(apiKey),
+    });
+    if (!res.ok) return CLAUDE_MODEL_OPTIONS;
+    const { data = [] } = await res.json();
+    const opts = data
+      .filter(m => m.type === 'model')
+      .map(m => ({ value: m.id, label: m.display_name || _humanizeModelId(m.id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!opts.length) return CLAUDE_MODEL_OPTIONS;
+    _modelCache.set(cacheKey, { models: opts, ts: Date.now() });
+    return opts;
+  } catch {
+    return CLAUDE_MODEL_OPTIONS;
+  }
+}
+
+/**
+ * Convert a model ID to a human-readable label as a fallback.
+ * @param {string} id e.g. "models/gemini-2.5-pro" or "claude-haiku-3-5"
+ * @returns {string}
+ */
+function _humanizeModelId(id) {
+  return id.replace('models/', '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Re-export vault so agent.js can import a single path */
+export { vault };
 
 /* ---------- System Prompt Builder (shared by agent.js and templates) ---------- */
 

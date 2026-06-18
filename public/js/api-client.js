@@ -130,6 +130,7 @@ async function loadMockSheet(sheetId) {
     'sheet-057': 'agents-registry',
     'sheet-iot-blank': 'iot-blank',
     'sheet-069': 'passwords-personal',
+    'sheet-070': 'passwords-api-keys',
     'sheet-058': 'linker-community',
     'sheet-059': 'marketing-waymark',
     'sheet-060': 'arcade-lobby',

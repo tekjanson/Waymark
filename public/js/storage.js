@@ -309,6 +309,55 @@ export function setAgentModel(model) {
   else remove('agent_model');
 }
 
+/* ---------- Provider selection ---------- */
+
+export function getAgentProvider() {
+  return get('agent_provider') || 'gemini';
+}
+
+export function setAgentProvider(provider) {
+  if (provider) set('agent_provider', provider);
+  else remove('agent_provider');
+}
+
+/* ---------- Claude key ring ---------- */
+
+export function getClaudeKeys() {
+  return get('agent_claude_keys') || [];
+}
+
+export function setClaudeKeys(keys) {
+  if (Array.isArray(keys) && keys.length > 0) set('agent_claude_keys', keys);
+  else remove('agent_claude_keys');
+}
+
+export function getClaudeModel() {
+  return get('agent_claude_model') || '';
+}
+
+export function setClaudeModel(model) {
+  if (model) set('agent_claude_model', model);
+  else remove('agent_claude_model');
+}
+
+export function recordClaudeKeyUsage(idx) {
+  const keys = getClaudeKeys();
+  if (keys[idx]) {
+    keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
+    keys[idx].lastUsed = new Date().toISOString();
+    keys[idx].lastError = null;
+    setClaudeKeys(keys);
+  }
+}
+
+export function recordClaudeKeyError(idx) {
+  const keys = getClaudeKeys();
+  if (keys[idx]) {
+    keys[idx].lastError = new Date().toISOString();
+    setClaudeKeys(keys);
+  }
+}
+
 export function getAgentConversation() {
   return get('agent_conversation') || [];
 }

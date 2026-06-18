@@ -660,6 +660,38 @@
   box-sizing: border-box;
 }
 
+/* ---------- Provider toggle ---------- */
+
+.agent-provider-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.agent-provider-btn {
+  flex: 1;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+
+.agent-provider-btn.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.agent-provider-btn:hover:not(.active) {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
 .agent-settings-input:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -1322,4 +1354,148 @@
   text-align: center;
   color: var(--color-text-muted);
   font-size: 0.88rem;
+}
+
+/* ---------- Vault lock overlay ---------- */
+
+.agent-vault-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px 24px;
+  height: 100%;
+  text-align: center;
+}
+
+.agent-vault-lock-icon {
+  font-size: 3rem;
+}
+
+.agent-vault-lock-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.agent-vault-lock-desc {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  max-width: 340px;
+  margin: 0;
+}
+
+.agent-vault-input {
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.agent-vault-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.agent-vault-unlock-btn {
+  padding: 10px 28px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.agent-vault-unlock-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+/* ---------- Vault settings section ---------- */
+
+.agent-settings-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 16px 0;
+}
+
+.agent-vault-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-vault-status {
+  font-size: 0.82rem;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.agent-vault-status-locked {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.agent-vault-status-unlocked {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.agent-vault-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-vault-lock-btn,
+.agent-vault-setup-btn {
+  padding: 7px 14px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.agent-vault-lock-btn:hover,
+.agent-vault-setup-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.agent-vault-clear-btn {
+  padding: 7px 14px;
+  background: none;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.agent-vault-clear-btn:hover {
+  background: var(--color-error-light);
+}
+
+.agent-vault-change-pw {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.agent-vault-change-pw summary {
+  cursor: pointer;
+  user-select: none;
 }

@@ -1,7 +1,7 @@
 /* ============================================================
    agent.js — Waymark AI user assistant
    Chat interface that helps users organise their data with
-   Waymark-powered Google Sheets via the Gemini API.
+   Waymark-powered Google Sheets via the Gemini and Claude APIs.
    ============================================================ */
 
 import { el, showToast } from './ui.js';
@@ -10,6 +10,8 @@ import * as userData from './user-data.js';
 import { api } from './api-client.js';
 import {
   BASE_SYSTEM_PROMPT,
+  CLAUDE_TOOL_DECLARATIONS,
+  DEFAULT_CLAUDE_MODEL,
   DEFAULT_MODEL,
   MAX_AGGRESSIVE_CONTEXT_MESSAGES,
   MAX_ASSISTANT_MESSAGE_CHARS,
@@ -25,18 +27,24 @@ import {
   MAX_USER_MESSAGE_CHARS,
   TOOL_DECLARATIONS,
   buildAgentSystemPrompt,
+  buildClaudeRequestBody,
   buildConversationSummary,
   buildPlannerBrief,
   buildRecentSheetHint,
   buildRequestBody,
+  claudeHeaders,
+  claudeUrl,
   compactContextText,
   estimateRawConversationTokens,
   estimateRequestTokens,
   geminiHeaders,
   geminiUrl,
   getRecentConversationSheets,
+  pickBestActiveKey,
+  pickBestClaudeKey,
   pickBestKey,
   shouldUsePlannerRound,
+  vault,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
 import { showSettingsModal } from './agent/settings.js';
@@ -47,6 +55,7 @@ import {
   buildEmptyState,
   buildFilePicker,
   buildMessage,
+  buildVaultLock,
   buildWelcome,
   refreshContextBar,
   renderAgentUI,
@@ -87,8 +96,20 @@ function _geminiHeaders(apiKey) {
   return geminiHeaders(apiKey);
 }
 
+function _claudeUrl() {
+  return claudeUrl();
+}
+
+function _claudeHeaders(apiKey) {
+  return claudeHeaders(apiKey);
+}
+
 function _buildRequestBody(contents) {
   return buildRequestBody(contents, _getSystemPrompt());
+}
+
+function _buildClaudeProviderBody(contents, model) {
+  return buildClaudeRequestBody(contents, _getSystemPrompt(), model || storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL);
 }
 
 function _compactContextText(text, maxChars) {
@@ -284,12 +305,12 @@ let _pendingInlineImages = [];
 
 /**
  * Pick the best available key using the shared LRU strategy from agent/config.js.
- * Returns { key, idx } or null if no keys are configured.
+ * Dispatches to vault keys when vault is active and unlocked,
+ * otherwise falls through to localStorage keys.
  * @returns {{ key: string, idx: number } | null}
  */
 function _getNextKey() {
-  const keys = pickBestKey();
-  return keys.length > 0 ? keys[0] : null;
+  return pickBestActiveKey();
 }
 
 /* ---------- Public API ---------- */
@@ -303,13 +324,23 @@ export function show(container) {
   _container.innerHTML = '';
   // Sync API keys from Drive if available and not already in localStorage
   const driveSettings = userData.getAgentSettings();
-  if (driveSettings?.keys?.length && storage.getAgentKeys().length === 0) {
-    storage.setAgentKeys(driveSettings.keys);
-    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
-  } else if (driveSettings?.apiKey && storage.getAgentKeys().length === 0) {
-    // Legacy single-key Drive sync
-    storage.setAgentApiKey(driveSettings.apiKey);
-    storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+  if (driveSettings) {
+    // Restore provider preference
+    if (driveSettings.provider) storage.setAgentProvider(driveSettings.provider);
+    // Restore Gemini keys
+    if (driveSettings.keys?.length && storage.getAgentKeys().length === 0) {
+      storage.setAgentKeys(driveSettings.keys);
+      storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+    } else if (driveSettings.apiKey && storage.getAgentKeys().length === 0) {
+      // Legacy single-key Drive sync
+      storage.setAgentApiKey(driveSettings.apiKey);
+      storage.setAgentModel(driveSettings.model || DEFAULT_MODEL);
+    }
+    // Restore Claude keys
+    if (driveSettings.claudeKeys?.length && storage.getClaudeKeys().length === 0) {
+      storage.setClaudeKeys(driveSettings.claudeKeys);
+      if (driveSettings.claudeModel) storage.setClaudeModel(driveSettings.claudeModel);
+    }
   }
   // Restore conversation from localStorage
   const saved = storage.getAgentConversation();
@@ -329,7 +360,18 @@ export function hide() {
 /* ---------- UI Rendering ---------- */
 
 function _renderUI() {
-  const hasKeys = storage.getAgentKeys().length > 0;
+  // If vault is set up but locked, show unlock overlay instead of chat
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    _container.innerHTML = '';
+    _container.appendChild(buildVaultLock(_onVaultUnlock));
+    return;
+  }
+
+  const provider = storage.getAgentProvider();
+  const hasKeys = vault.isVaultSetUp() && vault.isVaultUnlocked()
+    ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
+    : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0);
+  _container.innerHTML = '';
   const rendered = renderAgentUI({
     container: _container,
     messages: _messages,
@@ -349,6 +391,20 @@ function _renderUI() {
 
 function _buildWelcome() {
   return buildWelcome(_showSettings);
+}
+
+/** Handler called by the sheet lock overlay's unlock button. */
+async function _onVaultUnlock() {
+  const input = _container.querySelector('.agent-vault-input');
+  const pw = input?.value?.trim() ?? '';
+  // Empty password is valid (unencrypted sheet) — try with empty string first
+  const ok = await vault.unlockVault(pw);
+  if (ok) {
+    _renderUI(); // re-render with vault unlocked
+  } else {
+    showToast('Incorrect password or could not read sheet', 'error');
+    if (input) { input.value = ''; input.focus(); }
+  }
 }
 
 function _buildEmptyState() {
@@ -459,10 +515,32 @@ function _persistConversation() {
  * @returns {Promise<{model:string, url:string, contents:Array, body:Object}>}
  */
 async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = null) {
+  const provider = storage.getAgentProvider();
+  _assertConversationWithinBudget(userMessage);
+  const plannedUserText = _buildPlannedUserMessage(userMessage);
+
+  if (provider === 'claude') {
+    const model = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
+    const url = _claudeUrl();
+
+    const buildBudgetedRequest = (text) => {
+      let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
+      let body = _buildClaudeProviderBody(contents, model);
+      if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+        contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES, userParts);
+        body = _buildClaudeProviderBody(contents, model);
+      }
+      return { contents, body };
+    };
+
+    const { contents, body } = buildBudgetedRequest(plannedUserText);
+    _assertRequestWithinBudget(body, 'This request');
+    return { model, url, contents, body, provider: 'claude' };
+  }
+
+  // Gemini path
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const baseUrl = _geminiUrl(model, 'generateContent');
-  _assertConversationWithinBudget(userMessage);
-  let plannedUserText = _buildPlannedUserMessage(userMessage);
 
   const buildBudgetedRequest = (text) => {
     let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
@@ -476,11 +554,12 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = nul
     return { contents, body };
   };
 
+  let geminiPlannedText = plannedUserText;
   if (_shouldUsePlannerRound(userMessage)) {
     try {
       const microBrief = await _fetchPlannerMicroBrief(apiKey, keyIdx, userMessage);
       if (microBrief) {
-        plannedUserText = _compactContextText(
+        geminiPlannedText = _compactContextText(
           `Planner brief: ${microBrief} User request: ${_compactContextText(userMessage, MAX_USER_MESSAGE_CHARS)}`,
           MAX_PLANNED_USER_MESSAGE_CHARS
         );
@@ -490,10 +569,10 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = nul
     }
   }
 
-  const { contents, body } = buildBudgetedRequest(plannedUserText);
+  const { contents, body } = buildBudgetedRequest(geminiPlannedText);
 
   _assertRequestWithinBudget(body, 'This request');
-  return { model, url: baseUrl, contents, body };
+  return { model, url: baseUrl, contents, body, provider: 'gemini' };
 }
 
 function _clearConversation() {
@@ -620,7 +699,7 @@ async function _sendMessage(text) {
   }
 
   try {
-    const response = await _streamCallGemini(
+    const response = await _streamCallModel(
       keyEntry.key,
       keyEntry.idx,
       preparedRequest,
@@ -675,6 +754,269 @@ async function _sendMessage(text) {
       };
     }
   }
+}
+
+/* ---------- Provider API Dispatcher ---------- */
+
+/**
+ * Stream model response — dispatches to Gemini or Claude based on active provider.
+ */
+async function _streamCallModel(apiKey, keyIdx, request, onChunk, signal) {
+  const provider = (typeof request === 'object' && request.provider) || storage.getAgentProvider();
+  if (provider === 'claude') {
+    return _streamCallClaude(apiKey, keyIdx, request, onChunk, signal);
+  }
+  return _streamCallGemini(apiKey, keyIdx, request, onChunk, signal);
+}
+
+/* ---------- Claude API ---------- */
+
+/**
+ * Non-streaming Claude call with tool-call handling.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {Object} request — prepared request from _prepareModelRequest
+ * @returns {Promise<string>}
+ */
+async function _callClaude(apiKey, keyIdx, request) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { contents, body } = preparedRequest;
+  const url = _claudeUrl();
+  const data = await _fetchClaude(url, body, keyIdx);
+  storage.recordClaudeKeyUsage(keyIdx);
+
+  const toolUse = data.content?.find(c => c.type === 'tool_use');
+  if (toolUse) {
+    return _handleClaudeToolCall(apiKey, keyIdx, body.messages, toolUse);
+  }
+
+  return (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+}
+
+/**
+ * Stream Claude API response via SSE. Falls back to buffered on tool calls.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {Object|string} request
+ * @param {function(string):void} onChunk
+ * @param {AbortSignal} signal
+ * @returns {Promise<string>}
+ */
+async function _streamCallClaude(apiKey, keyIdx, request, onChunk, signal) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { body } = preparedRequest;
+  const streamBody = { ...body, stream: true };
+  const url = _claudeUrl();
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: _claudeHeaders(apiKey),
+      body: JSON.stringify(streamBody),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    return _callClaude(apiKey, keyIdx, preparedRequest);
+  }
+
+  if (!res.ok) {
+    return _callClaude(apiKey, keyIdx, preparedRequest);
+  }
+
+  storage.recordClaudeKeyUsage(keyIdx);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        let event;
+        try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        // Tool call detected — abort stream and handle via buffered endpoint
+        if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+          reader.cancel();
+          return _callClaude(apiKey, keyIdx, preparedRequest);
+        }
+
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+          const chunk = event.delta.text || '';
+          if (chunk) {
+            accumulated += chunk;
+            onChunk(chunk);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return accumulated;
+    if (accumulated) return accumulated;
+    throw err;
+  }
+
+  if (!accumulated) {
+    throw new Error('No response from Claude. Try again, or clear older chat messages.');
+  }
+
+  return accumulated;
+}
+
+/**
+ * Handle a Claude tool_use block: execute the tool and send result back for final text.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {Array} claudeMessages — existing Claude-format messages
+ * @param {{ type:'tool_use', id:string, name:string, input:Object }} toolUse
+ * @param {number} [chainDepth]
+ * @returns {Promise<string>}
+ */
+async function _handleClaudeToolCall(apiKey, keyIdx, claudeMessages, toolUse, chainDepth = 0) {
+  if (chainDepth >= 5) {
+    throw new Error('AI requested too many chained tool calls. Try again with a smaller request.');
+  }
+
+  const { name, id, input } = toolUse;
+  _showToolIndicator(name, input);
+
+  let result;
+  try {
+    result = await _executeTool(name, input);
+  } catch (err) {
+    result = { error: err.message };
+  }
+
+  _removeToolIndicator();
+
+  if (name === 'create_sheet' && result && !result.error) {
+    _appendSheetPreviewCard(result);
+  }
+
+  const model = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
+  const followUpMessages = [
+    ...claudeMessages,
+    { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: JSON.stringify(result) }] },
+  ];
+
+  const followUpBody = {
+    model,
+    system: _getSystemPrompt(),
+    messages: followUpMessages,
+    tools: CLAUDE_TOOL_DECLARATIONS,
+    max_tokens: MAX_OUTPUT_TOKENS,
+  };
+
+  const data = await _fetchClaude(_claudeUrl(), followUpBody, keyIdx);
+  storage.recordClaudeKeyUsage(keyIdx);
+
+  const nextToolUse = data.content?.find(c => c.type === 'tool_use');
+  if (nextToolUse) {
+    return _handleClaudeToolCall(apiKey, keyIdx, followUpMessages, nextToolUse, chainDepth + 1);
+  }
+
+  const finalText = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
+  if (!finalText) {
+    if (result && !result.error) {
+      if (name === 'create_sheet') return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+      if (name === 'read_sheet') return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
+      if (name === 'search_sheets') return result.results?.length ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".` : `🔍 No sheets found matching "${result.query}".`;
+      if (name === 'update_sheet') return result.operation === 'append_rows' ? `✅ Added ${result.rowsAdded} row(s) to "${result.title}".` : `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".`;
+      return `✅ Tool ${name} completed successfully.`;
+    }
+    throw new Error('No response from Claude after tool execution. Try again.');
+  }
+
+  return finalText;
+}
+
+/**
+ * Fetch from Claude API with rate-limit handling.
+ * @param {string} url
+ * @param {Object} body
+ * @param {number} keyIdx
+ * @returns {Promise<Object>}
+ */
+async function _fetchClaude(url, body, keyIdx) {
+  const keys = storage.getClaudeKeys();
+  const currentKey = keys[keyIdx]?.key || '';
+  const fetchOpts = {
+    method: 'POST',
+    headers: _claudeHeaders(currentKey),
+    body: JSON.stringify(body),
+  };
+
+  const res = await fetch(url, fetchOpts);
+
+  if (res.status === 429) {
+    storage.recordClaudeKeyError(keyIdx);
+
+    if (keys.length > 1) {
+      const next = pickBestClaudeKey();
+      if (next && next.idx !== keyIdx) {
+        _showRetryIndicator(0, true);
+        const retryRes = await fetch(url, {
+          method: 'POST',
+          headers: _claudeHeaders(next.key),
+          body: JSON.stringify(body),
+        });
+        _removeRetryIndicator();
+        if (retryRes.ok) {
+          storage.recordClaudeKeyUsage(next.idx);
+          return retryRes.json();
+        }
+        storage.recordClaudeKeyError(next.idx);
+      }
+    }
+
+    const errData = await res.json().catch(() => ({}));
+    const errMsg = errData?.error?.message || '';
+    const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
+    const delay = retryMatch ? Math.min(parseFloat(retryMatch[1]), 60) : 15;
+
+    _showRetryIndicator(Math.ceil(delay));
+    await new Promise(r => setTimeout(r, delay * 1000));
+    _removeRetryIndicator();
+
+    const retry = await fetch(url, fetchOpts);
+    if (retry.ok) return retry.json();
+    throw new Error('Claude API rate limit exceeded. Try again in a minute, or switch to a different key.');
+  }
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const errMsg = errData?.error?.message || `API error ${res.status}`;
+    if (res.status === 401) {
+      storage.recordClaudeKeyError(keyIdx);
+      throw new Error('Invalid Claude API key. Check your key in Settings.');
+    }
+    if (res.status === 403) {
+      storage.recordClaudeKeyError(keyIdx);
+      throw new Error('Claude API key does not have permission. Check your key at console.anthropic.com.');
+    }
+    throw new Error(errMsg);
+  }
+
+  return res.json();
 }
 
 /* ---------- Gemini API ---------- */

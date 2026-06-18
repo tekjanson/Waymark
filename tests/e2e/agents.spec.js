@@ -603,26 +603,40 @@ test('agents template delete modal cancel button', async ({ page }) => {
 test('agents template delete button sends edit', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  const deleteBtn = page.locator('.agents-card').first().locator('.agents-delete-btn');
-  
+
+  // Wait for agents cards to fully render (not just checklist-view)
+  await page.waitForSelector('.agents-card', { timeout: 5000 });
+
+  // Delete button is hidden until hover (opacity:0) — force click bypasses visibility
   await page.locator('.agents-card').first().hover();
-  await deleteBtn.click();
-  
+  await page.locator('.agents-delete-btn').first().click({ force: true });
+
+  // Wait for delete confirmation modal
+  await page.waitForFunction(
+    () => !document.querySelector('.agents-delete-modal')?.classList.contains('hidden'),
+    { timeout: 5000 }
+  );
+
   // Click confirm delete
-  await page.locator('.agents-confirm-delete-btn').click();
-  
-  // Check that a row-delete record was created
-  const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
-  const deleteRecord = records.find(r => r.type === 'row-delete');
-  expect(deleteRecord).toBeTruthy();
+  await page.locator('.agents-confirm-delete-btn').click({ force: true });
+
+  // Check for either success (row-delete record) or a toast indicating what happened
+  const outcome = await page.waitForFunction(() => {
+    const hasRecord = (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-delete');
+    const toast = document.querySelector('.toast');
+    return hasRecord ? 'deleted' : (toast ? toast.textContent : null);
+  }, { timeout: 10000 });
+
+  const value = await outcome.jsonValue();
+  expect(value).toBe('deleted');
 });
 
 test('agents template renders folder field when present', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  
-  // Check that folder field is rendered
-  await expect(page.locator('.agents-folder')).toHaveCount(1);
+
+  // All 4 fixture agents have a folder — expect one per card
+  await expect(page.locator('.agents-folder')).toHaveCount(4);
   await expect(page.locator('.agents-folder').first()).toContainText('📁 Folder');
 });
 
