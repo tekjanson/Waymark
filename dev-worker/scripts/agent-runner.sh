@@ -363,6 +363,58 @@ claim_next_qa_task() {
     return 0
 }
 
+# ── Check for incoming notes on a task ────────────────────────────────────────
+# After the agent session completes, check if any new notes have been added to
+# the task by the operator. If so, surface them and optionally let the agent
+# respond inline (stay on same task) instead of moving to the next task.
+#
+# Returns: sets HAS_NEW_NOTES and NEW_NOTES_TEXT
+# Returns 0 if notes were found (caller should resume this task)
+# Returns 1 if no new notes (caller should claim next task)
+check_for_task_notes() {
+    HAS_NEW_NOTES=""
+    NEW_NOTES_TEXT=""
+
+    if [[ -z "${CLAIMED_ROW:-}" || -z "${WAYMARK_WORKBOARD_ID:-}" ]]; then
+        return 1
+    fi
+
+    local notes_json
+    notes_json=$(
+        cd /workspace
+        GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json \
+        node scripts/check-task-notes.js \
+            --row "${CLAIMED_ROW}" \
+            --agent "${AGENT_HUMAN_NAME}" \
+            2>/dev/null
+    ) || true
+
+    if [[ -z "$notes_json" ]]; then
+        return 1
+    fi
+
+    local has_new_notes
+    has_new_notes=$(echo "$notes_json" | jq -r '.hasNewNotes // false' 2>/dev/null)
+
+    if [[ "$has_new_notes" == "true" ]]; then
+        local note_count
+        note_count=$(echo "$notes_json" | jq '.notes | length' 2>/dev/null || echo 0)
+        log "  ↳ New notes detected: ${note_count} message(s) from operator"
+
+        # Format notes as a chat-like string for the agent prompt
+        local formatted_notes=""
+        while IFS= read -r note_line; do
+            formatted_notes="${formatted_notes}${note_line}\n"
+        done < <(echo "$notes_json" | jq -r '.notes[] | "\(.author) (\(.date)): \(.text)"' 2>/dev/null)
+
+        HAS_NEW_NOTES="true"
+        NEW_NOTES_TEXT="$formatted_notes"
+        return 0
+    fi
+
+    return 1
+}
+
 
 # ── Main agent loop ───────────────────────────────────────────────────────────
 AGENT_ROLE="${AGENT_ROLE:-}"
@@ -438,6 +490,37 @@ while true; do
     esac
 
     AGENT_COMMAND="${_orig_cmd}"
+
+    # ── Check for incoming notes after session ────────────────────────────────
+    # If the operator added notes while the agent was working, surface them
+    # and optionally let the agent resume the same task to respond.
+    if [[ -n "${CLAIMED_ROW:-}" ]] && check_for_task_notes; then
+        log "━━━ Operator interrupt: incoming notes on row ${CLAIMED_ROW} ━━━"
+        log "$NEW_NOTES_TEXT"
+        
+        # Build a "continue" prompt that surfaces the notes as incoming messages
+        AGENT_COMMAND="Continue working on row ${CLAIMED_ROW} (${CLAIMED_TASK}). You received these messages from the operator:\n\n${NEW_NOTES_TEXT}\n\nRespond to the feedback, make requested changes, and update the workboard with a note when done. If this completes the task, mark it QA."
+        
+        SESSION=$(( SESSION + 1 ))
+        log "━━━ Session ${SESSION} starting (notes response) — row ${CLAIMED_ROW}: ${CLAIMED_TASK} ━━━"
+        sheet_write --status Busy --task "${CLAIMED_TASK} (responding to notes)" --heartbeat
+        
+        # Re-run agent with notes context
+        case "$AI_PROVIDER" in
+            copilot)
+                if validate_copilot; then
+                    run_copilot
+                fi
+                ;;
+            claude)
+                if validate_claude; then
+                    run_claude
+                fi
+                ;;
+        esac
+        
+        AGENT_COMMAND="${_orig_cmd}"
+    fi
 
     log "━━━ Session ${SESSION} ended — restarting in ${RESTART_DELAY}s ━━━"
     sheet_write --status Idle --task "Idle — last ran session ${SESSION}" --heartbeat
