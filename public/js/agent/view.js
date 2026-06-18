@@ -86,6 +86,36 @@ export function renderAgentUI(args) {
 }
 
 /**
+ * Build the vault lock overlay shown when vault is set but locked.
+ * @param {Function} onUnlock — called when user submits vault password
+ * @returns {HTMLElement}
+ */
+export function buildVaultLock(onUnlock) {
+  const input = el('input', {
+    type: 'password',
+    className: 'agent-vault-input',
+    placeholder: 'Vault password…',
+    on: {
+      keydown: (e) => { if (e.key === 'Enter') onUnlock(); },
+    },
+  });
+
+  return el('div', { className: 'agent-vault-lock' }, [
+    el('div', { className: 'agent-vault-lock-icon' }, ['🔐']),
+    el('h3', { className: 'agent-vault-lock-title' }, ['Vault Locked']),
+    el('p', { className: 'agent-vault-lock-desc' }, [
+      'Your AI keys are encrypted. Enter your vault password to unlock and start chatting.',
+    ]),
+    input,
+    el('button', {
+      className: 'agent-vault-unlock-btn',
+      type: 'button',
+      on: { click: onUnlock },
+    }, ['🔓 Unlock']),
+  ]);
+}
+
+/**
  * Build the welcome state shown before the user configures keys.
  * @param {Function} onShowSettings
  * @returns {HTMLElement}

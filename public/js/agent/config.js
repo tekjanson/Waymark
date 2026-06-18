@@ -12,6 +12,7 @@ import {
   getClaudeModel,
   resetDailyKeyCounters,
 } from '../storage.js';
+import * as vault from './vault.js';
 
 /* ---------- Constants ---------- */
 
@@ -650,6 +651,108 @@ export function pickBestClaudeKey() {
   pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
   return { key: pool[0].key, idx: pool[0].idx };
 }
+
+/**
+ * Return the best key for the current provider and vault state.
+ * When vault is active and unlocked, returns from vault keys.
+ * Falls back to localStorage keys when no vault.
+ * @returns {{ key: string, idx: number } | null}
+ */
+export function pickBestActiveKey() {
+  const provider = getAgentProvider();
+  if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+    const keys = provider === 'claude' ? vault.getClaudeKeys() : vault.getGeminiKeys();
+    if (!keys.length) return null;
+    const now = Date.now();
+    const annotated = keys.map((k, i) => ({
+      ...k, idx: i,
+      hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000),
+    }));
+    const pool = annotated.filter(k => !k.hasRecentError);
+    const sorted = (pool.length > 0 ? pool : annotated)
+      .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+    return { key: sorted[0].key, idx: sorted[0].idx };
+  }
+  if (provider === 'claude') return pickBestClaudeKey();
+  const keys = pickBestKey();
+  return keys.length > 0 ? keys[0] : null;
+}
+
+/* ---------- Dynamic Model Fetching ---------- */
+
+/** In-memory model list cache — survives for the session only */
+const _modelCache = new Map();
+const MODEL_CACHE_MS = 3_600_000; // 1 hour
+
+/**
+ * Fetch the list of available Gemini models for a given API key.
+ * Caches results per key for the session. Falls back to GEMINI_MODEL_OPTIONS on error.
+ * @param {string} apiKey
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function fetchGeminiModels(apiKey) {
+  if (!apiKey) return GEMINI_MODEL_OPTIONS;
+  const cacheKey = `gemini:${apiKey.slice(-6)}`;
+  const hit = _modelCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < MODEL_CACHE_MS) return hit.models;
+
+  try {
+    const res = await fetch(`${GEMINI_API_BASE}?key=${encodeURIComponent(apiKey)}`);
+    if (!res.ok) return GEMINI_MODEL_OPTIONS;
+    const { models = [] } = await res.json();
+    const opts = models
+      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+      .map(m => ({ value: m.name.replace('models/', ''), label: m.displayName || _humanizeModelId(m.name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!opts.length) return GEMINI_MODEL_OPTIONS;
+    _modelCache.set(cacheKey, { models: opts, ts: Date.now() });
+    return opts;
+  } catch {
+    return GEMINI_MODEL_OPTIONS;
+  }
+}
+
+/**
+ * Fetch the list of available Claude models for a given API key.
+ * Caches results per key for the session. Falls back to CLAUDE_MODEL_OPTIONS on error.
+ * @param {string} apiKey
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function fetchClaudeModels(apiKey) {
+  if (!apiKey) return CLAUDE_MODEL_OPTIONS;
+  const cacheKey = `claude:${apiKey.slice(-6)}`;
+  const hit = _modelCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < MODEL_CACHE_MS) return hit.models;
+
+  try {
+    const res = await fetch(`${CLAUDE_API_BASE}/models`, {
+      headers: claudeHeaders(apiKey),
+    });
+    if (!res.ok) return CLAUDE_MODEL_OPTIONS;
+    const { data = [] } = await res.json();
+    const opts = data
+      .filter(m => m.type === 'model')
+      .map(m => ({ value: m.id, label: m.display_name || _humanizeModelId(m.id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!opts.length) return CLAUDE_MODEL_OPTIONS;
+    _modelCache.set(cacheKey, { models: opts, ts: Date.now() });
+    return opts;
+  } catch {
+    return CLAUDE_MODEL_OPTIONS;
+  }
+}
+
+/**
+ * Convert a model ID to a human-readable label as a fallback.
+ * @param {string} id e.g. "models/gemini-2.5-pro" or "claude-haiku-3-5"
+ * @returns {string}
+ */
+function _humanizeModelId(id) {
+  return id.replace('models/', '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Re-export vault so agent.js can import a single path */
+export { vault };
 
 /* ---------- System Prompt Builder (shared by agent.js and templates) ---------- */
 

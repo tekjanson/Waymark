@@ -1,5 +1,5 @@
 import { GoogleAuth } from 'google-auth-library';
-import { randomBytes } from 'crypto';
+import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { RTCPeerConnection } from 'werift';
 
 function envMs(name, fallback) {
@@ -1047,4 +1047,58 @@ export class SheetWebRtcPeer {
 
         return { ok: true };
     }
+}
+
+/* ============================================================
+   Cell-level AES-256-GCM encryption helpers for signaling payloads.
+   Used to protect offer/answer SDPs and presence data in the sheet.
+   These are Node.js-only (uses 'crypto' module) and synchronous.
+   ============================================================ */
+
+/** Prefix for encrypted signaling cells */
+export const ENCRYPT_PREFIX = '\u{1F512}SIG:';
+
+/**
+ * Encrypt a plaintext string with AES-256-GCM.
+ * @param {string} plaintext
+ * @param {string} hexKey — 64-char hex string (32 bytes)
+ * @returns {string} ENCRYPT_PREFIX + base64(iv + ciphertext + authTag)
+ */
+export function encryptCell(plaintext, hexKey) {
+  const key = Buffer.from(hexKey, 'hex');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([
+    cipher.update(plaintext ?? '', 'utf8'),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+  // Layout: 12-byte IV | ciphertext | 16-byte authTag
+  const combined = Buffer.concat([iv, enc, tag]);
+  return ENCRYPT_PREFIX + combined.toString('base64');
+}
+
+/**
+ * Decrypt a value produced by encryptCell.
+ * Returns null on any failure (wrong key, corrupted data, missing prefix).
+ * @param {string|null|undefined} value
+ * @param {string} hexKey — 64-char hex string (32 bytes)
+ * @returns {string|null}
+ */
+export function decryptCell(value, hexKey) {
+  if (value == null || value === '') return null;
+  if (!value.startsWith(ENCRYPT_PREFIX)) return value;
+  try {
+    const combined = Buffer.from(value.slice(ENCRYPT_PREFIX.length), 'base64');
+    if (combined.length < 28) return null; // 12 IV + 16 tag minimum
+    const iv = combined.slice(0, 12);
+    const tag = combined.slice(combined.length - 16);
+    const enc = combined.slice(12, combined.length - 16);
+    const key = Buffer.from(hexKey, 'hex');
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(enc, undefined, 'utf8') + decipher.final('utf8');
+  } catch {
+    return null;
+  }
 }

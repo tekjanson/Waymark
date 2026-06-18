@@ -3522,3 +3522,233 @@ test('Claude provider routes messages to Anthropic API', async ({ page }) => {
 
   expect(claudeCalled).toBe(true);
 });
+
+/* ---------- Vault — encrypted key storage ---------- */
+
+/** Helper: create an encrypted vault entry in localStorage via browser crypto */
+async function seedVault(page, { password = 'testVaultPass123', geminiKeys = [], claudeKeys = [] } = {}) {
+  await page.evaluate(async ({ password, geminiKeys, claudeKeys }) => {
+    const payload = JSON.stringify({
+      geminiKeys,
+      claudeKeys,
+      geminiModel: 'gemini-flash-latest',
+      claudeModel: 'claude-haiku-3-5',
+      provider: geminiKeys.length ? 'gemini' : 'claude',
+    });
+    const enc = new TextEncoder();
+    const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+    const fromHex = hex => new Uint8Array(hex.match(/.{2}/g).map(h => parseInt(h, 16)));
+    const saltBuf = crypto.getRandomValues(new Uint8Array(16));
+    const salt = toHex(saltBuf);
+    const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+      material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(payload));
+    localStorage.setItem('waymark_agent_vault', JSON.stringify({ salt, iv: toHex(iv), data: toHex(new Uint8Array(cipher)) }));
+  }, { password, geminiKeys, claudeKeys });
+}
+
+test('vault lock overlay shown when vault is set but locked', async ({ page }) => {
+  await setupApp(page);
+  await seedVault(page, {
+    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-vault-lock', { timeout: 5000 });
+  await expect(page.locator('.agent-vault-lock')).toBeVisible();
+  await expect(page.locator('.agent-vault-input')).toBeVisible();
+  await expect(page.locator('.agent-vault-unlock-btn')).toBeVisible();
+  // Chat interface should not be visible while locked
+  await expect(page.locator('.agent-chat-body')).toHaveCount(0);
+});
+
+test('vault unlocks with correct password and shows chat', async ({ page }) => {
+  await setupApp(page);
+  await seedVault(page, {
+    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+
+  await page.fill('.agent-vault-input', 'testVaultPass123');
+  await page.click('.agent-vault-unlock-btn');
+
+  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+  await expect(page.locator('.agent-chat-body')).toBeVisible();
+  await expect(page.locator('.agent-vault-lock')).toHaveCount(0);
+});
+
+test('vault shows error on wrong password', async ({ page }) => {
+  await setupApp(page);
+  await seedVault(page, {
+    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+
+  await page.fill('.agent-vault-input', 'wrongPassword!');
+  await page.click('.agent-vault-unlock-btn');
+
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText('Incorrect');
+  // Still locked
+  await expect(page.locator('.agent-vault-lock')).toBeVisible();
+});
+
+test('vault Enter key triggers unlock', async ({ page }) => {
+  await setupApp(page);
+  await seedVault(page, {
+    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+
+  await page.fill('.agent-vault-input', 'testVaultPass123');
+  await page.press('.agent-vault-input', 'Enter');
+
+  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+  await expect(page.locator('.agent-chat-body')).toBeVisible();
+});
+
+test('vault section appears in settings modal', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-vault-section')).toBeVisible();
+  await expect(page.locator('.agent-vault-section')).toContainText('Vault');
+});
+
+test('vault setup form requires matching passwords', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-vault-section', { timeout: 3000 });
+
+  // Fill mismatched passwords
+  const inputs = page.locator('.agent-vault-section input[type=password]');
+  await inputs.nth(0).fill('password123');
+  await inputs.nth(1).fill('differentPassword123');
+  await page.locator('.agent-vault-setup-btn').click();
+
+  await page.waitForSelector('.toast', { timeout: 3000 });
+  await expect(page.locator('.toast')).toContainText('match');
+});
+
+/* ---------- Dynamic model fetching ---------- */
+
+test('Gemini model dropdown fetches live models when key is present', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-gemini-key-live', nickname: 'G', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  // Mock the Gemini models endpoint
+  await page.route('**/generativelanguage.googleapis.com/**models*', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        models: [
+          { name: 'models/gemini-dynamic-a', displayName: 'Gemini Dynamic A', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-dynamic-b', displayName: 'Gemini Dynamic B', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-embed', displayName: 'Gemini Embed', supportedGenerationMethods: ['embedContent'] },
+        ],
+      }),
+    });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Wait for live models to replace hardcoded options
+  await page.waitForFunction(() => {
+    const opts = [...(document.querySelector('.agent-settings-select')?.options || [])].map(o => o.value);
+    return opts.includes('gemini-dynamic-a');
+  }, { timeout: 6000 });
+
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.some(o => o.includes('Gemini Dynamic A'))).toBe(true);
+  expect(options.some(o => o.includes('Gemini Dynamic B'))).toBe(true);
+  // Embed model (no generateContent) should be filtered out
+  expect(options.some(o => o.includes('Gemini Embed'))).toBe(false);
+});
+
+test('Claude model dropdown fetches live models when key is present', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_provider', JSON.stringify('claude'));
+    localStorage.setItem('waymark_agent_claude_keys', JSON.stringify([
+      { key: 'sk-ant-test-live', nickname: 'C', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  await page.route('**/api.anthropic.com/v1/models*', async route => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: [
+          { id: 'claude-dynamic-fast', display_name: 'Claude Dynamic Fast', type: 'model' },
+          { id: 'claude-dynamic-pro', display_name: 'Claude Dynamic Pro', type: 'model' },
+        ],
+      }),
+    });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Switch to Claude tab if not already on it
+  const claudeBtn = page.locator('.agent-provider-btn').nth(1);
+  if (!(await claudeBtn.evaluate(el => el.classList.contains('active')))) {
+    await claudeBtn.click();
+  }
+
+  await page.waitForFunction(() => {
+    const opts = [...(document.querySelector('.agent-settings-select')?.options || [])].map(o => o.value);
+    return opts.includes('claude-dynamic-fast');
+  }, { timeout: 6000 });
+
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.some(o => o.includes('Claude Dynamic Fast'))).toBe(true);
+  expect(options.some(o => o.includes('Claude Dynamic Pro'))).toBe(true);
+});
+
+test('model dropdown falls back to hardcoded options on API error', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'test-key-fallback', nickname: 'T', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false },
+    ]));
+    window.location.hash = '#/agent';
+  });
+
+  // Block the Gemini models endpoint so it errors
+  await page.route('**/generativelanguage.googleapis.com/**models*', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({ status: 401, body: '{"error":{"message":"Invalid API key"}}' });
+  });
+
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-select', { timeout: 3000 });
+
+  // Should still show hardcoded fallback options
+  const options = await page.locator('.agent-settings-select option').allTextContents();
+  expect(options.length).toBeGreaterThan(0);
+  expect(options.some(o => /gemini/i.test(o))).toBe(true);
+});

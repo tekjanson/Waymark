@@ -40,9 +40,11 @@ import {
   geminiHeaders,
   geminiUrl,
   getRecentConversationSheets,
+  pickBestActiveKey,
   pickBestClaudeKey,
   pickBestKey,
   shouldUsePlannerRound,
+  vault,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
 import { showSettingsModal } from './agent/settings.js';
@@ -53,6 +55,7 @@ import {
   buildEmptyState,
   buildFilePicker,
   buildMessage,
+  buildVaultLock,
   buildWelcome,
   refreshContextBar,
   renderAgentUI,
@@ -302,17 +305,12 @@ let _pendingInlineImages = [];
 
 /**
  * Pick the best available key using the shared LRU strategy from agent/config.js.
- * Dispatches to the correct key pool based on the active provider.
- * Returns { key, idx } or null if no keys are configured.
+ * Dispatches to vault keys when vault is active and unlocked,
+ * otherwise falls through to localStorage keys.
  * @returns {{ key: string, idx: number } | null}
  */
 function _getNextKey() {
-  const provider = storage.getAgentProvider();
-  if (provider === 'claude') {
-    return pickBestClaudeKey();
-  }
-  const keys = pickBestKey();
-  return keys.length > 0 ? keys[0] : null;
+  return pickBestActiveKey();
 }
 
 /* ---------- Public API ---------- */
@@ -362,10 +360,18 @@ export function hide() {
 /* ---------- UI Rendering ---------- */
 
 function _renderUI() {
+  // If vault is set up but locked, show unlock overlay instead of chat
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    _container.innerHTML = '';
+    _container.appendChild(buildVaultLock(_onVaultUnlock));
+    return;
+  }
+
   const provider = storage.getAgentProvider();
-  const hasKeys = provider === 'claude'
-    ? storage.getClaudeKeys().length > 0
-    : storage.getAgentKeys().length > 0;
+  const hasKeys = vault.isVaultSetUp() && vault.isVaultUnlocked()
+    ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
+    : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0);
+  _container.innerHTML = '';
   const rendered = renderAgentUI({
     container: _container,
     messages: _messages,
@@ -385,6 +391,20 @@ function _renderUI() {
 
 function _buildWelcome() {
   return buildWelcome(_showSettings);
+}
+
+/** Handler called by the vault lock overlay's unlock button. */
+async function _onVaultUnlock() {
+  const input = _container.querySelector('.agent-vault-input');
+  const pw = input?.value?.trim() || '';
+  if (!pw) { showToast('Please enter your vault password', 'error'); return; }
+  const ok = await vault.unlockVault(pw);
+  if (ok) {
+    _renderUI(); // re-render with vault unlocked
+  } else {
+    showToast('Incorrect vault password', 'error');
+    if (input) { input.value = ''; input.focus(); }
+  }
 }
 
 function _buildEmptyState() {

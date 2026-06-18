@@ -7,11 +7,14 @@
 import { el, showToast } from '../ui.js';
 import * as storage from '../storage.js';
 import * as userData from '../user-data.js';
+import * as vault from './vault.js';
 import {
   DEFAULT_MODEL,
   DEFAULT_CLAUDE_MODEL,
   GEMINI_MODEL_OPTIONS,
   CLAUDE_MODEL_OPTIONS,
+  fetchGeminiModels,
+  fetchClaudeModels,
 } from './config.js';
 
 /* ---------- Settings Modal ---------- */
@@ -165,12 +168,14 @@ export function showSettingsModal(onRefresh) {
         newNicknameInput.value = '';
         billedToggle.checked = false;
         renderKeyList();
+        // Refresh model list for the newly added key
+        _refreshModelDropdown().catch(() => {});
         showToast('Key added to ring', 'success');
       },
     },
   }, ['+ Add Key']);
 
-  /* ---------- Model dropdown ---------- */
+  /* ---------- Model dropdown — immediately hardcoded, async-refreshed ---------- */
   const modelSelect = el('select', { className: 'agent-settings-select' }, []);
 
   function updateModelDropdown() {
@@ -180,12 +185,34 @@ export function showSettingsModal(onRefresh) {
     for (const opt of opts) {
       modelSelect.appendChild(el('option', { value: opt.value, ...(current === opt.value ? { selected: 'selected' } : {}) }, [opt.label]));
     }
+    _refreshModelDropdown().catch(() => {});
   }
   updateModelDropdown();
 
+  /** Async: replace dropdown options with live model list from provider API. */
+  async function _refreshModelDropdown() {
+    const key = activeKeys()[0]?.key;
+    if (!key) return;
+    try {
+      const opts = activeProvider === 'claude'
+        ? await fetchClaudeModels(key)
+        : await fetchGeminiModels(key);
+      const currentVal = modelSelect.value;
+      modelSelect.innerHTML = '';
+      for (const opt of opts) {
+        const selected = opt.value === currentVal;
+        modelSelect.appendChild(el('option', { value: opt.value, ...(selected ? { selected: 'selected' } : {}) }, [opt.label]));
+      }
+      if (!modelSelect.value && modelSelect.options.length > 0) {
+        modelSelect.selectedIndex = 0;
+      }
+    } catch {
+      // Keep hardcoded options
+    }
+  }
+
   /* ---------- Provider switch ---------- */
   function switchProvider(p) {
-    // Persist current model selection before switching
     if (activeProvider === 'claude') {
       claudeModel = modelSelect.value;
     } else {
@@ -299,6 +326,8 @@ export function showSettingsModal(onRefresh) {
       el('p', { className: 'agent-settings-hint' }, [
         'When enabled, your key ring and model are stored in your Google Drive so they work across all your devices.',
       ]),
+      el('hr', { className: 'agent-settings-divider' }),
+      buildVaultSection(),
     ]),
     el('div', { className: 'modal-footer' }, [
       (geminiKeys.length > 0 || claudeKeys.length > 0) ? removeAllBtn : el('span'),
@@ -316,6 +345,154 @@ export function showSettingsModal(onRefresh) {
 
   document.body.appendChild(overlay);
   newKeyInput.focus();
+}
+
+/**
+ * Build the vault section for the settings modal.
+ * Shows different UI depending on vault state:
+ *  - Not set up: setup form
+ *  - Locked: unlock form
+ *  - Unlocked: management options
+ */
+function buildVaultSection() {
+  const isSetUp = vault.isVaultSetUp();
+  const isUnlocked = vault.isVaultUnlocked();
+
+  /* ---------- Not set up ---------- */
+  if (!isSetUp) {
+    const pw1 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Create vault password (min 8 chars)' });
+    const pw2 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Confirm password' });
+
+    return el('div', { className: 'agent-vault-section' }, [
+      el('label', { className: 'agent-settings-label' }, ['🔐 Vault (optional)']),
+      el('p', { className: 'agent-settings-hint' }, [
+        'Encrypt your API keys with a password. Keys stay in your browser — Waymark and Google never see them.',
+      ]),
+      pw1, pw2,
+      el('button', {
+        className: 'agent-vault-setup-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            const p = pw1.value.trim();
+            const c = pw2.value.trim();
+            if (p.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+            if (p !== c) { showToast('Passwords do not match', 'error'); return; }
+            const current = storage.getAgentKeys();
+            const currentClaude = storage.getClaudeKeys();
+            await vault.setupVault(p, {
+              geminiKeys: current,
+              claudeKeys: currentClaude,
+              geminiModel: storage.getAgentModel() || '',
+              claudeModel: storage.getClaudeModel() || '',
+              provider: storage.getAgentProvider() || 'gemini',
+            });
+            // Clear plaintext keys (vault is now the source of truth)
+            storage.setAgentKeys([]);
+            storage.setClaudeKeys([]);
+            showToast('Vault enabled — keys encrypted', 'success');
+          },
+        },
+      }, ['Enable Vault']),
+    ]);
+  }
+
+  /* ---------- Set up but locked ---------- */
+  if (!isUnlocked) {
+    const pwInput = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Vault password' });
+    return el('div', { className: 'agent-vault-section agent-vault-locked' }, [
+      el('label', { className: 'agent-settings-label' }, ['🔐 Vault']),
+      el('p', { className: 'agent-vault-status agent-vault-status-locked' }, ['Keys are encrypted']),
+      pwInput,
+      el('div', { className: 'agent-vault-btns' }, [
+        el('button', {
+          className: 'agent-vault-unlock-btn',
+          type: 'button',
+          on: {
+            click: async () => {
+              const ok = await vault.unlockVault(pwInput.value.trim());
+              if (ok) {
+                showToast('Vault unlocked', 'success');
+              } else {
+                showToast('Incorrect vault password', 'error');
+                pwInput.value = '';
+              }
+            },
+          },
+        }, ['🔓 Unlock']),
+        el('button', {
+          className: 'agent-vault-clear-btn',
+          type: 'button',
+          on: {
+            click: async () => {
+              if (!confirm('Forget vault? Your encrypted keys will be deleted.')) return;
+              vault.clearVault();
+              showToast('Vault cleared', 'info');
+            },
+          },
+        }, ['Forget Vault']),
+      ]),
+    ]);
+  }
+
+  /* ---------- Set up and unlocked ---------- */
+  const newPw1 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'New password (min 8 chars)' });
+  const newPw2 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Confirm new password' });
+
+  return el('div', { className: 'agent-vault-section agent-vault-unlocked' }, [
+    el('label', { className: 'agent-settings-label' }, ['🔐 Vault']),
+    el('p', { className: 'agent-vault-status agent-vault-status-unlocked' }, ['🔓 Keys are encrypted and unlocked this session']),
+    el('div', { className: 'agent-vault-btns' }, [
+      el('button', {
+        className: 'agent-vault-lock-btn',
+        type: 'button',
+        on: {
+          click: () => {
+            vault.lockVault();
+            showToast('Vault locked', 'info');
+          },
+        },
+      }, ['🔐 Lock Now']),
+      el('button', {
+        className: 'agent-vault-clear-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            if (!confirm('Disable vault? Keys will be decrypted back to plain storage.')) return;
+            const geminiKeys = vault.getGeminiKeys();
+            const claudeKeys = vault.getClaudeKeys();
+            vault.clearVault();
+            // Restore keys to plaintext storage
+            if (geminiKeys.length) storage.setAgentKeys(geminiKeys);
+            if (claudeKeys.length) storage.setClaudeKeys(claudeKeys);
+            showToast('Vault disabled. Keys restored.', 'info');
+          },
+        },
+      }, ['Disable Vault']),
+    ]),
+    el('details', { className: 'agent-vault-change-pw' }, [
+      el('summary', {}, ['Change password']),
+      newPw1, newPw2,
+      el('button', {
+        className: 'agent-vault-setup-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            const p = newPw1.value.trim();
+            const c = newPw2.value.trim();
+            if (p.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+            if (p !== c) { showToast('Passwords do not match', 'error'); return; }
+            const ok = await vault.saveVaultChanges({ });
+            if (ok) {
+              showToast('Password changed', 'success');
+            } else {
+              showToast('Could not change password — try locking and unlocking first', 'error');
+            }
+          },
+        },
+      }, ['Change Password']),
+    ]),
+  ]);
 }
 
 /**

@@ -603,15 +603,23 @@ test('agents template delete modal cancel button', async ({ page }) => {
 test('agents template delete button sends edit', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  const deleteBtn = page.locator('.agents-card').first().locator('.agents-delete-btn');
-  
+
   await page.locator('.agents-card').first().hover();
-  await deleteBtn.click();
-  
+  // Delete button is opacity:0 until card is hovered — force click
+  await page.locator('.agents-card').first().locator('.agents-delete-btn').click({ force: true });
+
+  // Wait for delete modal to be visible
+  await page.waitForSelector('.agents-delete-modal:not(.hidden)', { timeout: 3000 });
+
   // Click confirm delete
   await page.locator('.agents-confirm-delete-btn').click();
-  
-  // Check that a row-delete record was created
+
+  // Wait for the async deleteRows to push a record
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-delete'),
+    { timeout: 5000 }
+  );
+
   const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
   const deleteRecord = records.find(r => r.type === 'row-delete');
   expect(deleteRecord).toBeTruthy();
@@ -620,9 +628,9 @@ test('agents template delete button sends edit', async ({ page }) => {
 test('agents template renders folder field when present', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  
-  // Check that folder field is rendered
-  await expect(page.locator('.agents-folder')).toHaveCount(1);
+
+  // All 4 fixture agents have a folder — expect one per card
+  await expect(page.locator('.agents-folder')).toHaveCount(4);
   await expect(page.locator('.agents-folder').first()).toContainText('📁 Folder');
 });
 
