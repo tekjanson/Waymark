@@ -42,6 +42,7 @@ import './okr/index.js';
 import './gantt/index.js';
 import './agents.js';
 import './passwords.js';
+import './aivault.js';
 import './linker.js';
 import './marketing.js';
 import './arcade/index.js';
