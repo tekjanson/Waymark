@@ -1,33 +1,63 @@
 /* ============================================================
    settings.js — Agent settings modal
    API key ring and model configuration UI for the chat agent.
+   Supports Gemini (Google) and Claude (Anthropic) providers.
    ============================================================ */
 
 import { el, showToast } from '../ui.js';
 import * as storage from '../storage.js';
 import * as userData from '../user-data.js';
-import { DEFAULT_MODEL } from './config.js';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_CLAUDE_MODEL,
+  GEMINI_MODEL_OPTIONS,
+  CLAUDE_MODEL_OPTIONS,
+} from './config.js';
 
 /* ---------- Settings Modal ---------- */
 
 /**
- * Show the agent settings modal.
+ * Show the agent settings modal with provider toggle (Gemini / Claude).
  * @param {Function} onRefresh
  */
 export function showSettingsModal(onRefresh) {
   const existingModal = document.getElementById('agent-settings-modal');
   if (existingModal) existingModal.remove();
 
-  const keys = storage.getAgentKeys();
-  const currentModel = storage.getAgentModel() || DEFAULT_MODEL;
+  /* ---------- Mutable state inside the modal ---------- */
+  let activeProvider = storage.getAgentProvider() || 'gemini';
+  let geminiKeys = storage.getAgentKeys();
+  let claudeKeys = storage.getClaudeKeys();
+  let geminiModel = storage.getAgentModel() || DEFAULT_MODEL;
+  let claudeModel = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
   const driveSettings = userData.getAgentSettings();
   const cloudSyncEnabled = driveSettings !== null;
 
+  /* ---------- Provider toggle ---------- */
+  const geminiBtn = el('button', {
+    className: 'agent-provider-btn' + (activeProvider === 'gemini' ? ' active' : ''),
+    type: 'button',
+    on: { click: () => switchProvider('gemini') },
+  }, ['🔵 Google Gemini']);
+
+  const claudeBtn = el('button', {
+    className: 'agent-provider-btn' + (activeProvider === 'claude' ? ' active' : ''),
+    type: 'button',
+    on: { click: () => switchProvider('claude') },
+  }, ['🟣 Anthropic Claude']);
+
+  const providerToggle = el('div', { className: 'agent-provider-toggle' }, [geminiBtn, claudeBtn]);
+
+  /* ---------- Key ring list ---------- */
   const keyListContainer = el('div', { className: 'agent-keyring-list' });
+
+  function activeKeys() {
+    return activeProvider === 'claude' ? claudeKeys : geminiKeys;
+  }
 
   function renderKeyList() {
     keyListContainer.innerHTML = '';
-    const currentKeys = storage.getAgentKeys();
+    const currentKeys = activeKeys();
     if (currentKeys.length === 0) {
       keyListContainer.appendChild(
         el('p', { className: 'agent-keyring-empty' }, ['No API keys configured. Add one below.'])
@@ -47,8 +77,13 @@ export function showSettingsModal(onRefresh) {
           title: 'Remove this key',
           on: {
             click: () => {
-              const updated = storage.getAgentKeys().filter((_, keyIndex) => keyIndex !== index);
-              storage.setAgentKeys(updated);
+              if (activeProvider === 'claude') {
+                claudeKeys = claudeKeys.filter((_, i) => i !== index);
+                storage.setClaudeKeys(claudeKeys);
+              } else {
+                geminiKeys = geminiKeys.filter((_, i) => i !== index);
+                storage.setAgentKeys(geminiKeys);
+              }
               renderKeyList();
             },
           },
@@ -59,41 +94,73 @@ export function showSettingsModal(onRefresh) {
   }
   renderKeyList();
 
+  /* ---------- Dynamic hint paragraph ---------- */
+  const hintPara = el('p', { className: 'agent-settings-hint' }, []);
+  function updateHint() {
+    hintPara.innerHTML = '';
+    if (activeProvider === 'gemini') {
+      hintPara.append(
+        'Add multiple free Gemini API keys to rotate between them automatically. ',
+        el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, ['Get a free key →'])
+      );
+    } else {
+      hintPara.append(
+        'Add your Anthropic Claude API key. ',
+        el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, ['Get a key →'])
+      );
+    }
+  }
+  updateHint();
+
+  /* ---------- Add-key form ---------- */
   const newKeyInput = el('input', {
     type: 'password',
     className: 'agent-settings-input',
-    placeholder: 'Paste a Gemini API key...',
+    placeholder: activeProvider === 'claude' ? 'Paste a Claude API key (sk-ant-...)...' : 'Paste a Gemini API key...',
   });
 
   const newNicknameInput = el('input', {
     type: 'text',
     className: 'agent-settings-input agent-keyring-nickname-input',
-    placeholder: 'Nickname (optional, e.g. "Personal")',
+    placeholder: 'Nickname (optional)',
   });
 
-  const billedToggle = el('input', {
-    type: 'checkbox',
-    className: 'agent-settings-toggle',
-  });
+  const billedToggle = el('input', { type: 'checkbox', className: 'agent-settings-toggle' });
 
   const addKeyBtn = el('button', {
     className: 'agent-keyring-add-btn',
+    type: 'button',
     on: {
       click: () => {
         const key = newKeyInput.value.trim();
         if (!key) { showToast('Please enter an API key', 'error'); return; }
-        const current = storage.getAgentKeys();
-        if (current.some(existing => existing.key === key)) { showToast('This key is already in your ring', 'error'); return; }
-        current.push({
-          key,
-          nickname: newNicknameInput.value.trim() || `Key ${current.length + 1}`,
-          addedAt: new Date().toISOString(),
-          requestsToday: 0,
-          lastUsed: null,
-          lastError: null,
-          isBilled: billedToggle.checked,
-        });
-        storage.setAgentKeys(current);
+
+        if (activeProvider === 'claude') {
+          if (claudeKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
+          claudeKeys.push({
+            key,
+            nickname: newNicknameInput.value.trim() || `Key ${claudeKeys.length + 1}`,
+            addedAt: new Date().toISOString(),
+            requestsToday: 0,
+            lastUsed: null,
+            lastError: null,
+            isBilled: billedToggle.checked,
+          });
+          storage.setClaudeKeys(claudeKeys);
+        } else {
+          if (geminiKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
+          geminiKeys.push({
+            key,
+            nickname: newNicknameInput.value.trim() || `Key ${geminiKeys.length + 1}`,
+            addedAt: new Date().toISOString(),
+            requestsToday: 0,
+            lastUsed: null,
+            lastError: null,
+            isBilled: billedToggle.checked,
+          });
+          storage.setAgentKeys(geminiKeys);
+        }
+
         newKeyInput.value = '';
         newNicknameInput.value = '';
         billedToggle.checked = false;
@@ -103,32 +170,66 @@ export function showSettingsModal(onRefresh) {
     },
   }, ['+ Add Key']);
 
-  const modelSelect = el('select', { className: 'agent-settings-select' }, [
-    el('option', { value: 'gemini-flash-latest', selected: currentModel === 'gemini-flash-latest' }, ['Gemini Flash Latest']),
-    el('option', { value: 'gemini-2.0-flash', selected: currentModel === 'gemini-2.0-flash' }, ['Gemini 2.0 Flash (fast)']),
-    el('option', { value: 'gemini-2.0-flash-lite', selected: currentModel === 'gemini-2.0-flash-lite' }, ['Gemini 2.0 Flash Lite (fastest)']),
-    el('option', { value: 'gemini-2.5-flash-preview-05-20', selected: currentModel === 'gemini-2.5-flash-preview-05-20' }, ['Gemini 2.5 Flash (balanced)']),
-    el('option', { value: 'gemini-2.5-pro-preview-05-06', selected: currentModel === 'gemini-2.5-pro-preview-05-06' }, ['Gemini 2.5 Pro (best)']),
-  ]);
+  /* ---------- Model dropdown ---------- */
+  const modelSelect = el('select', { className: 'agent-settings-select' }, []);
 
-  const toggleAttrs = {
+  function updateModelDropdown() {
+    modelSelect.innerHTML = '';
+    const opts = activeProvider === 'claude' ? CLAUDE_MODEL_OPTIONS : GEMINI_MODEL_OPTIONS;
+    const current = activeProvider === 'claude' ? claudeModel : geminiModel;
+    for (const opt of opts) {
+      modelSelect.appendChild(el('option', { value: opt.value, ...(current === opt.value ? { selected: 'selected' } : {}) }, [opt.label]));
+    }
+  }
+  updateModelDropdown();
+
+  /* ---------- Provider switch ---------- */
+  function switchProvider(p) {
+    // Persist current model selection before switching
+    if (activeProvider === 'claude') {
+      claudeModel = modelSelect.value;
+    } else {
+      geminiModel = modelSelect.value;
+    }
+
+    activeProvider = p;
+    geminiBtn.className = 'agent-provider-btn' + (p === 'gemini' ? ' active' : '');
+    claudeBtn.className = 'agent-provider-btn' + (p === 'claude' ? ' active' : '');
+    newKeyInput.placeholder = p === 'claude' ? 'Paste a Claude API key (sk-ant-...)...' : 'Paste a Gemini API key...';
+    updateHint();
+    updateModelDropdown();
+    renderKeyList();
+  }
+
+  /* ---------- Cloud sync toggle ---------- */
+  const cloudToggle = el('input', {
     type: 'checkbox',
     className: 'agent-settings-toggle',
-  };
-  if (cloudSyncEnabled) toggleAttrs.checked = 'checked';
-  const cloudToggle = el('input', toggleAttrs);
+    ...(cloudSyncEnabled ? { checked: 'checked' } : {}),
+  });
 
+  /* ---------- Save ---------- */
   const saveBtn = el('button', {
     className: 'agent-settings-save',
+    type: 'button',
     on: {
       click: async () => {
-        const current = storage.getAgentKeys();
-        storage.setAgentModel(modelSelect.value);
+        // Persist model from dropdown
+        if (activeProvider === 'claude') {
+          storage.setClaudeModel(modelSelect.value);
+        } else {
+          storage.setAgentModel(modelSelect.value);
+        }
+        storage.setAgentProvider(activeProvider);
+
         if (cloudToggle.checked) {
           await userData.saveAgentSettings({
-            apiKey: current.length > 0 ? current[0].key : '',
-            model: modelSelect.value,
-            keys: current,
+            provider: activeProvider,
+            keys: geminiKeys,
+            model: storage.getAgentModel() || DEFAULT_MODEL,
+            apiKey: geminiKeys.length > 0 ? geminiKeys[0].key : '',
+            claudeKeys,
+            claudeModel: storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL,
           });
         } else {
           await userData.saveAgentSettings(null);
@@ -140,21 +241,32 @@ export function showSettingsModal(onRefresh) {
     },
   }, ['Save']);
 
+  /* ---------- Remove all keys (provider-scoped) ---------- */
   const removeAllBtn = el('button', {
     className: 'agent-settings-remove',
+    type: 'button',
     on: {
       click: async () => {
-        storage.setAgentKeys([]);
-        await userData.saveAgentSettings(null);
-        showToast('All API keys removed', 'info');
-        overlay.remove();
-        onRefresh();
+        if (activeProvider === 'claude') {
+          claudeKeys = [];
+          storage.setClaudeKeys([]);
+          showToast('All Claude API keys removed', 'info');
+          renderKeyList();
+        } else {
+          geminiKeys = [];
+          storage.setAgentKeys([]);
+          await userData.saveAgentSettings(null);
+          showToast('All API keys removed', 'info');
+          overlay.remove();
+          onRefresh();
+        }
       },
     },
   }, ['Remove All Keys']);
 
   const closeBtn = el('button', {
     className: 'btn-icon agent-settings-close',
+    type: 'button',
     on: { click: () => overlay.remove() },
   }, ['✕']);
 
@@ -164,15 +276,10 @@ export function showSettingsModal(onRefresh) {
       closeBtn,
     ]),
     el('div', { className: 'modal-body' }, [
+      el('label', { className: 'agent-settings-label' }, ['AI Provider']),
+      providerToggle,
       el('label', { className: 'agent-settings-label' }, ['API Key Ring']),
-      el('p', { className: 'agent-settings-hint' }, [
-        'Add multiple free Gemini API keys to rotate between them automatically. ',
-        el('a', {
-          href: 'https://aistudio.google.com/apikey',
-          target: '_blank',
-          rel: 'noopener',
-        }, ['Get a free key →']),
-      ]),
+      hintPara,
       keyListContainer,
       el('div', { className: 'agent-keyring-add-form' }, [
         newKeyInput,
@@ -194,7 +301,7 @@ export function showSettingsModal(onRefresh) {
       ]),
     ]),
     el('div', { className: 'modal-footer' }, [
-      keys.length > 0 ? removeAllBtn : el('span'),
+      (geminiKeys.length > 0 || claudeKeys.length > 0) ? removeAllBtn : el('span'),
       saveBtn,
     ]),
   ]);

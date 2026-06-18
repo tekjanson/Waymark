@@ -3414,3 +3414,111 @@ test('pinned context files are included in the system prompt context', async ({ 
   expect(systemText).toContain('sheet-budget-1');
   expect(systemText).toContain('My Budget');
 });
+
+/* ---------- Claude Provider ---------- */
+
+test('settings modal shows provider toggle with Gemini and Claude options', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-provider-toggle')).toBeVisible();
+  await expect(page.locator('.agent-provider-btn').nth(0)).toContainText('Gemini');
+  await expect(page.locator('.agent-provider-btn').nth(1)).toContainText('Claude');
+  // Gemini is active by default
+  await expect(page.locator('.agent-provider-btn.active')).toContainText('Gemini');
+});
+
+test('switching to Claude provider updates model dropdown to Claude models', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-provider-toggle', { timeout: 3000 });
+
+  // Switch to Claude
+  await page.click('.agent-provider-btn:nth-child(2)');
+  await expect(page.locator('.agent-provider-btn.active')).toContainText('Claude');
+
+  // Model dropdown should contain Claude models
+  const modelOptions = await page.locator('.agent-settings-select option').allTextContents();
+  expect(modelOptions.some(o => /claude/i.test(o))).toBe(true);
+  expect(modelOptions.some(o => /haiku|sonnet|opus/i.test(o))).toBe(true);
+});
+
+test('saving Claude provider persists provider setting', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-provider-toggle', { timeout: 3000 });
+
+  // Switch to Claude and add a key
+  await page.click('.agent-provider-btn:nth-child(2)');
+  await page.fill('.agent-settings-input[type=password]', 'sk-ant-test-key-abc123');
+  await page.click('.agent-keyring-add-btn');
+  await page.click('.agent-settings-save');
+
+  await page.waitForFunction(() => !document.getElementById('agent-settings-modal'), { timeout: 3000 });
+
+  // Verify provider was saved
+  const provider = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_provider') || '"gemini"'); } catch { return 'gemini'; }
+  });
+  expect(provider).toBe('claude');
+
+  // Verify Claude keys were saved
+  const claudeKeys = await page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('waymark_agent_claude_keys') || '[]'); } catch { return []; }
+  });
+  expect(claudeKeys.length).toBeGreaterThan(0);
+});
+
+test('Claude provider routes messages to Anthropic API', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_provider', JSON.stringify('claude'));
+    localStorage.setItem('waymark_agent_claude_keys', JSON.stringify([{
+      key: 'sk-ant-test-key-123',
+      nickname: 'Test',
+      addedAt: new Date().toISOString(),
+      requestsToday: 0,
+      lastUsed: null,
+      lastError: null,
+      isBilled: false,
+    }]));
+    localStorage.setItem('waymark_agent_claude_model', JSON.stringify('claude-haiku-3-5'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-input:not([disabled])', { timeout: 5000 });
+
+  let claudeCalled = false;
+  await page.route(/api\.anthropic\.com/, async route => {
+    claudeCalled = true;
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'msg_test',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hello from Claude!' }],
+        model: 'claude-haiku-3-5',
+        stop_reason: 'end_turn',
+      }),
+    });
+  });
+
+  await page.fill('.agent-input', 'Hello');
+  await page.click('.agent-send-btn');
+
+  await page.waitForFunction(() => {
+    const msgs = document.querySelectorAll('.agent-message-assistant');
+    const last = msgs[msgs.length - 1];
+    return last && last.textContent.includes('Claude');
+  }, { timeout: 10000 });
+
+  expect(claudeCalled).toBe(true);
+});

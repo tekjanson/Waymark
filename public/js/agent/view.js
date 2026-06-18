@@ -96,12 +96,11 @@ export function buildWelcome(onShowSettings) {
     el('h3', {}, ['Welcome to Waymark AI']),
     el('p', {}, ['I can help you create and organise Google Sheets — budgets, project boards, meal plans, and more. Set up your API key to get started.']),
     el('p', { className: 'agent-welcome-hint' }, [
-      'Get a free API key at ',
-      el('a', {
-        href: 'https://aistudio.google.com/apikey',
-        target: '_blank',
-        rel: 'noopener',
-      }, ['aistudio.google.com/apikey']),
+      'Use a free Gemini key from ',
+      el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, ['aistudio.google.com']),
+      ' or a Claude key from ',
+      el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, ['console.anthropic.com']),
+      '.',
     ]),
     el('button', {
       className: 'agent-welcome-btn',
