@@ -87,6 +87,7 @@ let _context = null;   // { id, title, sheetTitle, values, templateKey, onRefres
 let _isStreaming = false;
 let _abortController = null;
 let _pendingInlineImages = [];
+let _conversationHistory = [];  // Maintains context across messages in this session
 
 /* ---------- Public API ---------- */
 
@@ -99,6 +100,8 @@ export function show(ctx) {
   // Close existing panel if open
   if (_panel) _close();
   try {
+    // Load conversation history for this sheet
+    _conversationHistory = storage.getConversationHistory(_context.id);
     _render();
   } catch (err) {
     showToast('Could not open AI panel', 'error');
@@ -136,6 +139,17 @@ function _render() {
 
   if (!hasKeys) {
     _chatBody.appendChild(_buildNoKeysState());
+  } else if (_conversationHistory.length > 0) {
+    // Render conversation history
+    _conversationHistory.forEach((msg, idx) => {
+      if (msg.role === 'user') {
+        const displayText = msg.parts?.map(p => p.text || '').join('\n') || '';
+        _chatBody.appendChild(_buildMessageEl('user', displayText));
+      } else if (msg.role === 'model') {
+        const displayText = msg.parts?.map(p => p.text || '').join('\n') || '';
+        _chatBody.appendChild(_buildMessageEl('assistant', displayText));
+      }
+    });
   } else {
     _chatBody.appendChild(_buildEmptyState());
   }
@@ -355,6 +369,12 @@ async function _sendMessage(text) {
   _chatBody.scrollTop = _chatBody.scrollHeight;
   _pendingInlineImages = [];
 
+  // Add user message to conversation history
+  _conversationHistory.push({
+    role: 'user',
+    parts: userParts,
+  });
+
   // Clear input
   const input = _panel.querySelector('.template-ai-input');
   if (input) {
@@ -397,10 +417,8 @@ async function _sendMessage(text) {
 
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const systemPrompt = _buildSystemPrompt();
-  const contents = [{
-    role: 'user',
-    parts: userParts,
-  }];
+  // Include full conversation history
+  const contents = [..._conversationHistory];
   const body = {
     contents,
     tools: OVERLAY_TOOL_DECLARATIONS,
@@ -430,6 +448,15 @@ async function _sendMessage(text) {
       liveContent.innerHTML = '';
       renderMarkdown(liveContent, response);
       storage.recordKeyUsage(keyEntry.idx);
+      // Add buffered response to history
+      if (response.trim()) {
+        _conversationHistory.push({
+          role: 'model',
+          parts: [{ text: response }],
+        });
+      }
+      // Save conversation history to localStorage
+      storage.setConversationHistory(_context.id, _conversationHistory);
       return;
     }
 
@@ -468,6 +495,15 @@ async function _sendMessage(text) {
           const response = await _callBuffered(keyEntry.key, body);
           liveContent.innerHTML = '';
           renderMarkdown(liveContent, response);
+          // Add buffered response to history
+          if (response.trim()) {
+            _conversationHistory.push({
+              role: 'model',
+              parts: [{ text: response }],
+            });
+          }
+          // Save conversation history to localStorage
+          storage.setConversationHistory(_context.id, _conversationHistory);
           return;
         }
 
@@ -485,10 +521,25 @@ async function _sendMessage(text) {
     liveContent.innerHTML = '';
     renderMarkdown(liveContent, accumulated);
 
+    // Add assistant response to conversation history
+    if (accumulated.trim()) {
+      _conversationHistory.push({
+        role: 'model',
+        parts: [{ text: accumulated }],
+      });
+    }
+
   } catch (err) {
     if (err.name === 'AbortError' && accumulated) {
       liveContent.innerHTML = '';
       renderMarkdown(liveContent, accumulated);
+      // Add partial response to history
+      if (accumulated.trim()) {
+        _conversationHistory.push({
+          role: 'model',
+          parts: [{ text: accumulated }],
+        });
+      }
     } else if (err.name !== 'AbortError') {
       liveWrapper.remove();
       _chatBody.appendChild(_buildMessageEl('assistant', `⚠️ Error: ${err.message}`));
@@ -500,6 +551,8 @@ async function _sendMessage(text) {
     _isStreaming = false;
     _abortController = null;
     if (sendBtn) { sendBtn.textContent = '➤'; sendBtn.title = 'Send'; }
+    // Save conversation history to localStorage
+    storage.setConversationHistory(_context.id, _conversationHistory);
   }
 }
 

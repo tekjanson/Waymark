@@ -557,3 +557,44 @@ export function getEchoSuppression() {
 export function setEchoSuppression(level) {
   set('audio_echo_suppression', Number(level));
 }
+
+/* --- Conversational Context (AI Panel) --- */
+
+/**
+ * Get conversation history for a specific sheet.
+ * @param {string} sheetId
+ * @returns {Array} Array of message objects { role, parts }
+ */
+export function getConversationHistory(sheetId) {
+  if (!sheetId) return [];
+  return get(`conversation_${sheetId}`) || [];
+}
+
+/**
+ * Save conversation history for a specific sheet.
+ * @param {string} sheetId
+ * @param {Array} history — Array of message objects
+ */
+export function setConversationHistory(sheetId, history) {
+  if (!sheetId) return;
+  set(`conversation_${sheetId}`, history);
+}
+
+/**
+ * Clear conversation history for a specific sheet.
+ * @param {string} sheetId
+ */
+export function clearConversationHistory(sheetId) {
+  if (!sheetId) return;
+  remove(`conversation_${sheetId}`);
+}
+
+/**
+ * Clear all conversation histories.
+ */
+export function clearAllConversationHistories() {
+  const allKeys = Object.keys(localStorage);
+  allKeys
+    .filter(k => k.startsWith(PREFIX + 'conversation_'))
+    .forEach(k => localStorage.removeItem(k));
+}
