@@ -214,5 +214,39 @@ function buildCard(row, rowIdx, cols) {
   return card;
 }
 
+/**
+ * Retrieve a decrypted AI key from the password vault.
+ * Used by adapters to fetch API keys (e.g., Claude, OpenAI) from a password manager sheet.
+ * @param {string} service — Service name to search for (e.g. 'claude', 'ai-claude', 'openai')
+ * @param {Object} sheetData — { rows, cols } from the password template
+ * @returns {string|null} — Decrypted password value or null if not found
+ */
+export function getDecryptedKey(service, sheetData) {
+  if (!sheetData || !sheetData.rows || !sheetData.cols) return null;
+  
+  const { rows, cols } = sheetData;
+  const serviceLower = service.toLowerCase();
+  
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const site = (cols.site >= 0 ? cell(row, cols.site) : '').toLowerCase();
+    
+    // Match service name in the site/service column
+    if (site.includes(serviceLower)) {
+      const password = cols.password >= 0 ? cell(row, cols.password) : '';
+      
+      if (password) {
+        // If encrypted, it won't be usable here (starts with 🔒ENC:)
+        // Return only plaintext passwords
+        if (!password.startsWith('\u{1F512}ENC:')) {
+          return password;
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
 registerTemplate('passwords', definition);
 export default definition;
