@@ -8,6 +8,7 @@
    ============================================================ */
 
 import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
+import { api } from '../api-client.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
@@ -300,15 +301,34 @@ const definition = {
         on: { click() {
           const deleteModal = document.querySelector('.agents-delete-modal');
           const deleteAgentName = document.querySelector('.agents-delete-agent-name');
-          const deleteAgentRow = document.querySelector('.agents-delete-agent-row');
           const confirmDeleteBtn = document.querySelector('.agents-confirm-delete-btn');
 
           deleteAgentName.textContent = name;
-          deleteAgentRow.dataset.rowIdx = rowIdx;
 
-          confirmDeleteBtn.onclick = () => {
-            emitEdit(rowIdx, cols.name, '');
-            deleteModal.classList.add('hidden');
+          confirmDeleteBtn.onclick = async () => {
+            try {
+              // Delete the row from the sheet (rowIdx is 1-based in sheet coordinates)
+              const sheetId = template._currentNumericSheetId ?? 0;
+              const sheetTitle = template._currentSheetTitle || 'Sheet1';
+              const spreadsheetId = template._currentSheetId;
+              
+              if (!spreadsheetId) {
+                showToast('Could not delete: spreadsheet ID not available', 'error');
+                deleteModal.classList.add('hidden');
+                return;
+              }
+
+              // Use batchUpdate to delete the row
+              await api.sheets.deleteRows(spreadsheetId, sheetId, rowIdx, rowIdx + 1);
+              showToast(`Agent "${name}" deleted`, 'success');
+              deleteModal.classList.add('hidden');
+              
+              // Reload the sheet to reflect changes
+              setTimeout(() => window.location.hash = window.location.hash, 100);
+            } catch (err) {
+              showToast(`Failed to delete agent: ${err.message}`, 'error');
+              deleteModal.classList.add('hidden');
+            }
           };
 
           deleteModal.classList.remove('hidden');
@@ -389,12 +409,6 @@ const definition = {
         ]),
       ]),
     ]);
-
-    // Add data attribute to modal for storing row index
-    const deleteAgentRow = document.createElement('div');
-    deleteAgentRow.className = 'agents-delete-agent-row';
-    deleteAgentRow.style.display = 'none';
-    deleteModal.append(deleteAgentRow);
 
     container.append(deleteModal);
   },

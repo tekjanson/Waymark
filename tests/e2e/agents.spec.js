@@ -611,9 +611,9 @@ test('agents template delete button sends edit', async ({ page }) => {
   // Click confirm delete
   await page.locator('.agents-confirm-delete-btn').click();
   
-  // Check that an edit record was created (agent name cleared)
+  // Check that a row-delete record was created
   const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
-  const deleteRecord = records.find(r => r.colIndex === 0 && r.value === '');
+  const deleteRecord = records.find(r => r.type === 'row-delete');
   expect(deleteRecord).toBeTruthy();
 });
 

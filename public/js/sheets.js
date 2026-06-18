@@ -241,6 +241,44 @@ export async function deleteProtectedRange(token, spreadsheetId, protectedRangeI
   return res.json();
 }
 
+/**
+ * Delete one or more rows from a spreadsheet.
+ * Uses batchUpdate with DeleteDimensionRequest.
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @param {number} sheetId      numeric Google Sheets tab ID
+ * @param {number} startRowIndex 0-based row index (first row to delete)
+ * @param {number} endRowIndex   0-based row index + 1 (exclusive)
+ * @returns {Promise<Object>}   batchUpdate response
+ */
+export async function deleteRows(token, spreadsheetId, sheetId, startRowIndex, endRowIndex) {
+  const body = {
+    requests: [{
+      deleteDimension: {
+        range: {
+          sheetId,
+          dimension: 'ROWS',
+          startIndex: startRowIndex,
+          endIndex: endRowIndex,
+        },
+      },
+    }],
+  };
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw sheetsError('Rows delete', res);
+  return res.json();
+}
+
 export async function getSpreadsheetSummary(token, spreadsheetId) {
   // Fetch just the first two rows via includeGridData with a limited range
   const res = await fetchWithRetry(
