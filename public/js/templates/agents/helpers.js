@@ -52,3 +52,18 @@ export function buildStatBadge(label, count, color = null) {
     el('span', { className: 'agents-stat-label' }, [label]),
   ]);
 }
+
+/** Group agents by folder
+ * @param {string[][]} rows - Agent rows
+ * @param {Object} cols - Column mapping
+ * @returns {Object} { folderName: [rowIdx, rowIdx, ...] }
+ */
+export function groupAgentsByFolder(rows, cols) {
+  const groups = {};
+  rows.forEach((row, i) => {
+    const folder = (cols.folder >= 0 ? row[cols.folder] : '').trim() || 'Ungrouped';
+    if (!groups[folder]) groups[folder] = [];
+    groups[folder].push(i + 1); // 1-based row index
+  });
+  return groups;
+}

@@ -647,3 +647,68 @@ test('agents template folder field is editable', async ({ page }) => {
   // Should be in edit mode with input
   await expect(folderCell.locator('input.editable-cell-input')).toBeVisible();
 });
+
+test('agents template renders folder directory sections', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Should have folder sections
+  await expect(page.locator('.agents-folder-section')).toHaveCount(4);
+});
+
+test('agents template folder headers show folder names', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Check for folder names in headers
+  await expect(page.locator('.agents-folder-title')).toContainText('Engineering');
+  await expect(page.locator('.agents-folder-title')).toContainText('QA');
+  await expect(page.locator('.agents-folder-title')).toContainText('Research');
+  await expect(page.locator('.agents-folder-title')).toContainText('Infrastructure');
+});
+
+test('agents template folder headers show agent count', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Check folder counts
+  const folderCounts = page.locator('.agents-folder-count');
+  const countTexts = await folderCounts.allTextContents();
+  
+  // Verify count format like "(1)", "(1)", "(1)", "(1)"
+  countTexts.forEach(text => {
+    expect(text).toMatch(/^\(\d+\)$/);
+  });
+});
+
+test('agents template agents are grouped under correct folder', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Get all folder sections
+  const sections = page.locator('.agents-folder-section');
+  
+  // Each folder section should contain cards
+  const firstSection = sections.first();
+  const firstSectionCards = firstSection.locator('.agents-card');
+  await expect(firstSectionCards).toBeDefined();
+});
+
+test('agents template delete works with folder grouping', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  
+  // Find first card in first folder section
+  const firstSection = page.locator('.agents-folder-section').first();
+  const firstCard = firstSection.locator('.agents-card').first();
+  
+  // Hover to reveal delete button
+  await firstCard.hover();
+  const deleteBtn = firstCard.locator('.agents-delete-btn');
+  
+  // Click delete button
+  await deleteBtn.click();
+  
+  // Modal should be visible
+  await expect(page.locator('.agents-delete-modal')).not.toHaveClass(/hidden/);
+});

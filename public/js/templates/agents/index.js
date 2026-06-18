@@ -3,7 +3,7 @@
    ============================================================ */
 
 import { el, cell, registerTemplate, showToast } from '../shared.js';
-import { AGENT_NAME_POOL, LS_WEBHOOK_KEY, STATUS_CYCLE, STATUS_COLORS, buildStatBadge } from './helpers.js';
+import { AGENT_NAME_POOL, LS_WEBHOOK_KEY, STATUS_CYCLE, STATUS_COLORS, buildStatBadge, groupAgentsByFolder } from './helpers.js';
 import { buildAgentCard } from './cards.js';
 import { buildDeleteModal, setupDeleteConfirmation } from './modal.js';
 
@@ -157,10 +157,33 @@ const definition = {
       setupDeleteConfirmation(deleteModal, name, rowIdx, tmpl);
     };
 
-    rows.forEach((row, i) => {
-      const rowIdx = i + 1;
-      const card = buildAgentCard(row, rowIdx, cols, template, handleDeleteClick);
-      grid.append(card);
+    /* Group agents by folder */
+    const folderGroups = groupAgentsByFolder(rows, cols);
+    const folderNames = Object.keys(folderGroups).sort();
+
+    /* Render folder sections */
+    folderNames.forEach(folderName => {
+      const folderSection = el('div', {
+        className: 'agents-folder-section',
+        dataset: { folder: folderName },
+      }, [
+        el('div', { className: 'agents-folder-header' }, [
+          el('h3', { className: 'agents-folder-title' }, [
+            `📁 ${folderName}`,
+          ]),
+          el('span', { className: 'agents-folder-count' }, [
+            `(${folderGroups[folderName].length})`,
+          ]),
+        ]),
+        el('div', { className: 'agents-folder-grid' }, 
+          folderGroups[folderName].map(rowIdx => {
+            const row = rows[rowIdx - 1];
+            const card = buildAgentCard(row, rowIdx, cols, template, handleDeleteClick);
+            return card;
+          })
+        ),
+      ]);
+      grid.append(folderSection);
     });
 
     container.append(grid);
