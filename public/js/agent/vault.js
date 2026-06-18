@@ -166,3 +166,83 @@ export function getGeminiKeys() { return _session?.geminiKeys || []; }
 /** @returns {Array} Claude key entries (empty when locked) */
 export function getClaudeKeys() { return _session?.claudeKeys || []; }
 
+/* ---------- Write a new key into the linked sheet ---------- */
+
+/**
+ * Append a new API key row to the linked passwords sheet.
+ * If the Password column is encrypted, the key will be stored encrypted.
+ * Uses `api.sheets.appendRows` under the hood.
+ *
+ * @param {{ key: string, nickname: string, provider: 'gemini'|'claude', isBilled?: boolean }} keyEntry
+ * @returns {Promise<boolean>} — true on success
+ */
+export async function addKeyToSheet(keyEntry) {
+  const sheetId = getLinkedSheetId();
+  if (!sheetId || !_session) return false; // must be linked and unlocked
+
+  try {
+    const sheet = await api.sheets.getSpreadsheet(sheetId);
+    const headers = (sheet.values?.[0] || []).map(h => String(h).toLowerCase().trim());
+
+    const siteCol     = headers.findIndex(h => /^(site|service|website|domain|app|account|platform)/.test(h));
+    const usernameCol = headers.findIndex(h => /^(user.?name|login|email|user|id)/.test(h));
+    const passwordCol = headers.findIndex(h => /^(password|passwd|secret|credential|pass)/.test(h));
+    const urlCol      = headers.findIndex(h => /^(url|link|address|href|web)/.test(h));
+    const categoryCol = headers.findIndex(h => /^(category|type|group|folder|tag)/.test(h));
+    const notesCol    = headers.findIndex(h => /^(notes?|comment|detail|info|description)/.test(h));
+
+    const numCols = headers.length || 6;
+    const row = Array(numCols).fill('');
+
+    // Site name describes the provider
+    const siteName = keyEntry.provider === 'claude'
+      ? `Claude API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`
+      : `Gemini API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`;
+
+    if (siteCol >= 0) row[siteCol] = siteName;
+    if (usernameCol >= 0) row[usernameCol] = keyEntry.provider === 'claude' ? 'anthropic' : 'google';
+
+    // Encrypt the key value if the password column is encrypted on other rows
+    const existingRows = (sheet.values || []).slice(1);
+    const isColumnEncrypted = passwordCol >= 0
+      && existingRows.some(r => encryption.isEncrypted(r[passwordCol] || ''));
+
+    let keyValue = keyEntry.key;
+    if (isColumnEncrypted && encryption.isUnlocked(sheetId)) {
+      keyValue = await encryption.encrypt(sheetId, keyEntry.key);
+    }
+    if (passwordCol >= 0) row[passwordCol] = keyValue;
+
+    if (urlCol >= 0) {
+      row[urlCol] = keyEntry.provider === 'claude'
+        ? 'https://console.anthropic.com'
+        : 'https://aistudio.google.com';
+    }
+    if (categoryCol >= 0) row[categoryCol] = 'AI';
+    if (notesCol >= 0) row[notesCol] = keyEntry.isBilled ? 'Billed key' : '';
+
+    const sheetTitle = sheet.sheetTitle || 'Sheet1';
+    await api.sheets.appendRows(sheetId, sheetTitle, [row]);
+
+    // Also update in-memory session
+    const entry = {
+      key:           keyEntry.key,
+      nickname:      siteName,
+      addedAt:       new Date().toISOString(),
+      requestsToday: 0,
+      lastUsed:      null,
+      lastError:     null,
+      isBilled:      !!keyEntry.isBilled,
+    };
+    if (keyEntry.provider === 'claude') {
+      _session.claudeKeys.push(entry);
+    } else {
+      _session.geminiKeys.push(entry);
+    }
+    return true;
+  } catch (err) {
+    console.error('[keys-sheet] addKeyToSheet failed:', err);
+    return false;
+  }
+}
+

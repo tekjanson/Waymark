@@ -308,9 +308,11 @@ const definition = {
           confirmDeleteBtn.onclick = async () => {
             try {
               // Delete the row from the sheet (rowIdx is 1-based in sheet coordinates)
-              const sheetId = template._currentNumericSheetId ?? 0;
-              const sheetTitle = template._currentSheetTitle || 'Sheet1';
-              const spreadsheetId = template._currentSheetId;
+              const sheetId = definition._currentNumericSheetId ?? 0;
+              const sheetTitle = definition._currentSheetTitle || 'Sheet1';
+              // Prefer definition property; fall back to hash URL
+              const spreadsheetId = definition._currentSheetId
+                || (window.location.hash.match(/#\/sheet\/([^/]+)/)?.[1] ?? null);
               
               if (!spreadsheetId) {
                 showToast('Could not delete: spreadsheet ID not available', 'error');

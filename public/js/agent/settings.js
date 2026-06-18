@@ -56,6 +56,12 @@ export function showSettingsModal(onRefresh) {
   const keyListContainer = el('div', { className: 'agent-keyring-list' });
 
   function activeKeys() {
+    // When keys sheet is unlocked, show its keys; otherwise localStorage ring
+    if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+      return activeProvider === 'claude'
+        ? vault.getClaudeKeys()
+        : vault.getGeminiKeys();
+    }
     return activeProvider === 'claude' ? claudeKeys : geminiKeys;
   }
 
@@ -135,32 +141,53 @@ export function showSettingsModal(onRefresh) {
     className: 'agent-keyring-add-btn',
     type: 'button',
     on: {
-      click: () => {
+      click: async () => {
         const key = newKeyInput.value.trim();
         if (!key) { showToast('Please enter an API key', 'error'); return; }
+
+        const nickname = newNicknameInput.value.trim();
+        const isBilled = billedToggle.checked;
+
+        /* If a keys sheet is linked and unlocked, write the key there */
+        if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+          const ok = await vault.addKeyToSheet({
+            key, nickname, isBilled, provider: activeProvider,
+          });
+          if (ok) {
+            newKeyInput.value = '';
+            newNicknameInput.value = '';
+            billedToggle.checked = false;
+            renderKeyList();
+            _refreshModelDropdown().catch(() => {});
+            showToast('Key added to your passwords sheet', 'success');
+            return;
+          }
+          // Fall through to localStorage if sheet write fails
+          showToast('Could not write to sheet — saved locally instead', 'error');
+        }
 
         if (activeProvider === 'claude') {
           if (claudeKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
           claudeKeys.push({
             key,
-            nickname: newNicknameInput.value.trim() || `Key ${claudeKeys.length + 1}`,
+            nickname: nickname || `Key ${claudeKeys.length + 1}`,
             addedAt: new Date().toISOString(),
             requestsToday: 0,
             lastUsed: null,
             lastError: null,
-            isBilled: billedToggle.checked,
+            isBilled,
           });
           storage.setClaudeKeys(claudeKeys);
         } else {
           if (geminiKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
           geminiKeys.push({
             key,
-            nickname: newNicknameInput.value.trim() || `Key ${geminiKeys.length + 1}`,
+            nickname: nickname || `Key ${geminiKeys.length + 1}`,
             addedAt: new Date().toISOString(),
             requestsToday: 0,
             lastUsed: null,
             lastError: null,
-            isBilled: billedToggle.checked,
+            isBilled,
           });
           storage.setAgentKeys(geminiKeys);
         }
@@ -169,7 +196,6 @@ export function showSettingsModal(onRefresh) {
         newNicknameInput.value = '';
         billedToggle.checked = false;
         renderKeyList();
-        // Refresh model list for the newly added key
         _refreshModelDropdown().catch(() => {});
         showToast('Key added to ring', 'success');
       },
@@ -371,12 +397,16 @@ function buildKeysSheetSection() {
       el('p', { className: 'agent-settings-hint' }, [
         'Store your API keys in a Waymark ',
         el('strong', {}, ['Passwords']),
-        ' sheet. Add rows named "Gemini API Key" and "Claude API Key". Encrypt the Password column — Waymark and Google never see your keys. ',
-        el('a', {
-          href: '#',
+        ' sheet. Add rows named "Gemini API Key" and "Claude API Key". Encrypt the Password column — Waymark and Google never see your keys.',
+      ]),
+      el('div', { className: 'agent-vault-btns' }, [
+        el('button', {
+          className: 'agent-vault-setup-btn',
+          type: 'button',
           on: {
-            click: async (e) => {
-              e.preventDefault();
+            click: async () => {
+              // Close the modal first so the picker isn't obscured by it
+              overlay.remove();
               try {
                 const files = await api.picker.pickSpreadsheets({ includeSharedDrives: false });
                 if (files?.[0]) {
@@ -386,11 +416,11 @@ function buildKeysSheetSection() {
               } catch {
                 showToast('Could not open Drive picker', 'error');
               }
+              // Re-open settings so user can see the linked sheet status
+              showSettingsModal(onRefresh);
             },
           },
-        }, ['Pick from Drive →']),
-      ]),
-      el('div', { className: 'agent-vault-btns' }, [
+        }, ['📂 Pick from Drive']),
         idInput,
         el('button', {
           className: 'agent-vault-setup-btn',
@@ -399,7 +429,6 @@ function buildKeysSheetSection() {
             click: () => {
               const raw = idInput.value.trim();
               if (!raw) { showToast('Paste a sheet URL or ID', 'error'); return; }
-              // Extract ID from URL if full URL pasted
               const match = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
               const id = match ? match[1] : raw;
               vault.linkSheet(id, id);
