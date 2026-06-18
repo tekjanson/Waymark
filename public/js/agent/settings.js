@@ -8,6 +8,7 @@ import { el, showToast } from '../ui.js';
 import * as storage from '../storage.js';
 import * as userData from '../user-data.js';
 import * as vault from './vault.js';
+import { api } from '../api-client.js';
 import {
   DEFAULT_MODEL,
   DEFAULT_CLAUDE_MODEL,
@@ -327,7 +328,7 @@ export function showSettingsModal(onRefresh) {
         'When enabled, your key ring and model are stored in your Google Drive so they work across all your devices.',
       ]),
       el('hr', { className: 'agent-settings-divider' }),
-      buildVaultSection(),
+      buildKeysSheetSection(),
     ]),
     el('div', { className: 'modal-footer' }, [
       (geminiKeys.length > 0 || claudeKeys.length > 0) ? removeAllBtn : el('span'),
@@ -348,61 +349,87 @@ export function showSettingsModal(onRefresh) {
 }
 
 /**
- * Build the vault section for the settings modal.
- * Shows different UI depending on vault state:
- *  - Not set up: setup form
- *  - Locked: unlock form
- *  - Unlocked: management options
+ * Build the Keys Sheet section — lets the user link a Waymark passwords sheet
+ * that holds their AI API keys (Gemini / Claude rows), optionally encrypted.
  */
-function buildVaultSection() {
-  const isSetUp = vault.isVaultSetUp();
+function buildKeysSheetSection() {
+  const isLinked   = vault.isVaultSetUp();
   const isUnlocked = vault.isVaultUnlocked();
+  const sheetName  = vault.getLinkedSheetName();
+  const sheetId    = vault.getLinkedSheetId();
 
-  /* ---------- Not set up ---------- */
-  if (!isSetUp) {
-    const pw1 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Create vault password (min 8 chars)' });
-    const pw2 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Confirm password' });
+  /* ---------- Not linked yet ---------- */
+  if (!isLinked) {
+    const idInput = el('input', {
+      type: 'text',
+      className: 'agent-settings-input',
+      placeholder: 'Paste passwords sheet URL or spreadsheet ID…',
+    });
 
     return el('div', { className: 'agent-vault-section' }, [
-      el('label', { className: 'agent-settings-label' }, ['🔐 Vault (optional)']),
+      el('label', { className: 'agent-settings-label' }, ['🔑 AI Keys Sheet (recommended)']),
       el('p', { className: 'agent-settings-hint' }, [
-        'Encrypt your API keys with a password. Keys stay in your browser — Waymark and Google never see them.',
-      ]),
-      pw1, pw2,
-      el('button', {
-        className: 'agent-vault-setup-btn',
-        type: 'button',
-        on: {
-          click: async () => {
-            const p = pw1.value.trim();
-            const c = pw2.value.trim();
-            if (p.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
-            if (p !== c) { showToast('Passwords do not match', 'error'); return; }
-            const current = storage.getAgentKeys();
-            const currentClaude = storage.getClaudeKeys();
-            await vault.setupVault(p, {
-              geminiKeys: current,
-              claudeKeys: currentClaude,
-              geminiModel: storage.getAgentModel() || '',
-              claudeModel: storage.getClaudeModel() || '',
-              provider: storage.getAgentProvider() || 'gemini',
-            });
-            // Clear plaintext keys (vault is now the source of truth)
-            storage.setAgentKeys([]);
-            storage.setClaudeKeys([]);
-            showToast('Vault enabled — keys encrypted', 'success');
+        'Store your API keys in a Waymark ',
+        el('strong', {}, ['Passwords']),
+        ' sheet. Add rows named "Gemini API Key" and "Claude API Key". Encrypt the Password column — Waymark and Google never see your keys. ',
+        el('a', {
+          href: '#',
+          on: {
+            click: async (e) => {
+              e.preventDefault();
+              try {
+                const files = await api.picker.pickSpreadsheets({ includeSharedDrives: false });
+                if (files?.[0]) {
+                  vault.linkSheet(files[0].id, files[0].name);
+                  showToast(`Linked: ${files[0].name}`, 'success');
+                }
+              } catch {
+                showToast('Could not open Drive picker', 'error');
+              }
+            },
           },
-        },
-      }, ['Enable Vault']),
+        }, ['Pick from Drive →']),
+      ]),
+      el('div', { className: 'agent-vault-btns' }, [
+        idInput,
+        el('button', {
+          className: 'agent-vault-setup-btn',
+          type: 'button',
+          on: {
+            click: () => {
+              const raw = idInput.value.trim();
+              if (!raw) { showToast('Paste a sheet URL or ID', 'error'); return; }
+              // Extract ID from URL if full URL pasted
+              const match = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+              const id = match ? match[1] : raw;
+              vault.linkSheet(id, id);
+              showToast('Sheet linked — unlock to load keys', 'success');
+            },
+          },
+        }, ['Link Sheet']),
+      ]),
     ]);
   }
 
-  /* ---------- Set up but locked ---------- */
+  /* ---------- Linked but locked ---------- */
   if (!isUnlocked) {
-    const pwInput = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Vault password' });
+    const pwInput = el('input', {
+      type: 'password',
+      className: 'agent-settings-input',
+      placeholder: 'Sheet password (leave empty if not encrypted)',
+    });
+    const statusText = `🔐 ${sheetName}`;
+
     return el('div', { className: 'agent-vault-section agent-vault-locked' }, [
-      el('label', { className: 'agent-settings-label' }, ['🔐 Vault']),
-      el('p', { className: 'agent-vault-status agent-vault-status-locked' }, ['Keys are encrypted']),
+      el('label', { className: 'agent-settings-label' }, ['🔑 AI Keys Sheet']),
+      el('p', { className: 'agent-vault-status agent-vault-status-locked' }, [statusText]),
+      el('p', { className: 'agent-settings-hint' }, [
+        'Enter the sheet password to decrypt your keys, or leave empty if the Password column is not encrypted. ',
+        el('a', {
+          href: `#/sheet/${sheetId}`,
+          on: { click: () => overlay?.remove() },
+        }, ['Open sheet →']),
+      ]),
       pwInput,
       el('div', { className: 'agent-vault-btns' }, [
         el('button', {
@@ -412,9 +439,11 @@ function buildVaultSection() {
             click: async () => {
               const ok = await vault.unlockVault(pwInput.value.trim());
               if (ok) {
-                showToast('Vault unlocked', 'success');
+                const g = vault.getGeminiKeys().length;
+                const c = vault.getClaudeKeys().length;
+                showToast(`Unlocked — ${g} Gemini key${g !== 1 ? 's' : ''}, ${c} Claude key${c !== 1 ? 's' : ''}`, 'success');
               } else {
-                showToast('Incorrect vault password', 'error');
+                showToast('Incorrect password or could not read sheet', 'error');
                 pwInput.value = '';
               }
             },
@@ -424,24 +453,29 @@ function buildVaultSection() {
           className: 'agent-vault-clear-btn',
           type: 'button',
           on: {
-            click: async () => {
-              if (!confirm('Forget vault? Your encrypted keys will be deleted.')) return;
-              vault.clearVault();
-              showToast('Vault cleared', 'info');
+            click: () => {
+              vault.unlinkSheet();
+              showToast('Sheet unlinked', 'info');
             },
           },
-        }, ['Forget Vault']),
+        }, ['Unlink']),
       ]),
     ]);
   }
 
-  /* ---------- Set up and unlocked ---------- */
-  const newPw1 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'New password (min 8 chars)' });
-  const newPw2 = el('input', { type: 'password', className: 'agent-settings-input', placeholder: 'Confirm new password' });
+  /* ---------- Linked and unlocked ---------- */
+  const gCount = vault.getGeminiKeys().length;
+  const cCount = vault.getClaudeKeys().length;
 
   return el('div', { className: 'agent-vault-section agent-vault-unlocked' }, [
-    el('label', { className: 'agent-settings-label' }, ['🔐 Vault']),
-    el('p', { className: 'agent-vault-status agent-vault-status-unlocked' }, ['🔓 Keys are encrypted and unlocked this session']),
+    el('label', { className: 'agent-settings-label' }, ['🔑 AI Keys Sheet']),
+    el('p', { className: 'agent-vault-status agent-vault-status-unlocked' }, [
+      `🔓 ${sheetName} — ${gCount} Gemini key${gCount !== 1 ? 's' : ''}, ${cCount} Claude key${cCount !== 1 ? 's' : ''}`,
+    ]),
+    el('p', { className: 'agent-settings-hint' }, [
+      'Keys are loaded from the sheet for this session. ',
+      el('a', { href: `#/sheet/${sheetId}`, on: { click: () => overlay?.remove() } }, ['Open sheet →']),
+    ]),
     el('div', { className: 'agent-vault-btns' }, [
       el('button', {
         className: 'agent-vault-lock-btn',
@@ -449,48 +483,20 @@ function buildVaultSection() {
         on: {
           click: () => {
             vault.lockVault();
-            showToast('Vault locked', 'info');
+            showToast('Keys cleared from memory — sheet still linked', 'info');
           },
         },
-      }, ['🔐 Lock Now']),
+      }, ['🔐 Lock']),
       el('button', {
         className: 'agent-vault-clear-btn',
         type: 'button',
         on: {
-          click: async () => {
-            if (!confirm('Disable vault? Keys will be decrypted back to plain storage.')) return;
-            const geminiKeys = vault.getGeminiKeys();
-            const claudeKeys = vault.getClaudeKeys();
-            vault.clearVault();
-            // Restore keys to plaintext storage
-            if (geminiKeys.length) storage.setAgentKeys(geminiKeys);
-            if (claudeKeys.length) storage.setClaudeKeys(claudeKeys);
-            showToast('Vault disabled. Keys restored.', 'info');
+          click: () => {
+            vault.unlinkSheet();
+            showToast('Sheet unlinked', 'info');
           },
         },
-      }, ['Disable Vault']),
-    ]),
-    el('details', { className: 'agent-vault-change-pw' }, [
-      el('summary', {}, ['Change password']),
-      newPw1, newPw2,
-      el('button', {
-        className: 'agent-vault-setup-btn',
-        type: 'button',
-        on: {
-          click: async () => {
-            const p = newPw1.value.trim();
-            const c = newPw2.value.trim();
-            if (p.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
-            if (p !== c) { showToast('Passwords do not match', 'error'); return; }
-            const ok = await vault.saveVaultChanges({ });
-            if (ok) {
-              showToast('Password changed', 'success');
-            } else {
-              showToast('Could not change password — try locking and unlocking first', 'error');
-            }
-          },
-        },
-      }, ['Change Password']),
+      }, ['Unlink']),
     ]),
   ]);
 }

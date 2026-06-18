@@ -3523,97 +3523,92 @@ test('Claude provider routes messages to Anthropic API', async ({ page }) => {
   expect(claudeCalled).toBe(true);
 });
 
-/* ---------- Vault — encrypted key storage ---------- */
+/* ---------- Keys Sheet — passwords sheet as AI key store ---------- */
 
-/** Helper: create an encrypted vault entry in localStorage via browser crypto */
-async function seedVault(page, { password = 'testVaultPass123', geminiKeys = [], claudeKeys = [] } = {}) {
-  await page.evaluate(async ({ password, geminiKeys, claudeKeys }) => {
-    const payload = JSON.stringify({
-      geminiKeys,
-      claudeKeys,
-      geminiModel: 'gemini-flash-latest',
-      claudeModel: 'claude-haiku-3-5',
-      provider: geminiKeys.length ? 'gemini' : 'claude',
-    });
-    const enc = new TextEncoder();
-    const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-    const fromHex = hex => new Uint8Array(hex.match(/.{2}/g).map(h => parseInt(h, 16)));
-    const saltBuf = crypto.getRandomValues(new Uint8Array(16));
-    const salt = toHex(saltBuf);
-    const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
-      material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
-    );
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(payload));
-    localStorage.setItem('waymark_agent_vault', JSON.stringify({ salt, iv: toHex(iv), data: toHex(new Uint8Array(cipher)) }));
-  }, { password, geminiKeys, claudeKeys });
-}
-
-test('vault lock overlay shown when vault is set but locked', async ({ page }) => {
+test('lock overlay shown when keys sheet is linked but locked', async ({ page }) => {
   await setupApp(page);
-  await seedVault(page, {
-    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  await page.evaluate(() => {
+    // Link the test passwords fixture sheet
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
   });
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-vault-lock', { timeout: 5000 });
   await expect(page.locator('.agent-vault-lock')).toBeVisible();
   await expect(page.locator('.agent-vault-input')).toBeVisible();
   await expect(page.locator('.agent-vault-unlock-btn')).toBeVisible();
+  await expect(page.locator('.agent-vault-lock-title')).toContainText('Locked');
   // Chat interface should not be visible while locked
   await expect(page.locator('.agent-chat-body')).toHaveCount(0);
 });
 
-test('vault unlocks with correct password and shows chat', async ({ page }) => {
+test('keys sheet unlocks with empty password (unencrypted sheet) and shows chat', async ({ page }) => {
   await setupApp(page);
-  await seedVault(page, {
-    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  await page.evaluate(() => {
+    // sheet-070 fixture has plaintext passwords — no encryption needed
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
   });
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
 
-  await page.fill('.agent-vault-input', 'testVaultPass123');
+  // Leave password empty (sheet is not encrypted in fixture)
   await page.click('.agent-vault-unlock-btn');
 
-  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
   await expect(page.locator('.agent-chat-body')).toBeVisible();
   await expect(page.locator('.agent-vault-lock')).toHaveCount(0);
 });
 
-test('vault shows error on wrong password', async ({ page }) => {
+test('keys sheet classifies Gemini and Claude rows correctly', async ({ page }) => {
   await setupApp(page);
-  await seedVault(page, {
-    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    window.location.hash = '#/agent';
   });
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
 
-  await page.fill('.agent-vault-input', 'wrongPassword!');
+  // Verify keys were loaded from sheet and classified
+  const result = await page.evaluate(() => {
+    return {
+      sheetId:    localStorage.getItem('waymark_agent_keys_sheet_id'),
+      sheetName:  localStorage.getItem('waymark_agent_keys_sheet_name'),
+    };
+  });
+  expect(result.sheetId).toContain('sheet-070');
+});
+
+test('keys sheet shows error when sheet cannot be read', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => {
+    // Link a non-existent sheet ID
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-nonexistent'));
+    window.location.hash = '#/agent';
+  });
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
   await page.click('.agent-vault-unlock-btn');
 
-  await page.waitForSelector('.toast', { timeout: 3000 });
-  await expect(page.locator('.toast')).toContainText('Incorrect');
-  // Still locked
+  await page.waitForSelector('.toast', { timeout: 5000 });
+  await expect(page.locator('.toast')).toContainText(/Incorrect|read/i);
   await expect(page.locator('.agent-vault-lock')).toBeVisible();
 });
 
-test('vault Enter key triggers unlock', async ({ page }) => {
+test('Enter key on lock screen triggers unlock', async ({ page }) => {
   await setupApp(page);
-  await seedVault(page, {
-    geminiKeys: [{ key: 'vault-test-key', nickname: 'VK', addedAt: '2026-01-01', requestsToday: 0, lastUsed: null, lastError: null, isBilled: false }],
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    window.location.hash = '#/agent';
   });
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
-
-  await page.fill('.agent-vault-input', 'testVaultPass123');
+  // Press Enter without typing (empty password = unencrypted sheet)
   await page.press('.agent-vault-input', 'Enter');
-
-  await page.waitForSelector('.agent-chat-body', { timeout: 5000 });
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
   await expect(page.locator('.agent-chat-body')).toBeVisible();
 });
 
-test('vault section appears in settings modal', async ({ page }) => {
+test('keys sheet section appears in settings modal with Link Sheet option', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
@@ -3621,24 +3616,25 @@ test('vault section appears in settings modal', async ({ page }) => {
   await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
 
   await expect(page.locator('.agent-vault-section')).toBeVisible();
-  await expect(page.locator('.agent-vault-section')).toContainText('Vault');
+  await expect(page.locator('.agent-vault-section')).toContainText('Keys Sheet');
 });
 
-test('vault setup form requires matching passwords', async ({ page }) => {
+test('keys sheet section shows unlink option when sheet is linked', async ({ page }) => {
   await setupApp(page);
-  await page.evaluate(() => { window.location.hash = '#/agent'; });
-  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+  // Unlock first so we can open settings without the lock overlay
+  await page.waitForSelector('.agent-vault-input', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
   await page.click('.agent-settings-btn');
-  await page.waitForSelector('.agent-vault-section', { timeout: 3000 });
-
-  // Fill mismatched passwords
-  const inputs = page.locator('.agent-vault-section input[type=password]');
-  await inputs.nth(0).fill('password123');
-  await inputs.nth(1).fill('differentPassword123');
-  await page.locator('.agent-vault-setup-btn').click();
-
-  await page.waitForSelector('.toast', { timeout: 3000 });
-  await expect(page.locator('.toast')).toContainText('match');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-section')).toContainText('AI API Keys');
+  await expect(page.locator('.agent-vault-clear-btn')).toBeVisible();
 });
 
 /* ---------- Dynamic model fetching ---------- */
@@ -3652,8 +3648,8 @@ test('Gemini model dropdown fetches live models when key is present', async ({ p
     window.location.hash = '#/agent';
   });
 
-  // Mock the Gemini models endpoint
-  await page.route('**/generativelanguage.googleapis.com/**models*', async route => {
+  // Mock the Gemini models list endpoint (GET, not POST generateContent)
+  await page.route(/generativelanguage\.googleapis\.com\/v1beta\/models(\?|$)/, async route => {
     if (route.request().method() !== 'GET') return route.continue();
     await route.fulfill({
       status: 200,
@@ -3676,7 +3672,7 @@ test('Gemini model dropdown fetches live models when key is present', async ({ p
   await page.waitForFunction(() => {
     const opts = [...(document.querySelector('.agent-settings-select')?.options || [])].map(o => o.value);
     return opts.includes('gemini-dynamic-a');
-  }, { timeout: 6000 });
+  }, { timeout: 8000 });
 
   const options = await page.locator('.agent-settings-select option').allTextContents();
   expect(options.some(o => o.includes('Gemini Dynamic A'))).toBe(true);

@@ -393,16 +393,16 @@ function _buildWelcome() {
   return buildWelcome(_showSettings);
 }
 
-/** Handler called by the vault lock overlay's unlock button. */
+/** Handler called by the sheet lock overlay's unlock button. */
 async function _onVaultUnlock() {
   const input = _container.querySelector('.agent-vault-input');
-  const pw = input?.value?.trim() || '';
-  if (!pw) { showToast('Please enter your vault password', 'error'); return; }
+  const pw = input?.value?.trim() ?? '';
+  // Empty password is valid (unencrypted sheet) — try with empty string first
   const ok = await vault.unlockVault(pw);
   if (ok) {
     _renderUI(); // re-render with vault unlocked
   } else {
-    showToast('Incorrect vault password', 'error');
+    showToast('Incorrect password or could not read sheet', 'error');
     if (input) { input.value = ''; input.focus(); }
   }
 }

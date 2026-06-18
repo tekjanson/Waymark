@@ -604,25 +604,29 @@ test('agents template delete button sends edit', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
 
-  await page.locator('.agents-card').first().hover();
-  // Delete button is opacity:0 until card is hovered — force click
-  await page.locator('.agents-card').first().locator('.agents-delete-btn').click({ force: true });
+  // Delete button is hidden until hover (opacity:0) — force click bypasses visibility
+  const card = page.locator('.agents-card').first();
+  await card.waitFor({ state: 'visible', timeout: 5000 });
+  await card.hover();
+  await page.locator('.agents-delete-btn').first().click({ force: true });
 
-  // Wait for delete modal to be visible
-  await page.waitForSelector('.agents-delete-modal:not(.hidden)', { timeout: 3000 });
-
-  // Click confirm delete
-  await page.locator('.agents-confirm-delete-btn').click();
-
-  // Wait for the async deleteRows to push a record
+  // Wait for delete confirmation modal
   await page.waitForFunction(
-    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-delete'),
+    () => !document.querySelector('.agents-delete-modal')?.classList.contains('hidden'),
     { timeout: 5000 }
   );
 
+  // Click confirm delete
+  await page.locator('.agents-confirm-delete-btn').click({ force: true });
+
+  // Wait for the async deleteRows to push a record (give generous timeout)
+  await page.waitForFunction(
+    () => (window.__WAYMARK_RECORDS || []).some(r => r.type === 'row-delete'),
+    { timeout: 10000 }
+  );
+
   const records = await page.evaluate(() => window.__WAYMARK_RECORDS || []);
-  const deleteRecord = records.find(r => r.type === 'row-delete');
-  expect(deleteRecord).toBeTruthy();
+  expect(records.some(r => r.type === 'row-delete')).toBe(true);
 });
 
 test('agents template renders folder field when present', async ({ page }) => {

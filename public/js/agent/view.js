@@ -86,25 +86,25 @@ export function renderAgentUI(args) {
 }
 
 /**
- * Build the vault lock overlay shown when vault is set but locked.
- * @param {Function} onUnlock — called when user submits vault password
+ * Build the overlay shown when the linked passwords sheet is locked.
+ * @param {Function} onUnlock — called when user submits password
  * @returns {HTMLElement}
  */
 export function buildVaultLock(onUnlock) {
   const input = el('input', {
     type: 'password',
     className: 'agent-vault-input',
-    placeholder: 'Vault password…',
+    placeholder: 'Sheet password (leave empty if not encrypted)…',
     on: {
       keydown: (e) => { if (e.key === 'Enter') onUnlock(); },
     },
   });
 
   return el('div', { className: 'agent-vault-lock' }, [
-    el('div', { className: 'agent-vault-lock-icon' }, ['🔐']),
-    el('h3', { className: 'agent-vault-lock-title' }, ['Vault Locked']),
+    el('div', { className: 'agent-vault-lock-icon' }, ['🔑']),
+    el('h3', { className: 'agent-vault-lock-title' }, ['AI Keys Locked']),
     el('p', { className: 'agent-vault-lock-desc' }, [
-      'Your AI keys are encrypted. Enter your vault password to unlock and start chatting.',
+      'Your API keys are stored in a Waymark Passwords sheet. Enter your sheet password to decrypt them.',
     ]),
     input,
     el('button', {

@@ -1,218 +1,168 @@
 /* ============================================================
-   vault.js — Agent API Key Vault
-   AES-GCM-256 encrypted storage for Gemini + Claude API keys.
-   Keys never leave the browser in plaintext.
-   Neither Waymark nor Google ever sees your API keys.
+   vault.js — Agent Keys Sheet integration
+   Reads AI API keys from a Waymark Passwords sheet.
 
-   Encryption: PBKDF2 (100k iterations, SHA-256) → AES-GCM-256
-   Storage   : localStorage key "waymark_agent_vault"
-   Session   : decrypted keys held in-memory only (cleared on lock)
+   The keys live in your own Google Sheet (passwords template).
+   The Password column can be encrypted with encryption.js —
+   neither Waymark nor Google ever sees your plaintext keys.
+
+   Flow:
+     1. User links their passwords sheet in Agent Settings
+     2. Agent reads the sheet; finds rows for Gemini / Claude
+     3. If Password column is encrypted → user enters sheet password
+     4. encryption.unlock() decrypts in-memory; keys are used
+     5. lock() clears decryption key from memory (or on page close)
    ============================================================ */
 
-/** localStorage key for the encrypted vault blob */
-const VAULT_LS_KEY = 'waymark_agent_vault';
+import { api } from '../api-client.js';
+import * as encryption from '../encryption.js';
 
-/** PBKDF2 iteration count — matches encryption.js */
-const PBKDF2_ITERATIONS = 100_000;
+/* ---------- localStorage keys ---------- */
+
+const LS_SHEET_ID   = 'waymark_agent_keys_sheet_id';
+const LS_SHEET_NAME = 'waymark_agent_keys_sheet_name';
 
 /* ---------- In-memory session ---------- */
 
-/**
- * Null when locked. When unlocked:
- * {
- *   geminiKeys: Array,
- *   claudeKeys:  Array,
- *   geminiModel: string,
- *   claudeModel: string,
- *   provider:    string,
- *   _password:   string,   // kept for re-encryption on save
- * }
- * @type {Object|null}
- */
+/** @type {{ geminiKeys: Array, claudeKeys: Array } | null} */
 let _session = null;
 
-/* ---------- Public status ---------- */
+/* ---------- Link / Unlink ---------- */
 
-/** @returns {boolean} true if an encrypted vault blob exists in localStorage */
-export function isVaultSetUp() {
-  return !!localStorage.getItem(VAULT_LS_KEY);
+/** @returns {string|null} */
+export function getLinkedSheetId() {
+  try { return JSON.parse(localStorage.getItem(LS_SHEET_ID) || 'null'); } catch { return null; }
 }
 
-/** @returns {boolean} true if vault has been unlocked this session */
+/** @returns {string} friendly sheet name */
+export function getLinkedSheetName() {
+  try { return JSON.parse(localStorage.getItem(LS_SHEET_NAME) || 'null') || 'Passwords sheet'; } catch { return 'Passwords sheet'; }
+}
+
+/**
+ * Link a passwords sheet as the AI keys source.
+ * @param {string} id   — spreadsheet ID
+ * @param {string} name — friendly title
+ */
+export function linkSheet(id, name) {
+  localStorage.setItem(LS_SHEET_ID, JSON.stringify(id));
+  localStorage.setItem(LS_SHEET_NAME, JSON.stringify(name || id));
+  _session = null; // force re-unlock after linking
+}
+
+/** Remove the link and lock. */
+export function unlinkSheet() {
+  const id = getLinkedSheetId();
+  if (id) encryption.lock(id);
+  localStorage.removeItem(LS_SHEET_ID);
+  localStorage.removeItem(LS_SHEET_NAME);
+  _session = null;
+}
+
+/* ---------- Lock / Unlock status ---------- */
+
+/** @returns {boolean} a sheet has been linked */
+export function isVaultSetUp() {
+  return !!getLinkedSheetId();
+}
+
+/** @returns {boolean} keys are decrypted and in memory */
 export function isVaultUnlocked() {
   return _session !== null;
 }
 
-/* ---------- Lock / Unlock ---------- */
-
-/** Clear in-memory keys. Keys stay encrypted in localStorage. */
+/** Lock — evict in-memory keys and encryption key. */
 export function lockVault() {
+  const id = getLinkedSheetId();
+  if (id) encryption.lock(id);
   _session = null;
 }
 
+/* ---------- Unlock ---------- */
+
 /**
- * Decrypt vault with the given password.
- * @param {string} password
- * @returns {Promise<boolean>} — true on success, false on wrong password
+ * Read the linked passwords sheet and decrypt the Password column.
+ * Classifies each row as a Gemini key or Claude key by Site/Category/Notes.
+ * Returns true on success, false on wrong password or unreadable sheet.
+ * @param {string} password — sheet unlock password (empty string if unencrypted)
+ * @returns {Promise<boolean>}
  */
 export async function unlockVault(password) {
-  const raw = localStorage.getItem(VAULT_LS_KEY);
-  if (!raw) return false;
+  const sheetId = getLinkedSheetId();
+  if (!sheetId) return false;
+
   try {
-    const stored = JSON.parse(raw);
-    const key = await _deriveKey(password, stored.salt);
-    const plaintext = await _decrypt(key, stored.iv, stored.data);
-    const data = JSON.parse(plaintext);
-    _session = { ...data, _password: password };
+    const sheet = await api.sheets.getSpreadsheet(sheetId);
+    const headers = (sheet.values?.[0] || []).map(h => String(h).toLowerCase().trim());
+    const rows    = (sheet.values || []).slice(1);
+
+    /* Identify column indices (passwords template roles) */
+    const siteCol     = headers.findIndex(h => /^(site|service|website|domain|app|account|platform)/.test(h));
+    const usernameCol = headers.findIndex(h => /^(user.?name|login|email|user|id)/.test(h));
+    const passwordCol = headers.findIndex(h => /^(password|passwd|secret|credential|pass)/.test(h));
+    const categoryCol = headers.findIndex(h => /^(category|type|group|folder|tag)/.test(h));
+    const notesCol    = headers.findIndex(h => /^(notes?|comment|detail|info|description)/.test(h));
+
+    /* Check if column is encrypted and validate password */
+    const encryptedSample = passwordCol >= 0
+      ? rows.map(r => (r[passwordCol] || '')).find(v => encryption.isEncrypted(v))
+      : undefined;
+
+    if (encryptedSample) {
+      const ok = await encryption.unlock(password, sheetId, encryptedSample);
+      if (!ok) return false;
+    }
+
+    /* Read and classify rows */
+    const geminiKeys = [];
+    const claudeKeys = [];
+
+    for (const row of rows) {
+      const site      = siteCol     >= 0 ? String(row[siteCol]     || '') : '';
+      const username  = usernameCol >= 0 ? String(row[usernameCol] || '') : '';
+      const rawPw     = passwordCol >= 0 ? String(row[passwordCol] || '') : '';
+      const category  = categoryCol >= 0 ? String(row[categoryCol] || '') : '';
+      const notes     = notesCol    >= 0 ? String(row[notesCol]    || '') : '';
+
+      if (!rawPw) continue;
+
+      const decrypted = encryption.isEncrypted(rawPw)
+        ? await encryption.decrypt(sheetId, rawPw)
+        : rawPw;
+
+      if (!decrypted) continue; // wrong key → skip silently
+
+      const searchText = `${site} ${username} ${category} ${notes}`.toLowerCase();
+      const entry = {
+        key:           decrypted.trim(),
+        nickname:      site || 'Sheet Key',
+        addedAt:       new Date().toISOString(),
+        requestsToday: 0,
+        lastUsed:      null,
+        lastError:     null,
+        isBilled:      /billed|paid|pro/i.test(searchText),
+      };
+
+      if (/gemini|google|aistudio|ai\.google/i.test(searchText)) {
+        geminiKeys.push(entry);
+      } else if (/claude|anthropic|sonnet|haiku|opus/i.test(searchText)) {
+        claudeKeys.push(entry);
+      }
+    }
+
+    _session = { geminiKeys, claudeKeys };
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[keys-sheet] unlock failed:', err);
     return false;
   }
 }
 
-/* ---------- Setup / Save / Clear ---------- */
+/* ---------- Key accessors ---------- */
 
-/**
- * Create or overwrite the encrypted vault.
- * Also unlocks the vault into memory for the current session.
- * @param {string} password
- * @param {{ geminiKeys: Array, claudeKeys: Array, geminiModel: string, claudeModel: string, provider: string }} data
- */
-export async function setupVault(password, data) {
-  const salt = _toHex(crypto.getRandomValues(new Uint8Array(16)));
-  const key = await _deriveKey(password, salt);
-  const { iv, data: encrypted } = await _encrypt(key, JSON.stringify(data));
-  localStorage.setItem(VAULT_LS_KEY, JSON.stringify({ salt, iv, data: encrypted }));
-  _session = { ...data, _password: password };
-}
+/** @returns {Array} Gemini key entries (empty when locked) */
+export function getGeminiKeys() { return _session?.geminiKeys || []; }
 
-/**
- * Re-encrypt with the current session password after key changes.
- * Call after adding/removing keys while vault is unlocked.
- * @param {{ geminiKeys?: Array, claudeKeys?: Array, geminiModel?: string, claudeModel?: string, provider?: string }} updates
- * @returns {Promise<boolean>} false if vault is locked (no session password)
- */
-export async function saveVaultChanges(updates) {
-  if (!_session?._password) return false;
-  const newData = { ..._session, ...updates };
-  const { _password } = newData;
-  delete newData._password;
-  await setupVault(_password, newData);
-  return true;
-}
+/** @returns {Array} Claude key entries (empty when locked) */
+export function getClaudeKeys() { return _session?.claudeKeys || []; }
 
-/**
- * Change the vault password. Requires old password for verification.
- * @param {string} oldPassword
- * @param {string} newPassword
- * @returns {Promise<boolean>}
- */
-export async function changeVaultPassword(oldPassword, newPassword) {
-  const ok = await unlockVault(oldPassword);
-  if (!ok) return false;
-  const { _password: _old, ...data } = _session; // eslint-disable-line no-unused-vars
-  await setupVault(newPassword, data);
-  return true;
-}
-
-/**
- * Remove the vault from localStorage and clear in-memory keys.
- */
-export function clearVault() {
-  localStorage.removeItem(VAULT_LS_KEY);
-  _session = null;
-}
-
-/* ---------- Key accessors (session-only) ---------- */
-
-/** @returns {Array} Gemini key ring (empty if locked) */
-export function getGeminiKeys() {
-  return _session?.geminiKeys || [];
-}
-
-/** @returns {Array} Claude key ring (empty if locked) */
-export function getClaudeKeys() {
-  return _session?.claudeKeys || [];
-}
-
-/** @returns {string} */
-export function getGeminiModel() {
-  return _session?.geminiModel || '';
-}
-
-/** @returns {string} */
-export function getClaudeModel() {
-  return _session?.claudeModel || '';
-}
-
-/** @returns {string} 'gemini' | 'claude' */
-export function getProvider() {
-  return _session?.provider || 'gemini';
-}
-
-/* ---------- Private crypto helpers ---------- */
-
-/**
- * Derive an AES-GCM-256 key using PBKDF2.
- * @param {string} password
- * @param {string} saltHex — 32-char hex string (16 bytes)
- * @returns {Promise<CryptoKey>}
- */
-async function _deriveKey(password, saltHex) {
-  const enc = new TextEncoder();
-  const material = await crypto.subtle.importKey(
-    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
-  );
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: _fromHex(saltHex), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-/**
- * Encrypt plaintext string.
- * @param {CryptoKey} key
- * @param {string} plaintext
- * @returns {Promise<{ iv: string, data: string }>}
- */
-async function _encrypt(key, plaintext) {
-  const enc = new TextEncoder();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
-  return { iv: _toHex(iv), data: _toHex(new Uint8Array(cipher)) };
-}
-
-/**
- * Decrypt ciphertext.
- * @param {CryptoKey} key
- * @param {string} ivHex
- * @param {string} dataHex
- * @returns {Promise<string>}
- */
-async function _decrypt(key, ivHex, dataHex) {
-  const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: _fromHex(ivHex) },
-    key,
-    _fromHex(dataHex)
-  );
-  return new TextDecoder().decode(plain);
-}
-
-/** @param {Uint8Array|ArrayBuffer} buf @returns {string} */
-function _toHex(buf) {
-  return [...(buf instanceof Uint8Array ? buf : new Uint8Array(buf))]
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/** @param {string} hex @returns {Uint8Array} */
-function _fromHex(hex) {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return arr;
-}
