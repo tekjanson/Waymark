@@ -780,6 +780,11 @@
           "id": "sheet-069",
           "name": "Personal Vault",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-070",
+          "name": "AI Secrets Vault",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     },

@@ -1032,4 +1032,15 @@ export const EXAMPLE_SHEETS = {
       ['',        '',               '',           '',           '',     'Content Calendar - 3 months',    '1',  '1200', ''],
     ],
   },
+
+  /* ---- AI Secrets Vault examples ---- */
+  'AI API Keys': {
+    folder: 'Security',
+    headers: ['Service', 'Key Name', 'Ciphertext', 'Salt', 'Nonce', 'AlgVersion', 'Category', 'Notes'],
+    rows: [
+      ['OpenAI', 'GPT-4 Production', 'XDlk+OygPAvo4d0mLfMGOpxhkrl+CTGmRSOR0KOz+Jayvyxh6BIbxVV2huBk67IQ08bnvg==', 'urL4OlvSWlvJxi7bWMNN6Q==', 'ODXIu8f+XLkrJG11', 'AES-GCM-256-v1', 'AI/ML', 'Primary GPT-4 API key'],
+      ['Anthropic', 'Claude API', 'uqEpA4RwmjpzwV1BYg6LjoM7bIU1oa/UVN2WTv9DS6qmcdvoI1LbPBDFpseCiUUk', 'YrZ6R+1XCKvL5L0GdPaOeg==', 'EhRfLA1LxPJjr6Ze', 'AES-GCM-256-v1', 'AI/ML', 'Claude Sonnet access'],
+      ['Cohere', 'Embed Key', 'FRnAfGwWZsC8V1214zSBvPFU4suEyxuhIb3hfJq++qAdVJjIyZ6pa71TlIA=', 'qCIX0nMZoYNyPtX5aIk6HA==', 'YOSed6RzZCTv5hvl', 'AES-GCM-256-v1', 'AI/ML', 'Text embedding model'],
+    ],
+  },
 };

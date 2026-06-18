@@ -298,6 +298,15 @@ const ROLE_LABELS = {
   'invoice.qty': 'Quantity / Units / Hours',
   'invoice.unitPrice': 'Unit Price / Rate / Cost',
   'invoice.notes': 'Notes / Payment Terms',
+  // AI Secrets Vault
+  'aivault.service': 'AI Service / Provider Name',
+  'aivault.keyName': 'Key Name / Label / Description',
+  'aivault.ciphertext': 'Encrypted Key (base64)',
+  'aivault.salt': 'Salt Value (base64)',
+  'aivault.nonce': 'Nonce / IV (base64)',
+  'aivault.algVersion': 'Algorithm Version',
+  'aivault.category': 'Category / Group (AI/ML, Services, etc.)',
+  'aivault.notes': 'Notes / Usage Notes',
 };
 
 /**
