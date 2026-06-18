@@ -318,7 +318,7 @@
   background: var(--color-bg);
 }
 
-.btn {
+.aivault-container .btn {
   padding: 0.75rem 1.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -329,27 +329,27 @@
   text-align: center;
 }
 
-.btn-primary {
+.aivault-container .btn-primary {
   background: #d946ef;
   color: #ffffff;
   border-color: #d946ef;
   flex: 1;
 }
 
-.btn-primary:hover {
+.aivault-container .btn-primary:hover {
   background: #c026d3;
   border-color: #c026d3;
   box-shadow: 0 4px 12px rgba(217, 70, 239, 0.3);
 }
 
-.btn-secondary {
+.aivault-container .btn-secondary {
   background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-border);
   flex: 1;
 }
 
-.btn-secondary:hover {
+.aivault-container .btn-secondary:hover {
   background: var(--color-bg);
   border-color: var(--color-text);
 }
