@@ -205,6 +205,12 @@ function buildCard(row, rowIdx, cols) {
             dataset: { field: 'password', rowIdx: String(rowIdx) },
             title: 'Copy password',
           }, ['📋']),
+          el('button', {
+            className: 'passwords-add-ai',
+            type: 'button',
+            dataset: { rowIdx: String(rowIdx) },
+            title: 'Add this value to AI agent keys',
+          }, ['🤖']),
         ]),
       ]) : null,
     ]),
@@ -213,6 +219,16 @@ function buildCard(row, rowIdx, cols) {
 
   return card;
 }
+
+/* ---------- Integration: Add to AI keys handler (emit event) ---------- */
+// Delegated handler so templates don't import storage directly.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest && e.target.closest('.passwords-add-ai');
+  if (!btn) return;
+  const rIdx = Number(btn.dataset.rowIdx || 0);
+  // Dispatch custom event with row index so checklist.js can handle key addition
+  document.dispatchEvent(new CustomEvent('waymark:passwords-add-ai', { detail: { rowIdx: rIdx } }));
+});
 
 registerTemplate('passwords', definition);
 export default definition;

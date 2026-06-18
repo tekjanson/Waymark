@@ -113,6 +113,28 @@ export function init() {
     });
   }
 
+  // Listen for template-level requests to add values to AI keyring
+  document.addEventListener('waymark:passwords-add-ai', async (e) => {
+    try {
+      const rowIdx = e.detail?.rowIdx;
+      if (!currentSheetId || !currentValues || !rowIdx) return;
+      const headers = currentValues[0] || [];
+      const cols = detectTemplate(headers).template.columns(headers.map(h => (h||'').toLowerCase().trim());
+      const pwCol = cols.password;
+      if (pwCol < 0) return;
+      const entry = currentValues[rowIdx] || [];
+      const pwVal = entry[pwCol] || '';
+      if (!pwVal) return;
+      // Emit a UI prompt so user can confirm adding (handled by agent settings page)
+      // We dispatch a high-level event with the candidate key value so the agent panel or settings can pick it up.
+      document.dispatchEvent(new CustomEvent('waymark:agent-add-key-candidate', { detail: { key: pwVal } }));
+      showToast('Key candidate added — open AI settings to review and save.', 'success');
+    } catch (err) {
+      console.error('Add-AI-Key handler error', err);
+      showToast('Could not queue key candidate', 'error');
+    }
+  });
+
   autoToggle.checked = userData.getAutoRefresh();
 
   refreshBtn.addEventListener('click', () => {
