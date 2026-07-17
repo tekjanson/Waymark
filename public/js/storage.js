@@ -376,6 +376,26 @@ export function recordClaudeKeyError(idx) {
   }
 }
 
+/* ---------- Ollama settings ---------- */
+
+export function getOllamaModel() {
+  return get('agent_ollama_model') || '';
+}
+
+export function setOllamaModel(model) {
+  if (model) set('agent_ollama_model', model);
+  else remove('agent_ollama_model');
+}
+
+export function getOllamaBaseUrl() {
+  return get('agent_ollama_base_url') || '';
+}
+
+export function setOllamaBaseUrl(url) {
+  if (url) set('agent_ollama_base_url', url);
+  else remove('agent_ollama_base_url');
+}
+
 export function getAgentConversation() {
   return get('agent_conversation') || [];
 }
