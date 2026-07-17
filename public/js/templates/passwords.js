@@ -4,12 +4,73 @@
    ============================================================ */
 
 import { el, cell, editableCell, delegateEvent, registerTemplate } from './shared.js';
+import * as encryption from '../encryption.js';
 
 /* ---------- Copy to clipboard helper ---------- */
 
 function copyToClip(text, label) {
   if (!text) return;
   navigator.clipboard.writeText(text).catch(() => {});
+}
+
+export async function getDecryptedKey(model, vaultSheet, sheetId = null) {
+  const targetModel = String(model || '').toLowerCase();
+  if (!targetModel || !vaultSheet) return null;
+
+  const rows = Array.isArray(vaultSheet.rows)
+    ? vaultSheet.rows
+    : Array.isArray(vaultSheet.values)
+      ? vaultSheet.values.slice(1)
+      : Array.isArray(vaultSheet.data)
+        ? vaultSheet.data
+        : [];
+
+  const headers = Array.isArray(vaultSheet.headers)
+    ? vaultSheet.headers
+    : Array.isArray(vaultSheet.values) && vaultSheet.values[0]
+      ? vaultSheet.values[0]
+      : [];
+
+  const cols = vaultSheet.cols || {};
+  const findColumn = (field, regexes) => {
+    if (typeof cols[field] === 'number') return cols[field];
+    const idx = headers.findIndex(h => regexes.some(r => r.test(String(h).toLowerCase().trim())));
+    return idx >= 0 ? idx : -1;
+  };
+
+  const siteCol = findColumn('site', [/^(site|service|website|domain|app|account|platform)/]);
+  const usernameCol = findColumn('username', [/^(user.?name|login|email|user|id)/]);
+  const passwordCol = findColumn('password', [/^(password|passwd|secret|credential|pass)/]);
+  const categoryCol = findColumn('category', [/^(category|type|group|folder|tag)/]);
+  const notesCol = findColumn('notes', [/^(notes?|comment|detail|info|description)/]);
+
+  const providerRegex = targetModel === 'claude'
+    ? /claude|anthropic|sonnet|haiku|opus/i
+    : /gemini|google|aistudio|ai\.google/i;
+
+  const effectiveSheetId = sheetId || vaultSheet.sheetId || vaultSheet.id || vaultSheet.sheet_id || '';
+
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
+    const site = String(row[siteCol] || '');
+    const username = String(row[usernameCol] || '');
+    const category = String(row[categoryCol] || '');
+    const notes = String(row[notesCol] || '');
+    const rawValue = String(row[passwordCol] || '');
+    const searchText = `${site} ${username} ${category} ${notes}`.toLowerCase();
+
+    if (!providerRegex.test(searchText) || !rawValue) continue;
+
+    let plainValue = rawValue;
+    if (encryption.isEncrypted(rawValue) && effectiveSheetId && encryption.isUnlocked(effectiveSheetId)) {
+      plainValue = await encryption.decrypt(effectiveSheetId, rawValue);
+    }
+
+    if (plainValue && plainValue !== rawValue) return String(plainValue).trim();
+    if (plainValue && !encryption.isEncrypted(rawValue)) return String(plainValue).trim();
+  }
+
+  return null;
 }
 
 const definition = {
@@ -212,6 +273,40 @@ function buildCard(row, rowIdx, cols) {
   ]);
 
   return card;
+}
+
+/**
+ * Retrieve a decrypted AI key from the password vault (sync version).
+ * Used by adapters to fetch API keys (e.g., Claude, OpenAI) from a password manager sheet.
+ * @param {string} service — Service name to search for (e.g. 'claude', 'ai-claude', 'openai')
+ * @param {Object} sheetData — { rows, cols } from the password template
+ * @returns {string|null} — Decrypted password value or null if not found
+ */
+export function getDecryptedKeySync(service, sheetData) {
+  if (!sheetData || !sheetData.rows || !sheetData.cols) return null;
+  
+  const { rows, cols } = sheetData;
+  const serviceLower = service.toLowerCase();
+  
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const site = (cols.site >= 0 ? cell(row, cols.site) : '').toLowerCase();
+    
+    // Match service name in the site/service column
+    if (site.includes(serviceLower)) {
+      const password = cols.password >= 0 ? cell(row, cols.password) : '';
+      
+      if (password) {
+        // If encrypted, it won't be usable here (starts with 🔒ENC:)
+        // Return only plaintext passwords
+        if (!password.startsWith('\u{1F512}ENC:')) {
+          return password;
+        }
+      }
+    }
+  }
+  
+  return null;
 }
 
 registerTemplate('passwords', definition);

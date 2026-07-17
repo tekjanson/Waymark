@@ -142,6 +142,20 @@ test('saving API key enables input and shows empty state with suggestions', asyn
   await expect(page.locator('.agent-send-btn')).not.toBeDisabled();
 });
 
+test('settings modal shows Ollama provider option and local base URL field', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-provider-btn').nth(2)).toContainText('Ollama');
+  await page.click('.agent-provider-btn:nth-child(3)');
+  await expect(page.locator('.agent-provider-btn.active')).toContainText('Ollama');
+  await expect(page.locator('.agent-ollama-settings')).toBeVisible();
+  await expect(page.locator('.agent-ollama-settings input[type="text"]')).toHaveValue(/127\.0\.0\.1:11434/);
+});
+
 /* ---------- Chat Interface ---------- */
 
 test('agent suggestions are clickable and have correct text', async ({ page }) => {

@@ -358,6 +358,26 @@ export function recordClaudeKeyError(idx) {
   }
 }
 
+/* ---------- Ollama settings ---------- */
+
+export function getOllamaModel() {
+  return get('agent_ollama_model') || '';
+}
+
+export function setOllamaModel(model) {
+  if (model) set('agent_ollama_model', model);
+  else remove('agent_ollama_model');
+}
+
+export function getOllamaBaseUrl() {
+  return get('agent_ollama_base_url') || '';
+}
+
+export function setOllamaBaseUrl(url) {
+  if (url) set('agent_ollama_base_url', url);
+  else remove('agent_ollama_base_url');
+}
+
 export function getAgentConversation() {
   return get('agent_conversation') || [];
 }
@@ -605,4 +625,28 @@ export function getEchoSuppression() {
 /** @param {number} level — 0 to 1 */
 export function setEchoSuppression(level) {
   set('audio_echo_suppression', Number(level));
+}
+
+/* --- AI Model Preference --- */
+
+/** @returns {string} Current AI model: 'claude' or 'gemini' (default 'claude') */
+export function getAiModel() {
+  return get('ai_model') ?? 'claude';
+}
+
+/** @param {string} model — 'claude' or 'gemini' */
+export function setAiModel(model) {
+  set('ai_model', String(model));
+}
+
+/* --- Generic get/set for model-swap --- */
+
+/** Internal: Generic storage getter */
+export function getStorageValue(key) {
+  return get(key);
+}
+
+/** Internal: Generic storage setter */
+export function setStorageValue(key, value) {
+  set(key, value);
 }

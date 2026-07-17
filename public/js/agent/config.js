@@ -22,6 +22,8 @@ export const DEFAULT_MODEL = 'gemini-flash-latest';
 export const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
 export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
+export const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
+export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 export const GEMINI_MODEL_OPTIONS = [
   { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
@@ -35,6 +37,12 @@ export const CLAUDE_MODEL_OPTIONS = [
   { value: 'claude-haiku-3-5', label: 'Claude Haiku 3.5 (fastest, cheapest)' },
   { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5 (balanced)' },
   { value: 'claude-opus-4-5', label: 'Claude Opus 4.5 (best)' },
+];
+
+export const OLLAMA_MODEL_OPTIONS = [
+  { value: 'qwen2.5-coder:3b', label: 'Qwen 2.5 Coder 3B (fastest)' },
+  { value: 'mistral:latest', label: 'Mistral (balanced)' },
+  { value: 'neural-chat:latest', label: 'Neural Chat (good reasoning)' },
 ];
 
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
@@ -121,6 +129,15 @@ export function geminiHeaders(apiKey) {
  */
 export function claudeUrl() {
   return `${CLAUDE_API_BASE}/messages`;
+}
+
+/**
+ * Build an Ollama chat API URL from the base URL.
+ * @param {string} baseUrl
+ * @returns {string}
+ */
+export function ollamaChatUrl(baseUrl = DEFAULT_OLLAMA_BASE_URL) {
+  return `${baseUrl}/api/chat`;
 }
 
 /**
@@ -552,6 +569,25 @@ export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
     messages,
     tools: CLAUDE_TOOL_DECLARATIONS,
     max_tokens: MAX_OUTPUT_TOKENS,
+  };
+}
+
+/**
+ * Build an Ollama API request body from Gemini-format contents.
+ * @param {Array} geminiContents
+ * @param {string} systemPrompt
+ * @param {string} model
+ * @returns {Object}
+ */
+export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
+  const messages = convertGeminiContentsToClaudeMessages(geminiContents);
+  return {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+    stream: false,
   };
 }
 
