@@ -555,6 +555,57 @@ export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
   };
 }
 
+export function normalizeOllamaBaseUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return DEFAULT_OLLAMA_BASE_URL;
+  return raw.replace(/\/+$/, '');
+}
+
+export function ollamaChatUrl(baseUrl) {
+  return `${normalizeOllamaBaseUrl(baseUrl)}/api/chat`;
+}
+
+export function convertGeminiContentsToOllamaMessages(geminiContents, systemPrompt = '') {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+
+  for (const entry of geminiContents || []) {
+    const role = entry.role === 'model' ? 'assistant' : entry.role === 'function' ? 'user' : entry.role;
+    if (!['user', 'assistant', 'system'].includes(role)) continue;
+
+    const text = (entry.parts || [])
+      .map(part => {
+        if (part.text) return part.text;
+        if (part.functionResponse?.response?.content) {
+          return typeof part.functionResponse.response.content === 'string'
+            ? part.functionResponse.response.content
+            : JSON.stringify(part.functionResponse.response.content);
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+
+    if (text) messages.push({ role, content: text });
+  }
+
+  return messages;
+}
+
+export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
+  const messages = convertGeminiContentsToOllamaMessages(geminiContents, systemPrompt);
+  return {
+    model: model || DEFAULT_OLLAMA_MODEL,
+    stream: false,
+    messages,
+    options: {
+      temperature: 0.2,
+      top_p: 0.9,
+      num_predict: MAX_OUTPUT_TOKENS,
+    },
+  };
+}
+
 /* ---------- Key Rotation (shared by agent.js and templates via shared.js) ---------- */
 
 /** Module-level date cache to detect day rollovers without importing Date every call. */

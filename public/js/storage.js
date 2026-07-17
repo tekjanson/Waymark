@@ -309,6 +309,24 @@ export function setAgentModel(model) {
   else remove('agent_model');
 }
 
+export function getOllamaModel() {
+  return get('agent_ollama_model') || '';
+}
+
+export function setOllamaModel(model) {
+  if (model) set('agent_ollama_model', model);
+  else remove('agent_ollama_model');
+}
+
+export function getOllamaBaseUrl() {
+  return get('agent_ollama_base_url') || '';
+}
+
+export function setOllamaBaseUrl(url) {
+  if (url) set('agent_ollama_base_url', url);
+  else remove('agent_ollama_base_url');
+}
+
 /* ---------- Provider selection ---------- */
 
 export function getAgentProvider() {

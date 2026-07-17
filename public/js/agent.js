@@ -13,6 +13,8 @@ import {
   CLAUDE_TOOL_DECLARATIONS,
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
   MAX_AGGRESSIVE_CONTEXT_MESSAGES,
   MAX_ASSISTANT_MESSAGE_CHARS,
   MAX_CONTEXT_CHARS,
@@ -29,6 +31,7 @@ import {
   buildAgentSystemPrompt,
   buildClaudeRequestBody,
   buildConversationSummary,
+  buildOllamaRequestBody,
   buildPlannerBrief,
   buildRecentSheetHint,
   buildRequestBody,
@@ -40,6 +43,8 @@ import {
   geminiHeaders,
   geminiUrl,
   getRecentConversationSheets,
+  normalizeOllamaBaseUrl,
+  ollamaChatUrl,
   pickBestActiveKey,
   pickBestClaudeKey,
   pickBestKey,
@@ -110,6 +115,10 @@ function _buildRequestBody(contents) {
 
 function _buildClaudeProviderBody(contents, model) {
   return buildClaudeRequestBody(contents, _getSystemPrompt(), model || storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL);
+}
+
+function _buildOllamaProviderBody(contents, model) {
+  return buildOllamaRequestBody(contents, _getSystemPrompt(), model || storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL);
 }
 
 function _compactContextText(text, maxChars) {
@@ -341,6 +350,8 @@ export function show(container) {
       storage.setClaudeKeys(driveSettings.claudeKeys);
       if (driveSettings.claudeModel) storage.setClaudeModel(driveSettings.claudeModel);
     }
+    if (driveSettings.ollamaModel) storage.setOllamaModel(driveSettings.ollamaModel);
+    if (driveSettings.ollamaBaseUrl) storage.setOllamaBaseUrl(driveSettings.ollamaBaseUrl);
   }
   // Restore conversation from localStorage
   const saved = storage.getAgentConversation();
@@ -368,9 +379,11 @@ function _renderUI() {
   }
 
   const provider = storage.getAgentProvider();
-  const hasKeys = vault.isVaultSetUp() && vault.isVaultUnlocked()
-    ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
-    : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0);
+  const hasKeys = provider === 'ollama'
+    ? true
+    : (vault.isVaultSetUp() && vault.isVaultUnlocked()
+      ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
+      : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0));
   _container.innerHTML = '';
   const rendered = renderAgentUI({
     container: _container,
@@ -538,6 +551,26 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = nul
     return { model, url, contents, body, provider: 'claude' };
   }
 
+  if (provider === 'ollama') {
+    const model = storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL;
+    const baseUrl = normalizeOllamaBaseUrl(storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL);
+    const url = ollamaChatUrl(baseUrl);
+
+    const buildBudgetedRequest = (text) => {
+      let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
+      let body = _buildOllamaProviderBody(contents, model);
+      if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+        contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES, userParts);
+        body = _buildOllamaProviderBody(contents, model);
+      }
+      return { contents, body };
+    };
+
+    const { contents, body } = buildBudgetedRequest(plannedUserText);
+    _assertRequestWithinBudget(body, 'This request');
+    return { model, url, contents, body, provider: 'ollama', baseUrl };
+  }
+
   // Gemini path
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const baseUrl = _geminiUrl(model, 'generateContent');
@@ -588,8 +621,9 @@ function _clearConversation() {
 async function _sendMessage(text) {
   if (!text || !text.trim() || _isStreaming) return;
 
-  const keyEntry = _getNextKey();
-  if (!keyEntry) {
+  const provider = storage.getAgentProvider();
+  const keyEntry = provider === 'ollama' ? { key: '', idx: -1 } : _getNextKey();
+  if (!keyEntry && provider !== 'ollama') {
     showToast('Configure your API keys in Settings first', 'error');
     return;
   }
@@ -766,7 +800,46 @@ async function _streamCallModel(apiKey, keyIdx, request, onChunk, signal) {
   if (provider === 'claude') {
     return _streamCallClaude(apiKey, keyIdx, request, onChunk, signal);
   }
+  if (provider === 'ollama') {
+    return _streamCallOllama(apiKey, keyIdx, request, onChunk, signal);
+  }
   return _streamCallGemini(apiKey, keyIdx, request, onChunk, signal);
+}
+
+/* ---------- Ollama API ---------- */
+
+async function _streamCallOllama(apiKey, keyIdx, request, onChunk, signal) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { url, body } = preparedRequest;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    throw new Error('Could not reach your Ollama server. Check that Ollama is running and the base URL is correct.');
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(errText || `Ollama request failed (${res.status})`);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  const text = data?.message?.content || data?.response || '';
+  if (!text) {
+    throw new Error('No response from Ollama. Check that the model is installed and your endpoint is reachable.');
+  }
+
+  onChunk(text);
+  return text;
 }
 
 /* ---------- Claude API ---------- */
