@@ -276,13 +276,13 @@ function buildCard(row, rowIdx, cols) {
 }
 
 /**
- * Retrieve a decrypted AI key from the password vault.
+ * Retrieve a decrypted AI key from the password vault (sync version).
  * Used by adapters to fetch API keys (e.g., Claude, OpenAI) from a password manager sheet.
  * @param {string} service — Service name to search for (e.g. 'claude', 'ai-claude', 'openai')
  * @param {Object} sheetData — { rows, cols } from the password template
  * @returns {string|null} — Decrypted password value or null if not found
  */
-export function getDecryptedKey(service, sheetData) {
+export function getDecryptedKeySync(service, sheetData) {
   if (!sheetData || !sheetData.rows || !sheetData.cols) return null;
   
   const { rows, cols } = sheetData;

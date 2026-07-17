@@ -22,7 +22,8 @@ import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
-import { initializeModelSwapUI } from './model-swap-ui.js';
+import { initializeModelSwap } from './model-swap.js';
+import { initializeModelSwapUI, setVaultSheet, clearVaultSheet } from './model-swap-ui.js';
 
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
@@ -210,7 +211,21 @@ async function boot() {
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
+  await initializeModelSwap();
   initializeModelSwapUI();
+
+  // Listen for password manager sheet renders to notify model-swap-ui
+  document.addEventListener('waymark:sheet-rendered', (e) => {
+    const { templateKey, rows, cols } = e.detail || {};
+    if (templateKey === 'passwords' && rows && cols) {
+      const sheetData = { rows, cols };
+      const sheetId = e.detail.sheetId;
+      setVaultSheet(sheetData, sheetId);
+    } else if (templateKey !== 'passwords') {
+      // Clear vault when navigating away from password sheet
+      clearVaultSheet();
+    }
+  });
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());

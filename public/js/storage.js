@@ -626,3 +626,27 @@ export function getEchoSuppression() {
 export function setEchoSuppression(level) {
   set('audio_echo_suppression', Number(level));
 }
+
+/* --- AI Model Preference --- */
+
+/** @returns {string} Current AI model: 'claude' or 'gemini' (default 'claude') */
+export function getAiModel() {
+  return get('ai_model') ?? 'claude';
+}
+
+/** @param {string} model — 'claude' or 'gemini' */
+export function setAiModel(model) {
+  set('ai_model', String(model));
+}
+
+/* --- Generic get/set for model-swap --- */
+
+/** Internal: Generic storage getter */
+export function getStorageValue(key) {
+  return get(key);
+}
+
+/** Internal: Generic storage setter */
+export function setStorageValue(key, value) {
+  set(key, value);
+}

@@ -5,8 +5,13 @@
 
 import { showToast } from './ui.js';
 import { getDecryptedKey } from './templates/passwords.js';
+import {
+  getCurrentModel,
+  setCurrentModel,
+  getModelKey as getModelKeyFromAdapter,
+  hasModelKey,
+} from './model-swap.js';
 
-let _currentModel = 'gemini';
 let _vaultSheet = null;
 let _vaultSheetId = null;
 
@@ -22,14 +27,9 @@ export async function initializeModelSwapUI() {
   if (!modelSelect) return; // UI not loaded
 
   // Load saved preference
-  try {
-    const saved = localStorage.getItem('waymark_ai_model') || 'gemini';
-    _currentModel = saved;
-    modelSelect.value = saved;
-    updateStatusDisplay(statusText);
-  } catch (e) {
-    console.warn('Failed to load AI model preference:', e.message);
-  }
+  const currentModel = getCurrentModel();
+  modelSelect.value = currentModel;
+  updateStatusDisplay(statusText);
 
   // Handle model selection change
   modelSelect.addEventListener('change', async (e) => {
@@ -38,24 +38,32 @@ export async function initializeModelSwapUI() {
   });
 
   // Show help modal
-  helpBtn.addEventListener('click', () => {
-    setupModal.classList.remove('hidden');
-  });
+  if (helpBtn) {
+    helpBtn.addEventListener('click', () => {
+      if (setupModal) setupModal.classList.remove('hidden');
+    });
+  }
 
-  setupClose.addEventListener('click', () => {
-    setupModal.classList.add('hidden');
-  });
+  if (setupClose) {
+    setupClose.addEventListener('click', () => {
+      if (setupModal) setupModal.classList.add('hidden');
+    });
+  }
 
-  setupDone.addEventListener('click', () => {
-    setupModal.classList.add('hidden');
-  });
+  if (setupDone) {
+    setupDone.addEventListener('click', () => {
+      if (setupModal) setupModal.classList.add('hidden');
+    });
+  }
 
   // Close on overlay click
-  setupModal.addEventListener('click', (e) => {
-    if (e.target === setupModal) {
-      setupModal.classList.add('hidden');
-    }
-  });
+  if (setupModal) {
+    setupModal.addEventListener('click', (e) => {
+      if (e.target === setupModal) {
+        setupModal.classList.add('hidden');
+      }
+    });
+  }
 }
 
 /**
@@ -70,24 +78,18 @@ async function selectModel(model, statusText) {
     return;
   }
 
-  _currentModel = model;
-
-  // Persist preference
-  try {
-    localStorage.setItem('waymark_ai_model', model);
-  } catch (e) {
-    console.warn('Failed to save AI model preference:', e.message);
-  }
-
   // Verify credentials are available
-  const key = await getModelKey(model);
+  const key = await getAvailableKey(model);
   if (!key) {
-    showToast(`No API key found for ${model}. Check settings.`, 'warning');
+    showToast(`No API key found for ${model}. Add it to the Password Manager vault.`, 'warning');
     updateStatusDisplay(statusText, false);
-  } else {
-    showToast(`Switched to ${model}`, 'success');
-    updateStatusDisplay(statusText, true);
+    return;
   }
+
+  // Set the preference and show confirmation
+  setCurrentModel(model);
+  showToast(`Switched to ${model}`, 'success');
+  updateStatusDisplay(statusText, true);
 }
 
 /**
@@ -96,13 +98,15 @@ async function selectModel(model, statusText) {
  * @param {boolean} hasKey — Whether a valid API key was found
  */
 function updateStatusDisplay(statusText, hasKey = null) {
-  const modelName = _currentModel === 'claude' ? 'Claude' : 'Gemini';
+  const model = getCurrentModel();
+  const modelName = model === 'claude' ? 'Claude' : 'Gemini';
   
   let status = `Active: ${modelName}`;
   
-  if (hasKey === null) {
-    status += ' • Checking credentials…';
-  } else if (hasKey) {
+  // Check if key is available
+  const keyAvailable = hasKey !== null ? hasKey : hasModelKey(model);
+  
+  if (keyAvailable) {
     status += ' • ✓ API key ready';
   } else {
     status += ' • ⚠️ No API key configured';
@@ -112,31 +116,53 @@ function updateStatusDisplay(statusText, hasKey = null) {
 }
 
 /**
- * Get the current selected AI model
- * @returns {string} — 'gemini' or 'claude'
+ * Get API key for the specified model from vault or environment
+ * Synchronous version for tests - returns immediately without async
+ * @param {string} model — 'gemini' or 'claude'
+ * @returns {string|null} — API key or null
  */
-export function getCurrentModel() {
-  return _currentModel;
+export function getModelKey(model) {
+  // Try vault first (only if a password sheet is open)
+  if (_vaultSheet && _vaultSheet.rows && _vaultSheet.cols) {
+    const passwordCol = _vaultSheet.cols.password;
+    const siteCol = _vaultSheet.cols.site;
+    
+    // Look for a row matching the model
+    for (const row of _vaultSheet.rows) {
+      const site = row[siteCol]?.toLowerCase() || '';
+      const password = row[passwordCol];
+      
+      // Match service name
+      if (model === 'gemini' && (site.includes('gemini') || site.includes('google'))) {
+        return password;
+      } else if (model === 'claude' && (site.includes('claude') || site.includes('anthropic'))) {
+        return password;
+      }
+    }
+  }
+
+  // Try model-swap adapter (environment variables + window globals)
+  const key = getModelKeyFromAdapter(model);
+  if (key) return key;
+
+  return null;
 }
 
 /**
- * Get API key for the specified model from vault or environment
+ * Get API key for the specified model from vault or environment (async version)
  * @param {string} model — 'gemini' or 'claude'
  * @returns {Promise<string|null>} — API key or null
  */
-export async function getModelKey(model) {
+export async function getAvailableKey(model) {
   // Try vault first (only if a password sheet is open)
   if (_vaultSheet) {
-    const key = await getDecryptedKey(model, _vaultSheet, _vaultSheetId);
-    if (key) return key;
+    const vaultKey = await getDecryptedKey(model, _vaultSheet, _vaultSheetId);
+    if (vaultKey) return vaultKey;
   }
 
-  // Try environment variables as fallback
-  if (model === 'claude') {
-    return process.env.ANTHROPIC_API_KEY || window.__WAYMARK_CLAUDE_KEY || null;
-  } else if (model === 'gemini') {
-    return process.env.GOOGLE_GEMINI_API_KEY || window.__WAYMARK_GEMINI_KEY || null;
-  }
+  // Try model-swap adapter (environment variables + window globals)
+  const key = getModelKeyFromAdapter(model);
+  if (key) return key;
 
   return null;
 }
@@ -161,8 +187,8 @@ export function clearVaultSheet() {
 
 export default {
   initializeModelSwapUI,
-  getCurrentModel,
   getModelKey,
+  getAvailableKey,
   setVaultSheet,
   clearVaultSheet,
 };
