@@ -12,8 +12,11 @@ import { api } from '../api-client.js';
 import {
   DEFAULT_MODEL,
   DEFAULT_CLAUDE_MODEL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
   GEMINI_MODEL_OPTIONS,
   CLAUDE_MODEL_OPTIONS,
+  OLLAMA_MODEL_OPTIONS,
   fetchGeminiModels,
   fetchClaudeModels,
 } from './config.js';
@@ -34,6 +37,8 @@ export function showSettingsModal(onRefresh) {
   let claudeKeys = storage.getClaudeKeys();
   let geminiModel = storage.getAgentModel() || DEFAULT_MODEL;
   let claudeModel = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
+  let ollamaModel = storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL;
+  let ollamaBaseUrl = storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL;
   const driveSettings = userData.getAgentSettings();
   const cloudSyncEnabled = driveSettings !== null;
 
@@ -50,12 +55,19 @@ export function showSettingsModal(onRefresh) {
     on: { click: () => switchProvider('claude') },
   }, ['🟣 Anthropic Claude']);
 
-  const providerToggle = el('div', { className: 'agent-provider-toggle' }, [geminiBtn, claudeBtn]);
+  const ollamaBtn = el('button', {
+    className: 'agent-provider-btn' + (activeProvider === 'ollama' ? ' active' : ''),
+    type: 'button',
+    on: { click: () => switchProvider('ollama') },
+  }, ['🟢 Ollama']);
+
+  const providerToggle = el('div', { className: 'agent-provider-toggle' }, [geminiBtn, claudeBtn, ollamaBtn]);
 
   /* ---------- Key ring list ---------- */
   const keyListContainer = el('div', { className: 'agent-keyring-list' });
 
   function activeKeys() {
+    if (activeProvider === 'ollama') return [];
     // When keys sheet is unlocked, show its keys; otherwise localStorage ring
     if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
       return activeProvider === 'claude'
@@ -113,11 +125,13 @@ export function showSettingsModal(onRefresh) {
         'Add multiple free Gemini API keys to rotate between them automatically. ',
         el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, ['Get a free key →'])
       );
-    } else {
+    } else if (activeProvider === 'claude') {
       hintPara.append(
         'Add your Anthropic Claude API key. ',
         el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, ['Get a key →'])
       );
+    } else {
+      hintPara.append('No API key is required. Point Waymark at your local Ollama server and choose a local model.');
     }
   }
   updateHint();
@@ -202,22 +216,51 @@ export function showSettingsModal(onRefresh) {
     },
   }, ['+ Add Key']);
 
+  const addKeyForm = el('div', { className: 'agent-keyring-add-form' }, [
+    newKeyInput,
+    newNicknameInput,
+    el('label', { className: 'agent-keyring-billed-label' }, [
+      billedToggle,
+      ' This key has billing enabled',
+    ]),
+    addKeyBtn,
+  ]);
+
   /* ---------- Model dropdown — immediately hardcoded, async-refreshed ---------- */
   const modelSelect = el('select', { className: 'agent-settings-select' }, []);
+  const baseUrlInput = el('input', {
+    type: 'text',
+    className: 'agent-settings-input',
+    value: ollamaBaseUrl,
+    placeholder: 'http://127.0.0.1:11434',
+  });
+  const ollamaSettingsRow = el('div', { className: 'agent-ollama-settings' }, [
+    el('label', { className: 'agent-settings-label' }, ['Ollama Base URL']),
+    baseUrlInput,
+    el('p', { className: 'agent-settings-hint' }, ['Point Waymark at your local Ollama server, for example http://127.0.0.1:11434.']),
+  ]);
 
   function updateModelDropdown() {
     modelSelect.innerHTML = '';
-    const opts = activeProvider === 'claude' ? CLAUDE_MODEL_OPTIONS : GEMINI_MODEL_OPTIONS;
-    const current = activeProvider === 'claude' ? claudeModel : geminiModel;
+    let opts = GEMINI_MODEL_OPTIONS;
+    let current = geminiModel;
+    if (activeProvider === 'claude') {
+      opts = CLAUDE_MODEL_OPTIONS;
+      current = claudeModel;
+    } else if (activeProvider === 'ollama') {
+      opts = OLLAMA_MODEL_OPTIONS;
+      current = ollamaModel;
+    }
     for (const opt of opts) {
       modelSelect.appendChild(el('option', { value: opt.value, ...(current === opt.value ? { selected: 'selected' } : {}) }, [opt.label]));
     }
     _refreshModelDropdown().catch(() => {});
   }
-  updateModelDropdown();
+  switchProvider(activeProvider);
 
   /** Async: replace dropdown options with live model list from provider API. */
   async function _refreshModelDropdown() {
+    if (activeProvider === 'ollama') return;
     const key = activeKeys()[0]?.key;
     if (!key) return;
     try {
@@ -242,6 +285,8 @@ export function showSettingsModal(onRefresh) {
   function switchProvider(p) {
     if (activeProvider === 'claude') {
       claudeModel = modelSelect.value;
+    } else if (activeProvider === 'ollama') {
+      ollamaModel = modelSelect.value;
     } else {
       geminiModel = modelSelect.value;
     }
@@ -249,7 +294,11 @@ export function showSettingsModal(onRefresh) {
     activeProvider = p;
     geminiBtn.className = 'agent-provider-btn' + (p === 'gemini' ? ' active' : '');
     claudeBtn.className = 'agent-provider-btn' + (p === 'claude' ? ' active' : '');
+    ollamaBtn.className = 'agent-provider-btn' + (p === 'ollama' ? ' active' : '');
     newKeyInput.placeholder = p === 'claude' ? 'Paste a Claude API key (sk-ant-...)...' : 'Paste a Gemini API key...';
+    addKeyForm.style.display = p === 'ollama' ? 'none' : '';
+    keyListContainer.style.display = p === 'ollama' ? 'none' : '';
+    ollamaSettingsRow.style.display = p === 'ollama' ? '' : 'none';
     updateHint();
     updateModelDropdown();
     renderKeyList();
@@ -271,6 +320,9 @@ export function showSettingsModal(onRefresh) {
         // Persist model from dropdown
         if (activeProvider === 'claude') {
           storage.setClaudeModel(modelSelect.value);
+        } else if (activeProvider === 'ollama') {
+          storage.setOllamaModel(modelSelect.value);
+          storage.setOllamaBaseUrl(baseUrlInput.value.trim());
         } else {
           storage.setAgentModel(modelSelect.value);
         }
@@ -284,6 +336,8 @@ export function showSettingsModal(onRefresh) {
             apiKey: geminiKeys.length > 0 ? geminiKeys[0].key : '',
             claudeKeys,
             claudeModel: storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL,
+            ollamaModel: storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL,
+            ollamaBaseUrl: storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL,
           });
         } else {
           await userData.saveAgentSettings(null);
@@ -306,6 +360,8 @@ export function showSettingsModal(onRefresh) {
           storage.setClaudeKeys([]);
           showToast('All Claude API keys removed', 'info');
           renderKeyList();
+        } else if (activeProvider === 'ollama') {
+          showToast('No API keys are needed for Ollama', 'info');
         } else {
           geminiKeys = [];
           storage.setAgentKeys([]);
@@ -335,17 +391,10 @@ export function showSettingsModal(onRefresh) {
       el('label', { className: 'agent-settings-label' }, ['API Key Ring']),
       hintPara,
       keyListContainer,
-      el('div', { className: 'agent-keyring-add-form' }, [
-        newKeyInput,
-        newNicknameInput,
-        el('label', { className: 'agent-keyring-billed-label' }, [
-          billedToggle,
-          ' This key has billing enabled',
-        ]),
-        addKeyBtn,
-      ]),
+      addKeyForm,
       el('label', { className: 'agent-settings-label agent-settings-model-label' }, ['Model']),
       modelSelect,
+      ollamaSettingsRow,
       el('label', { className: 'agent-settings-label agent-settings-cloud-label' }, [
         cloudToggle,
         ' Sync keys across devices',
@@ -357,7 +406,7 @@ export function showSettingsModal(onRefresh) {
       buildKeysSheetSection(),
     ]),
     el('div', { className: 'modal-footer' }, [
-      (geminiKeys.length > 0 || claudeKeys.length > 0) ? removeAllBtn : el('span'),
+      (activeProvider === 'ollama' || (geminiKeys.length === 0 && claudeKeys.length === 0)) ? el('span') : removeAllBtn,
       saveBtn,
     ]),
   ]);

@@ -39,6 +39,12 @@ export const CLAUDE_MODEL_OPTIONS = [
   { value: 'claude-opus-4-5', label: 'Claude Opus 4.5 (best)' },
 ];
 
+export const OLLAMA_MODEL_OPTIONS = [
+  { value: 'qwen2.5-coder:3b', label: 'Qwen 2.5 Coder 3B (fastest)' },
+  { value: 'mistral:latest', label: 'Mistral (balanced)' },
+  { value: 'neural-chat:latest', label: 'Neural Chat (good reasoning)' },
+];
+
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
@@ -123,6 +129,15 @@ export function geminiHeaders(apiKey) {
  */
 export function claudeUrl() {
   return `${CLAUDE_API_BASE}/messages`;
+}
+
+/**
+ * Build an Ollama chat API URL from the base URL.
+ * @param {string} baseUrl
+ * @returns {string}
+ */
+export function ollamaChatUrl(baseUrl = DEFAULT_OLLAMA_BASE_URL) {
+  return `${baseUrl}/api/chat`;
 }
 
 /**
@@ -554,6 +569,25 @@ export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
     messages,
     tools: CLAUDE_TOOL_DECLARATIONS,
     max_tokens: MAX_OUTPUT_TOKENS,
+  };
+}
+
+/**
+ * Build an Ollama API request body from Gemini-format contents.
+ * @param {Array} geminiContents
+ * @param {string} systemPrompt
+ * @param {string} model
+ * @returns {Object}
+ */
+export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
+  const messages = convertGeminiContentsToClaudeMessages(geminiContents);
+  return {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+    stream: false,
   };
 }
 

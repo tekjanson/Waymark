@@ -13,6 +13,8 @@ import {
   CLAUDE_TOOL_DECLARATIONS,
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
   MAX_AGGRESSIVE_CONTEXT_MESSAGES,
   MAX_ASSISTANT_MESSAGE_CHARS,
   MAX_CONTEXT_CHARS,
@@ -31,6 +33,7 @@ import {
   buildConversationSummary,
   buildPlannerBrief,
   buildRecentSheetHint,
+  buildOllamaRequestBody,
   buildRequestBody,
   claudeHeaders,
   claudeUrl,
@@ -40,6 +43,7 @@ import {
   geminiHeaders,
   geminiUrl,
   getRecentConversationSheets,
+  ollamaChatUrl,
   pickBestActiveKey,
   pickBestClaudeKey,
   pickBestKey,
@@ -104,12 +108,20 @@ function _claudeHeaders(apiKey) {
   return claudeHeaders(apiKey);
 }
 
+function _ollamaUrl(baseUrl = storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL) {
+  return ollamaChatUrl(baseUrl);
+}
+
 function _buildRequestBody(contents) {
   return buildRequestBody(contents, _getSystemPrompt());
 }
 
 function _buildClaudeProviderBody(contents, model) {
   return buildClaudeRequestBody(contents, _getSystemPrompt(), model || storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL);
+}
+
+function _buildOllamaProviderBody(contents, model) {
+  return buildOllamaRequestBody(contents, _getSystemPrompt(), model || storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL);
 }
 
 function _compactContextText(text, maxChars) {
@@ -310,6 +322,8 @@ let _pendingInlineImages = [];
  * @returns {{ key: string, idx: number } | null}
  */
 function _getNextKey() {
+  const provider = storage.getAgentProvider();
+  if (provider === 'ollama') return { key: '', idx: -1 };
   return pickBestActiveKey();
 }
 
@@ -341,6 +355,9 @@ export function show(container) {
       storage.setClaudeKeys(driveSettings.claudeKeys);
       if (driveSettings.claudeModel) storage.setClaudeModel(driveSettings.claudeModel);
     }
+    // Restore Ollama settings
+    if (driveSettings.ollamaModel) storage.setOllamaModel(driveSettings.ollamaModel);
+    if (driveSettings.ollamaBaseUrl) storage.setOllamaBaseUrl(driveSettings.ollamaBaseUrl);
   }
   // Restore conversation from localStorage
   const saved = storage.getAgentConversation();
@@ -368,9 +385,11 @@ function _renderUI() {
   }
 
   const provider = storage.getAgentProvider();
-  const hasKeys = vault.isVaultSetUp() && vault.isVaultUnlocked()
-    ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
-    : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0);
+  const hasKeys = provider === 'ollama'
+    ? true
+    : (vault.isVaultSetUp() && vault.isVaultUnlocked()
+      ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
+      : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0));
   _container.innerHTML = '';
   const rendered = renderAgentUI({
     container: _container,
@@ -538,6 +557,25 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = nul
     return { model, url, contents, body, provider: 'claude' };
   }
 
+  if (provider === 'ollama') {
+    const model = storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL;
+    const url = _ollamaUrl(storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL);
+
+    const buildBudgetedRequest = (text) => {
+      let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
+      let body = _buildOllamaProviderBody(contents, model);
+      if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+        contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES, userParts);
+        body = _buildOllamaProviderBody(contents, model);
+      }
+      return { contents, body };
+    };
+
+    const { contents, body } = buildBudgetedRequest(plannedUserText);
+    _assertRequestWithinBudget(body, 'This request');
+    return { model, url, contents, body, provider: 'ollama' };
+  }
+
   // Gemini path
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const baseUrl = _geminiUrl(model, 'generateContent');
@@ -580,7 +618,7 @@ function _clearConversation() {
   _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
-    const hasKeys = storage.getAgentKeys().length > 0;
+    const hasKeys = storage.getAgentProvider() === 'ollama' || storage.getAgentKeys().length > 0;
     _chatBody.appendChild(hasKeys ? _buildEmptyState() : _buildWelcome());
   }
 }
@@ -766,7 +804,101 @@ async function _streamCallModel(apiKey, keyIdx, request, onChunk, signal) {
   if (provider === 'claude') {
     return _streamCallClaude(apiKey, keyIdx, request, onChunk, signal);
   }
+  if (provider === 'ollama') {
+    return _streamCallOllama(apiKey, keyIdx, request, onChunk, signal);
+  }
   return _streamCallGemini(apiKey, keyIdx, request, onChunk, signal);
+}
+
+/* ---------- Ollama API ---------- */
+
+async function _callOllama(apiKey, keyIdx, request) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { body } = preparedRequest;
+  const url = preparedRequest.url || _ollamaUrl(storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, stream: false }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Ollama request failed (${res.status})`);
+  }
+
+  const data = await res.json();
+  return data.message?.content || '';
+}
+
+async function _streamCallOllama(apiKey, keyIdx, request, onChunk, signal) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { body } = preparedRequest;
+  const url = preparedRequest.url || _ollamaUrl(storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    return _callOllama(apiKey, keyIdx, preparedRequest);
+  }
+
+  if (!res.ok) {
+    return _callOllama(apiKey, keyIdx, preparedRequest);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    return _callOllama(apiKey, keyIdx, preparedRequest);
+  }
+
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const event = JSON.parse(trimmed);
+          const chunk = event.message?.content || '';
+          if (chunk) {
+            accumulated += chunk;
+            onChunk(chunk);
+          }
+          if (event.done) {
+            return accumulated;
+          }
+        } catch {
+          // Ignore malformed frames and continue streaming.
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return accumulated;
+    if (accumulated) return accumulated;
+    throw err;
+  }
+
+  return accumulated || _callOllama(apiKey, keyIdx, preparedRequest);
 }
 
 /* ---------- Claude API ---------- */
