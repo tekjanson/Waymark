@@ -22,6 +22,8 @@ export const DEFAULT_MODEL = 'gemini-flash-latest';
 export const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
 export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
+export const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
+export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 export const GEMINI_MODEL_OPTIONS = [
   { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
