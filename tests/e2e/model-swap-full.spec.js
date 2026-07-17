@@ -5,7 +5,7 @@ test('model-swap-full: can setup and swap between Claude and Gemini using passwo
   await setupApp(page);
   
   // Navigate to the password manager sheet (which exists in fixtures)
-  await navigateToSheet(page, 'sheet-019'); // passwords-api-keys fixture
+  await navigateToSheet(page, 'sheet-070'); // passwords-api-keys fixture
   await page.waitForLoadState('networkidle');
 
   // Verify password manager is loaded
