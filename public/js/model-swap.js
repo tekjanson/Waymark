@@ -5,8 +5,8 @@
 
 import { getDecryptedKeySync } from './templates/passwords.js';
 import {
-  getAiModel,
-  setAiModel,
+  getAgentProvider,
+  setAgentProvider,
   getStorageValue,
   setStorageValue,
 } from './storage.js';
@@ -32,7 +32,7 @@ export async function initializeModelSwap(options = {}) {
   
   // Load saved model preference
   try {
-    _currentModel = getAiModel();
+    _currentModel = getAgentProvider();
   } catch (e) {
     console.warn('Failed to load model preference:', e.message);
     _currentModel = 'claude';
@@ -74,7 +74,7 @@ export function setCurrentModel(model) {
   }
   _currentModel = model;
   try {
-    setAiModel(model);
+    setAgentProvider(model);
   } catch (e) {
     console.warn('Failed to save model preference:', e.message);
   }

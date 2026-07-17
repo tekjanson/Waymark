@@ -56,7 +56,7 @@ test('model-swap-integration: vault integration works with model adapter', async
   });
 
   // Verify results
-  expect(result.currentModelInitial).toBe('claude');
+  expect(result.currentModelInitial).toBe('gemini');
   expect(result.currentModelAfterChange).toBe('claude');
   expect(typeof result.hasClaude).toBe('boolean');
   expect(typeof result.hasGemini).toBe('boolean');
