@@ -127,7 +127,7 @@ export function getCurrentModel() {
 export async function getModelKey(model) {
   // Try vault first (only if a password sheet is open)
   if (_vaultSheet) {
-    const key = getDecryptedKey(model, _vaultSheet);
+    const key = await getDecryptedKey(model, _vaultSheet, _vaultSheetId);
     if (key) return key;
   }
 
