@@ -22,6 +22,7 @@ import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
+import { initializeModelSwapUI } from './model-swap-ui.js';
 
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
@@ -209,6 +210,7 @@ async function boot() {
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
+  initializeModelSwapUI();
 
   // Wire UI events
   loginBtn.addEventListener('click',  () => api.auth.login());

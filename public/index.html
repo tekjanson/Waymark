@@ -376,6 +376,32 @@
         <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
       </div>
 
+      <!-- AI Models Section -->
+      <div class="settings-section">
+        <h4 class="settings-section-title">AI Models</h4>
+        <p class="settings-hint">Choose which AI model to use and store API keys securely in your password vault.</p>
+
+        <div class="settings-row">
+          <span class="settings-label">Active Model</span>
+          <select id="settings-ai-model" class="settings-select">
+            <option value="gemini">Google Gemini (default)</option>
+            <option value="claude">Anthropic Claude</option>
+          </select>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-label">Current Status</span>
+          <div id="settings-ai-status" class="settings-ai-status">
+            <span id="settings-ai-status-text" class="settings-ai-status-text">Ready: Using environment variables</span>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-label">Setup Instructions</span>
+          <button id="settings-ai-help-btn" class="btn btn-secondary btn-sm">View Setup Guide</button>
+        </div>
+      </div>
+
       <!-- Developer Tools -->
       <div class="settings-section">
         <h4 class="settings-section-title">Developer</h4>
@@ -429,6 +455,73 @@
       <div class="modal-footer">
         <span class="text-muted">Changes save automatically</span>
         <button id="settings-done-btn" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Model Setup Guide Modal -->
+  <div id="ai-setup-modal" class="modal-overlay hidden">
+    <div class="modal ai-setup-modal">
+      <div class="modal-header">
+        <h3>AI Model Setup Guide</h3>
+        <button id="ai-setup-close" class="btn-icon" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Gemini Setup -->
+        <div class="ai-setup-section">
+          <h4 class="ai-setup-heading">🔷 Google Gemini (Default)</h4>
+          <p class="ai-setup-text">Gemini is pre-configured with Waymark. No additional setup required.</p>
+          <p class="ai-setup-hint">To use a custom Gemini API key, store it in your password vault:</p>
+          <ol class="ai-setup-steps">
+            <li>Open your <strong>Password Manager</strong> sheet</li>
+            <li>Add a new entry with:
+              <ul>
+                <li><strong>Site:</strong> "Gemini" or "Google Gemini"</li>
+                <li><strong>Password:</strong> Your Gemini API key</li>
+              </ul>
+            </li>
+            <li>Waymark will automatically detect and use it</li>
+          </ol>
+        </div>
+
+        <!-- Claude Setup -->
+        <div class="ai-setup-section">
+          <h4 class="ai-setup-heading">🔶 Anthropic Claude</h4>
+          <p class="ai-setup-text">Follow these steps to use Claude as your AI provider:</p>
+          <ol class="ai-setup-steps">
+            <li><a href="https://console.anthropic.com/" target="_blank" rel="noopener">Get your Claude API key from Anthropic Console</a></li>
+            <li>Open your <strong>Password Manager</strong> sheet in Waymark</li>
+            <li>Add a new password entry with:
+              <ul>
+                <li><strong>Site:</strong> "Claude" or "Anthropic Claude"</li>
+                <li><strong>Username:</strong> (leave blank or enter "api_key")</li>
+                <li><strong>Password:</strong> sk-ant-... (your actual Claude API key)</li>
+                <li><strong>Category:</strong> "AI" (optional)</li>
+              </ul>
+            </li>
+            <li>Come back to this Settings and select "Claude" from the dropdown</li>
+            <li>Waymark will fetch your Claude key from the vault</li>
+          </ol>
+          <p class="ai-setup-warning">⚠️ <strong>Security:</strong> Keep your API keys secure. Consider enabling encryption on your Password Manager sheet.</p>
+        </div>
+
+        <!-- Environment Variables -->
+        <div class="ai-setup-section">
+          <h4 class="ai-setup-heading">🔧 Using Environment Variables</h4>
+          <p class="ai-setup-text">If running Waymark on your own server, you can also set environment variables:</p>
+          <ul class="ai-setup-env-vars">
+            <li><code>ANTHROPIC_API_KEY</code> — Claude API key</li>
+            <li><code>GOOGLE_GEMINI_API_KEY</code> — Gemini API key (if not default)</li>
+          </ul>
+          <p class="ai-setup-hint">Environment variables are used as fallback when no vault credentials are found.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="ai-setup-done" class="btn btn-primary">Done</button>
       </div>
     </div>
   </div>
