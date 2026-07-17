@@ -39,6 +39,7 @@ const backBtn       = document.getElementById('back-btn');
 const folderBackBtn = document.getElementById('folder-back-btn');
 const generateProg  = document.getElementById('generate-progress');
 const tutorialBtn   = document.getElementById('tutorial-btn');
+const runtimeStatusBadge = document.getElementById('runtime-status-badge');
 
 /* ---------- Sidebar menu refs ---------- */
 const menuHomeBtn      = document.getElementById('menu-home-btn');
@@ -200,8 +201,43 @@ function navigate(type, id, name) {
 
 /* ---------- Init ---------- */
 
+async function initRuntimeBadge() {
+  if (!runtimeStatusBadge) return;
+
+  try {
+    const base = window.__WAYMARK_BASE || '';
+    const res = await fetch(`${base}/api/agent-runtime`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const provider = (data.provider || '').toLowerCase();
+    if (!provider || provider === 'unknown') {
+      runtimeStatusBadge.classList.add('hidden');
+      return;
+    }
+
+    const providerLabel = data.providerLabel || data.provider || 'Unknown';
+    const displayText = data.model ? `${providerLabel} • ${data.model}` : providerLabel;
+    runtimeStatusBadge.textContent = displayText;
+    runtimeStatusBadge.title = data.endpoint ? `${providerLabel} via ${data.endpoint}` : providerLabel;
+    runtimeStatusBadge.style.display = 'inline-flex';
+    runtimeStatusBadge.style.alignItems = 'center';
+    runtimeStatusBadge.style.padding = '0.35rem 0.65rem';
+    runtimeStatusBadge.style.borderRadius = '999px';
+    runtimeStatusBadge.style.fontSize = '0.78rem';
+    runtimeStatusBadge.style.fontWeight = '600';
+    runtimeStatusBadge.style.marginRight = '0.7rem';
+    runtimeStatusBadge.style.color = '#fff';
+    runtimeStatusBadge.style.backgroundColor = provider === 'ollama' ? '#0f766e' : provider === 'copilot' ? '#2563eb' : provider === 'claude' ? '#7c3aed' : '#475569';
+    runtimeStatusBadge.classList.remove('hidden');
+  } catch (err) {
+    runtimeStatusBadge.classList.add('hidden');
+  }
+}
+
 async function boot() {
   showLoading();
+  void initRuntimeBadge();
 
   // Init sub-modules
   checklist.init();

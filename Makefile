@@ -29,6 +29,8 @@ AGENT_NAMES   ?= Alex
 PROVIDER      ?= auto
 MODEL         ?= claude-sonnet-4.6
 CLAUDE_MODEL  ?= claude-opus-4-5
+OLLAMA_MODEL  ?= qwen2.5-coder:3b
+OLLAMA_BASE_URL ?= http://host.docker.internal:11434
 COMMAND       ?= @waymark-builder start
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
 
@@ -45,6 +47,8 @@ AGENT_NAME="$(NAME)" \
 AI_PROVIDER="$(PROVIDER)" \
 AGENT_MODEL="$(MODEL)" \
 CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+OLLAMA_MODEL="$(OLLAMA_MODEL)" \
+OLLAMA_BASE_URL="$(OLLAMA_BASE_URL)" \
 AGENT_COMMAND="$(COMMAND)" \
 AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
 CONTAINER_NAME="$(CONTAINER)"
@@ -58,7 +62,8 @@ endef
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
         auth-copilot auth-claude auth-check token-extract \
-        workboard clean
+        workboard clean \
+        harness-local agentic-factory
 
 # ── THE ONE COMMAND ───────────────────────────────────────────────────
 
@@ -149,6 +154,8 @@ coll = secretstorage.get_default_collection(bus); \
 			AI_PROVIDER="$(PROVIDER)" \
 			AGENT_MODEL="$(MODEL)" \
 			CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+			OLLAMA_MODEL="$(OLLAMA_MODEL)" \
+			OLLAMA_BASE_URL="$(OLLAMA_BASE_URL)" \
 			AGENT_COMMAND="$(COMMAND)" \
 			AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
 			CONTAINER_NAME="$$cname" \
@@ -313,6 +320,8 @@ fleet-start: ## Start all fleet agents in parallel  [FLEET_NAMES="Alex Sam Jorda
 		AI_PROVIDER="$(PROVIDER)" \
 		AGENT_MODEL="$(MODEL)" \
 		CLAUDE_MODEL="$(CLAUDE_MODEL)" \
+		OLLAMA_MODEL="$(OLLAMA_MODEL)" \
+		OLLAMA_BASE_URL="$(OLLAMA_BASE_URL)" \
 		AGENT_COMMAND="$(COMMAND)" \
 		AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
 		CONTAINER_NAME="$$cname" \
@@ -455,6 +464,12 @@ auth-check: ## Check which AI credentials are available
 
 workboard: ## Print current workboard state as JSON
 	node scripts/check-workboard.js
+
+harness-local: ## Run the local Ollama harness against the current Waymark workspace or the next board task
+	@node scripts/run-local-harness-workflow.js $(ARGS)
+
+agentic-factory: ## Start the local Ollama stack, launch Waymark, and open the Waymark UI
+	@bash scripts/start-agentic-code-factory.sh
 
 # ── Financials ────────────────────────────────────────────────────────
 

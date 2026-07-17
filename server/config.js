@@ -27,6 +27,10 @@ const config = {
 
   FLEET_WEBHOOK_URL: process.env.FLEET_WEBHOOK_URL || '',
 
+  AI_PROVIDER: process.env.AI_PROVIDER || process.env.WAYMARK_AGENT_PROVIDER || '',
+  AI_MODEL: process.env.OLLAMA_MODEL || process.env.AI_MODEL || process.env.AGENT_MODEL || '',
+  AI_ENDPOINT: process.env.OLLAMA_BASE_URL || process.env.AI_ENDPOINT || '',
+
   SCOPES: [
     'openid',
     'email',

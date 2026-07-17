@@ -34,6 +34,7 @@ services:
       # ── AI Provider selection ────────────────────────────────────────────────
       # copilot  → GitHub Copilot CLI (needs ~/.copilot/config.json volume)
       # claude   → Anthropic Claude Code (needs ANTHROPIC_API_KEY below)
+      # ollama   → Local Ollama API (host service, no API key)
       # auto     → learn-repo.sh detects from available credentials at startup
       - AI_PROVIDER=${AI_PROVIDER:-auto}
 
@@ -61,6 +62,9 @@ services:
       - AGENT_MODEL=${AGENT_MODEL:-claude-Haiku-4.5}
       # Model for Claude Code (uses Anthropic model IDs)
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
+      # Model for Ollama (set OLLAMA_MODEL to your local model tag, e.g. qwen2.5-coder:3b)
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
 
       # ── GitHub Copilot CLI auth ──────────────────────────────────────────────
       # Set COPILOT_GITHUB_TOKEN (or GH_TOKEN) to an OAuth token with Copilot access.
@@ -94,6 +98,9 @@ services:
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 
     restart: unless-stopped
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     volumes:
       # ── Workspace ──────────────────────────────────────────────────────────
@@ -176,6 +183,8 @@ services:
       # Use a higher-quality model for code review — Sonnet beats Haiku for QA
       - AGENT_MODEL=${EVAL_MODEL:-claude-sonnet-4.6}
       - CLAUDE_MODEL=${EVAL_CLAUDE_MODEL:-claude-opus-4-5}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
 
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:-}
       - GH_TOKEN=${GH_TOKEN:-${COPILOT_GITHUB_TOKEN:-}}
@@ -191,6 +200,9 @@ services:
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 
     restart: unless-stopped
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     volumes:
       - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace

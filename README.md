@@ -128,6 +128,68 @@ WAYMARK_AGENT_EVAL_STOP_ON_FAILURE=true
 
 ---
 
+## Local Ollama harness workflow
+
+Waymark can now hand tasks to the local Ollama-based synthesis loop through a dedicated workboard-aware wrapper.
+
+```bash
+npm run harness:local -- --task "Add a small utility that builds a report summary"
+```
+
+Or let it pick up the next To Do item from the workboard:
+
+```bash
+npm run harness:local
+```
+
+The wrapper will:
+- claim the selected workboard task
+- create a feature branch from the current base branch
+- run the local harness against the Waymark workspace
+- push the result through the same QA-style workboard progression used by the other agents
+
+If you want a repo-specific validation command for the harness, override it with:
+
+```bash
+LOCAL_HARNESS_VALIDATION_COMMAND="npm test -- --grep unit-" npm run harness:local -- --task "..."
+```
+
+### One-command startup
+
+Use this to start the local Ollama stack, start the Waymark agent fleet, and open the hosted Waymark UI:
+
+```bash
+cd /home/tekjanson/Documents/Code/Waymark && make agentic-factory
+```
+
+You can point it at a different Waymark UI URL if needed:
+
+```bash
+WAYMARK_UI_URL=https://your-waymark.example.com make agentic-factory
+```
+
+### Use your local Ollama model from the Waymark UI
+
+Yes — you can point the Waymark agent fleet at your host Ollama service so the UI-driven agents use your local model.
+
+1. Start your local Ollama server and make sure the model exists:
+   ```bash
+   ollama pull qwen2.5-coder:3b
+   ```
+2. In `.env`, switch the agent fleet to Ollama:
+   ```bash
+   PROVIDER=ollama
+   OLLAMA_MODEL=qwen2.5-coder:3b
+   OLLAMA_BASE_URL=http://host.docker.internal:11434
+   ```
+3. Start Waymark as usual:
+   ```bash
+   make up
+   ```
+4. Log in to the Waymark UI and use the board as normal. The dev-worker containers will call your host Ollama instance for each agent turn.
+
+If you leave `PROVIDER=auto`, Waymark will prefer Copilot/Claude when they are available, and fall back to Ollama if the host API is reachable.
+
 ## Architecture
 
 Zero-build vanilla stack. No bundler, no framework, no transpiler. ES Modules in the browser, Node.js + Express on the server.

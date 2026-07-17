@@ -52,6 +52,21 @@ function getRefForRequest(req) {
 const basePath = config.BASE_PATH || '';
 const router = express.Router();
 
+router.get('/api/agent-runtime', (_req, res) => {
+  const provider = (config.AI_PROVIDER || '').toLowerCase();
+  const providerLabel = provider === 'ollama' ? 'Ollama' : provider === 'copilot' ? 'Copilot' : provider === 'claude' ? 'Claude' : (config.AI_PROVIDER || 'Unknown');
+  const model = config.AI_MODEL || '';
+  const endpoint = config.AI_ENDPOINT || '';
+
+  res.json({
+    provider,
+    providerLabel,
+    model,
+    endpoint,
+    summary: provider ? `${providerLabel}${model ? ` • ${model}` : ''}` : '',
+  });
+});
+
 /* ---------- Top-level middleware (runs before router) ---------- */
 
 app.use(cookieParser(config.COOKIE_SECRET));

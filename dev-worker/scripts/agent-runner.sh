@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agent-runner.sh — Multi-provider AI agent watchdog loop.
 #
-# Supports two AI providers side-by-side, selected at runtime:
+# Supports three AI providers side-by-side, selected at runtime:
 #
 #   AI_PROVIDER=copilot  → GitHub Copilot CLI
 #     copilot --allow-all --autopilot --model $AGENT_MODEL --add-dir /workspace -p "$CMD"
@@ -10,6 +10,10 @@
 #   AI_PROVIDER=claude   → Anthropic Claude Code
 #     claude --dangerously-skip-permissions --model $CLAUDE_MODEL --print "$CMD"
 #     Reads: ANTHROPIC_API_KEY env, CLAUDE.md, .mcp.json in workspace root
+#
+#   AI_PROVIDER=ollama   → Local Ollama API
+#     Calls the host Ollama server over HTTP (OLLAMA_BASE_URL), no API key required.
+#     Reads: OLLAMA_MODEL / OLLAMA_BASE_URL env, then uses the prompt as the user message.
 #
 #   AI_PROVIDER=auto     → resolved by learn-repo.sh at startup (written to agent-env.sh)
 #
@@ -45,6 +49,8 @@ if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"
+    elif curl -sS -m 5 "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}/api/tags" >/dev/null 2>&1; then
+        AI_PROVIDER="ollama"
     else
         AI_PROVIDER="copilot"  # default — validate_copilot will surface a helpful error
     fi
@@ -148,6 +154,81 @@ validate_claude() {
     return 0
 }
 
+ollama_base_url() {
+    echo "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+}
+
+ollama_available() {
+    curl -sS -m 5 "$(ollama_base_url)/api/tags" >/dev/null 2>&1
+}
+
+ollama_model_name() {
+    echo "${OLLAMA_MODEL:-qwen2.5-coder:3b}"
+}
+
+validate_ollama() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        log "ERROR: python3 not found — cannot call Ollama API"
+        return 1
+    fi
+    if ! ollama_available; then
+        log "ERROR: Ollama API not reachable at $(ollama_base_url)"
+        return 1
+    fi
+    return 0
+}
+
+run_ollama() {
+    CONTEXT_DIR="${CONTEXT_DIR:-/workspace/dev-worker/context}"
+    local prompt
+    prompt="$(build_prompt "${AGENT_COMMAND}")"
+    local model
+    model="$(ollama_model_name)"
+    local base_url
+    base_url="$(ollama_base_url)"
+    local api_url="${base_url%/}/api/chat"
+    log "  Provider:  Ollama"
+    log "  Model:     ${model}"
+    log "  Endpoint:  ${api_url}"
+    log "  Identity:  ${AGENT_HUMAN_NAME:-<unnamed>}"
+    log "  Context:   $( [[ -d "$CONTEXT_DIR" ]] && echo "$CONTEXT_DIR" || echo "none" )"
+    [[ -n "${AGENT_TUNING:-}" ]] && log "  Tuning:    ${AGENT_TUNING:0:60}..."
+
+    local output
+    output=$(
+        python3 - "$api_url" "$model" "$prompt" 2>&1 <<'PY'
+import json
+import sys
+import urllib.request
+
+api_url, model, prompt = sys.argv[1], sys.argv[2], sys.argv[3]
+
+payload = {
+    "model": model,
+    "messages": [{"role": "user", "content": prompt}],
+    "stream": False,
+}
+
+request = urllib.request.Request(
+    api_url,
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+)
+
+with urllib.request.urlopen(request, timeout=180) as response:
+    data = json.load(response)
+
+print(data.get("message", {}).get("content", ""))
+PY
+    ) || true
+
+    if [[ -z "$output" ]]; then
+        log "WARNING: Ollama returned an empty response"
+    fi
+
+    printf '%s\n' "$output"
+}
+
 # ── Build prompt with tuning prefix ──────────────────────────────────────────
 # The tuning string (loaded from the Agent Registry sheet) is prepended to every
 # session prompt so the agent's personality is active from the first token.
@@ -229,6 +310,8 @@ if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"
+    elif ollama_available; then
+        AI_PROVIDER="ollama"
     else
         AI_PROVIDER="copilot"
     fi
@@ -483,8 +566,15 @@ while true; do
                 log "Claude validation failed — will retry after ${RESTART_DELAY}s"
             fi
             ;;
+        ollama)
+            if validate_ollama; then
+                run_ollama
+            else
+                log "Ollama validation failed — will retry after ${RESTART_DELAY}s"
+            fi
+            ;;
         *)
-            log "ERROR: Unknown AI_PROVIDER='${AI_PROVIDER}' — expected copilot or claude"
+            log "ERROR: Unknown AI_PROVIDER='${AI_PROVIDER}' — expected copilot, claude, or ollama"
             log "  Set AI_PROVIDER env var in docker-compose.yml or .env"
             ;;
     esac
@@ -515,6 +605,11 @@ while true; do
             claude)
                 if validate_claude; then
                     run_claude
+                fi
+                ;;
+            ollama)
+                if validate_ollama; then
+                    run_ollama
                 fi
                 ;;
         esac
