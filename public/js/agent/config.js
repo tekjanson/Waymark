@@ -39,6 +39,12 @@ export const CLAUDE_MODEL_OPTIONS = [
   { value: 'claude-opus-4-5', label: 'Claude Opus 4.5 (best)' },
 ];
 
+export const OLLAMA_MODEL_OPTIONS = [
+  { value: 'qwen2.5-coder:3b', label: 'Qwen 2.5 Coder 3B (fastest)' },
+  { value: 'mistral:latest', label: 'Mistral (balanced)' },
+  { value: 'neural-chat:latest', label: 'Neural Chat (good reasoning)' },
+];
+
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
