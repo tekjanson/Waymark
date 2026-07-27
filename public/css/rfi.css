@@ -1,0 +1,117 @@
+/* rfi.css */
+.rfi-board {
+  font-family: system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 20px;
+  background-color: #f8fafc;
+}
+
+.rfi-summary-bar {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.rfi-badge {
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.rfi-badge-open { background: #e0f2fe; color: #0369a1; }
+.rfi-badge-pending { background: #fef08a; color: #854d0e; }
+.rfi-badge-closed { background: #dcfce7; color: #166534; }
+
+.rfi-kanban {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  align-items: flex-start;
+  min-height: 500px;
+}
+
+.rfi-column {
+  flex: 1;
+  min-width: 280px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.rfi-column h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.125rem;
+  color: #334155;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 8px;
+}
+
+.rfi-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rfi-card {
+  background: white;
+  padding: 16px;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.rfi-card h4 {
+  margin: 0 0 8px 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.rfi-card p {
+  margin: 0 0 12px 0;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.rfi-status-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-bottom: 12px;
+  transition: opacity 0.2s;
+}
+
+.rfi-status-btn:hover { opacity: 0.8; }
+
+.rfi-status-btn.draft { background: #e2e8f0; color: #475569; }
+.rfi-status-btn.open { background: #bae6fd; color: #0284c7; }
+.rfi-status-btn.pending { background: #fde047; color: #ca8a04; }
+.rfi-status-btn.closed { background: #bbf7d0; color: #16a34a; }
+
+.rfi-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  resize: vertical;
+  min-height: 70px;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.rfi-card textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
