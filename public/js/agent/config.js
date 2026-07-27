@@ -369,7 +369,7 @@ export const KNOWN_HEADERS = Object.fromEntries(
     .filter(([k, t]) => {
       // Alert the developer console if a template module failed to load without crashing the app
       if (!t) {
-        console.warn(`[Waymark Debug] Template "${JSON.stringify(k,null,2)}" failed to load or is undefined. It may have been blocked by an ad-blocker or network error.`);
+        console.warn(`[Waymark Debug] Template farts "${JSON.stringify(k,null,2)}" failed to load or is undefined. It may have been blocked by an ad-blocker or network error.`);
         return false;
       }
       return Array.isArray(t.defaultHeaders);
