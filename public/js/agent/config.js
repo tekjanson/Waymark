@@ -372,9 +372,9 @@ export const KNOWN_HEADERS = Object.fromEntries(
         console.warn(`[Waymark Debug] Template "${k}" failed to load or is undefined. It may have been blocked by an ad-blocker or network error.`);
         return false;
       }
-      return Array.isArray(t.defaultHeaders);[cite: 8]
+      return Array.isArray(t.defaultHeaders);
     })
-    .map(([k, t]) => [k, t.defaultHeaders])[cite: 8]
+    .map(([k, t]) => [k, t.defaultHeaders])
 );
 
 const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
