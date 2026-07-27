@@ -298,6 +298,13 @@ const ROLE_LABELS = {
   'invoice.qty': 'Quantity / Units / Hours',
   'invoice.unitPrice': 'Unit Price / Rate / Cost',
   'invoice.notes': 'Notes / Payment Terms',
+  // Construction RFI
+  'rfi.rfiNumber': 'RFI Number / Reference',
+  'rfi.subject': 'Subject / Question',
+  'rfi.status': 'Status (Draft, Open, Pending, Closed)',
+  'rfi.assignedTo': 'Assigned To / DRI',
+  'rfi.responseDue': 'Response Due Date',
+  'rfi.officialResponse': 'Official Response / Answer',
 };
 
 /**
@@ -444,6 +451,13 @@ const CANONICAL_HEADERS = {
   'invoice.status': 'Status', 'invoice.item': 'Item',
   'invoice.qty': 'Qty', 'invoice.unitPrice': 'Unit Price',
   'invoice.notes': 'Notes',
+  // Construction RFI
+  'rfi.rfiNumber': 'RFI Number',
+  'rfi.subject': 'Subject',
+  'rfi.status': 'Status',
+  'rfi.assignedTo': 'Assigned To',
+  'rfi.responseDue': 'Response Due',
+  'rfi.officialResponse': 'Official Response',
 };
 
 /**

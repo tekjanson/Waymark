@@ -101,6 +101,7 @@ function render(sheetData, writeBack) {
 // Execute Waymark registration
 registerTemplate({
   name: 'Construction RFI',
+  priority: 25, 
   detect,
   render
 });
