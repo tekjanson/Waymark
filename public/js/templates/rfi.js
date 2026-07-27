@@ -99,7 +99,7 @@ function render(sheetData, writeBack) {
 }
 
 // Execute Waymark registration
-registerTemplate({
+registerTemplate("rfi",{
   name: 'Construction RFI',
   priority: 25, 
   detect,
