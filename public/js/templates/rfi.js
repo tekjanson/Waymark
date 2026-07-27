@@ -6,7 +6,7 @@ import {
   el, cell, editableCell, emitEdit, registerTemplate, buildDirSyncBtn,
   delegateEvent, parseGroups, buildAddRowForm, cycleStatus, lazySection,
   getUserName, isEditLocked, showToast, comboCell, textareaCell,
-} from '../shared.js';
+} from './shared.js';
 
 const STATUS_CYCLE = ['Draft', 'Open', 'Pending', 'Closed'];
 const PALETTE = ['#0284c7', '#2563eb', '#7c3aed', '#db2777', '#dc2626', '#ea580c', '#d97706', '#0d9488', '#16a34a'];
