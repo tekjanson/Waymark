@@ -9,7 +9,7 @@
 import { api }            from './api-client.js';
 import { el, showToast }  from './ui.js';
 import * as userData      from './user-data.js';
-import { detectTemplate, TEMPLATES } from './templates/index.js';
+import { detectTemplate, loadTemplate, TEMPLATES } from './templates/index.js';
 
 /* ---------- Layout definitions ---------- */
 
@@ -287,7 +287,8 @@ async function loadPanel(index, sheetId, db) {
     const values = data.values || [];
     const headers = values[0] || [];
     const rows = values.slice(1);
-    const { key: templateKey, template } = detectTemplate(headers);
+    const { key: templateKey, template: detectedTemplate } = detectTemplate(headers);
+    const template = await loadTemplate(templateKey);
 
     // Update title bar
     const titleEl = panelEl.querySelector('.dashboard-panel-title');
