@@ -8,7 +8,7 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
-import { detectTemplate, onEdit } from './templates/index.js';
+import { detectTemplate, loadTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
@@ -608,7 +608,7 @@ export async function showPublic(sheetId) {
     currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
     currentValues = data.values || [];
-    renderWithTemplate(currentValues);
+    await renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();
   } catch (err) {
@@ -673,7 +673,8 @@ window.__waymarkEmbedSheet = async function embedSheet(sheetId, container, opts 
     }
     const headers = values[0];
     const rows = values.slice(1);
-    const { template } = detectTemplate(headers);
+    const { key, template: detectedTemplate } = detectTemplate(headers);
+    const template = await loadTemplate(key);
     const lower = headers.map(h => (h || '').toLowerCase().trim());
     const cols = template.columns(lower);
     template._totalColumns = headers.length;
@@ -894,7 +895,7 @@ function openDuplicateModal() {
       await encryption.decryptSheet(sheetId, currentValues, encCols);
     }
 
-    renderWithTemplate(currentValues);
+    await renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();
 
@@ -1083,7 +1084,7 @@ function showLimitWarningBanner(spreadsheetId, count) {
 
 /* ---------- Template-aware rendering ---------- */
 
-function renderWithTemplate(values) {
+async function renderWithTemplate(values) {
   /* Blur any focused element inside the container before tearing down the DOM.
      This prevents stale inspector blur-handlers from firing commits against
      an already-destroyed node reference during auto-refresh (see F1). */
@@ -1104,7 +1105,8 @@ function renderWithTemplate(values) {
   const rows = values.slice(1);
 
   // Detect template type deterministically from headers
-  const { key, template } = detectTemplate(headers);
+  const { key, template: detectedTemplate } = detectTemplate(headers);
+  const template = await loadTemplate(key);
 
   // Show template badge
   if (templateBadge) {
@@ -1211,7 +1213,7 @@ function renderWithTemplate(values) {
       lastFetchTime = new Date();
       updateTimestamp();
       if (!(itemsEl && document.activeElement && itemsEl.contains(document.activeElement))) {
-        renderWithTemplate(currentValues);
+        await renderWithTemplate(currentValues);
       }
     } catch (err) {
       showToast(`Failed to add: ${err.message}`, 'error');

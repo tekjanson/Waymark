@@ -16,7 +16,7 @@ import { generateExamples, getExampleCategories } from './examples.js';
 import { Tutorial } from './tutorial.js';
 import * as importer from './import.js';
 import { scrapeRecipe } from './recipe-scraper.js';
-import { TEMPLATES, detectTemplate } from './templates/index.js';
+import { TEMPLATES, detectTemplate, loadTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
@@ -1107,7 +1107,7 @@ async function showFolderContents(folderId, folderName) {
       .sort((a, b) => b[1] - a[1])[0];
     if (dominant && dominant[1] > entries.length * 0.5) {
       const domKey = dominant[0];
-      const domTemplate = TEMPLATES[domKey];
+      const domTemplate = await loadTemplate(domKey);
       if (domTemplate?.directoryView) {
         const cachedSheets = entries
           .filter(([, v]) => (v.templateKey || 'checklist') === domKey)
@@ -1300,9 +1300,10 @@ async function showFolderContents(folderId, folderName) {
         let key, template;
         if (cachedEntry?.templateKey && TEMPLATES[cachedEntry.templateKey]) {
           key = cachedEntry.templateKey;
-          template = TEMPLATES[key];
+          template = await loadTemplate(key);
         } else {
           ({ key, template } = detectTemplate(headers));
+          template = await loadTemplate(key);
         }
         if (!templateGroups[key]) templateGroups[key] = { template, sheets: [] };
         const lower = headers.map(h => (h || '').toLowerCase().trim());
