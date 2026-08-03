@@ -12,18 +12,67 @@ import * as explorer from './explorer.js';
 import * as checklist from './checklist.js';
 import * as search   from './search.js';
 import * as records  from './records.js';
-import { generateExamples, getExampleCategories } from './examples.js';
-import { Tutorial } from './tutorial.js';
-import * as importer from './import.js';
-import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate, loadTemplate } from './templates/index.js';
-import * as agent from './agent.js';
-import * as notifications from './notifications.js';
-import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
 import { initializeModelSwap } from './model-swap.js';
-import { initializeModelSwapUI, setVaultSheet, clearVaultSheet } from './model-swap-ui.js';
+
+let _agentModule = null;
+let _notificationsModule = null;
+let _dashboardModule = null;
+let _importerModule = null;
+let _tutorialModule = null;
+let _examplesModule = null;
+let _recipeScraperModule = null;
+let _modelSwapUI = null;
+
+async function loadAgentModule() {
+  if (_agentModule) return _agentModule;
+  _agentModule = await import('./agent.js');
+  return _agentModule;
+}
+
+async function loadNotificationsModule() {
+  if (_notificationsModule) return _notificationsModule;
+  _notificationsModule = await import('./notifications.js');
+  return _notificationsModule;
+}
+
+async function loadDashboardModule() {
+  if (_dashboardModule) return _dashboardModule;
+  _dashboardModule = await import('./dashboard.js');
+  return _dashboardModule;
+}
+
+async function loadImporterModule() {
+  if (_importerModule) return _importerModule;
+  _importerModule = await import('./import.js');
+  return _importerModule;
+}
+
+async function loadTutorialModule() {
+  if (_tutorialModule) return _tutorialModule;
+  _tutorialModule = await import('./tutorial.js');
+  return _tutorialModule;
+}
+
+async function loadExamplesModule() {
+  if (_examplesModule) return _examplesModule;
+  _examplesModule = await import('./examples.js');
+  return _examplesModule;
+}
+
+async function loadRecipeScraperModule() {
+  if (_recipeScraperModule) return _recipeScraperModule;
+  _recipeScraperModule = await import('./recipe-scraper.js');
+  return _recipeScraperModule;
+}
+
+async function loadModelSwapUIModule() {
+  if (_modelSwapUI) return _modelSwapUI;
+  _modelSwapUI = await import('./model-swap-ui.js');
+  return _modelSwapUI;
+}
 
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('waymark-android', isTrustedAndroidWebView());
@@ -209,21 +258,23 @@ async function boot() {
   checklist.init();
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
-  dashboard.init(document.getElementById('dashboard-view'));
-  notifications.initBell();
   await initializeModelSwap();
-  initializeModelSwapUI();
+  await loadModelSwapUIModule();
+  const modelSwapUIModule = await loadModelSwapUIModule();
+  modelSwapUIModule.initializeModelSwapUI();
 
   // Listen for password manager sheet renders to notify model-swap-ui
-  document.addEventListener('waymark:sheet-rendered', (e) => {
+  document.addEventListener('waymark:sheet-rendered', async (e) => {
     const { templateKey, rows, cols } = e.detail || {};
     if (templateKey === 'passwords' && rows && cols) {
       const sheetData = { rows, cols };
       const sheetId = e.detail.sheetId;
-      setVaultSheet(sheetData, sheetId);
+      const modelSwapUIModule = await loadModelSwapUIModule();
+      modelSwapUIModule.setVaultSheet(sheetData, sheetId);
     } else if (templateKey !== 'passwords') {
       // Clear vault when navigating away from password sheet
-      clearVaultSheet();
+      const modelSwapUIModule = await loadModelSwapUIModule();
+      modelSwapUIModule.clearVaultSheet();
     }
   });
 
@@ -506,12 +557,18 @@ async function showApp(user) {
 
   // Show tutorial for first-time users
   if (!userData.getTutorialCompleted()) {
-    setTimeout(() => Tutorial.start(), 600);
+    setTimeout(async () => {
+      const tutorialModule = await loadTutorialModule();
+      tutorialModule.Tutorial.start();
+    }, 600);
   }
 
   // Tutorial button in top bar
   if (tutorialBtn) {
-    tutorialBtn.addEventListener('click', () => Tutorial.start());
+    tutorialBtn.addEventListener('click', async () => {
+      const tutorialModule = await loadTutorialModule();
+      tutorialModule.Tutorial.start();
+    });
   }
 
   // Start version checker for auto-update detection (production only)
@@ -568,8 +625,12 @@ function handleRoute() {
   }
 
   checklist.hide(); // stop any running timer
-  agent.hide();
-  dashboard.hide();
+  if (_agentModule) {
+    _agentModule.hide();
+  }
+  if (_dashboardModule) {
+    _dashboardModule.hide();
+  }
 
   // Auto-close sidebar on narrow screens when navigating to a detail view
   if (window.innerWidth <= 768 && isSidebarOpen()) {
@@ -608,19 +669,24 @@ function handleRoute() {
     userData.setLastView(hash);
   } else if (hash === '#/agent') {
     showView('agent');
-    agent.show(document.getElementById('agent-view'));
+    loadAgentModule().then((agentModule) => {
+      agentModule.hide();
+      agentModule.show(document.getElementById('agent-view'));
+    });
     updateMenuActive('agent');
     userData.setLastView(hash);
   } else if (hash.startsWith('#/dashboard')) {
     showView('dashboard');
     updateMenuActive('dashboard');
     userData.setLastView(hash);
-    const dashboardMatch = hash.match(/^#\/dashboard\/(.+)/);
-    if (dashboardMatch) {
-      dashboard.showDashboard(dashboardMatch[1]);
-    } else {
-      dashboard.showHome();
-    }
+    loadDashboardModule().then((dashboardModule) => {
+      const dashboardMatch = hash.match(/^#\/dashboard\/(.+)/);
+      if (dashboardMatch) {
+        dashboardModule.showDashboard(dashboardMatch[1]);
+      } else {
+        dashboardModule.showHome();
+      }
+    });
   } else {
     // Home
     showView('home');
@@ -889,7 +955,11 @@ if (folderPinBtn) {
 
 if (dirHelpBtn) {
   dirHelpBtn.addEventListener('click', () => {
-    if (currentDirKey) Tutorial.startTemplateTutorial('dir-' + currentDirKey, true);
+    if (currentDirKey) {
+      loadTutorialModule().then((tutorialModule) => {
+        tutorialModule.Tutorial.startTemplateTutorial('dir-' + currentDirKey, true);
+      });
+    }
   });
 }
 
@@ -1390,7 +1460,9 @@ async function showFolderContents(folderId, folderName) {
           currentDirKey = key;
           if (dirHelpBtn) dirHelpBtn.classList.remove('hidden');
           if (folderRefreshBtn) folderRefreshBtn.classList.remove('hidden');
-          Tutorial.startTemplateTutorial('dir-' + key);
+          loadTutorialModule().then((tutorialModule) => {
+            tutorialModule.Tutorial.startTemplateTutorial('dir-' + key);
+          });
 
           // Render remaining non-matching sheets normally
           for (const [otherKey, otherGroup] of Object.entries(templateGroups)) {
@@ -1476,8 +1548,9 @@ function initExamplesModal() {
   });
 
   // Select all / none
-  examplesSelectAll.addEventListener('click', () => {
-    selectedCategories = new Set(getExampleCategories().map(c => c.name));
+  examplesSelectAll.addEventListener('click', async () => {
+    const examplesModule = await loadExamplesModule();
+    selectedCategories = new Set(examplesModule.getExampleCategories().map(c => c.name));
     renderCategoryCheckboxes();
   });
   examplesSelectNone.addEventListener('click', () => {
@@ -1489,8 +1562,9 @@ function initExamplesModal() {
   examplesGenerateBtn.addEventListener('click', handleModalGenerate);
 }
 
-function openExamplesModal() {
-  const categories = getExampleCategories();
+async function openExamplesModal() {
+  const examplesModule = await loadExamplesModule();
+  const categories = examplesModule.getExampleCategories();
   selectedCategories = new Set(categories.map(c => c.name)); // all selected by default
   renderCategoryCheckboxes();
   examplesModal.classList.remove('hidden');
@@ -1535,8 +1609,9 @@ function getCategoryIcon(categoryName) {
   return '📋';
 }
 
-function renderCategoryCheckboxes() {
-  const categories = getExampleCategories();
+async function renderCategoryCheckboxes() {
+  const examplesModule = await loadExamplesModule();
+  const categories = examplesModule.getExampleCategories();
   examplesCategories.innerHTML = '';
 
   for (const cat of categories) {
@@ -1569,8 +1644,9 @@ function renderCategoryCheckboxes() {
   updateSelectionCount();
 }
 
-function updateSelectionCount() {
-  const total = getExampleCategories().length;
+async function updateSelectionCount() {
+  const examplesModule = await loadExamplesModule();
+  const total = examplesModule.getExampleCategories().length;
   examplesCount.textContent = `${selectedCategories.size} of ${total} categories selected`;
   examplesGenerateBtn.disabled = selectedCategories.size === 0;
 }
@@ -1585,7 +1661,8 @@ async function handleModalGenerate() {
 
   try {
     const cats = [...selectedCategories];
-    const result = await generateExamples((msg) => {
+    const examplesModule = await loadExamplesModule();
+    const result = await examplesModule.generateExamples((msg) => {
       examplesModalProg.textContent = msg;
     }, cats);
 
@@ -1606,7 +1683,7 @@ async function handleModalGenerate() {
 /* ---------- Legacy generate handler (kept for backwards compat) ---------- */
 
 async function handleGenerateExamples() {
-  openExamplesModal();
+  await openExamplesModal();
 }
 
 /* ---------- Create Sheet Modal ---------- */
@@ -1889,7 +1966,7 @@ function initImportModal() {
   importSearchInput.addEventListener('input', filterImportSheets);
 
   // Template picker change — user selection ALWAYS overrides auto-detection
-  importTemplatePick.addEventListener('change', () => {
+  importTemplatePick.addEventListener('change', async () => {
     if (!importSheetData || !importAnalysis) return;
     const chosenKey = importTemplatePick.value;
     if (!chosenKey) return;
@@ -1897,7 +1974,8 @@ function initImportModal() {
     // Record the user's explicit choice — this takes priority over all automation
     userTemplateOverride = chosenKey;
     importAnalysis.suggestedTemplate = chosenKey;
-    const templates = importer.getTemplateList();
+    const importerModule = await loadImporterModule();
+    const templates = importerModule.getTemplateList();
     const t = templates.find(t => t.key === chosenKey);
     importAnalysis.templateName = t?.name || chosenKey;
     importAnalysis.confidence = 1.0; // user-chosen, full confidence
@@ -2004,7 +2082,8 @@ async function handleRecipeUrlImport() {
   recipeUrlStatus.textContent = 'Fetching recipe from URL — this may take a few seconds…';
 
   try {
-    const recipe = await scrapeRecipe(url);
+    const recipeScraperModule = await loadRecipeScraperModule();
+    const recipe = await recipeScraperModule.scrapeRecipe(url);
 
     // Build sheet-like values — row-per-item so each ingredient/step
     // is its own row, making the sheet easy to edit as a human.
@@ -2041,7 +2120,8 @@ async function handleRecipeUrlImport() {
     };
 
     // Set up analysis as recipe template
-    importAnalysis = importer.analyzeWithCode(importSheetData);
+    const importerModule = await loadImporterModule();
+    importAnalysis = importerModule.analyzeWithCode(importSheetData);
     // Force recipe template — user-initiated, so record as explicit override
     userTemplateOverride = 'recipe';
     importAnalysis.suggestedTemplate = 'recipe';
@@ -2091,7 +2171,8 @@ async function handleRecipeResync(e) {
   showToast('Re-syncing recipe from source…', 'info');
 
   try {
-    const recipe = await scrapeRecipe(url);
+    const recipeScraperModule = await loadRecipeScraperModule();
+    const recipe = await recipeScraperModule.scrapeRecipe(url);
 
     const headers = ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Qty', 'Unit', 'Ingredient', 'Step', 'Notes', 'Source'];
     const ingredients = recipe.ingredients || [];
@@ -2170,16 +2251,17 @@ async function importGoNext() {
     importProgress.classList.remove('hidden');
     importProgress.textContent = 'Loading file data…';
     try {
+      const importerModule = await loadImporterModule();
       const isDoc = selectedImportSheet.mimeType === 'application/vnd.google-apps.document';
       if (isDoc) {
-        importSheetData = await importer.fetchDocForImport(selectedImportSheet.id, selectedImportSheet.name);
+        importSheetData = await importerModule.fetchDocForImport(selectedImportSheet.id, selectedImportSheet.name);
       } else {
-        importSheetData = await importer.fetchSheetForImport(selectedImportSheet.id);
+        importSheetData = await importerModule.fetchSheetForImport(selectedImportSheet.id);
       }
       renderImportPreview(importSheetData);
 
       // Auto-detect template
-      importAnalysis = importer.analyzeWithCode(importSheetData);
+      importAnalysis = importerModule.analyzeWithCode(importSheetData);
 
       // Populate template picker
       populateTemplatePicker(importAnalysis);
@@ -2199,7 +2281,8 @@ async function importGoNext() {
     importAnalysis.columnMapping = { ...userColumnMapping };
     const effectiveTemplate = userTemplateOverride || importTemplatePick.value || importAnalysis.suggestedTemplate;
     importAnalysis.suggestedTemplate = effectiveTemplate;
-    const templates = importer.getTemplateList();
+    const importerModule = await loadImporterModule();
+    const templates = importerModule.getTemplateList();
     const t = templates.find(t => t.key === effectiveTemplate);
     if (t) importAnalysis.templateName = t.name;
 
@@ -2221,7 +2304,7 @@ async function importGoNext() {
         columnMapping: userTemplateOverride ? userColumnMapping : null,
         onProgress(msg) { importProgress.textContent = msg; },
       };
-      const result = await importer.importSheet(importSheetData, importAnalysis, options);
+      const result = await importerModule.importSheet(importSheetData, importAnalysis, options);
 
       // Patch .waymark-index so the folder view picks up the imported sheet
       if (result.sheetId && result.folderId) {
@@ -2253,9 +2336,10 @@ async function importGoNext() {
   }
 }
 
-function populateTemplatePicker(analysis) {
+async function populateTemplatePicker(analysis) {
   importTemplatePick.innerHTML = '';
-  const templates = importer.getTemplateList();
+  const importerModule = await loadImporterModule();
+  const templates = importerModule.getTemplateList();
   for (const t of templates) {
     const opt = el('option', { value: t.key }, [`${t.icon} ${t.name}`]);
     if (t.key === analysis.suggestedTemplate) opt.selected = true;
@@ -2270,13 +2354,14 @@ function updateDetectBadge(analysis) {
     (conf >= 70 ? 'import-confidence-high' : conf >= 40 ? 'import-confidence-medium' : 'import-confidence-low');
 }
 
-function renderColumnMapEditor(analysis) {
+async function renderColumnMapEditor(analysis) {
   importColMapEditor.innerHTML = '';
   const headers = importSheetData?.values?.[0] || [];
   const mapping = analysis.columnMapping || {};
 
   // Get available roles for the selected template
-  const roles = importer.getTemplateRoles(analysis.suggestedTemplate);
+  const importerModule = await loadImporterModule();
+  const roles = importerModule.getTemplateRoles(analysis.suggestedTemplate);
 
   for (const header of headers) {
     const currentRole = mapping[header] || '';

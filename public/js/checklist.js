@@ -10,7 +10,6 @@ import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { detectTemplate, loadTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
-import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks } from './storage.js';
 import * as encryption from './encryption.js';
@@ -71,8 +70,10 @@ export function init() {
   }
 
   if (templateHelpBtn) {
-    templateHelpBtn.addEventListener('click', () => {
-      if (currentTemplateKey) Tutorial.startTemplateTutorial(currentTemplateKey, true);
+    templateHelpBtn.addEventListener('click', async () => {
+      if (!currentTemplateKey) return;
+      const tutorialModule = await import('./tutorial.js');
+      tutorialModule.Tutorial.startTemplateTutorial(currentTemplateKey, true);
     });
   }
 

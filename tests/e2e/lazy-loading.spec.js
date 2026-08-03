@@ -28,3 +28,25 @@ test('loads template modules only when needed', async ({ page }) => {
   const budgetLoaded = templateRequests.some(url => /\/js\/templates\/budget\/index\.js$/.test(url));
   expect(budgetLoaded).toBe(true);
 });
+
+test('defers optional feature modules until they are actually used', async ({ page }) => {
+  const moduleRequests = [];
+
+  await page.route('**/js/**', route => {
+    moduleRequests.push(route.request().url());
+    route.continue();
+  });
+
+  await setupApp(page, { hash: '#/' });
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
+
+  const initialModuleFiles = moduleRequests
+    .map(url => new URL(url).pathname.split('/').pop())
+    .filter(Boolean);
+
+  expect(initialModuleFiles).not.toContain('agent.js');
+  expect(initialModuleFiles).not.toContain('dashboard.js');
+  expect(initialModuleFiles).not.toContain('tutorial.js');
+  expect(initialModuleFiles).not.toContain('import.js');
+  expect(initialModuleFiles).not.toContain('recipe-scraper.js');
+});
