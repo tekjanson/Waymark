@@ -1252,7 +1252,12 @@ async function renderWithTemplate(values) {
       setFleetBtn.classList.add('hidden');
     }
   }
-  Tutorial.startTemplateTutorial(key);
+  try {
+    const tutorialModule = await import('./tutorial.js');
+    tutorialModule.Tutorial?.startTemplateTutorial?.(key);
+  } catch (err) {
+    console.warn('[tutorial] Failed to start template tutorial', err);
+  }
 
   // Migration banner: suggest adding missing columns the template now supports
   const missing = getMissingMigrations(template, cols);

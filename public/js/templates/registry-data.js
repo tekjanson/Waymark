@@ -9,7 +9,8 @@ export const TEMPLATE_REGISTRY = {
     color: '#7c3aed',
     priority: 25,
     modulePath: './testcases.js',
-    detectSignals: ["result", "pass", "fail", "test.status", "outcome", "verdict", "test", "case", "scenario", "expected", "actual"],
+    detectSignals: ["result", "pass", "fail", "test.status", "outcome", "verdict", "test", "case", "scenario", "expected", "actual", "priority", "notes"],
+    detectRequiredSignals: ["result", "test"],
     columnRoles: ["text", "result", "expected", "actual", "priority", "notes"],
   },
   'checklist': {
@@ -19,6 +20,7 @@ export const TEMPLATE_REGISTRY = {
     priority: 10,
     modulePath: './checklist.js',
     detectSignals: ["status", "done", "complete", "check"],
+    detectRequiredSignals: ["status"],
     columnRoles: ["status", "text", "date", "notes"],
   },
   'tracker': {
@@ -27,7 +29,8 @@ export const TEMPLATE_REGISTRY = {
     color: '#2563eb',
     priority: 20,
     modulePath: './tracker.js',
-    detectSignals: ["progress", "percent", "%", "score", "rating", "level", "grade", "completion"],
+    detectSignals: ["progress", "percent", "%", "score", "rating", "level", "grade", "completion", "goal", "target", "started", "notes"],
+    detectRequiredSignals: ["progress"],
     columnRoles: ["text", "progress", "target", "notes"],
   },
   'schedule': {
@@ -127,6 +130,7 @@ export const TEMPLATE_REGISTRY = {
     priority: 18,
     modulePath: './changelog.js',
     detectSignals: ["version", "release", "changelog", "what.changed", "breaking", "added", "fixed"],
+    detectRequiredSignals: ["version"],
     columnRoles: ["version", "date", "type", "description"],
   },
   'crm': {
@@ -199,6 +203,7 @@ export const TEMPLATE_REGISTRY = {
     priority: 21,
     modulePath: './automation.js',
     detectSignals: ["action", "target", "selector", "workflow", "automation", "command"],
+    detectRequiredSignals: ["action", "target"],
     columnRoles: ["workflow", "step", "action", "target", "value", "status"],
   },
   'guide': {
@@ -244,6 +249,7 @@ export const TEMPLATE_REGISTRY = {
     priority: 22,
     modulePath: './okr/index.js',
     detectSignals: ["objective", "key result", "okr", "goal", "progress", "target", "owner", "quarter"],
+    detectRequiredSignals: ["objective", "key result"],
     columnRoles: ["objective", "keyResult", "progress", "target", "owner", "quarter"],
   },
   'gantt': {
@@ -288,7 +294,8 @@ export const TEMPLATE_REGISTRY = {
     color: '#7c3aed',
     priority: 20,
     modulePath: './arcade/index.js',
-    detectSignals: ["arcade", "game lobby", "game room", "multiplayer"],
+    detectSignals: ["arcade", "game lobby", "game room", "multiplayer", "game", "player", "score", "status"],
+    detectRequiredSignals: ["game", "player"],
     columnRoles: ["game", "player1", "player2", "score", "status", "date"],
   },
   'worker': {
@@ -316,6 +323,7 @@ export const TEMPLATE_REGISTRY = {
     priority: 20,
     modulePath: './blog.js',
     detectSignals: ["blog", "title", "doc", "google doc", "article", "author"],
+    detectRequiredSignals: ["title", "doc"],
     columnRoles: ["title", "doc", "date", "author", "category", "status"],
   },
   'ledger': {
