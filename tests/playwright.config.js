@@ -1,12 +1,6 @@
 // @ts-check
 const { defineConfig } = require('@playwright/test');
 
-const browserExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
-  process.env.CHROMIUM_PATH ||
-  process.env.PLAYWRIGHT_EXECUTABLE_PATH;
-
-const launchOptions = browserExecutablePath ? { executablePath: browserExecutablePath } : {};
-
 module.exports = defineConfig({
   testDir: './e2e',
   testIgnore: ['**/design-audit.spec.js'],
@@ -20,7 +14,6 @@ module.exports = defineConfig({
   use: {
     baseURL: 'http://localhost:3000',
     headless: true,
-    launchOptions,
     viewport: { width: 1280, height: 720 },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
