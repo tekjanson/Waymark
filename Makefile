@@ -51,7 +51,6 @@ CONTAINER_NAME="$(CONTAINER)"
 endef
 
 .PHONY: help up down \
-        setup-dev \
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
@@ -192,9 +191,6 @@ down: ## Stop everything (web server + fleet webhook + all agent containers)
 	@docker ps --filter "name=dev-worker" --format "{{.Names}}" | \
 		xargs -r -I{} sh -c 'docker stop {} && docker rm {} && echo "  ✓  {} stopped"'
 	@echo "  ✓  Done"
-
-setup-dev: ## Install Node.js/npm and project dependencies
-	@./scripts/setup-dev-env.sh
 
 # ── Help ──────────────────────────────────────────────────────────────
 
