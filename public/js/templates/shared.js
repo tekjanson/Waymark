@@ -8,6 +8,7 @@
 import { el, showToast } from '../ui.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
+export * as encryption from '../encryption.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
@@ -1174,6 +1175,18 @@ export async function getSheetData(sheetId) {
  */
 export async function appendSheetRows(sheetId, sheetTitle, rows) {
   return api.sheets.appendRows(sheetId, sheetTitle, rows);
+}
+
+/**
+ * Delete rows from a Google Sheet.
+ * Used by templates to remove rows from sheets (e.g. deleting an agent).
+ * @param {string} spreadsheetId  Spreadsheet ID
+ * @param {number} sheetId        Sheet tab ID (numeric)
+ * @param {number} startIndex     Zero-based start index (inclusive)
+ * @param {number} endIndex       Zero-based end index (exclusive)
+ */
+export async function deleteSheetRows(spreadsheetId, sheetId, startIndex, endIndex) {
+  return api.sheets.deleteRows(spreadsheetId, sheetId, startIndex, endIndex);
 }
 
 /**

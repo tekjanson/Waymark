@@ -7,8 +7,7 @@
    agents read their row on boot and pick up the config.
    ============================================================ */
 
-import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
-import { api } from '../api-client.js';
+import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast, deleteSheetRows } from './shared.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
@@ -321,7 +320,7 @@ const definition = {
               }
 
               // Use batchUpdate to delete the row
-              await api.sheets.deleteRows(spreadsheetId, sheetId, rowIdx, rowIdx + 1);
+              await deleteSheetRows(spreadsheetId, sheetId, rowIdx, rowIdx + 1);
               showToast(`Agent "${name}" deleted`, 'success');
               deleteModal.classList.add('hidden');
               
