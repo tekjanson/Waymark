@@ -437,7 +437,7 @@ function openChat(sheetId, displayName, signal) {
   }
 
   /** Collect every piece of audio/WebRTC diagnostic state and download as JSON. */
-  function downloadDebugSnapshot() {
+  async function downloadDebugSnapshot() {
     const connect = _activeConnect;
     const ctx = connect?._audioCtx;
     const snap = {
@@ -642,37 +642,41 @@ function openChat(sheetId, displayName, signal) {
       for (const [peerId, r] of connect._rtc) {
         if (r?.pc?.getStats) {
           statsPromises.push(
-            r.pc.getStats().then(stats => {
-              const filtered = {};
-              stats.forEach(report => {
-                // Keep only audio-relevant and connection-relevant stats
-                if (/inbound-rtp|outbound-rtp|remote-inbound|remote-outbound|candidate-pair|transport|codec/i.test(report.type)) {
-                  if (report.kind === 'video' && !/candidate|transport|codec/.test(report.type)) return;
-                  filtered[report.id] = Object.fromEntries(
-                    Object.entries(report).filter(([k]) => typeof report[k] !== 'object')
-                  );
-                }
-              });
-              return { peerId, stats: filtered };
-            }).catch(() => ({ peerId, stats: 'getStats failed' }))
+            (async () => {
+              try {
+                const stats = await r.pc.getStats();
+                const filtered = {};
+                stats.forEach(report => {
+                  // Keep only audio-relevant and connection-relevant stats
+                  if (/inbound-rtp|outbound-rtp|remote-inbound|remote-outbound|candidate-pair|transport|codec/i.test(report.type)) {
+                    if (report.kind === 'video' && !/candidate|transport|codec/.test(report.type)) return;
+                    filtered[report.id] = Object.fromEntries(
+                      Object.entries(report).filter(([k]) => typeof report[k] !== 'object')
+                    );
+                  }
+                });
+                return { peerId, stats: filtered };
+              } catch {
+                return { peerId, stats: 'getStats failed' };
+              }
+            })()
           );
         }
       }
     }
 
-    Promise.all(statsPromises).then(allStats => {
-      snap.rtcStats = allStats;
+    const allStats = await Promise.all(statsPromises);
+    snap.rtcStats = allStats;
 
-      const json = JSON.stringify(snap, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `waymark-audio-debug-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      debugLog('Debug snapshot downloaded');
-    });
+    const json = JSON.stringify(snap, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `waymark-audio-debug-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    debugLog('Debug snapshot downloaded');
   }
 
   /** Describe a MediaStream's tracks for the snapshot. */
@@ -1146,7 +1150,8 @@ function openChat(sheetId, displayName, signal) {
   // --- Restore previous chat messages from the sheet ---
   if (signal?.readAll && signal.cols) {
     const c = signal.cols;
-    signal.readAll().then(allRows => {
+    (async () => {
+      const allRows = await signal.readAll();
       const dataRows = allRows.slice(1); // skip header
       for (const row of dataRows) {
         const cat = c.category >= 0 ? (row[c.category] || '').toLowerCase() : '';
@@ -1175,7 +1180,7 @@ function openChat(sheetId, displayName, signal) {
       if (messages.children.length > 0) {
         messages.scrollTop = messages.scrollHeight;
       }
-    }).catch(() => {}); // silent — don't block chat if read fails
+    })().catch(() => {}); // silent — don't block chat if read fails
   }
 
   // --- Create connection ---
@@ -1199,7 +1204,7 @@ function openChat(sheetId, displayName, signal) {
       statusLabel.textContent = labels[status] || status;
       if (status === 'disconnected') saveChatHistory();
     },
-    onRemoteStream(stream) {
+    async onRemoteStream(stream) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
         // Attach ONLY video tracks — audio goes exclusively through the echo
@@ -1230,11 +1235,12 @@ function openChat(sheetId, displayName, signal) {
         // Keep old pipeline running until new one is ready
         const oldCleanup = _remoteFilterCleanup;
         _remoteFilterCleanup = null;
-        connect.createRemoteAudioPipeline(stream, {
-          highPassFreq: getHighPassFreq(),
-          echoSuppression: getEchoSuppression(),
-          duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
-        }).then(result => {
+        try {
+          const result = await connect.createRemoteAudioPipeline(stream, {
+            highPassFreq: getHighPassFreq(),
+            echoSuppression: getEchoSuppression(),
+            duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
+          });
           // Discard if superseded by a newer onRemoteStream call
           if (_activeConnect !== connect || _pipelineGen !== gen) {
             debugLog(`Pipeline gen=${gen} superseded by gen=${_pipelineGen} — discarded`);
@@ -1267,9 +1273,9 @@ function openChat(sheetId, displayName, signal) {
           const outTracks = result.outputStream?.getAudioTracks() || [];
           const ot = outTracks[0];
           debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
-        }).catch(err => {
+        } catch (err) {
           debugLog(`Pipeline error: ${err.message}`);
-        });
+        }
       } else if (nAudioTracks === 0) {
         debugLog('Remote stream has no audio tracks');
       }

@@ -1230,7 +1230,10 @@ async function showFolderContents(folderId, folderName) {
       for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
         const batch = toFetch.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
-          batch.map(s => api.sheets.getSpreadsheetSummary(s.id).then(data => ({ ...s, data })))
+          batch.map(async s => {
+            const data = await api.sheets.getSpreadsheetSummary(s.id);
+            return { ...s, data };
+          })
         );
         for (let j = 0; j < results.length; j++) {
           if (results[j].status === 'fulfilled') {

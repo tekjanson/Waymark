@@ -63,9 +63,13 @@ let mockFixtures = null;
 
 async function loadFixtures() {
   if (mockFixtures) return mockFixtures;
+  const [foldersRes, usersRes] = await Promise.all([
+    fetch(BASE + '/__fixtures/folders.json'),
+    fetch(BASE + '/__fixtures/users.json'),
+  ]);
   const [folders, users] = await Promise.all([
-    fetch(BASE + '/__fixtures/folders.json').then(r => r.json()),
-    fetch(BASE + '/__fixtures/users.json').then(r => r.json()),
+    foldersRes.json(),
+    usersRes.json(),
   ]);
   mockFixtures = { folders, users, sheets: {} };
   return mockFixtures;
@@ -147,7 +151,8 @@ async function loadMockSheet(sheetId) {
   if (!filename) return null;
 
   try {
-    const data = await fetch(BASE + `/__fixtures/sheets/${filename}.json`).then(r => r.json());
+    const res = await fetch(BASE + `/__fixtures/sheets/${filename}.json`);
+    const data = await res.json();
     fix.sheets[sheetId] = data;
     return data;
   } catch {
