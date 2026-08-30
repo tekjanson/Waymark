@@ -4,7 +4,7 @@
   "sheetTitle": "Sheet1",
   "values": [
     ["Item", "Category", "Status", "Due", "Notes"],
-    ["Milk", "Dairy", "done", "2026-03-01", "Whole milk"],
+    ["Milk", "Dairy", "done", "2026-03-01", "Whole milk from the local dairy — grab two cartons and check the date is at least a week out"],
     ["Eggs", "Dairy", "", "2026-03-02", "Free range dozen"],
     ["Yogurt", "Dairy", "done", "", "Greek"],
     ["Apples", "Produce", "", "2026-03-03", "Honeycrisp"],

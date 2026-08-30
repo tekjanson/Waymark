@@ -206,6 +206,18 @@ export function getMissingMigrations(template, cols) {
 
 /* ---------- Inline-editable cell ---------- */
 
+/** Character count above which an inline editor opens as a multi-line textarea. */
+const LONG_TEXT_THRESHOLD = 70;
+
+/**
+ * Whether a value is long enough (or multi-line) to warrant a textarea editor.
+ * @param {string} v
+ * @returns {boolean}
+ */
+function _looksLong(v) {
+  return typeof v === 'string' && (v.includes('\n') || v.length > LONG_TEXT_THRESHOLD);
+}
+
 /**
  * Create a DOM element whose text content becomes an inline <input> on click.
  * On blur / Enter the edit is committed via emitEdit(); on Escape it is cancelled.
@@ -244,26 +256,24 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
       showToast('This row is locked — editing is disabled', 'warn');
       return;
     }
-    if (wrapper.querySelector('input')) return;            // already editing
-    const current = text || '';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'editable-cell-input';
-    input.value = current;
+    if (wrapper.querySelector('input, textarea')) return;  // already editing
 
-    wrapper.textContent = '';
-    wrapper.append(input);
-    input.focus();
-    input.select();
+    const current = text || '';
+    let control = null;
+    let done = false;
+    let upgrading = false;
+
+    function paint(value) {
+      if (opts.renderContent) opts.renderContent(wrapper);
+      else wrapper.textContent = value || '—';
+    }
 
     function commit() {
-      const newValue = input.value.trim();
-      input.removeEventListener('blur', commit);
-      if (opts.renderContent) {
-        opts.renderContent(wrapper);
-      } else {
-        wrapper.textContent = newValue || '—';
-      }
+      if (done) return;
+      done = true;
+      wrapper.classList.remove('editing-multiline');
+      const newValue = control.value.trim();
+      paint(newValue);
       if (newValue !== current && !(current === '' && newValue === '')) {
         emitEdit(rowIdx, colIdx, newValue);
         if (opts.onCommit) opts.onCommit(newValue, wrapper);
@@ -271,19 +281,64 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
     }
 
     function cancel() {
-      input.removeEventListener('blur', commit);
-      if (opts.renderContent) {
-        opts.renderContent(wrapper);
+      if (done) return;
+      done = true;
+      wrapper.classList.remove('editing-multiline');
+      paint(current);
+    }
+
+    function autoGrow(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 320)}px`;
+    }
+
+    /* Mount an <input> or <textarea>; re-mountable so a single-line input can
+       upgrade to a textarea once its content grows long. */
+    function mount(kind, value, caretToEnd) {
+      const existing = wrapper.querySelector('input, textarea');
+      if (existing) { upgrading = true; existing.remove(); upgrading = false; }
+
+      const isTextarea = kind === 'textarea';
+      control = document.createElement(isTextarea ? 'textarea' : 'input');
+      control.className = isTextarea ? 'editable-cell-textarea' : 'editable-cell-input';
+      if (!isTextarea) control.type = 'text';
+      control.value = value;
+      wrapper.classList.toggle('editing-multiline', isTextarea);
+      wrapper.append(control);
+      control.focus();
+      if (caretToEnd) {
+        const n = value.length;
+        try { control.setSelectionRange(n, n); } catch (_) { /* noop */ }
       } else {
-        wrapper.textContent = current || '—';
+        control.select();
+      }
+
+      control.addEventListener('blur', () => { if (!upgrading) commit(); });
+      control.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cancel(); return; }
+        if (e.key === 'Enter') {
+          if (isTextarea) {
+            /* Ctrl/Cmd+Enter commits; plain Enter inserts a newline */
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); control.blur(); }
+          } else {
+            e.preventDefault(); control.blur();
+          }
+        }
+      });
+
+      if (isTextarea) {
+        autoGrow(control);
+        control.addEventListener('input', () => autoGrow(control));
+      } else {
+        /* Grow into a textarea automatically once the text gets long */
+        control.addEventListener('input', () => {
+          if (_looksLong(control.value)) mount('textarea', control.value, true);
+        });
       }
     }
 
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-    });
+    wrapper.textContent = '';
+    mount(_looksLong(current) ? 'textarea' : 'input', current, false);
   }
 
   wrapper.addEventListener('click', (e) => {

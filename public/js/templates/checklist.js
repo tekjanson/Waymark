@@ -85,8 +85,8 @@ const definition = {
       { role: 'text',     label: 'Item',     colIndex: cols.text,     type: 'text',   placeholder: 'What needs to be done?', required: true },
       { role: 'status',   label: 'Status',   colIndex: cols.status,   type: 'text',   defaultValue: '', hidden: true },
       { role: 'category', label: 'Category', colIndex: cols.category, type: 'combo',  placeholder: 'Select or type a category…' },
-      { role: 'date',     label: 'Due',      colIndex: cols.date,     type: 'date',   placeholder: 'Due date' },
-      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'text',   placeholder: 'Optional notes' },
+      { role: 'date',     label: 'Due',      colIndex: cols.date,     type: 'date',     placeholder: 'Due date' },
+      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'textarea', placeholder: 'Optional notes' },
     ];
   },
 

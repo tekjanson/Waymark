@@ -298,3 +298,52 @@ test('bulk check-all completes every item in a category', async ({ page }) => {
   }
 });
 
+/* ---------- Long text opens in a textarea ---------- */
+
+test('a long text cell opens in a textarea for editing', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Milk's note is seeded long (> 70 chars) → editor opens as a textarea
+  const note = page.locator('.checklist-item-notes').first();
+  await note.click();
+  await expect(note.locator('textarea.editable-cell-textarea')).toBeVisible();
+  await expect(note.locator('input')).toHaveCount(0);
+});
+
+test('a short text cell opens as an input and upgrades to a textarea when long', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Milk's item text is short → opens as a single-line input
+  const item = page.locator('.checklist-item-text').first();
+  await item.click();
+  await expect(item.locator('input.editable-cell-input')).toBeVisible();
+
+  // Growing the text past the threshold upgrades the editor to a textarea
+  await item.locator('input.editable-cell-input').evaluate((el, val) => {
+    el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'A'.repeat(80));
+  await expect(item.locator('textarea.editable-cell-textarea')).toBeVisible();
+});
+
+test('editing a long text cell commits on blur', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const note = page.locator('.checklist-item-notes').first();
+  await note.click();
+  const ta = note.locator('textarea.editable-cell-textarea');
+  await ta.fill('Updated note that is also fairly long so it stays in a textarea while editing here');
+  await ta.evaluate(el => el.blur());
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.some(u => u.value.startsWith('Updated note'))).toBe(true);
+});
+
+
