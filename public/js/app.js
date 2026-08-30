@@ -78,6 +78,12 @@ const settingsChooseFolder = document.getElementById('settings-choose-folder');
 const settingsResetFolder  = document.getElementById('settings-reset-folder');
 const settingsFolderBrowser = document.getElementById('settings-folder-browser');
 
+/* ---------- Drive Access refs ---------- */
+const settingsUpgradeDrive = document.getElementById('settings-upgrade-drive');
+const driveAccessIcon      = document.getElementById('drive-access-icon');
+const driveAccessTier      = document.getElementById('drive-access-tier');
+const driveAccessDesc      = document.getElementById('drive-access-desc');
+
 /* ---------- Version Picker refs ---------- */
 const settingsVersionSection = document.getElementById('settings-version-section');
 const settingsGithubRef      = document.getElementById('settings-github-ref');
@@ -688,6 +694,7 @@ let _userName = '';
 function renderHome() {
   renderGreeting();
   wireQuickActions();
+  renderSharedWithMe();
   renderRecentSheets();
   renderPinnedSheets();
   renderPinnedFolders();
@@ -736,6 +743,72 @@ function wireQuickActions() {
   wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
   wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
   wire('home-action-examples', () => { openExamplesModal(); });
+}
+
+/* ---------- Home: Shared with me ---------- */
+
+/**
+ * List Drive items shared with the user directly on the home screen.
+ * Only shown when full Drive access is granted — the drive.file scope
+ * cannot enumerate shared items, so the section stays hidden for standard
+ * access (those users still pick shared files via the Picker).
+ */
+async function renderSharedWithMe() {
+  const section   = document.getElementById('home-shared');
+  const container = document.getElementById('home-shared-list');
+  if (!section || !container) return;
+
+  if (!api.auth.hasFullDriveAccess()) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  const FOLDER_MIME = 'application/vnd.google-apps.folder';
+  const SHEET_MIME  = 'application/vnd.google-apps.spreadsheet';
+
+  try {
+    const res = await api.drive.getSharedWithMe();
+    const items = (res?.files || []).filter(
+      f => f.mimeType === SHEET_MIME || f.mimeType === FOLDER_MIME
+    );
+
+    container.innerHTML = '';
+    if (items.length === 0) {
+      section.classList.add('hidden');
+      return;
+    }
+
+    for (const item of items.slice(0, 12)) {
+      const isFolder = item.mimeType === FOLDER_MIME;
+      const owner = item.owner || item.owners?.[0]?.emailAddress || '';
+      const card = el('div', {
+        className: 'pinned-card',
+        on: {
+          click() {
+            if (isFolder) navigate('folder', item.id, item.name);
+            else navigate('sheet', item.id);
+          },
+        },
+      }, [
+        el('span', { className: 'folder-emoji' }, [isFolder ? '📁' : '📊']),
+        el('div', { className: 'pinned-card-info' }, [
+          el('div', { className: 'pinned-card-name' }, [item.name || 'Untitled']),
+          owner
+            ? el('div', { className: 'pinned-card-owner', title: owner }, [
+                owner.includes('@') ? owner.split('@')[0] : owner,
+              ])
+            : null,
+          el('span', { className: 'badge-shared' }, ['shared']),
+        ]),
+      ]);
+      container.append(card);
+    }
+
+    section.classList.remove('hidden');
+  } catch {
+    // Best-effort — never let a shared-list failure block the home screen.
+    section.classList.add('hidden');
+  }
 }
 
 /* ---------- Home: Recent Sheets ---------- */
@@ -902,6 +975,16 @@ if (dirHelpBtn) {
  */
 async function refreshFolderViaPicker() {
   if (!currentFolderId) return;
+
+  // Full Drive access can read shared content directly — skip the Picker
+  // dance entirely and just re-list the folder (Drive now sees every file).
+  if (api.auth.hasFullDriveAccess()) {
+    document.querySelector('.sync-guide-overlay')?.remove();
+    storage.setFolderIndex(currentFolderId, null);
+    showToast('Syncing shared content…', 'info');
+    navigate('folder', currentFolderId, currentFolderName);
+    return;
+  }
 
   // Remove any previous guide that wasn't cleaned up
   document.querySelector('.sync-guide-overlay')?.remove();
@@ -2544,6 +2627,9 @@ function openSettingsModal() {
   settingsResetFolder.classList.toggle('hidden', !customName);
   settingsFolderBrowser.classList.add('hidden');
 
+  // Drive access tier
+  renderDriveAccessSetting();
+
   // Version picker (only visible when GitHub source is active)
   if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {
     settingsVersionSection.classList.remove('hidden');
@@ -2566,6 +2652,30 @@ function openSettingsModal() {
 function closeSettingsModal() {
   if (settingsModal) settingsModal.classList.add('hidden');
   if (settingsFolderBrowser) settingsFolderBrowser.classList.add('hidden');
+}
+
+/* ---------- Drive Access tier ---------- */
+
+/**
+ * Reflect the current Google Drive access tier in the Settings modal.
+ * Standard (drive.file) shows an "Enable full access" upgrade button;
+ * full access shows a granted confirmation with the button hidden.
+ */
+function renderDriveAccessSetting() {
+  if (!driveAccessTier) return;
+  const full = api.auth.hasFullDriveAccess();
+
+  if (driveAccessIcon) driveAccessIcon.textContent = full ? '🔓' : '🔒';
+  driveAccessTier.textContent = full ? 'Full access granted ✓' : 'Standard access';
+  if (driveAccessDesc) {
+    driveAccessDesc.textContent = full
+      ? 'Sheets and folders shared with you appear automatically and open without extra steps.'
+      : 'Waymark only sees files you create or open through it. Enable full access so shared Waymarks just work.';
+  }
+
+  if (settingsUpgradeDrive) {
+    settingsUpgradeDrive.classList.toggle('hidden', full);
+  }
 }
 
 /* ---------- Version Picker helpers ---------- */
@@ -2749,6 +2859,14 @@ function initSettingsModal() {
     settingsFolderBrowser.classList.add('hidden');
     showToast('Import folder reset to default', 'success');
   });
+
+  // Drive access — upgrade to full access (re-runs OAuth with the broader scope)
+  if (settingsUpgradeDrive) {
+    settingsUpgradeDrive.addEventListener('click', () => {
+      showToast('Redirecting to Google to grant full Drive access…', 'info');
+      api.auth.login({ full: true });
+    });
+  }
 
   // Version picker — apply button
   if (settingsApplyRef) {

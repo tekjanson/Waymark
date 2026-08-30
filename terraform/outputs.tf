@@ -16,6 +16,11 @@ output "required_scopes" {
   value       = local.api_scopes
 }
 
+output "optional_scopes" {
+  description = "Restricted scopes requested only for the opt-in 'full access' tier"
+  value       = local.optional_scopes
+}
+
 output "consent_screen_url" {
   description = "Direct link to the OAuth consent screen configuration"
   value       = "https://console.cloud.google.com/apis/credentials/consent?project=${var.project_id}"

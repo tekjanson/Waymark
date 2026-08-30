@@ -60,6 +60,7 @@ async function withAuthRetry(fn) {
 
 /* ---------- Mock state ---------- */
 let mockFixtures = null;
+let mockDriveAccess = 'file'; // simulated Drive access tier in local mode
 
 async function loadFixtures() {
   if (mockFixtures) return mockFixtures;
@@ -166,13 +167,14 @@ export const api = {
 
   /* ---- Auth ---- */
   auth: {
-    login() {
+    login(opts = {}) {
       if (isLocal) {
-        // Set mock state and reload
-        window.location.href = BASE + '/auth/login';
+        // Set mock state and reload, preserving the requested access tier.
+        const qs = opts.full ? '?access=full' : '';
+        window.location.href = BASE + '/auth/login' + qs;
         return;
       }
-      clientAuth.login();
+      clientAuth.login(opts);
     },
 
     async init() {
@@ -180,6 +182,8 @@ export const api = {
         // call server mock auth
         const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
         if (!res.ok) return null;
+        const data = await res.json().catch(() => ({}));
+        if (data.drive_access) mockDriveAccess = data.drive_access;
         await loadFixtures();
         return mockFixtures.users[0];
       }
@@ -208,6 +212,18 @@ export const api = {
     async getToken() {
       if (isLocal) return 'mock-access-token';
       return clientAuth.getToken();
+    },
+
+    /** The granted Drive access tier: 'file' (minimal) or 'full' (shared "just works"). */
+    getDriveAccess() {
+      if (isLocal) return mockDriveAccess;
+      return clientAuth.getDriveAccess();
+    },
+
+    /** True when full Drive access was granted. */
+    hasFullDriveAccess() {
+      if (isLocal) return mockDriveAccess === 'full';
+      return clientAuth.hasFullDriveAccess();
     },
   },
 

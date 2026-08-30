@@ -9,18 +9,28 @@ import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 let accessToken = null;
 let tokenExpiry  = 0;          // epoch ms
 let currentUser  = null;
+let driveAccess  = 'file';     // 'file' (drive.file) | 'full' (full Drive)
 let _refreshPromise = null;    // dedup concurrent refreshes
 const BASE = window.__WAYMARK_BASE || '';
 
 /* ---------- Public API ---------- */
 
-/** Redirect browser to server's OAuth login endpoint. */
-export function login() {
+/**
+ * Redirect browser to server's OAuth login endpoint.
+ * @param {Object} [opts]
+ * @param {boolean} [opts.full]  request the full Drive scope ("just works"
+ *                               sharing) instead of the minimal drive.file scope.
+ */
+export function login(opts = {}) {
+  const params = new URLSearchParams();
+  // ?access=full opts into the broader Drive scope on the server.
+  if (opts.full) params.set('access', 'full');
   // Android WebView exposes window.Android — signal the server so it uses
   // the custom-scheme redirect URI (com.waymark.app://oauth2callback) instead
   // of the HTTPS callback, allowing the deep-link to return to the app.
-  const platform = isTrustedAndroidWebView() ? '?android=1' : '';
-  window.location.href = BASE + '/auth/login' + platform;
+  if (isTrustedAndroidWebView()) params.set('android', '1');
+  const qs = params.toString();
+  window.location.href = BASE + '/auth/login' + (qs ? `?${qs}` : '');
 }
 
 /**
@@ -67,6 +77,7 @@ async function _doRefresh() {
     const data = await res.json();
     accessToken  = data.access_token;
     tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
+    if (data.drive_access) driveAccess = data.drive_access; // 'file' | 'full'
     console.log('[auth] refresh OK — handing token to Android bridge');
     // Hand fresh token to Android native WebRTC service (no-op in browser)
     const bridge = getAndroidBridge(['onAuthToken']);
@@ -87,6 +98,20 @@ export async function logout() {
   accessToken = null;
   tokenExpiry = 0;
   currentUser = null;
+  driveAccess = 'file';
+}
+
+/**
+ * The Drive access tier granted for this session.
+ * @returns {'file'|'full'}
+ */
+export function getDriveAccess() {
+  return driveAccess;
+}
+
+/** True when the user granted full Drive access (shared files "just work"). */
+export function hasFullDriveAccess() {
+  return driveAccess === 'full';
 }
 
 /** Get the current access token, auto-refreshing if needed. */

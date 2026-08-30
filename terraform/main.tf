@@ -33,14 +33,22 @@ locals {
     "profile",
   ]
 
-  # API scopes — only drive.file (non-restricted, no verification needed)
+  # Baseline API scope — drive.file (non-restricted, no verification needed).
   # Google Picker grants drive.file access to user-selected files,
   # removing the need for drive.readonly and spreadsheets scopes.
   api_scopes = [
     "https://www.googleapis.com/auth/drive.file", # manage files created or selected via Picker
   ]
 
-  all_scopes = concat(local.openid_scopes, local.api_scopes)
+  # Optional upgrade scope — requested only when a user opts into "full access"
+  # so that Waymarks shared with them work without the Picker.  This is a
+  # RESTRICTED scope: it must be registered on the consent screen and requires
+  # Google app verification for unrestricted public production use.
+  optional_scopes = [
+    "https://www.googleapis.com/auth/drive", # full Drive read/write (opt-in tier)
+  ]
+
+  all_scopes = concat(local.openid_scopes, local.api_scopes, local.optional_scopes)
 }
 
 # ──────────────────────────────────────────────

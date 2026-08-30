@@ -159,6 +159,12 @@
             </button>
           </div>
 
+          <!-- Shared with me (only when full Drive access is granted) -->
+          <div id="home-shared" class="home-section hidden">
+            <h3 class="home-section-title">🤝 Shared with me</h3>
+            <div id="home-shared-list" class="pinned-grid"></div>
+          </div>
+
           <!-- Recent Sheets -->
           <div id="home-recent" class="home-section hidden">
             <h3 class="home-section-title">📋 Recently Opened</h3>
@@ -334,6 +340,21 @@
           <span id="settings-user-name" class="settings-name"></span>
           <span id="settings-user-email" class="settings-email"></span>
           <span id="settings-version" class="settings-version"></span>
+        </div>
+      </div>
+
+      <!-- Google Drive Access -->
+      <div class="settings-section">
+        <h4 class="settings-section-title">Google Drive Access</h4>
+        <div id="settings-drive-access" class="settings-drive-access">
+          <div class="drive-access-status">
+            <span id="drive-access-icon" class="drive-access-icon">🔒</span>
+            <div class="drive-access-text">
+              <span id="drive-access-tier" class="drive-access-tier">Standard access</span>
+              <span id="drive-access-desc" class="drive-access-desc">Waymark only sees files you create or open through it.</span>
+            </div>
+          </div>
+          <button id="settings-upgrade-drive" class="btn btn-google btn-sm">Enable full access</button>
         </div>
       </div>
 

@@ -15,11 +15,12 @@ Manages the Google Cloud project configuration for WayMark, ensuring APIs and OA
 
 The **OAuth consent screen scopes** cannot be managed by Terraform — the Google API does not expose this. After `terraform apply`, you must verify the scopes in Cloud Console match the list printed by the `verify_scopes` resource:
 
-| Scope | Why |
-|---|---|
-| `https://www.googleapis.com/auth/drive.readonly` | Browse existing Drive folders and files |
-| `https://www.googleapis.com/auth/drive.file` | Create/manage app-owned files (settings, snapshots) |
-| `https://www.googleapis.com/auth/spreadsheets` | Read/write existing spreadsheets |
+| Scope | Tier | Why |
+|---|---|---|
+| `https://www.googleapis.com/auth/drive.file` | Standard (default) | Create/manage files the user creates or picks via the Google Picker |
+| `https://www.googleapis.com/auth/drive` | Full access (opt-in) | Read/write anything shared with the user so shared Waymarks "just work" — **restricted**, requires app verification for public production |
+
+Standard access uses only the non-restricted `drive.file` scope (no verification needed). The full-access tier is requested at sign-in via `/auth/login?access=full`; both scopes must be registered on the consent screen so users can grant either tier.
 
 ## Setup
 
