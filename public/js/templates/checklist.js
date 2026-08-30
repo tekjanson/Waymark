@@ -1,10 +1,11 @@
 /* ============================================================
    templates/checklist.js — Checklist: toggle done/undone,
-   category-level progress bars, bulk check/uncheck,
-   all fields editable, delegated events
+   collapsible categories with progress + bulk actions,
+   per-category "add item", new-category creation,
+   date-picker due dates, all fields editable, delegated events
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, isEditLocked, groupByColumn, registerTemplate, delegateEvent, buildDirSyncBtn } from './shared.js';
+import { el, cell, editableCell, dateCell, emitEdit, isEditLocked, groupByColumn, registerTemplate, delegateEvent, buildAddRowForm, buildDirSyncBtn } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -29,6 +30,24 @@ function updateGroupProgress(groupEl) {
   const label = bar.querySelector('.checklist-group-progress-label');
   if (fill) fill.style.width = `${pct}%`;
   if (label) label.textContent = `${done}/${total}`;
+}
+
+/**
+ * Update the overall progress bar at the top of a categorized checklist.
+ * @param {HTMLElement} container
+ */
+function updateOverallProgress(container) {
+  const overall = container.querySelector('.checklist-overall');
+  if (!overall) return;
+  const rows = container.querySelectorAll('.checklist-row');
+  const total = rows.length;
+  let done = 0;
+  for (const r of rows) { if (r.classList.contains('completed')) done++; }
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const fill = overall.querySelector('.checklist-overall-fill');
+  const label = overall.querySelector('.checklist-overall-label');
+  if (fill) fill.style.width = `${pct}%`;
+  if (label) label.textContent = `${done}/${total} done`;
 }
 
 /* ---------- Template Definition ---------- */
@@ -56,13 +75,18 @@ const definition = {
     return cols;
   },
 
+  /* Suggest a Category column so flat checklists can adopt grouping (migration banner) */
+  migrations: [
+    { role: 'category', header: 'Category', description: 'Group items into categories' },
+  ],
+
   addRowFields(cols) {
     return [
       { role: 'text',     label: 'Item',     colIndex: cols.text,     type: 'text',   placeholder: 'What needs to be done?', required: true },
       { role: 'status',   label: 'Status',   colIndex: cols.status,   type: 'text',   defaultValue: '', hidden: true },
-      { role: 'date',     label: 'Due',      colIndex: cols.date,     type: 'date',   placeholder: 'Due date' },
-      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'text',   placeholder: 'Optional notes' },
-      { role: 'category', label: 'Category', colIndex: cols.category, type: 'text',   placeholder: 'Category' },
+      { role: 'category', label: 'Category', colIndex: cols.category, type: 'combo',  placeholder: 'Select or type a category…' },
+      { role: 'date',     label: 'Due',      colIndex: cols.date,     type: 'date',     placeholder: 'Due date' },
+      { role: 'notes',    label: 'Notes',    colIndex: cols.notes,    type: 'textarea', placeholder: 'Optional notes' },
     ];
   },
 
@@ -89,12 +113,30 @@ const definition = {
     }, [
       checkbox,
       editableCell('span', { className: 'checklist-item-text' }, text, rowIdx, cols.text),
-      cols.date >= 0  ? editableCell('span', { className: 'checklist-item-date' }, date, rowIdx, cols.date) : null,
+      cols.date >= 0  ? dateCell('span', { className: 'checklist-item-date' }, date, rowIdx, cols.date) : null,
       cols.notes >= 0 ? editableCell('span', { className: 'checklist-item-notes', title: notes }, notes, rowIdx, cols.notes) : null,
     ]);
   },
 
+  /** Build a category section header (caret, name, progress, bulk actions). */
+  _buildCategoryHeader(cat, doneCount, totalCount) {
+    const pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+    return el('div', { className: 'checklist-group-header' }, [
+      el('span', { className: 'checklist-caret', 'aria-hidden': 'true' }, ['\u25BE']),
+      el('span', { className: 'checklist-group-header-text' }, [cat]),
+      el('div', { className: 'checklist-group-progress' }, [
+        el('div', { className: 'checklist-group-progress-fill', style: `width: ${pct}%` }),
+        el('span', { className: 'checklist-group-progress-label' }, [`${doneCount}/${totalCount}`]),
+      ]),
+      el('button', { className: 'checklist-bulk-btn', dataset: { action: 'check' }, title: 'Check all', type: 'button' }, ['\u2713 All']),
+      el('button', { className: 'checklist-bulk-btn', dataset: { action: 'uncheck' }, title: 'Uncheck all', type: 'button' }, ['\u2717 All']),
+    ]);
+  },
+
   render(container, rows, cols, template) {
+    const canAdd = typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function';
+    const totalCols = template._totalColumns || 0;
+
     /* Delegated checkbox toggle — single listener for all rows */
     delegateEvent(container, 'click', '.checklist-checkbox', (e, checkbox) => {
       e.stopPropagation();
@@ -105,11 +147,10 @@ const definition = {
       rowEl.classList.toggle('completed', nowComplete);
       checkbox.textContent = nowComplete ? '\u2713' : '';
       checkbox.setAttribute('aria-checked', String(nowComplete));
-      const rowIdx = Number(rowEl.dataset.rowIdx);
-      emitEdit(rowIdx, cols.status, nowComplete ? 'done' : '');
-      // Update group progress bar if in categorized mode
+      emitEdit(Number(rowEl.dataset.rowIdx), cols.status, nowComplete ? 'done' : '');
       const groupEl = rowEl.closest('.checklist-group');
       if (groupEl) updateGroupProgress(groupEl);
+      updateOverallProgress(container);
     });
 
     /* Delegated bulk check/uncheck buttons */
@@ -118,54 +159,85 @@ const definition = {
       const groupEl = btn.closest('.checklist-group-header')?.nextElementSibling;
       if (!groupEl) return;
       const setDone = btn.dataset.action === 'check';
-      const checkboxes = groupEl.querySelectorAll('.checklist-checkbox');
-      for (const cb of checkboxes) {
+      for (const cb of groupEl.querySelectorAll('.checklist-checkbox')) {
         const rowEl = cb.closest('.checklist-row');
         if (!rowEl) continue;
-        const alreadyDone = rowEl.classList.contains('completed');
-        if (alreadyDone === setDone) continue;
+        if (rowEl.classList.contains('completed') === setDone) continue;
         rowEl.classList.toggle('completed', setDone);
         cb.textContent = setDone ? '\u2713' : '';
         cb.setAttribute('aria-checked', String(setDone));
-        const rowIdx = Number(rowEl.dataset.rowIdx);
-        emitEdit(rowIdx, cols.status, setDone ? 'done' : '');
+        emitEdit(Number(rowEl.dataset.rowIdx), cols.status, setDone ? 'done' : '');
       }
       updateGroupProgress(groupEl);
+      updateOverallProgress(container);
     });
 
-    /* If no category column, render flat */
+    /* Delegated collapse toggle on category headers (ignore bulk-button clicks) */
+    delegateEvent(container, 'click', '.checklist-group-header', (e, header) => {
+      if (e.target.closest('.checklist-bulk-btn')) return;
+      const catEl = header.closest('.checklist-category');
+      if (catEl) catEl.classList.toggle('collapsed');
+    });
+
+    /* ---- Flat mode (no category column) ---- */
     if (cols.category < 0) {
       for (let i = 0; i < rows.length; i++) {
         container.append(template._buildRow(rows[i], i + 1, cols));
       }
+      if (canAdd) {
+        container.append(buildAddRowForm(template, cols, totalCols, template._onAddRow));
+      }
       return;
     }
 
-    /* Group rows by category */
+    /* ---- Categorized mode ---- */
+    const overallDone = rows.reduce((n, r) => n + (isComplete(cell(r, cols.status)) ? 1 : 0), 0);
+    const overallPct = rows.length ? Math.round((overallDone / rows.length) * 100) : 0;
+    container.append(el('div', { className: 'checklist-overall' }, [
+      el('div', { className: 'checklist-overall-bar' }, [
+        el('div', { className: 'checklist-overall-fill', style: `width: ${overallPct}%` }),
+      ]),
+      el('span', { className: 'checklist-overall-label' }, [`${overallDone}/${rows.length} done`]),
+    ]));
+
+    /* Group rows by category value */
     const groups = groupByColumn(rows, cols.category);
+    const existingCategories = [...groups.keys()];
 
     for (const [cat, items] of groups) {
       const doneCount = items.filter(it => isComplete(cell(it.row, cols.status))).length;
-      const totalCount = items.length;
-      const pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
 
-      /* Section header with progress + bulk buttons */
-      container.append(el('div', { className: 'checklist-group-header' }, [
-        el('span', { className: 'checklist-group-header-text' }, [cat]),
-        el('div', { className: 'checklist-group-progress' }, [
-          el('div', { className: 'checklist-group-progress-fill', style: `width: ${pct}%` }),
-          el('span', { className: 'checklist-group-progress-label' }, [`${doneCount}/${totalCount}`]),
-        ]),
-        el('button', { className: 'checklist-bulk-btn', dataset: { action: 'check' }, title: 'Check all' }, ['\u2713 All']),
-        el('button', { className: 'checklist-bulk-btn', dataset: { action: 'uncheck' }, title: 'Uncheck all' }, ['\u2717 All']),
-      ]));
+      const catEl = el('div', { className: 'checklist-category' });
+      catEl.append(template._buildCategoryHeader(cat, doneCount, items.length));
 
-      /* Group container for items */
       const groupEl = el('div', { className: 'checklist-group' });
       for (const { row, originalIndex } of items) {
         groupEl.append(template._buildRow(row, originalIndex + 1, cols));
       }
-      container.append(groupEl);
+      catEl.append(groupEl);
+
+      /* Per-category "add item" — category pre-filled and hidden */
+      if (canAdd) {
+        const addItem = buildAddRowForm(template, cols, totalCols, template._onAddRow, {
+          defaults: { category: cat },
+          hiddenRoles: ['category'],
+        });
+        addItem.classList.add('checklist-add-item');
+        catEl.append(addItem);
+      }
+
+      container.append(catEl);
+    }
+
+    /* New-category creator — category required + combo of existing names */
+    if (canAdd) {
+      const newCat = buildAddRowForm(template, cols, totalCols, template._onAddRow, {
+        noun: 'Category',
+        requiredRoles: ['category'],
+        dynamicOptions: { category: ['', ...existingCategories] },
+      });
+      newCat.classList.add('checklist-new-category');
+      container.append(newCat);
     }
   },
 

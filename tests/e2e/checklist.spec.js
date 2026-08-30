@@ -146,3 +146,204 @@ test('checklist directoryView shows folder refresh button in header', async ({ p
   await page.waitForSelector('.checklist-directory', { timeout: 8_000 });
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
+
+/* ---------- Enriched checklist: categories, add forms, date picker ---------- */
+
+test('categorized checklist renders an overall progress bar', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const overall = page.locator('.checklist-overall');
+  await expect(overall).toBeVisible();
+  // 10 items, 5 done (Milk, Yogurt, Bananas, Bread, Bagels)
+  await expect(overall.locator('.checklist-overall-label')).toContainText('5/10 done');
+});
+
+test('categorized checklist shows an add-item form per category plus a new-category form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  await expect(page.locator('.checklist-add-item')).toHaveCount(4);
+  await expect(page.locator('.checklist-new-category')).toHaveCount(1);
+});
+
+test('flat checklist shows a single add-item form and no per-category forms', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  await expect(page.locator('.add-row-trigger')).toHaveCount(1);
+  await expect(page.locator('.add-row-trigger')).toContainText('Add Item');
+  await expect(page.locator('.checklist-add-item')).toHaveCount(0);
+});
+
+test('per-category add form includes a date picker field', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const dairy = page.locator('.checklist-category').first();
+  await dairy.locator('.add-row-trigger').click();
+  await expect(dairy.locator('.add-row-form')).toBeVisible();
+  await expect(dairy.locator('.add-row-form input[type="date"]')).toBeVisible();
+});
+
+test('adding an item to a category appends a row carrying that category', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const dairy = page.locator('.checklist-category').first();
+  await dairy.locator('.add-row-trigger').click();
+  await dairy.locator('.add-row-form .add-row-field-input').first().fill('Butter');
+  await dairy.locator('.add-row-submit').click();
+
+  // Row-append triggers a reload; Dairy grows from 3 to 4 items (11 total)
+  await page.waitForFunction(
+    () => document.querySelectorAll('.checklist-row').length >= 11,
+    null,
+    { timeout: 10_000 },
+  );
+
+  const records = await getCreatedRecords(page);
+  const appends = records.filter(r => r.type === 'row-append');
+  expect(appends.length).toBe(1);
+  const row = appends[0].rows[0];
+  expect(row).toContain('Butter');
+  expect(row).toContain('Dairy');
+});
+
+test('new-category form creates a fresh category section', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+  await expect(page.locator('.checklist-category')).toHaveCount(4);
+
+  const newCat = page.locator('.checklist-new-category');
+  await newCat.locator('.add-row-trigger').click();
+  await newCat.locator('.add-row-form .add-row-field-input').first().fill('Frozen Peas');
+  await newCat.locator('.add-row-form .add-row-field-combo').fill('Frozen');
+  await newCat.locator('.add-row-submit').click();
+
+  await page.waitForFunction(
+    () => document.querySelectorAll('.checklist-category').length >= 5,
+    null,
+    { timeout: 10_000 },
+  );
+
+  const headers = await page.$$eval(
+    '.checklist-group-header-text',
+    els => els.map(e => e.textContent.trim()),
+  );
+  expect(headers).toContain('Frozen');
+});
+
+test('clicking a category header collapses and expands its items', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const cat = page.locator('.checklist-category').first();
+  await expect(cat).not.toHaveClass(/collapsed/);
+
+  await cat.locator('.checklist-group-header-text').click();
+  await expect(cat).toHaveClass(/collapsed/);
+  await expect(cat.locator('.checklist-group')).toBeHidden();
+
+  await cat.locator('.checklist-group-header-text').click();
+  await expect(cat).not.toHaveClass(/collapsed/);
+  await expect(cat.locator('.checklist-group')).toBeVisible();
+});
+
+test('clicking a due-date cell opens a native date picker', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const cellEl = page.locator('.checklist-item-date').first();
+  await cellEl.click();
+  await expect(cellEl.locator('input[type="date"]')).toBeVisible();
+});
+
+test('editing a due date emits a cell-update with an ISO date', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const cellEl = page.locator('.checklist-item-date').first();
+  await cellEl.click();
+  const input = cellEl.locator('input[type="date"]');
+  await input.fill('2026-04-15');
+  await input.evaluate(el => el.blur());
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.some(u => u.value === '2026-04-15')).toBe(true);
+});
+
+test('bulk check-all completes every item in a category', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const dairy = page.locator('.checklist-category').first();
+  await dairy.locator('.checklist-bulk-btn[data-action="check"]').click();
+
+  const rows = dairy.locator('.checklist-row');
+  const count = await rows.count();
+  for (let i = 0; i < count; i++) {
+    await expect(rows.nth(i)).toHaveClass(/completed/);
+  }
+});
+
+/* ---------- Long text opens in a textarea ---------- */
+
+test('a long text cell opens in a textarea for editing', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Milk's note is seeded long (> 70 chars) → editor opens as a textarea
+  const note = page.locator('.checklist-item-notes').first();
+  await note.click();
+  await expect(note.locator('textarea.editable-cell-textarea')).toBeVisible();
+  await expect(note.locator('input')).toHaveCount(0);
+});
+
+test('a short text cell opens as an input and upgrades to a textarea when long', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  // Milk's item text is short → opens as a single-line input
+  const item = page.locator('.checklist-item-text').first();
+  await item.click();
+  await expect(item.locator('input.editable-cell-input')).toBeVisible();
+
+  // Growing the text past the threshold upgrades the editor to a textarea
+  await item.locator('input.editable-cell-input').evaluate((el, val) => {
+    el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'A'.repeat(80));
+  await expect(item.locator('textarea.editable-cell-textarea')).toBeVisible();
+});
+
+test('editing a long text cell commits on blur', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-004');
+  await waitForChecklistRows(page);
+
+  const note = page.locator('.checklist-item-notes').first();
+  await note.click();
+  const ta = note.locator('textarea.editable-cell-textarea');
+  await ta.fill('Updated note that is also fairly long so it stays in a textarea while editing here');
+  await ta.evaluate(el => el.blur());
+
+  const records = await getCreatedRecords(page);
+  const updates = records.filter(r => r.type === 'cell-update');
+  expect(updates.some(u => u.value.startsWith('Updated note'))).toBe(true);
+});
+
+

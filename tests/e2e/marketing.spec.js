@@ -102,10 +102,11 @@ test('marketing post body is editable via inline edit', async ({ page }) => {
   const bodyEl = page.locator('.marketing-card-body').first();
   await bodyEl.click();
 
-  const input = page.locator('.marketing-card-body input.editable-cell-input');
-  await expect(input).toBeVisible({ timeout: 3_000 });
-  await input.fill('Updated post content');
-  await input.press('Enter');
+  // Long post bodies open in a textarea; short ones in a single-line input
+  const editor = bodyEl.locator('.editable-cell-input, .editable-cell-textarea');
+  await expect(editor).toBeVisible({ timeout: 3_000 });
+  await editor.fill('Updated post content');
+  await editor.evaluate(el => el.blur());
 
   const records = await getCreatedRecords(page);
   expect(records.some(r => r.type === 'cell-update' && r.value === 'Updated post content')).toBe(true);

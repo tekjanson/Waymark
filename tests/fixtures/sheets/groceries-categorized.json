@@ -3,16 +3,16 @@
   "title": "Multi-Store Grocery List",
   "sheetTitle": "Sheet1",
   "values": [
-    ["Item", "Category", "Status"],
-    ["Milk", "Dairy", "done"],
-    ["Eggs", "Dairy", ""],
-    ["Yogurt", "Dairy", "done"],
-    ["Apples", "Produce", ""],
-    ["Spinach", "Produce", ""],
-    ["Bananas", "Produce", "done"],
-    ["Chicken Breast", "Meat & Seafood", ""],
-    ["Salmon", "Meat & Seafood", ""],
-    ["Bread", "Bakery", "done"],
-    ["Bagels", "Bakery", ""]
+    ["Item", "Category", "Status", "Due", "Notes"],
+    ["Milk", "Dairy", "done", "2026-03-01", "Whole milk from the local dairy — grab two cartons and check the date is at least a week out"],
+    ["Eggs", "Dairy", "", "2026-03-02", "Free range dozen"],
+    ["Yogurt", "Dairy", "done", "", "Greek"],
+    ["Apples", "Produce", "", "2026-03-03", "Honeycrisp"],
+    ["Spinach", "Produce", "", "", "Baby spinach"],
+    ["Bananas", "Produce", "done", "", ""],
+    ["Chicken Breast", "Meat & Seafood", "", "2026-03-04", "Organic"],
+    ["Salmon", "Meat & Seafood", "", "", "Wild caught"],
+    ["Bread", "Bakery", "done", "", "Sourdough"],
+    ["Bagels", "Bakery", "done", "2026-03-05", "Everything"]
   ]
 }

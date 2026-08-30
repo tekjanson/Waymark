@@ -1388,6 +1388,33 @@ ul { list-style: none; }
   box-sizing: border-box;
 }
 
+/* Multi-line editor for long text (see editableCell in shared.js) */
+.editable-cell.editing-multiline {
+  display: block;
+  width: 100%;
+}
+.editable-cell-textarea {
+  width: 100%;
+  min-height: 56px;
+  max-height: 320px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: inherit;
+  font-family: inherit;
+  line-height: 1.5;
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.editable-cell-textarea:focus,
+.combo-cell-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
 /* ---------- Inline combo dropdown ---------- */
 .combo-cell {
   position: relative;

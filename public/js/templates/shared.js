@@ -206,6 +206,18 @@ export function getMissingMigrations(template, cols) {
 
 /* ---------- Inline-editable cell ---------- */
 
+/** Character count above which an inline editor opens as a multi-line textarea. */
+const LONG_TEXT_THRESHOLD = 70;
+
+/**
+ * Whether a value is long enough (or multi-line) to warrant a textarea editor.
+ * @param {string} v
+ * @returns {boolean}
+ */
+function _looksLong(v) {
+  return typeof v === 'string' && (v.includes('\n') || v.length > LONG_TEXT_THRESHOLD);
+}
+
 /**
  * Create a DOM element whose text content becomes an inline <input> on click.
  * On blur / Enter the edit is committed via emitEdit(); on Escape it is cancelled.
@@ -244,26 +256,24 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
       showToast('This row is locked — editing is disabled', 'warn');
       return;
     }
-    if (wrapper.querySelector('input')) return;            // already editing
-    const current = text || '';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'editable-cell-input';
-    input.value = current;
+    if (wrapper.querySelector('input, textarea')) return;  // already editing
 
-    wrapper.textContent = '';
-    wrapper.append(input);
-    input.focus();
-    input.select();
+    const current = text || '';
+    let control = null;
+    let done = false;
+    let upgrading = false;
+
+    function paint(value) {
+      if (opts.renderContent) opts.renderContent(wrapper);
+      else wrapper.textContent = value || '—';
+    }
 
     function commit() {
-      const newValue = input.value.trim();
-      input.removeEventListener('blur', commit);
-      if (opts.renderContent) {
-        opts.renderContent(wrapper);
-      } else {
-        wrapper.textContent = newValue || '—';
-      }
+      if (done) return;
+      done = true;
+      wrapper.classList.remove('editing-multiline');
+      const newValue = control.value.trim();
+      paint(newValue);
       if (newValue !== current && !(current === '' && newValue === '')) {
         emitEdit(rowIdx, colIdx, newValue);
         if (opts.onCommit) opts.onCommit(newValue, wrapper);
@@ -271,19 +281,64 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
     }
 
     function cancel() {
-      input.removeEventListener('blur', commit);
-      if (opts.renderContent) {
-        opts.renderContent(wrapper);
+      if (done) return;
+      done = true;
+      wrapper.classList.remove('editing-multiline');
+      paint(current);
+    }
+
+    function autoGrow(ta) {
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 320)}px`;
+    }
+
+    /* Mount an <input> or <textarea>; re-mountable so a single-line input can
+       upgrade to a textarea once its content grows long. */
+    function mount(kind, value, caretToEnd) {
+      const existing = wrapper.querySelector('input, textarea');
+      if (existing) { upgrading = true; existing.remove(); upgrading = false; }
+
+      const isTextarea = kind === 'textarea';
+      control = document.createElement(isTextarea ? 'textarea' : 'input');
+      control.className = isTextarea ? 'editable-cell-textarea' : 'editable-cell-input';
+      if (!isTextarea) control.type = 'text';
+      control.value = value;
+      wrapper.classList.toggle('editing-multiline', isTextarea);
+      wrapper.append(control);
+      control.focus();
+      if (caretToEnd) {
+        const n = value.length;
+        try { control.setSelectionRange(n, n); } catch (_) { /* noop */ }
       } else {
-        wrapper.textContent = current || '—';
+        control.select();
+      }
+
+      control.addEventListener('blur', () => { if (!upgrading) commit(); });
+      control.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cancel(); return; }
+        if (e.key === 'Enter') {
+          if (isTextarea) {
+            /* Ctrl/Cmd+Enter commits; plain Enter inserts a newline */
+            if (e.ctrlKey || e.metaKey) { e.preventDefault(); control.blur(); }
+          } else {
+            e.preventDefault(); control.blur();
+          }
+        }
+      });
+
+      if (isTextarea) {
+        autoGrow(control);
+        control.addEventListener('input', () => autoGrow(control));
+      } else {
+        /* Grow into a textarea automatically once the text gets long */
+        control.addEventListener('input', () => {
+          if (_looksLong(control.value)) mount('textarea', control.value, true);
+        });
       }
     }
 
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-    });
+    wrapper.textContent = '';
+    mount(_looksLong(current) ? 'textarea' : 'input', current, false);
   }
 
   wrapper.addEventListener('click', (e) => {
@@ -505,6 +560,110 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
+/* ---------- Date-picker editable cell ---------- */
+
+const _ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Format a stored date value for display. ISO dates (YYYY-MM-DD) render as a
+ * friendly "Mon D, YYYY"; any other free-form text (e.g. "2 weeks before") is
+ * shown verbatim so existing sheets are never mangled.
+ * @param {string} v
+ * @returns {string}
+ */
+function formatDateDisplay(v) {
+  if (!v) return '—';
+  if (_ISO_DATE.test(v)) {
+    const d = new Date(`${v}T00:00:00`);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+  }
+  return v;
+}
+
+/**
+ * Create a cell that opens a native date picker (`<input type="date">`) on click.
+ * On commit the value is stored as an ISO date (YYYY-MM-DD). Free-form text
+ * values are preserved when the picker is left untouched, so mixed date/label
+ * columns keep working.
+ *
+ * @param {string}   tag    — wrapper element tag (e.g. 'span')
+ * @param {Object}   attrs  — attributes forwarded to el()
+ * @param {string}   text   — initial stored value
+ * @param {number}   rowIdx — 1-based data-row index for emitEdit()
+ * @param {number}   colIdx — 0-based column index for emitEdit()
+ * @param {Object}   [opts] — extra options (onCommit)
+ * @returns {HTMLElement}
+ */
+export function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+  let current = text || '';
+  const wrapper = el(tag, {
+    ...attrs,
+    className: `${attrs.className || ''} editable-cell date-cell`.trim(),
+    tabindex: '0',
+    title: attrs.title || 'Click to pick a date',
+  });
+  wrapper.textContent = formatDateDisplay(current);
+  wrapper.dataset.rowIdx = String(rowIdx);
+  wrapper.dataset.colIdx = String(colIdx);
+
+  function startEdit() {
+    if (_editLocked) return;
+    if (_protectedRows.has(rowIdx)) {
+      showToast('This row is locked — editing is disabled', 'warn');
+      return;
+    }
+    if (wrapper.querySelector('input')) return;
+
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.className = 'editable-cell-input date-cell-input';
+    if (_ISO_DATE.test(current)) input.value = current;
+
+    wrapper.textContent = '';
+    wrapper.append(input);
+    input.focus();
+    /* Best-effort: open the native picker immediately on supported browsers */
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker(); } catch (_) { /* user gesture / support guard */ }
+    }
+
+    function commit() {
+      input.removeEventListener('blur', commit);
+      const picked = input.value; // '' or 'YYYY-MM-DD'
+      let newValue;
+      if (picked) newValue = picked;
+      else if (_ISO_DATE.test(current)) newValue = ''; // cleared a real date
+      else newValue = current;                         // preserve free-form text
+      wrapper.textContent = formatDateDisplay(newValue);
+      if (newValue !== current) {
+        current = newValue;
+        emitEdit(rowIdx, colIdx, newValue);
+        if (opts.onCommit) opts.onCommit(newValue, wrapper);
+      }
+    }
+
+    function cancel() {
+      input.removeEventListener('blur', commit);
+      wrapper.textContent = formatDateDisplay(current);
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+  }
+
+  wrapper.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startEdit();
+  });
+
+  return wrapper;
+}
+
 /* Re-export el and showToast for convenience — templates only need to import from shared */
 export { el, showToast };
 
@@ -677,8 +836,16 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
     : [];
   if (fields.length === 0) return el('span');
 
-  const noun = templateDef.itemNoun || 'Item';
+  const noun = opts.noun || templateDef.itemNoun || 'Item';
   const color = templateDef.color || 'var(--color-primary)';
+
+  /* Per-instance role overrides — let callers (e.g. per-category and
+     new-category checklist forms) hide or require specific roles without
+     changing the template's addRowFields() definition. */
+  const hiddenRoles = new Set(opts.hiddenRoles || []);
+  const requiredRoles = new Set(opts.requiredRoles || []);
+  const isHidden = (f) => !!f.hidden || hiddenRoles.has(f.role);
+  const isRequired = (f) => !!f.required || requiredRoles.has(f.role);
 
   const root = el('div', { className: 'add-row-root' });
 
@@ -697,7 +864,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
   const listMap = {};
 
   for (const field of fields) {
-    if (field.hidden) continue;
+    if (isHidden(field)) continue;
 
     const fieldWrap = el('div', { className: 'add-row-field' });
     const label = el('label', { className: 'add-row-field-label' }, [field.label]);
@@ -889,7 +1056,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
 
   function clearForm() {
     for (const field of fields) {
-      if (field.hidden) continue;
+      if (isHidden(field)) continue;
       const defaultVal = (opts.defaults && opts.defaults[field.role]) || field.defaultValue || '';
       const resolved = defaultVal === '__TODAY__'
         ? new Date().toISOString().slice(0, 10)
@@ -938,7 +1105,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
   function getValues() {
     const values = {};
     for (const field of fields) {
-      if (field.hidden) {
+      if (isHidden(field)) {
         const defaultVal = (opts.defaults && opts.defaults[field.role]) || field.defaultValue || '';
         values[field.role] = defaultVal === '__TODAY__'
           ? new Date().toISOString().slice(0, 10)
@@ -967,7 +1134,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
     form.querySelectorAll('.add-row-required').forEach(e => e.classList.remove('add-row-required'));
 
     for (const field of fields) {
-      if (!field.required || field.hidden) continue;
+      if (!isRequired(field) || isHidden(field)) continue;
       if (field.type === 'list') {
         const info = listMap[field.role];
         const hasItems = info && info.items.some(item => {
