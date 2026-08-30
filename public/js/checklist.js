@@ -1292,8 +1292,9 @@ function renderWithTemplate(values) {
     itemsEl.prepend(banner);
   }
 
-  // Append add-row form if template declares fields (skip kanban + recipe — they handle inline)
-  if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe') {
+  // Append add-row form if template declares fields
+  // (skip kanban, recipe, checklist — they render their own add forms inline)
+  if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe' && key !== 'checklist') {
     const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
     itemsEl.append(addForm);
   }

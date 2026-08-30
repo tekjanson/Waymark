@@ -66,6 +66,44 @@
 .checklist-bulk-btn:hover { background: var(--color-bg); color: var(--color-text); }
 .checklist-group { margin-bottom: 8px; }
 
+/* Collapsible category sections */
+.checklist-category { margin-bottom: 10px; }
+.checklist-category .checklist-group-header { cursor: pointer; user-select: none; }
+.checklist-caret {
+  display: inline-block; font-size: 0.7rem; color: var(--color-text-muted);
+  transition: transform var(--transition); flex-shrink: 0;
+}
+.checklist-category.collapsed .checklist-caret { transform: rotate(-90deg); }
+.checklist-category.collapsed .checklist-group,
+.checklist-category.collapsed .checklist-add-item { display: none; }
+
+/* Overall progress bar */
+.checklist-overall { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
+.checklist-overall-bar {
+  position: relative; flex: 1; height: 8px;
+  border-radius: 4px; background: var(--color-border); overflow: hidden;
+}
+.checklist-overall-fill {
+  height: 100%; border-radius: 4px;
+  background: var(--color-success); transition: width var(--transition);
+}
+.checklist-overall-label {
+  font-size: 0.78rem; color: var(--color-text-muted);
+  font-weight: 600; white-space: nowrap;
+}
+
+/* Per-category "add item" — compact, indented under its group */
+.checklist-add-item { margin: 2px 0 4px; }
+.checklist-add-item .add-row-trigger {
+  font-size: 0.82rem; padding: 6px 12px; width: 100%;
+}
+
+/* New-category creator — set apart from the item forms */
+.checklist-new-category {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px dashed var(--color-border);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 480px) {
   .checklist-actions { flex-wrap: wrap; gap: 6px; }
