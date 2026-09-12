@@ -10,9 +10,12 @@ import { api } from './api-client.js';
 import {
   DEFAULT_MODEL,
   MAX_OUTPUT_TOKENS,
+  buildToolResultText,
   compactContextText,
   geminiHeaders,
   geminiUrl,
+  parseToolCall,
+  stripToolCalls,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
 import { captureStillFromCamera } from './camera-capture.js';
@@ -25,58 +28,35 @@ const MAX_USER_MSG_CHARS = 600;
 const MAX_PENDING_IMAGES = 2;
 const MAX_IMAGE_EDGE = 1400;
 const MAX_IMAGE_BYTES = 900 * 1024;
+const MAX_TOOL_ITERATIONS = 6;
 
-/** Tool declarations: only read_sheet and update_sheet (focused mode). */
-const OVERLAY_TOOL_DECLARATIONS = [{
-  functionDeclarations: [{
-    name: 'read_sheet',
-    description: 'Read the full contents of the current sheet to examine data before making changes.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        spreadsheet_id: {
-          type: 'STRING',
-          description: 'The spreadsheet ID of the current sheet.',
-        },
-      },
-      required: ['spreadsheet_id'],
-    },
-  }, {
-    name: 'update_sheet',
-    description: 'Modify the current sheet. Use operation "append_rows" to add new rows at the bottom, or "update_cells" to change specific existing cells.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        spreadsheet_id: {
-          type: 'STRING',
-          description: 'The spreadsheet ID of the current sheet.',
-        },
-        operation: {
-          type: 'STRING',
-          description: '"append_rows" to add rows, or "update_cells" to modify existing cells.',
-        },
-        rows: {
-          type: 'ARRAY',
-          description: 'Rows to append (for append_rows). Each row is an array of strings.',
-          items: { type: 'ARRAY', items: { type: 'STRING' } },
-        },
-        updates: {
-          type: 'ARRAY',
-          description: 'Cell updates (for update_cells). Each item has row (1-based data row), col (0-based), and value.',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              row: { type: 'INTEGER', description: '1-based row index (not counting header)' },
-              col: { type: 'INTEGER', description: '0-based column index' },
-              value: { type: 'STRING', description: 'New cell value' },
-            },
-          },
-        },
-      },
-      required: ['spreadsheet_id', 'operation'],
-    },
-  }],
-}];
+/**
+ * Prompt-based tool protocol for the overlay (read_sheet + update_sheet only).
+ * We use our own tool calling — a fenced ```tool_call block parsed from the
+ * model's text — rather than provider-native function calling.
+ */
+const OVERLAY_TOOL_PROTOCOL = `# Tools
+
+To act on the sheet, reply with a fenced code block tagged \`tool_call\` containing ONE JSON object and nothing else:
+
+\`\`\`tool_call
+{"tool": "update_sheet", "args": { ... }}
+\`\`\`
+
+Rules:
+- Emit the tool_call block ALONE — no prose before or after it in that reply.
+- Call exactly ONE tool per reply. The system runs it and returns the result, then you may call another tool or answer the user.
+- "args" must be valid JSON.
+- When finished, reply to the user in plain language with NO tool_call block.
+- Never invent tool results — wait for the system to return them.
+
+Available tools:
+1. read_sheet — Read the current sheet before making changes.
+   args: {"spreadsheet_id": string}
+2. update_sheet — Modify the current sheet.
+   args: {"spreadsheet_id": string, "operation": "append_rows" | "update_cells", "rows"?: string[][], "updates"?: [{"row": number, "col": number, "value": string}]}
+   - operation "append_rows": "rows" is an array of rows (each an array of strings in column order).
+   - operation "update_cells": "updates" is an array; each has row (1-based data row, excluding header), col (0-based column index), and value.`;
 
 /* ---------- Module state ---------- */
 
@@ -323,6 +303,8 @@ function _buildSystemPrompt() {
     'Use update_sheet (append_rows or update_cells) to modify the sheet.',
     'Do NOT create new spreadsheets. Do NOT reference other sheets.',
     `After making changes, briefly confirm. Reference this sheet as: [${title}](#/sheet/${id})`,
+    '',
+    OVERLAY_TOOL_PROTOCOL,
   ];
 
   return parts.join('\n');
@@ -390,105 +372,86 @@ async function _sendMessage(text) {
     requestAnimationFrame(() => {
       renderPending = false;
       liveContent.innerHTML = '';
-      renderMarkdown(liveContent, accumulated);
+      renderMarkdown(liveContent, stripToolCalls(accumulated));
       _chatBody.scrollTop = _chatBody.scrollHeight;
     });
   };
 
+  const onChunk = (chunk) => {
+    if (!dotsRemoved) { typingDots.remove(); dotsRemoved = true; }
+    accumulated += chunk;
+    scheduleRender();
+  };
+
+  const resetLiveBubble = () => {
+    accumulated = '';
+    liveContent.innerHTML = '';
+    dotsRemoved = false;
+    liveContent.appendChild(typingDots);
+  };
+
   const model = storage.getAgentModel() || DEFAULT_MODEL;
   const systemPrompt = _buildSystemPrompt();
-  const contents = [{
-    role: 'user',
-    parts: userParts,
-  }];
-  const body = {
+  let contents = [{ role: 'user', parts: userParts }];
+
+  const buildBody = () => ({
     contents,
-    tools: OVERLAY_TOOL_DECLARATIONS,
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       temperature: 0.2,
       topP: 0.9,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
-  };
+  });
 
   try {
-    const streamUrl = geminiUrl(model, 'streamGenerateContent', 'alt=sse');
-    let res;
+    let response = '';
+    let toolIterations = 0;
 
-    try {
-      res = await fetch(streamUrl, {
-        method: 'POST',
-        headers: geminiHeaders(keyEntry.key),
-        body: JSON.stringify(body),
-        signal,
-      });
-    } catch (err) {
-      if (err.name === 'AbortError') throw err;
-      // Fall back to buffered endpoint (proxy may reject SSE)
-      const response = await _callBuffered(keyEntry.key, body);
-      liveContent.innerHTML = '';
-      renderMarkdown(liveContent, response);
-      storage.recordKeyUsage(keyEntry.idx);
-      return;
-    }
+    // Provider-agnostic tool loop (our own protocol, not Gemini function calls).
+    for (;;) {
+      const raw = await _streamOnce(keyEntry.key, keyEntry.idx, buildBody(), onChunk, signal);
+      const toolCall = parseToolCall(raw);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-      throw new Error(err?.error?.message || `API error ${res.status}`);
-    }
-
-    storage.recordKeyUsage(keyEntry.idx);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr || jsonStr === '[DONE]') continue;
-        let parsed;
-        try { parsed = JSON.parse(jsonStr); } catch { continue; }
-
-        const candidate = parsed.candidates?.[0];
-        if (!candidate?.content?.parts) continue;
-
-        // Function call detected — switch to buffered
-        const fc = candidate.content.parts.find(p => p.functionCall);
-        if (fc) {
-          reader.cancel();
-          const response = await _callBuffered(keyEntry.key, body);
-          liveContent.innerHTML = '';
-          renderMarkdown(liveContent, response);
-          return;
-        }
-
-        for (const part of candidate.content.parts) {
-          if (part.text) {
-            if (!dotsRemoved) { typingDots.remove(); dotsRemoved = true; }
-            accumulated += part.text;
-            scheduleRender();
-          }
-        }
+      if (!toolCall || toolIterations >= MAX_TOOL_ITERATIONS) {
+        response = stripToolCalls(raw).trim();
+        break;
       }
+
+      toolIterations++;
+      liveContent.innerHTML = '';
+      const toolMsg = _appendToolIndicator(toolCall.name);
+
+      let result;
+      try {
+        result = await _executeTool(toolCall.name, toolCall.args || {});
+      } catch (err) {
+        result = { error: err.message };
+      }
+      toolMsg?.remove();
+
+      contents = [
+        ...contents,
+        { role: 'model', parts: [{ text: raw }] },
+        { role: 'user', parts: [{ text: buildToolResultText(toolCall.name, result) }] },
+      ];
+      resetLiveBubble();
     }
 
     // Final render
     liveContent.innerHTML = '';
-    renderMarkdown(liveContent, accumulated);
+    if (response) {
+      renderMarkdown(liveContent, response);
+    } else {
+      liveWrapper.remove();
+    }
 
   } catch (err) {
     if (err.name === 'AbortError' && accumulated) {
+      const partial = stripToolCalls(accumulated).trim();
       liveContent.innerHTML = '';
-      renderMarkdown(liveContent, accumulated);
+      if (partial) renderMarkdown(liveContent, partial);
+      else liveWrapper.remove();
     } else if (err.name !== 'AbortError') {
       liveWrapper.remove();
       _chatBody.appendChild(_buildMessageEl('assistant', `⚠️ Error: ${err.message}`));
@@ -504,70 +467,101 @@ async function _sendMessage(text) {
 }
 
 /**
- * Call Gemini with function-call handling (non-streaming, for tool execution).
+ * Stream one model turn as plain text. Falls back to the buffered endpoint if
+ * SSE is unavailable. Tool calls, if any, are embedded in the returned text and
+ * handled by the caller's tool loop.
  * @param {string} apiKey
+ * @param {number} keyIdx
  * @param {Object} body
+ * @param {function(string):void} onChunk
+ * @param {AbortSignal} signal
  * @returns {Promise<string>}
  */
-async function _callBuffered(apiKey, body) {
+async function _streamOnce(apiKey, keyIdx, body, onChunk, signal) {
   const model = storage.getAgentModel() || DEFAULT_MODEL;
-  const url = geminiUrl(model, 'generateContent');
-  let iterContents = [...body.contents];
+  const streamUrl = geminiUrl(model, 'streamGenerateContent', 'alt=sse');
 
-  for (let round = 0; round < 5; round++) {
-    const res = await fetch(url, {
+  let res;
+  try {
+    res = await fetch(streamUrl, {
       method: 'POST',
       headers: geminiHeaders(apiKey),
-      body: JSON.stringify({ ...body, contents: iterContents }),
+      body: JSON.stringify(body),
+      signal,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `API error ${res.status}`);
-    }
-    const data = await res.json();
-    const candidate = data.candidates?.[0];
-    if (!candidate?.content?.parts?.length) {
-      throw new Error('No response from AI. Try again.');
-    }
-
-    // Check for function call
-    const fc = candidate.content.parts.find(p => p.functionCall);
-    if (fc) {
-      // Show tool indicator in chat
-      const toolMsg = _appendToolIndicator(fc.functionCall.name);
-
-      // Execute the tool
-      let toolResult;
-      try {
-        toolResult = await _executeTool(fc.functionCall.name, fc.functionCall.args || {});
-      } catch (err) {
-        toolResult = { error: err.message };
-      }
-
-      // Remove indicator
-      toolMsg?.remove();
-
-      // Add model turn + tool result to contents
-      iterContents = [
-        ...iterContents,
-        { role: 'model', parts: candidate.content.parts },
-        {
-          role: 'user',
-          parts: [{
-            functionResponse: {
-              name: fc.functionCall.name,
-              response: toolResult,
-            },
-          }],
-        },
-      ];
-      continue;
-    }
-
-    return candidate.content.parts.map(p => p.text || '').join('').trim();
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    return _callBuffered(apiKey, body, keyIdx);
   }
 
-  throw new Error('Too many tool calls — try a simpler request.');
+  if (!res.ok) {
+    return _callBuffered(apiKey, body, keyIdx);
+  }
+
+  storage.recordKeyUsage(keyIdx);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr || jsonStr === '[DONE]') continue;
+      let parsed;
+      try { parsed = JSON.parse(jsonStr); } catch { continue; }
+
+      const candidate = parsed.candidates?.[0];
+      if (!candidate?.content?.parts) continue;
+
+      for (const part of candidate.content.parts) {
+        if (part.text) {
+          accumulated += part.text;
+          onChunk(part.text);
+        }
+      }
+    }
+  }
+
+  return accumulated;
+}
+
+/**
+ * Buffered (non-streaming) Gemini call returning plain text.
+ * @param {string} apiKey
+ * @param {Object} body
+ * @param {number} [keyIdx]
+ * @returns {Promise<string>}
+ */
+async function _callBuffered(apiKey, body, keyIdx) {
+  const model = storage.getAgentModel() || DEFAULT_MODEL;
+  const url = geminiUrl(model, 'generateContent');
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: geminiHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${res.status}`);
+  }
+  if (typeof keyIdx === 'number') storage.recordKeyUsage(keyIdx);
+
+  const data = await res.json();
+  const candidate = data.candidates?.[0];
+  if (!candidate?.content?.parts?.length) {
+    throw new Error('No response from AI. Try again.');
+  }
+  return candidate.content.parts.map(p => p.text || '').join('');
 }
 
 /**
