@@ -1408,6 +1408,20 @@ export async function generateVision(systemPrompt, base64Image, mimeType = 'imag
   throw lastErr || new Error('All API keys exhausted. Try again later.');
 }
 
+/**
+ * Call the Gemini multimodal API with an inline audio clip and return the
+ * text response. Thin wrapper over the same inlineData plumbing as
+ * generateVision — used for voice-driven features (e.g. speak-to-log meals).
+ * @param {string} systemPrompt
+ * @param {string} base64Audio   raw base64 (no data: prefix)
+ * @param {string} [mimeType]    e.g. 'audio/webm', 'audio/mp4', 'audio/ogg'
+ * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
+  return generateVision(systemPrompt, base64Audio, mimeType, opts);
+}
+
 /* ---------- Sheet data helpers (for lazy-loaded sub-sheets) ---------- */
 
 import { api } from '../api-client.js';

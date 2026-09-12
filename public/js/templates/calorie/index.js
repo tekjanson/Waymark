@@ -1,14 +1,17 @@
 /* ============================================================
    calorie/index.js — Calorie & Fitness Tracker (barrel)
 
-   A mobile-first nutrition + fitness logger rendered from a single
-   Google Sheet (row-per-item, §4.7). Features:
-     • Net-calorie banner: Remaining = Target − Food + Burned
-       (exercise burned calories refund the daily budget)
-     • Collapsible Breakfast/Lunch/Dinner/Snacks with per-meal macros
-     • Quick actions: Search DB · Barcode scan · AI photo scan
-     • Exercise logging that increases the remaining allowance
-     • Date switcher across logged days
+   A clean, graphical, mobile-first nutrition + fitness logger rendered
+   from a single Google Sheet (row-per-item, §4.7).
+
+   Highlights:
+     • Calorie ring + macro rings (graphical, not walls of numbers)
+     • Day / Week / Month timeframes with trend charts + averages
+     • Prev/next date nav with swipe (Safari/Brave/Chrome friendly)
+     • Profile & goal (Mifflin-St Jeor) → recommended calories + macros
+     • Living "growth garden" mascot that thrives as you hit your goal
+     • Speak-to-log voice pipeline + photo AI + barcode + search
+     • Net-calorie model: Remaining = Target − Food + Burned
 
    Sheet layout (headers):
      Date | Meal | Item | Qty | Unit | Calories | Protein | Carbs | Fat | Burned | Target
@@ -16,46 +19,86 @@
 
 import {
   el, showToast, registerTemplate, appendSheetRows, getSheetData,
+  getCalorieProfile, setCalorieProfile, drawLineChart,
 } from '../shared.js';
 import {
   MEAL_TYPES, DEFAULT_TARGET, parseNum,
   computeDayTotals, computeNet, resolveTarget, groupByDate, latestDate,
   loadFoodDatabase, customFoodsFromRows,
+  buildSeries, averageSeries, adherenceScore, growthStage,
+  goalFromProfile, computeMacroTargets,
 } from './helpers.js';
 import { openFoodSearchModal, openExerciseModal } from './modal.js';
 import { openBarcodeScanner } from './scanner.js';
 import { openAiScanModal } from './ai-vision.js';
+import { openVoiceModal } from './voice.js';
+import { openProfileModal, buildMascot } from './profile.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /* ---------- Module state ---------- */
 
 let _activeDate = null;
+let _timeframe = 'day';     // 'day' | 'week' | 'month'
 let _collapsed = new Set();
 let _container = null;
 let _cols = null;
 let _sheetTitle = 'Sheet1';
+let _allRows = [];
+let _profile = null;
 
 function currentSheetId() {
   const m = (window.location.hash || '').match(/#\/(?:sheet|public)\/([^/?#]+)/);
   return m ? m[1] : null;
 }
 
-/** Today's date as YYYY-MM-DD (local). */
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function shiftDate(dateStr, deltaDays) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  return dt.toISOString().slice(0, 10);
+}
+
+function prettyDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getUTCDay()];
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dt.getUTCMonth()];
+  if (dateStr === today()) return 'Today';
+  return `${wd}, ${mo} ${d}`;
+}
+
+function svgEl(tag, attrs = {}, children = []) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const c of [].concat(children)) {
+    if (c == null) continue;
+    node.append(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return node;
+}
+
+/* ---------- Targets ---------- */
+
+/** Goal calories + macro targets for the active view (profile-aware). */
+function resolveGoals(rowsOnly) {
+  const g = goalFromProfile(_profile);
+  const fallbackCal = g ? g.calories : DEFAULT_TARGET;
+  const target = resolveTarget(rowsOnly, _cols, fallbackCal) || DEFAULT_TARGET;
+  const macros = g ? g.macros : computeMacroTargets(target, {});
+  return { target, macros };
+}
+
 /* ---------- Append + reload ---------- */
 
-/**
- * Append a food or exercise row for the active date, then re-render.
- * Row shape matches the header column order.
- */
 async function appendEntry(entry) {
   const sheetId = currentSheetId();
   const date = _activeDate || today();
-  const width = 11;
-  const row = new Array(width).fill('');
+  const row = new Array(11).fill('');
   row[_cols.date] = date;
   if (entry.type === 'exercise') {
     row[_cols.meal] = 'Exercise';
@@ -73,21 +116,16 @@ async function appendEntry(entry) {
     if (_cols.carbs >= 0) row[_cols.carbs] = String(entry.carbs);
     if (_cols.fat >= 0) row[_cols.fat] = String(entry.fat);
   }
-
-  if (!sheetId) {
-    showToast('Cannot log — open this sheet from your library', 'error');
-    return;
-  }
+  if (!sheetId) { showToast('Open this sheet from your library to log', 'error'); return; }
   try {
     await appendSheetRows(sheetId, _sheetTitle, [row]);
-    showToast(entry.type === 'exercise' ? 'Exercise logged' : 'Food logged', 'success');
+    showToast(entry.type === 'exercise' ? 'Exercise logged' : 'Logged', 'success');
     await reload();
   } catch (err) {
     showToast(err.message || 'Could not save', 'error');
   }
 }
 
-/** Re-fetch the sheet and re-render the dashboard in place. */
 async function reload() {
   const sheetId = currentSheetId();
   if (!sheetId || !_container) return;
@@ -96,121 +134,92 @@ async function reload() {
     _sheetTitle = data.sheetTitle || _sheetTitle;
     const rows = (data.values || []).slice(1);
     renderDashboard(_container, rows, _cols);
-  } catch { /* keep current view on failure */ }
+  } catch { /* keep current view */ }
 }
 
-/* ---------- Rendering ---------- */
+/* Confirm handler shared by voice (food + exercise items). */
+function logItem(item) {
+  if (item.type === 'exercise') return appendEntry({ ...item, type: 'exercise' });
+  return appendEntry({ ...item, type: 'food' });
+}
+const foodConfirm = (entry) => appendEntry({ ...entry, type: 'food' });
 
-function macroPill(label, value, cls = '') {
-  return el('div', { className: `calorie-macro-pill ${cls}` }, [
-    el('span', { className: 'calorie-macro-pill-val' }, [String(value)]),
-    el('span', { className: 'calorie-macro-pill-label' }, [label]),
-  ]);
+/* ---------- Rings ---------- */
+
+function buildRing(consumed, goal, centerTop, centerBottom, cls = '') {
+  const r = 52, c = 2 * Math.PI * r;
+  const pct = goal > 0 ? Math.min(consumed / goal, 1) : 0;
+  const over = goal > 0 && consumed > goal;
+  const svg = svgEl('svg', { viewBox: '0 0 120 120', class: `calorie-ring-svg ${cls}` });
+  svg.append(svgEl('circle', { cx: '60', cy: '60', r: String(r), class: 'calorie-ring-track', fill: 'none' }));
+  svg.append(svgEl('circle', {
+    cx: '60', cy: '60', r: String(r), fill: 'none',
+    class: `calorie-ring-fill ${over ? 'calorie-ring-over' : ''}`,
+    'stroke-dasharray': `${(pct * c).toFixed(1)} ${c.toFixed(1)}`,
+    transform: 'rotate(-90 60 60)', 'stroke-linecap': 'round',
+  }));
+  const txt = svgEl('text', { x: '60', y: '56', class: 'calorie-ring-num', 'text-anchor': 'middle' }, [String(centerTop)]);
+  const sub = svgEl('text', { x: '60', y: '74', class: 'calorie-ring-lbl', 'text-anchor': 'middle' }, [centerBottom]);
+  svg.append(txt, sub);
+  return svg;
 }
 
-function buildBanner(net, macros) {
-  const remainClass = net.remaining < 0 ? 'calorie-remaining-over' : 'calorie-remaining-ok';
-  const eq = el('div', { className: 'calorie-equation' }, [
-    el('span', { className: 'calorie-eq-part' }, [
-      el('span', { className: 'calorie-eq-num' }, [String(net.target)]),
-      el('span', { className: 'calorie-eq-lbl' }, ['Goal']),
+function buildMacroRing(label, value, goal, color) {
+  const r = 26, c = 2 * Math.PI * r;
+  const pct = goal > 0 ? Math.min(value / goal, 1) : 0;
+  const svg = svgEl('svg', { viewBox: '0 0 64 64', class: 'calorie-macroring-svg' });
+  svg.append(svgEl('circle', { cx: '32', cy: '32', r: String(r), class: 'calorie-ring-track', fill: 'none' }));
+  svg.append(svgEl('circle', {
+    cx: '32', cy: '32', r: String(r), fill: 'none', stroke: color,
+    class: 'calorie-macroring-fill',
+    'stroke-dasharray': `${(pct * c).toFixed(1)} ${c.toFixed(1)}`,
+    transform: 'rotate(-90 32 32)', 'stroke-linecap': 'round',
+  }));
+  return el('div', { className: 'calorie-macroring' }, [
+    svg,
+    el('div', { className: 'calorie-macroring-info' }, [
+      el('span', { className: 'calorie-macroring-val' }, [`${Math.round(value)}`]),
+      el('span', { className: 'calorie-macroring-goal' }, [goal > 0 ? `/${goal}g` : 'g']),
+      el('span', { className: 'calorie-macroring-lbl' }, [label]),
     ]),
-    el('span', { className: 'calorie-eq-op' }, ['\u2212']),
-    el('span', { className: 'calorie-eq-part' }, [
-      el('span', { className: 'calorie-eq-num' }, [String(net.food)]),
-      el('span', { className: 'calorie-eq-lbl' }, ['Food']),
-    ]),
-    el('span', { className: 'calorie-eq-op' }, ['+']),
-    el('span', { className: 'calorie-eq-part' }, [
-      el('span', { className: 'calorie-eq-num' }, [String(net.burned)]),
-      el('span', { className: 'calorie-eq-lbl' }, ['Exercise']),
-    ]),
-    el('span', { className: 'calorie-eq-op' }, ['=']),
-    el('span', { className: `calorie-eq-part calorie-eq-remaining ${remainClass}` }, [
-      el('span', { className: 'calorie-eq-num' }, [String(net.remaining)]),
-      el('span', { className: 'calorie-eq-lbl' }, ['Remaining']),
-    ]),
-  ]);
-
-  const macroRow = el('div', { className: 'calorie-macro-row' }, [
-    macroPill('Protein', `${macros.protein}g`, 'calorie-macro-prot'),
-    macroPill('Carbs', `${macros.carbs}g`, 'calorie-macro-carb'),
-    macroPill('Fat', `${macros.fat}g`, 'calorie-macro-fat'),
-  ]);
-
-  return el('div', { className: 'calorie-banner' }, [eq, macroRow]);
-}
-
-function buildQuickActions(mealType) {
-  const mk = (label, cls, handler) => {
-    const b = el('button', { className: `calorie-action ${cls}`, type: 'button' }, [label]);
-    b.addEventListener('click', (e) => { e.stopPropagation(); handler(); });
-    return b;
-  };
-  const onConfirm = (entry) => appendEntry({ ...entry, type: 'food' });
-  return el('div', { className: 'calorie-actions' }, [
-    mk('+ Search', 'calorie-action-search', async () => {
-      const foods = await loadFoodDatabase();
-      const customDb = customFoodsFromRows(collectAllRows(), _cols);
-      openFoodSearchModal({ mealType, foods, customDb, onConfirm });
-    }),
-    mk('\u2016 Barcode', 'calorie-action-barcode', () => {
-      openBarcodeScanner({ mealType, onConfirm });
-    }),
-    mk('\uD83D\uDCF8 AI Scan', 'calorie-action-ai', () => {
-      openAiScanModal({ mealType, onConfirm });
-    }),
   ]);
 }
 
-/* Keep a reference to the currently rendered rows for custom-DB search. */
-let _allRows = [];
-function collectAllRows() { return _allRows; }
+/* ---------- Header: date nav + timeframe ---------- */
 
-function buildMealSection(mealType, dayRows, totals) {
-  const bucket = totals.byMeal[mealType];
-  const collapsed = _collapsed.has(mealType);
+function buildHeaderBar(dateMap) {
+  /* Timeframe segmented control */
+  const seg = el('div', { className: 'calorie-segmented' },
+    [['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([v, l]) => {
+      const b = el('button', { className: `calorie-seg-btn ${_timeframe === v ? 'active' : ''}`, type: 'button' }, [l]);
+      b.addEventListener('click', () => { _timeframe = v; reload(); });
+      return b;
+    }));
 
-  const header = el('div', { className: 'calorie-meal-header' }, [
-    el('span', { className: 'calorie-meal-caret' }, [collapsed ? '\u25B8' : '\u25BE']),
-    el('span', { className: 'calorie-meal-name' }, [mealType]),
-    el('span', { className: 'calorie-meal-cal' }, [`${bucket.calories} cal`]),
+  const tools = el('div', { className: 'calorie-tools' }, [
+    (() => { const b = el('button', { className: 'calorie-tool-btn', type: 'button', 'aria-label': 'Voice log' }, ['\uD83C\uDF99\uFE0F']);
+      b.addEventListener('click', () => openVoiceModal({ onConfirm: logItem })); return b; })(),
+    (() => { const b = el('button', { className: 'calorie-tool-btn', type: 'button', 'aria-label': 'Profile & goal' }, ['\u2699\uFE0F']);
+      b.addEventListener('click', openProfile); return b; })(),
   ]);
-  header.addEventListener('click', () => {
-    if (_collapsed.has(mealType)) _collapsed.delete(mealType);
-    else _collapsed.add(mealType);
-    reload();
-  });
 
-  const body = el('div', { className: 'calorie-meal-body' });
-  const items = dayRows.filter(({ row }) => {
-    const meal = (row[_cols.meal] || '').trim();
-    return parseNum(row[_cols.burned]) === 0 && meal.toLowerCase() !== 'exercise'
-      && canon(meal) === mealType;
-  });
+  const top = el('div', { className: 'calorie-topbar' }, [seg, tools]);
 
-  if (!items.length) {
-    body.append(el('div', { className: 'calorie-empty-row' }, ['No items yet']));
-  } else {
-    for (const { row } of items) {
-      const name = row[_cols.item] || '\u2014';
-      const qty = _cols.qty >= 0 ? (row[_cols.qty] || '') : '';
-      const unit = _cols.unit >= 0 ? (row[_cols.unit] || '') : '';
-      const serving = [qty, unit].filter(Boolean).join(' ');
-      body.append(el('div', { className: 'calorie-food-row' }, [
-        el('span', { className: 'calorie-food-name' }, [name]),
-        serving ? el('span', { className: 'calorie-food-serving' }, [serving]) : null,
-        el('span', { className: 'calorie-food-cal' }, [`${parseNum(row[_cols.calories])} cal`]),
-      ]));
-    }
-  }
+  if (_timeframe !== 'day') return el('div', {}, [top]);
 
-  body.append(buildQuickActions(mealType));
+  /* Date nav (day view only) */
+  const prev = el('button', { className: 'calorie-datenav-btn', type: 'button', 'aria-label': 'Previous day' }, ['\u2039']);
+  const next = el('button', { className: 'calorie-datenav-btn', type: 'button', 'aria-label': 'Next day' }, ['\u203A']);
+  const label = el('button', { className: 'calorie-datenav-label', type: 'button' }, [prettyDate(_activeDate)]);
+  prev.addEventListener('click', () => { _activeDate = shiftDate(_activeDate, -1); reload(); });
+  next.addEventListener('click', () => { _activeDate = shiftDate(_activeDate, 1); reload(); });
+  label.addEventListener('click', () => { _activeDate = today(); reload(); });
+  const nav = el('div', { className: 'calorie-datenav' }, [prev, label, next]);
 
-  const section = el('div', { className: `calorie-meal ${collapsed ? 'calorie-collapsed' : ''}` }, [header]);
-  if (!collapsed) section.append(body);
-  return section;
+  return el('div', {}, [top, nav]);
 }
+
+/* ---------- Day view ---------- */
 
 function canon(meal) {
   const m = (meal || '').toLowerCase();
@@ -220,13 +229,80 @@ function canon(meal) {
   return 'Snacks';
 }
 
+function openActionSheet(mealType) {
+  const overlay = el('div', { className: 'calorie-modal-overlay' });
+  const sheet = el('div', { className: 'calorie-actionsheet' });
+  const close = () => overlay.remove();
+  const mk = (label, handler) => {
+    const b = el('button', { className: 'calorie-actionsheet-btn', type: 'button' }, [label]);
+    b.addEventListener('click', () => { close(); handler(); });
+    return b;
+  };
+  sheet.append(
+    el('div', { className: 'calorie-actionsheet-title' }, [`Add to ${mealType}`]),
+    mk('\uD83D\uDD0D  Search foods', async () => {
+      const foods = await loadFoodDatabase();
+      const customDb = customFoodsFromRows(_allRows, _cols);
+      openFoodSearchModal({ mealType, foods, customDb, onConfirm: foodConfirm });
+    }),
+    mk('\u2016  Scan barcode', () => openBarcodeScanner({ mealType, onConfirm: foodConfirm })),
+    mk('\uD83D\uDCF7  Photo AI', () => openAiScanModal({ mealType, onConfirm: foodConfirm })),
+    mk('\uD83C\uDF99\uFE0F  Speak', () => openVoiceModal({ onConfirm: logItem })),
+  );
+  overlay.append(sheet);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
+}
+
+function buildMealSection(mealType, dayRows, totals) {
+  const bucket = totals.byMeal[mealType];
+  const collapsed = _collapsed.has(mealType);
+
+  const addBtn = el('button', { className: 'calorie-meal-add', type: 'button', 'aria-label': `Add to ${mealType}` }, ['+']);
+  addBtn.addEventListener('click', (e) => { e.stopPropagation(); openActionSheet(mealType); });
+
+  const header = el('div', { className: 'calorie-meal-header' }, [
+    el('span', { className: 'calorie-meal-caret' }, [collapsed ? '\u25B8' : '\u25BE']),
+    el('span', { className: 'calorie-meal-name' }, [mealType]),
+    el('span', { className: 'calorie-meal-cal' }, [`${bucket.calories}`]),
+    addBtn,
+  ]);
+  header.addEventListener('click', () => {
+    if (_collapsed.has(mealType)) _collapsed.delete(mealType); else _collapsed.add(mealType);
+    reload();
+  });
+
+  const section = el('div', { className: `calorie-meal ${collapsed ? 'calorie-collapsed' : ''}` }, [header]);
+  if (collapsed) return section;
+
+  const body = el('div', { className: 'calorie-meal-body' });
+  const items = dayRows.filter(({ row }) => {
+    const meal = (row[_cols.meal] || '').trim();
+    return parseNum(row[_cols.burned]) === 0 && meal.toLowerCase() !== 'exercise' && canon(meal) === mealType;
+  });
+  if (!items.length) {
+    body.append(el('div', { className: 'calorie-empty-row' }, ['Nothing yet — tap +']));
+  } else {
+    for (const { row } of items) {
+      const name = row[_cols.item] || '\u2014';
+      const serving = [_cols.qty >= 0 ? row[_cols.qty] : '', _cols.unit >= 0 ? row[_cols.unit] : ''].filter(Boolean).join(' ');
+      body.append(el('div', { className: 'calorie-food-row' }, [
+        el('span', { className: 'calorie-food-name' }, [name]),
+        serving ? el('span', { className: 'calorie-food-serving' }, [serving]) : null,
+        el('span', { className: 'calorie-food-cal' }, [`${parseNum(row[_cols.calories])}`]),
+      ]));
+    }
+  }
+  section.append(body);
+  return section;
+}
+
 function buildExerciseSection(dayRows, totals) {
   const header = el('div', { className: 'calorie-meal-header calorie-exercise-header' }, [
     el('span', { className: 'calorie-meal-name' }, ['\uD83C\uDFC3 Exercise']),
-    el('span', { className: 'calorie-meal-cal calorie-burned' }, [`+${totals.burned} cal`]),
+    el('span', { className: 'calorie-meal-cal calorie-burned' }, [`+${totals.burned}`]),
   ]);
   const body = el('div', { className: 'calorie-meal-body' });
-
   const items = dayRows.filter(({ row }) =>
     parseNum(row[_cols.burned]) > 0 || (row[_cols.meal] || '').trim().toLowerCase() === 'exercise');
   if (!items.length) {
@@ -237,66 +313,186 @@ function buildExerciseSection(dayRows, totals) {
       const dur = _cols.qty >= 0 && row[_cols.qty] ? ` \u00B7 ${row[_cols.qty]} min` : '';
       body.append(el('div', { className: 'calorie-food-row' }, [
         el('span', { className: 'calorie-food-name' }, [name + dur]),
-        el('span', { className: 'calorie-food-cal calorie-burned' }, [`+${parseNum(row[_cols.burned])} cal`]),
+        el('span', { className: 'calorie-food-cal calorie-burned' }, [`+${parseNum(row[_cols.burned])}`]),
       ]));
     }
   }
-
   const addBtn = el('button', { className: 'calorie-action calorie-action-exercise', type: 'button' }, ['+ Log exercise']);
-  addBtn.addEventListener('click', () => {
-    openExerciseModal({ onConfirm: (e) => appendEntry({ ...e, type: 'exercise' }) });
-  });
+  addBtn.addEventListener('click', () => openExerciseModal({ onConfirm: (e) => appendEntry({ ...e, type: 'exercise' }) }));
   body.append(el('div', { className: 'calorie-actions' }, [addBtn]));
-
   return el('div', { className: 'calorie-meal calorie-exercise' }, [header, body]);
 }
 
-function buildDateSwitcher(dateMap) {
-  const dates = [...dateMap.keys()].sort().reverse();
-  const select = el('select', { className: 'calorie-date-select' },
-    dates.map(d => el('option', { value: d }, [d])));
-  select.value = _activeDate;
-  select.addEventListener('change', () => {
-    _activeDate = select.value;
-    reload();
-  });
-  return el('div', { className: 'calorie-date-bar' }, [
-    el('span', { className: 'calorie-date-label' }, ['Day']),
-    select,
+function renderDayView(container, dateMap) {
+  const dayEntries = dateMap.get(_activeDate) || [];
+  const rowsOnly = dayEntries.map(e => e.row);
+  const totals = computeDayTotals(rowsOnly, _cols);
+  const { target, macros } = resolveGoals(rowsOnly);
+  const net = computeNet(target, totals.food, totals.burned);
+
+  /* Hero: ring + mascot */
+  const remainClass = net.remaining < 0 ? 'calorie-ring-over' : '';
+  const ring = buildRing(net.food, target + net.burned,
+    Math.abs(net.remaining), net.remaining < 0 ? 'over' : 'left', remainClass);
+
+  const eqLine = el('div', { className: 'calorie-eqline' }, [
+    el('span', {}, [`${target} goal`]),
+    el('span', { className: 'calorie-eq-op' }, ['\u2212']),
+    el('span', {}, [`${net.food} food`]),
+    el('span', { className: 'calorie-eq-op' }, ['+']),
+    el('span', {}, [`${net.burned} exercise`]),
+  ]);
+
+  /* Mascot from trailing adherence */
+  const series30 = buildSeries(dateMap, _cols, _activeDate, 30);
+  const adh = adherenceScore(series30, target);
+  const mascot = buildMascot(growthStage(adh), adh);
+
+  const hero = el('div', { className: 'calorie-hero' }, [
+    el('div', { className: 'calorie-hero-ring' }, [ring, eqLine]),
+    mascot,
+  ]);
+  container.append(hero);
+
+  /* Macro rings */
+  container.append(el('div', { className: 'calorie-macrorings' }, [
+    buildMacroRing('Protein', totals.protein, macros.protein, '#6366f1'),
+    buildMacroRing('Carbs', totals.carbs, macros.carbs, '#f59e0b'),
+    buildMacroRing('Fat', totals.fat, macros.fat, '#ec4899'),
+  ]));
+
+  /* Global quick actions (compact) */
+  const quick = el('div', { className: 'calorie-quickbar' }, [
+    quickBtn('\uD83C\uDF99\uFE0F', 'Speak', () => openVoiceModal({ onConfirm: logItem })),
+    quickBtn('\uD83D\uDCF7', 'Photo', () => openAiScanModal({ mealType: 'Snacks', onConfirm: foodConfirm })),
+    quickBtn('\u2016', 'Barcode', () => openBarcodeScanner({ mealType: 'Snacks', onConfirm: foodConfirm })),
+    quickBtn('\uD83C\uDFC3', 'Exercise', () => openExerciseModal({ onConfirm: (e) => appendEntry({ ...e, type: 'exercise' }) })),
+  ]);
+  container.append(quick);
+
+  /* Meals */
+  for (const mealType of MEAL_TYPES) container.append(buildMealSection(mealType, dayEntries, totals));
+  container.append(buildExerciseSection(dayEntries, totals));
+}
+
+function quickBtn(icon, label, handler) {
+  const b = el('button', { className: 'calorie-quick', type: 'button' }, [
+    el('span', { className: 'calorie-quick-icon' }, [icon]),
+    el('span', { className: 'calorie-quick-lbl' }, [label]),
+  ]);
+  b.addEventListener('click', handler);
+  return b;
+}
+
+/* ---------- Week / Month view ---------- */
+
+function renderTrendView(container, dateMap) {
+  const days = _timeframe === 'week' ? 7 : 30;
+  const series = buildSeries(dateMap, _cols, _activeDate || today(), days);
+  const avg = averageSeries(series);
+  const rowsOnly = (dateMap.get(_activeDate) || []).map(e => e.row);
+  const { target, macros } = resolveGoals(rowsOnly);
+  const adh = adherenceScore(series, target);
+
+  /* Summary + mascot */
+  const summary = el('div', { className: 'calorie-avg-summary' }, [
+    el('div', { className: 'calorie-avg-hero' }, [
+      el('span', { className: 'calorie-avg-num' }, [String(avg.food)]),
+      el('span', { className: 'calorie-avg-lbl' }, [`avg cal/day · goal ${target}`]),
+      el('span', { className: `calorie-avg-delta ${avg.food <= target ? 'ok' : 'over'}` },
+        [avg.loggedDays ? `${avg.food - target >= 0 ? '+' : ''}${avg.food - target} vs goal` : 'No data yet']),
+    ]),
+    buildMascot(growthStage(adh), adh),
+  ]);
+  container.append(summary);
+
+  /* Trend chart: calories/day + goal line */
+  const chartWrap = el('div', { className: 'calorie-chart' });
+  container.append(chartWrap);
+  drawLineChart(chartWrap, {
+    labels: series.labels,
+    series: [
+      { name: 'Calories', values: series.food, color: '#ef4444' },
+      { name: 'Goal', values: series.food.map(() => target), color: '#94a3b8' },
+    ],
+  }, { height: 220, title: `${_timeframe === 'week' ? '7' : '30'}-day calories` });
+
+  /* Average macros */
+  container.append(el('div', { className: 'calorie-macrorings' }, [
+    buildMacroRing('Protein', avg.protein, macros.protein, '#6366f1'),
+    buildMacroRing('Carbs', avg.carbs, macros.carbs, '#f59e0b'),
+    buildMacroRing('Fat', avg.fat, macros.fat, '#ec4899'),
+  ]));
+
+  container.append(el('div', { className: 'calorie-avg-stats' }, [
+    stat('Logged days', `${avg.loggedDays}/${days}`),
+    stat('Avg burned', `${avg.burned} cal`),
+    stat('Best streak', `${adh.streak} d`),
+    stat('On target', `${adh.onTrackDays}/${adh.loggedDays || 0}`),
+  ]));
+}
+
+function stat(label, value) {
+  return el('div', { className: 'calorie-stat' }, [
+    el('span', { className: 'calorie-stat-val' }, [value]),
+    el('span', { className: 'calorie-stat-lbl' }, [label]),
   ]);
 }
 
-/**
- * Core dashboard renderer — reused by render() and reload().
- * @param {HTMLElement} container
- * @param {string[][]} rows
- * @param {Object} cols
- */
+/* ---------- Profile ---------- */
+
+function openProfile() {
+  openProfileModal({
+    profile: _profile,
+    onSave: (prof) => {
+      _profile = prof;
+      const sid = currentSheetId();
+      if (sid) setCalorieProfile(sid, prof);
+      const g = goalFromProfile(prof);
+      showToast(g ? `Goal set: ${g.calories} cal/day` : 'Profile saved', 'success');
+      reload();
+    },
+  });
+}
+
+/* ---------- Swipe (day nav) ---------- */
+
+function attachSwipe(container) {
+  let x0 = null, y0 = null;
+  container.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  container.addEventListener('touchend', (e) => {
+    if (x0 == null || _timeframe !== 'day') { x0 = null; return; }
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      _activeDate = shiftDate(_activeDate, dx < 0 ? 1 : -1);
+      reload();
+    }
+    x0 = null;
+  }, { passive: true });
+}
+
+/* ---------- Core render ---------- */
+
 function renderDashboard(container, rows, cols) {
   _container = container;
   _cols = cols;
   _allRows = rows;
   container.innerHTML = '';
+  container.classList.add('calorie-root');
 
   const dateMap = groupByDate(rows, cols);
-  if (!_activeDate || !dateMap.has(_activeDate)) {
+  if (!_activeDate || (_timeframe === 'day' && !dateMap.has(_activeDate) && _activeDate !== today())) {
     _activeDate = latestDate(dateMap) || today();
   }
-  const dayEntries = dateMap.get(_activeDate) || [];
-  const dayRows = dayEntries;
-  const rowsOnly = dayRows.map(e => e.row);
+  if (!_activeDate) _activeDate = today();
 
-  const totals = computeDayTotals(rowsOnly, cols);
-  const target = resolveTarget(rowsOnly, cols) || DEFAULT_TARGET;
-  const net = computeNet(target, totals.food, totals.burned);
-
-  container.append(buildDateSwitcher(dateMap));
-  container.append(buildBanner(net, totals));
-
-  for (const mealType of MEAL_TYPES) {
-    container.append(buildMealSection(mealType, dayRows, totals));
-  }
-  container.append(buildExerciseSection(dayRows, totals));
+  container.append(buildHeaderBar(dateMap));
+  if (_timeframe === 'day') renderDayView(container, dateMap);
+  else renderTrendView(container, dateMap);
 }
 
 /* ---------- Template Definition ---------- */
@@ -314,8 +510,6 @@ const definition = {
     const hasBurned = lower.some(h => /(burn|burned|calories_burned)/.test(h));
     const hasExercise = lower.some(h => /(exercise|workout|activity)/.test(h));
     const hasMealItem = lower.some(h => /^(meal|food|item)/.test(h));
-    // Requires calories AND a fitness signal (burned/exercise) to avoid
-    // colliding with the Meal Planner template.
     return hasCal && (hasBurned || (hasExercise && hasMealItem));
   },
 
@@ -349,10 +543,12 @@ const definition = {
   },
 
   render(container, rows, cols) {
-    // Reset volatile view state on a fresh full render.
     _activeDate = null;
+    _timeframe = 'day';
     _collapsed = new Set();
+    _profile = getCalorieProfile(currentSheetId());
     renderDashboard(container, rows, cols);
+    attachSwipe(container);
   },
 };
 

@@ -179,3 +179,93 @@ test('searchExerciseDatabase finds activities by keyword', async ({ page }) => {
   expect(r.names.some(n => n.includes('run'))).toBe(true);
   expect(r.elapsed).toBeLessThan(25);
 });
+
+/* ---------- Profile goals: BMR / TDEE / macros ---------- */
+
+test('computeBMR uses Mifflin-St Jeor (male vs female)', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    const male = h.computeBMR({ sex: 'male', age: 30, heightCm: 180, weightKg: 80 });
+    const female = h.computeBMR({ sex: 'female', age: 30, heightCm: 165, weightKg: 60 });
+    return { male, female };
+  });
+  // 10*80+6.25*180-5*30+5 = 1780
+  expect(r.male).toBe(1780);
+  // 10*60+6.25*165-5*30-161 = 1320.25 → 1320
+  expect(r.female).toBe(1320);
+});
+
+test('computeTDEE and computeCalorieGoal apply activity + deficit', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    const tdee = h.computeTDEE(1780, 'moderate'); // 1780*1.55 = 2759
+    const lose = h.computeCalorieGoal(tdee, 'lose', 0.5); // -550/day → 2209
+    const maintain = h.computeCalorieGoal(tdee, 'maintain', 0.5);
+    return { tdee, lose, maintain };
+  });
+  expect(r.tdee).toBe(2759);
+  expect(r.maintain).toBe(2759);
+  expect(r.lose).toBe(2209);
+});
+
+test('computeMacroTargets splits calories into protein/carbs/fat', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    return h.computeMacroTargets(2000, { weightKg: 80, goalType: 'maintain' });
+  });
+  // protein 1.6*80=128g; fat 27% of 2000 /9 = 60g; carbs remainder
+  expect(r.protein).toBe(128);
+  expect(r.fat).toBe(60);
+  expect(r.carbs).toBeGreaterThan(0);
+});
+
+test('goalFromProfile returns null without core inputs', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    return {
+      empty: h.goalFromProfile({ sex: 'male' }),
+      full: h.goalFromProfile({ sex: 'male', age: 30, heightCm: 180, weightKg: 80, activityLevel: 'moderate', goalType: 'maintain' }),
+    };
+  });
+  expect(r.empty).toBeNull();
+  expect(r.full.calories).toBe(2759);
+});
+
+/* ---------- Timeframe averages & adherence ---------- */
+
+test('buildSeries and averageSeries aggregate a trailing window', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    const cols = { date: 0, meal: 1, item: 2, qty: 3, unit: 4, calories: 5, protein: 6, carbs: 7, fat: 8, burned: 9, target: 10 };
+    const rows = [
+      ['2026-09-12', 'Breakfast', 'A', '', '', '500', '20', '50', '10', '', '2000'],
+      ['2026-09-11', 'Lunch', 'B', '', '', '700', '30', '60', '20', '', '2000'],
+    ];
+    const dateMap = h.groupByDate(rows, cols);
+    const series = h.buildSeries(dateMap, cols, '2026-09-12', 7);
+    const avg = h.averageSeries(series);
+    return { len: series.food.length, logged: series.loggedDays, avgFood: avg.food };
+  });
+  expect(r.len).toBe(7);
+  expect(r.logged).toBe(2);
+  expect(r.avgFood).toBe(600); // (500+700)/2
+});
+
+test('adherenceScore and growthStage reflect on-target logging', async ({ page }) => {
+  await setupApp(page);
+  const r = await page.evaluate(async () => {
+    const h = await import('/js/templates/calorie/helpers.js');
+    const series = { food: [1900, 1950, 2000], burned: [0, 0, 0], net: [1900, 1950, 2000], loggedDays: 3 };
+    const adh = h.adherenceScore(series, 2000);
+    const stage = h.growthStage(adh);
+    return { score: adh.score, streak: adh.streak, stage };
+  });
+  expect(r.score).toBeGreaterThan(0.8);
+  expect(r.streak).toBe(3);
+  expect(r.stage).toBeGreaterThanOrEqual(4);
+});
