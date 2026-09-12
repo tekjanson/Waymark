@@ -80,3 +80,50 @@ test('meal planner directoryView shows folder refresh button in header', async (
   await page.waitForSelector('.meal-dir-card', { timeout: 8_000 });
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
+
+test('meal planner shows view switcher and add-meal button', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-024');
+  await page.waitForSelector('.meal-chrome', { timeout: 5_000 });
+  const views = await page.locator('.meal-seg-btn').allTextContents();
+  expect(views).toEqual(expect.arrayContaining(['Days', 'Week', 'Macros']));
+  await expect(page.locator('.meal-add-btn')).toBeVisible();
+});
+
+test('meal week view renders a day x meal grid', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-024');
+  await page.waitForSelector('.meal-chrome', { timeout: 5_000 });
+  await page.locator('.meal-seg-btn', { hasText: 'Week' }).click();
+  await page.waitForSelector('.meal-week-grid', { timeout: 5_000 });
+  const heads = await page.locator('.meal-week-head').allTextContents();
+  expect(heads).toEqual(expect.arrayContaining(['Day', 'Breakfast', 'Lunch', 'Dinner', 'Total']));
+});
+
+test('meal macros view renders a calorie chart', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-024');
+  await page.waitForSelector('.meal-chrome', { timeout: 5_000 });
+  await page.locator('.meal-seg-btn', { hasText: 'Macros' }).click();
+  await page.waitForSelector('.meal-chart svg', { timeout: 5_000 });
+  await expect(page.locator('.meal-chart svg')).toHaveCount(1);
+});
+
+test('adding a meal via food search appends a row', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-024');
+  await page.waitForSelector('.meal-add-btn', { timeout: 5_000 });
+
+  await page.locator('.meal-add-btn').click();
+  await page.waitForSelector('.meal-search-input', { timeout: 5_000 });
+  await page.fill('.meal-search-input', 'banana');
+  await page.waitForSelector('.meal-search-item', { timeout: 5_000 });
+  await page.locator('.meal-search-item').first().click();
+  await page.waitForSelector('.meal-submit', { timeout: 5_000 });
+  await page.locator('.meal-submit').click();
+
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'row-append');
+  }, { timeout: 5_000 }).toBe(true);
+});

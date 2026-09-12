@@ -1288,6 +1288,8 @@ export {
   setEchoSuppression,
   getCalorieProfile,
   setCalorieProfile,
+  getTemplatePref,
+  setTemplatePref,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */

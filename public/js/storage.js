@@ -180,6 +180,20 @@ export function setCalorieProfile(sheetId, profile) {
   set(`calorie_profile_${sheetId}`, profile);
 }
 
+/* --- Generic per-template preferences (namespaced) --- */
+
+/** Read a namespaced template preference value, or null. */
+export function getTemplatePref(key) {
+  if (!key) return null;
+  return get(`tpl_${key}`);
+}
+
+/** Persist a namespaced template preference value. */
+export function setTemplatePref(key, value) {
+  if (!key) return;
+  set(`tpl_${key}`, value);
+}
+
 /* --- Dismissed Items --- */
 
 export function getDismissedItems() {
