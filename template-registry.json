@@ -1509,10 +1509,53 @@
       "fixtureFiles": [
         "agents-registry"
       ]
+    },
+    {
+      "key": "calorie",
+      "name": "Calorie & Fitness Tracker",
+      "icon": "🔥",
+      "color": "#ef4444",
+      "priority": 24,
+      "category": "Health & Lifestyle",
+      "detectSignals": [
+        "date",
+        "meal",
+        "item",
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "burned",
+        "exercise",
+        "target"
+      ],
+      "columnRoles": [
+        "date",
+        "meal",
+        "item",
+        "qty",
+        "unit",
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "burned",
+        "target"
+      ],
+      "interactive": true,
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-072"
+      ],
+      "fixtureFiles": [
+        "calorie-default"
+      ]
     }
   ],
-  "nextSheetId": "sheet-070",
-  "totalTemplates": 39,
+  "nextSheetId": "sheet-073",
+  "totalTemplates": 40,
   "categories": [
     "Productivity",
     "Engineering",
@@ -1534,6 +1577,7 @@
     "Social",
     "Documentation",
     "Monitoring",
-    "Marketing"
+    "Marketing",
+    "Health & Lifestyle"
   ]
 }

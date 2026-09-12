@@ -215,6 +215,10 @@ help: ## Show this help
 dev: ## Start the Waymark dev server on localhost:3000
 	GITHUB_SOURCE_LOCAL=true node server/index.js
 
+seed-data: ## Rebuild the calorie tracker food + exercise reference datasets
+	node scripts/seed-nutrition-database.mjs
+	node scripts/seed-exercise-database.mjs
+
 test: ## Run Playwright E2E suite (headless)
 	@# Kill any user-facing server so Playwright can start WAYMARK_LOCAL=true server
 	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \

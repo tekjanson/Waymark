@@ -142,6 +142,7 @@ async function loadMockSheet(sheetId) {
     'sheet-067': 'ledger-business',
     'sheet-068': 'invoice-sample',
     'sheet-071': 'rfi',
+    'sheet-072': 'calorie-default',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

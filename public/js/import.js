@@ -126,8 +126,19 @@ const ROLE_LABELS = {
   'meal.day': 'Day / Date',
   'meal.calories': 'Calories',
   'meal.protein': 'Protein (g)',
+  // Calorie & Fitness Tracker
+  'calorie.date': 'Date',
+  'calorie.meal': 'Meal Type (breakfast, lunch, dinner, snacks, exercise)',
+  'calorie.item': 'Food / Activity Name',
+  'calorie.qty': 'Serving Quantity',
+  'calorie.unit': 'Serving Unit (g, oz, cup)',
+  'calorie.calories': 'Calories',
+  'calorie.protein': 'Protein (g)',
+  'calorie.carbs': 'Carbs (g)',
+  'calorie.fat': 'Fat (g)',
+  'calorie.burned': 'Calories Burned (exercise)',
+  'calorie.target': 'Daily Calorie Target',
   // Travel
-  'travel.activity': 'Activity / Booking',
   'travel.date': 'Date',
   'travel.location': 'Location / Destination',
   'travel.booking': 'Booking Reference',
@@ -372,6 +383,11 @@ const CANONICAL_HEADERS = {
   // Meal
   'meal.meal': 'Meal', 'meal.day': 'Day',
   'meal.recipe': 'Recipe', 'meal.calories': 'Calories', 'meal.protein': 'Protein',
+  // Calorie & Fitness Tracker
+  'calorie.date': 'Date', 'calorie.meal': 'Meal', 'calorie.item': 'Item',
+  'calorie.qty': 'Qty', 'calorie.unit': 'Unit', 'calorie.calories': 'Calories',
+  'calorie.protein': 'Protein', 'calorie.carbs': 'Carbs', 'calorie.fat': 'Fat',
+  'calorie.burned': 'Burned', 'calorie.target': 'Target',
   // Travel
   'travel.activity': 'Activity', 'travel.date': 'Date',
   'travel.location': 'Location', 'travel.booking': 'Booking',

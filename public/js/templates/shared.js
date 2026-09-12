@@ -667,6 +667,11 @@ export function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
 /* Re-export el and showToast for convenience — templates only need to import from shared */
 export { el, showToast };
 
+/* Re-export the camera still-capture helper so template sub-modules can access
+   it without importing outside their folder (§1.5). */
+export { captureStillFromCamera } from '../camera-capture.js';
+
+
 /* ---------- Generic Helpers ---------- */
 
 /**
@@ -1288,6 +1293,59 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       temperature: opts.temperature ?? 0.7,
+      maxOutputTokens: opts.maxTokens ?? 1024,
+    },
+  };
+
+  let lastErr;
+  for (const keyEntry of keys) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: geminiHeaders(keyEntry.key),
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+      const errBody = await res.json().catch(() => ({}));
+      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
+      if (res.status === 429 || res.status === 503) continue;
+      throw lastErr;
+    }
+
+    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+    if (!text) throw new Error('No response from AI. Try again.');
+    return text;
+  }
+
+  throw lastErr || new Error('All API keys exhausted. Try again later.');
+}
+
+/**
+ * Call the Gemini multimodal API with an inline image and return the text
+ * response. Same key-rotation strategy as generateText(). Templates use this
+ * for vision features (e.g. meal-photo macro estimation) — §1.5-compliant.
+ * @param {string} systemPrompt
+ * @param {string} base64Image   raw base64 (no data: prefix)
+ * @param {string} [mimeType]
+ * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
+  const keys = pickBestKey();
+  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
+
+  const model = getAgentModel() || DEFAULT_MODEL;
+  const url = geminiUrl(model, 'generateContent');
+  const parts = [{ inlineData: { mimeType, data: base64Image } }];
+  if (opts.userMessage) parts.unshift({ text: opts.userMessage });
+  const body = {
+    contents: [{ role: 'user', parts }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: opts.temperature ?? 0.4,
       maxOutputTokens: opts.maxTokens ?? 1024,
     },
   };
