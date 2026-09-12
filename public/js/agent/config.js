@@ -300,7 +300,6 @@ export function buildConversationSummary(history, recentMessageLimit) {
 export function buildRequestBody(contents, systemPrompt) {
   return {
     contents,
-    tools: TOOL_DECLARATIONS,
     systemInstruction: {
       parts: [{ text: systemPrompt }],
     },
@@ -381,169 +380,153 @@ const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
   .map(([k, cols]) => `${k}: ${cols.join(', ')}`)
   .join(' | ');
 
-/** Tool definitions for Gemini function calling */
-export const TOOL_DECLARATIONS = [{
-  functionDeclarations: [{
-    name: 'create_sheet',
-    description: 'Create a new Google Sheet. Headers are auto-filled from the template. ' +
-      'Provide data rows matching the column order for the chosen template. ' +
-      'Column order per template — ' + TEMPLATE_COLUMNS,
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        template: {
-          type: 'STRING',
-          description: 'Template key: checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading',
-        },
-        title: {
-          type: 'STRING',
-          description: 'The title for the new spreadsheet (e.g. "My Budget Tracker", "Project Tasks")',
-        },
-        data: {
-          type: 'ARRAY',
-          description: 'Data rows (NO headers — auto-filled). Each row is an array of strings matching the template column order.',
-          items: {
-            type: 'ARRAY',
-            items: { type: 'STRING' },
-          },
-        },
-      },
-      required: ['template', 'title', 'data'],
-    },
-  }, {
-    name: 'read_sheet',
-    description: 'Read the contents of an existing Google Sheet by its spreadsheet ID. ' +
-      'Returns the sheet title, column headers, and all data rows.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        spreadsheet_id: {
-          type: 'STRING',
-          description: 'The Google Sheets spreadsheet ID (from the URL or from a previous create_sheet result)',
-        },
-      },
-      required: ['spreadsheet_id'],
-    },
-  }, {
-    name: 'search_sheets',
-    description: 'Search the user\'s Google Drive for spreadsheets by name. ' +
-      'Returns matching sheets with their IDs, names, and folder locations. ' +
-      'Use this when the user refers to a sheet you don\'t have the ID for.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        query: {
-          type: 'STRING',
-          description: 'Search term to match against sheet names (case-insensitive substring match)',
-        },
-      },
-      required: ['query'],
-    },
-  }, {
-    name: 'update_sheet',
-    description: 'Update an existing Google Sheet. Supports two operations: ' +
-      '"append_rows" adds new rows at the bottom, "update_cells" changes specific cells. ' +
-      'Use read_sheet first to see the current data and column order before updating.',
-    parameters: {
-      type: 'OBJECT',
-      properties: {
-        spreadsheet_id: {
-          type: 'STRING',
-          description: 'The Google Sheets spreadsheet ID to update',
-        },
-        operation: {
-          type: 'STRING',
-          description: 'Either "append_rows" to add rows at the end, or "update_cells" to change specific cells',
-        },
-        rows: {
-          type: 'ARRAY',
-          description: 'For append_rows: array of new rows to add (each row is an array of strings matching column order)',
-          items: {
-            type: 'ARRAY',
-            items: { type: 'STRING' },
-          },
-        },
-        updates: {
-          type: 'ARRAY',
-          description: 'For update_cells: array of cell updates. Each has row (1-based data row, excluding header), column (column name or 0-based index), and value.',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              row: { type: 'NUMBER', description: '1-based data row number (1 = first data row after header)' },
-              column: { type: 'STRING', description: 'Column name (matching header) or 0-based column index as string' },
-              value: { type: 'STRING', description: 'New cell value' },
-            },
-          },
-        },
-      },
-      required: ['spreadsheet_id', 'operation'],
-    },
-  }],
-}];
+/* ============================================================
+   Prompt-based tool protocol (provider-agnostic)
+   ------------------------------------------------------------
+   We do NOT use provider-native function calling. Instead the
+   model is instructed to emit a fenced ```tool_call JSON block.
+   We parse that from the model's TEXT output, run the tool, feed
+   the result back as a plain text turn, and loop. This works the
+   same for Gemini, Claude, and Ollama and needs no special API
+   permissions.
+   ============================================================ */
 
-/** Tool definitions for Claude (Anthropic) function calling */
-export const CLAUDE_TOOL_DECLARATIONS = [
-  {
-    name: 'create_sheet',
-    description: 'Create a new Google Sheet. Headers are auto-filled from the template. Provide data rows matching the column order.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        template: { type: 'string', description: 'Template key: checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading' },
-        title: { type: 'string', description: 'The title for the new spreadsheet' },
-        data: { type: 'array', description: 'Data rows (NO headers). Each row is an array of strings.', items: { type: 'array', items: { type: 'string' } } },
-      },
-      required: ['template', 'title', 'data'],
-    },
-  },
-  {
-    name: 'read_sheet',
-    description: 'Read the contents of an existing Google Sheet by its spreadsheet ID.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        spreadsheet_id: { type: 'string', description: 'The Google Sheets spreadsheet ID' },
-      },
-      required: ['spreadsheet_id'],
-    },
-  },
-  {
-    name: 'search_sheets',
-    description: "Search the user's Google Drive for spreadsheets by name.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search term to match against sheet names' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'update_sheet',
-    description: 'Update an existing Google Sheet. Use "append_rows" to add rows or "update_cells" to change specific cells.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        spreadsheet_id: { type: 'string', description: 'The spreadsheet ID' },
-        operation: { type: 'string', description: '"append_rows" or "update_cells"' },
-        rows: { type: 'array', description: 'Rows to add (for append_rows)', items: { type: 'array', items: { type: 'string' } } },
-        updates: {
-          type: 'array',
-          description: 'Cell updates (for update_cells)',
-          items: {
-            type: 'object',
-            properties: {
-              row: { type: 'number', description: '1-based data row number' },
-              column: { type: 'string', description: 'Column name or 0-based index' },
-              value: { type: 'string', description: 'New cell value' },
-            },
-          },
-        },
-      },
-      required: ['spreadsheet_id', 'operation'],
-    },
-  },
-];
+/** The fenced-block language tag the model must use to call a tool. */
+export const TOOL_CALL_FENCE = 'tool_call';
+
+/** Human/model-readable description of the available tools + calling format. */
+export const TOOL_PROTOCOL_PROMPT = `# Tools
+
+You can act on the user's Google Sheets by calling tools. You do this by writing a fenced code block tagged \`${TOOL_CALL_FENCE}\` containing a single JSON object, and NOTHING else in that reply:
+
+\`\`\`${TOOL_CALL_FENCE}
+{"tool": "create_sheet", "args": { ... }}
+\`\`\`
+
+Rules for calling tools:
+- Emit the ${TOOL_CALL_FENCE} block ALONE — no prose before or after it in the same reply.
+- Call exactly ONE tool per reply. The system runs it and replies with the result, then you may call another tool or answer the user.
+- "args" must be valid JSON matching the tool below.
+- When you have everything you need, reply to the user in normal conversational language with NO ${TOOL_CALL_FENCE} block. That plain reply is what the user sees.
+- Never invent tool results. Wait for the system to return them.
+
+Available tools:
+
+1. create_sheet — Create a new Google Sheet. Headers are auto-filled from the template; you only provide data rows in the template's column order.
+   args: {"template": string, "title": string, "data": string[][]}
+   - template: one of checklist, budget, kanban, tracker, schedule, contacts, inventory, log, habit, timesheet, crm, meal, travel, roster, testcases, recipe, poll, changelog, social, flow, automation, grading
+   - title: the spreadsheet title
+   - data: rows (NO header row) — each row an array of strings in the template's column order
+   Column order per template — ${TEMPLATE_COLUMNS}
+
+2. read_sheet — Read an existing sheet by ID. Returns title, headers, and rows.
+   args: {"spreadsheet_id": string}
+
+3. search_sheets — Find the user's sheets by name (case-insensitive substring).
+   args: {"query": string}
+
+4. update_sheet — Modify an existing sheet. Read it first to learn the columns.
+   args: {"spreadsheet_id": string, "operation": "append_rows" | "update_cells", "rows"?: string[][], "updates"?: [{"row": number, "column": string, "value": string}]}
+   - operation "append_rows": provide "rows" (arrays of strings in column order) to add at the end.
+   - operation "update_cells": provide "updates"; each has row (1-based data row), column (header name or 0-based index), and value.`;
+
+/** Full agent system prompt = base instructions + tool protocol. */
+export const AGENT_SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}\n\n${TOOL_PROTOCOL_PROMPT}`;
+
+/* ---------- Tool-call parsing (our protocol, not the provider's) ---------- */
+
+/**
+ * Extract the first tool call from a model's text reply.
+ * Accepts a fenced ```tool_call block, a fenced ```json block whose object has a
+ * "tool" key, or a bare JSON object with a "tool" key that is the whole reply.
+ * @param {string} text
+ * @returns {{ name: string, args: Object } | null}
+ */
+export function parseToolCall(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  const candidates = [];
+  const fenceRe = /```(?:tool_call|json)?\s*([\s\S]*?)```/gi;
+  let m;
+  while ((m = fenceRe.exec(text)) !== null) {
+    if (m[1]) candidates.push(m[1].trim());
+  }
+  // Also consider the whole trimmed reply as a bare JSON object.
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) candidates.push(trimmed);
+
+  for (const raw of candidates) {
+    const obj = _tryParseToolObject(raw);
+    if (obj) return obj;
+  }
+  return null;
+}
+
+/**
+ * Try to parse a JSON string into a normalised tool-call object.
+ * @param {string} raw
+ * @returns {{ name: string, args: Object } | null}
+ */
+function _tryParseToolObject(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const name = parsed.tool || parsed.name || parsed.tool_name;
+  if (!name || typeof name !== 'string') return null;
+  const args = parsed.args || parsed.arguments || parsed.parameters || parsed.input || {};
+  return { name, args: (args && typeof args === 'object') ? args : {} };
+}
+
+/**
+ * Remove tool_call blocks from text so they are never shown to the user.
+ * Also strips an unterminated trailing fence that can appear mid-stream.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripToolCalls(text) {
+  if (!text || typeof text !== 'string') return '';
+
+  // Remove complete fenced blocks that are actually tool calls. A ```tool_call
+  // fence is always removed; a plain ```json fence is removed only when its body
+  // parses to a tool object, so genuine JSON shown to the user is preserved.
+  let out = text.replace(/```(tool_call|json)?\s*([\s\S]*?)```/gi, (full, lang, inner) => {
+    if (lang && lang.toLowerCase() === 'tool_call') return '';
+    return _tryParseToolObject((inner || '').trim()) ? '' : full;
+  });
+
+  // Drop an unterminated tool_call fence still being streamed.
+  out = out.replace(/```tool_call[\s\S]*$/i, '');
+
+  // A bare, unfenced JSON tool object that is the whole reply.
+  const trimmed = out.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}') && _tryParseToolObject(trimmed)) {
+    return '';
+  }
+
+  return out;
+}
+
+/**
+ * Build the plain-text turn that feeds a tool result back to the model.
+ * @param {string} name
+ * @param {Object} result
+ * @returns {string}
+ */
+export function buildToolResultText(name, result) {
+  let json;
+  try {
+    json = JSON.stringify(result);
+  } catch {
+    json = '{"error":"result could not be serialised"}';
+  }
+  return `Tool result for ${name}:\n${json}\n\n`
+    + `If the task is complete, reply to the user in plain language with NO tool_call block. `
+    + `Otherwise call the next tool.`;
+}
 
 /**
  * Convert Gemini-format contents array to Claude messages array.
@@ -574,7 +557,6 @@ export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
     model,
     system: systemPrompt,
     messages,
-    tools: CLAUDE_TOOL_DECLARATIONS,
     max_tokens: MAX_OUTPUT_TOKENS,
   };
 }

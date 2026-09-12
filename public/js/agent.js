@@ -9,8 +9,7 @@ import * as storage from './storage.js';
 import * as userData from './user-data.js';
 import { api } from './api-client.js';
 import {
-  BASE_SYSTEM_PROMPT,
-  CLAUDE_TOOL_DECLARATIONS,
+  AGENT_SYSTEM_PROMPT,
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_MODEL,
   DEFAULT_OLLAMA_BASE_URL,
@@ -27,7 +26,6 @@ import {
   MAX_PLANNED_USER_MESSAGE_CHARS,
   MAX_RAW_CONVERSATION_TOKENS,
   MAX_USER_MESSAGE_CHARS,
-  TOOL_DECLARATIONS,
   buildAgentSystemPrompt,
   buildClaudeRequestBody,
   buildConversationSummary,
@@ -35,6 +33,7 @@ import {
   buildRecentSheetHint,
   buildOllamaRequestBody,
   buildRequestBody,
+  buildToolResultText,
   claudeHeaders,
   claudeUrl,
   compactContextText,
@@ -44,10 +43,12 @@ import {
   geminiUrl,
   getRecentConversationSheets,
   ollamaChatUrl,
+  parseToolCall,
   pickBestActiveKey,
   pickBestClaudeKey,
   pickBestKey,
   shouldUsePlannerRound,
+  stripToolCalls,
   vault,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
@@ -89,7 +90,7 @@ const MAX_TOTAL_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
  * @returns {string}
  */
 function _getSystemPrompt() {
-  return buildAgentSystemPrompt(BASE_SYSTEM_PROMPT, _cachedContext);
+  return buildAgentSystemPrompt(AGENT_SYSTEM_PROMPT, _cachedContext);
 }
 
 function _geminiUrl(model, action, query = '') {
@@ -122,6 +123,67 @@ function _buildClaudeProviderBody(contents, model) {
 
 function _buildOllamaProviderBody(contents, model) {
   return buildOllamaRequestBody(contents, _getSystemPrompt(), model || storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL);
+}
+
+/**
+ * Rebuild a provider request body for a fresh set of contents.
+ * @param {string} provider — 'gemini' | 'claude' | 'ollama'
+ * @param {Array} contents — Gemini-format contents array
+ * @param {string} [model]
+ * @returns {Object}
+ */
+function _rebuildBody(provider, contents, model) {
+  if (provider === 'claude') return _buildClaudeProviderBody(contents, model);
+  if (provider === 'ollama') return _buildOllamaProviderBody(contents, model);
+  return _buildRequestBody(contents);
+}
+
+/**
+ * Extend a prepared request with the model's tool-call turn and the tool result,
+ * then rebuild its body so the next model turn sees the outcome.
+ * @param {{provider:string, contents:Array, model?:string}} request
+ * @param {string} assistantText — the model's raw reply containing the tool_call
+ * @param {string} name — tool name
+ * @param {Object} result — tool result
+ * @returns {Object} updated request
+ */
+function _withToolResult(request, assistantText, name, result) {
+  const contents = [
+    ...request.contents,
+    { role: 'model', parts: [{ text: assistantText }] },
+    { role: 'user', parts: [{ text: buildToolResultText(name, result) }] },
+  ];
+  const body = _rebuildBody(request.provider, contents, request.model);
+  return { ...request, contents, body };
+}
+
+/**
+ * Build a fallback user-facing message when a tool succeeded but the model
+ * returned no closing text.
+ * @param {string|null} name
+ * @param {Object|null} result
+ * @returns {string}
+ */
+function _fallbackToolText(name, result) {
+  if (!name || !result || result.error) return '';
+  if (name === 'create_sheet') {
+    return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+  }
+  if (name === 'read_sheet') {
+    return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${(result.headers || []).join(', ')}`;
+  }
+  if (name === 'search_sheets') {
+    return result.results?.length
+      ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".`
+      : `🔍 No sheets found matching "${result.query}".`;
+  }
+  if (name === 'update_sheet') {
+    if (result.operation === 'append_rows') {
+      return `✅ Added ${result.rowsAdded} row(s) to "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+    }
+    return `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
+  }
+  return `✅ Tool ${name} completed successfully.`;
 }
 
 function _compactContextText(text, maxChars) {
@@ -724,34 +786,85 @@ async function _sendMessage(text) {
   let dotsRemoved = false;
   let renderPending = false;
 
-  /** Debounced re-render of markdown content */
+  /** Debounced re-render of markdown content. Tool_call blocks are hidden. */
   function scheduleRender() {
     if (renderPending) return;
     renderPending = true;
     requestAnimationFrame(() => {
       renderPending = false;
       liveContent.innerHTML = '';
-      _renderMarkdown(liveContent, accumulated);
+      _renderMarkdown(liveContent, stripToolCalls(accumulated));
       _chatBody.scrollTop = _chatBody.scrollHeight;
     });
   }
 
+  /** Stream callback — appends a text chunk and re-renders. */
+  const onChunk = (chunk) => {
+    if (!dotsRemoved) {
+      typingDots.remove();
+      dotsRemoved = true;
+    }
+    accumulated += chunk;
+    scheduleRender();
+  };
+
+  /** Reset the live bubble for a fresh model turn (after a tool call). */
+  const resetLiveBubble = () => {
+    accumulated = '';
+    liveContent.innerHTML = '';
+    dotsRemoved = false;
+    liveContent.appendChild(typingDots);
+  };
+
+  const MAX_TOOL_ITERATIONS = 6;
+
   try {
-    const response = await _streamCallModel(
-      keyEntry.key,
-      keyEntry.idx,
-      preparedRequest,
-      (chunk) => {
-        // Remove typing dots on first chunk
-        if (!dotsRemoved) {
-          typingDots.remove();
-          dotsRemoved = true;
-        }
-        accumulated += chunk;
-        scheduleRender();
-      },
-      signal,
-    );
+    let request = preparedRequest;
+    let response = '';
+    let lastToolName = null;
+    let lastToolResult = null;
+    let toolIterations = 0;
+
+    // Provider-agnostic tool loop: the model emits a ```tool_call block in its
+    // text, we run the tool locally, feed the result back as a plain turn, and
+    // repeat until it replies with a normal (tool-free) answer.
+    for (;;) {
+      const raw = await _streamCallModel(keyEntry.key, keyEntry.idx, request, onChunk, signal);
+      const toolCall = parseToolCall(raw);
+
+      if (!toolCall || toolIterations >= MAX_TOOL_ITERATIONS) {
+        response = stripToolCalls(raw).trim();
+        if (!response) response = _fallbackToolText(lastToolName, lastToolResult);
+        break;
+      }
+
+      // Model requested a tool — hide the block and execute it.
+      toolIterations++;
+      liveContent.innerHTML = '';
+      _showToolIndicator(toolCall.name, toolCall.args);
+
+      let result;
+      try {
+        result = await _executeTool(toolCall.name, toolCall.args);
+      } catch (err) {
+        result = { error: err.message };
+      }
+      _removeToolIndicator();
+
+      lastToolName = toolCall.name;
+      lastToolResult = result;
+
+      if (toolCall.name === 'create_sheet' && result && !result.error) {
+        _appendSheetPreviewCard(result);
+      }
+
+      request = _withToolResult(request, raw, toolCall.name, result);
+      resetLiveBubble();
+    }
+
+    if (!response) {
+      throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
+    }
 
     // Final render with complete text
     liveContent.innerHTML = '';
@@ -761,12 +874,17 @@ async function _sendMessage(text) {
     _chatBody.scrollTop = _chatBody.scrollHeight;
     _persistConversation();
   } catch (err) {
-    // If aborted and we have partial text, keep it
+    // If aborted and we have partial text, keep it (minus any tool_call block)
     if (err.name === 'AbortError' && accumulated) {
+      const partial = stripToolCalls(accumulated).trim();
       liveContent.innerHTML = '';
-      _renderMarkdown(liveContent, accumulated);
-      _messages.push({ role: 'assistant', content: accumulated });
-      _persistConversation();
+      if (partial) {
+        _renderMarkdown(liveContent, partial);
+        _messages.push({ role: 'assistant', content: partial });
+        _persistConversation();
+      } else {
+        liveWrapper.remove();
+      }
     } else if (err.name !== 'AbortError') {
       liveWrapper.remove();
       showToast('AI error: ' + err.message, 'error');
@@ -904,7 +1022,8 @@ async function _streamCallOllama(apiKey, keyIdx, request, onChunk, signal) {
 /* ---------- Claude API ---------- */
 
 /**
- * Non-streaming Claude call with tool-call handling.
+ * Non-streaming Claude call. Returns the model's text (tool calls, if any, are
+ * embedded in that text per our prompt protocol and handled by the caller loop).
  * @param {string} apiKey
  * @param {number} keyIdx
  * @param {Object} request — prepared request from _prepareModelRequest
@@ -914,15 +1033,10 @@ async function _callClaude(apiKey, keyIdx, request) {
   const preparedRequest = typeof request === 'string'
     ? await _prepareModelRequest(apiKey, keyIdx, request)
     : request;
-  const { contents, body } = preparedRequest;
+  const { body } = preparedRequest;
   const url = _claudeUrl();
   const data = await _fetchClaude(url, body, keyIdx);
   storage.recordClaudeKeyUsage(keyIdx);
-
-  const toolUse = data.content?.find(c => c.type === 'tool_use');
-  if (toolUse) {
-    return _handleClaudeToolCall(apiKey, keyIdx, body.messages, toolUse);
-  }
 
   return (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
 }
@@ -985,12 +1099,6 @@ async function _streamCallClaude(apiKey, keyIdx, request, onChunk, signal) {
         let event;
         try { event = JSON.parse(jsonStr); } catch { continue; }
 
-        // Tool call detected — abort stream and handle via buffered endpoint
-        if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-          reader.cancel();
-          return _callClaude(apiKey, keyIdx, preparedRequest);
-        }
-
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           const chunk = event.delta.text || '';
           if (chunk) {
@@ -1011,74 +1119,6 @@ async function _streamCallClaude(apiKey, keyIdx, request, onChunk, signal) {
   }
 
   return accumulated;
-}
-
-/**
- * Handle a Claude tool_use block: execute the tool and send result back for final text.
- * @param {string} apiKey
- * @param {number} keyIdx
- * @param {Array} claudeMessages — existing Claude-format messages
- * @param {{ type:'tool_use', id:string, name:string, input:Object }} toolUse
- * @param {number} [chainDepth]
- * @returns {Promise<string>}
- */
-async function _handleClaudeToolCall(apiKey, keyIdx, claudeMessages, toolUse, chainDepth = 0) {
-  if (chainDepth >= 5) {
-    throw new Error('AI requested too many chained tool calls. Try again with a smaller request.');
-  }
-
-  const { name, id, input } = toolUse;
-  _showToolIndicator(name, input);
-
-  let result;
-  try {
-    result = await _executeTool(name, input);
-  } catch (err) {
-    result = { error: err.message };
-  }
-
-  _removeToolIndicator();
-
-  if (name === 'create_sheet' && result && !result.error) {
-    _appendSheetPreviewCard(result);
-  }
-
-  const model = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
-  const followUpMessages = [
-    ...claudeMessages,
-    { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: JSON.stringify(result) }] },
-  ];
-
-  const followUpBody = {
-    model,
-    system: _getSystemPrompt(),
-    messages: followUpMessages,
-    tools: CLAUDE_TOOL_DECLARATIONS,
-    max_tokens: MAX_OUTPUT_TOKENS,
-  };
-
-  const data = await _fetchClaude(_claudeUrl(), followUpBody, keyIdx);
-  storage.recordClaudeKeyUsage(keyIdx);
-
-  const nextToolUse = data.content?.find(c => c.type === 'tool_use');
-  if (nextToolUse) {
-    return _handleClaudeToolCall(apiKey, keyIdx, followUpMessages, nextToolUse, chainDepth + 1);
-  }
-
-  const finalText = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
-  if (!finalText) {
-    if (result && !result.error) {
-      if (name === 'create_sheet') return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
-      if (name === 'read_sheet') return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
-      if (name === 'search_sheets') return result.results?.length ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".` : `🔍 No sheets found matching "${result.query}".`;
-      if (name === 'update_sheet') return result.operation === 'append_rows' ? `✅ Added ${result.rowsAdded} row(s) to "${result.title}".` : `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".`;
-      return `✅ Tool ${name} completed successfully.`;
-    }
-    throw new Error('No response from Claude after tool execution. Try again.');
-  }
-
-  return finalText;
 }
 
 /**
@@ -1164,7 +1204,7 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
   const request = typeof userMessage === 'string'
     ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
     : userMessage;
-  const { url, contents, body } = request;
+  const { url, body } = request;
 
   const data = await _fetchGemini(url, body, keyIdx);
   storage.recordKeyUsage(keyIdx);
@@ -1174,19 +1214,13 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
     throw new Error('No response from AI. Try again, or clear older chat messages to reduce context size.');
   }
 
-  // Check for function call in response
-  const functionCall = candidate.content.parts.find(p => p.functionCall);
-  if (functionCall) {
-    return _handleToolCall(apiKey, keyIdx, url, contents, candidate.content, functionCall.functionCall);
-  }
-
   return candidate.content.parts.map(p => p.text || '').join('');
 }
 
 /**
  * Stream the Gemini API response, calling onChunk for each text fragment.
- * Returns the full accumulated text if successful.
- * If a function call is detected, stops streaming and delegates to _handleToolCall.
+ * Returns the full accumulated text. Tool calls, if any, are embedded in that
+ * text per our prompt protocol and handled by the caller's tool loop.
  * @param {string} apiKey
  * @param {number} keyIdx
  * @param {string} userMessage
@@ -1198,7 +1232,7 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
   const request = typeof userMessage === 'string'
     ? await _prepareModelRequest(apiKey, keyIdx, userMessage)
     : userMessage;
-  const { model, contents, body } = request;
+  const { model, body } = request;
   const streamUrl = _geminiUrl(model, 'streamGenerateContent', 'alt=sse');
 
   let res;
@@ -1248,15 +1282,6 @@ async function _streamCallGemini(apiKey, keyIdx, userMessage, onChunk, signal) {
 
         const candidate = parsed.candidates?.[0];
         if (!candidate?.content?.parts) continue;
-
-        // Check for function call
-        const fc = candidate.content.parts.find(p => p.functionCall);
-        if (fc) {
-          // Abort the stream reader and re-run via the buffered endpoint so we
-          // execute a complete function call rather than a partial streamed one.
-          reader.cancel();
-          return _callGemini(apiKey, keyIdx, request);
-        }
 
         // Extract text chunks
         for (const part of candidate.content.parts) {
@@ -1506,115 +1531,6 @@ async function _loadImageBitmap(file) {
     reader.onerror = () => reject(new Error(`Could not read image "${file.name}"`));
     reader.readAsDataURL(file);
   });
-}
-
-/**
- * Handle a tool/function call from the model.
- * Executes the tool, sends results back, returns final text.
- * @param {string} apiKey
- * @param {string} url
- * @param {Array} contents
- * @param {Object} modelContent — the model's response content with the function call
- * @param {{ name: string, args: Object }} functionCall
- * @param {number} [chainDepth]
- * @returns {Promise<string>}
- */
-async function _handleToolCall(apiKey, keyIdx, url, contents, modelContent, functionCall, chainDepth = 0) {
-  if (chainDepth >= 5) {
-    throw new Error('AI requested too many chained tool calls in one turn. Try again with a smaller request.');
-  }
-
-  const { name, args } = functionCall;
-
-  // Show tool execution indicator
-  _showToolIndicator(name, args);
-
-  // Execute the tool
-  let result;
-  try {
-    result = await _executeTool(name, args);
-  } catch (err) {
-    result = { error: err.message };
-  }
-
-  // Remove tool indicator
-  _removeToolIndicator();
-
-  // Show an inline preview card immediately after sheet creation
-  if (name === 'create_sheet' && result && !result.error) {
-    _appendSheetPreviewCard(result);
-  }
-
-  // Send tool result back to model for final response
-  const followUp = {
-    contents: [
-      ...contents,
-      modelContent,
-      {
-        role: 'function',
-        parts: [{
-          functionResponse: {
-            name,
-            response: { content: result },
-          },
-        }],
-      },
-    ],
-    tools: TOOL_DECLARATIONS,
-    systemInstruction: {
-      parts: [{ text: _getSystemPrompt() }],
-    },
-    generationConfig: {
-      temperature: 0.2,
-      topP: 0.9,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-    },
-  };
-
-  const data = await _fetchGemini(url, followUp, keyIdx);
-  storage.recordKeyUsage(keyIdx);
-  const candidate = data.candidates?.[0];
-
-  const nextFunctionCall = candidate?.content?.parts?.find(p => p.functionCall);
-  if (nextFunctionCall) {
-    return _handleToolCall(
-      apiKey,
-      keyIdx,
-      url,
-      followUp.contents,
-      candidate.content,
-      nextFunctionCall.functionCall,
-      chainDepth + 1
-    );
-  }
-
-  const finalText = candidate?.content?.parts?.map(p => p.text || '').join('').trim() || '';
-  if (!candidate?.content?.parts?.length || !finalText) {
-    // Tool succeeded but model gave no usable text — construct a response.
-    if (result && !result.error) {
-      if (name === 'create_sheet') {
-        return `✅ Created sheet "${result.title}" successfully!\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
-      }
-      if (name === 'read_sheet') {
-        return `📄 Read sheet "${result.title}" — ${result.totalRows} data rows, columns: ${result.headers.join(', ')}`;
-      }
-      if (name === 'search_sheets') {
-        return result.results.length
-          ? `🔍 Found ${result.results.length} sheet(s) matching "${result.query}".`
-          : `🔍 No sheets found matching "${result.query}".`;
-      }
-      if (name === 'update_sheet') {
-        if (result.operation === 'append_rows') {
-          return `✅ Added ${result.rowsAdded} row(s) to "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
-        }
-        return `✅ Updated ${result.cellsUpdated} cell(s) in "${result.title}".\n\n[Open in Waymark](#/sheet/${result.spreadsheetId})`;
-      }
-      return `✅ Tool ${name} completed successfully.`;
-    }
-    throw new Error('No response from AI after tool execution. Try again, or clear older chat messages to reduce context size.');
-  }
-
-  return finalText;
 }
 
 /**
