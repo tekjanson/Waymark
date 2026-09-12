@@ -1244,7 +1244,7 @@ test('streaming fallback works when SSE endpoint returns error', async ({ page }
   }, { timeout: 10000 });
 });
 
-test('streamed tool calls fall back to buffered handling for complete execution', async ({ page }) => {
+test('streamed tool calls execute and continue in the same turn', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -1254,42 +1254,40 @@ test('streamed tool calls fall back to buffered handling for complete execution'
   });
   await page.waitForSelector('.agent-input', { timeout: 5000 });
 
-  let generateCallCount = 0;
+  let streamCallCount = 0;
   await page.route(/streamGenerateContent/, async route => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-      body: [
-        'data: ' + JSON.stringify({
-          candidates: [{
-            content: {
-              role: 'model',
-              parts: [{ functionCall: { name: 'create_sheet', args: { template: 'check' } } }],
-            },
-          }],
-        }),
-        '',
-      ].join('\n'),
-    });
-  });
-  await page.route(/generateContent/, async route => {
-    if (route.request().url().includes('stream')) return route.continue();
-    generateCallCount++;
-    if (generateCallCount === 1) {
+    streamCallCount++;
+    if (streamCallCount === 1) {
+      // First turn streams a tool_call block (our protocol) as plain text.
+      const toolText = '```tool_call\n' + JSON.stringify({
+        tool: 'create_sheet',
+        args: {
+          template: 'checklist',
+          title: 'Streaming Tool Checklist',
+          data: [['Pack bags', 'No', 'Friday'], ['Charge phone', 'No', 'Thursday']],
+        },
+      }) + '\n```';
       await route.fulfill({
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: buildCreateSheetFunctionCall('checklist', 'Streaming Tool Checklist', [
-          ['Pack bags', 'No', 'Friday'],
-          ['Charge phone', 'No', 'Thursday'],
-        ]),
+        headers: { 'Content-Type': 'text/event-stream' },
+        body: buildSSEBody([toolText]),
       });
       return;
     }
+    // Second turn streams the final user-facing answer.
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: buildSSEBody(['Streaming tool handling worked.']),
+    });
+  });
+  // Buffered endpoint should not be needed, but guard it just in case.
+  await page.route(/generateContent/, async route => {
+    if (route.request().url().includes('stream')) return route.continue();
     await route.fulfill({
       status: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: buildTextResponse('Buffered tool handling worked.'),
+      body: buildTextResponse('Streaming tool handling worked.'),
     });
   });
 
@@ -1299,10 +1297,11 @@ test('streamed tool calls fall back to buffered handling for complete execution'
   await page.waitForFunction(() => {
     const msgs = document.querySelectorAll('.agent-message-assistant');
     const last = msgs[msgs.length - 1];
-    return last && last.textContent.includes('Buffered tool handling worked');
+    return last && last.textContent.includes('Streaming tool handling worked');
   }, { timeout: 10000 });
 
-  expect(generateCallCount).toBe(2);
+  // Two streamed turns: the tool call, then the final answer.
+  expect(streamCallCount).toBe(2);
 });
 
 test('typing dots show before first streaming chunk arrives', async ({ page }) => {
@@ -1380,20 +1379,35 @@ test('streamed message is persisted to conversation history', async ({ page }) =
 /**
  * Helper: build a mock Gemini response that calls the read_sheet tool.
  */
+/**
+ * Helper: build a mock Gemini text response whose text is a ```tool_call block,
+ * matching our prompt-based tool protocol.
+ */
+function buildToolCallResponse(name, args) {
+  const block = '```tool_call\n' + JSON.stringify({ tool: name, args }) + '\n```';
+  return buildTextResponse(block);
+}
+
+/**
+ * Extract the tool-result JSON that our text protocol feeds back to the model.
+ * Finds the user turn whose text starts with "Tool result for {name}:" and
+ * parses the JSON that follows.
+ */
+function extractToolResult(body, name) {
+  const parts = (body.contents || []).flatMap(c => c.parts || []);
+  const marker = `Tool result for ${name}:`;
+  for (const p of parts) {
+    const text = p.text || '';
+    if (text.startsWith(marker)) {
+      const jsonLine = text.slice(marker.length).trim().split('\n')[0];
+      try { return JSON.parse(jsonLine); } catch { return null; }
+    }
+  }
+  return null;
+}
+
 function buildReadSheetFunctionCall(spreadsheetId) {
-  return JSON.stringify({
-    candidates: [{
-      content: {
-        parts: [{
-          functionCall: {
-            name: 'read_sheet',
-            args: { spreadsheet_id: spreadsheetId },
-          },
-        }],
-        role: 'model',
-      },
-    }],
-  });
+  return buildToolCallResponse('read_sheet', { spreadsheet_id: spreadsheetId });
 }
 
 /**
@@ -1411,19 +1425,7 @@ function buildTextResponse(text) {
 }
 
 function buildCreateSheetFunctionCall(template, title, data) {
-  return JSON.stringify({
-    candidates: [{
-      content: {
-        parts: [{
-          functionCall: {
-            name: 'create_sheet',
-            args: { template, title, data },
-          },
-        }],
-        role: 'model',
-      },
-    }],
-  });
+  return buildToolCallResponse('create_sheet', { template, title, data });
 }
 
 test('agent follows chained create_sheet tool calls before final response', async ({ page }) => {
@@ -1701,20 +1703,16 @@ test('read_sheet sends tool result back to model for summarization', async ({ pa
     return last && last.textContent.includes('sheet summary');
   }, { timeout: 10000 });
 
-  // Verify the follow-up request included a functionResponse with content
+  // Verify the follow-up request fed the tool result back to the model.
   expect(secondCallBody).not.toBeNull();
-  const funcResponse = secondCallBody.contents.find(c =>
-    c.parts?.some(p => p.functionResponse)
-  );
-  expect(funcResponse).toBeDefined();
-  const resp = funcResponse.parts[0].functionResponse;
-  expect(resp.name).toBe('read_sheet');
-  expect(resp.response.content.title).toBeTruthy();
-  expect(resp.response.content.headers).toBeDefined();
-  expect(Array.isArray(resp.response.content.rows)).toBe(true);
+  const resp = extractToolResult(secondCallBody, 'read_sheet');
+  expect(resp).not.toBeNull();
+  expect(resp.title).toBeTruthy();
+  expect(resp.headers).toBeDefined();
+  expect(Array.isArray(resp.rows)).toBe(true);
 });
 
-test('TOOL_DECLARATIONS includes read_sheet function', async ({ page }) => {
+test('agent view renders a container when opened', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });
   await page.waitForSelector('.agent-container', { timeout: 5000 });
@@ -1728,19 +1726,7 @@ test('TOOL_DECLARATIONS includes read_sheet function', async ({ page }) => {
 /* ---------- update_sheet Tool ---------- */
 
 function buildUpdateSheetFunctionCall(spreadsheetId, operation, extra) {
-  return JSON.stringify({
-    candidates: [{
-      content: {
-        parts: [{
-          functionCall: {
-            name: 'update_sheet',
-            args: { spreadsheet_id: spreadsheetId, operation, ...extra },
-          },
-        }],
-        role: 'model',
-      },
-    }],
-  });
+  return buildToolCallResponse('update_sheet', { spreadsheet_id: spreadsheetId, operation, ...extra });
 }
 
 test('update_sheet append_rows adds rows and model confirms', async ({ page }) => {
@@ -1882,14 +1868,10 @@ test('update_sheet sends correct tool result to model follow-up', async ({ page 
   }, { timeout: 10000 });
 
   expect(secondCallBody).not.toBeNull();
-  const funcResponse = secondCallBody.contents.find(c =>
-    c.parts?.some(p => p.functionResponse)
-  );
-  expect(funcResponse).toBeDefined();
-  const resp = funcResponse.parts[0].functionResponse;
-  expect(resp.name).toBe('update_sheet');
-  expect(resp.response.content.operation).toBe('append_rows');
-  expect(resp.response.content.rowsAdded).toBe(1);
+  const resp = extractToolResult(secondCallBody, 'update_sheet');
+  expect(resp).not.toBeNull();
+  expect(resp.operation).toBe('append_rows');
+  expect(resp.rowsAdded).toBe(1);
 });
 
 test('update_sheet handles invalid operation gracefully', async ({ page }) => {
@@ -2206,19 +2188,7 @@ test('system prompt always includes base instructions alongside context', async 
 /* ---------- search_sheets Tool ---------- */
 
 function buildSearchSheetsFunctionCall(query) {
-  return JSON.stringify({
-    candidates: [{
-      content: {
-        parts: [{
-          functionCall: {
-            name: 'search_sheets',
-            args: { query },
-          },
-        }],
-        role: 'model',
-      },
-    }],
-  });
+  return buildToolCallResponse('search_sheets', { query });
 }
 
 test('search_sheets tool finds matching sheets and returns results to model', async ({ page }) => {
@@ -2271,10 +2241,8 @@ test('search_sheets tool finds matching sheets and returns results to model', as
   expect(callCount).toBe(2);
   expect(toolResultBody).not.toBeNull();
   // The tool result should contain the search results
-  const toolParts = toolResultBody.contents?.find(c => c.role === 'function')
-    ?.parts?.find(p => p.functionResponse);
-  expect(toolParts).toBeDefined();
-  const response = toolParts.functionResponse.response.content;
+  const response = extractToolResult(toolResultBody, 'search_sheets');
+  expect(response).not.toBeNull();
   expect(response.query).toBe('Budget');
   expect(response.results.length).toBeGreaterThan(0);
   // Results should include Monthly Budget (from fixtures)
@@ -2323,9 +2291,8 @@ test('search_sheets with no matches returns empty results', async ({ page }) => 
     return msgs.length >= 1 && msgs[msgs.length - 1].textContent.includes('No sheets');
   }, { timeout: 10000 });
 
-  const toolParts = toolResultBody.contents?.find(c => c.role === 'function')
-    ?.parts?.find(p => p.functionResponse);
-  const response = toolParts.functionResponse.response.content;
+  const response = extractToolResult(toolResultBody, 'search_sheets');
+  expect(response).not.toBeNull();
   expect(response.results).toHaveLength(0);
   expect(response.totalMatches).toBe(0);
 });
@@ -2377,9 +2344,8 @@ test('search_sheets returns sheet IDs and folder info', async ({ page }) => {
     return msgs.length >= 1 && msgs[msgs.length - 1].textContent.includes('grocery');
   }, { timeout: 10000 });
 
-  const toolParts = toolResultBody.contents?.find(c => c.role === 'function')
-    ?.parts?.find(p => p.functionResponse);
-  const response = toolParts.functionResponse.response.content;
+  const response = extractToolResult(toolResultBody, 'search_sheets');
+  expect(response).not.toBeNull();
   expect(response.results.length).toBeGreaterThan(0);
   // Each result should have id, name, folder
   for (const sheet of response.results) {
@@ -2435,7 +2401,7 @@ test('search_sheets shows tool indicator while searching', async ({ page }) => {
   await expect(page.locator('.agent-tool-indicator')).toHaveCount(0);
 });
 
-test('search_sheets declaration is present in tool declarations', async ({ page }) => {
+test('tool protocol and tools are described in the system prompt', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => {
     localStorage.setItem('waymark_agent_keys', JSON.stringify([
@@ -2468,13 +2434,15 @@ test('search_sheets declaration is present in tool declarations', async ({ page 
   }, { timeout: 10000 });
 
   expect(capturedBody).not.toBeNull();
-  const declarations = capturedBody.tools?.[0]?.functionDeclarations || [];
-  const names = declarations.map(d => d.name);
-  expect(names).toContain('search_sheets');
-  // All declarations must have a name
-  for (const decl of declarations) {
-    expect(decl.name).toBeTruthy();
-  }
+  // We no longer send provider-native function declarations — the tools and the
+  // ```tool_call protocol are described in the system prompt instead.
+  expect(capturedBody.tools).toBeUndefined();
+  const systemText = capturedBody.systemInstruction?.parts?.[0]?.text || '';
+  expect(systemText).toContain('tool_call');
+  expect(systemText).toContain('search_sheets');
+  expect(systemText).toContain('create_sheet');
+  expect(systemText).toContain('read_sheet');
+  expect(systemText).toContain('update_sheet');
 });
 
 /* ---- Slash Commands ---- */
