@@ -166,6 +166,20 @@ export function setImportHistory(history) {
   set('import_history', history);
 }
 
+/* --- Calorie & Fitness Tracker profile (per sheet) --- */
+
+/** Read the stored profile/goal for a calorie tracker sheet, or null. */
+export function getCalorieProfile(sheetId) {
+  if (!sheetId) return null;
+  return get(`calorie_profile_${sheetId}`);
+}
+
+/** Persist the profile/goal for a calorie tracker sheet. */
+export function setCalorieProfile(sheetId, profile) {
+  if (!sheetId) return;
+  set(`calorie_profile_${sheetId}`, profile);
+}
+
 /* --- Dismissed Items --- */
 
 export function getDismissedItems() {

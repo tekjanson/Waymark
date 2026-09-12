@@ -1,26 +1,25 @@
 /* ============================================================
-   calorie/helpers.js — Calorie & Fitness Tracker: pure helpers
+   templates/nutrition.js — Shared food & fitness engine
 
-   Math (net calories, macro scaling), fast fuzzy food search over
-   the seeded USDA/staples dataset + user-saved Food DB rows, and
-   an Open Food Facts barcode fallback.
+   A template-agnostic utility module (like charts.js) that powers
+   both the Calorie & Fitness Tracker and the Meal Planner:
 
-   All functions here are side-effect-free where practical so they
-   can be unit-tested directly (see unit-calorie-helpers.spec.js).
+     • Fuzzy search over the seeded USDA food database (7,900+ foods)
+     • Serving/macro scaling
+     • Open Food Facts barcode lookup
+     • Compendium exercise database + MET calorie math
+     • BMR / TDEE / calorie-goal / macro-target formulas
+
+   Templates access these via re-exports in shared.js (§1.5).
+   No Google API access happens here — only static /data fetches
+   and pure math — so it stays outside api-client.js by design.
    ============================================================ */
 
-/* ---------- Constants ---------- */
-
-export const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
-export const EXERCISE_MEAL = 'Exercise';
-export const DEFAULT_TARGET = 2000;
 export const DEFAULT_WEIGHT_KG = 70;
 
-/* Reference DB cache (loaded once from /data/nutrition-reference.json) */
+/* Reference DB caches (loaded once from /data/*.json). */
 let _refFoods = null;
 let _refPromise = null;
-
-/* Exercise DB cache (loaded once from /data/exercise-reference.json) */
 let _refExercises = null;
 let _exPromise = null;
 
@@ -43,13 +42,16 @@ export function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }
 
+function slugify(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 /* ---------- Serving scaling ---------- */
 
 /**
  * Scale a food's macros from its reference serving to a new quantity.
- * The reference food carries macros per `food.qty` of `food.unit`.
  * @param {{qty:number,kcal:number,protein:number,carbs:number,fat:number}} food
- * @param {number} newQty   quantity the user actually ate (same unit)
+ * @param {number} newQty
  * @returns {{calories:number,protein:number,carbs:number,fat:number}}
  */
 export function scaleMacros(food, newQty) {
@@ -63,129 +65,15 @@ export function scaleMacros(food, newQty) {
   };
 }
 
-/* ---------- Daily aggregation ---------- */
-
-/**
- * Tally a single day's food + exercise rows into totals.
- * @param {string[][]} rows   rows already filtered to one Date
- * @param {Object} cols       column-index map from definition.columns()
- * @returns {{food:number,burned:number,protein:number,carbs:number,fat:number,byMeal:Object}}
- */
-export function computeDayTotals(rows, cols) {
-  const totals = { food: 0, burned: 0, protein: 0, carbs: 0, fat: 0, byMeal: {} };
-  for (const type of MEAL_TYPES) {
-    totals.byMeal[type] = { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 };
-  }
-  for (const row of rows) {
-    const meal = (row[cols.meal] || '').trim();
-    const burned = parseNum(row[cols.burned]);
-    if (burned > 0 || meal.toLowerCase() === 'exercise') {
-      totals.burned += burned;
-      continue;
-    }
-    const cal = parseNum(row[cols.calories]);
-    const p = parseNum(row[cols.protein]);
-    const c = parseNum(row[cols.carbs]);
-    const f = parseNum(row[cols.fat]);
-    totals.food += cal;
-    totals.protein += p;
-    totals.carbs += c;
-    totals.fat += f;
-    const bucket = totals.byMeal[canonicalMeal(meal)];
-    if (bucket) {
-      bucket.calories += cal;
-      bucket.protein += p;
-      bucket.carbs += c;
-      bucket.fat += f;
-      bucket.count += 1;
-    }
-  }
-  totals.protein = round1(totals.protein);
-  totals.carbs = round1(totals.carbs);
-  totals.fat = round1(totals.fat);
-  return totals;
-}
-
-/** Map an arbitrary meal label to one of the 4 canonical buckets. */
-export function canonicalMeal(meal) {
-  const m = (meal || '').toLowerCase();
-  if (/break/.test(m)) return 'Breakfast';
-  if (/lunch|midday/.test(m)) return 'Lunch';
-  if (/dinner|supper|evening/.test(m)) return 'Dinner';
-  return 'Snacks';
-}
-
-/**
- * The core net-calorie equation: Remaining = Target − Food + Burned.
- * @param {number} target
- * @param {number} food
- * @param {number} burned
- * @returns {{target:number,food:number,burned:number,net:number,remaining:number}}
- */
-export function computeNet(target, food, burned) {
-  const t = parseNum(target) || 0;
-  const fd = parseNum(food) || 0;
-  const bn = parseNum(burned) || 0;
-  return {
-    target: t,
-    food: fd,
-    burned: bn,
-    net: fd - bn,           // net calories consumed
-    remaining: t - fd + bn, // budget left (exercise refunds)
-  };
-}
-
-/**
- * Find the daily target for a date group. Target lives on the first row
- * that carries it (row-per-item §4.7); falls back to DEFAULT_TARGET.
- * @param {string[][]} rows  rows for one date
- * @param {Object} cols
- * @returns {number}
- */
-export function resolveTarget(rows, cols) {
-  if (cols.target != null && cols.target >= 0) {
-    for (const row of rows) {
-      const t = parseNum(row[cols.target]);
-      if (t > 0) return t;
-    }
-  }
-  return DEFAULT_TARGET;
-}
-
-/**
- * Group all rows by Date, preserving original row indices (0-based within
- * the data rows array passed to render()).
- * @param {string[][]} rows
- * @param {Object} cols
- * @returns {Map<string, {row:string[], index:number}[]>}
- */
-export function groupByDate(rows, cols) {
-  const map = new Map();
-  rows.forEach((row, i) => {
-    const date = (row[cols.date] || '').trim() || 'Undated';
-    if (!map.has(date)) map.set(date, []);
-    map.get(date).push({ row, index: i });
-  });
-  return map;
-}
-
-/** Pick the "active" (latest) date from a grouped map. */
-export function latestDate(dateMap) {
-  const dates = [...dateMap.keys()].filter(d => d !== 'Undated');
-  if (!dates.length) return [...dateMap.keys()][0] || null;
-  return dates.sort().at(-1);
-}
-
 /* ---------- Fuzzy food search ---------- */
 
 /**
  * Tokenized substring search across the reference dataset + custom rows.
- * Ranked: exact prefix > all-token match > partial. Designed to stay
- * well under 25 ms on mobile for the ~90-item seed + user DB.
- *
+ * Ranked: exact prefix > substring > all-token match. Stays well under
+ * 25 ms on mobile even over the full USDA dataset.
  * @param {string} query
- * @param {Array<Object>} foods       reference foods (loadFoodDatabase())
- * @param {Array<Object>} [customDb]  user-saved Food DB rows (same shape)
+ * @param {Array<Object>} foods
+ * @param {Array<Object>} [customDb]
  * @param {number} [limit]
  * @returns {Array<Object>}
  */
@@ -203,7 +91,6 @@ export function searchFoodDatabase(query, foods, customDb = [], limit = 25) {
     else if (hay.includes(q)) score = 60;
     else if (tokens.every(t => hay.includes(t))) score = 40;
     else continue;
-    // Prefer user (custom) items and shorter names on ties.
     if (food.source === 'custom') score += 10;
     score -= Math.min(hay.length, 40) * 0.1;
     scored.push({ food, score });
@@ -212,39 +99,7 @@ export function searchFoodDatabase(query, foods, customDb = [], limit = 25) {
   return scored.slice(0, limit).map(s => s.food);
 }
 
-/**
- * Convert user-saved Food_DB-style rows (from the current sheet history)
- * into the reference food shape for searching.
- * @param {string[][]} rows
- * @param {Object} cols
- * @returns {Array<Object>}
- */
-export function customFoodsFromRows(rows, cols) {
-  const seen = new Set();
-  const out = [];
-  for (const row of rows) {
-    const name = (row[cols.item] || '').trim();
-    if (!name || seen.has(name.toLowerCase())) continue;
-    if (parseNum(row[cols.burned]) > 0) continue; // skip exercise rows
-    seen.add(name.toLowerCase());
-    out.push({
-      id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      name,
-      brand: '',
-      qty: parseNum(row[cols.qty]) || 1,
-      unit: (row[cols.unit] || 'serving').trim() || 'serving',
-      kcal: parseNum(row[cols.calories]),
-      protein: parseNum(row[cols.protein]),
-      carbs: parseNum(row[cols.carbs]),
-      fat: parseNum(row[cols.fat]),
-      barcode: (row[cols.barcode] != null ? row[cols.barcode] : '') || '',
-      source: 'custom',
-    });
-  }
-  return out;
-}
-
-/* ---------- Reference DB loader ---------- */
+/* ---------- Reference food DB loader ---------- */
 
 /**
  * Load and cache the seeded nutrition reference dataset. Handles the
@@ -276,7 +131,6 @@ export async function loadFoodDatabase() {
  */
 export function expandReference(data) {
   if (!data) return [];
-  // Legacy v1: already an array of objects.
   if (Array.isArray(data.foods) && data.foods.length && !Array.isArray(data.foods[0])) {
     return data.foods;
   }
@@ -284,7 +138,6 @@ export function expandReference(data) {
   const unit = data.unit || 'g';
   const out = [];
   for (const t of (data.foods || [])) {
-    // [name, kcal, protein, carbs, fat]
     out.push({
       id: slugify(t[0]),
       name: t[0], brand: '', qty, unit,
@@ -293,7 +146,6 @@ export function expandReference(data) {
     });
   }
   for (const [code, t] of Object.entries(data.barcodes || {})) {
-    // [name, brand, kcal, protein, carbs, fat]
     out.push({
       id: String(code),
       name: t[0], brand: t[1] || '', qty, unit,
@@ -302,10 +154,6 @@ export function expandReference(data) {
     });
   }
   return out;
-}
-
-function slugify(name) {
-  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 /** Test/override hook — inject a reference dataset directly. */
@@ -317,20 +165,17 @@ export function _setFoodDatabase(foods) {
 /* ---------- Open Food Facts barcode lookup ---------- */
 
 /**
- * Look up a barcode in the local dataset first, then fall back to the
- * public Open Food Facts API. Returns a reference-shaped food or null.
+ * Look up a barcode locally first, then via Open Food Facts.
  * @param {string} barcode
- * @param {Array<Object>} [foods]  reference dataset (already loaded)
+ * @param {Array<Object>} [foods]
  * @returns {Promise<Object|null>}
  */
 export async function lookupBarcode(barcode, foods = null) {
   const code = String(barcode || '').trim();
   if (!code) return null;
-
   const db = foods || (await loadFoodDatabase());
   const local = db.find(f => f.barcode && f.barcode === code);
   if (local) return local;
-
   try {
     const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
     if (!res.ok) return null;
@@ -344,7 +189,6 @@ export async function lookupBarcode(barcode, foods = null) {
 
 /**
  * Convert an Open Food Facts product payload into a reference food.
- * OFF nutriments are per 100 g/ml.
  * @param {Object} product
  * @param {string} barcode
  * @returns {Object|null}
@@ -416,9 +260,8 @@ export function expandExercises(data) {
   }
   const out = [];
   for (const t of (data.activities || [])) {
-    // [name, met, category, intensity]
     out.push({
-      id: String(t[0]).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      id: slugify(t[0]),
       name: t[0], met: t[1], category: t[2] || '', intensity: t[3] || '',
     });
   }
@@ -432,7 +275,7 @@ export function _setExerciseDatabase(list) {
 }
 
 /**
- * Fuzzy search across the exercise dataset (same ranking as foods).
+ * Fuzzy search across the exercise dataset.
  * @param {string} query
  * @param {Array<Object>} activities
  * @param {number} [limit]
@@ -457,7 +300,7 @@ export function searchExerciseDatabase(query, activities, limit = 25) {
   return scored.slice(0, limit).map(s => s.act);
 }
 
-/* ---------- Profile, BMR / TDEE & goal targets ---------- */
+/* ---------- Profile: BMR / TDEE & goal targets ---------- */
 
 /** Activity multipliers applied to BMR to estimate TDEE. */
 export const ACTIVITY_FACTORS = {
@@ -500,7 +343,6 @@ export function computeBMR(p) {
   const sex = (p.sex || '').toLowerCase();
   if (sex === 'female' || sex === 'f') return Math.round(base - 161);
   if (sex === 'male' || sex === 'm') return Math.round(base + 5);
-  // Unspecified → average of male/female offset (-78).
   return Math.round(base - 78);
 }
 
@@ -517,10 +359,9 @@ export function computeTDEE(bmr, activityLevel) {
 
 /**
  * Daily calorie goal from TDEE and desired weekly weight change.
- *   lose  → deficit,  gain → surplus,  maintain → TDEE
  * @param {number} tdee
  * @param {string} goalType         'lose' | 'maintain' | 'gain'
- * @param {number} rateKgPerWeek    magnitude of change (e.g. 0.5)
+ * @param {number} rateKgPerWeek
  * @returns {number}
  */
 export function computeCalorieGoal(tdee, goalType, rateKgPerWeek = 0.5) {
@@ -530,13 +371,11 @@ export function computeCalorieGoal(tdee, goalType, rateKgPerWeek = 0.5) {
   let goal = t;
   if (goalType === 'lose') goal = t - dailyDelta;
   else if (goalType === 'gain') goal = t + dailyDelta;
-  // Never recommend an unsafe floor.
   return Math.max(1200, goal);
 }
 
 /**
  * Split a calorie goal into macro gram targets.
- * Protein scales with bodyweight; fat is a % of calories; carbs fill the rest.
  * @param {number} calories
  * @param {{weightKg?:number, goalType?:string}} [opts]
  * @returns {{protein:number, carbs:number, fat:number}}
@@ -545,7 +384,6 @@ export function computeMacroTargets(calories, opts = {}) {
   const cal = parseNum(calories) || 0;
   if (!cal) return { protein: 0, carbs: 0, fat: 0 };
   const weight = parseNum(opts.weightKg) || DEFAULT_WEIGHT_KG;
-  // Higher protein when cutting, moderate otherwise.
   const proteinPerKg = opts.goalType === 'lose' ? 2.0 : opts.goalType === 'gain' ? 1.8 : 1.6;
   const protein = Math.round(weight * proteinPerKg);
   const fatCals = cal * 0.27;
@@ -571,115 +409,4 @@ export function goalFromProfile(profile) {
     weightKg: profile.weightKg, goalType: profile.goalType,
   });
   return { bmr, tdee, calories, macros };
-}
-
-/* ---------- Timeframe averages & trends ---------- */
-
-/** Parse a YYYY-MM-DD string to a Date (UTC midnight); null when invalid. */
-export function parseDate(str) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((str || '').trim());
-  if (!m) return null;
-  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-}
-
-/**
- * Build a per-day series for a trailing window ending at `endDate`.
- * @param {Map} dateMap     from groupByDate()
- * @param {Object} cols
- * @param {string} endDate  YYYY-MM-DD (inclusive)
- * @param {number} days     window length (e.g. 7, 30)
- * @returns {{labels:string[], food:number[], burned:number[], net:number[],
- *            protein:number[], carbs:number[], fat:number[], loggedDays:number}}
- */
-export function buildSeries(dateMap, cols, endDate, days) {
-  const end = parseDate(endDate) || new Date();
-  const labels = [], food = [], burned = [], net = [];
-  const protein = [], carbs = [], fat = [];
-  let loggedDays = 0;
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(end.getTime() - i * 86400000);
-    const key = d.toISOString().slice(0, 10);
-    const entries = dateMap.get(key) || [];
-    const rows = entries.map(e => e.row);
-    const totals = computeDayTotals(rows, cols);
-    labels.push(key.slice(5)); // MM-DD
-    food.push(totals.food);
-    burned.push(totals.burned);
-    net.push(totals.food - totals.burned);
-    protein.push(totals.protein);
-    carbs.push(totals.carbs);
-    fat.push(totals.fat);
-    if (rows.length) loggedDays++;
-  }
-  return { labels, food, burned, net, protein, carbs, fat, loggedDays };
-}
-
-/**
- * Average the logged (non-empty) days of a series.
- * @param {Object} series  from buildSeries()
- * @returns {{food:number, burned:number, net:number, protein:number,
- *            carbs:number, fat:number, loggedDays:number}}
- */
-export function averageSeries(series) {
-  const n = series.loggedDays || 0;
-  if (!n) return { food: 0, burned: 0, net: 0, protein: 0, carbs: 0, fat: 0, loggedDays: 0 };
-  let f = 0, b = 0, nt = 0, p = 0, c = 0, ft = 0;
-  for (let i = 0; i < series.food.length; i++) {
-    // Only count days that had any logging.
-    if (series.food[i] === 0 && series.burned[i] === 0) continue;
-    f += series.food[i]; b += series.burned[i]; nt += series.net[i];
-    p += series.protein[i]; c += series.carbs[i]; ft += series.fat[i];
-  }
-  return {
-    food: Math.round(f / n), burned: Math.round(b / n), net: Math.round(nt / n),
-    protein: Math.round(p / n), carbs: Math.round(c / n), fat: Math.round(ft / n),
-    loggedDays: n,
-  };
-}
-
-/* ---------- Adherence / mascot growth ---------- */
-
-/**
- * Score how well recent days hit the calorie goal (0..1). A day counts as
- * "on track" when net calories are within ±15% of goal (or below goal by up
- * to the full deficit). Drives the living mascot's growth.
- * @param {Object} series   from buildSeries()
- * @param {number} goal
- * @returns {{score:number, streak:number, onTrackDays:number, loggedDays:number}}
- */
-export function adherenceScore(series, goal) {
-  const g = parseNum(goal) || 0;
-  if (!g) return { score: 0, streak: 0, onTrackDays: 0, loggedDays: 0 };
-  const band = g * 0.15;
-  let onTrack = 0, logged = 0, streak = 0, running = 0;
-  for (let i = 0; i < series.net.length; i++) {
-    const hadLog = !(series.food[i] === 0 && series.burned[i] === 0);
-    if (!hadLog) { running = 0; continue; }
-    logged++;
-    const net = series.net[i];
-    // On track: at or below goal, but not drastically under (>40% under).
-    const ok = net <= g + band && net >= g - g * 0.4;
-    if (ok) { onTrack++; running++; streak = Math.max(streak, running); }
-    else running = 0;
-  }
-  const score = logged ? onTrack / logged : 0;
-  return { score, streak, onTrackDays: onTrack, loggedDays: logged };
-}
-
-/**
- * Map an adherence score + streak to a growth stage 0..5 for the mascot.
- * @param {{score:number, streak:number, loggedDays:number}} adh
- * @returns {number}
- */
-export function growthStage(adh) {
-  if (!adh || !adh.loggedDays) return 0;
-  const s = adh.score;
-  const streakBonus = Math.min(2, Math.floor(adh.streak / 3));
-  let stage = 0;
-  if (s >= 0.85) stage = 5;
-  else if (s >= 0.7) stage = 4;
-  else if (s >= 0.5) stage = 3;
-  else if (s >= 0.3) stage = 2;
-  else stage = 1;
-  return Math.min(5, Math.max(stage, streakBonus));
 }

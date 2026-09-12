@@ -1236,6 +1236,36 @@ export {
   formatAxisLabel,
 } from './charts.js';
 
+/* ---------- Nutrition & fitness engine re-exports ---------- */
+
+/* Shared by the Calorie Tracker and Meal Planner (§1.5 — templates import
+   only from shared.js). See templates/nutrition.js. */
+export {
+  DEFAULT_WEIGHT_KG,
+  parseNum,
+  round1,
+  scaleMacros,
+  searchFoodDatabase,
+  loadFoodDatabase,
+  expandReference,
+  _setFoodDatabase,
+  lookupBarcode,
+  normalizeOffProduct,
+  caloriesFromMet,
+  loadExerciseDatabase,
+  expandExercises,
+  _setExerciseDatabase,
+  searchExerciseDatabase,
+  ACTIVITY_FACTORS,
+  ACTIVITY_LABELS,
+  GOAL_LABELS,
+  computeBMR,
+  computeTDEE,
+  computeCalorieGoal,
+  computeMacroTargets,
+  goalFromProfile,
+} from './nutrition.js';
+
 /* ---------- Chat preference re-exports ---------- */
 
 /* Templates access these via shared.js (§1.5 — templates import only from shared.js) */
@@ -1256,6 +1286,8 @@ export {
   setHighPassFreq,
   getEchoSuppression,
   setEchoSuppression,
+  getCalorieProfile,
+  setCalorieProfile,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */
