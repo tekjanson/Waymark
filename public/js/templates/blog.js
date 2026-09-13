@@ -9,6 +9,39 @@ import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, crea
 
 /* ---------- Helpers ---------- */
 
+/**
+ * Copy text to the clipboard with a graceful fallback.
+ * The async Clipboard API can be unavailable or blocked (permissions,
+ * non-focused document); fall back to a hidden textarea + execCommand.
+ * @param {string} text
+ * @returns {Promise<boolean>}  true if the copy succeeded
+ */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to legacy path */ }
+
+  try {
+    const ta = el('textarea', {
+      value: text,
+      className: 'hidden',
+      readOnly: true,
+    });
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Google Doc ID pattern (20-44 alphanumeric + underscores/hyphens) */
 const DOC_ID_RE = /[a-zA-Z0-9_-]{20,44}/;
 
@@ -381,15 +414,16 @@ function getReader() {
       className: 'blog-reader-share-btn',
       title: 'Copy shareable link',
       on: {
-        click() {
+        async click() {
           if (!_currentSheetId || !_currentDocId) return;
-          const base = window.location.origin + window.location.pathname;
-          const shareUrl = base + '#/public/' + _currentSheetId + '/post/' + _currentDocId;
-          navigator.clipboard.writeText(shareUrl).then(() => {
-            showToast('Link copied!', 'success');
-          }).catch(() => {
-            showToast('Could not copy link', 'error');
-          });
+          // Build the shareable public post URL from the app root — NOT from
+          // window.location.pathname, which already contains the post path when
+          // viewing a permalink and would produce a doubled, broken link.
+          const base = window.__WAYMARK_BASE || '';
+          const shareUrl = window.location.origin + base +
+            '/#/public/' + _currentSheetId + '/post/' + _currentDocId;
+          const ok = await copyText(shareUrl);
+          showToast(ok ? 'Link copied!' : 'Could not copy link', ok ? 'success' : 'error');
         },
       },
     }, ['🔗 Share']);
