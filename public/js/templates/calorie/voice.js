@@ -16,17 +16,23 @@ import { el, showToast, generateAudio } from '../shared.js';
 import { parseNum, round1, MEAL_TYPES } from './helpers.js';
 
 const SYSTEM_PROMPT =
-  'You are a nutrition logging assistant. The user will speak a description ' +
-  'of food they ate and/or exercise they did. Transcribe and interpret it, ' +
-  'then output STRICT JSON only (no prose) with an "items" array. Each item ' +
-  'is either food or exercise:\n' +
+  'You are a fitness and nutrition logging assistant. The user will speak a ' +
+  'description of food they ate AND/OR exercise/workouts they did. Transcribe ' +
+  'and interpret it, then output STRICT JSON only (no prose) with an "items" ' +
+  'array. Include BOTH food and exercise items when both are mentioned, and ' +
+  'handle exercise-only or food-only utterances. Each item is either:\n' +
   '- food: {"type":"food","name":string,"meal":"Breakfast|Lunch|Dinner|Snacks",' +
   '"serving_qty":number,"serving_unit":string,"calories":number,"protein":number,' +
   '"carbs":number,"fat":number}\n' +
   '- exercise: {"type":"exercise","name":string,"duration_min":number,' +
   '"calories_burned":number}\n' +
-  'Estimate reasonable calories/macros from typical nutrition data. If a meal ' +
-  'is not stated, infer from the food. Return only the JSON object.';
+  'For exercise, estimate calories_burned from the activity, duration, and a ' +
+  'typical adult (about 70 kg) using standard MET values. Examples: "I ran for ' +
+  '30 minutes" → {"type":"exercise","name":"Running","duration_min":30,' +
+  '"calories_burned":320}; "did 20 minutes of yoga" → {"type":"exercise",' +
+  '"name":"Yoga","duration_min":20,"calories_burned":60}. For food, estimate ' +
+  'calories/macros from typical nutrition data; if a meal is not stated, infer ' +
+  'it from the food. Return only the JSON object.';
 
 /* ---------- Audio helpers ---------- */
 

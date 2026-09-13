@@ -229,3 +229,31 @@ test('meals render in a two-column grid on desktop widths', async ({ page }) => 
   });
   expect(cols).toBe(2);
 });
+
+test('voice logging supports exercise-only utterances from the exercise section', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  await page.evaluate(() => {
+    window.__WAYMARK_VOICE_MOCK = { items: [
+      { type: 'exercise', name: 'Cycling', duration_min: 45, calories_burned: 400 },
+      { type: 'exercise', name: 'Push-ups', duration_min: 10, calories_burned: 80 },
+    ] };
+  });
+
+  // Use the Speak button inside the Exercise section.
+  await page.locator('.calorie-exercise .calorie-action-voice').click();
+  await page.waitForSelector('.calorie-ai-item', { timeout: 5_000 });
+  await expect(page.locator('.calorie-ai-item.calorie-ai-exercise')).toHaveCount(2);
+  await page.locator('.calorie-ai-modal .calorie-modal-submit').click();
+  await page.waitForSelector('.calorie-modal-overlay', { state: 'detached', timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const appends = records.filter(r => r.type === 'row-append');
+  const flat = JSON.stringify(appends);
+  expect(flat).toContain('Cycling');
+  expect(flat).toContain('Push-ups');
+  // Burned calories are written (exercise rows), not food calories.
+  expect(flat).toContain('400');
+});

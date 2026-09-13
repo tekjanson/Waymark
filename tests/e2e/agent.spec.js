@@ -63,6 +63,42 @@ test('clicking settings button opens agent settings modal', async ({ page }) => 
   await expect(page.locator('.agent-settings-modal h3')).toContainText('Agent Settings');
 });
 
+test('Pick from Drive button does not throw and opens the picker', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-vault-setup-btn', { timeout: 3000 });
+  // The first vault button is "Pick from Drive". Clicking it must not throw a
+  // ReferenceError (regression: `overlay is not defined`).
+  await page.locator('.agent-vault-setup-btn', { hasText: 'Pick from Drive' }).click();
+  await page.waitForTimeout(500);
+  expect(errors.join('\n')).not.toContain('overlay is not defined');
+  expect(errors.join('\n')).not.toContain('is not defined');
+});
+
+test('linking a keys sheet by ID updates the settings to the locked state', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('.agent-settings-input', { timeout: 3000 });
+  // Paste a sheet id into the vault ID field and click "Link Sheet".
+  await page.fill('input.agent-settings-input[placeholder*="passwords sheet"]', 'sheet-070');
+  await page.locator('.agent-vault-setup-btn', { hasText: 'Link Sheet' }).click();
+  // Modal reopens showing the linked (locked) vault state without errors.
+  await page.waitForSelector('.agent-vault-locked, .agent-vault-unlocked', { timeout: 3000 });
+  expect(errors.join('\n')).not.toContain('is not defined');
+  await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.unlinkSheet();
+  });
+});
+
 test('clicking welcome configure button opens settings modal', async ({ page }) => {
   await setupApp(page);
   await page.evaluate(() => { window.location.hash = '#/agent'; });

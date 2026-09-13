@@ -15,10 +15,12 @@ import {
   geminiHeaders,
   geminiUrl,
   parseToolCall,
+  pickBestKey,
   stripToolCalls,
 } from './agent/config.js';
 import { renderMarkdown } from './agent/markdown.js';
 import { captureStillFromCamera } from './camera-capture.js';
+import * as vault from './agent/vault.js';
 
 /* ---------- Constants ---------- */
 
@@ -97,7 +99,14 @@ export function hide() {
 /* ---------- Rendering ---------- */
 
 function _render() {
-  const hasKeys = storage.getAgentKeys().length > 0;
+  // Idempotent: drop any existing panel/backdrop so re-rendering (e.g. after
+  // unlocking the keys vault in-panel) replaces rather than duplicates.
+  if (_panel) { _panel.remove(); _panel = null; }
+  if (_backdrop) { _backdrop.remove(); _backdrop = null; }
+
+  // Vault-aware: an unlocked keys-sheet, a localStorage key, or a server key
+  // all make the AI usable (pickBestKey aggregates all sources).
+  const hasKeys = pickBestKey().length > 0;
 
   const header = el('div', { className: 'template-ai-header' }, [
     el('div', { className: 'template-ai-header-left' }, [
@@ -151,11 +160,40 @@ function _render() {
 }
 
 function _buildNoKeysState() {
+  // If a keys sheet is linked but still locked, guide the user to unlock it
+  // right here rather than sending them to add a new key.
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    const pwInput = el('input', {
+      type: 'password',
+      className: 'template-ai-unlock-input',
+      placeholder: 'Keys sheet password (blank if unencrypted)',
+    });
+    const unlockBtn = el('button', {
+      className: 'template-ai-unlock-btn',
+      type: 'button',
+      on: {
+        click: async () => {
+          const ok = await vault.unlockVault(pwInput.value.trim());
+          if (ok) { showToast('AI keys unlocked', 'success'); _render(); }
+          else { showToast('Incorrect password or unreadable sheet', 'error'); pwInput.value = ''; }
+        },
+      },
+    }, ['🔓 Unlock AI keys']);
+    pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') unlockBtn.click(); });
+    return el('div', { className: 'template-ai-no-keys' }, [
+      el('div', { className: 'template-ai-no-keys-icon' }, ['🔐']),
+      el('p', { className: 'template-ai-no-keys-text' }, ['Your AI keys sheet is locked.']),
+      el('p', { className: 'template-ai-no-keys-hint' }, ['Unlock it to use the AI on this device.']),
+      pwInput,
+      unlockBtn,
+    ]);
+  }
+
   return el('div', { className: 'template-ai-no-keys' }, [
     el('div', { className: 'template-ai-no-keys-icon' }, ['🤖']),
     el('p', { className: 'template-ai-no-keys-text' }, ['AI is not configured yet.']),
     el('p', { className: 'template-ai-no-keys-hint' }, [
-      'Add a Gemini API key via the ',
+      'Add a Gemini API key or link a keys sheet via the ',
       el('a', {
         href: '#/agent',
         on: { click: _close },
@@ -647,17 +685,9 @@ function _triggerRefresh() {
 /* ---------- Key rotation ---------- */
 
 function _getNextKey() {
-  const keys = storage.getAgentKeys();
-  if (keys.length === 0) return null;
-
-  const now = Date.now();
-  const available = keys
-    .map((k, i) => ({ ...k, idx: i }))
-    .filter(k => !k.lastError || (now - new Date(k.lastError).getTime()) > 60000);
-
-  const pool = available.length ? available : keys.map((k, i) => ({ ...k, idx: i }));
-  pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
-  return { key: pool[0].key, idx: pool[0].idx };
+  // Vault-aware key selection (unlocked keys-sheet → localStorage → server).
+  const entries = pickBestKey();
+  return entries.length ? entries[0] : null;
 }
 
 /* ---------- Message element builder ---------- */

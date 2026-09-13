@@ -250,6 +250,7 @@
   font-size: 0.85rem; font-weight: 600; cursor: pointer;
 }
 .calorie-action-exercise { border-color: var(--color-success); }
+.calorie-action-voice { border-color: var(--color-primary); }
 .calorie-action:hover { border-color: var(--color-primary); }
 
 /* ---------- Trend / averages view ---------- */

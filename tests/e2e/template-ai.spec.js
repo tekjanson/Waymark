@@ -114,6 +114,52 @@ test('text input is disabled in no-keys state', async ({ page }) => {
   await expect(page.locator('.template-ai-attach-btn')).toBeDisabled();
 });
 
+/* ---------- Ready state with an unlocked keys vault (no localStorage key) ---------- */
+
+test('Ask AI panel is usable when keys come from an unlocked vault', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-050');
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 5000 });
+  // No localStorage agent key — link + unlock the passwords-api-keys vault.
+  await page.evaluate(async () => {
+    localStorage.removeItem('waymark_agent_keys');
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    await vault.unlockVault('');
+  });
+  await page.click('#template-ai-btn');
+  await page.waitForSelector('.template-ai-input', { timeout: 3000 });
+  await expect(page.locator('.template-ai-input')).toBeEnabled();
+  await expect(page.locator('.template-ai-no-keys')).toHaveCount(0);
+  // Cleanup
+  await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.unlinkSheet();
+  });
+});
+
+test('Ask AI panel offers an inline unlock when a vault is linked but locked', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-050');
+  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 5000 });
+  await page.evaluate(async () => {
+    localStorage.removeItem('waymark_agent_keys');
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys'); // linked but NOT unlocked
+  });
+  await page.click('#template-ai-btn');
+  await page.waitForSelector('.template-ai-unlock-btn', { timeout: 3000 });
+  await expect(page.locator('.template-ai-unlock-btn')).toBeVisible();
+  // Unlocking in-panel makes the input usable.
+  await page.click('.template-ai-unlock-btn');
+  await page.waitForSelector('.template-ai-input:not([disabled])', { timeout: 3000 });
+  await expect(page.locator('.template-ai-input')).toBeEnabled();
+  await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.unlinkSheet();
+  });
+});
+
 /* ---------- Ready state with API key ---------- */
 
 test('overlay shows empty state with suggestions when API key is configured', async ({ page }) => {

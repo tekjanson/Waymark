@@ -429,7 +429,9 @@ function buildExerciseSection(dayRows, totals) {
   }
   const addBtn = el('button', { className: 'calorie-action calorie-action-exercise', type: 'button' }, ['+ Log exercise']);
   addBtn.addEventListener('click', () => openExerciseModal({ onConfirm: (e) => appendEntry({ ...e, type: 'exercise' }) }));
-  body.append(el('div', { className: 'calorie-actions' }, [addBtn]));
+  const speakBtn = el('button', { className: 'calorie-action calorie-action-voice', type: 'button' }, ['\uD83C\uDF99\uFE0F Speak']);
+  speakBtn.addEventListener('click', () => openVoiceModal({ onConfirm: logItem }));
+  body.append(el('div', { className: 'calorie-actions' }, [addBtn, speakBtn]));
   return el('div', { className: 'calorie-meal calorie-exercise' }, [header, body]);
 }
 
