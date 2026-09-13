@@ -450,13 +450,12 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
-  // Restore the AI keys vault link from Drive so it follows the user across
-  // devices (first login on a new phone auto-links; unlock once locally).
+  // Two-way, non-destructive sync of the AI keys vault link with Drive so it
+  // follows the user across devices (existing links migrate up; new devices
+  // pull down). Then best-effort auto-unlock for unencrypted vaults.
   try {
     const vault = await import('./agent/vault.js');
-    vault.hydrateFromDrive();
-    // Best-effort: if the linked vault is unencrypted, unlock it in the
-    // background so Ask AI and template AI work without opening settings.
+    await vault.syncVaultLink();
     if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
       vault.unlockVault('').catch(() => {});
     }

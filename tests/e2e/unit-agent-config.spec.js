@@ -295,15 +295,113 @@ test('vault link round-trips through Drive user-data for cross-device sync', asy
     const vault = await import('/js/agent/vault.js');
     vault.linkSheet('sheet-070', 'API Keys');
     const saved = userData.getAgentKeysSheet();
-    // Simulate a fresh device: clear the local link, then hydrate from Drive.
+    // Simulate a fresh device: clear the local link, then pull from Drive.
     localStorage.removeItem('waymark_agent_keys_sheet_id');
     localStorage.removeItem('waymark_agent_keys_sheet_name');
-    const restored = vault.hydrateFromDrive();
+    const pull = await vault.syncVaultLink();
     const linkedAfter = vault.getLinkedSheetId();
     vault.unlinkSheet();
-    return { saved, restored, linkedAfter };
+    return { saved, pull, linkedAfter };
   });
   expect(result.saved && result.saved.id).toBe('sheet-070');
-  expect(result.restored).toBe(true);
+  expect(result.pull.action).toBe('pulled');
   expect(result.linkedAfter).toBe('sheet-070');
+});
+
+test('syncVaultLink migrates an existing localStorage link UP to Drive (no data loss)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const userData = await import('/js/user-data.js');
+    await userData.init().catch(() => {});
+    // Simulate a pre-existing device link that predates Drive sync.
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('My Keys'));
+    // Drive has nothing yet.
+    await userData.saveAgentKeysSheet(null);
+    const vault = await import('/js/agent/vault.js');
+    const sync = await vault.syncVaultLink();
+    const driveAfter = userData.getAgentKeysSheet();
+    vault.unlinkSheet();
+    return { sync, driveAfter };
+  });
+  expect(result.sync.action).toBe('pushed');
+  expect(result.driveAfter && result.driveAfter.id).toBe('sheet-070');
+  expect(result.driveAfter.name).toBe('My Keys');
+});
+
+test('syncVaultLink never clears a link (noop when both sides agree)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const userData = await import('/js/user-data.js');
+    await userData.init().catch(() => {});
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys'); // writes both LS + Drive
+    const sync = await vault.syncVaultLink();
+    const linked = vault.getLinkedSheetId();
+    const drive = userData.getAgentKeysSheet();
+    vault.unlinkSheet();
+    return { sync, linked, driveId: drive && drive.id };
+  });
+  expect(result.sync.action).toBe('noop');
+  expect(result.linked).toBe('sheet-070');
+  expect(result.driveId).toBe('sheet-070');
+});
+
+/* ---------- End-to-end: AI actually routes through vault keys ---------- */
+
+test('generateText (Ask AI path) sends a request using the unlocked vault key', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    const unlocked = await vault.unlockVault('');
+    const calls = [];
+    const realFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      calls.push({ url: String(url), headers: (opts && opts.headers) || {} });
+      return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: 'PONG' }] } }] }) };
+    };
+    let text, err = null;
+    try {
+      const shared = await import('/js/templates/shared.js');
+      text = await shared.generateText('system', 'ping');
+    } catch (e) { err = e.message; }
+    window.fetch = realFetch;
+    vault.unlinkSheet();
+    const key = calls[0]?.headers?.['X-goog-api-key'] || calls[0]?.headers?.['x-goog-api-key'] || '';
+    return { unlocked, text, err, key, url: calls[0]?.url || '' };
+  });
+  expect(result.unlocked).toBe(true);
+  expect(result.err).toBeNull();
+  expect(result.text).toBe('PONG');
+  expect(result.key).toContain('test-gemini-key-from-sheet');
+  expect(result.url).toContain('generativelanguage.googleapis.com');
+});
+
+test('generateVision (calorie photo AI path) uses the unlocked vault key', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    await vault.unlockVault('');
+    const calls = [];
+    const realFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      calls.push({ url: String(url), body: opts && opts.body, headers: (opts && opts.headers) || {} });
+      return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"items":[]}' }] } }] }) };
+    };
+    let text, err = null;
+    try {
+      const shared = await import('/js/templates/shared.js');
+      text = await shared.generateVision('system', 'Zm9v', 'image/jpeg', { userMessage: 'x' });
+    } catch (e) { err = e.message; }
+    window.fetch = realFetch;
+    vault.unlinkSheet();
+    const key = calls[0]?.headers?.['X-goog-api-key'] || calls[0]?.headers?.['x-goog-api-key'] || '';
+    const hasInline = (calls[0]?.body || '').includes('inlineData');
+    return { text, err, key, hasInline };
+  });
+  expect(result.err).toBeNull();
+  expect(result.key).toContain('test-gemini-key-from-sheet');
+  expect(result.hasInline).toBe(true);
 });

@@ -65,10 +65,8 @@ export function unlinkSheet() {
 
 /**
  * Restore the vault link from Drive-synced user data when this device has no
- * local link yet (e.g. first login on a new phone). The keys themselves stay
- * encrypted in the linked sheet — the user still unlocks once per device.
- * Safe to call after userData.init(). Returns true if a link was restored.
- * @returns {boolean}
+ * local link yet (e.g. first login on a new phone). Pull-only, synchronous.
+ * @returns {boolean} true if a link was restored into localStorage
  */
 export function hydrateFromDrive() {
   try {
@@ -81,6 +79,49 @@ export function hydrateFromDrive() {
   } catch {
     return false;
   }
+}
+
+/**
+ * Two-way, non-destructive sync of the vault link between this device
+ * (localStorage) and the user's Google Drive account. Never clears a link —
+ * only an explicit Unlink does that.
+ *
+ *  - localStorage link, no Drive link → push up (migrate existing users so
+ *    their configured sheet becomes account-wide and reaches other devices).
+ *  - no localStorage link, Drive link → pull down (new device auto-links).
+ *  - both present → prefer the Drive value if they differ (account is source
+ *    of truth for a linked account), otherwise no-op.
+ *
+ * Safe to call once after userData.init().
+ * @returns {Promise<{action:'pushed'|'pulled'|'noop', id:(string|null)}>}
+ */
+export async function syncVaultLink() {
+  let localId = null, localName = null;
+  try { localId = getLinkedSheetId(); localName = getLinkedSheetName(); } catch { /* noop */ }
+  const driveLink = (() => { try { return userData.getAgentKeysSheet?.() || null; } catch { return null; } })();
+
+  // Fresh device: pull the account link down.
+  if (!localId && driveLink && driveLink.id) {
+    localStorage.setItem(LS_SHEET_ID, JSON.stringify(driveLink.id));
+    localStorage.setItem(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
+    return { action: 'pulled', id: driveLink.id };
+  }
+
+  // Existing device with a link the account doesn't have yet: migrate it up.
+  if (localId && (!driveLink || !driveLink.id)) {
+    try { await userData.saveAgentKeysSheet?.({ id: localId, name: localName || localId }); } catch { /* best-effort */ }
+    return { action: 'pushed', id: localId };
+  }
+
+  // Account has a different link than this device: adopt the account value.
+  if (localId && driveLink && driveLink.id && driveLink.id !== localId) {
+    localStorage.setItem(LS_SHEET_ID, JSON.stringify(driveLink.id));
+    localStorage.setItem(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
+    _session = null; // link changed → force re-unlock
+    return { action: 'pulled', id: driveLink.id };
+  }
+
+  return { action: 'noop', id: localId };
 }
 
 /* ---------- Lock / Unlock status ---------- */
