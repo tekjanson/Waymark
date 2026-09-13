@@ -51,6 +51,7 @@ import './photos.js';
 import './ledger/index.js';
 import './invoice/index.js';
 import './rfi.js';
+import './calorie/index.js';
 /* ---------- Detection ---------- */
 
 /**

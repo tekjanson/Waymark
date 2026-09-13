@@ -1,0 +1,22 @@
+{
+  "id": "sheet-072",
+  "title": "Calorie & Fitness Tracker",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Date", "Meal", "Item", "Qty", "Unit", "Calories", "Protein", "Carbs", "Fat", "Burned", "Target"],
+    ["2026-09-12", "Breakfast", "Oatmeal, cooked", "150", "g", "107", "3.8", "18", "2.3", "", "2200"],
+    ["2026-09-12", "Breakfast", "Banana", "1", "medium", "105", "1.3", "27", "0.4", "", ""],
+    ["2026-09-12", "Breakfast", "Greek yogurt, plain nonfat", "170", "g", "100", "17", "6", "0.7", "", ""],
+    ["2026-09-12", "Lunch", "Chicken breast, grilled", "150", "g", "248", "46.5", "0", "5.4", "", ""],
+    ["2026-09-12", "Lunch", "Brown rice, cooked", "150", "g", "185", "4.1", "39", "1.5", "", ""],
+    ["2026-09-12", "Lunch", "Broccoli, cooked", "100", "g", "35", "2.4", "7", "0.4", "", ""],
+    ["2026-09-12", "Dinner", "Salmon, cooked", "120", "g", "247", "26.4", "0", "14.4", "", ""],
+    ["2026-09-12", "Dinner", "Sweet potato, baked", "150", "g", "135", "3", "31.5", "0.2", "", ""],
+    ["2026-09-12", "Snacks", "Almonds", "28", "g", "164", "6", "6", "14", "", ""],
+    ["2026-09-12", "Exercise", "Running", "30", "min", "", "", "", "", "320", ""],
+    ["2026-09-11", "Breakfast", "Scrambled eggs (2)", "1", "serving", "180", "12", "2", "13", "", "2200"],
+    ["2026-09-11", "Lunch", "Caesar salad with chicken", "1", "bowl", "470", "38", "12", "30", "", ""],
+    ["2026-09-11", "Dinner", "Pizza slice, cheese", "2", "slice", "570", "24", "72", "20", "", ""],
+    ["2026-09-11", "Exercise", "Weightlifting", "45", "min", "", "", "", "", "210", ""]
+  ]
+}

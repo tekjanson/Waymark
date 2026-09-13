@@ -465,6 +465,21 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Calorie & Fitness Tracker examples ---- */
+  'My Calorie Tracker': {
+    folder: 'Health',
+    headers: ['Date', 'Meal', 'Item', 'Qty', 'Unit', 'Calories', 'Protein', 'Carbs', 'Fat', 'Burned', 'Target'],
+    rows: [
+      ['2026-09-12', 'Breakfast', 'Oatmeal, cooked',            '150', 'g',      '107', '3.8',  '18',   '2.3',  '',    '2200'],
+      ['2026-09-12', 'Breakfast', 'Banana',                     '1',   'medium', '105', '1.3',  '27',   '0.4',  '',    ''],
+      ['2026-09-12', 'Lunch',     'Chicken breast, grilled',    '150', 'g',      '248', '46.5', '0',    '5.4',  '',    ''],
+      ['2026-09-12', 'Lunch',     'Brown rice, cooked',         '150', 'g',      '185', '4.1',  '39',   '1.5',  '',    ''],
+      ['2026-09-12', 'Dinner',    'Salmon, cooked',             '120', 'g',      '247', '26.4', '0',    '14.4', '',    ''],
+      ['2026-09-12', 'Snacks',    'Almonds',                    '28',  'g',      '164', '6',    '6',    '14',   '',    ''],
+      ['2026-09-12', 'Exercise',  'Running',                    '30',  'min',    '',    '',     '',     '',     '320', ''],
+    ],
+  },
+
   /* ---- Travel Itinerary examples ---- */
   'Europe Trip': {
     folder: 'Travel',

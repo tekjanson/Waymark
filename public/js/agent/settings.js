@@ -403,7 +403,7 @@ export function showSettingsModal(onRefresh) {
         'When enabled, your key ring and model are stored in your Google Drive so they work across all your devices.',
       ]),
       el('hr', { className: 'agent-settings-divider' }),
-      buildKeysSheetSection(),
+      buildKeysSheetSection(onRefresh),
     ]),
     el('div', { className: 'modal-footer' }, [
       (activeProvider === 'ollama' || (geminiKeys.length === 0 && claudeKeys.length === 0)) ? el('span') : removeAllBtn,
@@ -426,12 +426,18 @@ export function showSettingsModal(onRefresh) {
 /**
  * Build the Keys Sheet section — lets the user link a Waymark passwords sheet
  * that holds their AI API keys (Gemini / Claude rows), optionally encrypted.
+ * @param {Function} [onRefresh] callback re-run after the vault state changes
  */
-function buildKeysSheetSection() {
+function buildKeysSheetSection(onRefresh) {
   const isLinked   = vault.isVaultSetUp();
   const isUnlocked = vault.isVaultUnlocked();
   const sheetName  = vault.getLinkedSheetName();
   const sheetId    = vault.getLinkedSheetId();
+
+  /* Close/reopen the settings modal by id (the overlay is created by the
+     caller after this function returns, so we can't capture it directly). */
+  const closeModal = () => document.getElementById('agent-settings-modal')?.remove();
+  const reopen = () => { closeModal(); showSettingsModal(onRefresh); };
 
   /* ---------- Not linked yet ---------- */
   if (!isLinked) {
@@ -455,7 +461,7 @@ function buildKeysSheetSection() {
           on: {
             click: async () => {
               // Close the modal first so the picker isn't obscured by it
-              overlay.remove();
+              closeModal();
               try {
                 const files = await api.picker.pickSpreadsheets({ includeSharedDrives: false });
                 if (files?.[0]) {
@@ -482,6 +488,7 @@ function buildKeysSheetSection() {
               const id = match ? match[1] : raw;
               vault.linkSheet(id, id);
               showToast('Sheet linked — unlock to load keys', 'success');
+              reopen();
             },
           },
         }, ['Link Sheet']),
@@ -505,7 +512,7 @@ function buildKeysSheetSection() {
         'Enter the sheet password to decrypt your keys, or leave empty if the Password column is not encrypted. ',
         el('a', {
           href: `#/sheet/${sheetId}`,
-          on: { click: () => overlay?.remove() },
+          on: { click: () => closeModal() },
         }, ['Open sheet →']),
       ]),
       pwInput,
@@ -520,6 +527,8 @@ function buildKeysSheetSection() {
                 const g = vault.getGeminiKeys().length;
                 const c = vault.getClaudeKeys().length;
                 showToast(`Unlocked — ${g} Gemini key${g !== 1 ? 's' : ''}, ${c} Claude key${c !== 1 ? 's' : ''}`, 'success');
+                if (typeof onRefresh === 'function') onRefresh();
+                reopen();
               } else {
                 showToast('Incorrect password or could not read sheet', 'error');
                 pwInput.value = '';
@@ -534,6 +543,7 @@ function buildKeysSheetSection() {
             click: () => {
               vault.unlinkSheet();
               showToast('Sheet unlinked', 'info');
+              reopen();
             },
           },
         }, ['Unlink']),
@@ -552,7 +562,7 @@ function buildKeysSheetSection() {
     ]),
     el('p', { className: 'agent-settings-hint' }, [
       'Keys are loaded from the sheet for this session. ',
-      el('a', { href: `#/sheet/${sheetId}`, on: { click: () => overlay?.remove() } }, ['Open sheet →']),
+      el('a', { href: `#/sheet/${sheetId}`, on: { click: () => closeModal() } }, ['Open sheet →']),
     ]),
     el('div', { className: 'agent-vault-btns' }, [
       el('button', {
@@ -562,6 +572,7 @@ function buildKeysSheetSection() {
           click: () => {
             vault.lockVault();
             showToast('Keys cleared from memory — sheet still linked', 'info');
+            reopen();
           },
         },
       }, ['🔐 Lock']),
@@ -572,6 +583,7 @@ function buildKeysSheetSection() {
           click: () => {
             vault.unlinkSheet();
             showToast('Sheet unlinked', 'info');
+            reopen();
           },
         },
       }, ['Unlink']),

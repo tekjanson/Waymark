@@ -266,7 +266,7 @@ async function _fetchPlannerMicroBrief(apiKey, keyIdx, userText) {
   };
 
   _assertRequestWithinBudget(plannerBody, 'Planner round');
-  const data = await _fetchGemini(url, plannerBody, keyIdx);
+  const data = await _fetchGemini(url, plannerBody, keyIdx, apiKey);
   storage.recordKeyUsage(keyIdx);
   const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join(' ').trim();
   return compactContextText(text, MAX_PLANNED_BRIEF_CHARS);
@@ -1035,7 +1035,7 @@ async function _callClaude(apiKey, keyIdx, request) {
     : request;
   const { body } = preparedRequest;
   const url = _claudeUrl();
-  const data = await _fetchClaude(url, body, keyIdx);
+  const data = await _fetchClaude(url, body, keyIdx, apiKey);
   storage.recordClaudeKeyUsage(keyIdx);
 
   return (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
@@ -1128,9 +1128,10 @@ async function _streamCallClaude(apiKey, keyIdx, request, onChunk, signal) {
  * @param {number} keyIdx
  * @returns {Promise<Object>}
  */
-async function _fetchClaude(url, body, keyIdx) {
+async function _fetchClaude(url, body, keyIdx, apiKey) {
   const keys = storage.getClaudeKeys();
-  const currentKey = keys[keyIdx]?.key || '';
+  // Prefer the explicitly selected key (vault keys use keyIdx=-1).
+  const currentKey = apiKey || keys[keyIdx]?.key || '';
   const fetchOpts = {
     method: 'POST',
     headers: _claudeHeaders(currentKey),
@@ -1206,7 +1207,7 @@ async function _callGemini(apiKey, keyIdx, userMessage) {
     : userMessage;
   const { url, body } = request;
 
-  const data = await _fetchGemini(url, body, keyIdx);
+  const data = await _fetchGemini(url, body, keyIdx, apiKey);
   storage.recordKeyUsage(keyIdx);
   const candidate = data.candidates?.[0];
 
@@ -1607,8 +1608,10 @@ function _removeToolIndicator() {
  * @param {Object} body
  * @returns {Promise<Object>}
  */
-async function _fetchGemini(url, body, keyIdx) {
-  const currentKey = storage.getAgentKeys()[keyIdx]?.key || '';
+async function _fetchGemini(url, body, keyIdx, apiKey) {
+  // Prefer the explicitly selected key (works for vault keys where keyIdx=-1);
+  // fall back to the localStorage ring by index for legacy callers.
+  const currentKey = apiKey || storage.getAgentKeys()[keyIdx]?.key || '';
   const fetchOpts = {
     method: 'POST',
     headers: _geminiHeaders(currentKey),

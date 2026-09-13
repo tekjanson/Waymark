@@ -667,6 +667,11 @@ export function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
 /* Re-export el and showToast for convenience — templates only need to import from shared */
 export { el, showToast };
 
+/* Re-export the camera still-capture helper so template sub-modules can access
+   it without importing outside their folder (§1.5). */
+export { captureStillFromCamera } from '../camera-capture.js';
+
+
 /* ---------- Generic Helpers ---------- */
 
 /**
@@ -1231,6 +1236,36 @@ export {
   formatAxisLabel,
 } from './charts.js';
 
+/* ---------- Nutrition & fitness engine re-exports ---------- */
+
+/* Shared by the Calorie Tracker and Meal Planner (§1.5 — templates import
+   only from shared.js). See templates/nutrition.js. */
+export {
+  DEFAULT_WEIGHT_KG,
+  parseNum,
+  round1,
+  scaleMacros,
+  searchFoodDatabase,
+  loadFoodDatabase,
+  expandReference,
+  _setFoodDatabase,
+  lookupBarcode,
+  normalizeOffProduct,
+  caloriesFromMet,
+  loadExerciseDatabase,
+  expandExercises,
+  _setExerciseDatabase,
+  searchExerciseDatabase,
+  ACTIVITY_FACTORS,
+  ACTIVITY_LABELS,
+  GOAL_LABELS,
+  computeBMR,
+  computeTDEE,
+  computeCalorieGoal,
+  computeMacroTargets,
+  goalFromProfile,
+} from './nutrition.js';
+
 /* ---------- Chat preference re-exports ---------- */
 
 /* Templates access these via shared.js (§1.5 — templates import only from shared.js) */
@@ -1251,6 +1286,10 @@ export {
   setHighPassFreq,
   getEchoSuppression,
   setEchoSuppression,
+  getCalorieProfile,
+  setCalorieProfile,
+  getTemplatePref,
+  setTemplatePref,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */
@@ -1318,6 +1357,73 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
   throw lastErr || new Error('All API keys exhausted. Try again later.');
 }
 
+/**
+ * Call the Gemini multimodal API with an inline image and return the text
+ * response. Same key-rotation strategy as generateText(). Templates use this
+ * for vision features (e.g. meal-photo macro estimation) — §1.5-compliant.
+ * @param {string} systemPrompt
+ * @param {string} base64Image   raw base64 (no data: prefix)
+ * @param {string} [mimeType]
+ * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
+  const keys = pickBestKey();
+  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
+
+  const model = getAgentModel() || DEFAULT_MODEL;
+  const url = geminiUrl(model, 'generateContent');
+  const parts = [{ inlineData: { mimeType, data: base64Image } }];
+  if (opts.userMessage) parts.unshift({ text: opts.userMessage });
+  const body = {
+    contents: [{ role: 'user', parts }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature: opts.temperature ?? 0.4,
+      maxOutputTokens: opts.maxTokens ?? 1024,
+    },
+  };
+
+  let lastErr;
+  for (const keyEntry of keys) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: geminiHeaders(keyEntry.key),
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
+      const errBody = await res.json().catch(() => ({}));
+      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
+      if (res.status === 429 || res.status === 503) continue;
+      throw lastErr;
+    }
+
+    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+    if (!text) throw new Error('No response from AI. Try again.');
+    return text;
+  }
+
+  throw lastErr || new Error('All API keys exhausted. Try again later.');
+}
+
+/**
+ * Call the Gemini multimodal API with an inline audio clip and return the
+ * text response. Thin wrapper over the same inlineData plumbing as
+ * generateVision — used for voice-driven features (e.g. speak-to-log meals).
+ * @param {string} systemPrompt
+ * @param {string} base64Audio   raw base64 (no data: prefix)
+ * @param {string} [mimeType]    e.g. 'audio/webm', 'audio/mp4', 'audio/ogg'
+ * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
+  return generateVision(systemPrompt, base64Audio, mimeType, opts);
+}
+
 /* ---------- Sheet data helpers (for lazy-loaded sub-sheets) ---------- */
 
 import { api } from '../api-client.js';
@@ -1341,6 +1447,28 @@ export async function getSheetData(sheetId) {
  */
 export async function appendSheetRows(sheetId, sheetTitle, rows) {
   return api.sheets.appendRows(sheetId, sheetTitle, rows);
+}
+
+/**
+ * Update a single cell in a Google Sheet.
+ * @param {string} sheetId
+ * @param {string} sheetTitle  e.g. 'Sheet1'
+ * @param {number} row         0-based row index (includes header)
+ * @param {number} col         0-based column index
+ * @param {string} value
+ */
+export async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
+  return api.sheets.updateCell(sheetId, sheetTitle, row, col, value);
+}
+
+/**
+ * Delete a single row from a Google Sheet.
+ * @param {string} sheetId
+ * @param {number} numericSheetId  numeric Google Sheets tab ID (0 in mock mode)
+ * @param {number} rowIndex        0-based row index including header
+ */
+export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
+  return api.sheets.deleteRows(sheetId, numericSheetId || 0, rowIndex, rowIndex + 1);
 }
 
 /**

@@ -166,6 +166,34 @@ export function setImportHistory(history) {
   set('import_history', history);
 }
 
+/* --- Calorie & Fitness Tracker profile (per sheet) --- */
+
+/** Read the stored profile/goal for a calorie tracker sheet, or null. */
+export function getCalorieProfile(sheetId) {
+  if (!sheetId) return null;
+  return get(`calorie_profile_${sheetId}`);
+}
+
+/** Persist the profile/goal for a calorie tracker sheet. */
+export function setCalorieProfile(sheetId, profile) {
+  if (!sheetId) return;
+  set(`calorie_profile_${sheetId}`, profile);
+}
+
+/* --- Generic per-template preferences (namespaced) --- */
+
+/** Read a namespaced template preference value, or null. */
+export function getTemplatePref(key) {
+  if (!key) return null;
+  return get(`tpl_${key}`);
+}
+
+/** Persist a namespaced template preference value. */
+export function setTemplatePref(key, value) {
+  if (!key) return;
+  set(`tpl_${key}`, value);
+}
+
 /* --- Dismissed Items --- */
 
 export function getDismissedItems() {

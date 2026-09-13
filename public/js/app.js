@@ -450,6 +450,17 @@ async function showApp(user) {
     console.warn('user-data init failed, using localStorage fallback:', err);
   }
 
+  // Two-way, non-destructive sync of the AI keys vault link with Drive so it
+  // follows the user across devices (existing links migrate up; new devices
+  // pull down). Then best-effort auto-unlock for unencrypted vaults.
+  try {
+    const vault = await import('./agent/vault.js');
+    await vault.syncVaultLink();
+    if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+      vault.unlockVault('').catch(() => {});
+    }
+  } catch { /* non-fatal */ }
+
   // Mark Fleet sidebar button as configured if a registry sheet is saved
   if (menuFleetBtn && userData.getFleetSheetId()) {
     menuFleetBtn.classList.add('fleet-configured');
