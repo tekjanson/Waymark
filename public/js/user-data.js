@@ -79,6 +79,8 @@ function defaultUserData() {
     /* ── AI Agent ── */
     agentConversations: [],     // { id, title, messages[], createdAt, updatedAt }[] (max 10)
     agentSettings: null,        // { apiKey, model, keys? } — null = opt-out (use localStorage only)
+    agentKeysSheetId: null,     // Drive-synced link to the AI keys vault (passwords sheet)
+    agentKeysSheetName: null,   // friendly name of the linked vault sheet
 
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
@@ -819,6 +821,31 @@ export function getAgentSettings() {
  */
 export async function saveAgentSettings(settings) {
   await save({ agentSettings: settings });
+}
+
+/* ---------- AI keys vault link (Drive-backed, cross-device) ---------- */
+
+/**
+ * Get the Drive-synced AI keys vault link, or null.
+ * @returns {{ id: string, name: string } | null}
+ */
+export function getAgentKeysSheet() {
+  const id = _userData?.agentKeysSheetId || null;
+  if (!id) return null;
+  return { id, name: _userData?.agentKeysSheetName || id };
+}
+
+/**
+ * Persist (or clear) the AI keys vault link so it follows the user across
+ * devices. Pass null to clear.
+ * @param {{ id: string, name?: string } | null} link
+ */
+export async function saveAgentKeysSheet(link) {
+  if (link && link.id) {
+    await save({ agentKeysSheetId: link.id, agentKeysSheetName: link.name || link.id });
+  } else {
+    await save({ agentKeysSheetId: null, agentKeysSheetName: null });
+  }
 }
 
 /* ---------- Dashboards ---------- */

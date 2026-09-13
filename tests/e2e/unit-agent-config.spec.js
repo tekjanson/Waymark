@@ -264,3 +264,46 @@ test('generateText in shared.js uses pickBestKey (fetch called once per key)', a
   expect(result.calls[1]).toBe('key2');
   expect(result.response).toBe('AI response');
 });
+
+/* ---------- pickBestKey — vault (Drive-synced passwords sheet) ---------- */
+
+test('pickBestKey includes unlocked vault gemini keys (Ask AI + template AI)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    // Link the AI-keys vault to the passwords-api-keys fixture and unlock it
+    // (unencrypted → passwordless unlock succeeds).
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    const unlocked = await vault.unlockVault('');
+    const { pickBestKey } = await import('/js/agent/config.js');
+    const keys = pickBestKey();
+    const geminiCount = vault.getGeminiKeys().length;
+    vault.unlinkSheet();
+    return { unlocked, geminiCount, keys: keys.map(k => k.key) };
+  });
+  expect(result.unlocked).toBe(true);
+  expect(result.geminiCount).toBeGreaterThanOrEqual(2);
+  // Vault gemini keys should be surfaced to pickBestKey (idx -1, no LS tracking).
+  expect(result.keys.some(k => k.includes('test-gemini-key-from-sheet'))).toBe(true);
+});
+
+test('vault link round-trips through Drive user-data for cross-device sync', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const userData = await import('/js/user-data.js');
+    await userData.init().catch(() => {});
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    const saved = userData.getAgentKeysSheet();
+    // Simulate a fresh device: clear the local link, then hydrate from Drive.
+    localStorage.removeItem('waymark_agent_keys_sheet_id');
+    localStorage.removeItem('waymark_agent_keys_sheet_name');
+    const restored = vault.hydrateFromDrive();
+    const linkedAfter = vault.getLinkedSheetId();
+    vault.unlinkSheet();
+    return { saved, restored, linkedAfter };
+  });
+  expect(result.saved && result.saved.id).toBe('sheet-070');
+  expect(result.restored).toBe(true);
+  expect(result.linkedAfter).toBe('sheet-070');
+});

@@ -615,6 +615,27 @@ export function pickBestKey(opts = {}) {
 
   const entries = [];
 
+  // Vault keys first (Drive-synced passwords sheet). When the vault is set up
+  // and unlocked, its keys are the user's cross-device source of truth — used
+  // by Ask AI and every template AI helper (calorie photo/voice, etc.).
+  // idx = -1 → no localStorage usage tracking (vault tracks its own).
+  if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+    const provider = getAgentProvider();
+    // These Gemini helpers hit the Gemini endpoint, so prefer Gemini vault keys;
+    // fall back to whichever the active provider exposes.
+    const vaultKeys = provider === 'claude'
+      ? (vault.getClaudeKeys?.() || [])
+      : (vault.getGeminiKeys?.() || []);
+    const now = Date.now();
+    const usable = vaultKeys
+      .map(k => ({ ...k, hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000) }))
+      .filter(k => !k.hasRecentError);
+    const pool = (usable.length > 0 ? usable : vaultKeys)
+      .slice()
+      .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+    for (const k of pool) if (k.key) entries.push({ key: k.key, idx: -1 });
+  }
+
   if (keys.length > 0) {
     const model = opts.model || getAgentModel() || DEFAULT_MODEL;
     const isExpensiveModel = /pro/i.test(model);
