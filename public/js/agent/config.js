@@ -717,7 +717,9 @@ export function pickBestActiveKey() {
     const pool = annotated.filter(k => !k.hasRecentError);
     const sorted = (pool.length > 0 ? pool : annotated)
       .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
-    return { key: sorted[0].key, idx: sorted[0].idx };
+    // idx: -1 marks a vault-sourced key so localStorage usage/error recorders
+    // and 429-retry lookups skip it (they operate on the localStorage ring).
+    return { key: sorted[0].key, idx: -1 };
   }
   if (provider === 'claude') return pickBestClaudeKey();
   const keys = pickBestKey();

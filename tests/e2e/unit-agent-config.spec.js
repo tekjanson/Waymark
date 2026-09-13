@@ -405,3 +405,24 @@ test('generateVision (calorie photo AI path) uses the unlocked vault key', async
   expect(result.key).toContain('test-gemini-key-from-sheet');
   expect(result.hasInline).toBe(true);
 });
+
+test('pickBestActiveKey tags vault-sourced keys with idx -1 (no localStorage mislabel)', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    // Seed a localStorage key so a positive index would collide if mis-tagged.
+    localStorage.setItem('waymark_agent_keys', JSON.stringify([
+      { key: 'ls-key-0', requestsToday: 0, lastError: null, isBilled: false },
+    ]));
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'API Keys');
+    await vault.unlockVault('');
+    const cfg = await import('/js/agent/config.js');
+    const active = cfg.pickBestActiveKey();
+    vault.unlinkSheet();
+    localStorage.removeItem('waymark_agent_keys');
+    return active;
+  });
+  expect(result).not.toBeNull();
+  expect(result.idx).toBe(-1);
+  expect(result.key).toContain('test-gemini-key-from-sheet');
+});
