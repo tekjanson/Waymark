@@ -758,7 +758,9 @@ export const api = {
         return data;
       }
       const apiKey = window.__WAYMARK_API_KEY;
-      if (!apiKey) throw new Error('Public sharing is not configured — missing API key');
+      // No server API key configured → use the keyless gviz CSV export,
+      // which works for any sheet shared "Anyone with the link can view".
+      if (!apiKey) return sheetsApi.getPublicSpreadsheetCsv(spreadsheetId);
       return sheetsApi.getPublicSpreadsheet(apiKey, spreadsheetId);
     },
 

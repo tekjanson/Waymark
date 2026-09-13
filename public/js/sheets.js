@@ -334,6 +334,71 @@ export async function getPublicSpreadsheet(apiKey, spreadsheetId) {
 }
 
 /**
+ * Read a publicly shared spreadsheet WITHOUT an API key or OAuth.
+ * Uses Google's gviz CSV export endpoint, which is enabled for any sheet
+ * shared as "Anyone with the link can view" and returns permissive CORS
+ * headers. This is the zero-config fallback used when no server API key
+ * is configured (window.__WAYMARK_API_KEY is absent).
+ * @param {string} spreadsheetId
+ * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+ */
+export async function getPublicSpreadsheetCsv(spreadsheetId) {
+  const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/gviz/tq?tqx=out:csv`;
+  const res = await fetchWithRetry(url, {});
+  if (!res.ok) throw sheetsError('Public sheet read', res);
+
+  // A non-public sheet redirects to an HTML sign-in/error page instead of CSV.
+  const contentType = res.headers.get('Content-Type') || '';
+  if (!/text\/csv/i.test(contentType)) {
+    const err = new Error('Permission denied — sheet is not publicly shared');
+    err.status = 403;
+    throw err;
+  }
+
+  const csv = await res.text();
+  const values = parseCsv(csv);
+  return { id: spreadsheetId, title: 'Shared Sheet', sheetTitle: 'Sheet1', values };
+}
+
+/**
+ * Parse CSV text into a 2D array of string cells.
+ * Handles quoted fields, escaped quotes ("") and CRLF/LF line endings.
+ * @param {string} csv
+ * @returns {string[][]}
+ */
+function parseCsv(csv) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    const next = csv[i + 1];
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') { field += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { field += ch; }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field); field = '';
+    } else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+      if (ch === '\r') i++;
+      row.push(field);
+      rows.push(row);
+      row = []; field = '';
+    } else {
+      field += ch;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+
+  return rows;
+}
+
+/**
  * Create a new spreadsheet with initial data.
  * @param {string} token
  * @param {string} title      spreadsheet title

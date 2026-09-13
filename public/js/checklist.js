@@ -578,7 +578,8 @@ export async function show(sheetId, sheetName) {
 
 /**
  * Show a publicly shared sheet in read-only mode (no auth required).
- * Uses api.sheets.getPublicSpreadsheet which reads via API key.
+ * Uses api.sheets.getPublicSpreadsheet, which reads via a server API key
+ * when configured, or falls back to Google's keyless CSV export otherwise.
  * @param {string} sheetId
  */
 export async function showPublic(sheetId) {
