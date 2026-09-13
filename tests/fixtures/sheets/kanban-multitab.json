@@ -1,0 +1,42 @@
+{
+  "id": "sheet-073",
+  "title": "Multi-Tab Project Board",
+  "sheetTitle": "Tasks",
+  "values": [
+    ["Task", "Stage", "Assignee", "Priority"],
+    ["Design login page", "Done", "Alice", "High"],
+    ["Set up CI pipeline", "In Progress", "Bob", "High"],
+    ["Write API docs", "To Do", "Carol", "Medium"]
+  ],
+  "tabs": [
+    {
+      "title": "Tasks",
+      "numericSheetId": 0,
+      "values": [
+        ["Task", "Stage", "Assignee", "Priority"],
+        ["Design login page", "Done", "Alice", "High"],
+        ["Set up CI pipeline", "In Progress", "Bob", "High"],
+        ["Write API docs", "To Do", "Carol", "Medium"]
+      ]
+    },
+    {
+      "title": "Team",
+      "numericSheetId": 1,
+      "values": [
+        ["Name", "Role", "Email"],
+        ["Alice", "Designer", "alice@example.com"],
+        ["Bob", "Engineer", "bob@example.com"],
+        ["Carol", "Writer", "carol@example.com"]
+      ]
+    },
+    {
+      "title": "Config",
+      "numericSheetId": 2,
+      "values": [
+        ["Key", "Value"],
+        ["sprint", "Q3-2026"],
+        ["team", "Platform"]
+      ]
+    }
+  ]
+}

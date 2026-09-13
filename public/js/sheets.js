@@ -108,14 +108,31 @@ async function fetchWithRetry(url, opts) {
 }
 
 /**
- * Get spreadsheet metadata + cell values for the first sheet.
+ * Convert a sheet's rowData grid into a 2D string array.
+ * @param {Array} rawSheet  one element from body.sheets[]
+ * @returns {string[][]}
+ */
+function gridToValues(rawSheet) {
+  const rowData = rawSheet?.data?.[0]?.rowData || [];
+  return rowData.map(row =>
+    (row.values || []).map(cell => {
+      const v = cell?.userEnteredValue;
+      if (!v) return '';
+      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
+    })
+  );
+}
+
+/**
+ * Get spreadsheet metadata + cell values for ALL sheets (tabs).
+ * Returns every tab's data in a single API call — no extra requests.
+ * The top-level sheetTitle/numericSheetId/values reflect the primary tab (index 0).
+ * templates may read the full tabs[] array to access any tab's data.
  * @param {string} token
  * @param {string} spreadsheetId
- * @returns {Promise<Object>}  { properties, sheets, values }
+ * @returns {Promise<Object>}  { id, title, sheetTitle, numericSheetId, values, tabs }
  */
 export async function getSpreadsheet(token, spreadsheetId) {
-  // Single API call: fetch metadata + all cell data for the first sheet.
-  // Uses includeGridData to avoid a separate values request (halves API usage).
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.sheetId,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -124,20 +141,26 @@ export async function getSpreadsheet(token, spreadsheetId) {
   const body = await res.json();
 
   const title = body.properties?.title || 'Untitled';
-  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
-  const numericSheetId = body.sheets?.[0]?.properties?.sheetId ?? 0;
+  const rawSheets = body.sheets || [];
 
-  // Convert gridData into simple 2D string array (same format as values endpoint)
-  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
-  const values = rowData.map(row =>
-    (row.values || []).map(cell => {
-      const v = cell?.userEnteredValue;
-      if (!v) return '';
-      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
-    })
-  );
+  // Map every tab into { title, numericSheetId, values }
+  const tabs = rawSheets.map(s => ({
+    title: s.properties?.title || 'Sheet1',
+    numericSheetId: s.properties?.sheetId ?? 0,
+    values: gridToValues(s),
+  }));
 
-  return { id: spreadsheetId, title, sheetTitle, numericSheetId, values };
+  // Primary tab (index 0) exposed at the top level for all existing consumers
+  const primary = tabs[0] || { title: 'Sheet1', numericSheetId: 0, values: [] };
+
+  return {
+    id: spreadsheetId,
+    title,
+    sheetTitle: primary.title,
+    numericSheetId: primary.numericSheetId,
+    values: primary.values,
+    tabs,
+  };
 }
 
 /**
@@ -279,27 +302,29 @@ export async function deleteRows(token, spreadsheetId, sheetId, startRowIndex, e
   return res.json();
 }
 
+/**
+ * Get only the header + first data row of a spreadsheet (for template detection and directory views).
+ * Uses a single API call fetching minimal fields — much cheaper than getSpreadsheet.
+ * Works for any tab name (does NOT hardcode 'Sheet1').
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+ */
 export async function getSpreadsheetSummary(token, spreadsheetId) {
-  // Fetch just the first two rows via includeGridData with a limited range
+  // Fetch metadata + grid data without a range filter so the first-tab title is
+  // read dynamically from the response (avoids the 'Sheet1!1:2' hardcode bug).
+  // Google returns all rowData for the sheet; we truncate to 2 rows after parsing.
   const res = await fetchWithRetry(
-    `${BASE}/${spreadsheetId}?ranges=Sheet1!1:2&fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
+    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) throw sheetsError('Sheets summary', res);
   const body = await res.json();
 
   const title = body.properties?.title || 'Untitled';
-  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
-
-  // Extract values from the grid data format into a simple 2D array
-  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
-  const values = rowData.map(row =>
-    (row.values || []).map(cell => {
-      const v = cell?.userEnteredValue;
-      if (!v) return '';
-      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
-    })
-  );
+  const firstSheet = body.sheets?.[0];
+  const sheetTitle = firstSheet?.properties?.title || 'Sheet1';
+  const values = gridToValues(firstSheet).slice(0, 2);
 
   return { id: spreadsheetId, title, sheetTitle, values };
 }
@@ -313,24 +338,21 @@ export async function getSpreadsheetSummary(token, spreadsheetId) {
  * @returns {Promise<Object>}  { id, title, sheetTitle, values }
  */
 export async function getPublicSpreadsheet(apiKey, spreadsheetId) {
-  const url = `${BASE}/${encodeURIComponent(spreadsheetId)}?key=${encodeURIComponent(apiKey)}&fields=properties.title,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`;
+  const url = `${BASE}/${encodeURIComponent(spreadsheetId)}?key=${encodeURIComponent(apiKey)}&fields=properties.title,sheets.properties.sheetId,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`;
   const res = await fetchWithRetry(url, {});
   if (!res.ok) throw sheetsError('Public sheet read', res);
   const body = await res.json();
 
   const title = body.properties?.title || 'Untitled';
-  const sheetTitle = body.sheets?.[0]?.properties?.title || 'Sheet1';
+  const rawSheets = body.sheets || [];
+  const tabs = rawSheets.map(s => ({
+    title: s.properties?.title || 'Sheet1',
+    numericSheetId: s.properties?.sheetId ?? 0,
+    values: gridToValues(s),
+  }));
+  const primary = tabs[0] || { title: 'Sheet1', numericSheetId: 0, values: [] };
 
-  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
-  const values = rowData.map(row =>
-    (row.values || []).map(cell => {
-      const v = cell?.userEnteredValue;
-      if (!v) return '';
-      return v.stringValue ?? v.numberValue?.toString() ?? v.boolValue?.toString() ?? '';
-    })
-  );
-
-  return { id: spreadsheetId, title, sheetTitle, values };
+  return { id: spreadsheetId, title, sheetTitle: primary.title, values: primary.values, tabs };
 }
 
 /**
@@ -357,7 +379,7 @@ export async function getPublicSpreadsheetCsv(spreadsheetId) {
 
   const csv = await res.text();
   const values = parseCsv(csv);
-  return { id: spreadsheetId, title: 'Shared Sheet', sheetTitle: 'Sheet1', values };
+  return { id: spreadsheetId, title: 'Shared Sheet', sheetTitle: 'Sheet1', values, tabs: [{ title: 'Sheet1', numericSheetId: 0, values }] };
 }
 
 /**
