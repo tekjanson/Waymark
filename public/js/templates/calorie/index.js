@@ -19,6 +19,7 @@
 
 import {
   el, showToast, registerTemplate, appendSheetRows, getSheetData,
+  updateSheetCell, deleteSheetRow,
   getCalorieProfile, setCalorieProfile, drawLineChart,
 } from '../shared.js';
 import {
@@ -44,6 +45,7 @@ let _collapsed = new Set();
 let _container = null;
 let _cols = null;
 let _sheetTitle = 'Sheet1';
+let _numericSheetId = 0;
 let _allRows = [];
 let _profile = null;
 
@@ -132,9 +134,109 @@ async function reload() {
   try {
     const data = await getSheetData(sheetId);
     _sheetTitle = data.sheetTitle || _sheetTitle;
+    if (data.numericSheetId != null) _numericSheetId = data.numericSheetId;
     const rows = (data.values || []).slice(1);
     renderDashboard(_container, rows, _cols);
   } catch { /* keep current view */ }
+}
+
+/* ---------- Edit / delete a logged entry ---------- */
+
+/**
+ * Update one column of a logged row, then reload.
+ * @param {number} dataIndex  0-based index within data rows (header excluded)
+ * @param {number} col        0-based column index
+ * @param {string} value
+ */
+async function updateEntryCell(dataIndex, col, value) {
+  const sheetId = currentSheetId();
+  if (!sheetId || col < 0) return;
+  try {
+    await updateSheetCell(sheetId, _sheetTitle, dataIndex + 1, col, value); // +1 for header
+  } catch (err) {
+    showToast(err.message || 'Could not update', 'error');
+  }
+}
+
+/**
+ * Delete a logged row entirely, then reload.
+ * @param {number} dataIndex  0-based index within data rows (header excluded)
+ */
+async function deleteEntry(dataIndex) {
+  const sheetId = currentSheetId();
+  if (!sheetId) return;
+  try {
+    await deleteSheetRow(sheetId, _numericSheetId, dataIndex + 1); // +1 for header
+    showToast('Deleted', 'success');
+    await reload();
+  } catch (err) {
+    showToast(err.message || 'Could not delete', 'error');
+  }
+}
+
+/**
+ * Open an edit/delete sheet for a single logged entry.
+ * @param {{row:string[], index:number}} entry
+ * @param {boolean} isExercise
+ */
+function openEntryEditor(entry, isExercise) {
+  const overlay = el('div', { className: 'calorie-modal-overlay' });
+  const modal = el('div', { className: 'calorie-modal' });
+  const close = () => overlay.remove();
+  const name = entry.row[_cols.item] || (isExercise ? 'Activity' : 'Item');
+
+  const header = el('div', { className: 'calorie-modal-header' }, [
+    el('span', { className: 'calorie-modal-title' }, [`Edit \u2014 ${name}`]),
+    el('button', { className: 'calorie-modal-close', type: 'button', 'aria-label': 'Close' }, ['\u00D7']),
+  ]);
+  header.querySelector('.calorie-modal-close').addEventListener('click', close);
+
+  const rows = [];
+  const field = (label, col, attrs = {}) => {
+    const input = el('input', { className: 'calorie-p-input', value: col >= 0 ? (entry.row[col] || '') : '', ...attrs });
+    rows.push({ col, input });
+    return el('div', { className: 'calorie-serving-row' }, [el('label', {}, [label]), input]);
+  };
+
+  const body = el('div', { className: 'calorie-modal-body' });
+  if (!isExercise && _cols.meal >= 0) {
+    const mealSel = el('select', { className: 'calorie-serving-meal' },
+      MEAL_TYPES.map(m => el('option', { value: m }, [m])));
+    mealSel.value = canon(entry.row[_cols.meal] || 'Snacks');
+    rows.push({ col: _cols.meal, input: mealSel });
+    body.append(el('div', { className: 'calorie-serving-row' }, [el('label', {}, ['Meal']), mealSel]));
+  }
+  body.append(field('Name', _cols.item, { type: 'text' }));
+  if (_cols.qty >= 0) body.append(field('Qty', _cols.qty, { type: 'text' }));
+  if (isExercise) {
+    body.append(field('Calories burned', _cols.burned, { type: 'number', min: '0' }));
+  } else {
+    if (_cols.calories >= 0) body.append(field('Calories', _cols.calories, { type: 'number', min: '0' }));
+    if (_cols.protein >= 0) body.append(field('Protein (g)', _cols.protein, { type: 'number', min: '0', step: 'any' }));
+    if (_cols.carbs >= 0) body.append(field('Carbs (g)', _cols.carbs, { type: 'number', min: '0', step: 'any' }));
+    if (_cols.fat >= 0) body.append(field('Fat (g)', _cols.fat, { type: 'number', min: '0', step: 'any' }));
+  }
+
+  const saveBtn = el('button', { className: 'calorie-modal-submit', type: 'button' }, ['Save changes']);
+  saveBtn.addEventListener('click', async () => {
+    for (const { col, input } of rows) {
+      if (col < 0) continue;
+      const newVal = String(input.value);
+      if (newVal !== (entry.row[col] || '')) await updateEntryCell(entry.index, col, newVal);
+    }
+    close();
+    showToast('Updated', 'success');
+    await reload();
+  });
+
+  const delBtn = el('button', { className: 'calorie-entry-delete', type: 'button' }, ['\uD83D\uDDD1 Delete']);
+  delBtn.addEventListener('click', async () => { close(); await deleteEntry(entry.index); });
+
+  body.append(el('div', { className: 'calorie-entry-actions' }, [delBtn]), saveBtn);
+  modal.append(header, body);
+  overlay.append(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
 }
 
 /* Confirm handler shared by voice (food + exercise items). */
@@ -283,14 +385,18 @@ function buildMealSection(mealType, dayRows, totals) {
   if (!items.length) {
     body.append(el('div', { className: 'calorie-empty-row' }, ['Nothing yet — tap +']));
   } else {
-    for (const { row } of items) {
+    for (const entry of items) {
+      const row = entry.row;
       const name = row[_cols.item] || '\u2014';
       const serving = [_cols.qty >= 0 ? row[_cols.qty] : '', _cols.unit >= 0 ? row[_cols.unit] : ''].filter(Boolean).join(' ');
-      body.append(el('div', { className: 'calorie-food-row' }, [
+      const rowEl = el('div', { className: 'calorie-food-row calorie-food-row-tap', role: 'button', tabindex: '0', title: 'Edit or delete' }, [
         el('span', { className: 'calorie-food-name' }, [name]),
         serving ? el('span', { className: 'calorie-food-serving' }, [serving]) : null,
         el('span', { className: 'calorie-food-cal' }, [`${parseNum(row[_cols.calories])}`]),
-      ]));
+        el('span', { className: 'calorie-food-edit', 'aria-hidden': 'true' }, ['\u203A']),
+      ]);
+      rowEl.addEventListener('click', () => openEntryEditor(entry, false));
+      body.append(rowEl);
     }
   }
   section.append(body);
@@ -308,13 +414,17 @@ function buildExerciseSection(dayRows, totals) {
   if (!items.length) {
     body.append(el('div', { className: 'calorie-empty-row' }, ['No workouts logged']));
   } else {
-    for (const { row } of items) {
+    for (const entry of items) {
+      const row = entry.row;
       const name = row[_cols.item] || 'Activity';
       const dur = _cols.qty >= 0 && row[_cols.qty] ? ` \u00B7 ${row[_cols.qty]} min` : '';
-      body.append(el('div', { className: 'calorie-food-row' }, [
+      const rowEl = el('div', { className: 'calorie-food-row calorie-food-row-tap', role: 'button', tabindex: '0', title: 'Edit or delete' }, [
         el('span', { className: 'calorie-food-name' }, [name + dur]),
         el('span', { className: 'calorie-food-cal calorie-burned' }, [`+${parseNum(row[_cols.burned])}`]),
-      ]));
+        el('span', { className: 'calorie-food-edit', 'aria-hidden': 'true' }, ['\u203A']),
+      ]);
+      rowEl.addEventListener('click', () => openEntryEditor(entry, true));
+      body.append(rowEl);
     }
   }
   const addBtn = el('button', { className: 'calorie-action calorie-action-exercise', type: 'button' }, ['+ Log exercise']);
@@ -370,9 +480,11 @@ function renderDayView(container, dateMap) {
   ]);
   container.append(quick);
 
-  /* Meals */
-  for (const mealType of MEAL_TYPES) container.append(buildMealSection(mealType, dayEntries, totals));
-  container.append(buildExerciseSection(dayEntries, totals));
+  /* Meals — two columns on wide screens via .calorie-meals-grid */
+  const mealsGrid = el('div', { className: 'calorie-meals-grid' });
+  for (const mealType of MEAL_TYPES) mealsGrid.append(buildMealSection(mealType, dayEntries, totals));
+  mealsGrid.append(buildExerciseSection(dayEntries, totals));
+  container.append(mealsGrid);
 }
 
 function quickBtn(icon, label, handler) {
@@ -406,9 +518,8 @@ function renderTrendView(container, dateMap) {
   ]);
   container.append(summary);
 
-  /* Trend chart: calories/day + goal line */
+  /* Trend chart + stats — side by side on desktop via .calorie-trend-grid */
   const chartWrap = el('div', { className: 'calorie-chart' });
-  container.append(chartWrap);
   drawLineChart(chartWrap, {
     labels: series.labels,
     series: [
@@ -417,18 +528,19 @@ function renderTrendView(container, dateMap) {
     ],
   }, { height: 220, title: `${_timeframe === 'week' ? '7' : '30'}-day calories` });
 
+  const statsBox = el('div', { className: 'calorie-avg-stats' }, [
+    stat('Logged days', `${avg.loggedDays}/${days}`),
+    stat('Avg burned', `${avg.burned} cal`),
+    stat('Best streak', `${adh.streak} d`),
+    stat('On target', `${adh.onTrackDays}/${adh.loggedDays || 0}`),
+  ]);
+  container.append(el('div', { className: 'calorie-trend-grid' }, [chartWrap, statsBox]));
+
   /* Average macros */
   container.append(el('div', { className: 'calorie-macrorings' }, [
     buildMacroRing('Protein', avg.protein, macros.protein, '#6366f1'),
     buildMacroRing('Carbs', avg.carbs, macros.carbs, '#f59e0b'),
     buildMacroRing('Fat', avg.fat, macros.fat, '#ec4899'),
-  ]));
-
-  container.append(el('div', { className: 'calorie-avg-stats' }, [
-    stat('Logged days', `${avg.loggedDays}/${days}`),
-    stat('Avg burned', `${avg.burned} cal`),
-    stat('Best streak', `${adh.streak} d`),
-    stat('On target', `${adh.onTrackDays}/${adh.loggedDays || 0}`),
   ]));
 }
 
@@ -546,9 +658,16 @@ const definition = {
     _activeDate = null;
     _timeframe = 'day';
     _collapsed = new Set();
+    _numericSheetId = 0;
     _profile = getCalorieProfile(currentSheetId());
     renderDashboard(container, rows, cols);
     attachSwipe(container);
+    // Fetch the numeric tab id in the background so row deletion works even
+    // before the first append/edit reload (mock mode defaults to 0).
+    const sid = currentSheetId();
+    if (sid) {
+      getSheetData(sid).then(d => { if (d && d.numericSheetId != null) _numericSheetId = d.numericSheetId; }).catch(() => {});
+    }
   },
 };
 

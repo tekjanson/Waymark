@@ -179,3 +179,52 @@ test('profile modal computes a recommended calorie goal', async ({ page }) => {
   await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
   await page.waitForSelector('.calorie-modal-overlay', { state: 'detached', timeout: 5_000 });
 });
+
+test('tapping a logged food opens the editor and saves an update', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  const bf = meal(page, 'Breakfast');
+  await bf.locator('.calorie-food-row-tap').first().click();
+  await page.waitForSelector('.calorie-entry-delete', { timeout: 5_000 });
+  await page.fill('.calorie-serving-row:has(label:text-is("Calories")) input', '999');
+  await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
+
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'cell-update' && String(r.value) === '999');
+  }, { timeout: 5_000 }).toBe(true);
+});
+
+test('deleting a logged entry removes its row', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  const bf = meal(page, 'Breakfast');
+  const before = await bf.locator('.calorie-food-row-tap').count();
+
+  await bf.locator('.calorie-food-row-tap').first().click();
+  await page.waitForSelector('.calorie-entry-delete', { timeout: 5_000 });
+  await page.locator('.calorie-entry-delete').click();
+
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'row-delete');
+  }, { timeout: 5_000 }).toBe(true);
+  await expect.poll(async () => bf.locator('.calorie-food-row-tap').count())
+    .toBeLessThan(before);
+});
+
+test('meals render in a two-column grid on desktop widths', async ({ page }) => {
+  await setupApp(page);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-meals-grid', { timeout: 5_000 });
+  const cols = await page.evaluate(() => {
+    const g = document.querySelector('.calorie-meals-grid');
+    return getComputedStyle(g).gridTemplateColumns.split(' ').length;
+  });
+  expect(cols).toBe(2);
+});

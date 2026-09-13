@@ -1450,6 +1450,28 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
 }
 
 /**
+ * Update a single cell in a Google Sheet.
+ * @param {string} sheetId
+ * @param {string} sheetTitle  e.g. 'Sheet1'
+ * @param {number} row         0-based row index (includes header)
+ * @param {number} col         0-based column index
+ * @param {string} value
+ */
+export async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
+  return api.sheets.updateCell(sheetId, sheetTitle, row, col, value);
+}
+
+/**
+ * Delete a single row from a Google Sheet.
+ * @param {string} sheetId
+ * @param {number} numericSheetId  numeric Google Sheets tab ID (0 in mock mode)
+ * @param {number} rowIndex        0-based row index including header
+ */
+export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
+  return api.sheets.deleteRows(sheetId, numericSheetId || 0, rowIndex, rowIndex + 1);
+}
+
+/**
  * Upload an image File to Google Drive and return the sharing URL + permission status.
  * @param {File}   file              Browser File object from <input type="file">
  * @param {string} [parentFolderId]  Optional Drive folder ID

@@ -438,3 +438,57 @@
   .calorie-ring-svg { width: 160px; height: 160px; }
   .calorie-quick-lbl { font-size: 0.68rem; }
 }
+
+/* ---------- Tappable log rows + entry editor ---------- */
+
+.calorie-food-row-tap { cursor: pointer; border-radius: var(--radius-sm); transition: background var(--transition); }
+.calorie-food-row-tap:hover { background: var(--color-bg); }
+.calorie-food-edit { color: var(--color-text-muted); font-size: 1.2rem; line-height: 1; margin-left: 4px; }
+.calorie-entry-actions { display: flex; margin-top: 8px; }
+.calorie-entry-delete {
+  flex: 1; min-height: 44px; padding: 10px;
+  border: 1px solid var(--color-error); border-radius: var(--radius);
+  background: none; color: var(--color-error);
+  font-weight: 600; cursor: pointer;
+}
+.calorie-entry-delete:hover { background: rgba(220, 38, 38, 0.08); }
+
+/* ---------- Desktop / tablet layout ---------- */
+
+@media (min-width: 720px) {
+  .calorie-root { max-width: 960px; }
+
+  /* Two-column: hero + macros on the left, meals on the right feel.
+     Keep it simple + robust: wider hero, meals in a 2-col grid. */
+  .calorie-hero { padding: 24px 28px; }
+  .calorie-ring-svg { width: 168px; height: 168px; }
+
+  /* Meals flow into two columns on wide screens for less scrolling. */
+  .calorie-meals-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .calorie-meals-grid .calorie-meal { margin-bottom: 0; }
+
+  /* Trend view: chart + stats side by side. */
+  .calorie-trend-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .calorie-trend-grid .calorie-chart { margin-bottom: 0; }
+
+  .calorie-quickbar { max-width: 520px; }
+  .calorie-macrorings { max-width: 640px; }
+
+  /* Modals become centered cards (not bottom sheets) on desktop. */
+  .calorie-modal, .calorie-actionsheet { max-width: 440px; }
+}
+
+@media (min-width: 1024px) {
+  .calorie-root { max-width: 1080px; }
+  .calorie-meals-grid { grid-template-columns: 1fr 1fr; }
+}
