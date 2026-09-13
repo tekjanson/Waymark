@@ -1472,6 +1472,31 @@ export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
 }
 
 /**
+ * Create-or-replace a named tab's full contents within a workbook.
+ * Used by templates to persist their own metadata as a dedicated tab
+ * (e.g. the calorie tracker's "Profile" tab) — the Waymark "everything
+ * persists" primitive built on multi-tab support.
+ * @param {string}     sheetId
+ * @param {string}     tabTitle
+ * @param {string[][]} rows       2D array including header row
+ */
+export async function writeSheetTab(sheetId, tabTitle, rows) {
+  return api.sheets.writeTab(sheetId, tabTitle, rows);
+}
+
+/**
+ * Find a tab by title (case-insensitive) within a workbook's tabs[] array.
+ * @param {Array<{title:string, values:string[][]}>} tabs
+ * @param {string} tabTitle
+ * @returns {{title:string, values:string[][]}|null}
+ */
+export function readSheetTab(tabs, tabTitle) {
+  if (!Array.isArray(tabs)) return null;
+  const want = (tabTitle || '').toLowerCase();
+  return tabs.find(t => (t.title || '').toLowerCase() === want) || null;
+}
+
+/**
  * Upload an image File to Google Drive and return the sharing URL + permission status.
  * @param {File}   file              Browser File object from <input type="file">
  * @param {string} [parentFolderId]  Optional Drive folder ID

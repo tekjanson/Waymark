@@ -900,6 +900,44 @@ export const api = {
     },
 
     /**
+     * Create-or-replace a named tab's full contents within a workbook.
+     * Ensures the tab exists (creates it if missing) then writes rows.
+     * The durable persistence primitive for template-managed metadata tabs
+     * (e.g. the calorie tracker's "Profile" tab).
+     * @param {string}     spreadsheetId
+     * @param {string}     tabTitle
+     * @param {string[][]} rows          2D array including header row
+     */
+    async writeTab(spreadsheetId, tabTitle, rows) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        const data = fix.sheets[spreadsheetId];
+        if (data) {
+          if (!Array.isArray(data.tabs)) {
+            data.tabs = [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
+          }
+          const existing = data.tabs.find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
+          if (existing) {
+            existing.values = rows;
+          } else {
+            const nextId = Math.max(0, ...data.tabs.map(t => t.numericSheetId || 0)) + 1;
+            data.tabs.push({ title: tabTitle, numericSheetId: nextId, values: rows });
+          }
+        }
+        const record = {
+          type: 'tab-write',
+          spreadsheetId, tabTitle, rows,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await requireToken();
+      return sheetsApi.writeTabData(token, spreadsheetId, tabTitle, rows);
+    },
+
+    /**
      * Delete rows from a spreadsheet.
      * @param {string} spreadsheetId
      * @param {number} sheetId      numeric Google Sheets tab ID

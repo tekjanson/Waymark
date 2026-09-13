@@ -257,3 +257,133 @@ test('voice logging supports exercise-only utterances from the exercise section'
   // Burned calories are written (exercise rows), not food calories.
   expect(flat).toContain('400');
 });
+
+/* ---------- Hero carousel ---------- */
+
+test('hero is a swipeable carousel with four pages and dots', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero-carousel', { timeout: 5_000 });
+  await expect(page.locator('.calorie-hero-page')).toHaveCount(4);
+  await expect(page.locator('.calorie-hero-dot')).toHaveCount(4);
+  // Ring, garden, macros and trend all live inside the carousel pages.
+  await expect(page.locator('.calorie-hero-page .calorie-ring-svg')).toHaveCount(1);
+  await expect(page.locator('.calorie-hero-page .calorie-mascot')).toHaveCount(1);
+  await expect(page.locator('.calorie-hero-page .calorie-macroring')).toHaveCount(3);
+  await expect(page.locator('.calorie-hero-trend svg')).toHaveCount(1);
+});
+
+test('clicking a hero dot scrolls the carousel to that page', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero-carousel', { timeout: 5_000 });
+  const track = page.locator('.calorie-hero-track');
+  const startLeft = await track.evaluate(el => el.scrollLeft);
+  await page.locator('.calorie-hero-dot').nth(2).click();
+  await expect.poll(async () => track.evaluate(el => el.scrollLeft), { timeout: 5_000 })
+    .toBeGreaterThan(startLeft);
+});
+
+/* ---------- Quantity scaling ---------- */
+
+test('editing quantity scales calories and macros proportionally', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  // First Breakfast item is Oatmeal: qty 150 → 107 cal, 3.8 protein.
+  const bf = meal(page, 'Breakfast');
+  await bf.locator('.calorie-food-row-tap').first().click();
+  await page.waitForSelector('.calorie-entry-delete', { timeout: 5_000 });
+
+  const calInput = page.locator('.calorie-serving-row:has(label:text-is("Calories")) input');
+  const protInput = page.locator('.calorie-serving-row:has(label:text-is("Protein (g)")) input');
+  expect(await calInput.inputValue()).toBe('107');
+
+  // Double the quantity → calories and macros double.
+  await page.fill('.calorie-serving-row:has(label:text-is("Qty")) input', '300');
+  await expect.poll(async () => calInput.inputValue(), { timeout: 5_000 }).toBe('214');
+  expect(await protInput.inputValue()).toBe('7.6');
+
+  // Save writes the scaled values back to the sheet.
+  await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'cell-update' && String(r.value) === '214');
+  }, { timeout: 5_000 }).toBe(true);
+});
+
+test('a hand-edited macro is pinned and not overwritten by quantity scaling', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  const bf = meal(page, 'Breakfast');
+  await bf.locator('.calorie-food-row-tap').first().click();
+  await page.waitForSelector('.calorie-entry-delete', { timeout: 5_000 });
+
+  const calInput = page.locator('.calorie-serving-row:has(label:text-is("Calories")) input');
+  // Manually pin calories, then change quantity.
+  await calInput.fill('500');
+  await page.fill('.calorie-serving-row:has(label:text-is("Qty")) input', '300');
+  // Pinned calories stay put; protein still scales.
+  expect(await calInput.inputValue()).toBe('500');
+  const protInput = page.locator('.calorie-serving-row:has(label:text-is("Protein (g)")) input');
+  expect(await protInput.inputValue()).toBe('7.6');
+});
+
+/* ---------- Profile persistence to a sheet tab ---------- */
+
+test('saving the profile persists it to a Profile tab in the workbook', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-root', { timeout: 5_000 });
+
+  await page.locator('.calorie-tool-btn[aria-label="Profile & goal"]').click();
+  await page.waitForSelector('.calorie-p-input', { timeout: 5_000 });
+  await page.fill('.calorie-serving-row:has(label:text-is("Age")) input', '30');
+  await page.fill('.calorie-serving-row:has(label:text-is("Height")) input', '180');
+  await page.fill('.calorie-serving-row:has(label:text-is("Weight")) input', '80');
+  await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
+  await page.waitForSelector('.calorie-modal-overlay', { state: 'detached', timeout: 5_000 });
+
+  // The profile is written to a dedicated "Profile" tab (durable, cross-device).
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'tab-write' && r.tabTitle === 'Profile');
+  }, { timeout: 5_000 }).toBe(true);
+
+  // The persisted rows are human-readable Setting/Value pairs.
+  const records = await getCreatedRecords(page);
+  const write = records.reverse().find(r => r.type === 'tab-write' && r.tabTitle === 'Profile');
+  const flat = JSON.stringify(write.rows);
+  expect(flat).toContain('heightCm');
+  expect(flat).toContain('180');
+  expect(flat).toContain('weightKg');
+});
+
+test('a persisted Profile tab is loaded back on next open', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-root', { timeout: 5_000 });
+
+  // Save a profile.
+  await page.locator('.calorie-tool-btn[aria-label="Profile & goal"]').click();
+  await page.waitForSelector('.calorie-p-input', { timeout: 5_000 });
+  await page.fill('.calorie-serving-row:has(label:text-is("Age")) input', '28');
+  await page.fill('.calorie-serving-row:has(label:text-is("Height")) input', '175');
+  await page.fill('.calorie-serving-row:has(label:text-is("Weight")) input', '72');
+  await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
+  await page.waitForSelector('.calorie-modal-overlay', { state: 'detached', timeout: 5_000 });
+
+  // The fixture cache now has a Profile tab — getSpreadsheet should return it.
+  const tab = await page.evaluate(async () => {
+    const res = await fetch('/__fixtures/sheets/calorie-default.json');
+    // The mock mutates the in-memory fixture, so re-read via the app's api.
+    const mod = await import('/js/api-client.js');
+    const data = await mod.api.sheets.getSpreadsheet('sheet-072');
+    return (data.tabs || []).find(t => t.title === 'Profile') || null;
+  });
+  expect(tab).not.toBeNull();
+  expect(JSON.stringify(tab.values)).toContain('175');
+});

@@ -558,3 +558,50 @@ export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
   if (!res.ok) throw sheetsError('Sheets replace', res);
   return res.json();
 }
+
+/**
+ * Create a new tab (sheet) within a spreadsheet.
+ * Returns the new tab's numeric sheetId. If a tab with the same title already
+ * exists, Google returns 400 — the caller may swallow this (tab already present).
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @param {string} tabTitle
+ * @returns {Promise<number|null>}  numeric sheetId of the created tab, or null
+ */
+export async function addSheetTab(token, spreadsheetId, tabTitle) {
+  const body = { requests: [{ addSheet: { properties: { title: tabTitle } } }] };
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw sheetsError('Sheet tab add', res);
+  const out = await res.json();
+  return out.replies?.[0]?.addSheet?.properties?.sheetId ?? null;
+}
+
+/**
+ * Write (create-or-replace) a named tab's full contents.
+ * Ensures the tab exists (creates it if missing), clears it, then writes rows.
+ * This is the durable persistence primitive for template-managed metadata tabs
+ * (e.g. the calorie tracker's "Profile" tab).
+ * @param {string}     token
+ * @param {string}     spreadsheetId
+ * @param {string}     tabTitle
+ * @param {string[][]} rows          2D array including header row
+ */
+export async function writeTabData(token, spreadsheetId, tabTitle, rows) {
+  // Ensure the tab exists. Swallow the "already exists" 400 so writes are idempotent.
+  try {
+    await addSheetTab(token, spreadsheetId, tabTitle);
+  } catch (err) {
+    if (err.status !== 400) throw err;   // 400 = tab already exists → fine
+  }
+  return replaceSheetData(token, spreadsheetId, tabTitle, rows);
+}

@@ -19,11 +19,11 @@
 
 import {
   el, showToast, registerTemplate, appendSheetRows, getSheetData,
-  updateSheetCell, deleteSheetRow,
+  updateSheetCell, deleteSheetRow, writeSheetTab, readSheetTab,
   getCalorieProfile, setCalorieProfile, drawLineChart,
 } from '../shared.js';
 import {
-  MEAL_TYPES, DEFAULT_TARGET, parseNum,
+  MEAL_TYPES, DEFAULT_TARGET, parseNum, round1,
   computeDayTotals, computeNet, resolveTarget, groupByDate, latestDate,
   loadFoodDatabase, customFoodsFromRows,
   buildSeries, averageSeries, adherenceScore, growthStage,
@@ -48,6 +48,75 @@ let _sheetTitle = 'Sheet1';
 let _numericSheetId = 0;
 let _allRows = [];
 let _profile = null;
+let _tabs = [];             // all workbook tabs (for the Profile tab, etc.)
+let _heroPage = 0;          // remembered hero carousel page across reloads
+
+const PROFILE_TAB = 'Profile';
+const PROFILE_KEYS = ['sex', 'age', 'heightCm', 'weightKg', 'activityLevel', 'goalType', 'rateKgPerWeek', 'units', 'bestStreak'];
+
+/* ---------- Profile tab (durable persistence) ---------- */
+
+/** Serialize a profile object into human-readable Setting/Value rows. */
+function profileToRows(profile) {
+  const rows = [['Setting', 'Value']];
+  for (const key of PROFILE_KEYS) {
+    if (profile[key] != null && profile[key] !== '') rows.push([key, String(profile[key])]);
+  }
+  return rows;
+}
+
+/** Parse Setting/Value rows from a Profile tab back into a typed profile. */
+function rowsToProfile(values) {
+  if (!Array.isArray(values) || values.length < 2) return null;
+  const numeric = new Set(['age', 'heightCm', 'weightKg', 'rateKgPerWeek', 'bestStreak']);
+  const prof = {};
+  for (let i = 1; i < values.length; i++) {
+    const [key, val] = values[i];
+    if (!key) continue;
+    prof[key] = numeric.has(key) ? Number(val) || 0 : val;
+  }
+  return Object.keys(prof).length ? prof : null;
+}
+
+/** Read the persisted profile from the workbook's Profile tab, or null. */
+function readProfileFromTabs() {
+  const tab = readSheetTab(_tabs, PROFILE_TAB);
+  return tab ? rowsToProfile(tab.values) : null;
+}
+
+/** Persist the profile to the Profile tab (durable) + localStorage (fast cache). */
+async function persistProfile(profile) {
+  const sid = currentSheetId();
+  if (sid) setCalorieProfile(sid, profile);   // fast local cache
+  if (!sid) return;
+  try {
+    await writeSheetTab(sid, PROFILE_TAB, profileToRows(profile));
+    // Keep the in-memory tab snapshot fresh so a reload reflects the write.
+    const existing = readSheetTab(_tabs, PROFILE_TAB);
+    if (existing) existing.values = profileToRows(profile);
+    else _tabs = [..._tabs, { title: PROFILE_TAB, numericSheetId: -1, values: profileToRows(profile) }];
+  } catch (err) {
+    showToast(err.message || 'Could not save profile to sheet', 'error');
+  }
+}
+
+/** The best streak recorded so far (from the persisted profile). */
+function bestStreak() {
+  return (_profile && Number(_profile.bestStreak)) || 0;
+}
+
+/**
+ * Record a new best streak to the Profile tab when the garden grows past its
+ * previous record. Only writes when a profile already exists (user opted in)
+ * and the streak strictly improved — so it never spams the backend.
+ * @param {number} streak
+ */
+function persistBestStreak(streak) {
+  if (!_profile) return;
+  if (!(streak > bestStreak())) return;
+  _profile = { ..._profile, bestStreak: streak };
+  persistProfile(_profile);
+}
 
 function currentSheetId() {
   const m = (window.location.hash || '').match(/#\/(?:sheet|public)\/([^/?#]+)/);
@@ -135,6 +204,7 @@ async function reload() {
     const data = await getSheetData(sheetId);
     _sheetTitle = data.sheetTitle || _sheetTitle;
     if (data.numericSheetId != null) _numericSheetId = data.numericSheetId;
+    if (Array.isArray(data.tabs)) _tabs = data.tabs;
     const rows = (data.values || []).slice(1);
     renderDashboard(_container, rows, _cols);
   } catch { /* keep current view */ }
@@ -192,9 +262,11 @@ function openEntryEditor(entry, isExercise) {
   header.querySelector('.calorie-modal-close').addEventListener('click', close);
 
   const rows = [];
+  const inputByCol = new Map();
   const field = (label, col, attrs = {}) => {
     const input = el('input', { className: 'calorie-p-input', value: col >= 0 ? (entry.row[col] || '') : '', ...attrs });
     rows.push({ col, input });
+    if (col >= 0) inputByCol.set(col, input);
     return el('div', { className: 'calorie-serving-row' }, [el('label', {}, [label]), input]);
   };
 
@@ -207,14 +279,49 @@ function openEntryEditor(entry, isExercise) {
     body.append(el('div', { className: 'calorie-serving-row' }, [el('label', {}, ['Meal']), mealSel]));
   }
   body.append(field('Name', _cols.item, { type: 'text' }));
-  if (_cols.qty >= 0) body.append(field('Qty', _cols.qty, { type: 'text' }));
+  if (_cols.qty >= 0) body.append(field('Qty', _cols.qty, { type: 'number', min: '0', step: 'any' }));
   if (isExercise) {
     body.append(field('Calories burned', _cols.burned, { type: 'number', min: '0' }));
   } else {
-    if (_cols.calories >= 0) body.append(field('Calories', _cols.calories, { type: 'number', min: '0' }));
+    if (_cols.calories >= 0) body.append(field('Calories', _cols.calories, { type: 'number', min: '0', step: 'any' }));
     if (_cols.protein >= 0) body.append(field('Protein (g)', _cols.protein, { type: 'number', min: '0', step: 'any' }));
     if (_cols.carbs >= 0) body.append(field('Carbs (g)', _cols.carbs, { type: 'number', min: '0', step: 'any' }));
     if (_cols.fat >= 0) body.append(field('Fat (g)', _cols.fat, { type: 'number', min: '0', step: 'any' }));
+  }
+
+  /* ---- Quantity → macro auto-scaling (for food entries) ---- */
+  // Editing Qty rescales calories + macros proportionally from the item's
+  // per-unit base, so bumping a serving from 1→2 doubles everything. A macro
+  // the user types into by hand is "pinned" and no longer auto-scaled.
+  if (!isExercise && _cols.qty >= 0) {
+    const qtyInput = inputByCol.get(_cols.qty);
+    const baseQty = parseNum(entry.row[_cols.qty]) || 1;
+    const macroCols = [
+      { col: _cols.calories, round: (n) => String(Math.round(n)) },
+      { col: _cols.protein, round: (n) => String(round1(n)) },
+      { col: _cols.carbs, round: (n) => String(round1(n)) },
+      { col: _cols.fat, round: (n) => String(round1(n)) },
+    ].filter(m => m.col >= 0);
+    // Per-unit base for each macro, captured from the original logged values.
+    for (const m of macroCols) {
+      m.input = inputByCol.get(m.col);
+      m.perUnit = (parseNum(entry.row[m.col]) || 0) / baseQty;
+      m.pinned = false;
+      // A manual edit pins the field so scaling won't clobber it.
+      m.input.addEventListener('input', () => { m.pinned = true; });
+    }
+    if (qtyInput) {
+      const scaleHint = el('div', { className: 'calorie-scale-hint' }, ['Calories & macros scale with quantity']);
+      qtyInput.insertAdjacentElement('afterend', scaleHint);
+      qtyInput.addEventListener('input', () => {
+        const newQty = parseNum(qtyInput.value);
+        if (newQty <= 0) return;
+        for (const m of macroCols) {
+          if (m.pinned) continue;
+          m.input.value = m.round(m.perUnit * newQty);
+        }
+      });
+    }
   }
 
   const saveBtn = el('button', { className: 'calorie-modal-submit', type: 'button' }, ['Save changes']);
@@ -435,6 +542,73 @@ function buildExerciseSection(dayRows, totals) {
   return el('div', { className: 'calorie-meal calorie-exercise' }, [header, body]);
 }
 
+/* ---------- Hero carousel ---------- */
+
+/**
+ * Build a horizontally swipeable hero carousel from a list of pages.
+ * Uses native CSS scroll-snap so touch/trackpad swipes feel native, with a
+ * synced dot indicator. Remembers the active page across reloads via _heroPage.
+ * @param {{key:string, node:HTMLElement}[]} pages
+ * @returns {HTMLElement}
+ */
+function buildHeroCarousel(pages) {
+  const track = el('div', { className: 'calorie-hero-track' },
+    pages.map(p => el('div', { className: 'calorie-hero-page', 'data-page': p.key }, [p.node])));
+
+  const dots = el('div', { className: 'calorie-hero-dots' },
+    pages.map((p, i) => {
+      const dot = el('button', {
+        className: `calorie-hero-dot ${i === _heroPage ? 'active' : ''}`,
+        type: 'button', 'aria-label': `Show ${p.key}`,
+      });
+      dot.addEventListener('click', () => {
+        const page = track.children[i];
+        if (page) track.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
+      });
+      return dot;
+    }));
+
+  // Sync dots + remember the page as the user scrolls/swipes.
+  let raf = 0;
+  track.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const idx = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+      _heroPage = Math.max(0, Math.min(pages.length - 1, idx));
+      [...dots.children].forEach((d, i) => d.classList.toggle('active', i === _heroPage));
+    });
+  }, { passive: true });
+
+  // Carousel owns horizontal swipes — stop them bubbling to the day-nav swipe.
+  track.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  track.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
+
+  const carousel = el('div', { className: 'calorie-hero calorie-hero-carousel' }, [track, dots]);
+
+  // Restore the remembered page after the element is laid out.
+  requestAnimationFrame(() => {
+    const page = track.children[_heroPage];
+    if (page) track.scrollLeft = page.offsetLeft;
+  });
+
+  return carousel;
+}
+
+/** Compact 7-day calorie sparkline for the hero carousel. */
+function buildTrendPage(dateMap, target) {
+  const series = buildSeries(dateMap, _cols, _activeDate || today(), 7);
+  const chart = el('div', { className: 'calorie-hero-spark' });
+  drawLineChart(chart, {
+    labels: series.labels,
+    series: [
+      { name: 'Calories', values: series.food, color: '#ef4444' },
+      { name: 'Goal', values: series.food.map(() => target), color: '#94a3b8' },
+    ],
+  }, { height: 150, title: '7-day calories' });
+  return el('div', { className: 'calorie-hero-trend' }, [chart]);
+}
+
 function renderDayView(container, dateMap) {
   const dayEntries = dateMap.get(_activeDate) || [];
   const rowsOnly = dayEntries.map(e => e.row);
@@ -442,11 +616,10 @@ function renderDayView(container, dateMap) {
   const { target, macros } = resolveGoals(rowsOnly);
   const net = computeNet(target, totals.food, totals.burned);
 
-  /* Hero: ring + mascot */
+  /* Page 1 — budget ring + equation */
   const remainClass = net.remaining < 0 ? 'calorie-ring-over' : '';
   const ring = buildRing(net.food, target + net.burned,
     Math.abs(net.remaining), net.remaining < 0 ? 'over' : 'left', remainClass);
-
   const eqLine = el('div', { className: 'calorie-eqline' }, [
     el('span', {}, [`${target} goal`]),
     el('span', { className: 'calorie-eq-op' }, ['\u2212']),
@@ -454,26 +627,31 @@ function renderDayView(container, dateMap) {
     el('span', { className: 'calorie-eq-op' }, ['+']),
     el('span', {}, [`${net.burned} exercise`]),
   ]);
+  const ringPage = el('div', { className: 'calorie-hero-ring' }, [ring, eqLine]);
 
-  /* Mascot from trailing adherence */
+  /* Page 2 — living garden (persists: derived from logged rows + saved goal) */
   const series30 = buildSeries(dateMap, _cols, _activeDate, 30);
   const adh = adherenceScore(series30, target);
-  const mascot = buildMascot(growthStage(adh), adh);
+  persistBestStreak(adh.streak);
+  const mascot = buildMascot(growthStage(adh), { ...adh, bestStreak: bestStreak() });
 
-  const hero = el('div', { className: 'calorie-hero' }, [
-    el('div', { className: 'calorie-hero-ring' }, [ring, eqLine]),
-    mascot,
-  ]);
-
-  /* Macro rings */
+  /* Page 3 — macro rings */
   const macrorings = el('div', { className: 'calorie-macrorings' }, [
     buildMacroRing('Protein', totals.protein, macros.protein, '#6366f1'),
     buildMacroRing('Carbs', totals.carbs, macros.carbs, '#f59e0b'),
     buildMacroRing('Fat', totals.fat, macros.fat, '#ec4899'),
   ]);
 
-  /* Hero + macros form the dashboard header (2-col on desktop). */
-  container.append(el('div', { className: 'calorie-topgrid' }, [hero, macrorings]));
+  /* Page 4 — 7-day trend sparkline */
+  const trend = buildTrendPage(dateMap, target);
+
+  const carousel = buildHeroCarousel([
+    { key: 'Budget', node: ringPage },
+    { key: 'Garden', node: mascot },
+    { key: 'Macros', node: macrorings },
+    { key: 'Trend', node: trend },
+  ]);
+  container.append(carousel);
 
   /* Global quick actions (compact) */
   const quick = el('div', { className: 'calorie-quickbar' }, [
@@ -560,12 +738,12 @@ function stat(label, value) {
 function openProfile() {
   openProfileModal({
     profile: _profile,
-    onSave: (prof) => {
-      _profile = prof;
-      const sid = currentSheetId();
-      if (sid) setCalorieProfile(sid, prof);
-      const g = goalFromProfile(prof);
-      showToast(g ? `Goal set: ${g.calories} cal/day` : 'Profile saved', 'success');
+    onSave: async (prof) => {
+      // Preserve any existing bestStreak when the user re-saves their profile.
+      _profile = { ...(_profile || {}), ...prof };
+      const g = goalFromProfile(_profile);
+      showToast(g ? `Goal set: ${g.calories} cal/day — saved to your sheet` : 'Profile saved', 'success');
+      await persistProfile(_profile);
       reload();
     },
   });
@@ -663,12 +841,20 @@ const definition = {
     _timeframe = 'day';
     _collapsed = new Set();
     _numericSheetId = 0;
-    _profile = getCalorieProfile(currentSheetId());
+    _heroPage = 0;
+    // Workbook tabs are injected by checklist.js (renderWithTemplate → _tabs).
+    _tabs = Array.isArray(definition._tabs) ? definition._tabs : [];
+    // Profile persists in the sheet's "Profile" tab (durable, cross-device).
+    // Fall back to the localStorage cache for sheets saved before this feature.
+    const sid = currentSheetId();
+    _profile = readProfileFromTabs() || getCalorieProfile(sid);
+    // If the profile came from the sheet, refresh the local cache so offline
+    // reads stay consistent.
+    if (_profile && sid) setCalorieProfile(sid, _profile);
     renderDashboard(container, rows, cols);
     attachSwipe(container);
     // Fetch the numeric tab id in the background so row deletion works even
     // before the first append/edit reload (mock mode defaults to 0).
-    const sid = currentSheetId();
     if (sid) {
       getSheetData(sid).then(d => { if (d && d.numericSheetId != null) _numericSheetId = d.numericSheetId; }).catch(() => {});
     }
