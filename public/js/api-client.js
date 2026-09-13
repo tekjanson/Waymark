@@ -143,6 +143,7 @@ async function loadMockSheet(sheetId) {
     'sheet-068': 'invoice-sample',
     'sheet-071': 'rfi',
     'sheet-072': 'calorie-default',
+    'sheet-073': 'kanban-multitab',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;
@@ -735,8 +736,10 @@ export const api = {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
-        // Fixtures may not have numericSheetId — default to 0
-        return { numericSheetId: 0, ...data };
+        // Normalise fixture: ensure tabs[] is present for multi-tab fixtures
+        // and synthesised from top-level values for legacy single-tab fixtures.
+        const tabs = data.tabs || [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
+        return { numericSheetId: 0, ...data, tabs };
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
@@ -748,14 +751,15 @@ export const api = {
      * Read a publicly shared spreadsheet without OAuth.
      * Uses an API key for sheets shared as "Anyone with the link can view".
      * @param {string} spreadsheetId
-     * @returns {Promise<Object>}  { id, title, sheetTitle, values }
+     * @returns {Promise<Object>}  { id, title, sheetTitle, values, tabs }
      */
     async getPublicSpreadsheet(spreadsheetId) {
       if (isLocal) {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
-        return data;
+        const tabs = data.tabs || [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
+        return { ...data, tabs };
       }
       const apiKey = window.__WAYMARK_API_KEY;
       // No server API key configured → use the keyless gviz CSV export,
@@ -776,7 +780,8 @@ export const api = {
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
         // Return only first two rows to mirror production behavior
-        return { ...data, values: (data.values || []).slice(0, 2) };
+        const values = (data.values || []).slice(0, 2);
+        return { ...data, values };
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
@@ -803,6 +808,7 @@ export const api = {
           title,
           sheetTitle: 'Sheet1',
           values: rows,
+          tabs: [{ title: 'Sheet1', numericSheetId: 0, values: rows }],
         };
 
         return record;
@@ -891,6 +897,44 @@ export const api = {
       }
       const token = await requireToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
+    },
+
+    /**
+     * Create-or-replace a named tab's full contents within a workbook.
+     * Ensures the tab exists (creates it if missing) then writes rows.
+     * The durable persistence primitive for template-managed metadata tabs
+     * (e.g. the calorie tracker's "Profile" tab).
+     * @param {string}     spreadsheetId
+     * @param {string}     tabTitle
+     * @param {string[][]} rows          2D array including header row
+     */
+    async writeTab(spreadsheetId, tabTitle, rows) {
+      if (isLocal) {
+        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
+        const fix = await loadFixtures();
+        const data = fix.sheets[spreadsheetId];
+        if (data) {
+          if (!Array.isArray(data.tabs)) {
+            data.tabs = [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
+          }
+          const existing = data.tabs.find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
+          if (existing) {
+            existing.values = rows;
+          } else {
+            const nextId = Math.max(0, ...data.tabs.map(t => t.numericSheetId || 0)) + 1;
+            data.tabs.push({ title: tabTitle, numericSheetId: nextId, values: rows });
+          }
+        }
+        const record = {
+          type: 'tab-write',
+          spreadsheetId, tabTitle, rows,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await requireToken();
+      return sheetsApi.writeTabData(token, spreadsheetId, tabTitle, rows);
     },
 
     /**

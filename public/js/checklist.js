@@ -19,6 +19,7 @@ import { getAndroidBridge } from './platform.js';
 let currentSheetId = null;
 let currentNumericSheetId = null;
 let currentSheetTitle = null;
+let currentTabs = [];           // all tabs from the workbook (populated by loadSheet)
 let refreshTimer   = null;
 let lastFetchTime  = null;
 let currentValues  = null;
@@ -609,6 +610,7 @@ export async function showPublic(sheetId) {
     currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
     currentValues = data.values || [];
+    currentTabs = data.tabs || [];
     renderWithTemplate(currentValues);
     lastFetchTime = new Date();
     updateTimestamp();
@@ -646,6 +648,7 @@ export function hide() {
   currentSheetId = null;
   currentValues = null;
   currentDataTitle = null;
+  currentTabs = [];
   clearInterval(refreshTimer);
   refreshTimer = null;
   // Reset protected-row state so lock icons don't bleed across sheets
@@ -880,6 +883,7 @@ function openDuplicateModal() {
     currentDataTitle = data.title;
     currentSheetTitle = data.sheetTitle || 'Sheet1';
     currentValues = data.values || [];
+    currentTabs = data.tabs || [];
 
     // Auto-detect encrypted columns from actual cell data and sync to localStorage
     let encCols = encryption.getEncryptedColumns(sheetId);
@@ -1224,6 +1228,9 @@ function renderWithTemplate(values) {
   template._currentSheetId = currentSheetId;
   template._currentNumericSheetId = currentNumericSheetId;
   template._currentSheetTitle = currentSheetTitle;
+  // Expose all workbook tabs so templates can read cross-tab data.
+  // tab[0] is always the primary tab (same source as the top-level values/sheetTitle).
+  template._tabs = currentTabs;
   template.render(itemsEl, rows, cols, template);
   currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
 

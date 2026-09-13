@@ -87,9 +87,11 @@ export function buildMascot(stage, adh = {}) {
 
   const caption = STAGE_LABELS[s];
   const streak = adh.streak || 0;
-  const sub = streak > 0
+  const best = adh.bestStreak || 0;
+  const streakLine = streak > 0
     ? `${streak}-day streak · ${adh.onTrackDays || 0}/${adh.loggedDays || 0} on target`
     : (adh.loggedDays ? `${adh.onTrackDays || 0}/${adh.loggedDays} days on target` : 'Log meals to grow your garden');
+  const sub = best > 0 ? `${streakLine} · best ${best}d` : streakLine;
 
   return el('div', { className: 'calorie-mascot' }, [
     el('div', { className: 'calorie-mascot-art' }, [svg]),
