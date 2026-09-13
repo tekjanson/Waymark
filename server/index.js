@@ -72,7 +72,7 @@ app.use((_req, res, next) => {
         "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://apis.google.com",
         // Fleet webhook is always a local tool — whitelist localhost so any user
         // can configure a local webhook URL via the ⚙️ button on any deployment.
-        "connect-src 'self' ws://localhost:9001 http://localhost:* http://127.0.0.1:* https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com",
+        "connect-src 'self' ws://localhost:9001 http://localhost:* http://127.0.0.1:* https://www.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://drive.googleapis.com https://generativelanguage.googleapis.com https://docs.google.com",
         "frame-src https://docs.google.com",
         "img-src 'self' https://*.googleusercontent.com https://drive.google.com data:",
         "style-src 'self' 'unsafe-inline'",
