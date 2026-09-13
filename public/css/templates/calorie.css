@@ -1,6 +1,13 @@
 /* Calorie & Fitness Tracker Template — clean, graphical, mobile-first */
 
-.calorie-root { max-width: 640px; margin: 0 auto; }
+/* Establish a container so the layout responds to the ACTUAL content width
+   (works whether or not the app sidebar is open) — not the raw viewport. */
+.calorie-root {
+  container-type: inline-size;
+  container-name: calorie;
+  width: 100%;
+  margin-inline: auto;
+}
 
 /* ---------- Top bar: timeframe + tools ---------- */
 
@@ -83,6 +90,7 @@
 
 .calorie-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 16px;
   background: var(--color-surface);
@@ -432,7 +440,6 @@
   .calorie-modal, .calorie-actionsheet { border-radius: var(--radius); }
 }
 @media (max-width: 520px) {
-  .calorie-hero { flex-direction: column; }
   .calorie-avg-summary { flex-direction: column; align-items: stretch; }
   .calorie-mascot { justify-content: center; }
   .calorie-ring-svg { width: 160px; height: 160px; }
@@ -453,17 +460,43 @@
 }
 .calorie-entry-delete:hover { background: rgba(220, 38, 38, 0.08); }
 
-/* ---------- Desktop / tablet layout ---------- */
+/* ---------- Desktop / tablet layout (container-query driven) ---------- */
 
-@media (min-width: 720px) {
-  .calorie-root { max-width: 960px; }
+/* Cap the reading width on very wide content areas and keep it centered. */
+@container calorie (min-width: 1140px) {
+  .calorie-root { max-width: 1240px; }
+}
 
-  /* Two-column: hero + macros on the left, meals on the right feel.
-     Keep it simple + robust: wider hero, meals in a 2-col grid. */
-  .calorie-hero { padding: 24px 28px; }
-  .calorie-ring-svg { width: 168px; height: 168px; }
+/* Wider content area (e.g. sidebar collapsed / big screen): two-column
+   dashboard header + two-column meals. Uses the ACTUAL content width. */
+@container calorie (min-width: 680px) {
+  /* Dashboard header: hero beside a stacked macro-ring column. */
+  .calorie-topgrid {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr;
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 14px;
+  }
+  .calorie-topgrid .calorie-hero { margin-bottom: 0; height: 100%; }
+  .calorie-hero {
+    flex-direction: row;
+    padding: 22px 24px;
+    justify-content: space-evenly;
+    gap: 32px;
+  }
+  .calorie-ring-svg { width: 176px; height: 176px; }
 
-  /* Meals flow into two columns on wide screens for less scrolling. */
+  /* Macro rings stack vertically in the header's right column. */
+  .calorie-topgrid .calorie-macrorings {
+    flex-direction: column;
+    margin-bottom: 0;
+    max-width: none;
+    justify-content: space-between;
+  }
+  .calorie-topgrid .calorie-macroring { flex: 1; }
+
+  /* Meals flow into two columns for less scrolling. */
   .calorie-meals-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -475,20 +508,36 @@
   /* Trend view: chart + stats side by side. */
   .calorie-trend-grid {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: 1.5fr 1fr;
     gap: 16px;
-    align-items: start;
+    align-items: stretch;
   }
   .calorie-trend-grid .calorie-chart { margin-bottom: 0; }
+  .calorie-trend-grid .calorie-avg-stats { align-content: start; }
 
-  .calorie-quickbar { max-width: 520px; }
-  .calorie-macrorings { max-width: 640px; }
-
-  /* Modals become centered cards (not bottom sheets) on desktop. */
-  .calorie-modal, .calorie-actionsheet { max-width: 440px; }
+  /* Quick actions centered, comfortable width. */
+  .calorie-quickbar { max-width: 640px; margin-inline: auto; }
 }
 
-@media (min-width: 1024px) {
-  .calorie-root { max-width: 1080px; }
-  .calorie-meals-grid { grid-template-columns: 1fr 1fr; }
+/* Roomy content area → give the hero column a touch more room. */
+@container calorie (min-width: 900px) {
+  .calorie-topgrid { grid-template-columns: 1.8fr 1fr; gap: 18px; }
+  .calorie-ring-svg { width: 188px; height: 188px; }
+}
+
+/* Modals become centered cards (not bottom sheets) on real desktop widths. */
+@media (min-width: 720px) {
+  .calorie-modal-overlay { align-items: center; }
+  .calorie-modal, .calorie-actionsheet { max-width: 460px; border-radius: var(--radius); }
+}
+
+/* Safety net for browsers without container-query support: fall back to a
+   viewport media query so the two-column layout still appears on desktop. */
+@supports not (container-type: inline-size) {
+  @media (min-width: 1000px) {
+    .calorie-topgrid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 16px; }
+    .calorie-topgrid .calorie-macrorings { flex-direction: column; max-width: none; }
+    .calorie-meals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .calorie-root { max-width: 1200px; }
+  }
 }

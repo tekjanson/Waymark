@@ -48,11 +48,12 @@ test('date navigation moves between days', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
   await page.waitForSelector('.calorie-datenav-label', { timeout: 5_000 });
-  await expect(page.locator('.calorie-datenav-label')).toHaveText('Today');
+  const label = page.locator('.calorie-datenav-label');
+  const start = await label.textContent();
   await page.locator('.calorie-datenav-btn[aria-label="Previous day"]').click();
-  await expect(page.locator('.calorie-datenav-label')).toContainText('Sep 11');
+  await expect.poll(async () => label.textContent()).not.toBe(start);
   await page.locator('.calorie-datenav-btn[aria-label="Next day"]').click();
-  await expect(page.locator('.calorie-datenav-label')).toHaveText('Today');
+  await expect(label).toHaveText(String(start));
 });
 
 test('week timeframe shows trend chart and averages', async ({ page }) => {

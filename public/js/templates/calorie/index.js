@@ -462,14 +462,16 @@ function renderDayView(container, dateMap) {
     el('div', { className: 'calorie-hero-ring' }, [ring, eqLine]),
     mascot,
   ]);
-  container.append(hero);
 
   /* Macro rings */
-  container.append(el('div', { className: 'calorie-macrorings' }, [
+  const macrorings = el('div', { className: 'calorie-macrorings' }, [
     buildMacroRing('Protein', totals.protein, macros.protein, '#6366f1'),
     buildMacroRing('Carbs', totals.carbs, macros.carbs, '#f59e0b'),
     buildMacroRing('Fat', totals.fat, macros.fat, '#ec4899'),
-  ]));
+  ]);
+
+  /* Hero + macros form the dashboard header (2-col on desktop). */
+  container.append(el('div', { className: 'calorie-topgrid' }, [hero, macrorings]));
 
   /* Global quick actions (compact) */
   const quick = el('div', { className: 'calorie-quickbar' }, [
