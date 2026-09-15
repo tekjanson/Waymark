@@ -1681,6 +1681,42 @@ async function _fetchGemini(url, body, keyIdx, apiKey) {
     throw new Error(retryData?.error?.message || `API error ${retry.status}`);
   }
 
+  if (res.status === 503) {
+    // Server overloaded — rotate key, then backoff + retry once
+    storage.recordKeyError(keyIdx);
+    const keys503 = storage.getAgentKeys();
+    if (keys503.length > 1) {
+      const next503 = _getNextKey();
+      if (next503 && next503.idx !== keyIdx) {
+        _showRetryIndicator(0, true);
+        const rotatedRes = await fetch(url, {
+          method: 'POST',
+          headers: _geminiHeaders(next503.key),
+          body: JSON.stringify(body),
+        });
+        _removeRetryIndicator();
+        if (rotatedRes.ok) {
+          storage.recordKeyUsage(next503.idx);
+          return rotatedRes.json();
+        }
+        storage.recordKeyError(next503.idx);
+      }
+    }
+    const delay503 = 10;
+    _showRetryIndicator(delay503);
+    await new Promise(r => setTimeout(r, delay503 * 1000));
+    _removeRetryIndicator();
+    const retry503 = await fetch(url, fetchOpts);
+    if (retry503.ok) return retry503.json();
+    if (retry503.status === 503) {
+      throw new Error(
+        'Gemini API is experiencing high demand. Please try again in a moment, or switch to a different model in Settings.'
+      );
+    }
+    const retryData503 = await retry503.json().catch(() => ({}));
+    throw new Error(retryData503?.error?.message || `API error ${retry503.status}`);
+  }
+
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const errMsg = errData?.error?.message || `API error ${res.status}`;

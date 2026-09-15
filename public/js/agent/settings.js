@@ -19,6 +19,7 @@ import {
   OLLAMA_MODEL_OPTIONS,
   fetchGeminiModels,
   fetchClaudeModels,
+  pickSmartDefault,
 } from './config.js';
 
 /* ---------- Settings Modal ---------- */
@@ -273,8 +274,18 @@ export function showSettingsModal(onRefresh) {
         const selected = opt.value === currentVal;
         modelSelect.appendChild(el('option', { value: opt.value, ...(selected ? { selected: 'selected' } : {}) }, [opt.label]));
       }
-      if (!modelSelect.value && modelSelect.options.length > 0) {
-        modelSelect.selectedIndex = 0;
+      // Saved model not in live list — auto-pick the best available and persist it
+      if (!modelSelect.value && opts.length > 0) {
+        const best = activeProvider === 'gemini' ? pickSmartDefault(opts) : opts[0].value;
+        modelSelect.value = best;
+        if (!modelSelect.value) modelSelect.selectedIndex = 0;
+        if (activeProvider === 'gemini') {
+          geminiModel = modelSelect.value;
+          storage.setAgentModel(modelSelect.value);
+        } else if (activeProvider === 'claude') {
+          claudeModel = modelSelect.value;
+          storage.setClaudeModel(modelSelect.value);
+        }
       }
     } catch {
       // Keep hardcoded options
