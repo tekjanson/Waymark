@@ -17,7 +17,7 @@ import * as vault from './vault.js';
 /* ---------- Constants ---------- */
 
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-export const DEFAULT_MODEL = 'gemini-flash-latest';
+export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 export const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
 export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
@@ -25,13 +25,49 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
 export const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
 export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
+// Fallback list used when no API key is present yet (dropdown won't auto-refresh).
+// The live list is always preferred once a key is available — see fetchGeminiModels().
 export const GEMINI_MODEL_OPTIONS = [
-  { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
+  { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite (free tier default)' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (balanced)' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (best)' },
   { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast)' },
-  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (fastest)' },
-  { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash (balanced)' },
-  { value: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro (best)' },
+  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+  { value: 'gemini-flash-latest', label: 'Gemini Flash Latest (unstable alias)' },
 ];
+
+/**
+ * Pick the best free-tier default from any live model list.
+ * Prefers the newest non-preview flash-lite model; falls back to flash, then first item.
+ * Used to auto-advance the default when Google ships new models.
+ * @param {Array<{value: string, label: string}>} opts
+ * @returns {string} model id
+ */
+export function pickSmartDefault(opts) {
+  // Sort helpers — higher version wins (e.g. 3.5 > 2.5 > 2.0). Unversioned IDs sort last (score 0).
+  const version = v => { const m = v.match(/(\d+\.\d+)/); return m ? parseFloat(m[1]) : 0; };
+  const versionSort = (a, b) => version(b.value) - version(a.value);
+  const isPreview = v => /preview|exp|labs/i.test(v);
+
+  const tiers = [
+    // 1. Stable flash-lite (cheapest, best for free tier)
+    opts.filter(o => /flash-lite/.test(o.value) && !isPreview(o.value)),
+    // 2. Preview flash-lite (still cheap)
+    opts.filter(o => /flash-lite/.test(o.value)),
+    // 3. Stable flash (no lite, no pro)
+    opts.filter(o => /flash/.test(o.value) && !/lite|pro/.test(o.value) && !isPreview(o.value)),
+    // 4. Any flash
+    opts.filter(o => /flash/.test(o.value)),
+    // 5. Anything at all
+    [...opts],
+  ];
+
+  for (const tier of tiers) {
+    if (!tier.length) continue;
+    return tier.sort(versionSort)[0].value;
+  }
+  return DEFAULT_MODEL;
+}
 
 export const CLAUDE_MODEL_OPTIONS = [
   { value: 'claude-haiku-3-5', label: 'Claude Haiku 3.5 (fastest, cheapest)' },
