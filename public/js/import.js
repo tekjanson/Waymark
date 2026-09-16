@@ -138,6 +138,13 @@ const ROLE_LABELS = {
   'calorie.fat': 'Fat (g)',
   'calorie.burned': 'Calories Burned (exercise)',
   'calorie.target': 'Daily Calorie Target',
+  // Party Planning Dashboard
+  'party.party': 'Party Name',
+  'party.guestOfHonor': 'Guest of Honor',
+  'party.date': 'Party Date',
+  'party.theme': 'Theme',
+  'party.venue': 'Venue / Location',
+  'party.host': 'Host / Organizer',
   // Travel
   'travel.date': 'Date',
   'travel.location': 'Location / Destination',

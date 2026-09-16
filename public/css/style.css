@@ -62,3 +62,6 @@
 
 /* Blog template */
 @import url('./templates/blog.css');
+
+/* Party Planning Dashboard template */
+@import url('./templates/party.css');

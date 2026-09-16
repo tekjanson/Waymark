@@ -52,6 +52,7 @@ import './ledger/index.js';
 import './invoice/index.js';
 import './rfi.js';
 import './calorie/index.js';
+import './party/index.js';
 /* ---------- Detection ---------- */
 
 /**

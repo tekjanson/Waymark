@@ -480,6 +480,15 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Party Planning Dashboard examples ---- */
+  "Sophie's Birthday Party": {
+    folder: 'Trackers',
+    headers: ['Party', 'Guest of Honor', 'Date', 'Theme', 'Venue', 'Host'],
+    rows: [
+      ["Sophie's 30th Birthday Bash", 'Sophie Martinez', '2026-07-18', 'Tropical Garden Party', 'Backyard at Home', 'Alex Martinez'],
+    ],
+  },
+
   /* ---- Travel Itinerary examples ---- */
   'Europe Trip': {
     folder: 'Travel',
