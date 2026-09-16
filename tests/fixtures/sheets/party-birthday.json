@@ -1,0 +1,85 @@
+{
+  "id": "sheet-074",
+  "title": "Sophie's 30th Birthday Bash",
+  "sheetTitle": "Details",
+  "values": [
+    ["Party", "Guest of Honor", "Date", "Theme", "Venue", "Host"],
+    ["Sophie's 30th Birthday Bash", "Sophie Martinez", "2026-07-18", "Tropical Garden Party", "Backyard at Home", "Alex Martinez"]
+  ],
+  "tabs": [
+    {
+      "title": "Details",
+      "numericSheetId": 0,
+      "values": [
+        ["Party", "Guest of Honor", "Date", "Theme", "Venue", "Host"],
+        ["Sophie's 30th Birthday Bash", "Sophie Martinez", "2026-07-18", "Tropical Garden Party", "Backyard at Home", "Alex Martinez"]
+      ]
+    },
+    {
+      "title": "Guests",
+      "numericSheetId": 1,
+      "values": [
+        ["Guest", "RSVP", "Party Size", "Notes"],
+        ["Maria Lopez", "Yes", "2", "Bringing partner"],
+        ["James Chen", "Yes", "1", "Vegetarian"],
+        ["Priya Patel", "No", "1", "Out of town"],
+        ["Tom Wilson", "Pending", "3", "Family of 3"],
+        ["Grandma Rose", "Yes", "1", "Needs a chair in the shade"]
+      ]
+    },
+    {
+      "title": "Menu",
+      "numericSheetId": 2,
+      "values": [
+        ["Dish", "Course", "Assigned To", "Status", "Notes"],
+        ["Grilled Pineapple Skewers", "Appetizer", "Alex", "Confirmed", ""],
+        ["Coconut Shrimp", "Appetizer", "Maria", "Planned", "Check shellfish allergies"],
+        ["Jerk Chicken", "Main", "Caterer", "Confirmed", "Order 2 weeks out"],
+        ["Mango Sticky Rice", "Dessert", "James", "Idea", ""],
+        ["Tropical Punch", "Drink", "Alex", "Planned", "Virgin + spiked batches"]
+      ]
+    },
+    {
+      "title": "Budget",
+      "numericSheetId": 3,
+      "values": [
+        ["Item", "Category", "Estimated", "Actual", "Paid"],
+        ["Backyard tent rental", "Venue", "300", "285", "Yes"],
+        ["Catering", "Food", "600", "", "No"],
+        ["Balloon arch + streamers", "Decor", "120", "134", "Yes"],
+        ["DJ / playlist speaker", "Entertainment", "150", "", "No"],
+        ["Birthday cake", "Food", "80", "80", "Yes"]
+      ]
+    },
+    {
+      "title": "Decorations",
+      "numericSheetId": 4,
+      "values": [
+        ["Decoration", "Location", "Bought", "Hung", "Notes"],
+        ["Balloon arch", "Entrance", "Yes", "No", "Pink + gold"],
+        ["String lights", "Patio", "Yes", "Yes", ""],
+        ["Tropical banner", "Fence", "No", "No", "Etsy order"],
+        ["Table centerpieces", "Tables", "Yes", "No", "Pineapples + flowers"]
+      ]
+    },
+    {
+      "title": "Links",
+      "numericSheetId": 5,
+      "values": [
+        ["Label", "URL", "Type"],
+        ["Sophie's Amazon Registry", "https://www.amazon.com/registry/sophie30", "Registry"],
+        ["Tropical Party Pinterest Board", "https://pinterest.com/alexm/tropical-party", "Pinterest"],
+        ["Party Playlist", "https://open.spotify.com/playlist/tropical-birthday", "Playlist"]
+      ]
+    },
+    {
+      "title": "Layout",
+      "numericSheetId": 6,
+      "values": [
+        ["Setting", "Value"],
+        ["order", "guests,menu,budget,decorations,links"],
+        ["collapsed", ""]
+      ]
+    }
+  ]
+}

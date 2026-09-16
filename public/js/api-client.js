@@ -144,6 +144,7 @@ async function loadMockSheet(sheetId) {
     'sheet-071': 'rfi',
     'sheet-072': 'calorie-default',
     'sheet-073': 'kanban-multitab',
+    'sheet-074': 'party-birthday',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;

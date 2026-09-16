@@ -1552,10 +1552,54 @@
       "fixtureFiles": [
         "calorie-default"
       ]
+    },
+    {
+      "key": "party",
+      "name": "Party Planning Dashboard",
+      "icon": "🎉",
+      "color": "#db2777",
+      "priority": 24,
+      "category": "Personal",
+      "detectSignals": [
+        "party",
+        "guest of honor",
+        "theme",
+        "venue",
+        "host",
+        "date"
+      ],
+      "columnRoles": [
+        "party",
+        "guestOfHonor",
+        "date",
+        "theme",
+        "venue",
+        "host"
+      ],
+      "interactive": true,
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "multiTab": true,
+      "tabs": [
+        "Details",
+        "Guests",
+        "Menu",
+        "Budget",
+        "Decorations",
+        "Links",
+        "Layout"
+      ],
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-074"
+      ],
+      "fixtureFiles": [
+        "party-birthday"
+      ]
     }
   ],
-  "nextSheetId": "sheet-073",
-  "totalTemplates": 40,
+  "nextSheetId": "sheet-075",
+  "totalTemplates": 41,
   "categories": [
     "Productivity",
     "Engineering",
