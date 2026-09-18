@@ -76,7 +76,7 @@ class FleetReporter {
         status: lower.findIndex((h) => /^(status|state|online|active)/.test(h)),
         task: lower.findIndex((h) => /^(task|current task|working on|job|doing)/.test(h)),
         summary: lower.findIndex((h) => /^(summary|state summary|ai summary|brief|synopsis)/.test(h)),
-        workboardFeedback: lower.findIndex((h) => /^(workboard feedback|workboard|workbook feedback|workbook)/.test(h)),
+        workboardFeedback: lower.findIndex((h) => /^(workboard feedback|workbook feedback|workbook)/.test(h)),
         tuningFeedback: lower.findIndex((h) => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h)),
         activity: lower.findIndex((h) => /^(activity|feed|log|stream)/.test(h)),
         heartbeat: lower.findIndex((h) => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h)),

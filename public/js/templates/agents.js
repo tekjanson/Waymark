@@ -70,9 +70,9 @@ const definition = {
     cols.project   = lower.findIndex(h => /^(project|board|scope)/.test(h));
     cols.heartbeat = lower.findIndex(h => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h));
     cols.summary   = lower.findIndex(h => /^(summary|state summary|ai summary|brief|synopsis)/.test(h));
-    cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workboard|workbook)/.test(h));
+    cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workbook)/.test(h));
     cols.tuningFeedback = lower.findIndex(h => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h));
-    cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)/.test(h));
+    cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)$/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
     cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
     cols.activity  = lower.findIndex(h => /^(activity|feed|log|stream|live)/.test(h));

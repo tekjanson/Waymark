@@ -39,6 +39,10 @@ ACTIVE_AGENT  ?= $(if $(GEMINI_KEY_POOL),gemini,copilot)
 # Fleet alias: FLEET_NAMES falls back to AGENT_NAMES
 FLEET_NAMES   ?= $(AGENT_NAMES)
 
+# Primary fleet identity (first name in AGENT_NAMES) — used by `make restart`.
+# The agent MUST have a name or the fleet reporter + workboard writes are skipped.
+FLEET_ID      := $(if $(strip $(AGENT_NAMES)),$(firstword $(AGENT_NAMES)),Alex)
+
 # Service-account key
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
@@ -56,7 +60,7 @@ GEMINI_MODEL="$(GEMINI_MODEL)" \
 CONTAINER_NAME="$(CONTAINER)"
 endef
 
-.PHONY: help up down \
+.PHONY: help up down restart fleet-tail \
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
@@ -198,6 +202,30 @@ down: ## Stop everything (web server + fleet webhook + all agent containers)
 	@docker ps --filter "name=dev-worker" --format "{{.Names}}" | \
 		xargs -r -I{} sh -c 'docker stop {} && docker rm {} && echo "  ✓  {} stopped"'
 	@echo "  ✓  Done"
+
+# ── Restart (the simple, repeatable one) ──────────────────────────────
+
+restart: ## Restart the fleet worker with the RIGHT engine + identity (safe to re-run)
+	@echo ""
+	@echo "  ⏳  Restarting fleet worker '$(FLEET_ID)' [engine=$(ACTIVE_AGENT), model=$(GEMINI_MODEL)]..."
+	@if [ "$(ACTIVE_AGENT)" = "gemini" ] && [ -z "$(strip $(GEMINI_KEY_POOL))" ]; then \
+		echo "  ✗  ACTIVE_AGENT=gemini but GEMINI_KEY_POOL is empty — set it in .env first"; exit 1; \
+	fi
+	@AGENT_HUMAN_NAME="$(FLEET_ID)" \
+	 AGENT_NAME="$(FLEET_ID)" \
+	 ACTIVE_AGENT="$(ACTIVE_AGENT)" \
+	 GEMINI_MODEL="$(GEMINI_MODEL)" \
+	 AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+	 CONTAINER_NAME="$(CONTAINER)" \
+	 $(COMPOSE) up -d --build --force-recreate waymark-dev-worker
+	@echo "  ✓  Fleet worker up → $(CONTAINER) as '$(FLEET_ID)'"
+	@echo "     Streaming to Agent Registry: $(AGENTS_SHEET)"
+	@echo "     Watch it:  make fleet-tail"
+	@echo ""
+
+fleet-tail: ## Tail the fleet worker, filtered to the live activity + engine lines
+	@docker logs -f $(CONTAINER) 2>&1 | grep -E --line-buffered \
+		'dream-rsi|fleet|Engine|Turn |Claimed|review|QA|PASS|fail|summary' || true
 
 # ── Help ──────────────────────────────────────────────────────────────
 
