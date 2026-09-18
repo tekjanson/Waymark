@@ -59,6 +59,17 @@ class DiscoveryTree {
     return this.sheets.ensureTab(this.tab, HEADERS);
   }
 
+  /** Wipe all attempt rows (keeps the header row). Used to reset memory. */
+  async clear() {
+    const gid = await this.sheets.getTabGid(this.tab);
+    if (gid === null) return { cleared: false };
+    await this.sheets.update(
+      `${this.tab}!A2:K400`,
+      Array.from({ length: 399 }, () => Array(HEADERS.length).fill(''))
+    );
+    return { cleared: true };
+  }
+
   /** Mint a unique branch id for a task attempt. */
   newBranchId(taskRow) {
     const t = this._now().toString(36);

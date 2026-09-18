@@ -58,7 +58,7 @@ endef
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
-        gemini-start gemini-logs dream-test dream-run \
+        gemini-start gemini-logs dream-test dream-run dream-reset \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
@@ -336,7 +336,7 @@ dream-run: ## Run ONE Dream-RSI task in the container to experiment  [TASK= requ
 	@echo "   Task:   $(TASK)"
 	@echo "   Turns:  $(if $(TURNS),$(TURNS),8)   Fanout: $(if $(FANOUT),$(FANOUT),1)   Push: $(if $(PUSH),$(PUSH),0)"
 	@echo ""
-	$(COMPOSE) run --rm --no-deps \
+	$(COMPOSE) run --rm --no-deps -T \
 	  -e WAYMARK_WORKBOARD_ID \
 	  -e GEMINI_KEY_POOL \
 	  -e GEMINI_MODEL="$(GEMINI_MODEL)" \
@@ -348,6 +348,12 @@ dream-run: ## Run ONE Dream-RSI task in the container to experiment  [TASK= requ
 	  -e AGENT_HUMAN_NAME="$(if $(NAME),$(NAME),Alex)" \
 	  --entrypoint bash waymark-dev-worker -lc \
 	  'Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 & sleep 1; export DISPLAY=:99; cd /workspace && node dev-worker/scripts/dream-rsi.js --task "$(TASK)" $(if $(DESC),--desc "$(DESC)",) $(if $(ROW),--row "$(ROW)",)'
+
+dream-reset: ## Clear the Discovery_Tree memory (dead-end lessons) for a clean experiment
+	$(COMPOSE) run --rm --no-deps -T \
+	  -e WAYMARK_WORKBOARD_ID -e DISCOVERY_TREE_SHEET_ID -e DISCOVERY_TREE_TAB \
+	  --entrypoint bash waymark-dev-worker -lc \
+	  'cd /workspace && node dev-worker/scripts/dream-rsi.js --reset-tree'
 
 
 

@@ -381,6 +381,20 @@ async function main() {
   const task = args.task || process.env.AGENT_COMMAND || '';
   const desc = args.desc || '';
 
+  // --reset-tree: wipe the Discovery_Tree memory and exit (clean-experiment aid).
+  if (args['reset-tree']) {
+    const sheets = TREE_SHEET_ID
+      ? createSheetsClient({ keyFile: KEY_FILE, spreadsheetId: TREE_SHEET_ID })
+      : null;
+    if (!sheets) {
+      log('No DISCOVERY_TREE_SHEET_ID / WAYMARK_WORKBOARD_ID configured — nothing to reset');
+      process.exit(0);
+    }
+    const r = await new DiscoveryTree(sheets).clear();
+    log(r.cleared ? 'Discovery_Tree cleared' : 'No Discovery_Tree tab to clear');
+    process.exit(0);
+  }
+
   if (!task) {
     log('No task provided (--task) — nothing to do');
     process.exit(0);

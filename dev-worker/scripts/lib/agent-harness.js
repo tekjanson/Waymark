@@ -152,7 +152,14 @@ class Harness {
       );
     };
 
-    for (let turn = 1; turn <= this.maxTurns; turn++) {
+    // `turn` counts only PRODUCTIVE actions against the budget. Malformed
+    // replies and actions that produce an ERROR observation (e.g. a search with
+    // no pattern) are free retries — weak models waste many turns on these, and
+    // charging them for it starves the real work. Bounded by maxIter so a model
+    // stuck emitting junk still terminates.
+    let turn = 0;
+    const maxIter = this.maxTurns + 10;
+    for (let iter = 0; turn < this.maxTurns && iter < maxIter; iter++) {
       let text;
       let keyIndex;
       try {
@@ -167,9 +174,9 @@ class Harness {
       const action = tryParseJSON(text);
       if (!action || !action.tool) {
         contents.push(obs(`ERROR: your reply was not a valid JSON action. Reply with EXACTLY one JSON object {"thought":...,"tool":...,"args":{...}}.${directive(turn)}`));
-        continue;
+        continue; // free retry
       }
-      this.log(`  [harness] turn ${turn}: ${action.tool} ${short(JSON.stringify(action.args || {}))}`);
+      this.log(`  [harness] turn ${turn + 1}: ${action.tool} ${short(JSON.stringify(action.args || {}))}`);
 
       if (action.tool === 'finish') {
         const testCommand = (action.args && (action.args.testCommand || action.args.test)) || 'npm test';
@@ -179,16 +186,31 @@ class Harness {
           result = { passed: true, done: true, summary, testCommand };
           break;
         }
-        // Failing finish → feed the failure back and keep going.
+        // Failing finish → feed the failure back and keep going (counts as a turn).
         contents.push(obs(`Tests FAILED for \`${testCommand}\` (exit ${test.code}). Fix the problem and finish again.\n${test.tail}`));
         result = { passed: false, done: false, summary, testCommand, transcriptTail: test.tail };
+        turn++;
         continue;
       }
 
       if (action.tool === 'write_file' || action.tool === 'edit_file') edited = true;
 
+      // Hard rail: once the explore budget is spent with no edit, block the pure
+      // discovery tools. A soft directive isn't enough for weak models — they
+      // keep searching forever. read_file stays allowed so the model can grab the
+      // exact lines it needs to form a precise edit.
+      if (!edited && turn >= exploreBudget && (action.tool === 'list_files' || action.tool === 'search')) {
+        contents.push(obs(
+          `Exploration is DISABLED now (${turn}/${this.maxTurns} turns used, no edit yet). ` +
+          `Valid actions: read_file (only to prepare an edit), edit_file, write_file, finish. Make your edit NOW.`
+        ));
+        continue; // free retry (bounded by maxIter)
+      }
+
       const observation = this._exec(action);
       contents.push(obs(observation + directive(turn)));
+      // Only productive actions consume the budget; errored ones are free retries.
+      if (!/^ERROR:/.test(observation)) turn++;
     }
 
     return {
