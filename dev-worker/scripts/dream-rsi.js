@@ -60,6 +60,9 @@ const EVAL_ENABLED = process.env.DREAM_EVAL_ENABLED !== '0';
 const EVAL_THRESHOLD = parseFloat(process.env.DREAM_EVAL_THRESHOLD || '0.7');
 const EVAL_RETRIES = parseInt(process.env.DREAM_EVAL_RETRIES || '1', 10);
 const PUSH = process.env.DREAM_PUSH !== '0';
+// After this many failed attempts on a row, PARK it (return to Backlog at P3) so
+// the loop stops spinning on one hard task and rotates to the rest of the board.
+const MAX_ROW_ATTEMPTS = parseInt(process.env.DREAM_MAX_ROW_ATTEMPTS || '3', 10);
 const AGENT = process.env.AGENT_HUMAN_NAME || 'Gemini';
 const WORKBOARD_TAB = process.env.WAYMARK_WORKBOARD_TAB || 'Sheet1';
 
@@ -359,6 +362,11 @@ class DreamRSI {
     await this.sheets.update(`${WORKBOARD_TAB}!C${row}`, [[stage]]);
   }
 
+  async setPriority(row, priority) {
+    if (!WORKBOARD_ID || !row) return;
+    await this.sheets.update(`${WORKBOARD_TAB}!F${row}`, [[priority]]);
+  }
+
   async addNote(row, text) {
     if (!WORKBOARD_ID || !row) return;
     const gid = await this.sheets.getTabGid(WORKBOARD_TAB);
@@ -502,11 +510,11 @@ async function main() {
   }
 
   // ── 2. Finalize: commit + workboard ──────────────────────────────────────
-  await finalize({ engine, row, task, outcome });
+  await finalize({ engine, row, task, outcome, attemptCount: evaln.attemptCount });
   log(`Done — ${outcome.passed ? 'PASS (task → QA)' : 'fail (logged dead end)'}`);
 }
 
-async function finalize({ engine, row, task, outcome }) {
+async function finalize({ engine, row, task, outcome, attemptCount = 0 }) {
   const written = outcome.written || [];
   const orig = (git(['rev-parse', '--abbrev-ref', 'HEAD']).out || 'HEAD').trim();
 
@@ -516,10 +524,23 @@ async function finalize({ engine, row, task, outcome }) {
   if (!outcome.passed) {
     revertFiles(written);
     if (row) {
+      const attempts = attemptCount + 1; // include this just-failed attempt
       const reviewNote = outcome.review ? ` Review: ${outcome.review}.` : '';
-      await engine
-        .addNote(row, `Dream-RSI ⚠ attempt not approved (branch ${outcome.branchId}).${reviewNote} Dead end logged to Discovery_Tree; will retry a different path.`)
-        .catch((e) => log(`addNote failed: ${e.message}`));
+      if (attempts >= MAX_ROW_ATTEMPTS) {
+        // Park: stop blocking the board. Return In Progress → Backlog and
+        // deprioritize to P3 so claim_next_task rotates to other tasks instead
+        // of resuming this same row forever.
+        await engine.markStage(row, 'Backlog').catch((e) => log(`markStage failed: ${e.message}`));
+        await engine.setPriority(row, 'P3').catch((e) => log(`setPriority failed: ${e.message}`));
+        await engine
+          .addNote(row, `Dream-RSI ⏸ parked after ${attempts} failed attempts.${reviewNote} Returned to Backlog at P3 for human review or a stronger model — lessons saved in Discovery_Tree. The loop is moving on to other tasks.`)
+          .catch((e) => log(`addNote failed: ${e.message}`));
+        log(`Parked row ${row} after ${attempts} attempts — loop will move on`);
+      } else {
+        await engine
+          .addNote(row, `Dream-RSI ⚠ attempt ${attempts}/${MAX_ROW_ATTEMPTS} not approved (branch ${outcome.branchId}).${reviewNote} Dead end logged to Discovery_Tree; will retry.`)
+          .catch((e) => log(`addNote failed: ${e.message}`));
+      }
     }
     return;
   }
