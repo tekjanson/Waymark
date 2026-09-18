@@ -141,6 +141,14 @@ test('agents live feed renders workbook and tuning feedback', async ({ page }) =
   await expect(card.locator('.agents-feedback-tuning')).toContainText('Tuning feedback');
 });
 
+test('agents fleet shows AI key-pool status', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const keys = page.locator('.agents-card').first().locator('.agents-keys');
+  await expect(keys).toBeVisible();
+  await expect(keys).toContainText('ready');
+});
+
 test('agents live feed renders a status indicator', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');

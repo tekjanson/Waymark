@@ -46,7 +46,7 @@ const definition = {
   color: '#7c3aed',
   priority: 24,
   itemNoun: 'Agent',
-  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Summary', 'Workboard feedback', 'Tuning feedback', 'Activity'],
+  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Summary', 'Workboard feedback', 'Tuning feedback', 'Keys', 'Activity'],
 
   detect(lower) {
     const hasTuning = lower.some(h => /\btuning\b|\bpersonality\b|\bprompt\b/.test(h));
@@ -58,7 +58,7 @@ const definition = {
     const cols = {
       name: -1, model: -1, provider: -1, status: -1,
       tuning: -1, task: -1, project: -1, heartbeat: -1, summary: -1, workboardFeedback: -1, tuningFeedback: -1,
-      workboard: -1, command: -1, folder: -1, activity: -1,
+      keys: -1, workboard: -1, command: -1, folder: -1, activity: -1,
     };
     cols.name      = lower.findIndex(h => /^(name|agent|worker|identity)$/.test(h));
     if (cols.name === -1) cols.name = 0;
@@ -72,6 +72,7 @@ const definition = {
     cols.summary   = lower.findIndex(h => /^(summary|state summary|ai summary|brief|synopsis)/.test(h));
     cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workbook)/.test(h));
     cols.tuningFeedback = lower.findIndex(h => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h));
+    cols.keys      = lower.findIndex(h => /^(keys|key status|api keys|key pool|tokens)/.test(h));
     cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)$/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
     cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
@@ -201,6 +202,7 @@ const definition = {
       const summary   = cell(row, cols.summary)    || '';
       const workboardFeedback = cell(row, cols.workboardFeedback) || '';
       const tuningFeedback = cell(row, cols.tuningFeedback) || '';
+      const keys      = cell(row, cols.keys)       || '';
       const workboard = cell(row, cols.workboard)  || '';
       const command   = cell(row, cols.command)    || '';
       const folder    = cell(row, cols.folder)     || '';
@@ -278,6 +280,16 @@ const definition = {
         ? el('div', { className: 'agents-feedback agents-feedback-tuning' }, [
             el('div', { className: 'agents-feedback-label' }, ['Tuning feedback']),
             el('div', { className: 'agents-feedback-text' }, [tuningFeedback]),
+          ])
+        : null;
+
+      /* -- AI key-pool monitor (throttle awareness) -- */
+      const keysThrottled = /throttl|(^|[^\d])0\/\d+/i.test(keys);
+      const keysEl = (cols.keys !== -1 && keys)
+        ? el('div', { className: 'agents-keys' + (keysThrottled ? ' agents-keys-throttled' : '') }, [
+            el('span', { className: 'agents-keys-icon' }, ['🔑']),
+            el('span', { className: 'agents-keys-label' }, ['Keys: ']),
+            el('span', { className: 'agents-keys-text' }, [keys]),
           ])
         : null;
 
@@ -406,6 +418,7 @@ const definition = {
           ]),
           cardActions,
         ]),
+        ...(keysEl ? [keysEl] : []),
         el('div', { className: 'agents-tuning-section' }, [
           el('label', { className: 'agents-tuning-label' }, ['✏️ Tuning']),
           el('div', { className: 'agents-tuning-hint' }, [

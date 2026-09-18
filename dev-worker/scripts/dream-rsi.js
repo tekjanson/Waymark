@@ -274,6 +274,7 @@ class DreamRSI {
     // Dev-fleet plumbing: stream the same line into the Agent Registry so the
     // AI Fleet tool shows a live chat feed. Independent of any kanban row.
     if (this.fleet) await this.fleet.pushActivity(text).catch(() => {});
+    void this.reportKeyStatus();
     void this.refreshLiveSnapshot().catch(() => {});
     // Kanban row note: only when this run is tied to a task row.
     if (!WORKBOARD_ID || !this.sheets || !this.currentTaskRow) return;
@@ -282,6 +283,28 @@ class DreamRSI {
       return;
     }
     await this.updateNote(this.liveRow, `Dream-RSI live: ${text}`);
+  }
+
+  /** Format the key pool's live status for the fleet monitor. */
+  _keyStatusLine() {
+    if (!this.km || typeof this.km.status !== 'function') return '';
+    const st = this.km.status();
+    const parts = [`key #${(st.activeIndex ?? 0) + 1} active`, `${st.available}/${st.total} ready`];
+    if (st.cooling && st.cooling.length) {
+      const soonest = Math.min(...st.cooling.map((c) => c.secondsLeft));
+      const mins = Math.max(1, Math.round(soonest / 60));
+      parts.push(`${st.cooling.length} cooling`, `next ~${mins}m`);
+    } else {
+      parts.push('all ready');
+    }
+    if (st.available === 0) parts.push('⚠ throttled');
+    return parts.join(' · ');
+  }
+
+  /** Push the current key-pool status to the fleet view (skips if unchanged). */
+  async reportKeyStatus() {
+    if (!this.fleet) return;
+    await this.fleet.setKeyStatus(this._keyStatusLine()).catch(() => {});
   }
 
   /**
@@ -573,6 +596,7 @@ async function main() {
   // AI Fleet tool shows the agent go live before any turns run.
   await fleet.setTask(task).catch(() => {});
   await fleet.pushActivity(`Claimed row ${row || '?'}: ${task}`).catch(() => {});
+  await engine.reportKeyStatus().catch(() => {});
   void engine.refreshLiveSnapshot().catch(() => {});
 
   // ── 1. dream_evaluator: simulate paths, collect dead ends ────────────────

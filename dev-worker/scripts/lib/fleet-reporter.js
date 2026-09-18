@@ -57,6 +57,7 @@ class FleetReporter {
     this.summary = '';
     this.workboardFeedback = '';
     this.tuningFeedback = '';
+    this.keyStatus = '';
     this.activityVersion = 0;
     this.ring = [];
   }
@@ -78,6 +79,7 @@ class FleetReporter {
         summary: lower.findIndex((h) => /^(summary|state summary|ai summary|brief|synopsis)/.test(h)),
         workboardFeedback: lower.findIndex((h) => /^(workboard feedback|workbook feedback|workbook)/.test(h)),
         tuningFeedback: lower.findIndex((h) => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h)),
+        keys: lower.findIndex((h) => /^(keys|key status|api keys|key pool|tokens)/.test(h)),
         activity: lower.findIndex((h) => /^(activity|feed|log|stream)/.test(h)),
         heartbeat: lower.findIndex((h) => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h)),
       };
@@ -104,6 +106,14 @@ class FleetReporter {
         await this.sheets.update(`${TAB}!${colLetter(newCol)}1`, [['Tuning feedback']]);
         this.cols.tuningFeedback = newCol;
         header.push('Tuning feedback');
+      }
+
+      // Ensure a Keys column exists — the AI key-pool status (throttle monitor).
+      if (this.cols.keys < 0) {
+        const newCol = header.length;
+        await this.sheets.update(`${TAB}!${colLetter(newCol)}1`, [['Keys']]);
+        this.cols.keys = newCol;
+        header.push('Keys');
       }
 
       // Ensure an Activity column exists — this is what the fleet tool renders
@@ -187,6 +197,17 @@ class FleetReporter {
     const data = [this._cell(this.cols.tuningFeedback, value)];
     if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
     if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
+    await this._write(data);
+  }
+
+  /** Report the AI key-pool status (availability + cooldowns) for throttle monitoring. */
+  async setKeyStatus(text) {
+    if (!(await this._ensure()) || this.cols.keys < 0) return;
+    const value = String(text || '').trim();
+    if (!value || value === this.keyStatus) return;
+    this.keyStatus = value;
+    const data = [this._cell(this.cols.keys, value)];
+    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
     await this._write(data);
   }
 
