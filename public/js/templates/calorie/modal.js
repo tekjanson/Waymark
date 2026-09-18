@@ -123,7 +123,63 @@ export function openFoodSearchModal({ mealType, foods, customDb = [], onConfirm 
     detail.innerHTML = '';
     if (!input.value.trim()) return;
     if (!matches.length) {
-      results.append(el('div', { className: 'calorie-search-empty' }, ['No matches. Try “+ Custom food”.']));
+      const emptyWrap = el('div', { className: 'calorie-search-empty' }, [
+        el('div', {}, ['No direct matches for multi-ingredient item.']), 
+        el('button', { className: 'calorie-search-fallback-btn', type: 'button' }, ['Search & Select Ingredients']) 
+      ]);
+      emptyWrap.querySelector('.calorie-search-fallback-btn').addEventListener('click', () => {
+        const query = input.value.trim();
+        // Split multi-ingredient query by with, and, comma, plus
+        const parts = query.split(/\b(?:with|and|,|\+)\b/i).map(s => s.trim()).filter(Boolean);
+        results.innerHTML = '';
+        detail.innerHTML = '';
+        if (!parts.length) parts.push(query);
+        
+        const fallbackHeader = el('div', { className: 'calorie-search-fallback-header' }, ['Select components for: ', el('strong', {}, [query])]);
+        results.append(fallbackHeader);
+
+        parts.forEach(part => {
+          const partContainer = el('div', { className: 'calorie-search-fallback-part' }, [
+            el('div', { className: 'calorie-search-part-title' }, [`Ingredient: ${part}`]),
+          ]);
+          const subInput = el('input', { className: 'calorie-search-input', type: 'search', placeholder: `Search database for ${part}…`, value: part });
+          const subResults = el('div', { className: 'calorie-search-results calorie-sub-results' });
+          
+          function searchSub() {
+            const subMatches = searchFoodDatabase(subInput.value, foods, customDb, 10);
+            subResults.innerHTML = '';
+            for (const food of subMatches) {
+              const srow = el('button', { className: 'calorie-search-item', type: 'button' }, [
+                el('span', { className: 'calorie-search-item-name' }, [food.name, food.brand ? el('span', { className: 'calorie-search-item-brand' }, [` ${food.brand}`]) : null]),
+                el('span', { className: 'calorie-search-item-cal' }, [`${food.kcal} cal / ${food.qty}${food.unit}`]),
+              ]);
+              srow.addEventListener('click', () => {
+                onConfirm({
+                  name: food.name + (food.brand ? ` (${food.brand})` : ''),
+                  qty: food.qty || 1,
+                  unit: food.unit || 'serving',
+                  calories: food.kcal || 0,
+                  protein: food.protein || 0,
+                  carbs: food.carbs || 0,
+                  fat: food.fat || 0,
+                  barcode: food.barcode || '',
+                  mealType,
+                });
+                showToast(`Added component: ${food.name}`, 'success');
+              });
+              subResults.append(srow);
+            }
+            if (!subMatches.length) {
+              subResults.append(el('div', { className: 'calorie-search-empty' }, ['No database match. Click to add custom.']));
+            }
+          }
+          subInput.addEventListener('input', searchSub);
+          searchSub();
+          partContainer.append(subInput, subResults);
+          results.append(partContainer);
+        });
+      });
+      results.append(emptyWrap);
       return;
     }
     for (const food of matches) {
