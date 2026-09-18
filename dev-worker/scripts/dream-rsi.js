@@ -386,6 +386,15 @@ async function main() {
     process.exit(0);
   }
 
+  // Ensure git trusts the (bind-mounted, often root-owned) workspace. The
+  // container entrypoint normally sets this, but when the handler is invoked
+  // with a bypassed entrypoint (e.g. `make dream-run` uses --entrypoint bash),
+  // safe.directory is unset and EVERY git call fails with "dubious ownership" —
+  // which silently breaks the harness's git ls-files/grep tools, fan-out
+  // worktrees, and the finalize commit/push. Configure it defensively here.
+  git(['config', '--global', '--add', 'safe.directory', WORKSPACE]);
+  git(['config', '--global', '--add', 'safe.directory', '*']);
+
   const km = KeyManager.fromEnv();
   if (km.size === 0) {
     log('ERROR: GEMINI_KEY_POOL is empty. Set it in .env — see .env.example');

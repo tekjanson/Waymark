@@ -58,7 +58,7 @@ endef
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
-        gemini-start gemini-logs dream-test \
+        gemini-start gemini-logs dream-test dream-run \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
@@ -328,6 +328,26 @@ gemini-logs: ## Tail the Gemini Dream-RSI worker output (Ctrl+C to stop)
 
 dream-test: ## Run Dream-RSI unit tests (key pool + discovery tree, no network)
 	node dev-worker/tests/dream-rsi.test.js
+
+dream-run: ## Run ONE Dream-RSI task in the container to experiment  [TASK= required | DESC= ROW= GEMINI_MODEL= TURNS= FANOUT= PUSH= NAME=]
+	@if [ -z "$(TASK)" ]; then echo "ERROR: TASK=\"describe the task\" is required"; exit 1; fi
+	@echo "── Dream-RSI single run ────────────────────────"
+	@echo "   Model:  $(GEMINI_MODEL)"
+	@echo "   Task:   $(TASK)"
+	@echo "   Turns:  $(if $(TURNS),$(TURNS),8)   Fanout: $(if $(FANOUT),$(FANOUT),1)   Push: $(if $(PUSH),$(PUSH),0)"
+	@echo ""
+	$(COMPOSE) run --rm --no-deps \
+	  -e WAYMARK_WORKBOARD_ID \
+	  -e GEMINI_KEY_POOL \
+	  -e GEMINI_MODEL="$(GEMINI_MODEL)" \
+	  -e GEMINI_KEY_COOLDOWN_MS \
+	  -e GEMINI_REQUEST_TIMEOUT_MS \
+	  -e DREAM_FANOUT_N="$(if $(FANOUT),$(FANOUT),1)" \
+	  -e DREAM_MAX_TURNS="$(if $(TURNS),$(TURNS),8)" \
+	  -e DREAM_PUSH="$(if $(PUSH),$(PUSH),0)" \
+	  -e AGENT_HUMAN_NAME="$(if $(NAME),$(NAME),Alex)" \
+	  --entrypoint bash waymark-dev-worker -lc \
+	  'Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 & sleep 1; export DISPLAY=:99; cd /workspace && node dev-worker/scripts/dream-rsi.js --task "$(TASK)" $(if $(DESC),--desc "$(DESC)",) $(if $(ROW),--row "$(ROW)",)'
 
 
 

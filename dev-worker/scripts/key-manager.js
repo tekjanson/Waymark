@@ -219,6 +219,16 @@ class KeyManager {
   }
 
   /**
+   * True for transient server-side errors that should be retried with backoff
+   * (NOT rotated onto cooldown). 503 UNAVAILABLE is Gemini's "high demand,
+   * try again later" signal; 500/502/504 are transient gateway/server hiccups.
+   * These are infrastructure blips, not key-quota failures.
+   */
+  static isTransientServer(status) {
+    return status === 500 || status === 502 || status === 503 || status === 504;
+  }
+
+  /**
    * Inspect a Gemini error body (or Error) for quota / rate-limit signals.
    * @param {any} err — response JSON, string, or Error
    * @returns {boolean}

@@ -70,12 +70,20 @@ TOOLS:
 - finish     {"summary":"one line","testCommand":"cmd that proves it works"}
 
 RULES:
-1. Explore first (list_files / read_file / search) before editing.
-2. Prefer edit_file for existing files. The "search" text must appear EXACTLY once.
-3. Verify with run before finishing (e.g. a single scoped test spec).
-4. finish re-runs testCommand. If it FAILS you must keep going and fix it —
+1. Explore BRIEFLY (a few list_files / search / read_file turns), then ACT. Do
+   not re-list or re-search the same thing — after ~5 exploration turns you must
+   make your first edit.
+2. Use FULL repository-relative paths exactly as shown in the repo map and search
+   results (e.g. public/js/templates/shared.js, NOT shared.js). A bare filename
+   will not resolve.
+3. Every tool needs its required args: search needs "pattern", read_file/edit_file/
+   write_file need "path". Never emit an action with empty args.
+4. Prefer edit_file for existing files. The "search" text must appear EXACTLY once.
+5. Verify with run before finishing — prefer a SINGLE scoped test spec or
+   'node --check <file>' over the whole suite so feedback is fast.
+6. finish re-runs testCommand. If it FAILS you must keep going and fix it —
    a failing finish does not end the task.
-5. Keep changes minimal and correct. Never output prose outside the JSON action.`;
+7. Keep changes minimal and correct. Never output prose outside the JSON action.`;
 
 class Harness {
   /**
@@ -127,6 +135,23 @@ class Harness {
     const contents = [{ role: 'user', parts: [{ text: first }] }];
     let result = { passed: false, done: false, summary: 'did not finish', testCommand: 'npm test' };
 
+    // Weaker models over-explore and never commit to an edit. Once this many
+    // turns pass with no edit, we escalate a firm directive to force action.
+    const exploreBudget = Math.max(4, Math.ceil(this.maxTurns * 0.4));
+    let edited = false;
+
+    // Firm nudge appended to observations once exploration has gone on too long.
+    const directive = (turn) => {
+      if (edited || turn < exploreBudget) return '';
+      const last = turn >= this.maxTurns - 2;
+      return (
+        `\n\n[DIRECTIVE] ${turn}/${this.maxTurns} turns used and NO edit made yet. ` +
+        (last
+          ? 'This is your LAST chance — your next action MUST be edit_file or write_file that implements the task, then finish.'
+          : 'STOP exploring. Your NEXT action MUST be edit_file or write_file that implements the task. A reasonable edit beats more searching.')
+      );
+    };
+
     for (let turn = 1; turn <= this.maxTurns; turn++) {
       let text;
       let keyIndex;
@@ -141,7 +166,7 @@ class Harness {
 
       const action = tryParseJSON(text);
       if (!action || !action.tool) {
-        contents.push(obs('ERROR: your reply was not a valid JSON action. Reply with {"thought":...,"tool":...,"args":...}.'));
+        contents.push(obs(`ERROR: your reply was not a valid JSON action. Reply with EXACTLY one JSON object {"thought":...,"tool":...,"args":{...}}.${directive(turn)}`));
         continue;
       }
       this.log(`  [harness] turn ${turn}: ${action.tool} ${short(JSON.stringify(action.args || {}))}`);
@@ -160,8 +185,10 @@ class Harness {
         continue;
       }
 
+      if (action.tool === 'write_file' || action.tool === 'edit_file') edited = true;
+
       const observation = this._exec(action);
-      contents.push(obs(observation));
+      contents.push(obs(observation + directive(turn)));
     }
 
     return {

@@ -36,6 +36,10 @@ class GeminiClient {
     this.model = opts.model || DEFAULT_MODEL;
     // Try every key at least once by default.
     this.maxRetries = opts.maxRetries ?? Math.max(1, keyManager.size);
+    // Abort a single request that stalls past this budget so a hung connection
+    // can never freeze the 24/7 loop. Generous enough for long generations.
+    this.requestTimeoutMs =
+      opts.requestTimeoutMs ?? parseInt(process.env.GEMINI_REQUEST_TIMEOUT_MS || '120000', 10);
     this.log = opts.log || (() => {});
   }
 
@@ -97,6 +101,8 @@ class GeminiClient {
    */
   async _send(body, model) {
     let attempt = 0;
+    let serverRetries = 0;
+    const maxServerRetries = 6;
     let lastErr = null;
     while (attempt <= this.maxRetries) {
       const keyIndex = this.km.index;
@@ -105,15 +111,29 @@ class GeminiClient {
 
       let res;
       try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+        try {
+          res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
       } catch (netErr) {
-        // Transient network failure — brief backoff, same key.
+        // Transient network failure or request timeout (AbortError) — brief
+        // backoff, then retry. Bounded by maxRetries so a dead endpoint still
+        // gives up instead of looping forever.
+        const why = netErr && netErr.name === 'AbortError'
+          ? `request timeout (${Math.round(this.requestTimeoutMs / 1000)}s)`
+          : `network error (${netErr.message})`;
         lastErr = netErr;
-        await sleep(500 * (attempt + 1));
+        const backoff = Math.min(8000, 500 * (attempt + 1)) + Math.floor(Math.random() * 300);
+        this.log(`[gemini] key #${keyIndex} ${why} \u2192 backoff ${Math.round(backoff / 1000)}s`);
+        await sleep(backoff);
         attempt++;
         continue;
       }
@@ -144,7 +164,23 @@ class GeminiClient {
         continue;
       }
 
-      // Non-retryable (400 bad request, 500 server error, etc.)
+      // Transient server overload → back off and retry the SAME key.
+      // gemini-flash frequently returns 503 UNAVAILABLE ("high demand") and
+      // 500/502/504 under load; Google's guidance is to retry with backoff.
+      // These are NOT key-quota failures, so we must not park the key on a
+      // 1-hour cooldown — that would waste a healthy key on a transient blip.
+      if (KeyManager.isTransientServer(res.status) && serverRetries < maxServerRetries) {
+        const backoff = Math.min(15000, 1000 * 2 ** serverRetries) + Math.floor(Math.random() * 400);
+        this.log(
+          `[gemini] key #${keyIndex} transient ${res.status} \u2192 backoff ${Math.round(backoff / 1000)}s ` +
+            `(retry ${serverRetries + 1}/${maxServerRetries})`
+        );
+        await sleep(backoff);
+        serverRetries++;
+        continue; // does not count against key-rotation attempts
+      }
+
+      // Non-retryable (400 bad request, malformed input, etc.)
       throw lastErr;
     }
     throw lastErr || new Error('Gemini: exhausted retries');
