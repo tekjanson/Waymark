@@ -46,6 +46,7 @@ const BLOCKED = [
   /\brm\s+-rf?\s+[/~]/, /\bgit\s+push\b/, /\bsudo\b/, /\bshutdown\b/, /\breboot\b/,
   /\bmkfs\b/, /\bdd\s+if=/, />\s*\/dev\/sd/, /:\(\)\s*\{/, /\bcurl\b[^\n|]*\|\s*(ba)?sh/,
   /\bwget\b[^\n|]*\|\s*(ba)?sh/, /\bchmod\s+-R\s+777\s+\//,
+  /agent-runner\.sh/, /\bsupervisorctl\b/, /\bdocker\s+compose\b/, /\bdocker\s+(run|exec|start|stop|rm)\b/,
 ];
 
 const SYSTEM = `You are an autonomous software engineer working INSIDE a real repository.

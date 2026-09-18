@@ -92,9 +92,25 @@ if [[ -d /root/.ssh ]]; then
     mkdir -p /root/.ssh-rw
     cp -r /root/.ssh/. /root/.ssh-rw/
     chmod 700 /root/.ssh-rw
+    find /root/.ssh-rw -type f -exec chmod 600 {} \;
+    find /root/.ssh-rw -type f -name "*.pub" -exec chmod 644 {} \;
     find /root/.ssh-rw -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} \;
-    echo "export GIT_SSH_COMMAND='ssh -i /root/.ssh-rw/id_rsa -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh-rw/known_hosts'" \
-        >> /etc/agent-env.sh
+    KEY_PATH=""
+    for key in /root/.ssh-rw/id_ed25519 /root/.ssh-rw/id_rsa /root/.ssh-rw/id_ecdsa /root/.ssh-rw/id_dsa; do
+        if [[ -f "$key" ]]; then
+            KEY_PATH="$key"
+            break
+        fi
+    done
+    if [[ -n "$KEY_PATH" ]]; then
+        echo "export GIT_SSH_COMMAND='ssh -F /dev/null -i ${KEY_PATH} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh-rw/known_hosts'" \
+            >> /etc/agent-env.sh
+        log "Using SSH key ${KEY_PATH} for git push"
+    else
+        echo "export GIT_SSH_COMMAND='ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh-rw/known_hosts'" \
+            >> /etc/agent-env.sh
+        log "No private SSH key found in /root/.ssh-rw; using default ssh identity resolution"
+    fi
     log "SSH keys copied to /root/.ssh-rw with correct permissions"
 fi
 
