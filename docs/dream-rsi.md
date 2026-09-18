@@ -23,9 +23,12 @@ flowchart TD
     E --> F[agentic harness<br/>read/search/edit/run tools, ReAct loop]
     F --> K[GeminiClient + KeyManager pool<br/>rotate on 429 / quota]
     F --> G[iterate with test feedback<br/>until scoped tests pass]
-    G -->|repeated failure| H[adaptive fan-out<br/>N agentic attempts across keys]
-    G --> R[Reflexion<br/>distil a one-line lesson]
-    R --> I[log node to Discovery_Tree]
+    G --> V{LLM-as-judge<br/>score ≥ threshold?<br/>no test-gaming?}
+    V -->|reject → self-repair| F
+    V -->|still stuck| H[adaptive fan-out<br/>N attempts, best-of-N by score]
+    V -->|approve| I[log node to Discovery_Tree]
+    V -->|failure| R[Reflexion lesson]
+    R --> I
     H --> I
     I --> J[commit winner, mark task QA]
 ```
@@ -36,6 +39,7 @@ flowchart TD
 | Key pool + rotation | [dev-worker/scripts/key-manager.js](../dev-worker/scripts/key-manager.js) |
 | Gemini API client | [dev-worker/scripts/lib/gemini.js](../dev-worker/scripts/lib/gemini.js) |
 | Agentic coding harness | [dev-worker/scripts/lib/agent-harness.js](../dev-worker/scripts/lib/agent-harness.js) |
+| Self-judging evaluator | [dev-worker/scripts/lib/evaluator.js](../dev-worker/scripts/lib/evaluator.js) |
 | Zero-dep Sheets client | [dev-worker/scripts/lib/sheets.js](../dev-worker/scripts/lib/sheets.js) |
 | Discovery Tree + dream_evaluator | [dev-worker/scripts/discovery-tree.js](../dev-worker/scripts/discovery-tree.js) |
 | Dream-RSI handler | [dev-worker/scripts/dream-rsi.js](../dev-worker/scripts/dream-rsi.js) |
@@ -91,6 +95,9 @@ DISCOVERY_TREE_TAB=Discovery_Tree  # tab name
 DREAM_FANOUT_N=3                   # parallel agentic attempts when a task keeps failing
 DREAM_MAX_TURNS=24                 # max tool actions per attempt
 DREAM_TEST_TIMEOUT_MS=600000       # max time per test run (10 min)
+DREAM_EVAL_ENABLED=1               # LLM-as-judge gate (set 0 to disable)
+DREAM_EVAL_THRESHOLD=0.7           # minimum review score to accept an attempt
+DREAM_EVAL_RETRIES=1               # self-repair rounds on a rejected attempt
 DREAM_PUSH=1                       # push winning branches to origin for QA
 ```
 
@@ -159,12 +166,16 @@ That's the full run: **works + tested + logged.** Stop the worker any time with
    command and, if it fails, the failure is fed back so the agent self-corrects
    (the lint/test → fix loop). The episode ends only when tests pass or the turn
    budget is spent.
-5. **Adapt (adaptive compute)** — if a task keeps failing, the engine **fans
+5. **Evaluate (self-judge)** — once tests pass, an **LLM-as-judge** scores the
+   change against a rubric and explicitly checks for **test gaming**. The
+   attempt is accepted only if it clears `DREAM_EVAL_THRESHOLD`; otherwise the
+   judge's issues are fed back for a self-repair round.
+6. **Adapt (adaptive compute)** — if a task keeps failing, the engine **fans
    out**: it runs `DREAM_FANOUT_N` full agentic attempts in parallel across
-   different keys in isolated `git worktree`s, merges the winner, and logs every
-   dead end. Each failed attempt also produces a one-line **Reflexion** lesson
-   that becomes an explicit "avoid" for the next attempt.
-6. **Record** — every attempt becomes a node in the `Discovery_Tree`; on success
+   different keys in isolated `git worktree`s, judges each, merges the
+   **highest-scoring** winner, and logs every dead end. Each failed attempt also
+   produces a one-line **Reflexion** lesson that becomes an explicit "avoid".
+7. **Record** — every attempt becomes a node in the `Discovery_Tree`; on success
    the task moves to **QA** with a note describing how to verify it.
 
 ### The agentic harness
@@ -183,6 +194,33 @@ borrows directly from the leading open-source coding agents:
 **Guardrails baked in:** every file path is confined to the workspace (no
 traversal), `run` blocks destructive/`git push` commands and is time-bounded, and
 the turn budget (`DREAM_MAX_TURNS`) caps each episode.
+
+### The self-judging eval
+
+Passing tests are necessary but not sufficient — an agent can make a suite go
+green by gaming it. So once tests pass, an **LLM-as-judge**
+([evaluator.js](../dev-worker/scripts/lib/evaluator.js)) reviews the diff + test
+output and returns a structured verdict:
+
+- a **0–1 score** across correctness, completeness, test quality, code quality,
+  and Waymark-law compliance;
+- an explicit **test-gaming** flag (deleted/weakened/skipped tests, trivial
+  always-true assertions, tests edited to match buggy behavior);
+- whether the change **actually fulfills the task**, plus concrete issues.
+
+The loop uses the verdict three ways:
+
+1. **Gate** — an attempt is accepted only if it passes tests *and* the judge
+   approves (score ≥ `DREAM_EVAL_THRESHOLD`, no gaming). A rejected attempt is
+   reverted and logged as a dead end.
+2. **Self-repair** — on a rejected-but-passing attempt, the judge's issues are
+   fed back to the harness for up to `DREAM_EVAL_RETRIES` fix-and-resubmit rounds.
+3. **Best-of-N** — in fan-out, the judge scores every passing candidate and the
+   **highest-scoring** one wins (not just the first to go green).
+
+The review score is written to the Discovery_Tree `Score` column, so the memory
+records not just pass/fail but *how good* each branch was. Set
+`DREAM_EVAL_ENABLED=0` to fall back to a pure test-only gate.
 
 ### Key rotation
 

@@ -108,6 +108,10 @@ services:
       - DREAM_MAX_TURNS=${DREAM_MAX_TURNS:-24}
       - DREAM_TEST_TIMEOUT_MS=${DREAM_TEST_TIMEOUT_MS:-600000}
       - DREAM_PUSH=${DREAM_PUSH:-1}
+      # Self-judging eval (LLM-as-judge): passing tests must ALSO clear the judge
+      - DREAM_EVAL_ENABLED=${DREAM_EVAL_ENABLED:-1}
+      - DREAM_EVAL_THRESHOLD=${DREAM_EVAL_THRESHOLD:-0.7}
+      - DREAM_EVAL_RETRIES=${DREAM_EVAL_RETRIES:-1}
       # Workboard the agent polls for tasks (also the default Discovery_Tree sheet)
       - WAYMARK_WORKBOARD_ID=${WAYMARK_WORKBOARD_ID:-}
 

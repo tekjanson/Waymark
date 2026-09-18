@@ -29,6 +29,7 @@
      WAYMARK_WORKBOARD_ID, DISCOVERY_TREE_SHEET_ID, DISCOVERY_TREE_TAB
      DREAM_FANOUT_N (default 3), DREAM_TEST_TIMEOUT_MS (default 600000)
      DREAM_MAX_TURNS (default 24), DREAM_PUSH (default 1)
+     DREAM_EVAL_ENABLED (1), DREAM_EVAL_THRESHOLD (0.7), DREAM_EVAL_RETRIES (1)
      AGENT_HUMAN_NAME, WORKSPACE_DIR (default /workspace)
    ============================================================ */
 
@@ -44,6 +45,7 @@ const { GeminiClient } = require('./lib/gemini');
 const { createSheetsClient } = require('./lib/sheets');
 const { DiscoveryTree, STATUS } = require('./discovery-tree');
 const { Harness } = require('./lib/agent-harness');
+const { Evaluator } = require('./lib/evaluator');
 
 /* ---------- Config ---------- */
 
@@ -54,6 +56,9 @@ const KEY_FILE = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/credentials/gsa
 const FANOUT_N = parseInt(process.env.DREAM_FANOUT_N || '3', 10);
 const MAX_TURNS = parseInt(process.env.DREAM_MAX_TURNS || '24', 10);
 const TEST_TIMEOUT_MS = parseInt(process.env.DREAM_TEST_TIMEOUT_MS || '600000', 10);
+const EVAL_ENABLED = process.env.DREAM_EVAL_ENABLED !== '0';
+const EVAL_THRESHOLD = parseFloat(process.env.DREAM_EVAL_THRESHOLD || '0.7');
+const EVAL_RETRIES = parseInt(process.env.DREAM_EVAL_RETRIES || '1', 10);
 const PUSH = process.env.DREAM_PUSH !== '0';
 const AGENT = process.env.AGENT_HUMAN_NAME || 'Gemini';
 const WORKBOARD_TAB = process.env.WAYMARK_WORKBOARD_TAB || 'Sheet1';
@@ -117,6 +122,27 @@ function readTouched(dir, relPaths) {
   return out;
 }
 
+/**
+ * Build a review diff for the given files: `git diff` for tracked changes, full
+ * body for new files. Bounded so the judge prompt stays compact.
+ */
+function computeDiff(dir, files) {
+  let out = '';
+  for (const rel of files || []) {
+    const tracked = git(['ls-files', '--error-unmatch', rel], dir).code === 0;
+    if (tracked) {
+      const d = git(['diff', '--no-color', 'HEAD', '--', rel], dir).out;
+      if (d.trim()) out += `${d}\n`;
+    } else {
+      const abs = path.resolve(dir, rel);
+      if (fs.existsSync(abs)) {
+        out += `\n+++ NEW FILE ${rel}\n${fs.readFileSync(abs, 'utf8').slice(0, 4000)}\n`;
+      }
+    }
+  }
+  return out.slice(0, 12000);
+}
+
 /* ---------- The Dream-RSI engine ---------- */
 
 class DreamRSI {
@@ -125,6 +151,7 @@ class DreamRSI {
     this.tree = tree;
     this.sheets = sheets;
     this.km = keyManager;
+    this.evaluator = new Evaluator(gemini, { threshold: EVAL_THRESHOLD, enabled: EVAL_ENABLED, log });
   }
 
   /** Adapter: one agent turn through the rotating key pool → { text, keyIndex }. */
@@ -150,6 +177,68 @@ class DreamRSI {
       runTimeoutMs: TEST_TIMEOUT_MS,
     });
     return harness.run({ task, desc, avoid, temperature });
+  }
+
+  /**
+   * Solve a task, then SELF-JUDGE the result. A passing attempt is only accepted
+   * if the LLM-as-judge approves it — this guards against test gaming and
+   * off-scope work. On a rejected-but-passing attempt the judge's issues are fed
+   * back to the harness for up to `retries` self-repair rounds.
+   * @returns { passed(=approved), testsPassed, summary, testCommand,
+   *            filesTouched(union), evalScore, evalVerdict, evalIssues, ... }
+   */
+  async solveWithReview({ workdir, task, desc, avoid, temperature, retries = EVAL_RETRIES }) {
+    const touched = new Set();
+    let r = await this.runAttempt({ workdir, task, desc, avoid, temperature });
+    (r.filesTouched || []).forEach((f) => touched.add(f));
+
+    // No judge (disabled or tests already failed) → tests are the only signal.
+    let ev = { approved: r.passed, score: r.passed ? 1 : 0, verdict: r.passed ? 'approve' : 'reject', issues: [], skipped: true };
+
+    if (r.passed && this.evaluator.enabled) {
+      ev = await this.evaluator.judge({
+        task,
+        desc,
+        diff: computeDiff(workdir, [...touched]),
+        testCommand: r.testCommand,
+        testOutput: r.transcriptTail,
+      });
+      log(`  ⚖ review: ${ev.verdict} (score ${ev.score})${ev.testGaming ? ' — TEST GAMING detected' : ''}`);
+
+      let tries = 0;
+      while (!ev.approved && tries < retries) {
+        tries++;
+        log(`  ↻ self-repair ${tries}/${retries} — feeding reviewer issues back`);
+        const feedback = `${desc || ''}\n\nA REVIEWER REJECTED the previous attempt. Address ALL of these, then finish again:\n- ${ev.issues.join('\n- ')}`;
+        r = await this.runAttempt({ workdir, task, desc: feedback, avoid, temperature });
+        (r.filesTouched || []).forEach((f) => touched.add(f));
+        if (!r.passed) {
+          ev = { approved: false, score: 0, verdict: 'reject', issues: [...(ev.issues || []), 'tests failed after self-repair'] };
+          break;
+        }
+        ev = await this.evaluator.judge({
+          task,
+          desc,
+          diff: computeDiff(workdir, [...touched]),
+          testCommand: r.testCommand,
+          testOutput: r.transcriptTail,
+        });
+        log(`  ⚖ review: ${ev.verdict} (score ${ev.score})`);
+      }
+    }
+
+    return {
+      passed: r.passed && ev.approved,
+      testsPassed: r.passed,
+      summary: r.summary,
+      testCommand: r.testCommand,
+      filesTouched: [...touched],
+      evalScore: ev.score,
+      evalVerdict: ev.verdict,
+      evalIssues: ev.issues || [],
+      keyIndex: r.keyIndex,
+      transcriptTail: r.transcriptTail,
+    };
   }
 
   /**
@@ -192,21 +281,24 @@ class DreamRSI {
             return { passed: false, summary: `worktree failed: ${e.message}`, filesTouched: [], branchId };
           }
           try {
-            const r = await this.runAttempt({
+            // Each fan-out attempt is judged; diversity comes from N, so no
+            // per-attempt self-repair (retries: 0). Best review score wins.
+            const s = await this.solveWithReview({
               workdir: wt,
               task,
               desc,
               avoid,
               temperature: Math.min(baseTemp + i * 0.15, 1.0),
+              retries: 0,
             });
-            return { ...r, branchId, wt };
+            return { ...s, branchId, wt };
           } catch (e) {
-            return { passed: false, summary: String(e.message || e), filesTouched: [], branchId, wt };
+            return { passed: false, testsPassed: false, evalScore: -1, summary: String(e.message || e), filesTouched: [], branchId, wt };
           }
         })
       );
 
-      // Log every branch to the Discovery_Tree.
+      // Log every branch to the Discovery_Tree with its review score.
       for (const a of attempts) {
         await this.tree.logAttempt({
           branchId: a.branchId,
@@ -215,14 +307,18 @@ class DreamRSI {
           task,
           prompt: a.summary,
           status: a.passed ? STATUS.PASS : STATUS.DEAD_END,
-          tests: a.passed ? 'pass' : 'fail',
-          result: a.passed ? a.summary : (a.transcriptTail || a.summary || '').slice(-160),
+          tests: a.testsPassed ? 'pass' : 'fail',
+          result: a.passed
+            ? `${a.summary} (review ${a.evalScore})`
+            : ((a.evalIssues && a.evalIssues.length) ? a.evalIssues.join('; ') : (a.transcriptTail || a.summary || '')).slice(-160),
           keyIndex: a.keyIndex,
-          score: a.passed ? 1 : -1,
+          score: a.testsPassed ? (a.evalScore ?? 0) : -1,
         });
       }
 
-      const winner = attempts.find((a) => a.passed) || null;
+      // Best-of-N: among JUDGE-APPROVED attempts, the highest review score wins.
+      const winner =
+        attempts.filter((a) => a.passed).sort((x, y) => (y.evalScore || 0) - (x.evalScore || 0))[0] || null;
       const files = winner && winner.wt ? readTouched(winner.wt, winner.filesTouched) : [];
       return { winner: winner ? { ...winner, files } : null, attempts };
     } finally {
@@ -338,35 +434,47 @@ async function main() {
     });
     if (winner) {
       const written = applyFiles(WORKSPACE, winner.files);
-      outcome = { passed: true, summary: winner.summary, branchId: winner.branchId, testCommand: winner.testCommand, written };
+      outcome = { passed: true, summary: winner.summary, branchId: winner.branchId, testCommand: winner.testCommand, written, evalScore: winner.evalScore };
     } else {
-      outcome = { passed: false, summary: 'fan-out found no passing branch', branchId, written: [] };
+      outcome = { passed: false, summary: 'fan-out found no judge-approved branch', branchId, written: [] };
     }
   } else {
-    // ── Single agentic attempt in the main workspace ───────────────────────
-    const r = await engine.runAttempt({
+    // ── Single agentic attempt + self-review in the main workspace ─────────
+    const s = await engine.solveWithReview({
       workdir: WORKSPACE,
       task,
       desc,
       avoid: evaln.avoid,
       temperature: evaln.suggestedTemperature,
     });
-    const written = r.filesTouched || [];
-    // Reflexion converts a raw failure into a concrete lesson for the next run.
-    const result = r.passed ? r.summary : await engine.reflect({ task, tail: r.transcriptTail });
-    outcome = { passed: r.passed, summary: r.summary, branchId, testCommand: r.testCommand, written, keyIndex: r.keyIndex };
+    const written = s.filesTouched || [];
+    const review = s.testsPassed && !s.passed ? s.evalIssues.join('; ') : '';
+    // Result string: approval + score, review rejection, or a Reflexion lesson.
+    const result = s.passed
+      ? `${s.summary} (review ${s.evalScore})`
+      : review || (await engine.reflect({ task, tail: s.transcriptTail }));
+    outcome = {
+      passed: s.passed,
+      summary: s.summary,
+      branchId,
+      testCommand: s.testCommand,
+      written,
+      keyIndex: s.keyIndex,
+      evalScore: s.evalScore,
+      review,
+    };
 
     await tree.logAttempt({
       branchId,
       parentId: evaln.bestParent,
       taskRow: row,
       task,
-      prompt: r.summary,
-      status: r.passed ? STATUS.PASS : STATUS.FAIL,
-      tests: r.passed ? 'pass' : 'fail',
+      prompt: s.summary,
+      status: s.passed ? STATUS.PASS : STATUS.FAIL,
+      tests: s.testsPassed ? 'pass' : 'fail',
       result,
-      keyIndex: r.keyIndex,
-      score: r.passed ? 1 : -1,
+      keyIndex: s.keyIndex,
+      score: s.testsPassed ? s.evalScore : -1,
     });
   }
 
@@ -385,8 +493,9 @@ async function finalize({ engine, row, task, outcome }) {
   if (!outcome.passed) {
     revertFiles(written);
     if (row) {
+      const reviewNote = outcome.review ? ` Review: ${outcome.review}.` : '';
       await engine
-        .addNote(row, `Dream-RSI ⚠ attempt failed (branch ${outcome.branchId}). Dead end logged to Discovery_Tree; will retry a different path.`)
+        .addNote(row, `Dream-RSI ⚠ attempt not approved (branch ${outcome.branchId}).${reviewNote} Dead end logged to Discovery_Tree; will retry a different path.`)
         .catch((e) => log(`addNote failed: ${e.message}`));
     }
     return;
@@ -414,7 +523,7 @@ async function finalize({ engine, row, task, outcome }) {
   if (row) {
     await engine.markStage(row, 'QA').catch((e) => log(`markStage failed: ${e.message}`));
     await engine
-      .addNote(row, `Dream-RSI ✅ ${outcome.summary}. Branch: ${branch}. Verify: ${outcome.testCommand}`)
+      .addNote(row, `Dream-RSI ✅ ${outcome.summary}${outcome.evalScore != null ? ` (review ${outcome.evalScore})` : ''}. Branch: ${branch}. Verify: ${outcome.testCommand}`)
       .catch((e) => log(`addNote failed: ${e.message}`));
   }
 

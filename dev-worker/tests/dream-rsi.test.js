@@ -24,6 +24,7 @@ const { DiscoveryTree, STATUS } = require('../scripts/discovery-tree');
 const { tryParseJSON } = require('../scripts/lib/gemini');
 const { applyFiles } = require('../scripts/dream-rsi');
 const { Harness } = require('../scripts/lib/agent-harness');
+const { Evaluator, verdictOf } = require('../scripts/lib/evaluator');
 
 /* ---------- tiny async test harness (queued, sequential) ---------- */
 
@@ -396,6 +397,55 @@ test('run blocks dangerous / push commands', async () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/* ======================================================================
+   Evaluator — LLM-as-judge self-evaluation (fake judge client)
+   ====================================================================== */
+
+section('Evaluator (self-judge)');
+
+test('empty diff is rejected without calling the model', async () => {
+  let called = false;
+  const gemini = { generateJSON: async () => { called = true; return { data: {} }; } };
+  const v = await new Evaluator(gemini, { threshold: 0.7 }).judge({ task: 'x', diff: '' });
+  ok(!v.approved, 'empty diff is not approved');
+  ok(!called, 'model is not called for an empty diff');
+});
+
+test('approves a solid change above threshold', async () => {
+  const gemini = { generateJSON: async () => ({ data: { score: 0.9, fulfillsTask: true, testGaming: false, issues: [] } }) };
+  const v = await new Evaluator(gemini, { threshold: 0.7 }).judge({ task: 'x', diff: 'diff --git a b' });
+  ok(v.approved, 'approved');
+  eq(v.verdict, 'approve');
+});
+
+test('rejects test gaming even with a high score', async () => {
+  const gemini = { generateJSON: async () => ({ data: { score: 0.95, fulfillsTask: true, testGaming: true, issues: ['deleted an assertion'] } }) };
+  const v = await new Evaluator(gemini, { threshold: 0.7 }).judge({ task: 'x', diff: 'd' });
+  ok(!v.approved, 'gaming blocks approval');
+  ok(v.testGaming, 'flagged as gaming');
+});
+
+test('rejects a low score and surfaces issues', async () => {
+  const gemini = { generateJSON: async () => ({ data: { score: 0.3, fulfillsTask: false, testGaming: false, issues: ['does not implement the feature'] } }) };
+  const v = await new Evaluator(gemini, { threshold: 0.7 }).judge({ task: 'x', diff: 'd' });
+  ok(!v.approved, 'low score not approved');
+  eq(v.verdict, 'reject');
+  ok(v.issues.includes('does not implement the feature'), 'surfaces issues');
+});
+
+test('disabled evaluator passes through without a call', async () => {
+  const gemini = { generateJSON: async () => { throw new Error('should not be called'); } };
+  const v = await new Evaluator(gemini, { enabled: false }).judge({ task: 'x', diff: 'd' });
+  ok(v.approved, 'disabled → approve');
+  ok(v.skipped, 'marked skipped');
+});
+
+test('verdictOf marks the revise band below threshold', () => {
+  const v = verdictOf({ score: 0.6, fulfillsTask: true, testGaming: false, issues: ['minor'] }, 0.7);
+  ok(!v.approved, 'below threshold not approved');
+  eq(v.verdict, 'revise');
 });
 
 /* ---------- runner ---------- */
