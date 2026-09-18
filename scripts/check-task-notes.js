@@ -34,9 +34,10 @@
 const fs = require('fs');
 const path = require('path');
 const { resolveWorkboardConfig } = require('./workboard-config');
+const { createTokenProvider } = require('./lib/service-account');
 
 const DEFAULT_SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const DEFAULT_RANGE          = 'Sheet1!A:I';
+const DEFAULT_RANGE          = 'Sheet1!A:J';
 const WORKBOARD = resolveWorkboardConfig({
   defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
   defaultRange: DEFAULT_RANGE,
@@ -44,14 +45,6 @@ const WORKBOARD = resolveWorkboardConfig({
 const SPREADSHEET_ID = WORKBOARD.spreadsheetId;
 const RANGE = WORKBOARD.range;
 const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
-
-let GoogleAuth;
-try {
-  ({ GoogleAuth } = require('google-auth-library'));
-} catch {
-  console.error('ERROR: google-auth-library not found. Run: npm install google-auth-library');
-  process.exit(1);
-}
 
 // Parse CLI args
 let taskRow = null;
@@ -72,6 +65,17 @@ if (!taskRow || taskRow < 1) {
   console.error('check-task-notes: --row required and must be > 0');
   process.exit(1);
 }
+
+const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+if (!credPath) {
+  console.error('ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to your service-account key JSON.');
+  process.exit(1);
+}
+
+const getAccessToken = createTokenProvider({
+  keyFile: credPath,
+  scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+});
 
 // Ensure state dir exists
 if (!fs.existsSync(stateDir)) {
@@ -96,18 +100,7 @@ seenState.lastSeenRows = seenState.lastSeenRows || [];
 
 async function main() {
   try {
-    const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    if (!credsPath) {
-      throw new Error('GOOGLE_APPLICATION_CREDENTIALS not set');
-    }
-
-    const auth = new GoogleAuth({
-      keyFile: credsPath,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
-    
-    const client = await auth.getClient();
-    const { token } = await client.getAccessToken();
+    const token = await getAccessToken();
 
     // Fetch the full workboard
     const url = `${SHEETS_BASE}/${SPREADSHEET_ID}/values/${encodeURIComponent(RANGE)}?valueRenderOption=UNFORMATTED_VALUE`;

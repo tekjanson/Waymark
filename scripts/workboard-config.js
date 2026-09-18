@@ -19,11 +19,11 @@
      "projects": {
        "waymark": {
          "spreadsheetId": "...",
-         "range": "Sheet1!A:I"
+        "range": "Sheet1!A:J"
        },
        "client-a": {
          "spreadsheetId": "...",
-         "range": "Board!A1:I500"
+         "range": "Board!A1:J500"
        }
      }
    }

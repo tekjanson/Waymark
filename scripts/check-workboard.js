@@ -38,9 +38,10 @@
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
+const { createTokenProvider } = require('./lib/service-account');
 
 const DEFAULT_SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const DEFAULT_RANGE          = 'Sheet1!A:I';
+const DEFAULT_RANGE          = 'Sheet1!A:J';
 const WORKBOARD = resolveWorkboardConfig({
   defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
   defaultRange: DEFAULT_RANGE,
@@ -64,31 +65,22 @@ if (rawArgs.includes('--qa-details')) {
 
 /* ---------- Auth ---------- */
 
-let GoogleAuth;
-try {
-  ({ GoogleAuth } = require('google-auth-library'));
-} catch {
-  console.error('ERROR: google-auth-library not found. Run: npm install google-auth-library');
-  process.exit(1);
-}
-
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!credPath) {
   console.error('ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to your service-account key JSON.');
   process.exit(1);
 }
 
-const auth = new GoogleAuth({
+const getAccessToken = createTokenProvider({
   keyFile: credPath,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
 });
 
 /* ---------- Main ---------- */
 
 (async () => {
   try {
-    const client = await auth.getClient();
-    const { token } = await client.getAccessToken();
+    const token = await getAccessToken();
 
     const url = `${SHEETS_BASE}/${SPREADSHEET_ID}/values/${encodeURIComponent(RANGE)}`;
     const res = await fetch(url, {
@@ -151,7 +143,10 @@ const auth = new GoogleAuth({
       };
       if (sheetId) item.sheetId = sheetId;
 
-      if (stage === 'To Do') {
+      // 'To Do' and 'Backlog' are both claimable queues — the watcher
+      // (watch-workboard.js) and the claim path (update-workboard.js) already
+      // treat Backlog as workable, so surface it here too.
+      if (stage === 'To Do' || stage === 'Backlog') {
         // When filtering by agent, only show unassigned or own tasks
         if (AGENT_NAME && assignee && assignee !== AGENT_NAME) continue;
 

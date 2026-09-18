@@ -3,7 +3,7 @@
   "projects": {
     "waymark": {
       "spreadsheetId": "1NG15SllfgAt2rNIWq4HPNsfnjxIGqBxGjCgZa1UhQYs",
-      "range": "Sheet1!A:I"
+      "range": "Sheet1!A:J"
     }
   }
 }

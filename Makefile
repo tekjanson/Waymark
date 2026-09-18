@@ -481,8 +481,14 @@ auth-check: ## Check which AI credentials are available
 
 # ── Workboard ─────────────────────────────────────────────────────────
 
-workboard: ## Print current workboard state as JSON
-	node scripts/check-workboard.js
+workboard: ## Print current workboard state as JSON inside the dev-worker container
+	@echo "Running workboard check inside the dev-worker container..."
+	$(COMPOSE) run --rm --no-deps --entrypoint bash waymark-dev-worker -lc 'cd /workspace && node scripts/check-workboard.js'
+
+workboard-notes: ## Check for new notes on a task row inside the dev-worker container [ROW= required]
+	@if [ -z "$(ROW)" ]; then echo "ERROR: ROW= is required"; exit 1; fi
+	@echo "Running note check inside the dev-worker container for row $(ROW)..."
+	$(COMPOSE) run --rm --no-deps --entrypoint bash waymark-dev-worker -lc 'cd /workspace && node scripts/check-task-notes.js --row "$(ROW)" $(if $(AGENT),--agent "$(AGENT)") $(if $(STATE_DIR),--state-dir "$(STATE_DIR)")'
 
 # ── Financials ────────────────────────────────────────────────────────
 
