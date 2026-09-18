@@ -5,7 +5,18 @@
 set -euo pipefail
 
 log() { echo "[entrypoint $(date +%T)] $*"; }
-
+# ── 0. Worker identity ─────────────────────────────────────────────────────
+# The agent runs UNPRIVILEGED as `worker` (UID/GID match the host operator so
+# bind-mounted files stay host-owned). This entrypoint still runs as root to
+# prepare the environment, but we point HOME at the worker's home NOW so every
+# config generated below (gitconfig, MCP files, credential + SSH symlinks) lands
+# where the worker will actually read it. supervisord then launches every
+# program as `worker` (see supervisord.conf).
+WORKER_USER="${WORKER_USER:-worker}"
+WORKER_HOME="$(getent passwd "$WORKER_USER" | cut -d: -f6 2>/dev/null)"
+WORKER_HOME="${WORKER_HOME:-/home/worker}"
+export HOME="$WORKER_HOME"
+log "Worker: ${WORKER_USER} (home: ${WORKER_HOME})"
 # ── 1. Git identity ───────────────────────────────────────────────────────────
 GIT_EMAIL="${GIT_EMAIL:-waymark-agent@container.local}"
 GIT_NAME="${GIT_NAME:-Waymark Agent}"
@@ -37,6 +48,8 @@ AGENT_HUMAN_NAME="${AGENT_HUMAN_NAME:-}"
 AGENT_MODEL="${AGENT_MODEL:-claude-sonnet-4.6}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5}"
 AI_PROVIDER="${AI_PROVIDER:-auto}"
+ACTIVE_AGENT="${ACTIVE_AGENT:-copilot}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-flash-latest}"
 AGENTS_SHEET_ID="${AGENTS_SHEET_ID:-}"
 
 cat > /etc/agent-env.sh <<EOF
@@ -51,34 +64,59 @@ export AGENTS_SHEET_ID="${AGENTS_SHEET_ID}"
 export CONTAINER_NAME="${CONTAINER_NAME:-waymark-dev-worker}"
 export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/credentials/gsa-key.json}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+# ── Gemini Dream-RSI engine (ACTIVE_AGENT=gemini) ───────────────────────────
+export ACTIVE_AGENT="${ACTIVE_AGENT}"
+export GEMINI_KEY_POOL="${GEMINI_KEY_POOL:-}"
+export GEMINI_MODEL="${GEMINI_MODEL}"
+export GEMINI_KEY_COOLDOWN_MS="${GEMINI_KEY_COOLDOWN_MS:-3600000}"
+export WAYMARK_WORKBOARD_ID="${WAYMARK_WORKBOARD_ID:-}"
+export DISCOVERY_TREE_SHEET_ID="${DISCOVERY_TREE_SHEET_ID:-}"
+export DISCOVERY_TREE_TAB="${DISCOVERY_TREE_TAB:-Discovery_Tree}"
+export DREAM_FANOUT_N="${DREAM_FANOUT_N:-3}"
+export DREAM_MAX_TURNS="${DREAM_MAX_TURNS:-24}"
+export DREAM_TEST_TIMEOUT_MS="${DREAM_TEST_TIMEOUT_MS:-600000}"
+export DREAM_PUSH="${DREAM_PUSH:-1}"
+export DREAM_EVAL_ENABLED="${DREAM_EVAL_ENABLED:-1}"
+export DREAM_EVAL_THRESHOLD="${DREAM_EVAL_THRESHOLD:-0.7}"
+export DREAM_EVAL_RETRIES="${DREAM_EVAL_RETRIES:-1}"
 export DISPLAY=":99"
-export HOME="/root"
+export HOME="${WORKER_HOME}"
 EOF
 chmod 644 /etc/agent-env.sh
 log "Agent env: NAME=${AGENT_HUMAN_NAME:-<unnamed>}, CMD=${AGENT_COMMAND}, MODEL=${AGENT_MODEL}, AI_PROVIDER=${AI_PROVIDER}"
 
 # ── 4. Symlink Google credential ──────────────────────────────────────────────
 if [[ -f /credentials/gsa-key.json ]]; then
-    mkdir -p /root/.config/gcloud
-    ln -sf /credentials/gsa-key.json /root/.config/gcloud/waymark-service-account-key.json
-    log "Google SA credential symlinked → /root/.config/gcloud/"
-    OPERATOR_HOME="${OPERATOR_HOME:-/home/tekjanson}"
-    if [[ -n "$OPERATOR_HOME" && "$OPERATOR_HOME" != "/root" ]]; then
-        mkdir -p "${OPERATOR_HOME}/.config/gcloud"
-        ln -sf /credentials/gsa-key.json "${OPERATOR_HOME}/.config/gcloud/waymark-service-account-key.json"
-        log "Google SA credential symlinked → ${OPERATOR_HOME}/.config/gcloud/"
-    fi
+    mkdir -p "${WORKER_HOME}/.config/gcloud"
+    ln -sf /credentials/gsa-key.json "${WORKER_HOME}/.config/gcloud/waymark-service-account-key.json"
+    log "Google SA credential symlinked → ${WORKER_HOME}/.config/gcloud/"
 fi
 
 # ── 5. SSH key permissions ────────────────────────────────────────────────────
-if [[ -d /root/.ssh ]]; then
-    mkdir -p /root/.ssh-rw
-    cp -r /root/.ssh/. /root/.ssh-rw/
-    chmod 700 /root/.ssh-rw
-    find /root/.ssh-rw -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} \;
-    echo "export GIT_SSH_COMMAND='ssh -i /root/.ssh-rw/id_rsa -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh-rw/known_hosts'" \
-        >> /etc/agent-env.sh
-    log "SSH keys copied to /root/.ssh-rw with correct permissions"
+if [[ -d "${WORKER_HOME}/.ssh" ]]; then
+    mkdir -p "${WORKER_HOME}/.ssh-rw"
+    cp -r "${WORKER_HOME}/.ssh/." "${WORKER_HOME}/.ssh-rw/"
+    chmod 700 "${WORKER_HOME}/.ssh-rw"
+    find "${WORKER_HOME}/.ssh-rw" -type f -exec chmod 600 {} \;
+    find "${WORKER_HOME}/.ssh-rw" -type f -name "*.pub" -exec chmod 644 {} \;
+    find "${WORKER_HOME}/.ssh-rw" -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} \;
+    KEY_PATH=""
+    for key in "${WORKER_HOME}/.ssh-rw/id_ed25519" "${WORKER_HOME}/.ssh-rw/id_rsa" "${WORKER_HOME}/.ssh-rw/id_ecdsa" "${WORKER_HOME}/.ssh-rw/id_dsa"; do
+        if [[ -f "$key" ]]; then
+            KEY_PATH="$key"
+            break
+        fi
+    done
+    if [[ -n "$KEY_PATH" ]]; then
+        echo "export GIT_SSH_COMMAND='ssh -F /dev/null -i ${KEY_PATH} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${WORKER_HOME}/.ssh-rw/known_hosts'" \
+            >> /etc/agent-env.sh
+        log "Using SSH key ${KEY_PATH} for git push"
+    else
+        echo "export GIT_SSH_COMMAND='ssh -F /dev/null -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${WORKER_HOME}/.ssh-rw/known_hosts'" \
+            >> /etc/agent-env.sh
+        log "No private SSH key found in ${WORKER_HOME}/.ssh-rw; using default ssh identity resolution"
+    fi
+    log "SSH keys copied to ${WORKER_HOME}/.ssh-rw with correct permissions"
 fi
 
 # ── 6. Docker socket permissions (DooD) ──────────────────────────────────────
@@ -99,8 +137,15 @@ else
     log "Workspace not mounted — skipping repo learning"
 fi
 
-# ── 8. Ensure log directory exists ───────────────────────────────────────────
+# ── 8. Ensure runtime dirs exist + hand ownership to the worker ────────────
 mkdir -p /var/log/supervisor /tmp
+# Xvfb (run as worker) needs a writable X11 socket dir.
+mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+# Everything the entrypoint generated under the worker home was created as root;
+# hand it back so the unprivileged worker can read/write its own config, creds,
+# and SSH keys.
+chown -R "${WORKER_USER}:${WORKER_USER}" "${WORKER_HOME}" 2>/dev/null || true
+chown -R "${WORKER_USER}:${WORKER_USER}" /var/log/supervisor 2>/dev/null || true
 
-log "Initialization complete — starting supervisord"
+log "Initialization complete — starting supervisord (programs run as ${WORKER_USER})"
 exec supervisord -n -c /etc/supervisord.conf

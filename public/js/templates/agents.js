@@ -46,7 +46,7 @@ const definition = {
   color: '#7c3aed',
   priority: 24,
   itemNoun: 'Agent',
-  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat'],
+  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Summary', 'Workboard feedback', 'Tuning feedback', 'Keys', 'Activity'],
 
   detect(lower) {
     const hasTuning = lower.some(h => /\btuning\b|\bpersonality\b|\bprompt\b/.test(h));
@@ -57,8 +57,8 @@ const definition = {
   columns(lower) {
     const cols = {
       name: -1, model: -1, provider: -1, status: -1,
-      tuning: -1, task: -1, project: -1, heartbeat: -1,
-      workboard: -1, command: -1, folder: -1,
+      tuning: -1, task: -1, project: -1, heartbeat: -1, summary: -1, workboardFeedback: -1, tuningFeedback: -1,
+      keys: -1, workboard: -1, command: -1, folder: -1, activity: -1,
     };
     cols.name      = lower.findIndex(h => /^(name|agent|worker|identity)$/.test(h));
     if (cols.name === -1) cols.name = 0;
@@ -69,9 +69,14 @@ const definition = {
     cols.task      = lower.findIndex(h => /^(task|current task|working on|job|doing)/.test(h));
     cols.project   = lower.findIndex(h => /^(project|board|scope)/.test(h));
     cols.heartbeat = lower.findIndex(h => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h));
-    cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)/.test(h));
+    cols.summary   = lower.findIndex(h => /^(summary|state summary|ai summary|brief|synopsis)/.test(h));
+    cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workbook)/.test(h));
+    cols.tuningFeedback = lower.findIndex(h => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h));
+    cols.keys      = lower.findIndex(h => /^(keys|key status|api keys|key pool|tokens)/.test(h));
+    cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)$/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
     cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
+    cols.activity  = lower.findIndex(h => /^(activity|feed|log|stream|live)/.test(h));
     return cols;
   },
 
@@ -194,9 +199,14 @@ const definition = {
       const taskVal   = cell(row, cols.task)       || '';
       const project   = cell(row, cols.project)    || '';
       const heartbeat = cell(row, cols.heartbeat)  || '';
+      const summary   = cell(row, cols.summary)    || '';
+      const workboardFeedback = cell(row, cols.workboardFeedback) || '';
+      const tuningFeedback = cell(row, cols.tuningFeedback) || '';
+      const keys      = cell(row, cols.keys)       || '';
       const workboard = cell(row, cols.workboard)  || '';
       const command   = cell(row, cols.command)    || '';
       const folder    = cell(row, cols.folder)     || '';
+      const activity  = cell(row, cols.activity)   || '';
 
       const statusKey   = STATUS_CYCLE.includes(statusVal) ? statusVal : 'Offline';
       const statusColor = STATUS_COLORS[statusKey];
@@ -249,6 +259,56 @@ const definition = {
       /* -- Heartbeat -- */
       const heartbeatEl = (cols.heartbeat !== -1 && heartbeat)
         ? el('div', { className: 'agents-heartbeat' }, ['⏱ Last seen: ', timeAgo(heartbeat)])
+        : null;
+
+      /* -- AI summary (state snapshot above the raw feed) -- */
+      const summaryEl = (cols.summary !== -1 && summary)
+        ? el('div', { className: 'agents-summary' }, [
+            el('div', { className: 'agents-summary-label' }, ['AI summary']),
+            el('div', { className: 'agents-summary-text' }, [summary]),
+          ])
+        : null;
+
+      const workboardFeedbackEl = (cols.workboardFeedback !== -1 && workboardFeedback)
+        ? el('div', { className: 'agents-feedback agents-feedback-workboard' }, [
+            el('div', { className: 'agents-feedback-label' }, ['Workbook feedback']),
+            el('div', { className: 'agents-feedback-text' }, [workboardFeedback]),
+          ])
+        : null;
+
+      const tuningFeedbackEl = (cols.tuningFeedback !== -1 && tuningFeedback)
+        ? el('div', { className: 'agents-feedback agents-feedback-tuning' }, [
+            el('div', { className: 'agents-feedback-label' }, ['Tuning feedback']),
+            el('div', { className: 'agents-feedback-text' }, [tuningFeedback]),
+          ])
+        : null;
+
+      /* -- AI key-pool monitor (throttle awareness) -- */
+      const keysThrottled = /throttl|(^|[^\d])0\/\d+/i.test(keys);
+      const keysEl = (cols.keys !== -1 && keys)
+        ? el('div', { className: 'agents-keys' + (keysThrottled ? ' agents-keys-throttled' : '') }, [
+            el('span', { className: 'agents-keys-icon' }, ['🔑']),
+            el('span', { className: 'agents-keys-label' }, ['Keys: ']),
+            el('span', { className: 'agents-keys-text' }, [keys]),
+          ])
+        : null;
+
+      /* -- Live activity feed (chat stream fed by the dev-worker) -- */
+      const hbMs = heartbeat ? Date.now() - new Date(heartbeat).getTime() : Infinity;
+      const isLive = /online|busy/i.test(statusVal) && hbMs < 180000;
+      const activityLines = activity.split('\n').map(l => l.trim()).filter(Boolean);
+      const feedEl = cols.activity !== -1
+        ? el('div', { className: 'agents-feed' + (isLive ? ' agents-feed-live' : '') }, [
+            el('div', { className: 'agents-feed-header' }, [
+              el('span', { className: 'agents-feed-pulse' + (isLive ? '' : ' agents-feed-pulse-off') }),
+              el('span', { className: 'agents-feed-title' }, ['Live activity']),
+            ]),
+            el('div', { className: 'agents-feed-body' },
+              activityLines.length
+                ? activityLines.map(_feedLine)
+                : [el('div', { className: 'agents-feed-empty' }, ['Waiting for the agent to stream…'])]
+            ),
+          ])
         : null;
 
       /* -- Workboard target: clickable link + inline edit -- */
@@ -358,6 +418,7 @@ const definition = {
           ]),
           cardActions,
         ]),
+        ...(keysEl ? [keysEl] : []),
         el('div', { className: 'agents-tuning-section' }, [
           el('label', { className: 'agents-tuning-label' }, ['✏️ Tuning']),
           el('div', { className: 'agents-tuning-hint' }, [
@@ -368,6 +429,10 @@ const definition = {
         ...(workboardEl ? [workboardEl] : []),
         ...(commandEl   ? [commandEl]   : []),
         ...(taskDisplay ? [taskDisplay] : []),
+        ...(summaryEl   ? [summaryEl]   : []),
+        ...(workboardFeedbackEl ? [workboardFeedbackEl] : []),
+        ...(tuningFeedbackEl ? [tuningFeedbackEl] : []),
+        ...(feedEl      ? [feedEl]      : []),
         ...(projectEl   ? [projectEl]   : []),
         ...(folderEl    ? [folderEl]    : []),
         ...(heartbeatEl ? [heartbeatEl] : []),
@@ -413,6 +478,11 @@ const definition = {
     ]);
 
     container.append(deleteModal);
+
+    /* Pin each live feed to the newest line so it reads like a chat. */
+    requestAnimationFrame(() => {
+      container.querySelectorAll('.agents-feed-body').forEach(b => { b.scrollTop = b.scrollHeight; });
+    });
   },
 };
 
@@ -424,6 +494,17 @@ function _statBadge(label, count, color = null) {
       ...(color ? { style: `color:${color}` } : {}),
     }, [String(count)]),
     el('span', { className: 'agents-stat-label' }, [label]),
+  ]);
+}
+
+/* Render one live-feed line, parsing an optional [HH:MM:SS] prefix. */
+function _feedLine(line) {
+  const m = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*(.*)$/);
+  const time = m ? m[1] : '';
+  const text = m ? m[2] : line;
+  return el('div', { className: 'agents-feed-line' }, [
+    time ? el('span', { className: 'agents-feed-time' }, [time]) : null,
+    el('span', { className: 'agents-feed-text' }, [text]),
   ]);
 }
 

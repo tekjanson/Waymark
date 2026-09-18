@@ -41,7 +41,7 @@ source /etc/agent-env.sh 2>/dev/null || true
 
 # Resolve "auto" → detect available provider (same logic as learn-repo.sh)
 if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
-    if [[ -f /root/.copilot/config.json ]]; then
+    if [[ -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"
@@ -57,9 +57,18 @@ AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 CLAUDE_COMMAND="${CLAUDE_COMMAND:-${AGENT_COMMAND/@waymark-builder /}}"
 AGENT_MODEL="${AGENT_MODEL:-claude-sonnet-4.6}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-flash-latest}"
 AGENT_HUMAN_NAME="${AGENT_HUMAN_NAME:-}"
 AGENTS_SHEET_ID="${AGENTS_SHEET_ID:-}"
 RESTART_DELAY=5
+
+# ACTIVE_AGENT selects the engine FAMILY (V2 multi-agent groundwork):
+#   copilot → the AI_PROVIDER path (GitHub Copilot CLI or Claude Code) — default
+#   gemini  → the Gemini Dream-RSI recursive self-improvement handler
+# Within the copilot family, AI_PROVIDER still chooses copilot vs claude, so the
+# existing behavior is 100% preserved when ACTIVE_AGENT is unset.
+ACTIVE_AGENT="${ACTIVE_AGENT:-copilot}"
+ACTIVE_AGENT="${ACTIVE_AGENT,,}"  # lowercase
 
 log() { echo "[agent-runner $(date +%T)] $*"; }
 
@@ -129,7 +138,7 @@ validate_copilot() {
         log "ERROR: copilot CLI not found — is @github/copilot installed?"
         return 1
     fi
-    if [[ ! -f /root/.copilot/config.json ]]; then
+    if [[ ! -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         log "ERROR: ~/.copilot/config.json missing — run 'copilot --login' on the host"
         return 1
     fi
@@ -178,7 +187,7 @@ run_copilot() {
     log "  Provider:  GitHub Copilot CLI"
     log "  Model:     ${AGENT_MODEL}"
     log "  Identity:  ${AGENT_HUMAN_NAME:-<unnamed>}"
-    log "  MCP:       $( [[ -f /root/.copilot/mcp.json ]] && echo "~/.copilot/mcp.json" || echo "none" )"
+    log "  MCP:       $( [[ -f "${HOME:-/home/worker}/.copilot/mcp.json" ]] && echo "~/.copilot/mcp.json" || echo "none" )"
     log "  Context:   $( [[ -d "$CONTEXT_DIR" ]] && echo "$CONTEXT_DIR" || echo "none" )"
     [[ -n "${AGENT_TUNING:-}" ]] && log "  Tuning:    ${AGENT_TUNING:0:60}..."
 
@@ -220,12 +229,78 @@ run_claude() {
     )
 }
 
+# ── Gemini Dream-RSI engine ───────────────────────────────────────────────────
+# Runs the Node Dream-RSI handler for one claimed task. The handler owns the
+# recursive self-improvement cycle (dream_evaluator → generate → test → adaptive
+# fan-out) and reads the rotating GEMINI_KEY_POOL. It never uses the Copilot CLI,
+# so this is a fully independent engine sitting behind the same router.
+validate_gemini() {
+    if ! command -v node >/dev/null 2>&1; then
+        log "ERROR: node not found — cannot run the Gemini Dream-RSI handler"
+        return 1
+    fi
+    if [[ -z "${GEMINI_KEY_POOL:-}" ]]; then
+        log "ERROR: GEMINI_KEY_POOL not set — add keys in .env (see .env.example)"
+        return 1
+    fi
+    return 0
+}
+
+run_gemini() {
+    local script
+    script="$( [ -f /workspace/dev-worker/scripts/dream-rsi.js ] && echo /workspace/dev-worker/scripts/dream-rsi.js || echo /scripts/dream-rsi.js )"
+    log "  Engine:    Gemini Dream-RSI"
+    log "  Model:     ${GEMINI_MODEL}"
+    log "  Identity:  ${AGENT_HUMAN_NAME:-<unnamed>}"
+    # Never echo key material — report presence only.
+    log "  Key pool:  $( [[ -n "${GEMINI_KEY_POOL:-}" ]] && echo 'configured' || echo 'MISSING' )"
+    log "  Memory:    $( [[ -n "${DISCOVERY_TREE_SHEET_ID:-${WAYMARK_WORKBOARD_ID:-}}" ]] && echo 'Discovery_Tree' || echo 'none' )"
+    (
+        cd /workspace
+        GEMINI_MODEL="${GEMINI_MODEL}" \
+        node "$script" \
+            --row  "${CLAIMED_ROW:-}" \
+            --task "${CLAIMED_TASK:-${AGENT_COMMAND}}" \
+            --desc "${CLAIMED_DESC:-}" \
+            || true
+    )
+}
+
+# ── Engine router ─────────────────────────────────────────────────────────────
+# Single dispatch point. ACTIVE_AGENT=gemini routes to the Dream-RSI handler;
+# anything else falls through to the AI_PROVIDER path so Copilot/Claude are
+# untouched. This is the seam future V2 engines plug into.
+dispatch_session() {
+    if [[ "${ACTIVE_AGENT}" == "gemini" ]]; then
+        if validate_gemini; then
+            run_gemini
+        else
+            log "Gemini validation failed — will retry after ${RESTART_DELAY}s"
+        fi
+        return
+    fi
+    case "$AI_PROVIDER" in
+        copilot)
+            if validate_copilot; then run_copilot
+            else log "Copilot validation failed — will retry after ${RESTART_DELAY}s"; fi
+            ;;
+        claude)
+            if validate_claude; then run_claude
+            else log "Claude validation failed — will retry after ${RESTART_DELAY}s"; fi
+            ;;
+        *)
+            log "ERROR: Unknown AI_PROVIDER='${AI_PROVIDER}' — expected copilot or claude"
+            log "  Set AI_PROVIDER (or ACTIVE_AGENT=gemini) in docker-compose.yml or .env"
+            ;;
+    esac
+}
+
 # ── Resolve "auto" provider (after tuning may have re-exported AI_PROVIDER) ───
 # read-agent-tuning.sh exports AI_PROVIDER from the sheet value. Normalize to
 # lowercase and resolve "auto" here, after tuning has loaded.
 AI_PROVIDER="${AI_PROVIDER,,}"  # lowercase
 if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
-    if [[ -f /root/.copilot/config.json ]]; then
+    if [[ -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"
@@ -418,7 +493,7 @@ check_for_task_notes() {
 
 # ── Main agent loop ───────────────────────────────────────────────────────────
 AGENT_ROLE="${AGENT_ROLE:-}"
-log "Starting agent loop — provider: ${AI_PROVIDER} | role: ${AGENT_ROLE:-builder}"
+log "Starting agent loop — engine: ${ACTIVE_AGENT} | provider: ${AI_PROVIDER} | role: ${AGENT_ROLE:-builder}"
 log "  Copilot CLI: $(copilot --version 2>/dev/null || echo 'not available')"
 log "  Claude Code: $(claude --version 2>/dev/null || echo 'not available')"
 log "  Workboard:   ${WAYMARK_WORKBOARD_ID:-<not set>}"
@@ -468,26 +543,7 @@ while true; do
     _orig_cmd="${AGENT_COMMAND}"
     AGENT_COMMAND="${TASK_PROMPT}"
 
-    case "$AI_PROVIDER" in
-        copilot)
-            if validate_copilot; then
-                run_copilot
-            else
-                log "Copilot validation failed — will retry after ${RESTART_DELAY}s"
-            fi
-            ;;
-        claude)
-            if validate_claude; then
-                run_claude
-            else
-                log "Claude validation failed — will retry after ${RESTART_DELAY}s"
-            fi
-            ;;
-        *)
-            log "ERROR: Unknown AI_PROVIDER='${AI_PROVIDER}' — expected copilot or claude"
-            log "  Set AI_PROVIDER env var in docker-compose.yml or .env"
-            ;;
-    esac
+    dispatch_session
 
     AGENT_COMMAND="${_orig_cmd}"
 
@@ -505,20 +561,14 @@ while true; do
         log "━━━ Session ${SESSION} starting (notes response) — row ${CLAIMED_ROW}: ${CLAIMED_TASK} ━━━"
         sheet_write --status Busy --task "${CLAIMED_TASK} (responding to notes)" --heartbeat
         
-        # Re-run agent with notes context
-        case "$AI_PROVIDER" in
-            copilot)
-                if validate_copilot; then
-                    run_copilot
-                fi
-                ;;
-            claude)
-                if validate_claude; then
-                    run_claude
-                fi
-                ;;
-        esac
-        
+        # Re-run agent with notes context. For the Gemini engine, fold the
+        # operator notes into the task description so dream-rsi.js sees them.
+        _orig_desc="${CLAIMED_DESC:-}"
+        [[ "${ACTIVE_AGENT}" == "gemini" ]] && \
+            CLAIMED_DESC="${CLAIMED_DESC:-} | Operator notes: ${NEW_NOTES_TEXT}"
+        dispatch_session
+        CLAIMED_DESC="${_orig_desc}"
+
         AGENT_COMMAND="${_orig_cmd}"
     fi
 

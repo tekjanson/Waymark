@@ -56,13 +56,27 @@ RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
 # Both read MCP servers from the workspace (see learn-repo.sh for config generation).
 RUN npm install -g @github/copilot @anthropic-ai/claude-code
 
-# ── Runtime directories ────────────────────────────────────────────────────────
+# ── Non-root worker user ─────────────────────────────────────────────────
+# The agent runs as an UNPRIVILEGED user whose UID/GID match the host operator
+# (default 1000:1000). supervisord still starts as root (pid 1) so the entrypoint
+# can prepare the environment and the Docker socket, then it launches every
+# program as `worker`. Because worker's UID matches the host, everything the
+# agent writes into the bind-mounted /workspace (git objects, test artifacts,
+# branches) is owned by the host user — never root.
+ARG WORKER_UID=1000
+ARG WORKER_GID=1000
+RUN groupadd -g "${WORKER_GID}" worker \
+ && useradd -m -u "${WORKER_UID}" -g "${WORKER_GID}" -s /bin/bash worker
+
+# ── Runtime directories ──────────────────────────────────────────────────
 RUN mkdir -p \
-    /root/.copilot \
-    /root/.claude \
+    /home/worker/.copilot \
+    /home/worker/.claude \
+    /home/worker/.config/gcloud \
     /var/log/supervisor \
     /workspace \
-    /credentials
+    /credentials \
+ && chown -R worker:worker /home/worker /workspace /var/log/supervisor
 
 # ── Scripts, defaults, context, and supervisord ───────────────────────────────
 COPY scripts/ /scripts/

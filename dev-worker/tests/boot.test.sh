@@ -95,8 +95,8 @@ else
 fi
 
 # ── SSH keys available (optional) ─────────────────────────────────────────────
-if exec_q "test -d /root/.ssh-rw && ls /root/.ssh-rw/id_* >/dev/null 2>&1"; then
-    pass "SSH keys available at /root/.ssh-rw/"
+if exec_q "test -d /home/worker/.ssh-rw && ls /home/worker/.ssh-rw/id_* >/dev/null 2>&1"; then
+    pass "SSH keys available at /home/worker/.ssh-rw/"
 else
     skip "No SSH keys — git push over SSH will fail"
 fi

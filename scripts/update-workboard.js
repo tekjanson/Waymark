@@ -53,9 +53,10 @@
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
+const { createTokenProvider } = require('./lib/service-account');
 
 const DEFAULT_SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const DEFAULT_RANGE = 'Sheet1!A:I';
+const DEFAULT_RANGE = 'Sheet1!A:J';
 const WORKBOARD = resolveWorkboardConfig({
   defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
   defaultRange: DEFAULT_RANGE,
@@ -66,32 +67,18 @@ const SHEETS_BASE    = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /* ---------- Auth ---------- */
 
-let GoogleAuth;
-try {
-  ({ GoogleAuth } = require('google-auth-library'));
-} catch {
-  console.error('ERROR: google-auth-library not found. Run: npm install google-auth-library');
-  process.exit(1);
-}
-
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!credPath) {
   console.error('ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to your service-account key JSON.');
   process.exit(1);
 }
 
-const auth = new GoogleAuth({
+const getAccessToken = createTokenProvider({
   keyFile: credPath,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  scope: 'https://www.googleapis.com/auth/spreadsheets',
 });
 
 /* ---------- Helpers ---------- */
-
-async function getToken() {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  return token;
-}
 
 /** Read a range and return the values array */
 async function readRange(token, range) {
@@ -160,7 +147,7 @@ async function insertRow(token, afterRow) {
  * race conditions in multi-agent setups.
  */
 async function cmdClaim(row, agentName) {
-  const token = await getToken();
+  const token = await getAccessToken();
 
   // Read current row to verify it's a task row (column A non-empty)
   const current = await readRange(token, `Sheet1!A${row}:I${row}`);
@@ -201,7 +188,7 @@ async function cmdClaim(row, agentName) {
  * Update stage only (column C).
  */
 async function cmdStage(row, stage) {
-  const token = await getToken();
+  const token = await getAccessToken();
 
   // Verify it's a task row
   const current = await readRange(token, `Sheet1!A${row}`);
@@ -220,7 +207,7 @@ async function cmdStage(row, stage) {
  * This NEVER overwrites existing data.
  */
 async function cmdNote(afterRow, text, agentName) {
-  const token = await getToken();
+  const token = await getAccessToken();
   const now = new Date();
   const today = now.toISOString().slice(0, 10)
     + ' ' + String(now.getHours()).padStart(2, '0')

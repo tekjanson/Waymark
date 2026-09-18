@@ -108,6 +108,53 @@ test('agents template renders avatar initials', async ({ page }) => {
   await expect(page.locator('.agents-avatar').first()).toContainText('A');
 });
 
+test('agents template renders live activity feed', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-feed').first()).toBeVisible();
+  await expect(page.locator('.agents-feed-title').first()).toContainText('Live activity');
+});
+
+test('agents live feed renders streamed lines', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const firstFeed = page.locator('.agents-card').first().locator('.agents-feed-line');
+  await expect(firstFeed).toHaveCount(4);
+  await expect(firstFeed.first()).toContainText('Claimed row 42');
+});
+
+test('agents live feed renders an AI summary', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const summary = page.locator('.agents-card').first().locator('.agents-summary');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('AI summary');
+});
+
+test('agents live feed renders workbook and tuning feedback', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const card = page.locator('.agents-card').first();
+  await expect(card.locator('.agents-feedback-workboard')).toBeVisible();
+  await expect(card.locator('.agents-feedback-workboard')).toContainText('Workbook feedback');
+  await expect(card.locator('.agents-feedback-tuning')).toBeVisible();
+  await expect(card.locator('.agents-feedback-tuning')).toContainText('Tuning feedback');
+});
+
+test('agents fleet shows AI key-pool status', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const keys = page.locator('.agents-card').first().locator('.agents-keys');
+  await expect(keys).toBeVisible();
+  await expect(keys).toContainText('ready');
+});
+
+test('agents live feed renders a status indicator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-card').first().locator('.agents-feed-pulse')).toBeVisible();
+});
+
 test('Dev Fleet sidebar button is visible', async ({ page }) => {
   await setupApp(page);
   await expect(page.locator('#menu-fleet-btn')).toBeVisible();

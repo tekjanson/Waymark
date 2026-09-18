@@ -4,6 +4,8 @@
 #
 #   make up    ← THE ONE COMMAND. Starts everything, opens the UI.
 #   make down  ← Stops everything.
+#   make start ← Start ONLY the Gemini AI dev-fleet worker (agent "AI", uses .env board + keys)
+#   make fleet-tail ← Watch the AI fleet worker stream live activity
 #
 # After `make up`, use the Waymark UI to drive everything:
 #   • Drop tasks in the kanban workboard → agents pick them up
@@ -30,10 +32,18 @@ PROVIDER      ?= auto
 MODEL         ?= claude-sonnet-4.6
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
+GEMINI_MODEL  ?= gemini-flash-latest
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
+
+# Prefer the Gemini engine automatically whenever a key pool is configured.
+ACTIVE_AGENT  ?= $(if $(GEMINI_KEY_POOL),gemini,copilot)
 
 # Fleet alias: FLEET_NAMES falls back to AGENT_NAMES
 FLEET_NAMES   ?= $(AGENT_NAMES)
+
+# Primary fleet identity (first name in AGENT_NAMES) — used by `make restart`.
+# The agent MUST have a name or the fleet reporter + workboard writes are skipped.
+FLEET_ID      := $(if $(strip $(AGENT_NAMES)),$(firstword $(AGENT_NAMES)),Alex)
 
 # Service-account key
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
@@ -47,13 +57,16 @@ AGENT_MODEL="$(MODEL)" \
 CLAUDE_MODEL="$(CLAUDE_MODEL)" \
 AGENT_COMMAND="$(COMMAND)" \
 AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+ACTIVE_AGENT="$(ACTIVE_AGENT)" \
+GEMINI_MODEL="$(GEMINI_MODEL)" \
 CONTAINER_NAME="$(CONTAINER)"
 endef
 
-.PHONY: help up down \
+.PHONY: help up down start restart fleet-tail \
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
+        gemini-start gemini-logs dream-test dream-run dream-reset \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
@@ -192,6 +205,30 @@ down: ## Stop everything (web server + fleet webhook + all agent containers)
 		xargs -r -I{} sh -c 'docker stop {} && docker rm {} && echo "  ✓  {} stopped"'
 	@echo "  ✓  Done"
 
+# ── Restart (the simple, repeatable one) ──────────────────────────────
+start: restart ## Start the AI dev-fleet worker — the ONE command to run each day
+restart: ## Restart the fleet worker with the RIGHT engine + identity (safe to re-run)
+	@echo ""
+	@echo "  ⏳  Restarting fleet worker '$(FLEET_ID)' [engine=$(ACTIVE_AGENT), model=$(GEMINI_MODEL)]..."
+	@if [ "$(ACTIVE_AGENT)" = "gemini" ] && [ -z "$(strip $(GEMINI_KEY_POOL))" ]; then \
+		echo "  ✗  ACTIVE_AGENT=gemini but GEMINI_KEY_POOL is empty — set it in .env first"; exit 1; \
+	fi
+	@AGENT_HUMAN_NAME="$(FLEET_ID)" \
+	 AGENT_NAME="$(FLEET_ID)" \
+	 ACTIVE_AGENT="$(ACTIVE_AGENT)" \
+	 GEMINI_MODEL="$(GEMINI_MODEL)" \
+	 AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+	 CONTAINER_NAME="$(CONTAINER)" \
+	 $(COMPOSE) up -d --build --force-recreate waymark-dev-worker
+	@echo "  ✓  Fleet worker up → $(CONTAINER) as '$(FLEET_ID)'"
+	@echo "     Streaming to Agent Registry: $(AGENTS_SHEET)"
+	@echo "     Watch it:  make fleet-tail"
+	@echo ""
+
+fleet-tail: ## Tail the fleet worker, filtered to the live activity + engine lines
+	@docker logs -f $(CONTAINER) 2>&1 | grep -E --line-buffered \
+		'dream-rsi|fleet|Engine|Turn |Claimed|review|QA|PASS|fail|summary' || true
+
 # ── Help ──────────────────────────────────────────────────────────────
 
 help: ## Show this help
@@ -304,6 +341,51 @@ agent-test-boot: ## Just the boot suite (fastest, infra only)
 
 agent-test-suite: ## Full E2E suite — real AI creds, real browser, real workspace
 	bash dev-worker/tests/run-tests.sh --container $(CONTAINER) $(if $(ONLY),--only $(ONLY),) $(if $(SKIP),--skip $(SKIP),)
+
+# ── Dev-worker: Gemini Dream-RSI engine ────────────────────────────────
+
+gemini-start: NAME := $(if $(NAME),$(NAME),Gemini)
+gemini-start: ACTIVE_AGENT := gemini
+gemini-start: ## Start a worker running the Gemini Dream-RSI loop  [NAME=Gemini GEMINI_MODEL=...]
+	$(AGENT_ENV) $(COMPOSE) up -d --build
+	@echo ""
+	@echo "  ✓ Gemini Dream-RSI worker started — $(if $(NAME),$(NAME),Gemini) [$(GEMINI_MODEL)]"
+	@echo "    Set GEMINI_KEY_POOL in .env first (comma-separated keys)."
+	@echo "    Logs:  make gemini-logs"
+	@echo "    Stop:  make agent-stop"
+	@echo ""
+
+gemini-logs: ## Tail the Gemini Dream-RSI worker output (Ctrl+C to stop)
+	docker logs -f $(CONTAINER) 2>&1
+
+dream-test: ## Run Dream-RSI unit tests (key pool + discovery tree, no network)
+	node dev-worker/tests/dream-rsi.test.js
+
+dream-run: ## Run ONE Dream-RSI task in the container to experiment  [TASK= required | DESC= ROW= GEMINI_MODEL= TURNS= FANOUT= PUSH= NAME=]
+	@if [ -z "$(TASK)" ]; then echo "ERROR: TASK=\"describe the task\" is required"; exit 1; fi
+	@echo "── Dream-RSI single run ────────────────────────"
+	@echo "   Model:  $(GEMINI_MODEL)"
+	@echo "   Task:   $(TASK)"
+	@echo "   Turns:  $(if $(TURNS),$(TURNS),8)   Fanout: $(if $(FANOUT),$(FANOUT),1)   Push: $(if $(PUSH),$(PUSH),0)"
+	@echo ""
+	$(COMPOSE) run --rm --no-deps -T \
+	  -e WAYMARK_WORKBOARD_ID \
+	  -e GEMINI_KEY_POOL \
+	  -e GEMINI_MODEL="$(GEMINI_MODEL)" \
+	  -e GEMINI_KEY_COOLDOWN_MS \
+	  -e GEMINI_REQUEST_TIMEOUT_MS \
+	  -e DREAM_FANOUT_N="$(if $(FANOUT),$(FANOUT),1)" \
+	  -e DREAM_MAX_TURNS="$(if $(TURNS),$(TURNS),8)" \
+	  -e DREAM_PUSH="$(if $(PUSH),$(PUSH),0)" \
+	  -e AGENT_HUMAN_NAME="$(if $(NAME),$(NAME),Alex)" \
+	  --entrypoint bash waymark-dev-worker -lc \
+	  'Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 & sleep 1; export DISPLAY=:99; cd /workspace && node dev-worker/scripts/dream-rsi.js --task "$(TASK)" $(if $(DESC),--desc "$(DESC)",) $(if $(ROW),--row "$(ROW)",)'
+
+dream-reset: ## Clear the Discovery_Tree memory (dead-end lessons) for a clean experiment
+	$(COMPOSE) run --rm --no-deps -T \
+	  -e WAYMARK_WORKBOARD_ID -e DISCOVERY_TREE_SHEET_ID -e DISCOVERY_TREE_TAB \
+	  --entrypoint bash waymark-dev-worker -lc \
+	  'cd /workspace && node dev-worker/scripts/dream-rsi.js --reset-tree'
 
 
 
@@ -457,8 +539,14 @@ auth-check: ## Check which AI credentials are available
 
 # ── Workboard ─────────────────────────────────────────────────────────
 
-workboard: ## Print current workboard state as JSON
-	node scripts/check-workboard.js
+workboard: ## Print current workboard state as JSON inside the dev-worker container
+	@echo "Running workboard check inside the dev-worker container..."
+	$(COMPOSE) run --rm --no-deps --entrypoint bash waymark-dev-worker -lc 'cd /workspace && node scripts/check-workboard.js'
+
+workboard-notes: ## Check for new notes on a task row inside the dev-worker container [ROW= required]
+	@if [ -z "$(ROW)" ]; then echo "ERROR: ROW= is required"; exit 1; fi
+	@echo "Running note check inside the dev-worker container for row $(ROW)..."
+	$(COMPOSE) run --rm --no-deps --entrypoint bash waymark-dev-worker -lc 'cd /workspace && node scripts/check-task-notes.js --row "$(ROW)" $(if $(AGENT),--agent "$(AGENT)") $(if $(STATE_DIR),--state-dir "$(STATE_DIR)")'
 
 # ── Financials ────────────────────────────────────────────────────────
 

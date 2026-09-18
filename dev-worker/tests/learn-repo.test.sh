@@ -48,9 +48,9 @@ if exec_q "test -f /workspace/.vscode/mcp.json"; then
     fi
 
     # Copilot format should be generated
-    if exec_q "test -f /root/.copilot/mcp.json"; then
+    if exec_q "test -f /home/worker/.copilot/mcp.json"; then
         pass "~/.copilot/mcp.json generated for Copilot CLI"
-        KEYS=$(exec_q "node -e \"const j=require('/root/.copilot/mcp.json'); console.log(Object.keys(j.servers||{}).join(','))\"" || echo "")
+        KEYS=$(exec_q "node -e \"const j=require('/home/worker/.copilot/mcp.json'); console.log(Object.keys(j.servers||{}).join(','))\"" || echo "")
         [[ -n "$KEYS" ]] && pass "  MCP servers: ${KEYS}" \
                          || fail "  ~/.copilot/mcp.json has no servers entries"
     else

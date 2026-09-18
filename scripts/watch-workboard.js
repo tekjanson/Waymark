@@ -32,9 +32,10 @@
    ============================================================ */
 
 const { resolveWorkboardConfig } = require('./workboard-config');
+const { createTokenProvider } = require('./lib/service-account');
 
 const DEFAULT_SPREADSHEET_ID = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
-const DEFAULT_RANGE          = 'Sheet1!A:I';
+const DEFAULT_RANGE          = 'Sheet1!A:J';
 const WORKBOARD = resolveWorkboardConfig({
   defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
   defaultRange: DEFAULT_RANGE,
@@ -65,35 +66,21 @@ let pollTimer = null;
 
 /* ---------- Auth ---------- */
 
-let GoogleAuth;
-try {
-  ({ GoogleAuth } = require('google-auth-library'));
-} catch {
-  console.error('ERROR: google-auth-library not found. Run: cd mcp && npm install');
-  process.exit(1);
-}
-
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!credPath) {
   console.error('ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to your service-account key JSON.');
   process.exit(1);
 }
 
-const auth = new GoogleAuth({
+const getAccessToken = createTokenProvider({
   keyFile: credPath,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
 });
-
-async function getToken() {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  return token;
-}
 
 /* ---------- Sheets fetch ---------- */
 
 async function fetchWorkboard() {
-  const token = await getToken();
+  const token = await getAccessToken();
   const url = `${SHEETS_BASE}/${SPREADSHEET_ID}/values/${encodeURIComponent(RANGE)}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },

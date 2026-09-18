@@ -128,9 +128,9 @@ Each container claims tasks independently. The `--agent $AGENT_NAME` flag on
 | Credential | Location | Used for |
 |---|---|---|
 | Google SA key | `/credentials/gsa-key.json` → `/root/.config/gcloud/waymark-service-account-key.json` | MCP servers, Drive/Sheets API |
-| Copilot OAuth token | `/root/.copilot/config.json` | GitHub Copilot CLI |
+| Copilot OAuth token | `/home/worker/.copilot/config.json` | GitHub Copilot CLI |
 | Anthropic API key | `ANTHROPIC_API_KEY` env var | Claude Code |
-| SSH key | `/root/.ssh-rw/id_rsa` | Git push, SSH access |
+| SSH key | `/home/worker/.ssh-rw/id_rsa` | Git push, SSH access |
 
 ---
 

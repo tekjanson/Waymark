@@ -30,28 +30,28 @@ else
     fail "copilot CLI not found — npm install -g @github/copilot missing from Dockerfile"
 fi
 
-if exec_q "test -f /root/.copilot/config.json"; then
-    SIZE=$(exec_q "wc -c < /root/.copilot/config.json" || echo "0")
+if exec_q "test -f /home/worker/.copilot/config.json"; then
+    SIZE=$(exec_q "wc -c < /home/worker/.copilot/config.json" || echo "0")
     [[ "$SIZE" -gt 10 ]] \
-        && pass "Copilot auth config: /root/.copilot/config.json (${SIZE} bytes)" \
+        && pass "Copilot auth config: /home/worker/.copilot/config.json (${SIZE} bytes)" \
         || fail "Copilot auth config exists but appears empty (${SIZE} bytes) — run: copilot --login"
 else
     if [[ "$ACTIVE_PROVIDER" == "copilot" ]]; then
-        fail "No auth config at /root/.copilot/config.json — run: copilot --login on host"
+        fail "No auth config at /home/worker/.copilot/config.json — run: copilot --login on host"
     else
         skip "No Copilot config (active provider is '${ACTIVE_PROVIDER}' — this is OK)"
     fi
 fi
 
 # Config dir must be writable for token refresh
-if exec_q "touch /root/.copilot/.write-test && rm /root/.copilot/.write-test 2>/dev/null"; then
-    pass "/root/.copilot/ is writable (token auto-refresh will work)"
+if exec_q "touch /home/worker/.copilot/.write-test && rm /home/worker/.copilot/.write-test 2>/dev/null"; then
+    pass "/home/worker/.copilot/ is writable (token auto-refresh will work)"
 else
-    fail "/root/.copilot/ is not writable — token refresh will fail"
+    fail "/home/worker/.copilot/ is not writable — token refresh will fail"
 fi
 
 # Live auth probe for Copilot
-if exec_q "test -f /root/.copilot/config.json"; then
+if exec_q "test -f /home/worker/.copilot/config.json"; then
     echo ""
     echo "  Probing Copilot live auth (30s timeout)..."
     AUTH_RESULT=$(
@@ -116,7 +116,7 @@ fi
 echo ""
 
 # ══ At least one provider must be functional ══════════════════════════════════
-COPILOT_OK=$(exec_q "test -f /root/.copilot/config.json" && echo "yes" || echo "no")
+COPILOT_OK=$(exec_q "test -f /home/worker/.copilot/config.json" && echo "yes" || echo "no")
 CLAUDE_OK=$([[ -n "$ANTHROPIC_KEY" ]] && echo "yes" || echo "no")
 
 if [[ "$COPILOT_OK" == "yes" || "$CLAUDE_OK" == "yes" ]]; then
