@@ -139,6 +139,7 @@ class Harness {
     // turns pass with no edit, we escalate a firm directive to force action.
     const exploreBudget = Math.max(4, Math.ceil(this.maxTurns * 0.4));
     let edited = false;
+    let readsAfterBudget = 0;
 
     // Firm nudge appended to observations once exploration has gone on too long.
     const directive = (turn) => {
@@ -158,7 +159,10 @@ class Harness {
     // charging them for it starves the real work. Bounded by maxIter so a model
     // stuck emitting junk still terminates.
     let turn = 0;
-    const maxIter = this.maxTurns + 10;
+    // Free retries (malformed replies, errored/blocked actions) don't consume a
+    // productive turn, but they DO consume iterations. Weak models emit many
+    // no-op calls, so give generous slack before the hard iteration cap.
+    const maxIter = this.maxTurns * 2 + 10;
     for (let iter = 0; turn < this.maxTurns && iter < maxIter; iter++) {
       let text;
       let keyIndex;
@@ -195,16 +199,29 @@ class Harness {
 
       if (action.tool === 'write_file' || action.tool === 'edit_file') edited = true;
 
-      // Hard rail: once the explore budget is spent with no edit, block the pure
-      // discovery tools. A soft directive isn't enough for weak models — they
-      // keep searching forever. read_file stays allowed so the model can grab the
-      // exact lines it needs to form a precise edit.
-      if (!edited && turn >= exploreBudget && (action.tool === 'list_files' || action.tool === 'search')) {
-        contents.push(obs(
-          `Exploration is DISABLED now (${turn}/${this.maxTurns} turns used, no edit yet). ` +
-          `Valid actions: read_file (only to prepare an edit), edit_file, write_file, finish. Make your edit NOW.`
-        ));
-        continue; // free retry (bounded by maxIter)
+      // Hard rail: once the explore budget is spent with no edit, force the model
+      // toward an edit. A soft directive isn't enough for weak models. First
+      // disable the pure discovery tools (list_files/search); allow a few more
+      // read_files to prepare an edit, then disable reading too so the ONLY valid
+      // actions are edit_file/write_file/finish. Blocked actions are free retries.
+      if (!edited && turn >= exploreBudget) {
+        if (action.tool === 'list_files' || action.tool === 'search') {
+          contents.push(obs(
+            `Exploration is DISABLED (${turn}/${this.maxTurns} turns used, no edit yet). ` +
+            `Valid actions: read_file (a few, only to prepare an edit), edit_file, write_file, finish. Edit NOW.`
+          ));
+          continue; // free retry
+        }
+        if (action.tool === 'read_file') {
+          if (readsAfterBudget >= 3) {
+            contents.push(obs(
+              `Reading is DISABLED — you have read enough. Your ONLY valid actions are edit_file, ` +
+              `write_file, or finish. Produce your best implementation edit NOW.`
+            ));
+            continue; // free retry
+          }
+          readsAfterBudget++;
+        }
       }
 
       const observation = this._exec(action);
