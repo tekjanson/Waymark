@@ -89,6 +89,27 @@ services:
       # Operators edit tuning strings in the sheet; agents pick them up on boot.
       - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-1egJZTEcy0Wh0rl98sO4Voz5LgntCAIBlxt1Ez8_8fqc}
 
+      # ── Engine selection (V2 multi-agent groundwork) ─────────────────────
+      # copilot (default) → existing Copilot/Claude behavior, fully preserved.
+      # gemini            → the Gemini Dream-RSI recursive self-improvement loop.
+      - ACTIVE_AGENT=${ACTIVE_AGENT:-copilot}
+
+      # ── Gemini Dream-RSI engine ──────────────────────────────────────────
+      # GEMINI_KEY_POOL: comma-separated Gemini API keys. The loop rotates to
+      # the next key on HTTP 429 / quota errors and parks the spent key for 1h.
+      - GEMINI_KEY_POOL=${GEMINI_KEY_POOL:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-latest}
+      - GEMINI_KEY_COOLDOWN_MS=${GEMINI_KEY_COOLDOWN_MS:-3600000}
+      # Discovery_Tree memory tab (defaults to the workboard sheet if unset)
+      - DISCOVERY_TREE_SHEET_ID=${DISCOVERY_TREE_SHEET_ID:-}
+      - DISCOVERY_TREE_TAB=${DISCOVERY_TREE_TAB:-Discovery_Tree}
+      # Adaptive compute: parallel fixes on repeated failure, test timeout, push
+      - DREAM_FANOUT_N=${DREAM_FANOUT_N:-3}
+      - DREAM_TEST_TIMEOUT_MS=${DREAM_TEST_TIMEOUT_MS:-600000}
+      - DREAM_PUSH=${DREAM_PUSH:-1}
+      # Workboard the agent polls for tasks (also the default Discovery_Tree sheet)
+      - WAYMARK_WORKBOARD_ID=${WAYMARK_WORKBOARD_ID:-}
+
       # ── Git identity for commits made inside the container ───────────────
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
       - GIT_NAME=${GIT_NAME:-Waymark Agent}

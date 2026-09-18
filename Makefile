@@ -30,6 +30,8 @@ PROVIDER      ?= auto
 MODEL         ?= claude-sonnet-4.6
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
+ACTIVE_AGENT  ?= copilot
+GEMINI_MODEL  ?= gemini-flash-latest
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
 
 # Fleet alias: FLEET_NAMES falls back to AGENT_NAMES
@@ -47,6 +49,8 @@ AGENT_MODEL="$(MODEL)" \
 CLAUDE_MODEL="$(CLAUDE_MODEL)" \
 AGENT_COMMAND="$(COMMAND)" \
 AGENTS_SHEET_ID="$(AGENTS_SHEET)" \
+ACTIVE_AGENT="$(ACTIVE_AGENT)" \
+GEMINI_MODEL="$(GEMINI_MODEL)" \
 CONTAINER_NAME="$(CONTAINER)"
 endef
 
@@ -54,6 +58,7 @@ endef
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
+        gemini-start gemini-logs dream-test \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
@@ -304,6 +309,25 @@ agent-test-boot: ## Just the boot suite (fastest, infra only)
 
 agent-test-suite: ## Full E2E suite — real AI creds, real browser, real workspace
 	bash dev-worker/tests/run-tests.sh --container $(CONTAINER) $(if $(ONLY),--only $(ONLY),) $(if $(SKIP),--skip $(SKIP),)
+
+# ── Dev-worker: Gemini Dream-RSI engine ────────────────────────────────
+
+gemini-start: NAME := $(if $(NAME),$(NAME),Gemini)
+gemini-start: ACTIVE_AGENT := gemini
+gemini-start: ## Start a worker running the Gemini Dream-RSI loop  [NAME=Gemini GEMINI_MODEL=...]
+	$(AGENT_ENV) $(COMPOSE) up -d --build
+	@echo ""
+	@echo "  ✓ Gemini Dream-RSI worker started — $(if $(NAME),$(NAME),Gemini) [$(GEMINI_MODEL)]"
+	@echo "    Set GEMINI_KEY_POOL in .env first (comma-separated keys)."
+	@echo "    Logs:  make gemini-logs"
+	@echo "    Stop:  make agent-stop"
+	@echo ""
+
+gemini-logs: ## Tail the Gemini Dream-RSI worker output (Ctrl+C to stop)
+	docker logs -f $(CONTAINER) 2>&1
+
+dream-test: ## Run Dream-RSI unit tests (key pool + discovery tree, no network)
+	node dev-worker/tests/dream-rsi.test.js
 
 
 
