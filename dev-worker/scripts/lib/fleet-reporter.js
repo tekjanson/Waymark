@@ -31,6 +31,10 @@ const { createSheetsClient } = require('./sheets');
 
 const TAB = 'Sheet1';
 const MAX_LINES = 12; // rolling transcript window shown in the fleet feed
+// Coalesce all field updates and write them in ONE batched request per window.
+// This is the fix for blowing past Sheets' 60 writes/min/user quota: instead of
+// a write per field per turn, we buffer and flush at most once per FLUSH_MS.
+const FLUSH_MS = parseInt(process.env.FLEET_FLUSH_MS || '5000', 10);
 
 /** 0-based column index → A1 letter (Agent Registry stays well under 26 cols). */
 function colLetter(idx) {
@@ -60,6 +64,9 @@ class FleetReporter {
     this.keyStatus = '';
     this.activityVersion = 0;
     this.ring = [];
+    this.pending = new Map(); // colIdx -> value, coalesced until the next flush
+    this.flushTimer = null;
+    this.flushing = false;
   }
 
   /**
@@ -158,77 +165,61 @@ class FleetReporter {
   async setTask(title) {
     if (!(await this._ensure())) return;
     this.task = String(title || '');
-    const data = [];
-    if (this.cols.task >= 0) data.push(this._cell(this.cols.task, String(title || '')));
-    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
-    await this._write(data);
+    this._queue(this.cols.task, this.task);
+    this._queue(this.cols.status, 'Online');
   }
 
   /** Replace the short AI summary shown above the live feed. */
   async setSummary(text) {
-    if (!(await this._ensure()) || this.cols.summary < 0) return;
-    const summary = String(text || '').trim();
-    if (!summary || summary === this.summary) return;
-    this.summary = summary;
-    const data = [this._cell(this.cols.summary, summary)];
-    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
-    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
-    await this._write(data);
+    if (!(await this._ensure())) return;
+    const v = String(text || '').trim();
+    if (!v || v === this.summary) return;
+    this.summary = v;
+    this._queue(this.cols.summary, v);
   }
 
   /** Replace the concise workboard/workbook feedback shown in the fleet card. */
   async setWorkboardFeedback(text) {
-    if (!(await this._ensure()) || this.cols.workboardFeedback < 0) return;
-    const value = String(text || '').trim();
-    if (!value || value === this.workboardFeedback) return;
-    this.workboardFeedback = value;
-    const data = [this._cell(this.cols.workboardFeedback, value)];
-    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
-    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
-    await this._write(data);
+    if (!(await this._ensure())) return;
+    const v = String(text || '').trim();
+    if (!v || v === this.workboardFeedback) return;
+    this.workboardFeedback = v;
+    this._queue(this.cols.workboardFeedback, v);
   }
 
   /** Replace the concise tuning feedback shown in the fleet card. */
   async setTuningFeedback(text) {
-    if (!(await this._ensure()) || this.cols.tuningFeedback < 0) return;
-    const value = String(text || '').trim();
-    if (!value || value === this.tuningFeedback) return;
-    this.tuningFeedback = value;
-    const data = [this._cell(this.cols.tuningFeedback, value)];
-    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
-    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
-    await this._write(data);
+    if (!(await this._ensure())) return;
+    const v = String(text || '').trim();
+    if (!v || v === this.tuningFeedback) return;
+    this.tuningFeedback = v;
+    this._queue(this.cols.tuningFeedback, v);
   }
 
   /** Report the AI key-pool status (availability + cooldowns) for throttle monitoring. */
   async setKeyStatus(text) {
-    if (!(await this._ensure()) || this.cols.keys < 0) return;
-    const value = String(text || '').trim();
-    if (!value || value === this.keyStatus) return;
-    this.keyStatus = value;
-    const data = [this._cell(this.cols.keys, value)];
-    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
-    await this._write(data);
+    if (!(await this._ensure())) return;
+    const v = String(text || '').trim();
+    if (!v || v === this.keyStatus) return;
+    this.keyStatus = v;
+    this._queue(this.cols.keys, v);
   }
 
-  /** Push one live line into the rolling feed (Activity + Heartbeat + Online). */
+  /** Push one live line into the rolling feed (coalesced into the next flush). */
   async pushActivity(line) {
     if (!line || !(await this._ensure())) return;
     const ts = new Date().toISOString().slice(11, 19);
     this.ring.push(`[${ts}] ${line}`);
     this.activityVersion += 1;
     while (this.ring.length > MAX_LINES) this.ring.shift();
-
-    const data = [this._cell(this.cols.activity, this.ring.join('\n'))];
-    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
-    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
-    await this._write(data);
+    this._queue(this.cols.activity, this.ring.join('\n'));
+    this._queue(this.cols.status, 'Online');
   }
 
   /** Flip the agent's status (e.g. 'Idle' when the task is done). */
   async setStatus(status) {
-    if (!(await this._ensure()) || this.cols.status < 0) return;
-    await this._write([this._cell(this.cols.status, String(status))]);
+    if (!(await this._ensure())) return;
+    this._queue(this.cols.status, String(status));
   }
 
   /** Snapshot the live state so the Dream-RSI summarizer can inspect it. */
@@ -245,6 +236,48 @@ class FleetReporter {
 
   /* ---------- internals ---------- */
 
+  /**
+   * Queue a single cell for the next flush. Many field updates within one
+   * FLUSH_MS window collapse into ONE Sheets write — this is what keeps us under
+   * the 60 writes/min/user quota that was throttling the fleet stream.
+   */
+  _queue(colIdx, value) {
+    if (colIdx == null || colIdx < 0) return;
+    this.pending.set(colIdx, value);
+    this._scheduleFlush();
+  }
+
+  _scheduleFlush() {
+    if (this.flushTimer || !this.enabled) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flush().catch(() => {});
+    }, FLUSH_MS);
+    if (typeof this.flushTimer.unref === 'function') this.flushTimer.unref();
+  }
+
+  /**
+   * Write all queued cells in ONE batched request (plus a fresh heartbeat).
+   * Call directly for an immediate flush (task start / end of run).
+   */
+  async flush() {
+    if (this.flushing) return;
+    if (!(await this._ensure())) { this.pending.clear(); return; }
+    if (this.pending.size === 0) return;
+    if (this.cols.heartbeat >= 0) this.pending.set(this.cols.heartbeat, new Date().toISOString());
+    const data = [...this.pending.entries()].map(([c, v]) => this._cell(c, v));
+    this.pending.clear();
+    this.flushing = true;
+    try {
+      await this.sheets.batchUpdate(data);
+    } catch (e) {
+      this.log(`  [fleet] flush skipped: ${e.message}`);
+    } finally {
+      this.flushing = false;
+      if (this.pending.size) this._scheduleFlush();
+    }
+  }
+
   /** Build a single-cell batchUpdate entry; guards against unknown columns. */
   _cell(colIdx, value) {
     return { range: `${TAB}!${colLetter(colIdx)}${this.row}`, values: [[value]] };
@@ -254,15 +287,6 @@ class FleetReporter {
     if (!this.enabled) return false;
     if (!this.ready) await this.init();
     return this.ready;
-  }
-
-  async _write(data) {
-    if (!data || !data.length) return;
-    try {
-      await this.sheets.batchUpdate(data);
-    } catch (e) {
-      this.log(`  [fleet] write skipped: ${e.message}`);
-    }
   }
 }
 

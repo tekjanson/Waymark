@@ -271,18 +271,12 @@ class DreamRSI {
 
   async setLiveStatus(text) {
     if (!text) return;
-    // Dev-fleet plumbing: stream the same line into the Agent Registry so the
-    // AI Fleet tool shows a live chat feed. Independent of any kanban row.
+    // Stream the live line into the Agent Registry (buffered — one Sheets write
+    // per flush window). We intentionally DO NOT write per-turn notes onto the
+    // kanban workboard: that was noisy and doubled the Sheets write rate.
     if (this.fleet) await this.fleet.pushActivity(text).catch(() => {});
     void this.reportKeyStatus();
     void this.refreshLiveSnapshot().catch(() => {});
-    // Kanban row note: only when this run is tied to a task row.
-    if (!WORKBOARD_ID || !this.sheets || !this.currentTaskRow) return;
-    if (!this.liveRow) {
-      this.liveRow = await this.addNoteRow(`Dream-RSI live: ${text}`, this.currentTaskRow);
-      return;
-    }
-    await this.updateNote(this.liveRow, `Dream-RSI live: ${text}`);
   }
 
   /** Format the key pool's live status for the fleet monitor. */
@@ -598,6 +592,7 @@ async function main() {
   await fleet.pushActivity(`Claimed row ${row || '?'}: ${task}`).catch(() => {});
   await engine.reportKeyStatus().catch(() => {});
   void engine.refreshLiveSnapshot().catch(() => {});
+  await fleet.flush().catch(() => {}); // show the agent go live immediately
 
   // ── 1. dream_evaluator: simulate paths, collect dead ends ────────────────
   const evaln = await tree.dreamEvaluator(row, task);
@@ -672,6 +667,7 @@ async function main() {
     outcome.passed ? `✅ Done — ${outcome.summary} (→ QA)` : `⚠ Attempt logged: ${outcome.summary}`
   ).catch(() => {});
   await engine.fleet?.setStatus('Idle').catch(() => {});
+  await engine.fleet?.flush().catch(() => {}); // ensure the final state is written
   log(`Done — ${outcome.passed ? 'PASS (task → QA)' : 'fail (logged dead end)'}`);
 }
 
@@ -694,13 +690,13 @@ async function finalize({ engine, row, task, outcome, attemptCount = 0 }) {
         await engine.markStage(row, 'Backlog').catch((e) => log(`markStage failed: ${e.message}`));
         await engine.setPriority(row, 'P3').catch((e) => log(`setPriority failed: ${e.message}`));
         await engine
-          .addNote(row, `Dream-RSI ⏸ parked after ${attempts} failed attempts.${reviewNote} Returned to Backlog at P3 for human review or a stronger model — lessons saved in Discovery_Tree. The loop is moving on to other tasks.`)
+          .addNote(row, `Parked after ${attempts} attempts — needs human review or a stronger model.${reviewNote}`)
           .catch((e) => log(`addNote failed: ${e.message}`));
         log(`Parked row ${row} after ${attempts} attempts — loop will move on`);
       } else {
-        await engine
-          .addNote(row, `Dream-RSI ⚠ attempt ${attempts}/${MAX_ROW_ATTEMPTS} not approved (branch ${outcome.branchId}).${reviewNote} Dead end logged to Discovery_Tree; will retry.`)
-          .catch((e) => log(`addNote failed: ${e.message}`));
+        // Interim failures go to the Discovery_Tree, not the board — no point
+        // spamming the card with every not-yet-approved attempt.
+        log(`Row ${row}: attempt ${attempts}/${MAX_ROW_ATTEMPTS} not approved — will retry`);
       }
     }
     return;
@@ -708,7 +704,7 @@ async function finalize({ engine, row, task, outcome, attemptCount = 0 }) {
 
   if (!written.length) {
     log('No file changes produced');
-    if (row) await engine.addNote(row, `Dream-RSI: ${outcome.summary}. No file change was needed.`).catch(() => {});
+    if (row) await engine.addNote(row, `${outcome.summary} — no file change needed.`).catch(() => {});
     return;
   }
 
@@ -728,7 +724,7 @@ async function finalize({ engine, row, task, outcome, attemptCount = 0 }) {
   if (row) {
     await engine.markStage(row, 'QA').catch((e) => log(`markStage failed: ${e.message}`));
     await engine
-      .addNote(row, `Dream-RSI ✅ ${outcome.summary}${outcome.evalScore != null ? ` (review ${outcome.evalScore})` : ''}. Branch: ${branch}. Verify: ${outcome.testCommand}`)
+      .addNote(row, `Done: ${outcome.summary}${outcome.evalScore != null ? ` (review ${outcome.evalScore})` : ''}. Branch: ${branch}. Verify: ${outcome.testCommand}`)
       .catch((e) => log(`addNote failed: ${e.message}`));
   }
 
