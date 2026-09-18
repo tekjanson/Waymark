@@ -78,7 +78,7 @@ Verifies the Copilot CLI is authenticated. Makes a **live network call** to GitH
 | Test | What it checks |
 |---|---|
 | Binary installed | `copilot` is in PATH |
-| Config file | `/root/.copilot/config.json` exists and has content |
+| Config file | `/home/worker/.copilot/config.json` exists and has content |
 | Volume writable | Token refresh will work (needs write access) |
 | CLI executes | `copilot --version` runs without crashing |
 | Live auth probe | `copilot -p '/version'` — real GitHub API call |

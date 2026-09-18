@@ -41,7 +41,7 @@ source /etc/agent-env.sh 2>/dev/null || true
 
 # Resolve "auto" → detect available provider (same logic as learn-repo.sh)
 if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
-    if [[ -f /root/.copilot/config.json ]]; then
+    if [[ -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"
@@ -138,7 +138,7 @@ validate_copilot() {
         log "ERROR: copilot CLI not found — is @github/copilot installed?"
         return 1
     fi
-    if [[ ! -f /root/.copilot/config.json ]]; then
+    if [[ ! -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         log "ERROR: ~/.copilot/config.json missing — run 'copilot --login' on the host"
         return 1
     fi
@@ -187,7 +187,7 @@ run_copilot() {
     log "  Provider:  GitHub Copilot CLI"
     log "  Model:     ${AGENT_MODEL}"
     log "  Identity:  ${AGENT_HUMAN_NAME:-<unnamed>}"
-    log "  MCP:       $( [[ -f /root/.copilot/mcp.json ]] && echo "~/.copilot/mcp.json" || echo "none" )"
+    log "  MCP:       $( [[ -f "${HOME:-/home/worker}/.copilot/mcp.json" ]] && echo "~/.copilot/mcp.json" || echo "none" )"
     log "  Context:   $( [[ -d "$CONTEXT_DIR" ]] && echo "$CONTEXT_DIR" || echo "none" )"
     [[ -n "${AGENT_TUNING:-}" ]] && log "  Tuning:    ${AGENT_TUNING:0:60}..."
 
@@ -300,7 +300,7 @@ dispatch_session() {
 # lowercase and resolve "auto" here, after tuning has loaded.
 AI_PROVIDER="${AI_PROVIDER,,}"  # lowercase
 if [[ "${AI_PROVIDER:-auto}" == "auto" ]]; then
-    if [[ -f /root/.copilot/config.json ]]; then
+    if [[ -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         AI_PROVIDER="copilot"
     elif command -v claude >/dev/null 2>&1 && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         AI_PROVIDER="claude"

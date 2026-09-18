@@ -9,7 +9,7 @@ Auth is a simple JSON file — no gnome-keyring, no VS Code token stores, no SQL
 
 The Copilot CLI stores its OAuth token in `~/.copilot/config.json` on your host.
 
-The container mounts your host `~/.copilot/` directory directly at `/root/.copilot/`.
+The container mounts your host `~/.copilot/` directory directly at `/home/worker/.copilot/`.
 When the CLI starts inside the container, it reads the same config file you already
 have from your interactive sessions. **No re-auth needed — it just works.**
 
@@ -67,7 +67,7 @@ Expected output:
 3. Copilot CLI Agent
   ✓ copilot CLI installed: 1.0.x
   ✓ agent-runner.sh is present and executable
-  ✓ Copilot auth config present at /root/.copilot/config.json
+  ✓ Copilot auth config present at /home/worker/.copilot/config.json
 ```
 
 ---
@@ -77,7 +77,7 @@ Expected output:
 | Component | Value |
 |---|---|
 | Auth token location (host) | `~/.copilot/config.json` |
-| Auth token location (container) | `/root/.copilot/config.json` |
-| Volume mount | `~/.copilot:/root/.copilot` (read-write) |
+| Auth token location (container) | `/home/worker/.copilot/config.json` |
+| Volume mount | `~/.copilot:/home/worker/.copilot` (read-write) |
 | Token format | Plain JSON — no encryption, no keyring |
 | Re-auth command | `copilot --login` (on host) |

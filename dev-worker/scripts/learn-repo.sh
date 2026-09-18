@@ -201,7 +201,7 @@ ok "Operator context files: ${#FOUND_CONTEXT_FILES[@]}"
 translate_mcp_vars() {
     local content="$1"
     content="${content//\$\{workspaceFolder\}/${WORKSPACE}}"
-    content="${content//\$\{userHome\}/\/root}"
+    content="${content//\$\{userHome\}/${HOME:-/home/worker}}"
     while [[ "$content" =~ \$\{env:([A-Za-z_][A-Za-z0-9_]*)\} ]]; do
         local var="${BASH_REMATCH[1]}"
         local val="${!var:-}"
@@ -234,8 +234,8 @@ if [[ -n "$FOUND_MCP" ]]; then
     " "$TRANSLATED" 2>/dev/null || echo "")
 
     if [[ -n "$COPILOT_MCP" ]]; then
-        mkdir -p /root/.copilot
-        echo "$COPILOT_MCP" > /root/.copilot/mcp.json
+        mkdir -p "${HOME:-/home/worker}/.copilot"
+        echo "$COPILOT_MCP" > "${HOME:-/home/worker}/.copilot/mcp.json"
         ok "Generated ~/.copilot/mcp.json for Copilot CLI"
     fi
 else
@@ -352,7 +352,7 @@ if [[ "$AI_PROVIDER" == "auto" ]]; then
     if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         RESOLVED_PROVIDER="claude"
         info "AI_PROVIDER=auto → claude (ANTHROPIC_API_KEY set)"
-    elif [[ -f /root/.copilot/config.json ]]; then
+    elif [[ -f "${HOME:-/home/worker}/.copilot/config.json" ]]; then
         RESOLVED_PROVIDER="copilot"
         info "AI_PROVIDER=auto → copilot (config.json found)"
     else

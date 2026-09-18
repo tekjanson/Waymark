@@ -130,20 +130,20 @@ services:
       # ── Copilot CLI auth ───────────────────────────────────────────────────
       # Plain JSON file — no gnome-keyring, no SQLite, no password-store.
       # Run `copilot --login` on the host once; container reuses the token.
-      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/root/.copilot
+      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/home/worker/.copilot
 
       # ── Claude Code auth / config ──────────────────────────────────────────
       # Claude Code uses ANTHROPIC_API_KEY (env) for auth and ~/.claude for
       # project settings and global MCP config. Mount the host dir so the
       # agent's Claude settings persist across container restarts.
       # If you don't use Claude, this mount is a no-op (dir may be empty).
-      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/root/.claude
+      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/home/worker/.claude
 
       # ── Google service-account key ─────────────────────────────────────────
       - ${GSA_KEY_PATH:-/home/tekjanson/.config/gcloud/waymark-service-account-key.json}:/credentials/gsa-key.json:ro
 
       # ── SSH keys ───────────────────────────────────────────────────────────
-      - ${SSH_PATH:-/home/tekjanson/.ssh}:/root/.ssh:ro
+      - ${SSH_PATH:-/home/tekjanson/.ssh}:/home/worker/.ssh:ro
 
       # ── Docker socket (Docker-outside-of-Docker) ───────────────────────────
       # Mounts the HOST Docker daemon socket into the container.
@@ -220,8 +220,8 @@ services:
 
     volumes:
       - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace
-      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/root/.copilot
-      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/root/.claude
+      - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/home/worker/.copilot
+      - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/home/worker/.claude
       - ${GSA_KEY_PATH:-/home/tekjanson/.config/gcloud/waymark-service-account-key.json}:/credentials/gsa-key.json:ro
-      - ${SSH_PATH:-/home/tekjanson/.ssh}:/root/.ssh:ro
+      - ${SSH_PATH:-/home/tekjanson/.ssh}:/home/worker/.ssh:ro
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
