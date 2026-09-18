@@ -105,6 +105,7 @@ services:
       - DISCOVERY_TREE_TAB=${DISCOVERY_TREE_TAB:-Discovery_Tree}
       # Adaptive compute: parallel fixes on repeated failure, test timeout, push
       - DREAM_FANOUT_N=${DREAM_FANOUT_N:-3}
+      - DREAM_MAX_TURNS=${DREAM_MAX_TURNS:-24}
       - DREAM_TEST_TIMEOUT_MS=${DREAM_TEST_TIMEOUT_MS:-600000}
       - DREAM_PUSH=${DREAM_PUSH:-1}
       # Workboard the agent polls for tasks (also the default Discovery_Tree sheet)

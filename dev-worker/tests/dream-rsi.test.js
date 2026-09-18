@@ -17,11 +17,13 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const { KeyManager, parsePool } = require('../scripts/key-manager');
 const { DiscoveryTree, STATUS } = require('../scripts/discovery-tree');
 const { tryParseJSON } = require('../scripts/lib/gemini');
 const { applyFiles } = require('../scripts/dream-rsi');
+const { Harness } = require('../scripts/lib/agent-harness');
 
 /* ---------- tiny async test harness (queued, sequential) ---------- */
 
@@ -79,6 +81,38 @@ function fakeSheets() {
       return afterRow + 1;
     },
   };
+}
+
+/* ---------- temp git repo + scripted model (for harness tests) ---------- */
+
+function makeGitRepo(files = { 'README.md': '# test\n' }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-repo-'));
+  const sh = (bin, args) => spawnSync(bin, args, { cwd: dir });
+  sh('git', ['init', '-q']);
+  sh('git', ['config', 'user.email', 't@t.local']);
+  sh('git', ['config', 'user.name', 'T']);
+  for (const [p, c] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+    fs.writeFileSync(path.join(dir, p), c);
+  }
+  sh('git', ['add', '-A']);
+  sh('git', ['commit', '-qm', 'init']);
+  return dir;
+}
+
+// A fake model that replays a fixed list of actions and records the observation
+// it was shown on each turn (the last user message in the conversation).
+function scriptedModel(actions) {
+  let i = 0;
+  const seen = [];
+  const complete = async ({ contents }) => {
+    const last = contents[contents.length - 1];
+    if (last && last.role === 'user') seen.push(last.parts[0].text);
+    const a = i < actions.length ? actions[i++] : { tool: 'finish', args: { summary: 'end', testCommand: 'true' } };
+    return { text: JSON.stringify(a), keyIndex: 0 };
+  };
+  complete.seen = seen;
+  return complete;
 }
 
 /* ======================================================================
@@ -285,6 +319,83 @@ test('extracts the outermost object from noisy output', () => {
 });
 test('returns undefined for non-JSON', () => {
   eq(tryParseJSON('not json at all'), undefined);
+});
+
+/* ======================================================================
+   Harness — the agentic tool loop (real tools, scripted model)
+   ====================================================================== */
+
+section('Harness (agentic loop)');
+
+test('runs a tool loop and finishes when tests pass', async () => {
+  const dir = makeGitRepo();
+  try {
+    const model = scriptedModel([
+      { tool: 'list_files', args: {} },
+      { tool: 'write_file', args: { path: 'feature.js', content: 'export const x = 1;\n' } },
+      { tool: 'run', args: { cmd: 'test -f feature.js' } },
+      { tool: 'finish', args: { summary: 'add feature', testCommand: 'true' } },
+    ]);
+    const h = new Harness({ complete: model, workdir: dir, maxTurns: 10, runTimeoutMs: 10000 });
+    const r = await h.run({ task: 'Add feature', desc: '' });
+    ok(r.passed, 'should finish green');
+    ok(r.filesTouched.includes('feature.js'), 'tracks the written file');
+    ok(fs.existsSync(path.join(dir, 'feature.js')), 'file exists on disk');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failing finish does NOT end the episode (test-fix loop)', async () => {
+  const dir = makeGitRepo();
+  try {
+    const model = scriptedModel([
+      { tool: 'finish', args: { summary: 'x', testCommand: 'false' } }, // fails → keep going
+      { tool: 'finish', args: { summary: 'x', testCommand: 'true' } }, // passes
+    ]);
+    const h = new Harness({ complete: model, workdir: dir, maxTurns: 5, runTimeoutMs: 10000 });
+    const r = await h.run({ task: 'T', desc: '' });
+    ok(r.passed, 'second finish passes');
+    ok(r.turns >= 2, 'took at least two turns');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('edit_file needs an exact unique match and blocks traversal', async () => {
+  const dir = makeGitRepo({ 'a.js': 'const a = 1;\nconst b = 2;\n' });
+  try {
+    const model = scriptedModel([
+      { tool: 'edit_file', args: { path: 'a.js', search: 'NOPE', replace: 'x' } }, // not found
+      { tool: 'write_file', args: { path: '../evil.js', content: 'bad' } }, // traversal
+      { tool: 'edit_file', args: { path: 'a.js', search: 'const a = 1;', replace: 'const a = 42;' } },
+      { tool: 'finish', args: { summary: 'edit', testCommand: 'true' } },
+    ]);
+    const h = new Harness({ complete: model, workdir: dir, maxTurns: 10, runTimeoutMs: 10000 });
+    const r = await h.run({ task: 'edit', desc: '' });
+    ok(r.passed, 'finishes green after a successful edit');
+    ok(fs.readFileSync(path.join(dir, 'a.js'), 'utf8').includes('const a = 42;'), 'edit applied');
+    ok(!fs.existsSync(path.join(path.dirname(dir), 'evil.js')), 'traversal write blocked');
+    ok(model.seen.some((o) => /not found/i.test(o)), 'reports search-not-found');
+    ok(model.seen.some((o) => /escapes the workspace/i.test(o)), 'reports traversal error');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('run blocks dangerous / push commands', async () => {
+  const dir = makeGitRepo();
+  try {
+    const model = scriptedModel([
+      { tool: 'run', args: { cmd: 'git push origin main' } },
+      { tool: 'finish', args: { summary: 'x', testCommand: 'true' } },
+    ]);
+    const h = new Harness({ complete: model, workdir: dir, maxTurns: 5, runTimeoutMs: 10000 });
+    await h.run({ task: 'x', desc: '' });
+    ok(model.seen.some((o) => /blocked for safety/i.test(o)), 'git push was blocked');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 /* ---------- runner ---------- */

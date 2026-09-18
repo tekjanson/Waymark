@@ -51,20 +51,51 @@ class GeminiClient {
    * @param {string} [req.model] — override the default model
    * @returns {Promise<string>}
    */
+  /** Shared generationConfig builder. */
+  _genConfig(req) {
+    return {
+      temperature: req.temperature ?? 0.7,
+      maxOutputTokens: req.maxOutputTokens ?? 8192,
+      ...(req.responseMimeType ? { responseMimeType: req.responseMimeType } : {}),
+    };
+  }
+
+  /**
+   * Single-user-message generateContent (convenience over generateContents).
+   * @param {Object} req — { prompt, system?, temperature?, maxOutputTokens?, responseMimeType?, model? }
+   * @returns {Promise<{text:string,keyIndex:number,raw:any}>}
+   */
   async generate(req) {
-    const model = req.model || this.model;
     const body = {
       contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
-      generationConfig: {
-        temperature: req.temperature ?? 0.7,
-        maxOutputTokens: req.maxOutputTokens ?? 8192,
-        ...(req.responseMimeType ? { responseMimeType: req.responseMimeType } : {}),
-      },
+      generationConfig: this._genConfig(req),
     };
-    if (req.system) {
-      body.systemInstruction = { parts: [{ text: req.system }] };
-    }
+    if (req.system) body.systemInstruction = { parts: [{ text: req.system }] };
+    return this._send(body, req.model || this.model);
+  }
 
+  /**
+   * Multi-turn generateContent — pass a full `contents` array of
+   * { role: 'user'|'model', parts: [{ text }] }. This powers the agentic
+   * harness's tool loop while preserving key rotation across every turn.
+   * @param {Object} req — { contents, system?, temperature?, maxOutputTokens?, responseMimeType?, model? }
+   * @returns {Promise<{text:string,keyIndex:number,raw:any}>}
+   */
+  async generateContents(req) {
+    const body = {
+      contents: req.contents,
+      generationConfig: this._genConfig(req),
+    };
+    if (req.system) body.systemInstruction = { parts: [{ text: req.system }] };
+    return this._send(body, req.model || this.model);
+  }
+
+  /**
+   * Core generateContent HTTP call with key-pool rotation + retry.
+   * Rotates on 429 / quota and retries the SAME payload automatically.
+   * @returns {Promise<{text:string,keyIndex:number,raw:any}>}
+   */
+  async _send(body, model) {
     let attempt = 0;
     let lastErr = null;
     while (attempt <= this.maxRetries) {

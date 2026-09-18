@@ -20,10 +20,12 @@ flowchart TD
     B -->|copilot default| C[Copilot / Claude handler<br/>unchanged]
     B -->|gemini| D[dream-rsi.js handler]
     D --> E[dream_evaluator<br/>read Discovery_Tree, avoid dead ends]
-    E --> F[GeminiClient + KeyManager pool<br/>rotate on 429 / quota]
-    F --> G[apply files, run tests]
-    G -->|repeated failure| H[adaptive fan-out<br/>N fixes in parallel across keys]
-    G --> I[log node to Discovery_Tree]
+    E --> F[agentic harness<br/>read/search/edit/run tools, ReAct loop]
+    F --> K[GeminiClient + KeyManager pool<br/>rotate on 429 / quota]
+    F --> G[iterate with test feedback<br/>until scoped tests pass]
+    G -->|repeated failure| H[adaptive fan-out<br/>N agentic attempts across keys]
+    G --> R[Reflexion<br/>distil a one-line lesson]
+    R --> I[log node to Discovery_Tree]
     H --> I
     I --> J[commit winner, mark task QA]
 ```
@@ -33,6 +35,7 @@ flowchart TD
 | Engine router | [dev-worker/scripts/agent-runner.sh](../dev-worker/scripts/agent-runner.sh) |
 | Key pool + rotation | [dev-worker/scripts/key-manager.js](../dev-worker/scripts/key-manager.js) |
 | Gemini API client | [dev-worker/scripts/lib/gemini.js](../dev-worker/scripts/lib/gemini.js) |
+| Agentic coding harness | [dev-worker/scripts/lib/agent-harness.js](../dev-worker/scripts/lib/agent-harness.js) |
 | Zero-dep Sheets client | [dev-worker/scripts/lib/sheets.js](../dev-worker/scripts/lib/sheets.js) |
 | Discovery Tree + dream_evaluator | [dev-worker/scripts/discovery-tree.js](../dev-worker/scripts/discovery-tree.js) |
 | Dream-RSI handler | [dev-worker/scripts/dream-rsi.js](../dev-worker/scripts/dream-rsi.js) |
@@ -85,7 +88,8 @@ Optional tuning (sensible defaults apply if omitted):
 GEMINI_KEY_COOLDOWN_MS=3600000     # per-key cooldown after a 429 (1 hour)
 DISCOVERY_TREE_SHEET_ID=           # separate sheet for memory (default: workboard)
 DISCOVERY_TREE_TAB=Discovery_Tree  # tab name
-DREAM_FANOUT_N=3                   # parallel fixes when a task keeps failing
+DREAM_FANOUT_N=3                   # parallel agentic attempts when a task keeps failing
+DREAM_MAX_TURNS=24                 # max tool actions per attempt
 DREAM_TEST_TIMEOUT_MS=600000       # max time per test run (10 min)
 DREAM_PUSH=1                       # push winning branches to origin for QA
 ```
@@ -146,16 +150,39 @@ That's the full run: **works + tested + logged.** Stop the worker any time with
 2. **dream_evaluator** — before writing any code, `discovery-tree.js` reads the
    `Discovery_Tree`, isolates prior attempts for this task, and returns the set
    of **dead ends to avoid** plus a recommendation on whether to fan out.
-3. **Generate** — `GeminiClient` asks Gemini for a fix (full-file writes + a
-   scoped test command), pulling its API key from the pool. On HTTP 429 /
-   `RESOURCE_EXHAUSTED` it rotates to the next key and retries automatically.
-4. **Test** — the change is applied and the test command runs.
+3. **Solve (agentic harness)** — `agent-harness.js` drives Gemini as a real
+   coding agent: it explores the repo and edits it through tools
+   (`read_file`, `search`, `edit_file`, `write_file`, `run`), one action per
+   turn, pulling each turn's API key from the pool. On HTTP 429 /
+   `RESOURCE_EXHAUSTED` it rotates keys and continues mid-episode.
+4. **Verify + fix** — the agent runs the scoped tests; `finish` re-runs the test
+   command and, if it fails, the failure is fed back so the agent self-corrects
+   (the lint/test → fix loop). The episode ends only when tests pass or the turn
+   budget is spent.
 5. **Adapt (adaptive compute)** — if a task keeps failing, the engine **fans
-   out**: it generates `DREAM_FANOUT_N` alternative fixes in parallel across
-   different keys, evaluates each in an isolated `git worktree`, merges the
-   winner, and logs every dead end back to the tree.
+   out**: it runs `DREAM_FANOUT_N` full agentic attempts in parallel across
+   different keys in isolated `git worktree`s, merges the winner, and logs every
+   dead end. Each failed attempt also produces a one-line **Reflexion** lesson
+   that becomes an explicit "avoid" for the next attempt.
 6. **Record** — every attempt becomes a node in the `Discovery_Tree`; on success
    the task moves to **QA** with a note describing how to verify it.
+
+### The agentic harness
+
+The engine is a genuine coding harness, not a single-shot generator. Its design
+borrows directly from the leading open-source coding agents:
+
+| Technique | Borrowed from | How it shows up here |
+|---|---|---|
+| Agent-Computer Interface (small, documented tool set) | **SWE-agent** | `read_file`/`search`/`edit_file`/`write_file`/`run`/`finish` with structured observations |
+| Precise SEARCH/REPLACE edits + repo map | **Aider** | `edit_file` requires an exact, unique match; a compact repo map orients turn one |
+| Event/observation loop | **OpenHands** | every turn is `{thought, tool, args}` → observation → next action (ReAct) |
+| Lint / test → fix loop | SWE-agent / Aider | JS edits get an instant `node --check`; a failing `finish` re-runs tests and keeps going |
+| Self-reflection on failure | **Reflexion** | each dead end is distilled to a one-line lesson fed into the next attempt |
+
+**Guardrails baked in:** every file path is confined to the workspace (no
+traversal), `run` blocks destructive/`git push` commands and is time-bounded, and
+the turn budget (`DREAM_MAX_TURNS`) caps each episode.
 
 ### Key rotation
 
