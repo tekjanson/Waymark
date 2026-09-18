@@ -373,7 +373,7 @@ function buildRing(consumed, goal, centerTop, centerBottom, cls = '') {
   return svg;
 }
 
-function buildMacroRing(label, value, goal, color) {
+function buildMacroRing(label, value, goal, color, onClick) {
   const r = 26, c = 2 * Math.PI * r;
   const pct = goal > 0 ? Math.min(value / goal, 1) : 0;
   const svg = svgEl('svg', { viewBox: '0 0 64 64', class: 'calorie-macroring-svg' });
@@ -384,7 +384,7 @@ function buildMacroRing(label, value, goal, color) {
     'stroke-dasharray': `${(pct * c).toFixed(1)} ${c.toFixed(1)}`,
     transform: 'rotate(-90 32 32)', 'stroke-linecap': 'round',
   }));
-  return el('div', { className: 'calorie-macroring' }, [
+  const node = el('div', { className: 'calorie-macroring calorie-macroring-interactive', role: 'button', tabIndex: '0' }, [
     svg,
     el('div', { className: 'calorie-macroring-info' }, [
       el('span', { className: 'calorie-macroring-val' }, [`${Math.round(value)}`]),
@@ -392,6 +392,10 @@ function buildMacroRing(label, value, goal, color) {
       el('span', { className: 'calorie-macroring-lbl' }, [label]),
     ]),
   ]);
+  if (onClick) {
+    node.addEventListener('click', onClick);
+  }
+  return node;
 }
 
 /* ---------- Header: date nav + timeframe ---------- */
@@ -637,9 +641,9 @@ function renderDayView(container, dateMap) {
 
   /* Page 3 — macro rings */
   const macrorings = el('div', { className: 'calorie-macrorings' }, [
-    buildMacroRing('Protein', totals.protein, macros.protein, '#6366f1'),
-    buildMacroRing('Carbs', totals.carbs, macros.carbs, '#f59e0b'),
-    buildMacroRing('Fat', totals.fat, macros.fat, '#ec4899'),
+    buildMacroRing('Protein', totals.protein, macros.protein, '#6366f1', () => openMacroDrillDown('Protein', totals.protein, macros.protein, dayEntries, 'protein')),
+    buildMacroRing('Carbs', totals.carbs, macros.carbs, '#f59e0b', () => openMacroDrillDown('Carbs', totals.carbs, macros.carbs, dayEntries, 'carbs')),
+    buildMacroRing('Fat', totals.fat, macros.fat, '#ec4899', () => openMacroDrillDown('Fat', totals.fat, macros.fat, dayEntries, 'fat')),
   ]);
 
   /* Page 4 — 7-day trend sparkline */
@@ -720,9 +724,9 @@ function renderTrendView(container, dateMap) {
 
   /* Average macros */
   container.append(el('div', { className: 'calorie-macrorings' }, [
-    buildMacroRing('Protein', avg.protein, macros.protein, '#6366f1'),
-    buildMacroRing('Carbs', avg.carbs, macros.carbs, '#f59e0b'),
-    buildMacroRing('Fat', avg.fat, macros.fat, '#ec4899'),
+    buildMacroRing('Protein', avg.protein, macros.protein, '#6366f1', () => openMacroDrillDown('Protein (Avg)', avg.protein, macros.protein, [], 'protein', avg)),
+    buildMacroRing('Carbs', avg.carbs, macros.carbs, '#f59e0b', () => openMacroDrillDown('Carbs (Avg)', avg.carbs, macros.carbs, [], 'carbs', avg)),
+    buildMacroRing('Fat', avg.fat, macros.fat, '#ec4899', () => openMacroDrillDown('Fat (Avg)', avg.fat, macros.fat, [], 'fat', avg)),
   ]));
 }
 
@@ -734,6 +738,73 @@ function stat(label, value) {
 }
 
 /* ---------- Profile ---------- */
+
+function openMacroDrillDown(label, value, goal, dayEntries, macroKey, avg) {
+  const overlay = el('div', { className: 'calorie-modal-overlay' });
+  const sheet = el('div', { className: 'calorie-modal-sheet' });
+  
+  const top = el('div', { className: 'calorie-modal-top' }, [
+    el('h3', { className: 'calorie-modal-title' }, [`${label} Breakdown`]),
+    el('button', { className: 'calorie-modal-close', type: 'button' }, ['✕']),
+  ]);
+  top.querySelector('button').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const summaryVal = Math.round(value);
+  const goalVal = goal ? Math.round(goal) : 0;
+  const pct = goalVal > 0 ? Math.round((value / goalVal) * 100) : 0;
+
+  const stats = el('div', { className: 'calorie-drill-stats' }, [
+    el('div', { className: 'calorie-stat' }, [
+      el('span', { className: 'calorie-stat-val' }, [`${summaryVal}g`]),
+      el('span', { className: 'calorie-stat-lbl' }, ['Total Consumed']),
+    ]),
+    el('div', { className: 'calorie-stat' }, [
+      el('span', { className: 'calorie-stat-val' }, [goalVal > 0 ? `${goalVal}g` : 'None']),
+      el('span', { className: 'calorie-stat-lbl' }, ['Daily Goal']),
+    ]),
+    el('div', { className: 'calorie-stat' }, [
+      el('span', { className: 'calorie-stat-val' }, [goalVal > 0 ? `${pct}%` : '—']),
+      el('span', { className: 'calorie-stat-lbl' }, ['Goal Progress']),
+    ]),
+  ]);
+
+  const contribList = el('div', { className: 'calorie-drill-contrib' }, [
+    el('h4', {}, ['Top Contributing Foods']),
+  ]);
+
+  // Collect entries and sort by macro amount descending
+  const items = [];
+  const entriesToScan = dayEntries && dayEntries.length ? dayEntries : (_allRows ? _allRows.map(row => ({ row, macro: parseNum(row[_cols[macroKey]]) })) : []);
+  
+  for (const entry of entriesToScan) {
+    const row = entry.row || entry;
+    const foodName = row[_cols.item] || 'Food item';
+    const mealName = row[_cols.meal] || '';
+    const macroVal = parseNum(row[_cols[macroKey]]);
+    if (macroVal > 0) {
+      items.push({ name: foodName, meal: mealName, val: macroVal });
+    }
+  }
+  items.sort((a, b) => b.val - a.val);
+
+  if (items.length === 0) {
+    contribList.append(el('p', { className: 'calorie-drill-empty' }, ['No food items recorded for this macro yet.']));
+  } else {
+    const ul = el('ul', { className: 'calorie-drill-list' });
+    for (const item of items.slice(0, 10)) {
+      ul.append(el('li', {}, [
+        el('span', { className: 'calorie-drill-item-name' }, [item.name, item.meal ? ` (${item.meal})` : '']),
+        el('span', { className: 'calorie-drill-item-val' }, [`${Math.round(item.val)}g`]),
+      ]));
+    }
+    contribList.append(ul);
+  }
+
+  sheet.append(top, stats, contribList);
+  overlay.append(sheet);
+  document.body.append(overlay);
+}
 
 function openProfile() {
   openProfileModal({
