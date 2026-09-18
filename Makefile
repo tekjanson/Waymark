@@ -4,6 +4,8 @@
 #
 #   make up    ← THE ONE COMMAND. Starts everything, opens the UI.
 #   make down  ← Stops everything.
+#   make start ← Start ONLY the Gemini AI dev-fleet worker (agent "AI", uses .env board + keys)
+#   make fleet-tail ← Watch the AI fleet worker stream live activity
 #
 # After `make up`, use the Waymark UI to drive everything:
 #   • Drop tasks in the kanban workboard → agents pick them up
@@ -60,7 +62,7 @@ GEMINI_MODEL="$(GEMINI_MODEL)" \
 CONTAINER_NAME="$(CONTAINER)"
 endef
 
-.PHONY: help up down restart fleet-tail \
+.PHONY: help up down start restart fleet-tail \
         dev test test-watch test-full \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
@@ -204,7 +206,7 @@ down: ## Stop everything (web server + fleet webhook + all agent containers)
 	@echo "  ✓  Done"
 
 # ── Restart (the simple, repeatable one) ──────────────────────────────
-
+start: restart ## Start the AI dev-fleet worker — the ONE command to run each day
 restart: ## Restart the fleet worker with the RIGHT engine + identity (safe to re-run)
 	@echo ""
 	@echo "  ⏳  Restarting fleet worker '$(FLEET_ID)' [engine=$(ACTIVE_AGENT), model=$(GEMINI_MODEL)]..."

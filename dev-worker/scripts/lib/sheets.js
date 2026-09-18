@@ -208,6 +208,26 @@ function createSheetsClient({ keyFile, spreadsheetId }) {
       });
       return afterRow + 1;
     },
+
+    /**
+     * Delete rows [startRow, endRow] (1-based, inclusive) from the given tab.
+     * Deleting shifts lower rows up, so callers removing several rows should
+     * delete from the highest row number down to keep indices valid.
+     */
+    async deleteRows(gid, startRow, endRow) {
+      await api(':batchUpdate', {
+        method: 'POST',
+        body: {
+          requests: [
+            {
+              deleteDimension: {
+                range: { sheetId: gid, dimension: 'ROWS', startIndex: startRow - 1, endIndex: endRow },
+              },
+            },
+          ],
+        },
+      });
+    },
   };
 }
 
