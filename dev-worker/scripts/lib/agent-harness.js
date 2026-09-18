@@ -103,6 +103,7 @@ class Harness {
     this.runTimeoutMs = runTimeoutMs;
     this.filesTouched = new Set();
     this.lastKeyIndex = undefined;
+    this.onProgress = null;
   }
 
   /** Build a compact repository map to orient the agent on turn one. */
@@ -182,6 +183,17 @@ class Harness {
         continue; // free retry
       }
       this.log(`  [harness] turn ${turn + 1}: ${action.tool} ${short(JSON.stringify(action.args || {}))}`);
+      if (typeof this.onProgress === 'function') {
+        try {
+          await this.onProgress({
+            turn: turn + 1,
+            tool: action.tool,
+            args: action.args || {},
+          });
+        } catch {
+          /* live status is best-effort */
+        }
+      }
 
       if (action.tool === 'finish') {
         const testCommand = (action.args && (action.args.testCommand || action.args.test)) || 'npm test';

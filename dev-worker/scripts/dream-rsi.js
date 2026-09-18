@@ -155,6 +155,8 @@ class DreamRSI {
     this.sheets = sheets;
     this.km = keyManager;
     this.evaluator = new Evaluator(gemini, { threshold: EVAL_THRESHOLD, enabled: EVAL_ENABLED, log });
+    this.liveRow = null;
+    this.currentTaskRow = null;
   }
 
   /** Adapter: one agent turn through the rotating key pool → { text, keyIndex }. */
@@ -179,6 +181,9 @@ class DreamRSI {
       maxTurns: MAX_TURNS,
       runTimeoutMs: TEST_TIMEOUT_MS,
     });
+    harness.onProgress = async ({ turn, tool }) => {
+      await this.setLiveStatus(`Turn ${turn}/${MAX_TURNS}: ${tool}`);
+    };
     return harness.run({ task, desc, avoid, temperature });
   }
 
@@ -190,8 +195,10 @@ class DreamRSI {
    * @returns { passed(=approved), testsPassed, summary, testCommand,
    *            filesTouched(union), evalScore, evalVerdict, evalIssues, ... }
    */
-  async solveWithReview({ workdir, task, desc, avoid, temperature, retries = EVAL_RETRIES }) {
+  async solveWithReview({ row, workdir, task, desc, avoid, temperature, retries = EVAL_RETRIES }) {
+    this.currentTaskRow = row || null;
     const touched = new Set();
+    await this.setLiveStatus(`Starting attempt for ${task}`);
     let r = await this.runAttempt({ workdir, task, desc, avoid, temperature });
     (r.filesTouched || []).forEach((f) => touched.add(f));
 
@@ -199,6 +206,7 @@ class DreamRSI {
     let ev = { approved: r.passed, score: r.passed ? 1 : 0, verdict: r.passed ? 'approve' : 'reject', issues: [], skipped: true };
 
     if (r.passed && this.evaluator.enabled) {
+      await this.setLiveStatus(`Tests passed; running review for ${task}`);
       ev = await this.evaluator.judge({
         task,
         desc,
@@ -211,6 +219,7 @@ class DreamRSI {
       let tries = 0;
       while (!ev.approved && tries < retries) {
         tries++;
+        await this.setLiveStatus(`Reviewer asked for another pass (${tries}/${retries})`);
         log(`  ↻ self-repair ${tries}/${retries} — feeding reviewer issues back`);
         const feedback = `${desc || ''}\n\nA REVIEWER REJECTED the previous attempt. Address ALL of these, then finish again:\n- ${ev.issues.join('\n- ')}`;
         r = await this.runAttempt({ workdir, task, desc: feedback, avoid, temperature });
@@ -242,6 +251,15 @@ class DreamRSI {
       keyIndex: r.keyIndex,
       transcriptTail: r.transcriptTail,
     };
+  }
+
+  async setLiveStatus(text) {
+    if (!WORKBOARD_ID || !this.sheets || !text || !this.currentTaskRow) return;
+    if (!this.liveRow) {
+      this.liveRow = await this.addNoteRow(`Dream-RSI live: ${text}`, this.currentTaskRow);
+      return;
+    }
+    await this.updateNote(this.liveRow, `Dream-RSI live: ${text}`);
   }
 
   /**
@@ -368,6 +386,10 @@ class DreamRSI {
   }
 
   async addNote(row, text) {
+    return this.addNoteRow(text, row);
+  }
+
+  async addNoteRow(text, row = null) {
     if (!WORKBOARD_ID || !row) return;
     const gid = await this.sheets.getTabGid(WORKBOARD_TAB);
     if (gid === null) return;
@@ -376,6 +398,15 @@ class DreamRSI {
     const newRow = await this.sheets.insertRowAfter(gid, Number(row));
     const today = new Date().toISOString().slice(0, 10);
     await this.sheets.update(`${WORKBOARD_TAB}!A${newRow}:I${newRow}`, [
+      ['', '', '', '', AGENT, '', today, '', text],
+    ]);
+    return newRow;
+  }
+
+  async updateNote(row, text) {
+    if (!WORKBOARD_ID || !row) return;
+    const today = new Date().toISOString().slice(0, 10);
+    await this.sheets.update(`${WORKBOARD_TAB}!A${row}:I${row}`, [
       ['', '', '', '', AGENT, '', today, '', text],
     ]);
   }
@@ -472,6 +503,7 @@ async function main() {
   } else {
     // ── Single agentic attempt + self-review in the main workspace ─────────
     const s = await engine.solveWithReview({
+        row,
       workdir: WORKSPACE,
       task,
       desc,
