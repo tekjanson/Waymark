@@ -30,9 +30,11 @@ PROVIDER      ?= auto
 MODEL         ?= claude-sonnet-4.6
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
-ACTIVE_AGENT  ?= copilot
 GEMINI_MODEL  ?= gemini-flash-latest
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
+
+# Prefer the Gemini engine automatically whenever a key pool is configured.
+ACTIVE_AGENT  ?= $(if $(GEMINI_KEY_POOL),gemini,copilot)
 
 # Fleet alias: FLEET_NAMES falls back to AGENT_NAMES
 FLEET_NAMES   ?= $(AGENT_NAMES)
