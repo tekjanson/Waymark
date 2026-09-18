@@ -46,7 +46,7 @@ const definition = {
   color: '#7c3aed',
   priority: 24,
   itemNoun: 'Agent',
-  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Activity'],
+  defaultHeaders: ['Name', 'Model', 'Provider', 'Status', 'Tuning', 'Task', 'Project', 'Heartbeat', 'Summary', 'Workboard feedback', 'Tuning feedback', 'Activity'],
 
   detect(lower) {
     const hasTuning = lower.some(h => /\btuning\b|\bpersonality\b|\bprompt\b/.test(h));
@@ -57,7 +57,7 @@ const definition = {
   columns(lower) {
     const cols = {
       name: -1, model: -1, provider: -1, status: -1,
-      tuning: -1, task: -1, project: -1, heartbeat: -1,
+      tuning: -1, task: -1, project: -1, heartbeat: -1, summary: -1, workboardFeedback: -1, tuningFeedback: -1,
       workboard: -1, command: -1, folder: -1, activity: -1,
     };
     cols.name      = lower.findIndex(h => /^(name|agent|worker|identity)$/.test(h));
@@ -69,6 +69,9 @@ const definition = {
     cols.task      = lower.findIndex(h => /^(task|current task|working on|job|doing)/.test(h));
     cols.project   = lower.findIndex(h => /^(project|board|scope)/.test(h));
     cols.heartbeat = lower.findIndex(h => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h));
+    cols.summary   = lower.findIndex(h => /^(summary|state summary|ai summary|brief|synopsis)/.test(h));
+    cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workboard|workbook)/.test(h));
+    cols.tuningFeedback = lower.findIndex(h => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h));
     cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
     cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
@@ -195,6 +198,9 @@ const definition = {
       const taskVal   = cell(row, cols.task)       || '';
       const project   = cell(row, cols.project)    || '';
       const heartbeat = cell(row, cols.heartbeat)  || '';
+      const summary   = cell(row, cols.summary)    || '';
+      const workboardFeedback = cell(row, cols.workboardFeedback) || '';
+      const tuningFeedback = cell(row, cols.tuningFeedback) || '';
       const workboard = cell(row, cols.workboard)  || '';
       const command   = cell(row, cols.command)    || '';
       const folder    = cell(row, cols.folder)     || '';
@@ -251,6 +257,28 @@ const definition = {
       /* -- Heartbeat -- */
       const heartbeatEl = (cols.heartbeat !== -1 && heartbeat)
         ? el('div', { className: 'agents-heartbeat' }, ['⏱ Last seen: ', timeAgo(heartbeat)])
+        : null;
+
+      /* -- AI summary (state snapshot above the raw feed) -- */
+      const summaryEl = (cols.summary !== -1 && summary)
+        ? el('div', { className: 'agents-summary' }, [
+            el('div', { className: 'agents-summary-label' }, ['AI summary']),
+            el('div', { className: 'agents-summary-text' }, [summary]),
+          ])
+        : null;
+
+      const workboardFeedbackEl = (cols.workboardFeedback !== -1 && workboardFeedback)
+        ? el('div', { className: 'agents-feedback agents-feedback-workboard' }, [
+            el('div', { className: 'agents-feedback-label' }, ['Workbook feedback']),
+            el('div', { className: 'agents-feedback-text' }, [workboardFeedback]),
+          ])
+        : null;
+
+      const tuningFeedbackEl = (cols.tuningFeedback !== -1 && tuningFeedback)
+        ? el('div', { className: 'agents-feedback agents-feedback-tuning' }, [
+            el('div', { className: 'agents-feedback-label' }, ['Tuning feedback']),
+            el('div', { className: 'agents-feedback-text' }, [tuningFeedback]),
+          ])
         : null;
 
       /* -- Live activity feed (chat stream fed by the dev-worker) -- */
@@ -388,6 +416,9 @@ const definition = {
         ...(workboardEl ? [workboardEl] : []),
         ...(commandEl   ? [commandEl]   : []),
         ...(taskDisplay ? [taskDisplay] : []),
+        ...(summaryEl   ? [summaryEl]   : []),
+        ...(workboardFeedbackEl ? [workboardFeedbackEl] : []),
+        ...(tuningFeedbackEl ? [tuningFeedbackEl] : []),
         ...(feedEl      ? [feedEl]      : []),
         ...(projectEl   ? [projectEl]   : []),
         ...(folderEl    ? [folderEl]    : []),

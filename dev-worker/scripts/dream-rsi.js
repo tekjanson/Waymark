@@ -61,6 +61,9 @@ const EVAL_ENABLED = process.env.DREAM_EVAL_ENABLED !== '0';
 const EVAL_THRESHOLD = parseFloat(process.env.DREAM_EVAL_THRESHOLD || '0.7');
 const EVAL_RETRIES = parseInt(process.env.DREAM_EVAL_RETRIES || '1', 10);
 const PUSH = process.env.DREAM_PUSH !== '0';
+const SUMMARY_TIMEOUT_MS = parseInt(process.env.DREAM_SUMMARY_TIMEOUT_MS || '15000', 10);
+const SUMMARY_THROTTLE_MS = parseInt(process.env.DREAM_SUMMARY_THROTTLE_MS || '20000', 10);
+const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-flash-latest';
 // After this many failed attempts on a row, PARK it (return to Backlog at P3) so
 // the loop stops spinning on one hard task and rotates to the rest of the board.
 const MAX_ROW_ATTEMPTS = parseInt(process.env.DREAM_MAX_ROW_ATTEMPTS || '3', 10);
@@ -152,6 +155,12 @@ function computeDiff(dir, files) {
 class DreamRSI {
   constructor({ gemini, tree, sheets, keyManager, fleet }) {
     this.gemini = gemini;
+    this.summaryGemini = new GeminiClient(keyManager, {
+      model: SUMMARY_MODEL,
+      maxRetries: 1,
+      requestTimeoutMs: SUMMARY_TIMEOUT_MS,
+      log,
+    });
     this.tree = tree;
     this.sheets = sheets;
     this.km = keyManager;
@@ -159,6 +168,11 @@ class DreamRSI {
     this.evaluator = new Evaluator(gemini, { threshold: EVAL_THRESHOLD, enabled: EVAL_ENABLED, log });
     this.liveRow = null;
     this.currentTaskRow = null;
+    this.summaryBusy = false;
+    this.summaryQueued = false;
+    this.summaryLastAt = 0;
+    this.summaryLastVersion = -1;
+    this.tuningText = process.env.AGENT_TUNING || '';
   }
 
   /** Adapter: one agent turn through the rotating key pool → { text, keyIndex }. */
@@ -260,6 +274,7 @@ class DreamRSI {
     // Dev-fleet plumbing: stream the same line into the Agent Registry so the
     // AI Fleet tool shows a live chat feed. Independent of any kanban row.
     if (this.fleet) await this.fleet.pushActivity(text).catch(() => {});
+    void this.refreshLiveSnapshot().catch(() => {});
     // Kanban row note: only when this run is tied to a task row.
     if (!WORKBOARD_ID || !this.sheets || !this.currentTaskRow) return;
     if (!this.liveRow) {
@@ -284,6 +299,69 @@ class DreamRSI {
       return (text || '').trim().slice(0, 200) || (tail || '').slice(-160);
     } catch {
       return (tail || '').slice(-160);
+    }
+  }
+
+  /**
+   * Generate a short AI summary of the most recent live updates.
+   * Uses a short Gemini timeout and coalesces overlapping requests so it can
+   * never stall the agent loop if the model or key pool gets unhappy.
+   */
+  async refreshLiveSnapshot() {
+    if (!this.fleet || !this.summaryGemini) return;
+    if (this.summaryBusy) {
+      this.summaryQueued = true;
+      return;
+    }
+
+    const snap = this.fleet.getSnapshot ? this.fleet.getSnapshot() : null;
+    const recent = (snap && snap.activity ? snap.activity.slice(-6) : []).filter(Boolean);
+    const version = snap && typeof snap.activityVersion === 'number' ? snap.activityVersion : 0;
+    const now = Date.now();
+
+    if (!recent.length) return;
+    if (version === this.summaryLastVersion && now - this.summaryLastAt < SUMMARY_THROTTLE_MS) return;
+    if (now - this.summaryLastAt < SUMMARY_THROTTLE_MS && recent.length < 3) return;
+
+    this.summaryBusy = true;
+    try {
+      const prompt = [
+        `Task: ${snap.task || 'unknown'}`,
+        `Tuning: ${(this.tuningText || 'none').slice(0, 1200) || 'none'}`,
+        'Recent live updates:',
+        ...recent.map((line) => `- ${line}`),
+        '',
+        'Return strict JSON with these keys:',
+        'summary — 1-2 short sentences for a human following the live agent feed.',
+        'workboardFeedback — 1 short sentence about the current workboard/task state and next step.',
+        'tuningFeedback — 1 short sentence about whether the current tuning seems helpful, too broad, or too verbose.',
+        'If the updates look repetitive, stalled, or hung up on tests/tools, say that plainly in summary and workboardFeedback.',
+        'Keep all values concise, factual, and current. No markdown, no extra keys.',
+      ].join('\n');
+
+      const { text } = await this.summaryGemini.generate({
+        system: 'You summarize a live coding agent feed for a human operator. Stay concise and factual.',
+        prompt,
+        temperature: 0.2,
+        maxOutputTokens: 180,
+        responseMimeType: 'application/json',
+      });
+      const snapshot = normalizeSnapshot(text);
+      if (snapshot.summary || snapshot.workboardFeedback || snapshot.tuningFeedback) {
+        await this.fleet.setSummary(snapshot.summary || '').catch(() => {});
+        await this.fleet.setWorkboardFeedback(snapshot.workboardFeedback || '').catch(() => {});
+        await this.fleet.setTuningFeedback(snapshot.tuningFeedback || '').catch(() => {});
+        this.summaryLastAt = Date.now();
+        this.summaryLastVersion = version;
+      }
+    } catch (e) {
+      log(`  ! live summary skipped: ${e.message}`);
+    } finally {
+      this.summaryBusy = false;
+      if (this.summaryQueued) {
+        this.summaryQueued = false;
+        setImmediate(() => this.refreshLiveSnapshot().catch(() => {}));
+      }
     }
   }
 
@@ -495,6 +573,7 @@ async function main() {
   // AI Fleet tool shows the agent go live before any turns run.
   await fleet.setTask(task).catch(() => {});
   await fleet.pushActivity(`Claimed row ${row || '?'}: ${task}`).catch(() => {});
+  void engine.refreshLiveSnapshot().catch(() => {});
 
   // ── 1. dream_evaluator: simulate paths, collect dead ends ────────────────
   const evaln = await tree.dreamEvaluator(row, task);
@@ -661,6 +740,47 @@ function nullTree() {
       suggestedTemperature: 0.6, bestParent: null,
     }),
   };
+}
+
+function normalizeSummary(text) {
+  return tidyLine(text).slice(0, 240);
+}
+
+function normalizeSnapshot(text) {
+  const parsed = tryParseJSONText(text);
+  if (parsed && typeof parsed === 'object') {
+    return {
+      summary: tidyLine(parsed.summary || parsed.state || ''),
+      workboardFeedback: tidyLine(parsed.workboardFeedback || parsed.workbookFeedback || parsed.workboard || ''),
+      tuningFeedback: tidyLine(parsed.tuningFeedback || parsed.tuning || ''),
+    };
+  }
+  const fallback = tidyLine(text);
+  return { summary: fallback, workboardFeedback: '', tuningFeedback: '' };
+}
+
+function tidyLine(text) {
+  return String(text || '')
+    .replace(/```(?:json|text)?/gi, '')
+    .replace(/```/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tryParseJSONText(text) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim());
+  } catch {
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    try {
+      return JSON.parse(m[0]);
+    } catch {
+      return null;
+    }
+  }
 }
 
 if (require.main === module) {

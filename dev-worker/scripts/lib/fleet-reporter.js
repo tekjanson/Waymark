@@ -9,6 +9,9 @@
    real chat-style feed of what the agent is doing right now.
 
    It auto-provisions:
+     • a "Summary" column (appended to the header if the sheet lacks one),
+     • a "Workboard feedback" column (appended to the header if the sheet lacks one),
+     • a "Tuning feedback" column (appended to the header if the sheet lacks one),
      • an "Activity" column (appended to the header if the sheet lacks one), and
      • a row for this agent (appended if the agent's name isn't in the sheet),
    so it "just works" against any Agent Registry without manual setup.
@@ -50,11 +53,16 @@ class FleetReporter {
     this.cols = null;
     this.row = -1;
     this.ready = false;
+    this.task = '';
+    this.summary = '';
+    this.workboardFeedback = '';
+    this.tuningFeedback = '';
+    this.activityVersion = 0;
     this.ring = [];
   }
 
   /**
-   * Discover columns, ensure an Activity column exists, and find-or-create this
+  * Discover columns, ensure Summary/feedback columns exist, and find-or-create this
    * agent's row. Safe to call repeatedly; only does the work once.
    * @returns {Promise<boolean>} whether the reporter is ready to stream
    */
@@ -67,10 +75,36 @@ class FleetReporter {
         name: lower.findIndex((h) => /^(name|agent|worker|identity)$/.test(h)),
         status: lower.findIndex((h) => /^(status|state|online|active)/.test(h)),
         task: lower.findIndex((h) => /^(task|current task|working on|job|doing)/.test(h)),
+        summary: lower.findIndex((h) => /^(summary|state summary|ai summary|brief|synopsis)/.test(h)),
+        workboardFeedback: lower.findIndex((h) => /^(workboard feedback|workboard|workbook feedback|workbook)/.test(h)),
+        tuningFeedback: lower.findIndex((h) => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h)),
         activity: lower.findIndex((h) => /^(activity|feed|log|stream)/.test(h)),
         heartbeat: lower.findIndex((h) => /^(heartbeat|last seen|ping|updated|timestamp)/.test(h)),
       };
       if (this.cols.name < 0) this.cols.name = 0;
+
+      // Ensure a Summary column exists — this is what the fleet tool renders
+      // as the concise AI state snapshot above the raw activity log.
+      if (this.cols.summary < 0) {
+        const newCol = header.length;
+        await this.sheets.update(`${TAB}!${colLetter(newCol)}1`, [['Summary']]);
+        this.cols.summary = newCol;
+        header.push('Summary');
+      }
+
+      if (this.cols.workboardFeedback < 0) {
+        const newCol = header.length;
+        await this.sheets.update(`${TAB}!${colLetter(newCol)}1`, [['Workboard feedback']]);
+        this.cols.workboardFeedback = newCol;
+        header.push('Workboard feedback');
+      }
+
+      if (this.cols.tuningFeedback < 0) {
+        const newCol = header.length;
+        await this.sheets.update(`${TAB}!${colLetter(newCol)}1`, [['Tuning feedback']]);
+        this.cols.tuningFeedback = newCol;
+        header.push('Tuning feedback');
+      }
 
       // Ensure an Activity column exists — this is what the fleet tool renders
       // as the live chat feed. Append it to the header if the sheet lacks one.
@@ -113,8 +147,45 @@ class FleetReporter {
   /** Set the "Current task" title shown on the agent's fleet card. */
   async setTask(title) {
     if (!(await this._ensure())) return;
+    this.task = String(title || '');
     const data = [];
     if (this.cols.task >= 0) data.push(this._cell(this.cols.task, String(title || '')));
+    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
+    await this._write(data);
+  }
+
+  /** Replace the short AI summary shown above the live feed. */
+  async setSummary(text) {
+    if (!(await this._ensure()) || this.cols.summary < 0) return;
+    const summary = String(text || '').trim();
+    if (!summary || summary === this.summary) return;
+    this.summary = summary;
+    const data = [this._cell(this.cols.summary, summary)];
+    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
+    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
+    await this._write(data);
+  }
+
+  /** Replace the concise workboard/workbook feedback shown in the fleet card. */
+  async setWorkboardFeedback(text) {
+    if (!(await this._ensure()) || this.cols.workboardFeedback < 0) return;
+    const value = String(text || '').trim();
+    if (!value || value === this.workboardFeedback) return;
+    this.workboardFeedback = value;
+    const data = [this._cell(this.cols.workboardFeedback, value)];
+    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
+    if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
+    await this._write(data);
+  }
+
+  /** Replace the concise tuning feedback shown in the fleet card. */
+  async setTuningFeedback(text) {
+    if (!(await this._ensure()) || this.cols.tuningFeedback < 0) return;
+    const value = String(text || '').trim();
+    if (!value || value === this.tuningFeedback) return;
+    this.tuningFeedback = value;
+    const data = [this._cell(this.cols.tuningFeedback, value)];
+    if (this.cols.heartbeat >= 0) data.push(this._cell(this.cols.heartbeat, new Date().toISOString()));
     if (this.cols.status >= 0) data.push(this._cell(this.cols.status, 'Online'));
     await this._write(data);
   }
@@ -124,6 +195,7 @@ class FleetReporter {
     if (!line || !(await this._ensure())) return;
     const ts = new Date().toISOString().slice(11, 19);
     this.ring.push(`[${ts}] ${line}`);
+    this.activityVersion += 1;
     while (this.ring.length > MAX_LINES) this.ring.shift();
 
     const data = [this._cell(this.cols.activity, this.ring.join('\n'))];
@@ -136,6 +208,18 @@ class FleetReporter {
   async setStatus(status) {
     if (!(await this._ensure()) || this.cols.status < 0) return;
     await this._write([this._cell(this.cols.status, String(status))]);
+  }
+
+  /** Snapshot the live state so the Dream-RSI summarizer can inspect it. */
+  getSnapshot() {
+    return {
+      task: this.task,
+      summary: this.summary,
+      workboardFeedback: this.workboardFeedback,
+      tuningFeedback: this.tuningFeedback,
+      activity: this.ring.slice(),
+      activityVersion: this.activityVersion,
+    };
   }
 
   /* ---------- internals ---------- */

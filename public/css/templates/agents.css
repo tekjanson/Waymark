@@ -311,6 +311,68 @@
 }
 
 /* ---------- Live activity feed (chat stream) ---------- */
+.agents-summary {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agents-summary-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1d4ed8;
+}
+
+.agents-summary-text {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #1e293b;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agents-feedback {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff;
+}
+
+.agents-feedback-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+.agents-feedback-text {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agents-feedback-workboard {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.agents-feedback-tuning {
+  border-color: #ddd6fe;
+  background: #faf5ff;
+}
+
 .agents-feed {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -396,6 +458,23 @@
 
 [data-theme="dark"] .agents-feed {
   background: rgba(148, 163, 184, 0.06);
+}
+
+[data-theme="dark"] .agents-summary {
+  background: rgba(59, 130, 246, 0.09);
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+[data-theme="dark"] .agents-summary-text {
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .agents-feedback {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+[data-theme="dark"] .agents-feedback-text {
+  color: var(--color-text);
 }
 
 [data-theme="dark"] .agents-feed-line {

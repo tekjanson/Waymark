@@ -123,6 +123,24 @@ test('agents live feed renders streamed lines', async ({ page }) => {
   await expect(firstFeed.first()).toContainText('Claimed row 42');
 });
 
+test('agents live feed renders an AI summary', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const summary = page.locator('.agents-card').first().locator('.agents-summary');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('AI summary');
+});
+
+test('agents live feed renders workbook and tuning feedback', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const card = page.locator('.agents-card').first();
+  await expect(card.locator('.agents-feedback-workboard')).toBeVisible();
+  await expect(card.locator('.agents-feedback-workboard')).toContainText('Workbook feedback');
+  await expect(card.locator('.agents-feedback-tuning')).toBeVisible();
+  await expect(card.locator('.agents-feedback-tuning')).toContainText('Tuning feedback');
+});
+
 test('agents live feed renders a status indicator', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
