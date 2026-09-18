@@ -46,6 +46,7 @@ const { createSheetsClient } = require('./lib/sheets');
 const { DiscoveryTree, STATUS } = require('./discovery-tree');
 const { Harness } = require('./lib/agent-harness');
 const { Evaluator } = require('./lib/evaluator');
+const { FleetReporter } = require('./lib/fleet-reporter');
 
 /* ---------- Config ---------- */
 
@@ -149,11 +150,12 @@ function computeDiff(dir, files) {
 /* ---------- The Dream-RSI engine ---------- */
 
 class DreamRSI {
-  constructor({ gemini, tree, sheets, keyManager }) {
+  constructor({ gemini, tree, sheets, keyManager, fleet }) {
     this.gemini = gemini;
     this.tree = tree;
     this.sheets = sheets;
     this.km = keyManager;
+    this.fleet = fleet || null;
     this.evaluator = new Evaluator(gemini, { threshold: EVAL_THRESHOLD, enabled: EVAL_ENABLED, log });
     this.liveRow = null;
     this.currentTaskRow = null;
@@ -254,7 +256,12 @@ class DreamRSI {
   }
 
   async setLiveStatus(text) {
-    if (!WORKBOARD_ID || !this.sheets || !text || !this.currentTaskRow) return;
+    if (!text) return;
+    // Dev-fleet plumbing: stream the same line into the Agent Registry so the
+    // AI Fleet tool shows a live chat feed. Independent of any kanban row.
+    if (this.fleet) await this.fleet.pushActivity(text).catch(() => {});
+    // Kanban row note: only when this run is tied to a task row.
+    if (!WORKBOARD_ID || !this.sheets || !this.currentTaskRow) return;
     if (!this.liveRow) {
       this.liveRow = await this.addNoteRow(`Dream-RSI live: ${text}`, this.currentTaskRow);
       return;
@@ -472,7 +479,22 @@ async function main() {
     if (prov && prov.created) log(`Provisioned Discovery_Tree tab`);
   }
 
-  const engine = new DreamRSI({ gemini, tree, sheets: wbSheets || sheets, keyManager: km });
+  // Dev Fleet plumbing: stream live activity into the Agent Registry sheet that
+  // the AI Fleet tool renders. Auto-provisions the agent row + Activity column.
+  const fleet = new FleetReporter({
+    keyFile: KEY_FILE,
+    sheetId: process.env.AGENTS_SHEET_ID || '',
+    agent: AGENT,
+    log,
+  });
+  await fleet.init().catch(() => {});
+
+  const engine = new DreamRSI({ gemini, tree, sheets: wbSheets || sheets, keyManager: km, fleet });
+
+  // Announce this task on the Dev Fleet plumbing (Agent Registry sheet) so the
+  // AI Fleet tool shows the agent go live before any turns run.
+  await fleet.setTask(task).catch(() => {});
+  await fleet.pushActivity(`Claimed row ${row || '?'}: ${task}`).catch(() => {});
 
   // ── 1. dream_evaluator: simulate paths, collect dead ends ────────────────
   const evaln = await tree.dreamEvaluator(row, task);
@@ -543,6 +565,10 @@ async function main() {
 
   // ── 2. Finalize: commit + workboard ──────────────────────────────────────
   await finalize({ engine, row, task, outcome, attemptCount: evaln.attemptCount });
+  await engine.fleet?.pushActivity(
+    outcome.passed ? `✅ Done — ${outcome.summary} (→ QA)` : `⚠ Attempt logged: ${outcome.summary}`
+  ).catch(() => {});
+  await engine.fleet?.setStatus('Idle').catch(() => {});
   log(`Done — ${outcome.passed ? 'PASS (task → QA)' : 'fail (logged dead end)'}`);
 }
 

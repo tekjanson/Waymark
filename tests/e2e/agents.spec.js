@@ -108,6 +108,27 @@ test('agents template renders avatar initials', async ({ page }) => {
   await expect(page.locator('.agents-avatar').first()).toContainText('A');
 });
 
+test('agents template renders live activity feed', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-feed').first()).toBeVisible();
+  await expect(page.locator('.agents-feed-title').first()).toContainText('Live activity');
+});
+
+test('agents live feed renders streamed lines', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  const firstFeed = page.locator('.agents-card').first().locator('.agents-feed-line');
+  await expect(firstFeed).toHaveCount(4);
+  await expect(firstFeed.first()).toContainText('Claimed row 42');
+});
+
+test('agents live feed renders a status indicator', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-card').first().locator('.agents-feed-pulse')).toBeVisible();
+});
+
 test('Dev Fleet sidebar button is visible', async ({ page }) => {
   await setupApp(page);
   await expect(page.locator('#menu-fleet-btn')).toBeVisible();

@@ -143,6 +143,18 @@ function createSheetsClient({ keyFile, spreadsheetId }) {
       );
     },
 
+    /**
+     * Update several disjoint ranges in ONE request.
+     * @param {Array<{range:string, values:string[][]}>} data
+     */
+    async batchUpdate(data) {
+      if (!data || !data.length) return null;
+      return api('/values:batchUpdate', {
+        method: 'POST',
+        body: { valueInputOption: 'RAW', data },
+      });
+    },
+
     /** List all tab titles. */
     async listTabs() {
       const data = await api('?fields=sheets.properties');

@@ -101,6 +101,15 @@ fi
 
 # Sheet row number (1-based): jq key 0 → sheet row 1 (header), key 1 → sheet row 2, etc.
 SHEET_ROW=$((VALUES_IDX + 1))
+
+# Safety: never write to the header row. A stale match (or an agent literally
+# named to collide with the header) would otherwise overwrite the Status / Task /
+# Heartbeat HEADERS with values, which breaks column detection in the fleet tool.
+if (( SHEET_ROW <= 1 )); then
+    log "Refusing to write to header row (agent '${AGENT_NAME}' resolved to row ${SHEET_ROW}) — skipping"
+    exit 0
+fi
+
 log "Agent '${AGENT_NAME}' at sheet row ${SHEET_ROW}"
 
 # ── Single-cell update via Sheets API ────────────────────────────────────────
