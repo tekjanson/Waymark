@@ -144,6 +144,13 @@ export const TEMPLATES = {};
  * @param {Object} definition — template definition with name, icon, color, priority, detect, columns, render
  */
 export function registerTemplate(key, definition) {
+  // A template MUST provide detect() and render(). Reject malformed definitions
+  // (e.g. registry-metadata like detectSignals instead of a real detect()) so a
+  // single bad template can never crash detectTemplate() for every sheet.
+  if (!definition || typeof definition.detect !== 'function' || typeof definition.render !== 'function') {
+    console.error('[templates] Ignoring invalid template "' + key + '": it must export detect() and render() functions.', definition);
+    return;
+  }
   TEMPLATES[key] = definition;
 }
 
