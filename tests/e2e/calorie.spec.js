@@ -26,6 +26,33 @@ test('day view shows calorie ring, mascot and macro rings', async ({ page }) => 
   await expect(page.locator('.calorie-macroring')).toHaveCount(3);
 });
 
+test('weight card renders the weigh-in history from the Weight tab', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-weight-card', { timeout: 5_000 });
+  await expect(page.locator('.calorie-weight-title')).toContainText('Weight');
+  // Weight tab has 5 weigh-ins: 78.5 → 76.9 (latest), change = 76.9 - 78.5 = -1.6.
+  const stats = page.locator('.calorie-weight-stat-value');
+  await expect(stats.nth(0)).toHaveText('76.9');
+  await expect(stats.nth(1)).toHaveText('-1.6');
+  await expect(stats.nth(2)).toHaveText('5');
+  await expect(page.locator('.calorie-weight-spark')).toBeVisible();
+});
+
+test('logging a weigh-in writes to the Weight tab and updates the card', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-weight-log', { timeout: 5_000 });
+  await page.click('.calorie-weight-log');
+  await expect(page.locator('.calorie-weight-input')).toBeVisible();
+  await page.fill('.calorie-weight-input', '76.4');
+  await page.click('.calorie-weight-save');
+  // Modal closes and the card re-renders with the new latest weight + count (6).
+  await expect(page.locator('.calorie-weight-modal-overlay')).toHaveCount(0);
+  await expect(page.locator('.calorie-weight-stat-value').nth(0)).toHaveText('76.4');
+  await expect(page.locator('.calorie-weight-stat-value').nth(2)).toHaveText('6');
+});
+
 test('calorie ring center shows remaining budget (goal - food + exercise)', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);

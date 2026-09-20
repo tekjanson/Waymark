@@ -18,5 +18,30 @@
     ["2026-09-11", "Lunch", "Caesar salad with chicken", "1", "bowl", "470", "38", "12", "30", "", ""],
     ["2026-09-11", "Dinner", "Pizza slice, cheese", "2", "slice", "570", "24", "72", "20", "", ""],
     ["2026-09-11", "Exercise", "Weightlifting", "45", "min", "", "", "", "", "210", ""]
+  ],
+  "tabs": [
+    {
+      "title": "Sheet1",
+      "numericSheetId": 0,
+      "values": [
+        ["Date", "Meal", "Item", "Qty", "Unit", "Calories", "Protein", "Carbs", "Fat", "Burned", "Target"],
+        ["2026-09-12", "Breakfast", "Oatmeal, cooked", "150", "g", "107", "3.8", "18", "2.3", "", "2200"],
+        ["2026-09-12", "Breakfast", "Banana", "1", "medium", "105", "1.3", "27", "0.4", "", ""],
+        ["2026-09-12", "Exercise", "Running", "30", "min", "", "", "", "", "320", ""],
+        ["2026-09-11", "Breakfast", "Scrambled eggs (2)", "1", "serving", "180", "12", "2", "13", "", "2200"]
+      ]
+    },
+    {
+      "title": "Weight",
+      "numericSheetId": 1,
+      "values": [
+        ["Date", "Weight", "Unit", "Notes"],
+        ["2026-09-01", "78.5", "kg", "Starting point"],
+        ["2026-09-05", "78.1", "kg", ""],
+        ["2026-09-08", "77.6", "kg", "post-workout"],
+        ["2026-09-11", "77.2", "kg", ""],
+        ["2026-09-12", "76.9", "kg", ""]
+      ]
+    }
   ]
 }

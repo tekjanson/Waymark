@@ -582,3 +582,72 @@
     .calorie-root { max-width: 1200px; }
   }
 }
+
+/* ---------- Weight tracking card ---------- */
+.calorie-weight-card {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+.calorie-weight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.calorie-weight-title { font-weight: 700; color: var(--color-text); font-size: 1rem; }
+.calorie-weight-log {
+  border: 1px solid var(--color-primary);
+  background: none;
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  min-height: 36px;
+}
+.calorie-weight-log:hover { background: var(--color-bg); }
+.calorie-weight-stats { display: flex; gap: 24px; flex-wrap: wrap; }
+.calorie-weight-stat { display: flex; flex-direction: column; }
+.calorie-weight-stat-value { font-size: 1.5rem; font-weight: 800; color: var(--color-text); line-height: 1; }
+.calorie-weight-stat-label { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 3px; }
+.calorie-weight-empty { color: var(--color-text-muted); font-size: 0.9rem; }
+.calorie-weight-chart { margin-top: 12px; }
+.calorie-weight-spark { width: 100%; height: 70px; display: block; }
+
+/* Weigh-in modal */
+.calorie-weight-modal-overlay {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.calorie-weight-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 20px;
+  width: 100%; max-width: 320px;
+  box-shadow: var(--shadow);
+}
+.calorie-weight-modal-title { font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
+.calorie-weight-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 1.1rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+.calorie-weight-modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.calorie-weight-cancel, .calorie-weight-save {
+  flex: 1; min-height: 44px; border-radius: var(--radius);
+  font-weight: 600; cursor: pointer; border: 1px solid var(--color-border);
+}
+.calorie-weight-cancel { background: none; color: var(--color-text); }
+.calorie-weight-save { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.calorie-weight-save:hover { opacity: 0.9; }

@@ -34,6 +34,7 @@ import { openBarcodeScanner } from './scanner.js';
 import { openAiScanModal } from './ai-vision.js';
 import { openVoiceModal } from './voice.js';
 import { openProfileModal, buildMascot } from './profile.js';
+import { renderWeightCard, migrateWeightIfNeeded } from './weight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -858,6 +859,14 @@ function renderDashboard(container, rows, cols) {
   container.append(buildHeaderBar(dateMap));
   if (_timeframe === 'day') renderDayView(container, dateMap);
   else renderTrendView(container, dateMap);
+
+  // Weight-over-time card (self-contained + defensive — never breaks the board).
+  renderWeightCard(container, {
+    sheetId: currentSheetId(),
+    tabs: _tabs,
+    profile: _profile,
+    onChange: reload,
+  });
 }
 
 /* ---------- Template Definition ---------- */
@@ -928,6 +937,11 @@ const definition = {
     // before the first append/edit reload (mock mode defaults to 0).
     if (sid) {
       getSheetData(sid).then(d => { if (d && d.numericSheetId != null) _numericSheetId = d.numericSheetId; }).catch(() => {});
+      // One-time migration to the new structure: seed a Weight tab from the
+      // profile's current weight so existing trackers immediately have data.
+      migrateWeightIfNeeded({ sheetId: sid, tabs: _tabs, profile: _profile })
+        .then((migrated) => { if (migrated) reload(); })
+        .catch(() => {});
     }
   },
 };
