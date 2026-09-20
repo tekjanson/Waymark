@@ -37,20 +37,79 @@ test('weight card renders the weigh-in history from the Weight tab', async ({ pa
   await expect(stats.nth(1)).toHaveText('-1.6');
   await expect(stats.nth(2)).toHaveText('5');
   await expect(page.locator('.calorie-weight-spark')).toBeVisible();
+  // The full history log is shown, newest first.
+  await expect(page.locator('.calorie-weight-row')).toHaveCount(5);
+  await expect(page.locator('.calorie-weight-row-val').first()).toContainText('76.9');
 });
 
-test('logging a weigh-in writes to the Weight tab and updates the card', async ({ page }) => {
+test('every weigh-in is recorded — same-day logs accumulate, never overwrite', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
   await page.waitForSelector('.calorie-weight-log', { timeout: 5_000 });
+
+  // First weigh-in of the day.
   await page.click('.calorie-weight-log');
   await expect(page.locator('.calorie-weight-input')).toBeVisible();
   await page.fill('.calorie-weight-input', '76.4');
   await page.click('.calorie-weight-save');
-  // Modal closes and the card re-renders with the new latest weight + count (6).
   await expect(page.locator('.calorie-weight-modal-overlay')).toHaveCount(0);
-  await expect(page.locator('.calorie-weight-stat-value').nth(0)).toHaveText('76.4');
   await expect(page.locator('.calorie-weight-stat-value').nth(2)).toHaveText('6');
+
+  // Second weigh-in the SAME day — must be kept, not overwrite the first.
+  await page.click('.calorie-weight-log');
+  await page.fill('.calorie-weight-input', '76.2');
+  await page.click('.calorie-weight-save');
+  await expect(page.locator('.calorie-weight-modal-overlay')).toHaveCount(0);
+  await expect(page.locator('.calorie-weight-stat-value').nth(0)).toHaveText('76.2');
+  await expect(page.locator('.calorie-weight-stat-value').nth(2)).toHaveText('7');
+
+  // The persisted Weight tab keeps BOTH readings — a real history log.
+  const records = await getCreatedRecords(page);
+  const weightWrites = records.filter((r) => r.type === 'tab-write' && r.tabTitle === 'Weight');
+  const lastRows = weightWrites[weightWrites.length - 1].rows;
+  const weights = lastRows.slice(1).map((r) => r[2]);   // Weight is column index 2
+  expect(weights).toContain('76.4');
+  expect(weights).toContain('76.2');
+  expect(lastRows.length).toBe(8);                       // header + 7 entries
+});
+
+test('logging a weigh-in syncs the profile weight (tracker → profile link)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-weight-log', { timeout: 5_000 });
+  await page.click('.calorie-weight-log');
+  await page.fill('.calorie-weight-input', '75.5');
+  await page.click('.calorie-weight-save');
+  await expect(page.locator('.calorie-weight-modal-overlay')).toHaveCount(0);
+  await expect(page.locator('.calorie-weight-stat-value').nth(0)).toHaveText('75.5');
+
+  // The profile's current weight follows the newest weigh-in.
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some((r) => r.type === 'tab-write' && r.tabTitle === 'Profile'
+      && JSON.stringify(r.rows).includes('75.5'));
+  }, { timeout: 5_000 }).toBe(true);
+});
+
+test('editing the profile weight appends a weigh-in (profile → tracker link)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-root', { timeout: 5_000 });
+
+  await page.locator('.calorie-tool-btn[aria-label="Profile & goal"]').click();
+  await page.waitForSelector('.calorie-p-input', { timeout: 5_000 });
+  await page.fill('.calorie-serving-row:has(label:text-is("Age")) input', '30');
+  await page.fill('.calorie-serving-row:has(label:text-is("Height")) input', '180');
+  await page.fill('.calorie-serving-row:has(label:text-is("Weight")) input', '82.3');
+  await page.locator('.calorie-modal-submit', { hasText: 'Save' }).click();
+  await page.waitForSelector('.calorie-modal-overlay', { state: 'detached', timeout: 5_000 });
+
+  // A changed profile weight is recorded as a weigh-in in the Weight tab.
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some((r) => r.type === 'tab-write' && r.tabTitle === 'Weight'
+      && JSON.stringify(r.rows).includes('From profile'));
+  }, { timeout: 5_000 }).toBe(true);
 });
 
 test('calorie ring center shows remaining budget (goal - food + exercise)', async ({ page }) => {

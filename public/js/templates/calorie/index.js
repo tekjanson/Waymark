@@ -34,7 +34,7 @@ import { openBarcodeScanner } from './scanner.js';
 import { openAiScanModal } from './ai-vision.js';
 import { openVoiceModal } from './voice.js';
 import { openProfileModal, buildMascot } from './profile.js';
-import { renderWeightCard, migrateWeightIfNeeded } from './weight.js';
+import { renderWeightCard, migrateWeightIfNeeded, logWeight } from './weight.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -117,6 +117,18 @@ function persistBestStreak(streak) {
   if (!(streak > bestStreak())) return;
   _profile = { ..._profile, bestStreak: streak };
   persistProfile(_profile);
+}
+
+/**
+ * Link tracker → profile: when a weigh-in is logged, the profile's current
+ * weight follows the newest reading so the two never drift apart.
+ * @param {number} weightKg
+ */
+async function syncProfileWeight(weightKg) {
+  const kg = Number(weightKg);
+  if (!kg || kg <= 0) return;
+  _profile = { ...(_profile || {}), weightKg: kg };
+  await persistProfile(_profile);
 }
 
 function currentSheetId() {
@@ -812,10 +824,23 @@ function openProfile() {
     profile: _profile,
     onSave: async (prof) => {
       // Preserve any existing bestStreak when the user re-saves their profile.
+      const prevKg = Number(_profile && _profile.weightKg) || 0;
       _profile = { ...(_profile || {}), ...prof };
       const g = goalFromProfile(_profile);
       showToast(g ? `Goal set: ${g.calories} cal/day — saved to your sheet` : 'Profile saved', 'success');
       await persistProfile(_profile);
+      // Link profile → tracker: a changed weight is recorded as a weigh-in too.
+      const newKg = Number(_profile.weightKg) || 0;
+      if (newKg > 0 && newKg !== prevKg) {
+        const imperial = _profile.units === 'imperial';
+        await logWeight({
+          sheetId: currentSheetId(),
+          tabs: _tabs,
+          weight: imperial ? Math.round(newKg * 2.2046226218 * 10) / 10 : newKg,
+          unit: imperial ? 'lbs' : 'kg',
+          notes: 'From profile',
+        }).catch(() => {});
+      }
       reload();
     },
   });
@@ -866,6 +891,7 @@ function renderDashboard(container, rows, cols) {
     tabs: _tabs,
     profile: _profile,
     onChange: reload,
+    onProfileWeight: syncProfileWeight,
   });
 }
 
