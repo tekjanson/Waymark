@@ -69,8 +69,9 @@ export function detectTemplate(headers) {
 
   // Sort by priority (higher = more specific = preferred)
   const candidates = Object.entries(TEMPLATES)
-    .filter(([, t]) => t.detect(lower))
-    .sort((a, b) => b[1].priority - a[1].priority);
+    // Defensive: never let one malformed template crash detection for all.
+    .filter(([, t]) => t && typeof t.detect === 'function' && t.detect(lower))
+    .sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0));
 
   if (candidates.length > 0) {
     const [key, template] = candidates[0];

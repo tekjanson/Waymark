@@ -715,7 +715,17 @@ async function finalize({ engine, row, task, outcome, attemptCount = 0 }) {
   // ── Success: commit ONLY our files onto a dedicated branch, then restore ──
   // the original branch so the next task starts from a clean base.
   const branch = `dream/row-${row || 'x'}-${Date.now().toString(36)}`;
-  git(['checkout', '-b', branch]);
+  const co = git(['checkout', '-b', branch]);
+  const cur = (git(['rev-parse', '--abbrev-ref', 'HEAD']).out || '').trim();
+  // HARD guard: never commit onto the base branch (main). If the dedicated
+  // dream branch didn't get checked out, abort — a failed `checkout -b` used to
+  // silently commit agent work straight onto main and ship broken code.
+  if (co.code !== 0 || cur !== branch) {
+    log(`ABORT: could not switch to ${branch} (HEAD='${cur}') — refusing to commit onto ${orig}`);
+    if (row) await engine.addNote(row, `Attempt not committed (branch switch failed) — protected ${orig}.`).catch(() => {});
+    git(['checkout', orig]);
+    return;
+  }
   git(['add', ...written]);
   const msg = `feat: ${outcome.summary}\n\nDream-RSI branch ${outcome.branchId}\nTask row ${row}: ${task}\n\nCo-authored-by: Gemini Dream-RSI <gemini@waymark.local>`;
   git(['commit', '-m', msg]);
