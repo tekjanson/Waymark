@@ -312,7 +312,7 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
       control.value = value;
       wrapper.classList.toggle('editing-multiline', isTextarea);
       wrapper.append(control);
-      control.focus();
+      control.focus({ preventScroll: true });
       if (caretToEnd) {
         const n = value.length;
         try { control.setSelectionRange(n, n); } catch (_) { /* noop */ }
@@ -442,9 +442,7 @@ export function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) 
       dropdown.classList.add('hidden');
     }
 
-    wrapper.textContent = '';
-    wrapper.append(input, arrow, dropdown);
-    input.focus();
+    input.focus({ preventScroll: true });
     input.select();
     openDropdown();
 
