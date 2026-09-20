@@ -57,6 +57,9 @@ const KEY_FILE = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/credentials/gsa
 const FANOUT_N = parseInt(process.env.DREAM_FANOUT_N || '3', 10);
 const MAX_TURNS = parseInt(process.env.DREAM_MAX_TURNS || '24', 10);
 const TEST_TIMEOUT_MS = parseInt(process.env.DREAM_TEST_TIMEOUT_MS || '600000', 10);
+// Hard wall-clock cap per solve attempt so no single task can monopolize the
+// loop (the 429-backoff cycle once held one task for 39h). 20 min default.
+const TASK_BUDGET_MS = parseInt(process.env.DREAM_TASK_BUDGET_MS || '1200000', 10);
 const EVAL_ENABLED = process.env.DREAM_EVAL_ENABLED !== '0';
 const EVAL_THRESHOLD = parseFloat(process.env.DREAM_EVAL_THRESHOLD || '0.7');
 const EVAL_RETRIES = parseInt(process.env.DREAM_EVAL_RETRIES || '1', 10);
@@ -196,6 +199,7 @@ class DreamRSI {
       log,
       maxTurns: MAX_TURNS,
       runTimeoutMs: TEST_TIMEOUT_MS,
+      budgetMs: TASK_BUDGET_MS,
     });
     harness.onProgress = async ({ turn, tool }) => {
       await this.setLiveStatus(`Turn ${turn}/${MAX_TURNS}: ${tool}`);

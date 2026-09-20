@@ -134,12 +134,12 @@ class KeyManager {
    * @param {string} [reason] — logged reason (e.g. '429', 'RESOURCE_EXHAUSTED')
    * @returns {{ rotatedFrom: number, rotatedTo: number, allExhausted: boolean, cooldownUntil: number }}
    */
-  rotateKey(reason = 'rate-limit') {
+  rotateKey(reason = 'rate-limit', cooldownMs = this.cooldownMs) {
     if (this.keys.length === 0) {
       throw new Error('GEMINI_KEY_POOL is empty — cannot rotate');
     }
     const from = this.index;
-    const cooldownUntil = this._now() + this.cooldownMs;
+    const cooldownUntil = this._now() + Math.max(1000, cooldownMs || this.cooldownMs);
     this.cooldowns.set(from, cooldownUntil);
     this.rotations.set(from, (this.rotations.get(from) || 0) + 1);
 

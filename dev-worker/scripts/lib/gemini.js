@@ -146,15 +146,18 @@ class GeminiClient {
       const errText = await res.text();
       lastErr = new Error(`Gemini ${res.status}: ${errText}`);
 
-      // Rate limit / quota → rotate key and retry the same payload.
+      // Rate limit / quota → rotate key and retry the same payload. Park the
+      // spent key only for the delay Google actually asks for (retryDelay) so a
+      // per-minute (RPM) limit frees the key in ~60s instead of a blanket hour.
       if (KeyManager.isRateLimit(res.status) || KeyManager.isQuotaError(errText)) {
-        const info = this.km.rotateKey(`HTTP ${res.status}`);
+        const retryMs = parseRetryDelayMs(errText);
+        const info = this.km.rotateKey(`HTTP ${res.status}`, retryMs);
         this.log(
-          `[gemini] key #${keyIndex} rate-limited (${res.status}) → rotated to #${info.rotatedTo}` +
+          `[gemini] key #${keyIndex} rate-limited (${res.status}) → cooldown ${Math.round(retryMs / 1000)}s, rotated to #${info.rotatedTo}` +
             (info.allExhausted ? ' (ALL keys exhausted)' : '')
         );
         if (info.allExhausted) {
-          const waitMs = Math.min(this.km.msUntilAvailable(), 5 * 60_000);
+          const waitMs = Math.min(this.km.msUntilAvailable(), 90_000);
           if (waitMs > 0) {
             this.log(`[gemini] whole pool cooling — backing off ${Math.round(waitMs / 1000)}s`);
             await sleep(waitMs);
@@ -238,6 +241,17 @@ function tryParseJSON(text) {
     }
     return undefined;
   }
+}
+
+/**
+ * Extract Google's requested retry delay (ms) from a 429 body. Gemini returns a
+ * RetryInfo detail like "retryDelay":"58s". We honour it (plus a small pad) so
+ * an RPM limit frees the key in ~60s; fall back to 60s and cap at 5min for RPD.
+ */
+function parseRetryDelayMs(errText) {
+  const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(errText || '');
+  if (m) return Math.min(5 * 60_000, Math.ceil(parseFloat(m[1]) * 1000) + 1500);
+  return 60_000;
 }
 
 function sleep(ms) {

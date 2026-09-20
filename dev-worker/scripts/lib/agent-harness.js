@@ -95,12 +95,13 @@ class Harness {
    * @param {number} [opts.maxTurns] — hard cap on agent turns (default 24)
    * @param {number} [opts.runTimeoutMs] — per-command timeout (default 300000)
    */
-  constructor({ complete, workdir, log, maxTurns = 24, runTimeoutMs = 300000 }) {
+  constructor({ complete, workdir, log, maxTurns = 24, runTimeoutMs = 300000, budgetMs = 0 }) {
     this.complete = complete;
     this.workdir = path.resolve(workdir);
     this.log = log || (() => {});
     this.maxTurns = maxTurns;
     this.runTimeoutMs = runTimeoutMs;
+    this.budgetMs = budgetMs; // hard wall-clock cap for one run() (0 = no cap)
     this.filesTouched = new Set();
     this.lastKeyIndex = undefined;
     this.onProgress = null;
@@ -127,6 +128,10 @@ class Harness {
    * @returns {Promise<Object>} result (see file header)
    */
   async run({ task, desc, avoid = [], temperature = 0.6 }) {
+    // Hard wall-clock deadline for this attempt. Without it, a single task can
+    // spin for hours (429 backoffs + retries) and monopolize the whole loop —
+    // which is exactly how one task blocked the board for 39h.
+    const deadline = this.budgetMs > 0 ? Date.now() + this.budgetMs : Infinity;
     const avoidBlock = avoid.length
       ? `\nApproaches that ALREADY FAILED — do NOT repeat them:\n${avoid.map((a, i) => `  ${i + 1}. ${a}`).join('\n')}\n`
       : '';
@@ -166,6 +171,11 @@ class Harness {
     // no-op calls, so give generous slack before the hard iteration cap.
     const maxIter = this.maxTurns * 2 + 10;
     for (let iter = 0; turn < this.maxTurns && iter < maxIter; iter++) {
+      if (Date.now() > deadline) {
+        this.log(`  [harness] task time budget (${Math.round(this.budgetMs / 60000)}m) exhausted — aborting so the loop moves on`);
+        result = { passed: false, done: false, summary: 'aborted: task time budget exhausted', testCommand: result.testCommand || 'npm test', timedOut: true, transcriptTail: result.transcriptTail };
+        break;
+      }
       let text;
       let keyIndex;
       try {
