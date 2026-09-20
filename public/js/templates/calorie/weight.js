@@ -1,9 +1,17 @@
 /* ============================================================
    calorie/weight.js — Weight-over-time tracking for the Calorie tracker.
 
-   Weight lives in a dedicated "Weight" tab in the same workbook (row-per-entry,
-   AI_LAWS §4.7). A one-time migration seeds it from the profile's current
-   weight so existing trackers immediately have a starting data point.
+   Weight lives in a dedicated "Weight" tab in the same workbook, ONE ROW PER
+   WEIGH-IN (Date | Time | Weight | Unit | Notes, AI_LAWS §4.7). Every weigh-in
+   is APPENDED — nothing is ever overwritten — so the tab is a full history log.
+
+   The tracker and the profile's current weight stay in sync:
+     • logging a weigh-in updates the profile's weight (via onProfileWeight), and
+     • editing the profile weight appends a weigh-in (see calorie/index.js).
+
+   The parser is header-aware, so legacy 4-column tabs (Date | Weight | Unit |
+   Notes) are read correctly and transparently upgraded to the 5-column layout
+   on the next write.
 
    Everything here is DEFENSIVE: rendering is wrapped so a failure can never
    break the calorie dashboard, and every write is best-effort.
@@ -12,32 +20,75 @@
 import { el, showToast, readSheetTab, writeSheetTab } from '../shared.js';
 
 export const WEIGHT_TAB = 'Weight';
-const WEIGHT_HEADERS = ['Date', 'Weight', 'Unit', 'Notes'];
+const WEIGHT_HEADERS = ['Date', 'Time', 'Weight', 'Unit', 'Notes'];
+const LB_PER_KG = 2.2046226218;
 
 /* ---------- Data model ---------- */
 
-/** Parse the workbook's Weight tab into typed, date-sorted entries. */
+/** Locate columns in a Weight tab header (handles legacy 4-col + new 5-col). */
+function weightCols(header) {
+  const lower = (header || []).map((h) => String(h || '').toLowerCase().trim());
+  const find = (re) => lower.findIndex((h) => re.test(h));
+  const cols = {
+    date: find(/^(date|day|when)/),
+    time: find(/^time/),
+    weight: find(/^(weight|weigh|mass|lbs|kgs?)/),
+    unit: find(/^unit/),
+    notes: find(/^(note|comment)/),
+  };
+  if (cols.date < 0) cols.date = 0;
+  // Legacy minimal layout: Date | Weight | Unit | Notes (no Time column).
+  if (cols.weight < 0) cols.weight = cols.time >= 0 ? 2 : 1;
+  return cols;
+}
+
+/** Sortable epoch ms from an entry's date (+ optional time). */
+function tsOf(e) {
+  const time = /^\d{1,2}:\d{2}/.test(e.time || '') ? e.time : '00:00';
+  const ms = Date.parse(`${e.date}T${time.length === 4 ? '0' + time : time}`);
+  return Number.isFinite(ms) ? ms : (Date.parse(e.date) || 0);
+}
+
+/** Parse the workbook's Weight tab into typed, chronologically-sorted entries. */
 export function parseWeightEntries(tabs) {
   const tab = readSheetTab(tabs, WEIGHT_TAB);
   if (!tab || !Array.isArray(tab.values) || tab.values.length < 2) return [];
-  const entries = tab.values.slice(1).map((r) => ({
-    date: String((r && r[0]) || '').trim(),
-    weight: parseFloat(r && r[1]) || 0,
-    unit: String((r && r[2]) || 'kg').trim() || 'kg',
-    notes: String((r && r[3]) || '').trim(),
-  })).filter((e) => e.weight > 0 && e.date);
-  entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  const c = weightCols(tab.values[0] || []);
+  const entries = tab.values.slice(1).map((row) => {
+    const r = row || [];
+    return {
+      date: String(r[c.date] || '').trim(),
+      time: c.time >= 0 ? String(r[c.time] || '').trim() : '',
+      weight: parseFloat(r[c.weight]) || 0,
+      unit: c.unit >= 0 ? (String(r[c.unit] || 'kg').trim() || 'kg') : 'kg',
+      notes: c.notes >= 0 ? String(r[c.notes] || '').trim() : '',
+    };
+  }).filter((e) => e.weight > 0 && e.date);
+  entries.sort((a, b) => tsOf(a) - tsOf(b));
   return entries;
 }
 
-/** Serialize entries into human-readable rows for the Weight tab. */
+/** Serialize entries into the human-readable 5-column layout. */
 function entriesToRows(entries) {
-  return [WEIGHT_HEADERS.slice(), ...entries.map((e) => [e.date, String(e.weight), e.unit || 'kg', e.notes || ''])];
+  return [
+    WEIGHT_HEADERS.slice(),
+    ...entries.map((e) => [e.date, e.time || '', String(e.weight), e.unit || 'kg', e.notes || '']),
+  ];
 }
 
-function todayISO() {
+function nowParts() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const pad = (n) => String(n).padStart(2, '0');
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+/** Convert a displayed weight to kilograms (for the profile link). */
+export function toKg(weight, unit) {
+  const w = Number(weight) || 0;
+  return unit === 'lbs' ? Math.round((w / LB_PER_KG) * 10) / 10 : Math.round(w * 10) / 10;
 }
 
 /**
@@ -49,13 +100,14 @@ function todayISO() {
  */
 export async function migrateWeightIfNeeded({ sheetId, tabs, profile }) {
   if (!sheetId || !Array.isArray(tabs)) return false;
-  if (readSheetTab(tabs, WEIGHT_TAB)) return false;              // already migrated
+  if (readSheetTab(tabs, WEIGHT_TAB)) return false;              // already present
   const kg = profile && Number(profile.weightKg);
   if (!kg || kg <= 0) return false;                             // nothing to seed
   const imperial = profile && profile.units === 'imperial';
   const unit = imperial ? 'lbs' : 'kg';
-  const weight = imperial ? Math.round(kg * 2.2046 * 10) / 10 : Math.round(kg * 10) / 10;
-  const rows = entriesToRows([{ date: todayISO(), weight, unit, notes: 'Imported from profile' }]);
+  const weight = imperial ? Math.round(kg * LB_PER_KG * 10) / 10 : Math.round(kg * 10) / 10;
+  const { date, time } = nowParts();
+  const rows = entriesToRows([{ date, time, weight, unit, notes: 'Imported from profile' }]);
   try {
     await writeSheetTab(sheetId, WEIGHT_TAB, rows);
     tabs.push({ title: WEIGHT_TAB, numericSheetId: -1, values: rows });
@@ -66,15 +118,19 @@ export async function migrateWeightIfNeeded({ sheetId, tabs, profile }) {
 }
 
 /**
- * Record a weigh-in and persist the Weight tab (one entry per day — logging
- * again on the same date replaces it). Creates the tab if it doesn't exist,
- * so manual logging also works as a migration path.
+ * APPEND a weigh-in to the history (never overwrites). Each call adds a new
+ * timestamped row, so logging multiple times — even on the same day — keeps
+ * every entry. Creates the tab if it doesn't exist and upgrades a legacy
+ * 4-column tab to the 5-column layout on write.
  */
-export async function logWeight({ sheetId, tabs, date, weight, unit, notes }) {
+export async function logWeight({ sheetId, tabs, weight, unit, notes }) {
   if (!sheetId) { showToast('Open this sheet from your library to log', 'error'); return false; }
-  const entries = parseWeightEntries(tabs).filter((e) => e.date !== date);
-  entries.push({ date, weight, unit: unit || 'kg', notes: notes || '' });
-  entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  const w = Number(weight) || 0;
+  if (w <= 0) return false;
+  const { date, time } = nowParts();
+  const entries = parseWeightEntries(tabs);          // keep ALL existing history
+  entries.push({ date, time, weight: Math.round(w * 10) / 10, unit: unit || 'kg', notes: notes || '' });
+  entries.sort((a, b) => tsOf(a) - tsOf(b));
   const rows = entriesToRows(entries);
   await writeSheetTab(sheetId, WEIGHT_TAB, rows);
   const existing = readSheetTab(tabs, WEIGHT_TAB);
@@ -89,9 +145,10 @@ export async function logWeight({ sheetId, tabs, date, weight, unit, notes }) {
  * Build + append the weight-tracking card to the calorie dashboard. Fully
  * defensive: any failure is swallowed so it can never break the dashboard.
  * @param {HTMLElement} container
- * @param {{sheetId:string, tabs:Array, profile:Object, onChange:Function}} ctx
+ * @param {{sheetId:string, tabs:Array, profile:Object, onChange:Function,
+ *          onProfileWeight:Function}} ctx
  */
-export function renderWeightCard(container, { sheetId, tabs, profile, onChange } = {}) {
+export function renderWeightCard(container, { sheetId, tabs, profile, onChange, onProfileWeight } = {}) {
   try {
     const entries = parseWeightEntries(tabs);
     const latest = entries[entries.length - 1] || null;
@@ -103,7 +160,7 @@ export function renderWeightCard(container, { sheetId, tabs, profile, onChange }
 
     const logBtn = el('button', {
       className: 'calorie-weight-log',
-      on: { click: () => openLogWeightModal({ sheetId, tabs, unit, onChange }) },
+      on: { click: () => openLogWeightModal({ sheetId, tabs, unit, onChange, onProfileWeight }) },
     }, ['＋ Log weight']);
 
     const body = latest
@@ -125,6 +182,18 @@ export function renderWeightCard(container, { sheetId, tabs, profile, onChange }
     const spark = _sparkline(entries.map((e) => e.weight));
     if (spark) card.append(el('div', { className: 'calorie-weight-chart' }, [spark]));
 
+    // History log — every weigh-in, newest first (this is the durable record).
+    if (entries.length) {
+      const recent = entries.slice(-8).reverse();
+      card.append(el('div', { className: 'calorie-weight-history' }, [
+        el('div', { className: 'calorie-weight-history-title' }, ['History']),
+        ...recent.map((e) => el('div', { className: 'calorie-weight-row' }, [
+          el('span', { className: 'calorie-weight-row-when' }, [e.time ? `${e.date} · ${e.time}` : e.date]),
+          el('span', { className: 'calorie-weight-row-val' }, [`${e.weight} ${e.unit}`]),
+        ])),
+      ]));
+    }
+
     container.append(card);
   } catch (err) {
     // Never let the weight card break the calorie dashboard.
@@ -132,8 +201,8 @@ export function renderWeightCard(container, { sheetId, tabs, profile, onChange }
   }
 }
 
-/** Small overlay modal to enter today's weigh-in. */
-function openLogWeightModal({ sheetId, tabs, unit, onChange }) {
+/** Small overlay modal to enter a weigh-in (always appends — never overwrites). */
+function openLogWeightModal({ sheetId, tabs, unit, onChange, onProfileWeight }) {
   const input = el('input', {
     type: 'number', step: '0.1', min: '0',
     className: 'calorie-weight-input', placeholder: `Weight (${unit})`,
@@ -149,7 +218,12 @@ function openLogWeightModal({ sheetId, tabs, unit, onChange }) {
     const w = parseFloat(input.value);
     if (!w || w <= 0) { showToast('Enter a valid weight', 'error'); return; }
     try {
-      await logWeight({ sheetId, tabs, date: todayISO(), weight: Math.round(w * 10) / 10, unit });
+      const weight = Math.round(w * 10) / 10;
+      await logWeight({ sheetId, tabs, weight, unit });
+      // Keep the profile's current weight in sync with the newest weigh-in.
+      if (typeof onProfileWeight === 'function') {
+        await Promise.resolve(onProfileWeight(toKg(weight, unit))).catch(() => {});
+      }
       showToast('Weigh-in saved', 'success');
       close();
       if (typeof onChange === 'function') onChange();
@@ -164,7 +238,7 @@ function openLogWeightModal({ sheetId, tabs, unit, onChange }) {
   });
 
   overlay.append(el('div', { className: 'calorie-weight-modal' }, [
-    el('div', { className: 'calorie-weight-modal-title' }, ["Log today's weigh-in"]),
+    el('div', { className: 'calorie-weight-modal-title' }, ['Log a weigh-in']),
     input,
     el('div', { className: 'calorie-weight-modal-actions' }, [
       el('button', { className: 'calorie-weight-cancel', on: { click: close } }, ['Cancel']),
