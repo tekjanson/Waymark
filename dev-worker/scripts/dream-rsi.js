@@ -625,44 +625,62 @@ async function main() {
       outcome = { passed: false, summary: 'fan-out found no judge-approved branch', branchId, written: [] };
     }
   } else {
-    // ── Single agentic attempt + self-review in the main workspace ─────────
-    const s = await engine.solveWithReview({
-        row,
-      workdir: WORKSPACE,
-      task,
-      desc,
-      avoid: evaln.avoid,
-      temperature: evaln.suggestedTemperature,
-    });
-    const written = s.filesTouched || [];
-    const review = s.testsPassed && !s.passed ? s.evalIssues.join('; ') : '';
-    // Result string: approval + score, review rejection, or a Reflexion lesson.
-    const result = s.passed
-      ? `${s.summary} (review ${s.evalScore})`
-      : review || (await engine.reflect({ task, tail: s.transcriptTail }));
-    outcome = {
-      passed: s.passed,
-      summary: s.summary,
-      branchId,
-      testCommand: s.testCommand,
-      written,
-      keyIndex: s.keyIndex,
-      evalScore: s.evalScore,
-      review,
-    };
+    // ── Single agentic attempt + self-review in an ISOLATED worktree ───────
+    // NEVER edit the live /workspace directly: the dev server serves it and the
+    // operator edits it there. The harness works in a throwaway git worktree;
+    // only a JUDGE-APPROVED result is applied back to /workspace for the commit.
+    // A failed attempt leaves the live tree completely untouched.
+    let wt = null;
+    try {
+      wt = engine._makeWorktree(`${row || 'x'}-solo`);
+    } catch (e) {
+      log(`worktree setup failed: ${e.message}`);
+      outcome = { passed: false, summary: `worktree setup failed: ${e.message}`, branchId, written: [] };
+    }
+    if (wt) {
+      try {
+        const s = await engine.solveWithReview({
+          row,
+          workdir: wt,
+          task,
+          desc,
+          avoid: evaln.avoid,
+          temperature: evaln.suggestedTemperature,
+        });
+        // Only touch /workspace when the attempt is approved.
+        const written = s.passed ? applyFiles(WORKSPACE, readTouched(wt, s.filesTouched || [])) : [];
+        const review = s.testsPassed && !s.passed ? s.evalIssues.join('; ') : '';
+        // Result string: approval + score, review rejection, or a Reflexion lesson.
+        const result = s.passed
+          ? `${s.summary} (review ${s.evalScore})`
+          : review || (await engine.reflect({ task, tail: s.transcriptTail }));
+        outcome = {
+          passed: s.passed,
+          summary: s.summary,
+          branchId,
+          testCommand: s.testCommand,
+          written,
+          keyIndex: s.keyIndex,
+          evalScore: s.evalScore,
+          review,
+        };
 
-    await tree.logAttempt({
-      branchId,
-      parentId: evaln.bestParent,
-      taskRow: row,
-      task,
-      prompt: s.summary,
-      status: s.passed ? STATUS.PASS : STATUS.FAIL,
-      tests: s.testsPassed ? 'pass' : 'fail',
-      result,
-      keyIndex: s.keyIndex,
-      score: s.testsPassed ? s.evalScore : -1,
-    });
+        await tree.logAttempt({
+          branchId,
+          parentId: evaln.bestParent,
+          taskRow: row,
+          task,
+          prompt: s.summary,
+          status: s.passed ? STATUS.PASS : STATUS.FAIL,
+          tests: s.testsPassed ? 'pass' : 'fail',
+          result,
+          keyIndex: s.keyIndex,
+          score: s.testsPassed ? s.evalScore : -1,
+        });
+      } finally {
+        engine._removeWorktree(wt);
+      }
+    }
   }
 
   // ── 2. Finalize: commit + workboard ──────────────────────────────────────
