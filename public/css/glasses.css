@@ -159,3 +159,22 @@
   gap: 10px;
   margin-top: 14px;
 }
+
+/* Connection banner + disconnected (preview) state */
+.glasses-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: var(--color-text);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.glasses-disconnected .glasses-card {
+  opacity: 0.55;
+}
+
+.glasses-switch-input:disabled + .glasses-switch-track {
+  opacity: 0.6;
+}
