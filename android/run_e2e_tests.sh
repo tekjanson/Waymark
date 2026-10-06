@@ -107,30 +107,35 @@ fi
 # Run instrumented tests
 echo -e "\n${YELLOW}Running instrumented tests on device...${NC}\n"
 
-adb shell am instrument -w \
-    -e class com.waymark.app.SignalingEncryptionTest \
-    com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner
+run_instrumented() {
+    local class_name="$1"
+    local out_file="$LOG_DIR/${class_name##*.}.out"
+    set +e
+    adb shell am instrument -w \
+        -e class "$class_name" \
+        com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner | tee "$out_file"
+    local exit_code=${PIPESTATUS[0]}
+    set -e
+
+    if [ "$exit_code" -ne 0 ] || grep -qE "FAILURES!!!|Error in initializationError|Process crashed|INSTRUMENTATION_FAILED" "$out_file"; then
+        return 1
+    fi
+    return 0
+}
+
+set +e
+run_instrumented com.waymark.app.ConnectionStateTest
 RESULT1=$?
 
-adb shell am instrument -w \
-    -e class com.waymark.app.ConnectionStateTest \
-    com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner
+run_instrumented com.waymark.app.NotificationDeliveryTest
 RESULT2=$?
 
-adb shell am instrument -w \
-    -e class com.waymark.app.NotificationDeliveryTest \
-    com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner
+run_instrumented com.waymark.app.OrchestratorPeerTest
 RESULT3=$?
 
-adb shell am instrument -w \
-    -e class com.waymark.app.OrchestratorPeerTest \
-    com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner
+run_instrumented com.waymark.app.P2PEndToEndTest
 RESULT4=$?
-
-adb shell am instrument -w \
-    -e class com.waymark.app.P2PEndToEndTest \
-    com.waymark.app.test/androidx.test.runner.AndroidJUnitRunner
-RESULT5=$?
+set -e
 
 # Cleanup
 if [ -n "$ORCH_PID" ]; then
@@ -155,13 +160,12 @@ report() {
         echo -e "  ${RED}✗${NC} $1 (exit code $2)"
     fi
 }
-report "SignalingEncryptionTest" "$RESULT1"
-report "ConnectionStateTest" "$RESULT2"
-report "NotificationDeliveryTest" "$RESULT3"
-report "OrchestratorPeerTest" "$RESULT4"
-report "P2PEndToEndTest" "$RESULT5"
+report "ConnectionStateTest" "$RESULT1"
+report "NotificationDeliveryTest" "$RESULT2"
+report "OrchestratorPeerTest" "$RESULT3"
+report "P2PEndToEndTest" "$RESULT4"
 
-TOTAL=$((RESULT1 + RESULT2 + RESULT3 + RESULT4 + RESULT5))
+TOTAL=$((RESULT1 + RESULT2 + RESULT3 + RESULT4))
 if [ "$TOTAL" -eq 0 ]; then
     echo -e "\n${GREEN}✓ ALL TESTS PASSED${NC}"
     exit 0

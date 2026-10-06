@@ -12,37 +12,146 @@ package com.waymark.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Size
+import android.view.View
+import android.view.WindowManager
 import android.webkit.*
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import android.hardware.camera2.CameraCharacteristics
+import androidx.core.content.PermissionChecker
+import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
+
+    private data class RearCameraOption(
+        val logicalCameraId: String,
+        val physicalCameraId: String?,
+        val focalLength: Float,
+    )
 
     /* ---------- Constants ---------- */
 
     companion object {
         private const val PERMISSION_REQUEST_NOTIFICATIONS = 1001
-        private const val PERMISSION_REQUEST_CAMERA = 1004
+        private const val TARGET_STALE_TIMEOUT_MS = 900L
     }
 
     /* ---------- State ---------- */
 
     private lateinit var webView: WebView
     private lateinit var bridge: WaymarkBridge
+    private lateinit var cameraPreview: PreviewView
+    private lateinit var pointOverlay: PointAndDetectOverlayView
+    private lateinit var nativeVisionContainer: View
+    private lateinit var switchVisionOverlay: SwitchCompat
+    private lateinit var textBleState: TextView
+    private lateinit var textSyntheticState: TextView
+    private lateinit var inputDeviceName: EditText
+    private lateinit var inputServiceUuid: EditText
+    private lateinit var inputCharUuid: EditText
+    private lateinit var inputChunkSize: EditText
+    private lateinit var inputChunkDelayMs: EditText
+    private lateinit var inputHudTestText: EditText
+    private lateinit var buttonConnectG2: Button
+    private lateinit var buttonSendHudText: Button
+    private lateinit var buttonOpenG2Docs: Button
+    private lateinit var buttonDemoPointing: Button
+    private lateinit var buttonDemoOk: Button
+    private lateinit var buttonDemoSweep: Button
+    private lateinit var buttonUseLiveVision: Button
+    private lateinit var buttonExitOverlay: Button
+    private lateinit var buttonCaptureFeedbackFrame: Button
+    private lateinit var buttonSwitchCamera: Button
+    private lateinit var buttonOverlayPower: Button
+    private lateinit var textG2Notice: TextView
+    private lateinit var buttonShowNativePanel: Button
+    private lateinit var buttonHideNativePanel: Button
+    private lateinit var switchSyntheticDemo: SwitchCompat
+    private var latestVisionDebugState: VisionDebugState = VisionDebugState(lines = listOf("Vision: waiting for frames"))
+    private var imageAnalyzer: PointAndDetectVisionSource? = null
+    private var cameraExecutor: ExecutorService? = null
+    private var cameraProvider: ProcessCameraProvider? = null
+    private val rearCameraOptions = mutableListOf<RearCameraOption>()
+    private var activeRearCameraIndex: Int = 0
+    private var syntheticVisionEnabled = false
+    private var syntheticVisionScenario = SyntheticVisionScenario.POINTING
+    private var lastTargetUpdateAtMs: Long = 0L
+
+    private val nativeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var audioCaptureManager: WaymarkAudioCaptureManager? = null
+    private var g2GlassesManager: G2GlassesManager? = null
+    private var bleStateJob: Job? = null
+    private lateinit var g2ProtocolStore: G2ProtocolConfigStore
+    private var hasStartedNativePipelines = false
+    private val publicDocsOnlyMode = true
 
     /** Reference to the WebChromeClient so we can deliver file chooser results. */
     private lateinit var chromeClient: WaymarkWebChromeClient
+
+    private val permissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantMap ->
+        val cameraGranted = grantMap[Manifest.permission.CAMERA] == true
+        val micGranted = grantMap[Manifest.permission.RECORD_AUDIO] == true
+
+        if (!cameraGranted || !micGranted) {
+            Toast.makeText(this, "Camera and microphone permissions are required", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        startNativePipelines()
+    }
+
+    private val blePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantMap ->
+        val bleGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            grantMap[Manifest.permission.BLUETOOTH_SCAN] == true && grantMap[Manifest.permission.BLUETOOTH_CONNECT] == true
+        } else {
+            grantMap[Manifest.permission.ACCESS_FINE_LOCATION] == true || grantMap[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        }
+
+        if (!bleGranted) {
+            Toast.makeText(this, "Bluetooth permission is required for G2 connect", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+
+        reconnectG2()
+    }
 
     /* ---------- Lifecycle ---------- */
 
@@ -52,19 +161,56 @@ class MainActivity : AppCompatActivity() {
 
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
-        requestCameraPermission()
         requestBatteryOptimizationExemption()
         scheduleWatchdog()
 
         bridge = WaymarkBridge(this)
+        g2ProtocolStore = G2ProtocolConfigStore(this)
         webView = findViewById(R.id.webView)
+        nativeVisionContainer = findViewById(R.id.nativeVisionContainer)
+        cameraPreview = findViewById(R.id.cameraPreviewView)
+        cameraPreview.scaleType = PreviewView.ScaleType.FIT_CENTER
+        pointOverlay = findViewById(R.id.pointDetectOverlay)
+        switchVisionOverlay = findViewById(R.id.switchVisionOverlay)
+        textBleState = findViewById(R.id.textBleState)
+        textSyntheticState = findViewById(R.id.textSyntheticState)
+        inputDeviceName = findViewById(R.id.inputDeviceName)
+        inputServiceUuid = findViewById(R.id.inputServiceUuid)
+        inputCharUuid = findViewById(R.id.inputCharUuid)
+        inputChunkSize = findViewById(R.id.inputChunkSize)
+        inputChunkDelayMs = findViewById(R.id.inputChunkDelayMs)
+        inputHudTestText = findViewById(R.id.inputHudTestText)
+        buttonConnectG2 = findViewById(R.id.buttonConnectG2)
+        buttonSendHudText = findViewById(R.id.buttonSendHudText)
+        buttonOpenG2Docs = findViewById(R.id.buttonOpenG2Docs)
+        buttonDemoPointing = findViewById(R.id.buttonDemoPointing)
+        buttonDemoOk = findViewById(R.id.buttonDemoOk)
+        buttonDemoSweep = findViewById(R.id.buttonDemoSweep)
+        buttonUseLiveVision = findViewById(R.id.buttonUseLiveVision)
+        buttonExitOverlay = findViewById(R.id.buttonExitOverlay)
+        buttonCaptureFeedbackFrame = findViewById(R.id.buttonCaptureFeedbackFrame)
+        buttonSwitchCamera = findViewById(R.id.buttonSwitchCamera)
+        buttonOverlayPower = findViewById(R.id.buttonOverlayPower)
+        textG2Notice = findViewById(R.id.textG2Notice)
+        buttonShowNativePanel = findViewById(R.id.buttonShowNativePanel)
+        buttonHideNativePanel = findViewById(R.id.buttonHideNativePanel)
+        switchSyntheticDemo = findViewById(R.id.switchSyntheticDemo)
+
+        pointOverlay.isDeveloperModeEnabled = false
+        pointOverlay.debugState = latestVisionDebugState
+        nativeVisionContainer.visibility = View.GONE
+        updateKeepScreenOn(false)
+        updateSyntheticStateLabel()
         setupWebView()
+        setupNativeControlPanel()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
 
         // Start the background WebRTC service so the orchestrator signaling
         // peer connects even before the user opens a sheet.
         startService(Intent(this, WebRtcService::class.java))
+
+        // Native toolchain starts only when user opens the native panel.
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -101,6 +247,18 @@ class MainActivity : AppCompatActivity() {
         // The service may have been killed by Doze/battery optimization while in background,
         // so we restart it here to guarantee reconnection attempts resume.
         startService(Intent(this, WebRtcService::class.java))
+
+        // Native G2/CV tools are opt-in. Keep Waymark WebView as the default UX.
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        updateKeepScreenOn(false)
+        stopVisionPipeline()
+        audioCaptureManager?.stopCapture()
+        g2GlassesManager?.disconnect()
+        bleStateJob?.cancel()
+        nativeScope.cancel()
     }
 
     override fun onBackPressed() {
@@ -225,16 +383,666 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestCameraPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                PERMISSION_REQUEST_CAMERA
+    private fun requestNativeRuntimePermissions() {
+        val required = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+        )
+
+        if (!publicDocsOnlyMode) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                required += Manifest.permission.BLUETOOTH_SCAN
+                required += Manifest.permission.BLUETOOTH_CONNECT
+            } else {
+                required += Manifest.permission.BLUETOOTH
+                required += Manifest.permission.BLUETOOTH_ADMIN
+                required += Manifest.permission.ACCESS_FINE_LOCATION
+            }
+        }
+
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(this, it) != PermissionChecker.PERMISSION_GRANTED
+        }
+
+        if (missing.isEmpty()) {
+            startNativePipelines()
+            return
+        }
+
+        permissionsLauncher.launch(missing.toTypedArray())
+    }
+
+    private fun hasRequiredNativePermissions(): Boolean {
+        val baseGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PermissionChecker.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PermissionChecker.PERMISSION_GRANTED
+        if (!baseGranted) return false
+
+        if (publicDocsOnlyMode) return true
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PermissionChecker.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PermissionChecker.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) == PermissionChecker.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADMIN) == PermissionChecker.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PermissionChecker.PERMISSION_GRANTED
+        }
+    }
+
+    private fun hasRequiredBlePermissions(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PermissionChecker.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PermissionChecker.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PermissionChecker.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PermissionChecker.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestBlePermissions() {
+        val required = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
             )
         }
+        blePermissionsLauncher.launch(required)
+    }
+
+    private fun startNativePipelines() {
+        if (!hasStartedNativePipelines) {
+            hasStartedNativePipelines = true
+            updateKeepScreenOn(true)
+
+            initAudioPipeline()
+            if (!publicDocsOnlyMode) {
+                initG2Pipeline()
+            }
+        }
+
+        initVisionPipeline()
+    }
+
+    private fun initVisionPipeline() {
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            val provider = providerFuture.get()
+            cameraProvider = provider
+            ensureRearCameraInventory(provider)
+            val selectedCamera = currentRearCameraOption()
+
+            val previewBuilder = Preview.Builder()
+                .setTargetResolution(Size(960, 1280))
+            selectedCamera?.physicalCameraId?.let { physicalId ->
+                Camera2Interop.Extender(previewBuilder).setPhysicalCameraId(physicalId)
+            }
+
+            val preview = previewBuilder.build().also {
+                it.setSurfaceProvider(cameraPreview.getSurfaceProvider())
+            }
+
+            val targetHandler: (PointingTarget) -> Unit = { target ->
+                lifecycleScope.launch(Dispatchers.Main) {
+                    val sourceAnalyzer = imageAnalyzer
+                    if (sourceAnalyzer != null) {
+                        pointOverlay.sourceFrameWidth = sourceAnalyzer.latestFrameWidth
+                        pointOverlay.sourceFrameHeight = sourceAnalyzer.latestFrameHeight
+                    }
+                    pointOverlay.currentTarget = target
+                    lastTargetUpdateAtMs = System.currentTimeMillis()
+                    pointOverlay.debugState = latestVisionDebugState
+                    pointOverlay.invalidate()
+                    g2GlassesManager?.sendTextToHUD(target.label)
+                }
+            }
+
+            val debugHandler: (VisionDebugState) -> Unit = { debugState ->
+                lifecycleScope.launch(Dispatchers.Main) {
+                    latestVisionDebugState = debugState
+                    val sourceAnalyzer = imageAnalyzer
+                    if (sourceAnalyzer != null) {
+                        pointOverlay.sourceFrameWidth = sourceAnalyzer.latestFrameWidth
+                        pointOverlay.sourceFrameHeight = sourceAnalyzer.latestFrameHeight
+                    }
+                    pointOverlay.debugState = debugState
+                    val shouldClearTarget = shouldClearCurrentTarget(debugState)
+                    val targetStale = pointOverlay.currentTarget != null &&
+                        (System.currentTimeMillis() - lastTargetUpdateAtMs) > TARGET_STALE_TIMEOUT_MS
+                    if (shouldClearTarget || targetStale) {
+                        pointOverlay.currentTarget = null
+                    }
+                    pointOverlay.invalidate()
+                }
+            }
+
+            val visionSource: PointAndDetectVisionSource = if (syntheticVisionEnabled) {
+                SyntheticPointAndDetectAnalyzer(syntheticVisionScenario, targetHandler, debugHandler)
+            } else {
+                PointAndDetectAnalyzer(this, targetHandler, debugHandler)
+            }
+            imageAnalyzer = visionSource
+
+            cameraExecutor?.shutdown()
+            cameraExecutor = Executors.newSingleThreadExecutor()
+            val analysisBuilder = ImageAnalysis.Builder()
+                .setTargetResolution(Size(960, 1280))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            selectedCamera?.physicalCameraId?.let { physicalId ->
+                Camera2Interop.Extender(analysisBuilder).setPhysicalCameraId(physicalId)
+            }
+
+            val analysis = analysisBuilder
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor!!, visionSource as ImageAnalysis.Analyzer)
+                }
+
+            try {
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    this,
+                    currentCameraSelector(),
+                    preview,
+                    analysis,
+                )
+            } catch (t: Throwable) {
+                hasStartedNativePipelines = false
+                val leakedAnalyzer = imageAnalyzer
+                imageAnalyzer = null
+                cameraProvider?.unbindAll()
+                val leakedExecutor = cameraExecutor
+                cameraExecutor = null
+                leakedExecutor?.shutdown()
+                leakedAnalyzer?.close()
+                Toast.makeText(this, "Failed to start camera pipeline: ${t.message}", Toast.LENGTH_LONG).show()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun initAudioPipeline() {
+        val manager = WaymarkAudioCaptureManager(this, nativeScope)
+        audioCaptureManager = manager
+
+        val microphones = manager.getAvailableMicrophones()
+        val primary = microphones.firstOrNull() ?: return
+        val references = microphones.drop(1)
+        manager.startCapture(primary, references)
+    }
+
+    private fun initG2Pipeline() {
+        val manager = G2GlassesManager(this, nativeScope, currentProtocolSpec())
+        g2GlassesManager = manager
+        manager.connect()
+
+        bleStateJob?.cancel()
+        bleStateJob = lifecycleScope.launch {
+            manager.state.collectLatest { state ->
+                textBleState.text = "BLE: $state"
+            }
+        }
+    }
+
+    private fun setupNativeControlPanel() {
+        val nativePanel = findViewById<View>(R.id.nativeControlPanel)
+        nativePanel.visibility = View.GONE
+
+        val config = g2ProtocolStore.load()
+        inputDeviceName.setText(config.deviceNameHint)
+        inputServiceUuid.setText(config.serviceUuid)
+        inputCharUuid.setText(config.characteristicUuid)
+        inputChunkSize.setText(config.chunkSizeBytes.toString())
+        inputChunkDelayMs.setText(config.interChunkDelayMs.toString())
+        inputHudTestText.setText("Hello from Waymark")
+
+        if (publicDocsOnlyMode) {
+            textBleState.text = "Even bridge: public docs only"
+            textSyntheticState.text = "Synthetic demo: off"
+            inputDeviceName.visibility = View.GONE
+            inputServiceUuid.visibility = View.GONE
+            inputCharUuid.visibility = View.GONE
+            inputChunkSize.visibility = View.GONE
+            inputChunkDelayMs.visibility = View.GONE
+            inputHudTestText.visibility = View.GONE
+            buttonConnectG2.text = "Open Even Setup Guide"
+            buttonSendHudText.visibility = View.GONE
+            textG2Notice.text = "Waymark keeps the server for sign-in and web sync, while the phone handles camera, audio, and the Even bridge setup. Install and pair the glasses in the Even app, then return here."
+        }
+
+        switchSyntheticDemo.isChecked = syntheticVisionEnabled
+        switchSyntheticDemo.setOnCheckedChangeListener { _, isChecked ->
+            syntheticVisionEnabled = isChecked
+            updateSyntheticStateLabel()
+            if (nativeVisionContainer.visibility == View.VISIBLE) {
+                restartVisionPipeline()
+            }
+        }
+
+        buttonDemoPointing.setOnClickListener {
+            syntheticVisionEnabled = true
+            syntheticVisionScenario = SyntheticVisionScenario.POINTING
+            switchSyntheticDemo.isChecked = true
+            updateSyntheticStateLabel()
+            restartVisionPipeline()
+            if (nativeVisionContainer.visibility != View.VISIBLE) {
+                switchVisionOverlay.isChecked = true
+            }
+        }
+
+        buttonDemoOk.setOnClickListener {
+            syntheticVisionEnabled = true
+            syntheticVisionScenario = SyntheticVisionScenario.OK
+            switchSyntheticDemo.isChecked = true
+            updateSyntheticStateLabel()
+            restartVisionPipeline()
+            if (nativeVisionContainer.visibility != View.VISIBLE) {
+                switchVisionOverlay.isChecked = true
+            }
+        }
+
+        buttonDemoSweep.setOnClickListener {
+            syntheticVisionEnabled = true
+            syntheticVisionScenario = SyntheticVisionScenario.SWEEP
+            switchSyntheticDemo.isChecked = true
+            updateSyntheticStateLabel()
+            restartVisionPipeline()
+            if (nativeVisionContainer.visibility != View.VISIBLE) {
+                switchVisionOverlay.isChecked = true
+            }
+        }
+
+        buttonUseLiveVision.setOnClickListener {
+            syntheticVisionEnabled = false
+            switchSyntheticDemo.isChecked = false
+            updateSyntheticStateLabel()
+            restartVisionPipeline()
+        }
+
+        switchVisionOverlay.isChecked = false
+        switchVisionOverlay.visibility = View.GONE
+        switchVisionOverlay.setOnCheckedChangeListener { _, isChecked ->
+            nativeVisionContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
+            updateKeepScreenOn(isChecked)
+            pointOverlay.isDeveloperModeEnabled = isChecked
+            pointOverlay.debugState = latestVisionDebugState
+            pointOverlay.invalidate()
+            buttonOverlayPower.text = if (isChecked) "Turn Vision Off" else "Turn Vision On"
+
+            if (isChecked && !hasRequiredNativePermissions()) {
+                requestNativeRuntimePermissions()
+            } else if (isChecked) {
+                startNativePipelines()
+            } else {
+                stopVisionPipeline()
+            }
+        }
+
+        buttonConnectG2.setOnClickListener {
+            if (publicDocsOnlyMode) {
+                showEvenSetupGuide()
+                return@setOnClickListener
+            }
+            g2ProtocolStore.save(readProtocolConfigFromUi())
+            if (hasRequiredBlePermissions()) {
+                reconnectG2()
+            } else {
+                requestBlePermissions()
+            }
+        }
+
+        buttonSendHudText.setOnClickListener {
+            if (publicDocsOnlyMode) {
+                Toast.makeText(this, "Public docs only: raw HUD writes are disabled", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val message = inputHudTestText.text?.toString().orEmpty().trim()
+            if (message.isBlank()) {
+                Toast.makeText(this, "Enter HUD text first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            g2GlassesManager?.sendTextToHUD(message)
+        }
+
+        buttonOpenG2Docs.setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://hub.evenrealities.com/docs/get-started/overview")))
+        }
+
+        buttonShowNativePanel.setOnClickListener {
+            switchVisionOverlay.isChecked = !switchVisionOverlay.isChecked
+        }
+        buttonShowNativePanel.visibility = View.GONE
+
+        buttonHideNativePanel.setOnClickListener {
+            switchVisionOverlay.isChecked = false
+            nativeVisionContainer.visibility = View.GONE
+            stopVisionPipeline()
+            updateKeepScreenOn(false)
+        }
+        buttonHideNativePanel.visibility = View.GONE
+
+        buttonExitOverlay.setOnClickListener {
+            switchVisionOverlay.isChecked = false
+            nativeVisionContainer.visibility = View.GONE
+            stopVisionPipeline()
+            updateKeepScreenOn(false)
+        }
+        buttonExitOverlay.visibility = View.GONE
+
+        buttonCaptureFeedbackFrame.setOnClickListener {
+            val sourceAnalyzer = imageAnalyzer
+            if (sourceAnalyzer == null) {
+                Toast.makeText(this, "Vision pipeline is not active", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            sourceAnalyzer.requestFeedbackSnapshot()
+            Toast.makeText(this, "Feedback snapshot queued", Toast.LENGTH_SHORT).show()
+        }
+        buttonCaptureFeedbackFrame.visibility = View.GONE
+
+        buttonSwitchCamera.setOnClickListener {
+            val provider = cameraProvider
+            if (provider != null) {
+                ensureRearCameraInventory(provider)
+            }
+
+            if (rearCameraOptions.size <= 1) {
+                Toast.makeText(this, "Only one rear camera available", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val nextOption = cycleRearCamera()
+
+            if (nativeVisionContainer.visibility == View.VISIBLE) {
+                restartVisionPipeline()
+            }
+
+            val label = nextOption?.let { option ->
+                val focal = String.format("%.2f", option.focalLength)
+                val physical = option.physicalCameraId ?: option.logicalCameraId
+                "id $physical, f=$focal"
+            } ?: "unknown"
+            val position = activeRearCameraIndex + 1
+            val count = rearCameraOptions.size
+            Toast.makeText(this, "Rear camera $position/$count ($label)", Toast.LENGTH_SHORT).show()
+        }
+        buttonSwitchCamera.visibility = View.GONE
+
+        buttonOverlayPower.text = "Turn Vision On"
+        buttonOverlayPower.setOnClickListener {
+            switchVisionOverlay.isChecked = !switchVisionOverlay.isChecked
+        }
+        buttonOverlayPower.setOnLongClickListener {
+            val provider = cameraProvider
+            if (provider != null) {
+                ensureRearCameraInventory(provider)
+            }
+
+            if (rearCameraOptions.size <= 1) {
+                Toast.makeText(this, "Only one rear camera available", Toast.LENGTH_SHORT).show()
+                return@setOnLongClickListener true
+            }
+
+            val nextOption = cycleRearCamera()
+            if (switchVisionOverlay.isChecked) {
+                restartVisionPipeline()
+            }
+
+            val label = nextOption?.let { option ->
+                val focal = String.format("%.2f", option.focalLength)
+                val physical = option.physicalCameraId ?: option.logicalCameraId
+                "id $physical, f=$focal"
+            } ?: "unknown"
+            val position = activeRearCameraIndex + 1
+            val count = rearCameraOptions.size
+            Toast.makeText(this, "Rear camera $position/$count ($label)", Toast.LENGTH_SHORT).show()
+            true
+        }
+
+        if (publicDocsOnlyMode) {
+            textG2Notice.visibility = View.GONE
+            textBleState.visibility = View.GONE
+            textSyntheticState.visibility = View.GONE
+        }
+    }
+
+    @Synchronized
+    private fun ensureRearCameraInventory(provider: ProcessCameraProvider) {
+        val cameraManager = getSystemService(CameraManager::class.java)
+        if (cameraManager == null) {
+            rearCameraOptions.clear()
+            activeRearCameraIndex = 0
+            return
+        }
+
+        val backInfos = provider.availableCameraInfos.filter { info ->
+            val lensFacing = Camera2CameraInfo.from(info).getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+            lensFacing == CameraCharacteristics.LENS_FACING_BACK
+        }
+
+        if (backInfos.isEmpty()) {
+            rearCameraOptions.clear()
+            activeRearCameraIndex = 0
+            return
+        }
+
+        val previousKey = currentRearCameraOption()?.let { option ->
+            "${option.logicalCameraId}:${option.physicalCameraId ?: ""}"
+        }
+
+        val discovered = mutableListOf<RearCameraOption>()
+        val seenKeys = mutableSetOf<String>()
+
+        backInfos.forEach { info ->
+            val logicalId = Camera2CameraInfo.from(info).cameraId
+            val logicalChars = runCatching { cameraManager.getCameraCharacteristics(logicalId) }.getOrNull()
+            val logicalFocal = logicalChars
+                ?.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                ?.minOrNull()
+                ?: Float.MAX_VALUE
+
+            val physicalIds = logicalChars?.physicalCameraIds?.toList().orEmpty()
+            if (physicalIds.isEmpty()) {
+                val key = "$logicalId:"
+                if (seenKeys.add(key)) {
+                    discovered += RearCameraOption(
+                        logicalCameraId = logicalId,
+                        physicalCameraId = null,
+                        focalLength = logicalFocal,
+                    )
+                }
+                return@forEach
+            }
+
+            physicalIds.forEach physicalLoop@{ physicalId ->
+                val physicalChars = runCatching { cameraManager.getCameraCharacteristics(physicalId) }.getOrNull()
+                val facing = physicalChars?.get(CameraCharacteristics.LENS_FACING)
+                if (facing != CameraCharacteristics.LENS_FACING_BACK) return@physicalLoop
+
+                val physicalFocal = physicalChars
+                    .get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                    ?.minOrNull()
+                    ?: logicalFocal
+
+                val key = "$logicalId:$physicalId"
+                if (seenKeys.add(key)) {
+                    discovered += RearCameraOption(
+                        logicalCameraId = logicalId,
+                        physicalCameraId = physicalId,
+                        focalLength = physicalFocal,
+                    )
+                }
+            }
+        }
+
+        val ordered = discovered.sortedWith(
+            compareBy<RearCameraOption> { it.focalLength }
+                .thenBy { it.logicalCameraId }
+                .thenBy { it.physicalCameraId ?: "" },
+        )
+
+        rearCameraOptions.clear()
+        rearCameraOptions.addAll(ordered)
+
+        activeRearCameraIndex = if (!previousKey.isNullOrBlank()) {
+            rearCameraOptions.indexOfFirst { option ->
+                "${option.logicalCameraId}:${option.physicalCameraId ?: ""}" == previousKey
+            }.takeIf { it >= 0 } ?: 0
+        } else {
+            0
+        }
+    }
+
+    @Synchronized
+    private fun currentRearCameraOption(): RearCameraOption? {
+        if (rearCameraOptions.isEmpty()) return null
+        if (activeRearCameraIndex !in rearCameraOptions.indices) {
+            activeRearCameraIndex = 0
+        }
+        return rearCameraOptions[activeRearCameraIndex]
+    }
+
+    @Synchronized
+    private fun cycleRearCamera(): RearCameraOption? {
+        if (rearCameraOptions.isEmpty()) return null
+        activeRearCameraIndex = (activeRearCameraIndex + 1) % rearCameraOptions.size
+        return rearCameraOptions[activeRearCameraIndex]
+    }
+
+    private fun shouldClearCurrentTarget(debugState: VisionDebugState): Boolean {
+        val lines = debugState.lines.joinToString(" ").lowercase()
+        return lines.contains("lock: none") ||
+            lines.contains("shape: unknown") ||
+            lines.contains("hand: no landmarks")
+    }
+
+    private fun currentCameraSelector(): CameraSelector {
+        val selectedRear = currentRearCameraOption()
+        val selectedLogicalId = selectedRear?.logicalCameraId
+        if (selectedLogicalId.isNullOrBlank()) {
+            return CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build()
+        }
+
+        return CameraSelector.Builder()
+            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+            .addCameraFilter { infos ->
+                val matching = infos.filter { info ->
+                    Camera2CameraInfo.from(info).cameraId == selectedLogicalId
+                }
+                if (matching.isNotEmpty()) matching else infos
+            }
+            .build()
+    }
+
+    private fun updateKeepScreenOn(enabled: Boolean) {
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            cameraPreview.keepScreenOn = true
+            nativeVisionContainer.keepScreenOn = true
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            cameraPreview.keepScreenOn = false
+            nativeVisionContainer.keepScreenOn = false
+        }
+    }
+
+    private fun updateSyntheticStateLabel() {
+        textSyntheticState.text = if (syntheticVisionEnabled) {
+            "Synthetic demo: ${syntheticVisionScenario.label}"
+        } else {
+            "Synthetic demo: off"
+        }
+    }
+
+    private fun restartVisionPipeline() {
+        stopVisionPipeline()
+        if (nativeVisionContainer.visibility == View.VISIBLE) {
+            startNativePipelines()
+        }
+    }
+
+    private fun stopVisionPipeline() {
+        val analyzer = imageAnalyzer
+        imageAnalyzer = null
+        cameraProvider?.unbindAll()
+
+        val executor = cameraExecutor
+        cameraExecutor = null
+        executor?.shutdown()
+        if (executor != null) {
+            try {
+                executor.awaitTermination(750, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        analyzer?.close()
+        latestVisionDebugState = VisionDebugState(lines = listOf("Vision: stopped"))
+        pointOverlay.currentTarget = null
+        pointOverlay.debugState = latestVisionDebugState
+        pointOverlay.invalidate()
+    }
+
+    private fun showEvenSetupGuide() {
+        val guideText = buildString {
+            appendLine("1. Install the Even Realities app on your phone from the official app store.")
+            appendLine("2. Pair the G2 glasses inside the Even app first.")
+            appendLine("3. Use the Even app / SDK bridge path for glasses integration.")
+            appendLine("4. Return to Waymark after the glasses are paired.")
+            appendLine("5. If the vision overlay is black, grant camera permission and enable the Vision Overlay switch after opening the native tools.")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Even Setup Guide")
+            .setMessage(guideText)
+            .setPositiveButton("Open Even Docs") { _, _ ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://hub.evenrealities.com/docs/get-started/overview")))
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun reconnectG2() {
+        g2GlassesManager?.disconnect()
+        val manager = G2GlassesManager(this, nativeScope, currentProtocolSpec())
+        g2GlassesManager = manager
+        bleStateJob?.cancel()
+        bleStateJob = lifecycleScope.launch {
+            manager.state.collectLatest { state ->
+                textBleState.text = "BLE: $state"
+            }
+        }
+        manager.connect()
+    }
+
+    private fun readProtocolConfigFromUi(): G2ProtocolConfigStore.Config {
+        val chunkSize = inputChunkSize.text?.toString()?.toIntOrNull() ?: 20
+        val chunkDelay = inputChunkDelayMs.text?.toString()?.toLongOrNull() ?: 35L
+        return G2ProtocolConfigStore.Config(
+            deviceNameHint = inputDeviceName.text?.toString().orEmpty().trim(),
+            serviceUuid = inputServiceUuid.text?.toString().orEmpty().trim(),
+            characteristicUuid = inputCharUuid.text?.toString().orEmpty().trim(),
+            chunkSizeBytes = chunkSize,
+            interChunkDelayMs = chunkDelay,
+        )
+    }
+
+    private fun currentProtocolSpec(): G2GlassesManager.G2ProtocolSpec {
+        val config = readProtocolConfigFromUi().let {
+            if (it.deviceNameHint.isBlank() && it.serviceUuid.isBlank() && it.characteristicUuid.isBlank()) {
+                g2ProtocolStore.load()
+            } else {
+                it
+            }
+        }
+        return g2ProtocolStore.toProtocolSpec(config)
     }
 
     /**

@@ -149,6 +149,24 @@ const EXAMPLE_SHEETS = {
       ['2026-02-23 18:00', 'Lower body strength', '50 min', 'Strength'],
     ],
   },
+  'Waymark Android G2 Field Dashboard': {
+    folder: 'Test Cases',
+    rows: [
+      ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
+      ['Install app via make android-install', 'Untested', 'Install succeeds with BUILD SUCCESSFUL', '', 'P0', 'Record install output and timestamp.'],
+      ['Open app and confirm web shell loads', 'Untested', 'Waymark home UI appears in Android app', '', 'P0', 'If blank, capture logcat from make android-logcat.'],
+      ['Grant runtime camera permission', 'Untested', 'Permission is granted and camera preview starts', '', 'P0', 'Record whether prompt appeared automatically or via settings.'],
+      ['Grant runtime microphone permission', 'Untested', 'Permission is granted and audio pipeline initializes', '', 'P0', 'Confirm no permission-denied errors in logcat.'],
+      ['Connect G2 in direct BLE mode', 'Untested', 'State reaches READY or clear actionable error is shown', '', 'P0', 'Enter service UUID and text characteristic UUID before connect.'],
+      ['Send HUD test phrase', 'Untested', 'Phrase is visible on glasses HUD', '', 'P0', 'Phrase: WAYMARK G2 LINK OK. Record latency in seconds.'],
+      ['Point-and-ask target acquisition', 'Untested', 'Overlay target aligns with pointed object', '', 'P1', 'Log object label quality and false positives.'],
+      ['Fallback behavior when G2 protocol missing', 'Untested', 'UI explains partner/private requirement without crash', '', 'P1', 'Expected docs-aligned guidance message.'],
+      ['BLE reconnect after manual disconnect', 'Untested', 'Reconnect succeeds without app restart', '', 'P1', 'Disconnect and reconnect from in-app controls.'],
+      ['Background/foreground service continuity', 'Untested', 'Returning to app preserves stable state', '', 'P1', 'Home button 30s then return; verify connection state.'],
+      ['Run log capture for session', 'Untested', 'Useful logs captured for Waymark/G2 tags', '', 'P2', 'Command: make android-logcat. Attach key error lines if any.'],
+      ['Operator signoff', 'Untested', 'All P0 rows are Pass and notes are complete', '', 'P0', 'Use Notes as test journal for final QA verdict.'],
+    ],
+  },
 };
 
 /* ---------- HTTP helpers ---------- */

@@ -1,0 +1,8 @@
+# Treat on-device vision model assets and test fixtures as binary so git never
+# applies EOL normalization (which would corrupt the raw pixel grids / models).
+*.rgb binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.task binary
+*.tflite binary

@@ -1,0 +1,362 @@
+[
+  {
+    "base": "frame_000",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_001",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_002",
+    "label": 1,
+    "category": "point_hard",
+    "detected": true
+  },
+  {
+    "base": "frame_003",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_004",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_005",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_006",
+    "label": 1,
+    "category": "point_hard",
+    "detected": true
+  },
+  {
+    "base": "frame_007",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_008",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_009",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_010",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_011",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_012",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_013",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_014",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_015",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_016",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_017",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_018",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_019",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_020",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_021",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_022",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_023",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_024",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_025",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_026",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_027",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_028",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_029",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_030",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_031",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_033",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_034",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_035",
+    "label": 0,
+    "category": "empty",
+    "detected": false
+  },
+  {
+    "base": "frame_036",
+    "label": 0,
+    "category": "empty",
+    "detected": false
+  },
+  {
+    "base": "frame_037",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_038",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_039",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_040",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_041",
+    "label": 1,
+    "category": "point_hard",
+    "detected": false
+  },
+  {
+    "base": "frame_042",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_043",
+    "label": 0,
+    "category": "empty",
+    "detected": false
+  },
+  {
+    "base": "frame_044",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_045",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_046",
+    "label": 0,
+    "category": "empty",
+    "detected": false
+  },
+  {
+    "base": "frame_047",
+    "label": 0,
+    "category": "empty",
+    "detected": false
+  },
+  {
+    "base": "frame_048",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_049",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_050",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_051",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_052",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_053",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_054",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_055",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_056",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_057",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  },
+  {
+    "base": "frame_058",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_059",
+    "label": 1,
+    "category": "point",
+    "detected": true
+  },
+  {
+    "base": "frame_060",
+    "label": 0,
+    "category": "ambiguous_neg",
+    "detected": true
+  }
+]

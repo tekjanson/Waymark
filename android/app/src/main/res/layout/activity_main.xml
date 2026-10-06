@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- activity_main.xml — Full-screen WebView layout -->
+<!-- activity_main.xml — Waymark WebView with phone setup panel -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:background="#0B1020">
 
     <WebView
         android:id="@+id/webView"
@@ -15,5 +16,370 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <FrameLayout
+        android:id="@+id/nativeVisionContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <androidx.camera.view.PreviewView
+            android:id="@+id/cameraPreviewView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <com.waymark.app.PointAndDetectOverlayView
+            android:id="@+id/pointDetectOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <Button
+            android:id="@+id/buttonExitOverlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="12dp"
+            android:visibility="gone"
+            android:text="Exit Overlay" />
+
+        <LinearLayout
+            android:id="@+id/cameraControlsBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="20dp"
+            android:layout_marginBottom="22dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/buttonCaptureFeedbackFrame"
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:backgroundTint="#F2F4F8"
+                android:text="Capture"
+                android:textColor="#141A24"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/buttonSwitchCamera"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_marginStart="18dp"
+                android:backgroundTint="#44506A"
+                android:text="Flip"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/nativeControlPanel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_margin="12dp"
+        android:background="#D9202A44"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:id="@+id/nativePanelTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Point-and-Ask Control"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/nativePanelSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Camera + Audio + Even bridge"
+            android:textColor="#CFD7FF"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/textG2Notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Waymark keeps the server for sign-in and web sync, while the phone handles camera, audio, and the Even bridge setup."
+            android:textColor="#F9E7A1"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Vision Overlay"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/switchVisionOverlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/textBleState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Even bridge: public docs only"
+            android:textColor="#AEE5FF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textSyntheticState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Synthetic demo: off"
+            android:textColor="#B7E7FF"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Synthetic Demo"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/switchSyntheticDemo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/buttonDemoPointing"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="Demo Pointing" />
+
+            <Button
+                android:id="@+id/buttonDemoOk"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Demo OK" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/buttonDemoSweep"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="Demo Sweep" />
+
+            <Button
+                android:id="@+id/buttonUseLiveVision"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Use Live Camera" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/inputDeviceName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#122040"
+            android:hint="Device name (e.g. Even Realities G2)"
+            android:inputType="text"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#9AB1D8" />
+
+        <EditText
+            android:id="@+id/inputServiceUuid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="#122040"
+            android:hint="Service UUID"
+            android:inputType="text"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#9AB1D8" />
+
+        <EditText
+            android:id="@+id/inputCharUuid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="#122040"
+            android:hint="Text Characteristic UUID"
+            android:inputType="text"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#9AB1D8" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/inputChunkSize"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="#122040"
+                android:hint="Chunk bytes"
+                android:inputType="number"
+                android:padding="8dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#9AB1D8" />
+
+            <EditText
+                android:id="@+id/inputChunkDelayMs"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="#122040"
+                android:hint="Delay ms"
+                android:inputType="number"
+                android:padding="8dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#9AB1D8" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/inputHudTestText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="#122040"
+            android:hint="HUD test text"
+            android:inputType="text"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#9AB1D8" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/buttonConnectG2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="Open Even Setup Guide" />
+
+            <Button
+                android:id="@+id/buttonSendHudText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Send HUD Text" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/buttonOpenG2Docs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Open Even Docs" />
+
+        <Button
+            android:id="@+id/buttonHideNativePanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Back to Waymark" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/buttonShowNativePanel"
+        android:layout_width="0dp"
+        android:layout_height="74dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="20dp"
+        android:backgroundTint="#EAF4FF"
+        android:text="Turn Vision On"
+        android:textAllCaps="false"
+        android:textColor="#0D1A2D"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <Button
+        android:id="@+id/buttonOverlayPower"
+        android:layout_width="0dp"
+        android:layout_height="74dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="20dp"
+        android:backgroundTint="#EAF4FF"
+        android:text="Turn Vision On"
+        android:textAllCaps="false"
+        android:textColor="#0D1A2D"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

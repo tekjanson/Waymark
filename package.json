@@ -1,6 +1,6 @@
 {
   "name": "waymark",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Turn Google Sheets into interactive tools — two-way sync, zero server state",
   "main": "server/index.js",
   "scripts": {

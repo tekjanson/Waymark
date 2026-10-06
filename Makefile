@@ -64,13 +64,15 @@ endef
 
 .PHONY: help up down start restart fleet-tail \
         dev test test-watch test-full \
+	examples-generate \
+	android-build android-lint android-test android-install android-install-help android-logcat \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
         gemini-start gemini-logs dream-test dream-run dream-reset \
         fleet-start fleet-stop fleet-status fleet-sync fleet-build \
         fleet-webhook fleet-webhook-stop \
         eval-start eval-stop eval-logs \
-        auth-copilot auth-claude auth-check token-extract \
+	auth-copilot auth-claude auth-check token-extract oauth-token \
         workboard clean
 
 # ── THE ONE COMMAND ───────────────────────────────────────────────────
@@ -251,6 +253,63 @@ help: ## Show this help
 
 dev: ## Start the Waymark dev server on localhost:3000
 	GITHUB_SOURCE_LOCAL=true node server/index.js
+
+examples-generate: ## Create/update example sheets in Drive (includes Android G2 Field Dashboard)
+	npm run generate
+
+android-build: ## Build Waymark Android app module
+	cd android && ./gradlew :app:assembleDebug
+
+android-lint: ## Run Android lint for app module
+	cd android && ./gradlew :app:lintDebug
+
+android-test: ## Run Android unit tests for app module
+	cd android && ./gradlew :app:testDebugUnitTest
+
+android-connected-test: ## Run Android instrumented tests on connected device/emulator
+	adb uninstall com.waymark.app.test >/dev/null 2>&1 || true
+	cd android && ./gradlew :app:connectedDebugAndroidTest
+
+android-e2e: ## Run Android device E2E suite (instrumented classes + install flow)
+	cd android && ./run_e2e_tests.sh
+
+android-e2e-orchestrator: ## Run Android device E2E suite with external test orchestrator
+	cd android && ./run_e2e_tests.sh --with-orchestrator
+
+android-vision-debug-pull: ## Pull captured vision debug frames/metadata from connected phone
+	mkdir -p generated/vision-debug
+	adb pull /sdcard/Android/data/com.waymark.app/files/vision-debug generated/vision-debug >/dev/null 2>&1 || true
+	@echo "Pulled vision debug snapshots to generated/vision-debug"
+
+android-vision-debug-clear: ## Remove captured vision debug snapshots from connected phone
+	adb shell rm -rf /sdcard/Android/data/com.waymark.app/files/vision-debug
+	@echo "Cleared on-device vision debug snapshots"
+
+android-vision-debug-analyze: ## Analyze pulled vision snapshot metadata and print failure patterns
+	node scripts/analyze-vision-debug.mjs generated/vision-debug
+
+android-install: ## Install debug APK to connected Android device via adb
+	cd android && ./gradlew :app:installDebug
+
+android-launch: ## Launch Waymark app on connected Android device
+	adb shell monkey -p com.waymark.app -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+	@echo "Launched Waymark on connected device"
+
+android-install-help: ## Show exact steps to authorize adb + install Waymark on a physical phone
+	@echo "── Waymark Android Install (Physical Phone) ───────────"
+	@echo "1) On phone: enable Developer options + USB debugging"
+	@echo "2) Connect USB and set USB mode to File Transfer"
+	@echo "3) Run: adb kill-server && adb start-server"
+	@echo "4) Unlock phone and accept the RSA prompt: 'Allow USB debugging'"
+	@echo "5) Verify: adb devices -l (must show 'device', not 'unauthorized')"
+	@echo "6) Install: make android-install"
+	@echo "7) Logs: make android-logcat"
+	@echo ""
+	@echo "If still unauthorized: revoke USB debugging authorizations on the phone,"
+	@echo "replug cable, then repeat steps 3-6."
+
+android-logcat: ## Tail Android logcat filtered to Waymark tags
+	adb logcat | grep -E --line-buffered "Waymark|G2GlassesManager|PointAndDetect|WaymarkAudio"
 
 seed-data: ## Rebuild the calorie tracker food + exercise reference datasets
 	node scripts/seed-nutrition-database.mjs
@@ -536,6 +595,11 @@ auth-check: ## Check which AI credentials are available
 		&& echo "  ✓ Google   $(GOOGLE_APPLICATION_CREDENTIALS) (OK)" \
 		|| echo "  ✗ Google   $(GOOGLE_APPLICATION_CREDENTIALS) (missing)"
 	@echo ""
+
+oauth-token: ## Run Google OAuth flow and store user token at ~/.config/gcloud/waymark-oauth-token.json
+	@echo "── Google User OAuth Token Setup ───────────────────────"
+	@echo "This opens a browser login and saves a refresh token for user-scoped scripts."
+	node scripts/get-oauth-token.js
 
 # ── Workboard ─────────────────────────────────────────────────────────
 

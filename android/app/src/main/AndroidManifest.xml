@@ -27,6 +27,18 @@
 
     <!-- Camera access — required for AI photo capture in the web app -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Audio capture for multi-mic isolation pipeline -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- BLE permissions (legacy + Android 12+) for G2 connectivity -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Ask the user to exempt Waymark from Doze battery optimizations so the
          foreground service retains network access during idle windows -->

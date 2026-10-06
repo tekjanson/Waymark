@@ -106,7 +106,7 @@ class SignalingEncryptionTest {
     @Test
     fun `decrypt returns null for empty string`() {
         assertNull(SignalingEncryption.decrypt(null, TEST_KEY))
-        assertEquals("", SignalingEncryption.decrypt("", TEST_KEY))
+        assertNull(SignalingEncryption.decrypt("", TEST_KEY))
     }
 
     @Test

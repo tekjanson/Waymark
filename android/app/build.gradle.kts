@@ -15,8 +15,8 @@ android {
         applicationId = "com.waymark.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -62,6 +62,15 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // CameraX (preview + analysis)
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+
+    // MediaPipe vision tasks
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
     // OkHttp for Google Sheets REST API calls
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

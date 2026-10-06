@@ -8,7 +8,7 @@ A native Android companion app that renders the Waymark web app in a full-screen
 
 ```
 Android App
-├── WebView (full-screen)            — loads https://waymark.app
+├── WebView (full-screen)            — loads the Waymark web app
 │     └── JavaScript (webrtc.js)    — existing P2P mesh in-browser
 │           └── window.Android.*    — JavascriptInterface bridge
 │
@@ -19,27 +19,30 @@ Android App
 
 ### How It Works
 
-1. The WebView loads the full Waymark web app — all templates, editing, and
-   social features work exactly as in the browser.
+1. The WebView loads the Waymark web app — templates, editing, and social
+   features still work in the browser-backed surface.
 
-2. `WaymarkBridge` is registered as `window.Android` in JavaScript. The web
+2. The native Android layer handles the phone-first pieces: camera, audio,
+   foreground notifications, and the Even setup flow.
+
+3. `WaymarkBridge` is registered as `window.Android` in JavaScript. The web
    app calls three native methods:
    - `Android.onAuthToken(token)` — after each OAuth refresh (in `auth.js`)
    - `Android.onSheetOpened(sheetId)` — when the user opens a sheet (in `checklist.js`)
    - `Android.onPeerMessage(json)` — when a DataChannel message arrives (in `webrtc.js`)
    - `Android.showNotification(title, body)` — direct notification request
 
-3. `WebRtcService` runs as a foreground service and keeps a native WebRTC
+4. `WebRtcService` runs as a foreground service and keeps a native WebRTC
    peer connection alive even when the WebView is in the background. It uses
    the same Google Sheets signaling protocol as `webrtc.js`, so the Android
    device appears as a peer in the mesh.
 
-4. On first start after login, `WebRtcService` reads `.waymark-data.json`
+5. On first start after login, `WebRtcService` reads `.waymark-data.json`
    directly from the user's Google Drive (using the stored OAuth token) to
    find the `signalingSheetId` created by the web app. No server relay
    is involved — Drive is accessed from the Android device directly.
 
-5. When any peer sends a `waymark-notification` or `orchestrator-alert`
+6. When any peer sends a `waymark-notification` or `orchestrator-alert`
    DataChannel message, both the in-browser handler (via `WaymarkBridge`) and
    the background service show an Android notification.
 
@@ -72,6 +75,34 @@ const val BASE_URL = "http://10.0.2.2:3000"  // emulator → host localhost
 
 The emulator's `10.0.2.2` maps to the host machine's `localhost`. The
 `network_security_config.xml` already permits cleartext to `10.0.2.2`.
+
+### G2 Integration Modes
+
+Waymark Android supports an in-app G2 control panel with two practical modes:
+
+1. Official public-docs path (recommended by Even): the Even Hub SDK bridge model.
+2. Direct BLE path (advanced/partner): requires service UUID + text characteristic UUID and transport tuning values.
+
+Important: Even public docs explicitly state that raw Bluetooth access and low-level protocol details are not part of the public SDK surface. If you are not on a partner/private program, the official route is to use the Even Hub SDK bridge flow inside the Even Realities app environment.
+
+Current Android builds run in public-docs-only mode by default. That means the in-app raw BLE controls are disabled, the phone setup panel is shown up front, and the app will open the Even docs instead of guessing UUIDs or attempting speculative GATT writes.
+
+For end-user testing, the expected flow is:
+
+1. Sign in to Waymark normally.
+2. Keep the Waymark server for auth and web sync.
+3. Use the phone setup panel to open the Even setup guide.
+4. Pair the glasses in the Even app.
+5. Return to Waymark and enable the native camera/audio tools when prompted.
+
+Control panel fields (in-app):
+- Device name hint
+- Service UUID
+- Text characteristic UUID
+- Chunk bytes
+- Delay ms
+
+The app persists these values locally and reconnects using the latest saved configuration.
 
 ---
 

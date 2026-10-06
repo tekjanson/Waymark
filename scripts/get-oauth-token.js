@@ -21,19 +21,120 @@ const { execSync } = require('child_process');
 
 /* ---------- Load OAuth client credentials ---------- */
 
-const CLIENT_SECRET_FILE = path.resolve(
-  __dirname, '..',
-  'client_secret_764742927885-fs0atq3ecenhndpdaaqkb0d0go1blt22.apps.googleusercontent.com_waymarkauth.json'
-);
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+function loadDotEnv() {
+  try {
+    const envPath = path.join(REPO_ROOT, '.env');
+    if (!fs.existsSync(envPath)) return;
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      const value = trimmed.slice(eq + 1).trim();
+      if (!process.env[key]) process.env[key] = value;
+    }
+  } catch {
+    // Ignore .env parsing failures and continue with other credential sources.
+  }
+}
+
+function readClientSecretFile(filePath) {
+  const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const source = raw.web || raw.installed;
+  if (!source?.client_id || !source?.client_secret) {
+    throw new Error(`Invalid OAuth client secret file format: ${filePath}`);
+  }
+  return {
+    clientId: source.client_id,
+    clientSecret: source.client_secret,
+    redirectUri: source.redirect_uris?.[0],
+    source: filePath,
+  };
+}
+
+function findClientSecretFile() {
+  const preferred = path.join(
+    REPO_ROOT,
+    'client_secret_764742927885-fs0atq3ecenhndpdaaqkb0d0go1blt22.apps.googleusercontent.com_waymarkauth.json'
+  );
+  if (fs.existsSync(preferred)) return preferred;
+
+  const candidates = fs
+    .readdirSync(REPO_ROOT)
+    .filter((name) => /^client_secret_.*\.json$/i.test(name))
+    .map((name) => path.join(REPO_ROOT, name));
+
+  return candidates[0] || null;
+}
+
+function loadClientCredentials() {
+  loadDotEnv();
+
+  const envClientId = process.env.GOOGLE_CLIENT_ID;
+  const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (envClientId && envClientSecret) {
+    return {
+      clientId: envClientId,
+      clientSecret: envClientSecret,
+      source: '.env',
+    };
+  }
+
+  const secretFile = findClientSecretFile();
+  if (secretFile) {
+    return readClientSecretFile(secretFile);
+  }
+
+  throw new Error(
+    [
+      'Missing Google OAuth client credentials.',
+      'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env,',
+      'or place a Google OAuth client secret JSON file in the repo root',
+      '(for example client_secret_*.json).',
+    ].join(' ')
+  );
+}
+
+const oauth = loadClientCredentials();
+
+function resolveRedirectUri() {
+  const defaultRedirect = 'http://localhost:3000/auth/callback';
+  const configured = process.env.WAYMARK_OAUTH_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI;
+  if (!configured) return defaultRedirect;
+
+  try {
+    const parsed = new URL(configured);
+    const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    if (parsed.protocol === 'http:' && localHost) {
+      return configured;
+    }
+
+    console.warn(
+      `\n  ! Ignoring non-local redirect URI from environment: ${configured}`
+    );
+    console.warn(`    Using local callback instead: ${defaultRedirect}`);
+    return defaultRedirect;
+  } catch {
+    return defaultRedirect;
+  }
+}
 
 const TOKEN_PATH = path.join(
   process.env.HOME || '/home/tekjanson',
   '.config', 'gcloud', 'waymark-oauth-token.json'
 );
 
-const creds = JSON.parse(fs.readFileSync(CLIENT_SECRET_FILE, 'utf8'));
-const { client_id, client_secret } = creds.web;
-const REDIRECT_URI = 'http://localhost:3000/auth/callback';
+const client_id = oauth.clientId;
+const client_secret = oauth.clientSecret;
+const REDIRECT_URI = resolveRedirectUri();
+const REDIRECT_URL = new URL(REDIRECT_URI);
+const CALLBACK_HOST = REDIRECT_URL.hostname;
+const CALLBACK_PORT = Number(REDIRECT_URL.port || 80);
+const CALLBACK_PATH = REDIRECT_URL.pathname;
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 const SCOPES = [
@@ -73,9 +174,9 @@ async function exchangeCode(code) {
 /* ---------- Start server and wait for callback ---------- */
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost:3000');
+  const url = new URL(req.url, `${REDIRECT_URL.protocol}//${REDIRECT_URL.host}`);
 
-  if (!url.pathname.startsWith('/auth/callback')) {
+  if (!url.pathname.startsWith(CALLBACK_PATH)) {
     res.writeHead(404);
     res.end('Not found');
     return;
@@ -127,15 +228,26 @@ const server = http.createServer(async (req, res) => {
   setTimeout(() => { server.close(); process.exit(0); }, 500);
 });
 
-server.listen(3000, () => {
+server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
   console.log('\n  OAuth token setup for Waymark test report upload');
   console.log('  ────────────────────────────────────────────────');
+  console.log(`  Using OAuth credentials source: ${oauth.source}`);
+  console.log(`  Redirect URI: ${REDIRECT_URI}`);
   console.log(`\n  Open this URL in your browser:\n`);
   console.log(`  ${authUrl}\n`);
-  console.log('  Waiting for callback on http://localhost:3000/auth/callback ...');
+  console.log(`  Waiting for callback on ${REDIRECT_URI} ...`);
 
   // Try to open browser automatically
   try {
     execSync(`xdg-open "${authUrl}" 2>/dev/null || open "${authUrl}" 2>/dev/null`, { stdio: 'ignore' });
   } catch { /* ignore — user can open manually */ }
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`\n  Error: callback port already in use (${CALLBACK_HOST}:${CALLBACK_PORT}).`);
+    console.error('  Stop the conflicting process, then run make oauth-token again.');
+    process.exit(1);
+  }
+  throw err;
 });

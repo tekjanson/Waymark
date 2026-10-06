@@ -1,3 +1,42 @@
 #!/bin/sh
-GRADLE_HOME=~/.gradle/wrapper/dists/gradle-8.4-bin/1w5dpkrfk8irigvoxmyhowfim/gradle-8.4
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROPS_FILE="$SCRIPT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+if [ ! -f "$PROPS_FILE" ]; then
+	echo "Missing $PROPS_FILE" >&2
+	exit 1
+fi
+
+DIST_URL=$(grep '^distributionUrl=' "$PROPS_FILE" | sed 's/^distributionUrl=//; s#\\:#:#g')
+if [ -z "$DIST_URL" ]; then
+	echo "distributionUrl not found in gradle-wrapper.properties" >&2
+	exit 1
+fi
+
+DIST_ZIP_NAME=$(basename "$DIST_URL")
+DIST_DIR_NAME=$(echo "$DIST_ZIP_NAME" | sed 's/\.zip$//')
+GRADLE_VERSION_DIR=$(echo "$DIST_DIR_NAME" | sed 's/-bin$//; s/-all$//')
+GRADLE_HOME="$HOME/.gradle/wrapper/dists/$DIST_DIR_NAME/local/$GRADLE_VERSION_DIR"
+
+if [ ! -x "$GRADLE_HOME/bin/gradle" ]; then
+	TMP_DIR=$(mktemp -d)
+	trap 'rm -rf "$TMP_DIR"' EXIT
+
+	ARCHIVE="$TMP_DIR/$DIST_ZIP_NAME"
+	mkdir -p "$HOME/.gradle/wrapper/dists/$DIST_DIR_NAME/local"
+
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$DIST_URL" -o "$ARCHIVE"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q "$DIST_URL" -O "$ARCHIVE"
+	else
+		echo "Neither curl nor wget is available to download Gradle." >&2
+		exit 1
+	fi
+
+	unzip -q "$ARCHIVE" -d "$HOME/.gradle/wrapper/dists/$DIST_DIR_NAME/local"
+fi
+
 exec "$GRADLE_HOME/bin/gradle" "$@"
