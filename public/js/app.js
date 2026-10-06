@@ -20,6 +20,7 @@ import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as dashboard from './dashboard.js';
+import * as glasses from './glasses.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
 import { initializeModelSwap } from './model-swap.js';
@@ -51,6 +52,7 @@ const menuExamplesBtn  = document.getElementById('menu-examples-btn');
 const menuFleetBtn     = document.getElementById('menu-fleet-btn');
 const menuAgentBtn     = document.getElementById('menu-agent-btn');
 const menuDashboardBtn = document.getElementById('menu-dashboard-btn');
+const menuGlassesBtn   = document.getElementById('menu-glasses-btn');
 const explorerRefreshBtn = document.getElementById('explorer-refresh-btn');
 
 /* ---------- Example Modal refs ---------- */
@@ -210,6 +212,7 @@ async function boot() {
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
+  glasses.init(document.getElementById('glasses-view'));
   notifications.initBell();
   await initializeModelSwap();
   initializeModelSwapUI();
@@ -298,6 +301,13 @@ async function boot() {
     menuDashboardBtn.addEventListener('click', () => {
       window.location.hash = '#/dashboard';
       updateMenuActive('dashboard');
+      autoCloseSidebarMobile();
+    });
+  }
+  if (menuGlassesBtn) {
+    menuGlassesBtn.addEventListener('click', () => {
+      window.location.hash = '#/glasses';
+      updateMenuActive('glasses');
       autoCloseSidebarMobile();
     });
   }
@@ -581,6 +591,7 @@ function handleRoute() {
   checklist.hide(); // stop any running timer
   agent.hide();
   dashboard.hide();
+  glasses.hide();
 
   // Auto-close sidebar on narrow screens when navigating to a detail view
   if (window.innerWidth <= 768 && isSidebarOpen()) {
@@ -632,6 +643,11 @@ function handleRoute() {
     } else {
       dashboard.showHome();
     }
+  } else if (hash === '#/glasses') {
+    showView('glasses');
+    glasses.show(document.getElementById('glasses-view'));
+    updateMenuActive('glasses');
+    userData.setLastView(hash);
   } else {
     // Home
     showView('home');

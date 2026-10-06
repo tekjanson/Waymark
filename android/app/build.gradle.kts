@@ -78,6 +78,9 @@ dependencies {
     // JSON parsing
     implementation("org.json:json:20231013")
 
+    // Lightweight embedded HTTP server for on-device app-to-app bridge.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     // WorkManager — periodic watchdog to restart WebRtcService after aggressive OEM kills
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 

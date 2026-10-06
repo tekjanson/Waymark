@@ -10,14 +10,18 @@
 package com.waymark.app
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.WindowManager
@@ -45,6 +49,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import fi.iki.elonen.NanoHTTPD
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,7 +62,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), GlassesController {
 
     private data class RearCameraOption(
         val logicalCameraId: String,
@@ -69,6 +75,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PERMISSION_REQUEST_NOTIFICATIONS = 1001
         private const val TARGET_STALE_TIMEOUT_MS = 900L
+        private const val BRIDGE_IDLE_PUBLISH_INTERVAL_MS = 450L
+        private const val CALIB_STEP_TIMEOUT_MS = 9000L
+        private const val PREF_GLASSES_CALIBRATION = "glasses_calibration_affine"
     }
 
     /* ---------- State ---------- */
@@ -102,6 +111,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonShowNativePanel: Button
     private lateinit var buttonHideNativePanel: Button
     private lateinit var switchSyntheticDemo: SwitchCompat
+    private lateinit var pointModeBar: View
+    private lateinit var pointModeLabel: TextView
+    private lateinit var switchPointMode: SwitchCompat
+    private lateinit var buttonCalibrate: Button
     private var latestVisionDebugState: VisionDebugState = VisionDebugState(lines = listOf("Vision: waiting for frames"))
     private var imageAnalyzer: PointAndDetectVisionSource? = null
     private var cameraExecutor: ExecutorService? = null
@@ -111,8 +124,24 @@ class MainActivity : AppCompatActivity() {
     private var syntheticVisionEnabled = false
     private var syntheticVisionScenario = SyntheticVisionScenario.POINTING
     private var lastTargetUpdateAtMs: Long = 0L
+    private var lastBridgeIdleText: String = ""
+    private var lastBridgeIdleState: String = "idle"
+    private var lastBridgeIdlePublishAtMs: Long = 0L
+    private var pointModeEnabled = true
+    @Volatile private var calibrationOffsetX = 0f
+    @Volatile private var calibrationOffsetY = 0f
+    @Volatile private var lastHitX = 0.5f
+    @Volatile private var lastHitY = 0.5f
+    @Volatile private var calibrationFit: AffineFit? = null
+    @Volatile private var glassesStateCache: String = "{}"
+    @Volatile private var lastPublishedLabel: String = ""
+    @Volatile private var calibrationStepStartMs = 0L
+    private lateinit var calibrationController: CalibrationController
+    private val calibrationHandler = Handler(Looper.getMainLooper())
 
     private val nativeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var phoneBridgeStore: PhoneBridgeStore
+    private var phoneBridgeServer: PhoneBridgeServer? = null
     private var audioCaptureManager: WaymarkAudioCaptureManager? = null
     private var g2GlassesManager: G2GlassesManager? = null
     private var bleStateJob: Job? = null
@@ -165,6 +194,42 @@ class MainActivity : AppCompatActivity() {
         scheduleWatchdog()
 
         bridge = WaymarkBridge(this)
+        phoneBridgeStore = PhoneBridgeStore(this)
+        phoneBridgeStore.writeIdle("Waiting for target", source = "waymark-vision", state = "idle")
+        startPhoneBridgeServer()
+        calibrationController = CalibrationController(object : CalibrationListener {
+            override fun onCalibrationStep(step: Int, total: Int, targetX: Float, targetY: Float, prompt: String) {
+                calibrationStepStartMs = System.currentTimeMillis()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    phoneBridgeStore.writeCalibration(targetX, targetY, prompt, step + 1, total)
+                }
+                updateGlassesState()
+            }
+
+            override fun onCalibrationFinished(fit: AffineFit?, capturedCount: Int) {
+                calibrationFit = fit
+                if (fit != null) persistCalibration(fit)
+                lifecycleScope.launch(Dispatchers.IO) {
+                    phoneBridgeStore.writeIdle(
+                        if (fit != null) "Calibration complete" else "Calibration failed",
+                        source = "waymark-vision",
+                        state = "idle",
+                    )
+                }
+                runOnUiThread {
+                    val msg = if (fit != null) {
+                        "Calibration complete — accuracy ${"%.0f".format((1f - fit.rms.coerceIn(0f, 1f)) * 100)}%"
+                    } else {
+                        "Calibration failed — try again"
+                    }
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                }
+                updateGlassesState()
+            }
+        })
+        calibrationFit = loadCalibration()
+        bridge.glassesController = this
+        updateGlassesState()
         g2ProtocolStore = G2ProtocolConfigStore(this)
         webView = findViewById(R.id.webView)
         nativeVisionContainer = findViewById(R.id.nativeVisionContainer)
@@ -195,6 +260,10 @@ class MainActivity : AppCompatActivity() {
         buttonShowNativePanel = findViewById(R.id.buttonShowNativePanel)
         buttonHideNativePanel = findViewById(R.id.buttonHideNativePanel)
         switchSyntheticDemo = findViewById(R.id.switchSyntheticDemo)
+        pointModeBar = findViewById(R.id.pointModeBar)
+        pointModeLabel = findViewById(R.id.pointModeLabel)
+        switchPointMode = findViewById(R.id.switchPointMode)
+        buttonCalibrate = findViewById(R.id.buttonCalibrate)
 
         pointOverlay.isDeveloperModeEnabled = false
         pointOverlay.debugState = latestVisionDebugState
@@ -203,6 +272,7 @@ class MainActivity : AppCompatActivity() {
         updateSyntheticStateLabel()
         setupWebView()
         setupNativeControlPanel()
+        setupPointModeControls()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
 
@@ -210,7 +280,15 @@ class MainActivity : AppCompatActivity() {
         // peer connects even before the user opens a sheet.
         startService(Intent(this, WebRtcService::class.java))
 
-        // Native toolchain starts only when user opens the native panel.
+        // Start native vision pipeline on launch so phone bridge emits live
+        // updates without requiring manual native panel interaction.
+        if (pointModeEnabled) {
+            if (hasRequiredNativePermissions()) {
+                startNativePipelines()
+            } else {
+                requestNativeRuntimePermissions()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -253,6 +331,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopPhoneBridgeServer()
         updateKeepScreenOn(false)
         stopVisionPipeline()
         audioCaptureManager?.stopCapture()
@@ -487,6 +566,27 @@ class MainActivity : AppCompatActivity() {
             }
 
             val targetHandler: (PointingTarget) -> Unit = { target ->
+                val hitX = target.normalizedHitPoint.x
+                val hitY = target.normalizedHitPoint.y
+                lastHitX = hitX
+                lastHitY = hitY
+                if (calibrationController.active) {
+                    calibrationController.onPointing(hitX, hitY)
+                } else {
+                    val (gx, gy) = mapHitToGlasses(hitX, hitY)
+                    lastPublishedLabel = target.label
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        phoneBridgeStore.writeLatest(
+                            label = target.label,
+                            confidence = target.confidence,
+                            source = "waymark-vision",
+                            state = "identified",
+                            x = gx,
+                            y = gy,
+                        )
+                    }
+                }
+
                 lifecycleScope.launch(Dispatchers.Main) {
                     val sourceAnalyzer = imageAnalyzer
                     if (sourceAnalyzer != null) {
@@ -513,8 +613,24 @@ class MainActivity : AppCompatActivity() {
                     val shouldClearTarget = shouldClearCurrentTarget(debugState)
                     val targetStale = pointOverlay.currentTarget != null &&
                         (System.currentTimeMillis() - lastTargetUpdateAtMs) > TARGET_STALE_TIMEOUT_MS
+                    val idleText = bridgeIdleTextFor(debugState)
+                    val idleState = bridgeIdleStateFor(debugState)
                     if (shouldClearTarget || targetStale) {
                         pointOverlay.currentTarget = null
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            publishBridgeIdleIfNeeded(
+                                text = idleText,
+                                state = idleState,
+                                force = true,
+                            )
+                        }
+                    } else {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            publishBridgeIdleIfNeeded(
+                                text = idleText,
+                                state = idleState,
+                            )
+                        }
                     }
                     pointOverlay.invalidate()
                 }
@@ -920,6 +1036,39 @@ class MainActivity : AppCompatActivity() {
             lines.contains("hand: no landmarks")
     }
 
+    @Synchronized
+    private fun publishBridgeIdleIfNeeded(text: String, state: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val textChanged = text != lastBridgeIdleText || state != lastBridgeIdleState
+        val timedOut = (now - lastBridgeIdlePublishAtMs) >= BRIDGE_IDLE_PUBLISH_INTERVAL_MS
+        if (!force && !textChanged && !timedOut) return
+
+        phoneBridgeStore.writeIdle(text = text, source = "waymark-vision", state = state)
+        lastBridgeIdleText = text
+        lastBridgeIdleState = state
+        lastBridgeIdlePublishAtMs = now
+    }
+
+    private fun bridgeIdleTextFor(debugState: VisionDebugState): String {
+        val lines = debugState.lines.joinToString(" ").lowercase()
+        return when {
+            lines.contains("hand: no landmarks") -> "No hand detected"
+            lines.contains("shape: unknown") -> "Show pointing gesture"
+            lines.contains("lock: none") -> "Aiming..."
+            else -> "Waiting for target"
+        }
+    }
+
+    private fun bridgeIdleStateFor(debugState: VisionDebugState): String {
+        val lines = debugState.lines.joinToString(" ").lowercase()
+        return when {
+            lines.contains("hand: no landmarks") -> "no-hand"
+            lines.contains("shape: unknown") -> "gesture-unknown"
+            lines.contains("lock: none") -> "tracking"
+            else -> "idle"
+        }
+    }
+
     private fun currentCameraSelector(): CameraSelector {
         val selectedRear = currentRearCameraOption()
         val selectedLogicalId = selectedRear?.logicalCameraId
@@ -949,6 +1098,168 @@ class MainActivity : AppCompatActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             cameraPreview.keepScreenOn = false
             nativeVisionContainer.keepScreenOn = false
+        }
+    }
+
+    private fun startPhoneBridgeServer() {
+        if (phoneBridgeServer != null) return
+        val server = PhoneBridgeServer(phoneBridgeStore, PhoneBridgeServer.DEFAULT_PORT)
+        try {
+            server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+            phoneBridgeServer = server
+            Log.i("PhoneBridge", "Local bridge started on :${PhoneBridgeServer.DEFAULT_PORT}")
+        } catch (t: Throwable) {
+            Log.e("PhoneBridge", "Failed to start local bridge", t)
+            Toast.makeText(this, "Phone bridge failed: ${t.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun stopPhoneBridgeServer() {
+        phoneBridgeServer?.stop()
+        phoneBridgeServer = null
+    }
+
+    /* ---------- Point Mode (native control) ---------- */
+
+    private fun setupPointModeControls() {
+        pointModeBar.visibility = View.VISIBLE
+        switchPointMode.isChecked = pointModeEnabled
+        switchPointMode.setOnCheckedChangeListener { _, checked -> setPointMode(checked) }
+        buttonCalibrate.setOnClickListener { calibratePointMode() }
+        updatePointModeUi()
+    }
+
+    /**
+     * Toggle the on-phone vision producer. ON streams identifications to the
+     * Even bridge; OFF stops the camera pipeline and parks the bridge so the
+     * glasses show a clear "off" state.
+     */
+    private fun setPointMode(enabled: Boolean) {
+        pointModeEnabled = enabled
+        if (enabled) {
+            if (hasRequiredNativePermissions()) {
+                startNativePipelines()
+            } else {
+                requestNativeRuntimePermissions()
+            }
+            phoneBridgeStore.writeIdle("Point mode on", source = "waymark-vision", state = "idle")
+        } else {
+            stopVisionPipeline()
+            phoneBridgeStore.writeIdle("Point mode off", source = "waymark-vision", state = "off")
+        }
+        updatePointModeUi()
+    }
+
+    /**
+     * Calibrate the highlight so the object currently under the pointer maps to
+     * the center of the glasses view. Captures the offset applied to every
+     * subsequent published position.
+     */
+    private fun calibratePointMode() {
+        calibrationOffsetX = 0.5f - lastHitX
+        calibrationOffsetY = 0.5f - lastHitY
+        Toast.makeText(this, "Calibrated — pointer centered on glasses", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updatePointModeUi() {
+        pointModeLabel.text = if (pointModeEnabled) "Point Mode" else "Point Mode (off)"
+        buttonCalibrate.isEnabled = pointModeEnabled
+        buttonCalibrate.alpha = if (pointModeEnabled) 1f else 0.5f
+    }
+
+    /* ---------- Spatial calibration + glasses web bridge ---------- */
+
+    /** Map a camera pointing hit to glasses space via the fitted affine (or offset fallback). */
+    private fun mapHitToGlasses(hx: Float, hy: Float): Pair<Float, Float> {
+        val fit = calibrationFit
+        return if (fit != null) {
+            val (gx, gy) = fit.apply(hx, hy)
+            gx.coerceIn(0f, 1f) to gy.coerceIn(0f, 1f)
+        } else {
+            (hx + calibrationOffsetX).coerceIn(0f, 1f) to (hy + calibrationOffsetY).coerceIn(0f, 1f)
+        }
+    }
+
+    private fun startCalibrationRoutine() {
+        if (!pointModeEnabled) setPointMode(true)
+        if (!hasRequiredNativePermissions()) {
+            requestNativeRuntimePermissions()
+            Toast.makeText(this, "Grant camera access, then start calibration", Toast.LENGTH_LONG).show()
+            return
+        }
+        calibrationStepStartMs = System.currentTimeMillis()
+        calibrationController.start()
+        calibrationHandler.removeCallbacks(calibrationTick)
+        calibrationHandler.postDelayed(calibrationTick, 500)
+        updateGlassesState()
+    }
+
+    private fun cancelCalibrationRoutine() {
+        calibrationController.cancel()
+        calibrationHandler.removeCallbacks(calibrationTick)
+        lifecycleScope.launch(Dispatchers.IO) {
+            phoneBridgeStore.writeIdle("Calibration cancelled", source = "waymark-vision", state = "idle")
+        }
+        updateGlassesState()
+    }
+
+    private val calibrationTick = object : Runnable {
+        override fun run() {
+            if (!calibrationController.active) return
+            if (System.currentTimeMillis() - calibrationStepStartMs > CALIB_STEP_TIMEOUT_MS) {
+                calibrationController.forceCapture()
+            }
+            if (calibrationController.active) calibrationHandler.postDelayed(this, 500)
+        }
+    }
+
+    private fun persistCalibration(fit: AffineFit) {
+        getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(PREF_GLASSES_CALIBRATION, fit.toJsonObject().toString()).apply()
+    }
+
+    private fun loadCalibration(): AffineFit? {
+        val s = getSharedPreferences(WaymarkConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(PREF_GLASSES_CALIBRATION, null) ?: return null
+        return runCatching { AffineFit.fromJsonObject(JSONObject(s)) }.getOrNull()
+    }
+
+    @Synchronized
+    private fun updateGlassesState() {
+        val o = JSONObject()
+            .put("pointMode", pointModeEnabled)
+            .put("calibrating", calibrationController.active)
+            .put("step", calibrationController.step)
+            .put("steps", calibrationController.total)
+            .put("captured", calibrationController.capturedCount)
+            .put("calibrated", calibrationFit != null)
+            .put("lastLabel", lastPublishedLabel)
+        calibrationController.currentTarget?.let { o.put("prompt", it.prompt) }
+        calibrationFit?.let { o.put("quality", it.rms.toDouble()) }
+        glassesStateCache = o.toString()
+    }
+
+    /* GlassesController — invoked from the JS bridge (background thread). */
+
+    override fun glassesSetPointMode(enabled: Boolean) {
+        runOnUiThread { setPointMode(enabled); updateGlassesState() }
+    }
+
+    override fun glassesIsPointModeEnabled(): Boolean = pointModeEnabled
+
+    override fun glassesStartCalibration() {
+        runOnUiThread { startCalibrationRoutine() }
+    }
+
+    override fun glassesCancelCalibration() {
+        runOnUiThread { cancelCalibrationRoutine() }
+    }
+
+    override fun glassesStateJson(): String = glassesStateCache
+
+    override fun glassesSendSnapshot() {
+        runOnUiThread {
+            Toast.makeText(this, "Snapshot streaming is coming soon", Toast.LENGTH_SHORT).show()
         }
     }
 

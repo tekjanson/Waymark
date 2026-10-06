@@ -54,6 +54,9 @@
 /* Agent view */
 @import url('./agent.css');
 
+/* Glasses & spatial view */
+@import url('./glasses.css');
+
 /* AI overlay for template views */
 @import url('./template-ai.css');
 

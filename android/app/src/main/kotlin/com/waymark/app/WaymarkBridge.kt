@@ -34,6 +34,9 @@ class WaymarkBridge(private val context: Context) {
     /** Reference to the hosting activity for window-level operations. */
     private val activity get() = context as? androidx.appcompat.app.AppCompatActivity
 
+    /** Set by MainActivity so the web UI can drive glasses / point-mode features. */
+    @JvmField var glassesController: GlassesController? = null
+
     /* ---------- Auth token handoff ---------- */
 
     /**
@@ -200,4 +203,50 @@ class WaymarkBridge(private val context: Context) {
             controller.isAppearanceLightNavigationBars = !isDark
         }
     }
+
+    /* ---------- Glasses / spatial point-mode control ---------- */
+
+    /** True when running inside the Waymark Android app with glasses support. */
+    @JavascriptInterface
+    fun glassesAvailable(): Boolean = glassesController != null
+
+    /** Enable or disable the on-phone vision producer (streams to the glasses). */
+    @JavascriptInterface
+    fun setPointMode(enabled: Boolean) {
+        glassesController?.glassesSetPointMode(enabled)
+    }
+
+    @JavascriptInterface
+    fun isPointModeEnabled(): Boolean = glassesController?.glassesIsPointModeEnabled() ?: false
+
+    /** Begin the guided point-at-target spatial calibration routine. */
+    @JavascriptInterface
+    fun startCalibration() {
+        glassesController?.glassesStartCalibration()
+    }
+
+    @JavascriptInterface
+    fun cancelCalibration() {
+        glassesController?.glassesCancelCalibration()
+    }
+
+    /** Returns a JSON snapshot of glasses/calibration state for the web UI to poll. */
+    @JavascriptInterface
+    fun getGlassesState(): String = glassesController?.glassesStateJson() ?: "{}"
+
+    /** Push the current camera view to the glasses (experimental snapshot stream). */
+    @JavascriptInterface
+    fun sendSnapshotToGlasses() {
+        glassesController?.glassesSendSnapshot()
+    }
+}
+
+/** Implemented by MainActivity so the Waymark web UI can drive glasses features. */
+interface GlassesController {
+    fun glassesSetPointMode(enabled: Boolean)
+    fun glassesIsPointModeEnabled(): Boolean
+    fun glassesStartCalibration()
+    fun glassesCancelCalibration()
+    fun glassesStateJson(): String
+    fun glassesSendSnapshot()
 }

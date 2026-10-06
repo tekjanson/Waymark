@@ -1,0 +1,161 @@
+/* Glasses & Spatial view */
+
+#glasses-view {
+  padding: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.glasses-header {
+  margin-bottom: 20px;
+}
+
+.glasses-header h2 {
+  margin: 0 0 4px;
+  color: var(--color-text);
+}
+
+.glasses-sub {
+  margin: 0;
+  color: var(--color-text-muted, #64748b);
+  font-size: 14px;
+}
+
+.glasses-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.glasses-notice p {
+  margin: 0;
+  color: var(--color-text-muted, #64748b);
+}
+
+.glasses-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.glasses-row-text {
+  flex: 1;
+}
+
+.glasses-row-title {
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.glasses-row-desc {
+  font-size: 13px;
+  color: var(--color-text-muted, #64748b);
+  margin: 0 0 8px;
+}
+
+/* Toggle switch */
+.glasses-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  flex: none;
+}
+
+.glasses-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.glasses-switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-border);
+  border-radius: 999px;
+  transition: background var(--transition);
+}
+
+.glasses-switch-track::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--transition);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.glasses-switch-input:checked + .glasses-switch-track {
+  background: var(--color-primary);
+}
+
+.glasses-switch-input:checked + .glasses-switch-track::before {
+  transform: translateX(20px);
+}
+
+/* Stats */
+.glasses-stats {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.glasses-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.glasses-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #64748b);
+}
+
+.glasses-stat-value {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Calibration */
+.glasses-cal-status {
+  margin-top: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.glasses-cal-status.glasses-calibrated {
+  color: var(--color-success);
+}
+
+.glasses-cal-progress {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.glasses-cal-prompt {
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+.glasses-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
