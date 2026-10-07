@@ -1125,7 +1125,11 @@ class MainActivity : AppCompatActivity(), GlassesController {
         pointModeBar.visibility = View.VISIBLE
         switchPointMode.isChecked = pointModeEnabled
         switchPointMode.setOnCheckedChangeListener { _, checked -> setPointMode(checked) }
-        buttonCalibrate.setOnClickListener { calibratePointMode() }
+        // Tap runs the full guided point-at-target routine; long-press does a
+        // quick centre calibration. Both work natively so the pipeline is
+        // testable with `make android-install` (no web deploy needed).
+        buttonCalibrate.setOnClickListener { startCalibrationRoutine() }
+        buttonCalibrate.setOnLongClickListener { calibratePointMode(); true }
         updatePointModeUi()
     }
 
