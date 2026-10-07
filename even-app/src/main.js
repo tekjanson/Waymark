@@ -25,6 +25,7 @@ import {
 } from './waymarkIdentify.js';
 import { fetchLatestBridgeMessage, PHONE_BRIDGE_BASES } from './phoneBridgeClient.js';
 import { renderBridgePayload } from './bridgeRender.js';
+import { AcousticRanger } from './acousticRange.js';
 
 // G2 display dimensions (drawing target space)
 const G2_WIDTH = 576;
@@ -39,6 +40,14 @@ const phoneSensor   = new PhoneSensor();
 const spatialMapper = new SpatialMapper();
 let glassesSensor   = null;
 let visionTracker   = null;
+let acousticRanger  = null;
+
+// ── Acoustic correction weighting (LOW — IMU orientation dominates) ──────────
+let acousticZeroBearing = null;        // bearing captured at the fusion origin
+const ACOUSTIC_MIN_CONF = 0.5;         // only trust confident chirp detections
+const ACOUSTIC_PX_PER_DEG = 4;         // assumes firmware `direction` ~ degrees (tune on HW)
+const ACOUSTIC_WEIGHT = 0.4;           // low weight
+const ACOUSTIC_MAX_PX = 48;            // hard clamp (~8% of 576) — safety
 
 // ── UI refs ──────────────────────────────────────────────────────────────────
 let btnConnect, btnImu, btnCamera, btnCaptureSdk, btnTouch, btnSync, btnHello, btnClear;
@@ -82,6 +91,7 @@ function buildUI() {
       await g2Bridge.init();
       glassesConnected = true;
       glassesSensor = new GlassesSensor(g2Bridge.bridge);
+      acousticRanger = new AcousticRanger(g2Bridge.bridge);
 
       const pcr = g2Bridge.pageCreateResult;
       setStatus(`✅ Glasses connected (page:${pcr}) — Hello World is on the lenses`);
@@ -535,8 +545,16 @@ function updateDebugInfo() {
     `Phone IMU  : ${phone ? `P${phone.pitch.toFixed(0)} Y${phone.yaw.toFixed(0)} R${phone.roll.toFixed(0)}` : 'not ready'}`,
     `Glasses IMU: ${glasses ? `P${glasses.pitch.toFixed(0)} Y${glasses.yaw.toFixed(0)} R${glasses.roll.toFixed(0)}` : 'not ready'} (${glassesSensor?.eventCount ?? 0})`,
     `Origin sync: ${mapper.originSynced ? '✅' : '❌'}`,
+    `Acoustic   : ${acousticDebugLine()}`,
     `Camera     : ${cameraActive ? '✅' : '❌'}   Touch: ${touchMode ? '✅' : '❌'}`,
   ].join('\n');
+}
+
+function acousticDebugLine() {
+  if (!acousticRanger?.active) return 'off';
+  const a = acousticRanger.getLatest();
+  if (a.bearing == null) return 'listening…';
+  return `bearing ${a.bearing.toFixed(0)} · conf ${(a.confidence * 100).toFixed(0)}%`;
 }
 
 /**
@@ -552,6 +570,12 @@ function updateDebugInfo() {
  * @returns {object} payload to render
  */
 function fuseBridgePayload(payload) {
+  // Open the glasses mic for acoustic ranging during calibration; close when parked.
+  if (acousticRanger) {
+    if (payload.state === 'calibrate' && !acousticRanger.active) acousticRanger.start();
+    else if (payload.state === 'off' && acousticRanger.active) acousticRanger.stop();
+  }
+
   // 1. Feed live orientations into the fusion engine.
   const qx = Number(payload.qx), qy = Number(payload.qy);
   const qz = Number(payload.qz), qw = Number(payload.qw);
@@ -574,6 +598,7 @@ function fuseBridgePayload(payload) {
   if (Number.isFinite(calEpoch) && calEpoch !== lastCalEpoch && haveOrientations) {
     lastCalEpoch = calEpoch;
     spatialMapper.syncOriginFromCurrent();
+    acousticZeroBearing = acousticRanger?.getLatest().bearing ?? null;
   }
 
   // 3. Reproject an identified target's raw camera hit through the dual-IMU
@@ -587,7 +612,19 @@ function fuseBridgePayload(payload) {
   const camW = Number(payload.cw) || 960;
   const camH = Number(payload.ch) || 1280;
   const mapped = spatialMapper.mapFingerToGlasses(rx * camW, ry * camH, camW, camH);
-  return { ...payload, x: mapped.x / G2_WIDTH, y: mapped.y / G2_HEIGHT, fused: true };
+  let gx = mapped.x;
+
+  // Low-weight acoustic yaw correction: nudge the marker toward the acoustic
+  // bearing drift. Clamped + confidence-gated so a noisy/uncalibrated reading
+  // can never destabilize the dominant IMU solution.
+  const a = acousticRanger?.getLatest();
+  if (a && a.bearing != null && acousticZeroBearing != null && a.confidence >= ACOUSTIC_MIN_CONF) {
+    const driftDeg = a.bearing - acousticZeroBearing;
+    const nudge = Math.max(-ACOUSTIC_MAX_PX, Math.min(ACOUSTIC_MAX_PX,
+      driftDeg * ACOUSTIC_PX_PER_DEG * ACOUSTIC_WEIGHT));
+    gx += nudge;
+  }
+  return { ...payload, x: gx / G2_WIDTH, y: mapped.y / G2_HEIGHT, fused: true };
 }
 
 async function startPhoneBridgeMode() {
@@ -660,6 +697,8 @@ function stopPhoneBridgeMode() {
   btnPhoneBridge.removeAttribute('data-active');
   btnPhoneBridge.textContent = '🎯 Point Mode: OFF';
   phoneBridgeStatusEl.textContent = `Bridge endpoints: ${PHONE_BRIDGE_BASES.join(', ')}`;
+  if (acousticRanger?.active) acousticRanger.stop();
+  acousticZeroBearing = null;
   setStatus('Point Mode OFF');
 }
 

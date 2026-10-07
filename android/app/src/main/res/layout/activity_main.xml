@@ -46,6 +46,35 @@
             android:visibility="gone"
             android:text="Exit Overlay" />
 
+        <Button
+            android:id="@+id/buttonVoiceToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="12dp"
+            android:backgroundTint="#44506A"
+            android:text="🎤 Voice"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/voiceHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="60dp"
+            android:background="#99101829"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="Listening — say: calibrate · capture · cancel · recenter · exit"
+            android:textColor="#AEE5FF"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+
         <LinearLayout
             android:id="@+id/cameraControlsBar"
             android:layout_width="match_parent"

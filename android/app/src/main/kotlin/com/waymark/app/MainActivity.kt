@@ -122,6 +122,8 @@ class MainActivity : AppCompatActivity(), GlassesController {
     private lateinit var calibrationActionBar: View
     private lateinit var buttonCapturePoint: Button
     private lateinit var buttonCancelCalibration: Button
+    private lateinit var buttonVoiceToggle: Button
+    private lateinit var voiceHint: TextView
     private var latestVisionDebugState: VisionDebugState = VisionDebugState(lines = listOf("Vision: waiting for frames"))
     private var imageAnalyzer: PointAndDetectVisionSource? = null
     private var cameraExecutor: ExecutorService? = null
@@ -153,6 +155,9 @@ class MainActivity : AppCompatActivity(), GlassesController {
     private var phoneBridgeServer: PhoneBridgeServer? = null
     private var audioCaptureManager: WaymarkAudioCaptureManager? = null
     private var phoneOrientationTracker: PhoneOrientationTracker? = null
+    private var voiceCommandManager: VoiceCommandManager? = null
+    private var voiceEnabled = false
+    private val acousticPinger = AcousticPinger()
     private var g2GlassesManager: G2GlassesManager? = null
     private var bleStateJob: Job? = null
     private lateinit var g2ProtocolStore: G2ProtocolConfigStore
@@ -221,6 +226,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
             }
 
             override fun onCalibrationFinished(fit: AffineFit?, capturedCount: Int) {
+                acousticPinger.stop()
                 calibrationFit = fit
                 if (fit != null) persistCalibration(fit)
                 // A successful fit re-establishes the camera↔glasses anchor; tell
@@ -290,6 +296,8 @@ class MainActivity : AppCompatActivity(), GlassesController {
         calibrationActionBar = findViewById(R.id.calibrationActionBar)
         buttonCapturePoint = findViewById(R.id.buttonCapturePoint)
         buttonCancelCalibration = findViewById(R.id.buttonCancelCalibration)
+        buttonVoiceToggle = findViewById(R.id.buttonVoiceToggle)
+        voiceHint = findViewById(R.id.voiceHint)
 
         pointOverlay.isDeveloperModeEnabled = false
         pointOverlay.debugState = latestVisionDebugState
@@ -300,6 +308,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         setupNativeControlPanel()
         setupPointModeControls()
         setupCalibrationOverlay()
+        setupVoiceControls()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
 
@@ -362,6 +371,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         updateKeepScreenOn(false)
         stopVisionPipeline()
         audioCaptureManager?.stopCapture()
+        voiceCommandManager?.stop()
         g2GlassesManager?.disconnect()
         bleStateJob?.cancel()
         nativeScope.cancel()
@@ -1235,12 +1245,16 @@ class MainActivity : AppCompatActivity(), GlassesController {
             return
         }
         calibrationController.start()
+        // The chirp shares the audio channel with voice; only ping when the mic
+        // isn't being used for speech, so it can't false-trigger a command.
+        if (!voiceEnabled) acousticPinger.start()
         updateGlassesState()
         updateCalibrationUi()
     }
 
     private fun cancelCalibrationRoutine() {
         calibrationController.cancel()
+        acousticPinger.stop()
         lifecycleScope.launch(Dispatchers.IO) {
             phoneBridgeStore.writeIdle("Calibration cancelled", source = "waymark-vision", state = "idle")
         }
@@ -1252,6 +1266,70 @@ class MainActivity : AppCompatActivity(), GlassesController {
         buttonStartCalibration.setOnClickListener { startCalibrationRoutine() }
         buttonCapturePoint.setOnClickListener { captureCalibrationPoint() }
         buttonCancelCalibration.setOnClickListener { cancelCalibrationRoutine() }
+    }
+
+    /* ---------- Voice control (hands-free) ---------- */
+
+    private fun setupVoiceControls() {
+        voiceCommandManager = VoiceCommandManager(
+            context = this,
+            onCommand = { cmd -> runOnUiThread { onVoiceCommand(cmd) } },
+            onListeningChanged = { listening ->
+                runOnUiThread {
+                    buttonVoiceToggle.text = if (listening) "\uD83C\uDFA4 Listening\u2026" else "\uD83C\uDFA4 Voice"
+                    voiceHint.visibility = if (listening) View.VISIBLE else View.GONE
+                }
+            },
+        )
+        buttonVoiceToggle.setOnClickListener { toggleVoice() }
+        if (voiceCommandManager?.available != true) {
+            buttonVoiceToggle.isEnabled = false
+            buttonVoiceToggle.alpha = 0.5f
+        }
+    }
+
+    private fun toggleVoice() {
+        if (voiceEnabled) { stopVoice(); return }
+        if (!hasRequiredNativePermissions()) {
+            requestNativeRuntimePermissions()
+            Toast.makeText(this, "Grant microphone access for voice control", Toast.LENGTH_LONG).show()
+            return
+        }
+        // Speech recognition owns the mic; park the raw capture stub and the
+        // acoustic chirp (which the mic would otherwise hear as a command).
+        audioCaptureManager?.stopCapture()
+        acousticPinger.stop()
+        voiceEnabled = true
+        voiceCommandManager?.start()
+    }
+
+    private fun stopVoice() {
+        if (!voiceEnabled) return
+        voiceEnabled = false
+        voiceCommandManager?.stop()
+    }
+
+    private fun onVoiceCommand(cmd: VoiceCommandManager.VoiceCommand) {
+        when (cmd) {
+            VoiceCommandManager.VoiceCommand.VISION_ON ->
+                if (nativeVisionContainer.visibility != View.VISIBLE) switchVisionOverlay.isChecked = true
+            VoiceCommandManager.VoiceCommand.EXIT -> {
+                if (calibrationController.active) cancelCalibrationRoutine()
+                switchVisionOverlay.isChecked = false
+            }
+            VoiceCommandManager.VoiceCommand.CALIBRATE ->
+                if (nativeVisionContainer.visibility != View.VISIBLE) enterCalibrationOverlay()
+                else if (!calibrationController.active) startCalibrationRoutine()
+            VoiceCommandManager.VoiceCommand.CAPTURE ->
+                if (calibrationController.active) captureCalibrationPoint()
+            VoiceCommandManager.VoiceCommand.CANCEL ->
+                if (calibrationController.active) cancelCalibrationRoutine()
+            VoiceCommandManager.VoiceCommand.RECENTER -> {
+                phoneBridgeStore.bumpCalEpoch()
+                Toast.makeText(this, "Recentered \u2014 glasses re-synced to current pose", Toast.LENGTH_SHORT).show()
+            }
+        }
+        voiceHint.text = "Heard: ${cmd.name.lowercase()}"
     }
 
     /** Open the full-screen vision overlay ready to calibrate. */
@@ -1285,6 +1363,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         // buttonOverlayPower is the topmost root view; hide it while the overlay
         // is open so it never covers the in-overlay calibration controls.
         buttonOverlayPower.visibility = if (overlayOn) View.GONE else View.VISIBLE
+        buttonVoiceToggle.visibility = if (overlayOn) View.VISIBLE else View.GONE
         pointModeBar.visibility = if (overlayOn) View.GONE else View.VISIBLE
         buttonExitOverlay.visibility = if (overlayOn && !calibrating) View.VISIBLE else View.GONE
         calibrationStartBar.visibility = if (overlayOn && !calibrating) View.VISIBLE else View.GONE
@@ -1383,6 +1462,8 @@ class MainActivity : AppCompatActivity(), GlassesController {
         pointOverlay.debugState = latestVisionDebugState
         pointOverlay.invalidate()
         phoneOrientationTracker?.stop()
+        stopVoice()
+        acousticPinger.stop()
     }
 
     private fun showEvenSetupGuide() {
