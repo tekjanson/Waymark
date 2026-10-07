@@ -1,0 +1,31 @@
+{
+  "name": "even-reality-g2-eyes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:android": "node scripts/android-dev.mjs",
+    "dev:ios": "node scripts/ios-dev.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pack": "npm run build && evenhub pack app.json dist",
+    "test": "node --test src/*.test.js",
+    "qc:visual": "node scripts/visual-qc.mjs",
+    "setup:assets": "node scripts/copy-mediapipe.mjs",
+    "postinstall": "node scripts/copy-mediapipe.mjs"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "^0.1.14",
+    "@evenrealities/evenhub-simulator": "^0.9.5",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "vite": "^8.3.0",
+    "ws": "^8.21.3"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "^0.0.15",
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/hands": "^0.4.1675469240",
+    "gl-matrix": "^3.4.4"
+  }
+}

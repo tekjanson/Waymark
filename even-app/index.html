@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <!--
+      user-scalable=no prevents iOS from zooming on double-tap while the user
+      is pointing at the camera.  The touch-action CSS rule below reinforces this.
+    -->
+    <title>G2 AR Drawing</title>
+    <link rel="stylesheet" href="/src/style.css" />
+
+    <!--
+      MediaPipe Hands is a UMD bundle that injects window.Hands and
+      window.HAND_CONNECTIONS. We serve it (and its WASM/model assets) LOCALLY
+      from /public/mediapipe/hands/ rather than a CDN.
+
+      This is critical for the Even App WebView: the host blocks every network
+      request whose domain is not in app.json's network whitelist. A CDN script
+      tag would be silently dropped, leaving window.Hands undefined and killing
+      the camera pipeline before it starts. Local same-origin assets are always
+      allowed, so no network permission is needed for MediaPipe.
+
+      (camera_utils.js is intentionally NOT loaded — we drive MediaPipe from our
+      own single getUserMedia stream via requestAnimationFrame.)
+    -->
+    <script src="/mediapipe/hands/hands.js"></script>
+
+    <!-- Catch catastrophic JS errors and show them instead of a blank screen -->
+    <script>
+      window.addEventListener('error', function(e) {
+        document.body.style.cssText = 'background:#1a0000;color:#ff6b6b;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap;';
+        document.body.textContent = '❌ JS Error:\n' + e.message + '\n\n' + (e.filename || '') + ':' + e.lineno;
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        document.body.style.cssText = 'background:#1a0000;color:#ff6b6b;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap;';
+        document.body.textContent = '❌ Unhandled Promise Rejection:\n' + (e.reason?.message || e.reason || 'unknown');
+      });
+    </script>
+  </head>
+  <body>
+    <!--
+      #debug-canvas and #control-panel are injected dynamically by main.js
+      so that the JS module controls their lifecycle.  The <body> itself is
+      intentionally empty.
+    -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

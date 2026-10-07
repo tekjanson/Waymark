@@ -152,6 +152,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
     private lateinit var phoneBridgeStore: PhoneBridgeStore
     private var phoneBridgeServer: PhoneBridgeServer? = null
     private var audioCaptureManager: WaymarkAudioCaptureManager? = null
+    private var phoneOrientationTracker: PhoneOrientationTracker? = null
     private var g2GlassesManager: G2GlassesManager? = null
     private var bleStateJob: Job? = null
     private lateinit var g2ProtocolStore: G2ProtocolConfigStore
@@ -205,6 +206,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         bridge = WaymarkBridge(this)
         phoneBridgeStore = PhoneBridgeStore(this)
         phoneBridgeStore.writeIdle("Waiting for target", source = "waymark-vision", state = "idle")
+        phoneOrientationTracker = PhoneOrientationTracker(this)
         startPhoneBridgeServer()
         calibrationController = CalibrationController(object : CalibrationListener {
             override fun onCalibrationStep(step: Int, total: Int, targetX: Float, targetY: Float, prompt: String) {
@@ -221,6 +223,9 @@ class MainActivity : AppCompatActivity(), GlassesController {
             override fun onCalibrationFinished(fit: AffineFit?, capturedCount: Int) {
                 calibrationFit = fit
                 if (fit != null) persistCalibration(fit)
+                // A successful fit re-establishes the camera↔glasses anchor; tell
+                // the glasses app to re-sync its IMU fusion origin.
+                if (fit != null) phoneBridgeStore.bumpCalEpoch()
                 lifecycleScope.launch(Dispatchers.IO) {
                     phoneBridgeStore.writeIdle(
                         if (fit != null) "Calibration complete" else "Calibration failed",
@@ -567,6 +572,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         }
 
         initVisionPipeline()
+        phoneOrientationTracker?.start()
     }
 
     private fun initVisionPipeline() {
@@ -597,6 +603,8 @@ class MainActivity : AppCompatActivity(), GlassesController {
                     // glasses show the target dot; the user taps Capture to record.
                     val (gx, gy) = mapHitToGlasses(hitX, hitY)
                     lastPublishedLabel = target.label
+                    val camW = imageAnalyzer?.latestFrameWidth ?: 0
+                    val camH = imageAnalyzer?.latestFrameHeight ?: 0
                     lifecycleScope.launch(Dispatchers.IO) {
                         phoneBridgeStore.writeLatest(
                             label = target.label,
@@ -605,6 +613,10 @@ class MainActivity : AppCompatActivity(), GlassesController {
                             state = "identified",
                             x = gx,
                             y = gy,
+                            rawX = hitX,
+                            rawY = hitY,
+                            camW = if (camW > 0) camW else null,
+                            camH = if (camH > 0) camH else null,
                         )
                     }
                 }
@@ -624,6 +636,9 @@ class MainActivity : AppCompatActivity(), GlassesController {
             }
 
             val debugHandler: (VisionDebugState) -> Unit = { debugState ->
+                phoneOrientationTracker?.let {
+                    if (it.hasReading) phoneBridgeStore.setOrientation(it.x, it.y, it.z, it.w)
+                }
                 lifecycleScope.launch(Dispatchers.Main) {
                     latestVisionDebugState = debugState
                     val sourceAnalyzer = imageAnalyzer
@@ -1367,6 +1382,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         pointOverlay.currentTarget = null
         pointOverlay.debugState = latestVisionDebugState
         pointOverlay.invalidate()
+        phoneOrientationTracker?.stop()
     }
 
     private fun showEvenSetupGuide() {

@@ -25,6 +25,35 @@ class PhoneBridgeStore(context: Context) {
     @Volatile
     private var seq: Long = 0L
 
+    // Ambient phone orientation (unit quaternion x,y,z,w) + calibration epoch,
+    // stamped onto every payload so the glasses app can fuse IMU drift and know
+    // when to re-sync its origin. Updated out-of-band by the vision loop.
+    @Volatile private var oqx = 0f
+    @Volatile private var oqy = 0f
+    @Volatile private var oqz = 0f
+    @Volatile private var oqw = 1f
+    @Volatile private var hasOrientation = false
+    @Volatile private var calEpoch = 0
+
+    /** Update the ambient phone orientation (unit quaternion x,y,z,w). */
+    fun setOrientation(x: Float, y: Float, z: Float, w: Float) {
+        oqx = x; oqy = y; oqz = z; oqw = w; hasOrientation = true
+    }
+
+    /** Bump the calibration epoch — tells the glasses app to re-sync its fusion origin. */
+    fun bumpCalEpoch() { calEpoch += 1 }
+
+    /** Stamp ambient phone orientation + calibration epoch onto a payload. */
+    private fun stamp(payload: JSONObject): JSONObject {
+        if (hasOrientation) {
+            payload.put("qx", oqx.toDouble())
+                .put("qy", oqy.toDouble())
+                .put("qz", oqz.toDouble())
+                .put("qw", oqw.toDouble())
+        }
+        return payload.put("calEpoch", calEpoch)
+    }
+
     @Synchronized
     fun writeLatest(
         label: String,
@@ -33,6 +62,10 @@ class PhoneBridgeStore(context: Context) {
         state: String = "identified",
         x: Float? = null,
         y: Float? = null,
+        rawX: Float? = null,
+        rawY: Float? = null,
+        camW: Int? = null,
+        camH: Int? = null,
     ): JSONObject {
         seq += 1L
         val now = System.currentTimeMillis()
@@ -46,6 +79,13 @@ class PhoneBridgeStore(context: Context) {
             .put("state", state)
         if (x != null) payload.put("x", x.toDouble())
         if (y != null) payload.put("y", y.toDouble())
+        // Raw camera-frame hit (normalized 0..1) + frame dims let the glasses
+        // app run its own dual-IMU unprojection instead of the static affine.
+        if (rawX != null) payload.put("rx", rawX.toDouble())
+        if (rawY != null) payload.put("ry", rawY.toDouble())
+        if (camW != null) payload.put("cw", camW)
+        if (camH != null) payload.put("ch", camH)
+        stamp(payload)
 
         val tmp = File(dir, "$FILE_NAME.tmp")
         tmp.writeText(payload.toString(), Charsets.UTF_8)
@@ -72,6 +112,7 @@ class PhoneBridgeStore(context: Context) {
             .put("confidence", 0.0)
             .put("source", source)
             .put("state", state)
+        stamp(payload)
 
         val tmp = File(dir, "$FILE_NAME.tmp")
         tmp.writeText(payload.toString(), Charsets.UTF_8)
@@ -105,6 +146,7 @@ class PhoneBridgeStore(context: Context) {
             .put("cy", targetY.toDouble())
             .put("step", step)
             .put("steps", steps)
+        stamp(payload)
 
         val tmp = File(dir, "$FILE_NAME.tmp")
         tmp.writeText(payload.toString(), Charsets.UTF_8)

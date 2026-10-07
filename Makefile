@@ -66,6 +66,7 @@ endef
         dev test test-watch test-full \
 	examples-generate \
 	android-build android-lint android-test android-install android-install-help android-logcat \
+        even-install even-assets even-test even-qc even-build even-pack even-dev \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
         gemini-start gemini-logs dream-test dream-run dream-reset \
@@ -294,6 +295,27 @@ android-install: ## Install debug APK to connected Android device via adb
 android-launch: ## Launch Waymark app on connected Android device
 	adb shell monkey -p com.waymark.app -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 	@echo "Launched Waymark on connected device"
+
+even-install: ## Install Even app (glasses companion) dependencies
+	cd even-app && npm install
+
+even-assets: ## Restore MediaPipe runtime assets into even-app/public (from node_modules)
+	cd even-app && npm run setup:assets
+
+even-test: ## Run Even app unit tests (SpatialMapper fusion + identify)
+	cd even-app && npm test
+
+even-qc: ## Run Even app visual-QC simulator (bridge render decisions)
+	cd even-app && npm run qc:visual
+
+even-build: ## Build the Even app (Vite)
+	cd even-app && npm run build
+
+even-pack: ## Build + pack the Even app into out.ehpk for Even Hub upload
+	cd even-app && npm run pack
+
+even-dev: ## Run the Even app dev server (Vite)
+	cd even-app && npm run dev
 
 android-install-help: ## Show exact steps to authorize adb + install Waymark on a physical phone
 	@echo "── Waymark Android Install (Physical Phone) ───────────"

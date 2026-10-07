@@ -1,0 +1,24 @@
+{
+  "package_id": "com.evenreality.g2eyes",
+  "edition": "202601",
+  "name": "G2 AR Drawing",
+  "version": "0.2.0",
+  "min_app_version": "2.2.10",
+  "min_sdk_version": "0.0.15",
+  "entrypoint": "index.html",
+  "permissions": [
+    { "name": "camera", "desc": "Capture a photo to identify what you point at." },
+    {
+      "name": "network",
+      "desc": "Poll the on-phone Waymark bridge and optionally call Gemini for fallback identify mode.",
+      "whitelist": [
+        "localhost",
+        "127.0.0.1",
+        "http://127.0.0.1:8787",
+        "http://localhost:8787",
+        "https://generativelanguage.googleapis.com"
+      ]
+    }
+  ],
+  "supported_languages": ["en"]
+}
