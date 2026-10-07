@@ -88,6 +88,18 @@ class CalibrationController(private val listener: CalibrationListener) {
         if (window.isNotEmpty()) captureStep() else advance()
     }
 
+    /**
+     * Manually record the correspondence for the current target using the
+     * caller-supplied pointing hit (user tapped "Capture" while aligned).
+     */
+    @Synchronized
+    fun captureManual(hx: Float, hy: Float) {
+        if (!active) return
+        val target = targets.getOrNull(step) ?: return
+        captured.add(CalibrationSample(hx, hy, target.gx, target.gy))
+        advance()
+    }
+
     private fun captureStep() {
         val target = targets.getOrNull(step) ?: return
         val (mx, my) = median(window)

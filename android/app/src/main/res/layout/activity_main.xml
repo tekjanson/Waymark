@@ -83,6 +83,92 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- Calibration: entry button (vision overlay on, not calibrating) -->
+        <LinearLayout
+            android:id="@+id/calibrationStartBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="28dp"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/buttonStartCalibration"
+                android:layout_width="match_parent"
+                android:layout_height="68dp"
+                android:backgroundTint="#2563EB"
+                android:text="Start Calibration"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Calibration: step banner (top) -->
+        <LinearLayout
+            android:id="@+id/calibrationPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:background="#D9101829"
+            android:orientation="vertical"
+            android:padding="18dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/calibrationTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Calibration"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/calibrationPrompt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Look at the dot on your glasses, line your finger up with it, hold steady, then tap Capture."
+                android:textColor="#CFE0FF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <!-- Calibration: action bar (bottom, large touch targets) -->
+        <LinearLayout
+            android:id="@+id/calibrationActionBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="28dp"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/buttonCapturePoint"
+                android:layout_width="match_parent"
+                android:layout_height="84dp"
+                android:backgroundTint="#16A34A"
+                android:text="Capture Point"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/buttonCancelCalibration"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:backgroundTint="#44506A"
+                android:text="Cancel"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+        </LinearLayout>
+
     </FrameLayout>
 
     <LinearLayout

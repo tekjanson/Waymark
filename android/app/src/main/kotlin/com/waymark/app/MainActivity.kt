@@ -17,12 +17,11 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.util.Size
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
@@ -76,7 +75,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         private const val PERMISSION_REQUEST_NOTIFICATIONS = 1001
         private const val TARGET_STALE_TIMEOUT_MS = 900L
         private const val BRIDGE_IDLE_PUBLISH_INTERVAL_MS = 450L
-        private const val CALIB_STEP_TIMEOUT_MS = 9000L
+        private const val CAPTURE_DEBOUNCE_MS = 600L
         private const val PREF_GLASSES_CALIBRATION = "glasses_calibration_affine"
     }
 
@@ -115,6 +114,14 @@ class MainActivity : AppCompatActivity(), GlassesController {
     private lateinit var pointModeLabel: TextView
     private lateinit var switchPointMode: SwitchCompat
     private lateinit var buttonCalibrate: Button
+    private lateinit var calibrationStartBar: View
+    private lateinit var buttonStartCalibration: Button
+    private lateinit var calibrationPanel: View
+    private lateinit var calibrationTitle: TextView
+    private lateinit var calibrationPrompt: TextView
+    private lateinit var calibrationActionBar: View
+    private lateinit var buttonCapturePoint: Button
+    private lateinit var buttonCancelCalibration: Button
     private var latestVisionDebugState: VisionDebugState = VisionDebugState(lines = listOf("Vision: waiting for frames"))
     private var imageAnalyzer: PointAndDetectVisionSource? = null
     private var cameraExecutor: ExecutorService? = null
@@ -135,9 +142,11 @@ class MainActivity : AppCompatActivity(), GlassesController {
     @Volatile private var calibrationFit: AffineFit? = null
     @Volatile private var glassesStateCache: String = "{}"
     @Volatile private var lastPublishedLabel: String = ""
-    @Volatile private var calibrationStepStartMs = 0L
     private lateinit var calibrationController: CalibrationController
-    private val calibrationHandler = Handler(Looper.getMainLooper())
+    @Volatile private var calStep = 0
+    @Volatile private var calTotal = 0
+    @Volatile private var calPrompt = ""
+    private var lastCaptureAtMs = 0L
 
     private val nativeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var phoneBridgeStore: PhoneBridgeStore
@@ -199,11 +208,14 @@ class MainActivity : AppCompatActivity(), GlassesController {
         startPhoneBridgeServer()
         calibrationController = CalibrationController(object : CalibrationListener {
             override fun onCalibrationStep(step: Int, total: Int, targetX: Float, targetY: Float, prompt: String) {
-                calibrationStepStartMs = System.currentTimeMillis()
+                calStep = step + 1
+                calTotal = total
+                calPrompt = prompt
                 lifecycleScope.launch(Dispatchers.IO) {
                     phoneBridgeStore.writeCalibration(targetX, targetY, prompt, step + 1, total)
                 }
                 updateGlassesState()
+                runOnUiThread { updateCalibrationUi() }
             }
 
             override fun onCalibrationFinished(fit: AffineFit?, capturedCount: Int) {
@@ -223,6 +235,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
                         "Calibration failed — try again"
                     }
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                    updateCalibrationUi()
                 }
                 updateGlassesState()
             }
@@ -264,6 +277,14 @@ class MainActivity : AppCompatActivity(), GlassesController {
         pointModeLabel = findViewById(R.id.pointModeLabel)
         switchPointMode = findViewById(R.id.switchPointMode)
         buttonCalibrate = findViewById(R.id.buttonCalibrate)
+        calibrationStartBar = findViewById(R.id.calibrationStartBar)
+        buttonStartCalibration = findViewById(R.id.buttonStartCalibration)
+        calibrationPanel = findViewById(R.id.calibrationPanel)
+        calibrationTitle = findViewById(R.id.calibrationTitle)
+        calibrationPrompt = findViewById(R.id.calibrationPrompt)
+        calibrationActionBar = findViewById(R.id.calibrationActionBar)
+        buttonCapturePoint = findViewById(R.id.buttonCapturePoint)
+        buttonCancelCalibration = findViewById(R.id.buttonCancelCalibration)
 
         pointOverlay.isDeveloperModeEnabled = false
         pointOverlay.debugState = latestVisionDebugState
@@ -273,6 +294,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         setupWebView()
         setupNativeControlPanel()
         setupPointModeControls()
+        setupCalibrationOverlay()
 
         webView.loadUrl(WaymarkConfig.BASE_URL)
 
@@ -570,9 +592,9 @@ class MainActivity : AppCompatActivity(), GlassesController {
                 val hitY = target.normalizedHitPoint.y
                 lastHitX = hitX
                 lastHitY = hitY
-                if (calibrationController.active) {
-                    calibrationController.onPointing(hitX, hitY)
-                } else {
+                if (!calibrationController.active) {
+                    // During calibration we don't publish identifications — the
+                    // glasses show the target dot; the user taps Capture to record.
                     val (gx, gy) = mapHitToGlasses(hitX, hitY)
                     lastPublishedLabel = target.label
                     lifecycleScope.launch(Dispatchers.IO) {
@@ -795,6 +817,8 @@ class MainActivity : AppCompatActivity(), GlassesController {
             } else {
                 stopVisionPipeline()
             }
+            if (!isChecked && calibrationController.active) cancelCalibrationRoutine()
+            updateCalibrationUi()
         }
 
         buttonConnectG2.setOnClickListener {
@@ -1038,6 +1062,10 @@ class MainActivity : AppCompatActivity(), GlassesController {
 
     @Synchronized
     private fun publishBridgeIdleIfNeeded(text: String, state: String, force: Boolean = false) {
+        // While calibrating, the bridge must hold the "calibrate" target dot so
+        // the glasses keep drawing it. Never let the per-frame vision loop
+        // overwrite it with an idle "waiting" state.
+        if (calibrationController.active) return
         val now = System.currentTimeMillis()
         val textChanged = text != lastBridgeIdleText || state != lastBridgeIdleState
         val timedOut = (now - lastBridgeIdlePublishAtMs) >= BRIDGE_IDLE_PUBLISH_INTERVAL_MS
@@ -1128,7 +1156,7 @@ class MainActivity : AppCompatActivity(), GlassesController {
         // Tap runs the full guided point-at-target routine; long-press does a
         // quick centre calibration. Both work natively so the pipeline is
         // testable with `make android-install` (no web deploy needed).
-        buttonCalibrate.setOnClickListener { startCalibrationRoutine() }
+        buttonCalibrate.setOnClickListener { enterCalibrationOverlay() }
         buttonCalibrate.setOnLongClickListener { calibratePointMode(); true }
         updatePointModeUi()
     }
@@ -1191,29 +1219,65 @@ class MainActivity : AppCompatActivity(), GlassesController {
             Toast.makeText(this, "Grant camera access, then start calibration", Toast.LENGTH_LONG).show()
             return
         }
-        calibrationStepStartMs = System.currentTimeMillis()
         calibrationController.start()
-        calibrationHandler.removeCallbacks(calibrationTick)
-        calibrationHandler.postDelayed(calibrationTick, 500)
         updateGlassesState()
+        updateCalibrationUi()
     }
 
     private fun cancelCalibrationRoutine() {
         calibrationController.cancel()
-        calibrationHandler.removeCallbacks(calibrationTick)
         lifecycleScope.launch(Dispatchers.IO) {
             phoneBridgeStore.writeIdle("Calibration cancelled", source = "waymark-vision", state = "idle")
         }
         updateGlassesState()
+        updateCalibrationUi()
     }
 
-    private val calibrationTick = object : Runnable {
-        override fun run() {
-            if (!calibrationController.active) return
-            if (System.currentTimeMillis() - calibrationStepStartMs > CALIB_STEP_TIMEOUT_MS) {
-                calibrationController.forceCapture()
-            }
-            if (calibrationController.active) calibrationHandler.postDelayed(this, 500)
+    private fun setupCalibrationOverlay() {
+        buttonStartCalibration.setOnClickListener { startCalibrationRoutine() }
+        buttonCapturePoint.setOnClickListener { captureCalibrationPoint() }
+        buttonCancelCalibration.setOnClickListener { cancelCalibrationRoutine() }
+    }
+
+    /** Open the full-screen vision overlay ready to calibrate. */
+    private fun enterCalibrationOverlay() {
+        if (!hasRequiredNativePermissions()) {
+            requestNativeRuntimePermissions()
+            Toast.makeText(this, "Grant camera access to calibrate", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!pointModeEnabled) setPointMode(true)
+        switchVisionOverlay.isChecked = true   // reveals the camera overlay + starts the pipeline
+        updateCalibrationUi()
+    }
+
+    /** Record the current pointing position for the active calibration target. */
+    private fun captureCalibrationPoint() {
+        if (!calibrationController.active) return
+        // Debounce: a double-fire would silently skip a calibration target and
+        // degrade the fit. Ignore taps that land within the guard window.
+        val now = System.currentTimeMillis()
+        if (now - lastCaptureAtMs < CAPTURE_DEBOUNCE_MS) return
+        lastCaptureAtMs = now
+        buttonCapturePoint.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        calibrationController.captureManual(lastHitX, lastHitY)
+    }
+
+    /** Reflect overlay + calibration state in the native vision-overlay controls. */
+    private fun updateCalibrationUi() {
+        val overlayOn = nativeVisionContainer.visibility == View.VISIBLE
+        val calibrating = calibrationController.active
+        // buttonOverlayPower is the topmost root view; hide it while the overlay
+        // is open so it never covers the in-overlay calibration controls.
+        buttonOverlayPower.visibility = if (overlayOn) View.GONE else View.VISIBLE
+        pointModeBar.visibility = if (overlayOn) View.GONE else View.VISIBLE
+        buttonExitOverlay.visibility = if (overlayOn && !calibrating) View.VISIBLE else View.GONE
+        calibrationStartBar.visibility = if (overlayOn && !calibrating) View.VISIBLE else View.GONE
+        calibrationPanel.visibility = if (overlayOn && calibrating) View.VISIBLE else View.GONE
+        calibrationActionBar.visibility = if (overlayOn && calibrating) View.VISIBLE else View.GONE
+        if (calibrating) {
+            calibrationTitle.text = "Calibration · Point $calStep of $calTotal"
+            if (calPrompt.isNotBlank()) calibrationPrompt.text = calPrompt
         }
     }
 
