@@ -13,6 +13,8 @@
    ============================================================ */
 
 let _pickerLoaded = false;
+let _gapiScriptPromise = null;
+const GAPI_SRC = 'https://apis.google.com/js/api.js';
 
 /** GCP project number — required for Shared-with-me to populate. */
 function getAppId() {
@@ -23,8 +25,39 @@ function getAppId() {
  * Ensure the Picker library is loaded from gapi.
  * Returns a promise that resolves once google.picker is available.
  */
-function ensurePickerLoaded() {
+function ensureGapiScriptLoaded() {
+  if (typeof gapi !== 'undefined') return Promise.resolve();
+  if (_gapiScriptPromise) return _gapiScriptPromise;
+
+  _gapiScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${GAPI_SRC}"]`);
+    if (existing) {
+      const waitForGapi = () => {
+        if (typeof gapi !== 'undefined') {
+          resolve();
+          return;
+        }
+        window.setTimeout(waitForGapi, 30);
+      };
+      waitForGapi();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = GAPI_SRC;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google API client script'));
+    document.head.append(script);
+  });
+
+  return _gapiScriptPromise;
+}
+
+async function ensurePickerLoaded() {
   if (_pickerLoaded) return Promise.resolve();
+  await ensureGapiScriptLoaded();
   return new Promise((resolve, reject) => {
     if (typeof gapi === 'undefined') {
       reject(new Error('Google API client (gapi) not loaded'));
@@ -184,6 +217,54 @@ export async function pickFilesForImport(token) {
         }
       })
       .setTitle('Select files to import');
+
+    builder.build().setVisible(true);
+  });
+}
+
+/**
+ * Open a pre-filtered Google Picker for a single shared spreadsheet invite.
+ * @param {string} token
+ * @param {Object} opts
+ * @param {string} opts.fileId
+ * @param {string} [opts.fileName]
+ * @param {string} [opts.parentFolderId]
+ * @returns {Promise<{id:string,name:string,mimeType:string}|null>}
+ */
+export async function pickSpreadsheetForInvite(token, opts = {}) {
+  await ensurePickerLoaded();
+
+  return new Promise((resolve) => {
+    const sheetsView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setIncludeFolders(false)
+      .setSelectFolderEnabled(false);
+
+    if (opts.parentFolderId) {
+      sheetsView.setParent(opts.parentFolderId);
+    }
+    if (opts.fileName) {
+      sheetsView.setQuery(opts.fileName);
+    } else if (opts.fileId) {
+      sheetsView.setQuery(opts.fileId);
+    }
+
+    const builder = new google.picker.PickerBuilder()
+      .addView(sheetsView)
+      .setOAuthToken(token)
+      .setAppId(getAppId())
+      .setTitle(opts.fileName ? `Authorize "${opts.fileName}"` : 'Authorize shared spreadsheet')
+      .setCallback((data) => {
+        if (data.action === google.picker.Action.PICKED) {
+          const docs = mapDocs(data.docs || []);
+          resolve(docs[0] || null);
+        } else if (data.action === google.picker.Action.CANCEL) {
+          resolve(null);
+        }
+      });
+
+    if (opts.parentFolderId) {
+      builder.enableFeature(google.picker.Feature.NAV_HIDDEN);
+    }
 
     builder.build().setVisible(true);
   });

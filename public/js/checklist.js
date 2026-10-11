@@ -1482,8 +1482,8 @@ function updateTimestamp() {
 
 /* ---------- Share Modal ---------- */
 
-/** Open a share modal with copy-link, Google sharing, and Waymark link */
-function openShareModal(sheetId, sheetName) {
+/** Open a share modal with copy-link, invite link, and Google sharing controls. */
+async function openShareModal(sheetId, sheetName) {
   // Remove existing modal if open
   const existing = document.getElementById('share-modal');
   if (existing) existing.remove();
@@ -1492,6 +1492,14 @@ function openShareModal(sheetId, sheetName) {
   const waymarkLink = `${window.location.origin}${base}/#/sheet/${sheetId}`;
   const publicLink = `${window.location.origin}${base}/#/public/${sheetId}`;
   const googleEditLink = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing`;
+  let parentFolderId = '';
+  try {
+    const file = await api.drive.getFile(sheetId);
+    parentFolderId = file?.parents?.[0] || '';
+  } catch {
+    parentFolderId = '';
+  }
+  const inviteLink = api.drive.generateShareLink(sheetId, sheetName, parentFolderId || undefined);
 
   const modal = el('div', {
     id: 'share-modal',
@@ -1521,6 +1529,40 @@ function openShareModal(sheetId, sheetName) {
               type: 'button',
               dataset: { link: waymarkLink },
             }, ['📋 Copy']),
+          ]),
+        ]),
+        el('div', { className: 'share-section' }, [
+          el('label', { className: 'share-label' }, ['🤝 Collaborator Invite Link']),
+          el('p', { className: 'share-hint' }, ['Opens Waymark and auto-launches a pre-filtered Google Picker so collaborators can authorize this sheet with one click.']),
+          el('div', { className: 'share-link-row' }, [
+            el('input', {
+              className: 'share-link-input share-invite-link',
+              type: 'text',
+              value: inviteLink,
+              readOnly: true,
+            }),
+            el('button', {
+              className: 'btn btn-primary share-copy-btn',
+              type: 'button',
+              dataset: { link: inviteLink },
+            }, ['📋 Copy']),
+          ]),
+          el('div', { className: 'share-invite-permission-row' }, [
+            el('input', {
+              className: 'share-invite-email',
+              type: 'email',
+              placeholder: 'collaborator@email.com',
+            }),
+            el('select', {
+              className: 'share-invite-role',
+            }, [
+              el('option', { value: 'reader' }, ['Can view']),
+              el('option', { value: 'writer' }, ['Can edit']),
+            ]),
+            el('button', {
+              className: 'btn btn-secondary share-invite-grant-btn',
+              type: 'button',
+            }, ['Grant Access']),
           ]),
         ]),
         el('div', { className: 'share-section' }, [
@@ -1589,6 +1631,32 @@ function openShareModal(sheetId, sheetName) {
       }
     });
   });
+
+  const grantBtn = modal.querySelector('.share-invite-grant-btn');
+  const emailInput = modal.querySelector('.share-invite-email');
+  const roleInput = modal.querySelector('.share-invite-role');
+  if (grantBtn && emailInput && roleInput) {
+    grantBtn.addEventListener('click', async () => {
+      const email = (emailInput.value || '').trim();
+      if (!email) {
+        showToast('Enter a collaborator email first', 'error');
+        return;
+      }
+      const role = roleInput.value === 'writer' ? 'writer' : 'reader';
+      grantBtn.disabled = true;
+      grantBtn.textContent = 'Granting…';
+      try {
+        await api.drive.createDrivePermission(sheetId, email, role);
+        showToast(`Access granted to ${email}`, 'success');
+        emailInput.value = '';
+      } catch (err) {
+        showToast(`Could not grant access: ${err.message}`, 'error');
+      } finally {
+        grantBtn.disabled = false;
+        grantBtn.textContent = 'Grant Access';
+      }
+    });
+  }
 
   document.body.append(modal);
 }
