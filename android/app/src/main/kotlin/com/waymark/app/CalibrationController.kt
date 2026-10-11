@@ -2,11 +2,12 @@
    CalibrationController.kt — Guided point-at-target routine
 
    Drives a short spatial-calibration routine: the user is asked to
-   point at a sequence of on-glasses targets. For each target we
-   collect pointing hit-points, wait until they are spatially stable,
-   capture the median correspondence, then advance. When all targets
-   are captured we fit an affine transform (CalibrationSolver) that
-   maps future pointing to the glasses view.
+   look at a sequence of on-glasses targets while the phone camera and
+   Waymark select the highlighted object. For each target we collect the
+   current object hit-point, wait until it is spatially stable, capture
+   the median correspondence, then advance. When all targets are captured
+   we fit an affine transform (CalibrationSolver) that maps future pointing
+   to the glasses view without depending on a noisy hand-point calibration.
 
    Pure logic (no Android deps) so the state machine is testable.
    ============================================================ */
@@ -28,11 +29,11 @@ class CalibrationController(private val listener: CalibrationListener) {
     data class Target(val gx: Float, val gy: Float, val prompt: String)
 
     private val targets = listOf(
-        Target(0.50f, 0.50f, "Point at the center dot and hold"),
-        Target(0.22f, 0.28f, "Point at the top-left dot and hold"),
-        Target(0.78f, 0.28f, "Point at the top-right dot and hold"),
-        Target(0.78f, 0.72f, "Point at the bottom-right dot and hold"),
-        Target(0.22f, 0.72f, "Point at the bottom-left dot and hold"),
+        Target(0.50f, 0.50f, "Look at the highlighted center target and hold"),
+        Target(0.22f, 0.28f, "Look at the highlighted top-left target and hold"),
+        Target(0.78f, 0.28f, "Look at the highlighted top-right target and hold"),
+        Target(0.78f, 0.72f, "Look at the highlighted bottom-right target and hold"),
+        Target(0.22f, 0.72f, "Look at the highlighted bottom-left target and hold"),
     )
 
     @Volatile var active = false
@@ -64,9 +65,9 @@ class CalibrationController(private val listener: CalibrationListener) {
     }
 
     /**
-     * Feed a pointing hit-point (camera-normalized 0..1). When the recent
-     * window is spatially stable, the current step is captured and the
-     * routine advances.
+     * Feed the current selected object hit-point (camera-normalized 0..1) as
+     * the user looks at the highlighted target. When the recent window is
+     * spatially stable, the current step is captured and the routine advances.
      */
     @Synchronized
     fun onPointing(hx: Float, hy: Float) {
@@ -90,7 +91,8 @@ class CalibrationController(private val listener: CalibrationListener) {
 
     /**
      * Manually record the correspondence for the current target using the
-     * caller-supplied pointing hit (user tapped "Capture" while aligned).
+     * caller-supplied eye-alignment hit (user tapped "Capture" while aligned
+     * to the highlighted target).
      */
     @Synchronized
     fun captureManual(hx: Float, hy: Float) {

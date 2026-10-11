@@ -43,6 +43,7 @@ const MOCK_AUTH_COOKIE = {
  * @param {boolean}  [opts.githubSource]             simulate GitHub source mode (sets __WAYMARK_GITHUB_SOURCE)
  * @param {string}   [opts.githubRef]                ref to inject as __WAYMARK_GITHUB_REF (default 'main')
  * @param {string}   [opts.theme]                    seed 'waymark_theme' in localStorage before load (e.g. 'dark', 'light', 'system')
+ * @param {string}   [opts.driveAccess]              simulate Drive access tier ('full' | 'file'); sets the waymark_drive_access cookie the mock /auth/refresh echoes
  */
 async function setupApp(page, opts = {}) {
   const {
@@ -59,10 +60,23 @@ async function setupApp(page, opts = {}) {
     githubSource,
     githubRef = 'main',
     theme,
+    driveAccess,
   } = opts;
 
   /* 1. Auth — inject cookie before any navigation */
-  await page.context().addCookies([MOCK_AUTH_COOKIE]);
+  const cookies = [MOCK_AUTH_COOKIE];
+  if (driveAccess) {
+    cookies.push({
+      name:     'waymark_drive_access',
+      value:    driveAccess,
+      domain:   'localhost',
+      path:     '/auth',
+      httpOnly: true,
+      secure:   false,
+      sameSite: 'Lax',
+    });
+  }
+  await page.context().addCookies(cookies);
 
   /* 2. LocalStorage — use addInitScript so values exist before app JS runs */
   const lsEntries = {};

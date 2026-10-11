@@ -682,7 +682,10 @@ async function startPhoneBridgeMode() {
     // so what we verify off-device is exactly what paints on the lenses.
     await renderBridgePayload(g2Bridge, rendered).catch(() => {});
 
-    phoneBridgeTimer = setTimeout(tick, 130);
+    // Poll fast while locked on an object (smooth tracking); idle slow to
+    // conserve BLE + CPU when there's nothing moving.
+    const nextDelay = rendered.state === 'identified' ? 45 : 140;
+    phoneBridgeTimer = setTimeout(tick, nextDelay);
   };
 
   await tick();

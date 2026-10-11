@@ -27,7 +27,8 @@ export async function renderBridgePayload(g2, payload = {}) {
   const hasPos = Number.isFinite(nx) && Number.isFinite(ny);
   const identified = state === 'identified';
 
-  // Guided calibration: draw the target reticle the user must point at.
+  // Guided calibration: draw the target reticle the user looks at while the
+  // phone camera re-anchors the selected object to the glasses view.
   if (state === 'calibrate') {
     const cx = Number(payload.cx);
     const cy = Number(payload.cy);
@@ -49,7 +50,7 @@ export async function renderBridgePayload(g2, payload = {}) {
   // Otherwise → a centered status/label line (idle, no-hand, offline…).
   const mode = identified && hasPos ? 'marker' : 'text';
   await g2.renderHud({
-    text: text || 'Point at something',
+    text: text || 'Look at something',
     nx: hasPos ? nx : null,
     ny: hasPos ? ny : null,
     marker: identified && hasPos,

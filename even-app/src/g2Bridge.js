@@ -75,8 +75,8 @@ const STROKE_WIDTH = 6;
 // Minimum time between distinct HUD repaints. Combined with content-signature
 // dedup AND per-tile diffing (only changed tiles go over BLE), this keeps the
 // stream smooth: a stable scene sends ZERO frames; a moving marker repaints
-// cheaply (usually 1–2 tiles) at up to ~11×/sec.
-const HUD_MIN_REDRAW_MS = 90;
+// cheaply (1 tile) at up to ~22x/sec.
+const HUD_MIN_REDRAW_MS = 45;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // G2Bridge
@@ -249,16 +249,16 @@ export class G2Bridge {
     ctx.textBaseline = 'middle';
 
     if (mx !== null) {
-      // AR annotation: bracket the object and label it right beside the bracket
-      // (not at a fixed top-center spot, which collided with high markers).
+      // Bracket tracks the object; the label sits in a FIXED top band. A moving
+      // marker then only ever redraws its own tile(s), never the label tiles —
+      // so a tracking update is 1–2 BLE tiles instead of all four (the old
+      // label-follows-marker path repainted the whole top row on every move).
       this._drawMarker(ctx, mx, my);
-      const label2 = label.length > 22 ? `${label.slice(0, 21)}…` : label;
-      ctx.font = 'bold 30px sans-serif';
-      const halfW = ctx.measureText(label2).width / 2;
-      const cxLabel = clamp(mx, halfW + 10, G2_WIDTH - halfW - 10);
-      const above = my - 46 - 22;           // 46 = bracket half-size
-      const labelY = above > 16 ? above : (my + 46 + 24);
-      if (label2) ctx.fillText(label2, cxLabel, labelY);
+      const label2 = label.length > 28 ? `${label.slice(0, 27)}\u2026` : label;
+      if (label2) {
+        ctx.font = 'bold 28px sans-serif';
+        ctx.fillText(label2, G2_WIDTH / 2, 24);
+      }
     } else {
       // Status / message: one big line in the upper HUD band (keeps the centre
       // of view clear and touches only the top two tiles — half the BLE cost).

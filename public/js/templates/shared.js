@@ -8,6 +8,7 @@
 import { el, showToast } from '../ui.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
+export * as encryption from '../encryption.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
@@ -144,13 +145,6 @@ export const TEMPLATES = {};
  * @param {Object} definition — template definition with name, icon, color, priority, detect, columns, render
  */
 export function registerTemplate(key, definition) {
-  // A template MUST provide detect() and render(). Reject malformed definitions
-  // (e.g. registry-metadata like detectSignals instead of a real detect()) so a
-  // single bad template can never crash detectTemplate() for every sheet.
-  if (!definition || typeof definition.detect !== 'function' || typeof definition.render !== 'function') {
-    console.error('[templates] Ignoring invalid template "' + key + '": it must export detect() and render() functions.', definition);
-    return;
-  }
   TEMPLATES[key] = definition;
 }
 
@@ -213,18 +207,6 @@ export function getMissingMigrations(template, cols) {
 
 /* ---------- Inline-editable cell ---------- */
 
-/** Character count above which an inline editor opens as a multi-line textarea. */
-const LONG_TEXT_THRESHOLD = 70;
-
-/**
- * Whether a value is long enough (or multi-line) to warrant a textarea editor.
- * @param {string} v
- * @returns {boolean}
- */
-function _looksLong(v) {
-  return typeof v === 'string' && (v.includes('\n') || v.length > LONG_TEXT_THRESHOLD);
-}
-
 /**
  * Create a DOM element whose text content becomes an inline <input> on click.
  * On blur / Enter the edit is committed via emitEdit(); on Escape it is cancelled.
@@ -263,24 +245,26 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
       showToast('This row is locked — editing is disabled', 'warn');
       return;
     }
-    if (wrapper.querySelector('input, textarea')) return;  // already editing
-
+    if (wrapper.querySelector('input')) return;            // already editing
     const current = text || '';
-    let control = null;
-    let done = false;
-    let upgrading = false;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'editable-cell-input';
+    input.value = current;
 
-    function paint(value) {
-      if (opts.renderContent) opts.renderContent(wrapper);
-      else wrapper.textContent = value || '—';
-    }
+    wrapper.textContent = '';
+    wrapper.append(input);
+    input.focus();
+    input.select();
 
     function commit() {
-      if (done) return;
-      done = true;
-      wrapper.classList.remove('editing-multiline');
-      const newValue = control.value.trim();
-      paint(newValue);
+      const newValue = input.value.trim();
+      input.removeEventListener('blur', commit);
+      if (opts.renderContent) {
+        opts.renderContent(wrapper);
+      } else {
+        wrapper.textContent = newValue || '—';
+      }
       if (newValue !== current && !(current === '' && newValue === '')) {
         emitEdit(rowIdx, colIdx, newValue);
         if (opts.onCommit) opts.onCommit(newValue, wrapper);
@@ -288,64 +272,19 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
     }
 
     function cancel() {
-      if (done) return;
-      done = true;
-      wrapper.classList.remove('editing-multiline');
-      paint(current);
-    }
-
-    function autoGrow(ta) {
-      ta.style.height = 'auto';
-      ta.style.height = `${Math.min(ta.scrollHeight, 320)}px`;
-    }
-
-    /* Mount an <input> or <textarea>; re-mountable so a single-line input can
-       upgrade to a textarea once its content grows long. */
-    function mount(kind, value, caretToEnd) {
-      const existing = wrapper.querySelector('input, textarea');
-      if (existing) { upgrading = true; existing.remove(); upgrading = false; }
-
-      const isTextarea = kind === 'textarea';
-      control = document.createElement(isTextarea ? 'textarea' : 'input');
-      control.className = isTextarea ? 'editable-cell-textarea' : 'editable-cell-input';
-      if (!isTextarea) control.type = 'text';
-      control.value = value;
-      wrapper.classList.toggle('editing-multiline', isTextarea);
-      wrapper.append(control);
-      control.focus();
-      if (caretToEnd) {
-        const n = value.length;
-        try { control.setSelectionRange(n, n); } catch (_) { /* noop */ }
+      input.removeEventListener('blur', commit);
+      if (opts.renderContent) {
+        opts.renderContent(wrapper);
       } else {
-        control.select();
-      }
-
-      control.addEventListener('blur', () => { if (!upgrading) commit(); });
-      control.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { e.preventDefault(); cancel(); return; }
-        if (e.key === 'Enter') {
-          if (isTextarea) {
-            /* Ctrl/Cmd+Enter commits; plain Enter inserts a newline */
-            if (e.ctrlKey || e.metaKey) { e.preventDefault(); control.blur(); }
-          } else {
-            e.preventDefault(); control.blur();
-          }
-        }
-      });
-
-      if (isTextarea) {
-        autoGrow(control);
-        control.addEventListener('input', () => autoGrow(control));
-      } else {
-        /* Grow into a textarea automatically once the text gets long */
-        control.addEventListener('input', () => {
-          if (_looksLong(control.value)) mount('textarea', control.value, true);
-        });
+        wrapper.textContent = current || '—';
       }
     }
 
-    wrapper.textContent = '';
-    mount(_looksLong(current) ? 'textarea' : 'input', current, false);
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
   }
 
   wrapper.addEventListener('click', (e) => {
@@ -567,117 +506,8 @@ export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
-/* ---------- Date-picker editable cell ---------- */
-
-const _ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Format a stored date value for display. ISO dates (YYYY-MM-DD) render as a
- * friendly "Mon D, YYYY"; any other free-form text (e.g. "2 weeks before") is
- * shown verbatim so existing sheets are never mangled.
- * @param {string} v
- * @returns {string}
- */
-function formatDateDisplay(v) {
-  if (!v) return '—';
-  if (_ISO_DATE.test(v)) {
-    const d = new Date(`${v}T00:00:00`);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    }
-  }
-  return v;
-}
-
-/**
- * Create a cell that opens a native date picker (`<input type="date">`) on click.
- * On commit the value is stored as an ISO date (YYYY-MM-DD). Free-form text
- * values are preserved when the picker is left untouched, so mixed date/label
- * columns keep working.
- *
- * @param {string}   tag    — wrapper element tag (e.g. 'span')
- * @param {Object}   attrs  — attributes forwarded to el()
- * @param {string}   text   — initial stored value
- * @param {number}   rowIdx — 1-based data-row index for emitEdit()
- * @param {number}   colIdx — 0-based column index for emitEdit()
- * @param {Object}   [opts] — extra options (onCommit)
- * @returns {HTMLElement}
- */
-export function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
-  let current = text || '';
-  const wrapper = el(tag, {
-    ...attrs,
-    className: `${attrs.className || ''} editable-cell date-cell`.trim(),
-    tabindex: '0',
-    title: attrs.title || 'Click to pick a date',
-  });
-  wrapper.textContent = formatDateDisplay(current);
-  wrapper.dataset.rowIdx = String(rowIdx);
-  wrapper.dataset.colIdx = String(colIdx);
-
-  function startEdit() {
-    if (_editLocked) return;
-    if (_protectedRows.has(rowIdx)) {
-      showToast('This row is locked — editing is disabled', 'warn');
-      return;
-    }
-    if (wrapper.querySelector('input')) return;
-
-    const input = document.createElement('input');
-    input.type = 'date';
-    input.className = 'editable-cell-input date-cell-input';
-    if (_ISO_DATE.test(current)) input.value = current;
-
-    wrapper.textContent = '';
-    wrapper.append(input);
-    input.focus();
-    /* Best-effort: open the native picker immediately on supported browsers */
-    if (typeof input.showPicker === 'function') {
-      try { input.showPicker(); } catch (_) { /* user gesture / support guard */ }
-    }
-
-    function commit() {
-      input.removeEventListener('blur', commit);
-      const picked = input.value; // '' or 'YYYY-MM-DD'
-      let newValue;
-      if (picked) newValue = picked;
-      else if (_ISO_DATE.test(current)) newValue = ''; // cleared a real date
-      else newValue = current;                         // preserve free-form text
-      wrapper.textContent = formatDateDisplay(newValue);
-      if (newValue !== current) {
-        current = newValue;
-        emitEdit(rowIdx, colIdx, newValue);
-        if (opts.onCommit) opts.onCommit(newValue, wrapper);
-      }
-    }
-
-    function cancel() {
-      input.removeEventListener('blur', commit);
-      wrapper.textContent = formatDateDisplay(current);
-    }
-
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-    });
-  }
-
-  wrapper.addEventListener('click', (e) => {
-    e.stopPropagation();
-    startEdit();
-  });
-
-  return wrapper;
-}
-
 /* Re-export el and showToast for convenience — templates only need to import from shared */
 export { el, showToast };
-
-/* Re-export the camera still-capture helper so template sub-modules can access
-   it without importing outside their folder (§1.5). */
-export { captureStillFromCamera } from '../camera-capture.js';
-
 
 /* ---------- Generic Helpers ---------- */
 
@@ -848,16 +678,8 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
     : [];
   if (fields.length === 0) return el('span');
 
-  const noun = opts.noun || templateDef.itemNoun || 'Item';
+  const noun = templateDef.itemNoun || 'Item';
   const color = templateDef.color || 'var(--color-primary)';
-
-  /* Per-instance role overrides — let callers (e.g. per-category and
-     new-category checklist forms) hide or require specific roles without
-     changing the template's addRowFields() definition. */
-  const hiddenRoles = new Set(opts.hiddenRoles || []);
-  const requiredRoles = new Set(opts.requiredRoles || []);
-  const isHidden = (f) => !!f.hidden || hiddenRoles.has(f.role);
-  const isRequired = (f) => !!f.required || requiredRoles.has(f.role);
 
   const root = el('div', { className: 'add-row-root' });
 
@@ -876,7 +698,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
   const listMap = {};
 
   for (const field of fields) {
-    if (isHidden(field)) continue;
+    if (field.hidden) continue;
 
     const fieldWrap = el('div', { className: 'add-row-field' });
     const label = el('label', { className: 'add-row-field-label' }, [field.label]);
@@ -1068,7 +890,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
 
   function clearForm() {
     for (const field of fields) {
-      if (isHidden(field)) continue;
+      if (field.hidden) continue;
       const defaultVal = (opts.defaults && opts.defaults[field.role]) || field.defaultValue || '';
       const resolved = defaultVal === '__TODAY__'
         ? new Date().toISOString().slice(0, 10)
@@ -1117,7 +939,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
   function getValues() {
     const values = {};
     for (const field of fields) {
-      if (isHidden(field)) {
+      if (field.hidden) {
         const defaultVal = (opts.defaults && opts.defaults[field.role]) || field.defaultValue || '';
         values[field.role] = defaultVal === '__TODAY__'
           ? new Date().toISOString().slice(0, 10)
@@ -1146,7 +968,7 @@ export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts 
     form.querySelectorAll('.add-row-required').forEach(e => e.classList.remove('add-row-required'));
 
     for (const field of fields) {
-      if (!isRequired(field) || isHidden(field)) continue;
+      if (!field.required || field.hidden) continue;
       if (field.type === 'list') {
         const info = listMap[field.role];
         const hasItems = info && info.items.some(item => {
@@ -1243,36 +1065,6 @@ export {
   formatAxisLabel,
 } from './charts.js';
 
-/* ---------- Nutrition & fitness engine re-exports ---------- */
-
-/* Shared by the Calorie Tracker and Meal Planner (§1.5 — templates import
-   only from shared.js). See templates/nutrition.js. */
-export {
-  DEFAULT_WEIGHT_KG,
-  parseNum,
-  round1,
-  scaleMacros,
-  searchFoodDatabase,
-  loadFoodDatabase,
-  expandReference,
-  _setFoodDatabase,
-  lookupBarcode,
-  normalizeOffProduct,
-  caloriesFromMet,
-  loadExerciseDatabase,
-  expandExercises,
-  _setExerciseDatabase,
-  searchExerciseDatabase,
-  ACTIVITY_FACTORS,
-  ACTIVITY_LABELS,
-  GOAL_LABELS,
-  computeBMR,
-  computeTDEE,
-  computeCalorieGoal,
-  computeMacroTargets,
-  goalFromProfile,
-} from './nutrition.js';
-
 /* ---------- Chat preference re-exports ---------- */
 
 /* Templates access these via shared.js (§1.5 — templates import only from shared.js) */
@@ -1293,10 +1085,6 @@ export {
   setHighPassFreq,
   getEchoSuppression,
   setEchoSuppression,
-  getCalorieProfile,
-  setCalorieProfile,
-  getTemplatePref,
-  setTemplatePref,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */
@@ -1364,73 +1152,6 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
   throw lastErr || new Error('All API keys exhausted. Try again later.');
 }
 
-/**
- * Call the Gemini multimodal API with an inline image and return the text
- * response. Same key-rotation strategy as generateText(). Templates use this
- * for vision features (e.g. meal-photo macro estimation) — §1.5-compliant.
- * @param {string} systemPrompt
- * @param {string} base64Image   raw base64 (no data: prefix)
- * @param {string} [mimeType]
- * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
- * @returns {Promise<string>}
- */
-export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
-  const keys = pickBestKey();
-  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
-
-  const model = getAgentModel() || DEFAULT_MODEL;
-  const url = geminiUrl(model, 'generateContent');
-  const parts = [{ inlineData: { mimeType, data: base64Image } }];
-  if (opts.userMessage) parts.unshift({ text: opts.userMessage });
-  const body = {
-    contents: [{ role: 'user', parts }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      temperature: opts.temperature ?? 0.4,
-      maxOutputTokens: opts.maxTokens ?? 1024,
-    },
-  };
-
-  let lastErr;
-  for (const keyEntry of keys) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: geminiHeaders(keyEntry.key),
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
-      const errBody = await res.json().catch(() => ({}));
-      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
-      if (res.status === 429 || res.status === 503) continue;
-      throw lastErr;
-    }
-
-    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-    if (!text) throw new Error('No response from AI. Try again.');
-    return text;
-  }
-
-  throw lastErr || new Error('All API keys exhausted. Try again later.');
-}
-
-/**
- * Call the Gemini multimodal API with an inline audio clip and return the
- * text response. Thin wrapper over the same inlineData plumbing as
- * generateVision — used for voice-driven features (e.g. speak-to-log meals).
- * @param {string} systemPrompt
- * @param {string} base64Audio   raw base64 (no data: prefix)
- * @param {string} [mimeType]    e.g. 'audio/webm', 'audio/mp4', 'audio/ogg'
- * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
- * @returns {Promise<string>}
- */
-export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
-  return generateVision(systemPrompt, base64Audio, mimeType, opts);
-}
-
 /* ---------- Sheet data helpers (for lazy-loaded sub-sheets) ---------- */
 
 import { api } from '../api-client.js';
@@ -1457,50 +1178,15 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
 }
 
 /**
- * Update a single cell in a Google Sheet.
- * @param {string} sheetId
- * @param {string} sheetTitle  e.g. 'Sheet1'
- * @param {number} row         0-based row index (includes header)
- * @param {number} col         0-based column index
- * @param {string} value
+ * Delete rows from a Google Sheet.
+ * Used by templates to remove rows from sheets (e.g. deleting an agent).
+ * @param {string} spreadsheetId  Spreadsheet ID
+ * @param {number} sheetId        Sheet tab ID (numeric)
+ * @param {number} startIndex     Zero-based start index (inclusive)
+ * @param {number} endIndex       Zero-based end index (exclusive)
  */
-export async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
-  return api.sheets.updateCell(sheetId, sheetTitle, row, col, value);
-}
-
-/**
- * Delete a single row from a Google Sheet.
- * @param {string} sheetId
- * @param {number} numericSheetId  numeric Google Sheets tab ID (0 in mock mode)
- * @param {number} rowIndex        0-based row index including header
- */
-export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
-  return api.sheets.deleteRows(sheetId, numericSheetId || 0, rowIndex, rowIndex + 1);
-}
-
-/**
- * Create-or-replace a named tab's full contents within a workbook.
- * Used by templates to persist their own metadata as a dedicated tab
- * (e.g. the calorie tracker's "Profile" tab) — the Waymark "everything
- * persists" primitive built on multi-tab support.
- * @param {string}     sheetId
- * @param {string}     tabTitle
- * @param {string[][]} rows       2D array including header row
- */
-export async function writeSheetTab(sheetId, tabTitle, rows) {
-  return api.sheets.writeTab(sheetId, tabTitle, rows);
-}
-
-/**
- * Find a tab by title (case-insensitive) within a workbook's tabs[] array.
- * @param {Array<{title:string, values:string[][]}>} tabs
- * @param {string} tabTitle
- * @returns {{title:string, values:string[][]}|null}
- */
-export function readSheetTab(tabs, tabTitle) {
-  if (!Array.isArray(tabs)) return null;
-  const want = (tabTitle || '').toLowerCase();
-  return tabs.find(t => (t.title || '').toLowerCase() === want) || null;
+export async function deleteSheetRows(spreadsheetId, sheetId, startIndex, endIndex) {
+  return api.sheets.deleteRows(spreadsheetId, sheetId, startIndex, endIndex);
 }
 
 /**

@@ -3,8 +3,7 @@
    with inline editing, category grouping, and search
    ============================================================ */
 
-import { el, cell, editableCell, delegateEvent, registerTemplate } from './shared.js';
-import * as encryption from '../encryption.js';
+import { el, cell, editableCell, delegateEvent, registerTemplate, encryption } from './shared.js';
 
 /* ---------- Copy to clipboard helper ---------- */
 

@@ -22,7 +22,7 @@
 resource "null_resource" "verify_scopes" {
   # Re-run whenever the declared scope list changes
   triggers = {
-    scopes_hash = sha256(join(",", local.api_scopes))
+    scopes_hash = sha256(join(",", concat(local.api_scopes, local.optional_scopes)))
   }
 
   provisioner "local-exec" {
@@ -36,6 +36,12 @@ resource "null_resource" "verify_scopes" {
       echo "consent screen in Cloud Console for project: ${var.project_id}"
       echo ""
       %{for s in local.api_scopes~}
+      echo "  • ${s}"
+      %{endfor~}
+      echo ""
+      echo "Optional upgrade scope (restricted — request only for the 'full"
+      echo "access' tier; requires app verification for public production):"
+      %{for s in local.optional_scopes~}
       echo "  • ${s}"
       %{endfor~}
       echo ""

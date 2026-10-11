@@ -249,8 +249,8 @@ const PAGE_PROGRAM = `
   await renderPayload('bridge-identified-center', { state: 'identified', text: 'Keyboard', x: 0.5, y: 0.5 });
   await renderPayload('bridge-identified-corner', { state: 'identified', text: 'Coffee mug', x: 0.82, y: 0.30 });
   await renderPayload('bridge-identified-no-pos', { state: 'identified', text: 'Laptop' });
-  await renderPayload('bridge-calibrate-center', { state: 'calibrate', text: 'Point at the center dot and hold', cx: 0.50, cy: 0.50, step: 1, steps: 5 });
-  await renderPayload('bridge-calibrate-topleft', { state: 'calibrate', text: 'Point at the top-left dot and hold', cx: 0.22, cy: 0.28, step: 2, steps: 5 });
+  await renderPayload('bridge-calibrate-center', { state: 'calibrate', text: 'Look at the highlighted center target and hold', cx: 0.50, cy: 0.50, step: 1, steps: 5 });
+  await renderPayload('bridge-calibrate-topleft', { state: 'calibrate', text: 'Look at the highlighted top-left target and hold', cx: 0.22, cy: 0.28, step: 2, steps: 5 });
   await renderPayload('bridge-idle', { state: 'idle', text: 'Waiting for target' });
   await renderPayload('bridge-no-hand', { state: 'no-hand', text: 'No hand detected' });
 

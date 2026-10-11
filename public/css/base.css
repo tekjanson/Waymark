@@ -1742,6 +1742,15 @@ html.waymark-android #search-input {
 .settings-hash-link { color: #4338ca; text-decoration: none; font-weight: 500; }
 .settings-hash-link:hover { text-decoration: underline; }
 
+/* Google Drive access tier */
+.settings-drive-access { display: flex; flex-direction: column; gap: 12px; }
+.drive-access-status { display: flex; align-items: flex-start; gap: 12px; }
+.drive-access-icon { font-size: 1.4rem; line-height: 1.2; }
+.drive-access-text { display: flex; flex-direction: column; gap: 3px; }
+.drive-access-tier { font-weight: 600; font-size: 0.92rem; }
+.drive-access-desc { font-size: 0.82rem; color: var(--color-text-muted); line-height: 1.4; }
+.settings-drive-access .btn { align-self: flex-start; }
+
 .settings-section { padding: 16px 24px; }
 .settings-section-title {
   font-size: 0.82rem; font-weight: 700; text-transform: uppercase;

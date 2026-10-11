@@ -128,7 +128,7 @@ function buildPanel() {
     el('div', { className: 'glasses-card' }, [
       el('div', { className: 'glasses-row-title' }, ['Spatial Calibration']),
       el('p', { className: 'glasses-row-desc' }, [
-        'Point at each dot shown on your glasses and hold. Waymark learns how where you point maps to your view, so highlights land where you expect.',
+        'Look at each highlighted target on your glasses and hold. Waymark learns how your gaze and the selected object map to your view, so highlights land where you expect.',
       ]),
       _nodes.calStatus,
       _nodes.calProgress,
@@ -162,7 +162,7 @@ function onTogglePointMode(e) {
 function onRunCalibration() {
   const b = bridge();
   if (!b) return;
-  try { b.startCalibration(); showToast('Calibration started — look at your glasses and point at each dot.', 'info'); }
+  try { b.startCalibration(); showToast('Calibration started — follow the highlighted target and hold.', 'info'); }
   catch { showToast('Could not start calibration', 'error'); }
   refresh();
 }
@@ -228,7 +228,7 @@ function refresh() {
     const steps = Number(s.steps || 0);
     _nodes.calProgress.classList.remove('hidden');
     _nodes.calProgress.textContent = `Step ${Math.min(step, steps)} of ${steps} · captured ${Number(s.captured || 0)}`;
-    _nodes.calPrompt.textContent = s.prompt ? String(s.prompt) : 'Point at the dot on your glasses and hold.';
+    _nodes.calPrompt.textContent = s.prompt ? String(s.prompt) : 'Look at the highlighted target on your glasses and hold.';
     _nodes.calStatus.textContent = 'Calibrating…';
     _nodes.runBtn.classList.add('hidden');
     _nodes.cancelBtn.classList.remove('hidden');

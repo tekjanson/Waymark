@@ -10,3 +10,9 @@
 # WebRTC
 -keep class org.webrtc.** { *; }
 -dontwarn org.webrtc.**
+
+# AutoValue / JavaPoet — annotation processing classes not needed at runtime
+-dontwarn javax.lang.model.**
+-dontwarn com.squareup.javapoet.**
+-dontwarn autovalue.shaded.**
+-dontwarn com.google.auto.value.processor.**

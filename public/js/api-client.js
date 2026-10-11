@@ -60,6 +60,7 @@ async function withAuthRetry(fn) {
 
 /* ---------- Mock state ---------- */
 let mockFixtures = null;
+let mockDriveAccess = 'file'; // simulated Drive access tier in local mode
 
 async function loadFixtures() {
   if (mockFixtures) return mockFixtures;
@@ -142,9 +143,6 @@ async function loadMockSheet(sheetId) {
     'sheet-067': 'ledger-business',
     'sheet-068': 'invoice-sample',
     'sheet-071': 'rfi',
-    'sheet-072': 'calorie-default',
-    'sheet-073': 'kanban-multitab',
-    'sheet-074': 'party-birthday',
   };
   const filename = mapping[sheetId];
   if (!filename) return null;
@@ -169,13 +167,14 @@ export const api = {
 
   /* ---- Auth ---- */
   auth: {
-    login() {
+    login(opts = {}) {
       if (isLocal) {
-        // Set mock state and reload
-        window.location.href = BASE + '/auth/login';
+        // Set mock state and reload, preserving the requested access tier.
+        const qs = opts.full ? '?access=full' : '';
+        window.location.href = BASE + '/auth/login' + qs;
         return;
       }
-      clientAuth.login();
+      clientAuth.login(opts);
     },
 
     async init() {
@@ -183,6 +182,8 @@ export const api = {
         // call server mock auth
         const res = await fetch(BASE + '/auth/refresh', { method: 'POST', credentials: 'include' });
         if (!res.ok) return null;
+        const data = await res.json().catch(() => ({}));
+        if (data.drive_access) mockDriveAccess = data.drive_access;
         await loadFixtures();
         return mockFixtures.users[0];
       }
@@ -211,6 +212,18 @@ export const api = {
     async getToken() {
       if (isLocal) return 'mock-access-token';
       return clientAuth.getToken();
+    },
+
+    /** The granted Drive access tier: 'file' (minimal) or 'full' (shared "just works"). */
+    getDriveAccess() {
+      if (isLocal) return mockDriveAccess;
+      return clientAuth.getDriveAccess();
+    },
+
+    /** True when full Drive access was granted. */
+    hasFullDriveAccess() {
+      if (isLocal) return mockDriveAccess === 'full';
+      return clientAuth.hasFullDriveAccess();
     },
   },
 
@@ -737,10 +750,8 @@ export const api = {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
-        // Normalise fixture: ensure tabs[] is present for multi-tab fixtures
-        // and synthesised from top-level values for legacy single-tab fixtures.
-        const tabs = data.tabs || [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
-        return { numericSheetId: 0, ...data, tabs };
+        // Fixtures may not have numericSheetId — default to 0
+        return { numericSheetId: 0, ...data };
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
@@ -752,20 +763,17 @@ export const api = {
      * Read a publicly shared spreadsheet without OAuth.
      * Uses an API key for sheets shared as "Anyone with the link can view".
      * @param {string} spreadsheetId
-     * @returns {Promise<Object>}  { id, title, sheetTitle, values, tabs }
+     * @returns {Promise<Object>}  { id, title, sheetTitle, values }
      */
     async getPublicSpreadsheet(spreadsheetId) {
       if (isLocal) {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
-        const tabs = data.tabs || [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
-        return { ...data, tabs };
+        return data;
       }
       const apiKey = window.__WAYMARK_API_KEY;
-      // No server API key configured → use the keyless gviz CSV export,
-      // which works for any sheet shared "Anyone with the link can view".
-      if (!apiKey) return sheetsApi.getPublicSpreadsheetCsv(spreadsheetId);
+      if (!apiKey) throw new Error('Public sharing is not configured — missing API key');
       return sheetsApi.getPublicSpreadsheet(apiKey, spreadsheetId);
     },
 
@@ -781,8 +789,7 @@ export const api = {
         const data = await loadMockSheet(spreadsheetId);
         if (!data) throw new Error(`No fixture for sheet ${spreadsheetId}`);
         // Return only first two rows to mirror production behavior
-        const values = (data.values || []).slice(0, 2);
-        return { ...data, values };
+        return { ...data, values: (data.values || []).slice(0, 2) };
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
@@ -809,7 +816,6 @@ export const api = {
           title,
           sheetTitle: 'Sheet1',
           values: rows,
-          tabs: [{ title: 'Sheet1', numericSheetId: 0, values: rows }],
         };
 
         return record;
@@ -898,44 +904,6 @@ export const api = {
       }
       const token = await requireToken();
       return sheetsApi.replaceSheetData(token, spreadsheetId, sheetTitle, rows);
-    },
-
-    /**
-     * Create-or-replace a named tab's full contents within a workbook.
-     * Ensures the tab exists (creates it if missing) then writes rows.
-     * The durable persistence primitive for template-managed metadata tabs
-     * (e.g. the calorie tracker's "Profile" tab).
-     * @param {string}     spreadsheetId
-     * @param {string}     tabTitle
-     * @param {string[][]} rows          2D array including header row
-     */
-    async writeTab(spreadsheetId, tabTitle, rows) {
-      if (isLocal) {
-        if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
-        const fix = await loadFixtures();
-        const data = fix.sheets[spreadsheetId];
-        if (data) {
-          if (!Array.isArray(data.tabs)) {
-            data.tabs = [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
-          }
-          const existing = data.tabs.find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
-          if (existing) {
-            existing.values = rows;
-          } else {
-            const nextId = Math.max(0, ...data.tabs.map(t => t.numericSheetId || 0)) + 1;
-            data.tabs.push({ title: tabTitle, numericSheetId: nextId, values: rows });
-          }
-        }
-        const record = {
-          type: 'tab-write',
-          spreadsheetId, tabTitle, rows,
-          createdAt: new Date().toISOString(),
-        };
-        window.__WAYMARK_RECORDS.push(record);
-        return record;
-      }
-      const token = await requireToken();
-      return sheetsApi.writeTabData(token, spreadsheetId, tabTitle, rows);
     },
 
     /**

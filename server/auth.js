@@ -14,12 +14,12 @@ function generatePKCE() {
 
 /* ---------- Google token helpers ---------- */
 
-function buildAuthUrl(codeChallenge, state) {
+function buildAuthUrl(codeChallenge, state, scopes) {
   const params = new URLSearchParams({
     client_id: config.GOOGLE_CLIENT_ID,
     redirect_uri: config.GOOGLE_REDIRECT_URI,
     response_type: 'code',
-    scope: config.SCOPES.join(' '),
+    scope: (scopes || config.SCOPES).join(' '),
     access_type: 'offline',
     prompt: 'consent',
     code_challenge: codeChallenge,
@@ -150,6 +150,17 @@ const SHORT_COOKIE_OPTS = {
   maxAge: 10 * 60 * 1000, // 10 minutes
 };
 
+// Local/mock-mode only: remembers the access tier the user "granted" so the
+// mock /auth/refresh can echo it back exactly like production derives the tier
+// from Google's returned `scope`.  Never used in production (real scope wins).
+const LOCAL_ACCESS_COOKIE_OPTS = {
+  httpOnly: true,
+  secure: isSecure,
+  sameSite: 'lax',
+  path: (config.BASE_PATH || '') + '/auth',
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+};
+
 /* ---------- Route handler ---------- */
 
 module.exports = function setupAuth(app) {
@@ -157,8 +168,16 @@ module.exports = function setupAuth(app) {
 
   /* --- GET /auth/login --- */
   app.get('/auth/login', (req, res) => {
+    // Which Drive access tier to request: ?access=full opts into the broader
+    // Drive scope so shared Waymarks work without the Picker.  Anything else
+    // (including no param) uses the minimal drive.file scope.
+    const tier = req.query.access === 'full' ? 'full' : 'file';
+    const scopes = config.scopesFor(tier);
+
     if (config.WAYMARK_LOCAL) {
       res.cookie('waymark_refresh', 'mock-refresh-token', REFRESH_COOKIE_OPTS);
+      // Simulate the granted tier so the mock /auth/refresh can report it.
+      res.cookie('waymark_drive_access', tier, LOCAL_ACCESS_COOKIE_OPTS);
       return res.redirect(bp + '/#auth_success');
     }
 
@@ -176,13 +195,13 @@ module.exports = function setupAuth(app) {
       // can recover it without any server-side storage or cookies.
       // The system browser will forward this opaque state to Google and back.
       const state = buildAndroidState(verifier);
-      res.redirect(buildAuthUrl(challenge, state));
+      res.redirect(buildAuthUrl(challenge, state, scopes));
     } else {
       // Web flow: store PKCE in short-lived httpOnly cookies (same browser).
       const state = crypto.randomBytes(16).toString('hex');
       res.cookie('pkce_verifier', verifier, SHORT_COOKIE_OPTS);
       res.cookie('oauth_state', state, SHORT_COOKIE_OPTS);
-      res.redirect(buildAuthUrl(challenge, state));
+      res.redirect(buildAuthUrl(challenge, state, scopes));
     }
   });
 
@@ -308,6 +327,7 @@ module.exports = function setupAuth(app) {
         access_token: 'mock-access-token-' + Date.now(),
         expires_in: 3600,
         token_type: 'Bearer',
+        drive_access: req.cookies.waymark_drive_access === 'full' ? 'full' : 'file',
       });
     }
 
@@ -334,6 +354,9 @@ module.exports = function setupAuth(app) {
         access_token: tokens.access_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
+        // Report the Drive access tier Google actually granted so the UI can
+        // enable/disable the "just works" sharing features accordingly.
+        drive_access: config.driveAccessFromScope(tokens.scope),
       });
     } catch (err) {
       console.error('Token refresh exception:', err);
@@ -344,6 +367,8 @@ module.exports = function setupAuth(app) {
   /* --- POST /auth/logout --- */
   app.post('/auth/logout', async (req, res) => {
     res.clearCookie('waymark_refresh', { path: bp + '/auth' });
+    // Clear the simulated access tier (local mode) so the next login starts clean.
+    res.clearCookie('waymark_drive_access', { path: bp + '/auth' });
     // Clear the temporary session ref so the user's next visit uses their
     // pinned ref (or the server default) rather than a stale switch.
     res.clearCookie('waymark_session_ref', { path: bp + '/' });

@@ -232,9 +232,10 @@ export async function decryptSheet(sheetId, values, encCols) {
       if (c < values[r].length && isEncrypted(values[r][c])) {
         const row = r, col = c;
         tasks.push(
-          decryptValue(key, values[row][col]).then(plain => {
+          (async () => {
+            const plain = await decryptValue(key, values[row][col]);
             if (plain !== null) values[row][col] = plain;
-          })
+          })()
         );
       }
     }
