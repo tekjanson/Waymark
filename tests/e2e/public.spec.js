@@ -175,9 +175,9 @@ test('share modal public link has copy button', async ({ page }) => {
   await page.click('#share-btn');
   await page.waitForSelector('#share-modal', { timeout: 3000 });
 
-  // Should have 3 copy buttons (Waymark link, Public link, Google Sheets link)
+  // Should have 4 copy buttons (Waymark link, Invite link, Public link, Google Sheets link)
   const copyBtns = page.locator('.share-copy-btn');
-  await expect(copyBtns).toHaveCount(3);
+  await expect(copyBtns).toHaveCount(4);
 });
 
 test('public view hides the add-row form', async ({ page }) => {
