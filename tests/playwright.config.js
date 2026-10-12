@@ -13,6 +13,7 @@ module.exports = defineConfig({
 
   use: {
     baseURL: 'http://localhost:3000',
+    channel: 'chrome',
     headless: true,
     viewport: { width: 1280, height: 720 },
     screenshot: 'only-on-failure',

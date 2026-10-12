@@ -46,6 +46,7 @@
 @import url('./templates/invoice.css');
 @import url('./templates/rfi.css');
 @import url('./templates/calorie.css');
+@import url('./templates/floorplan.css');
 @import url('./templates/charts.css');
 
 /* Cross-template feature integration */

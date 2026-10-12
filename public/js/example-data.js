@@ -489,6 +489,27 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  /* ---- Floor Plan examples ---- */
+  'House Layout': {
+    folder: 'Home Plans',
+    headers: ['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes'],
+    rows: [
+      ['Room', 'Living Room', 'floor', '80', '50', '260', '180', '', 'North-facing lounge'],
+      ['Room', 'Kitchen', 'floor', '340', '50', '220', '180', '', 'Prep and dining zone'],
+      ['Room', 'Primary Suite', 'floor', '80', '230', '260', '170', '', 'Owner bedroom'],
+      ['Room', 'Bath', 'floor', '340', '230', '180', '120', '', 'Shared bath'],
+      ['Wall', 'North Wall', 'structure', '80', '50', '', '', '400', 'Main exterior wall'],
+      ['Wall', 'West Wall', 'structure', '80', '50', '', '180', '', 'Partition wall'],
+      ['Door', 'Front Entry', 'structure', '230', '50', '50', '0', '', 'Entry door'],
+      ['Window', 'Living Window', 'structure', '160', '230', '100', '0', '', 'Triple pane'],
+      ['Fixture', 'Sofa', 'furniture', '120', '90', '100', '70', '', 'Sectional sofa'],
+      ['Electrical', 'Ceiling Light', 'electrical', '220', '150', '', '', '', 'Main fixture'],
+      ['Electrical', 'Outlet', 'electrical', '150', '200', '', '', '', 'Repeated by circuit'],
+      ['Plumbing', 'Sink', 'plumbing', '420', '90', '60', '40', '', 'Kitchen sink'],
+      ['Plumbing', 'Toilet', 'plumbing', '180', '280', '50', '60', '', 'Bathroom fixture'],
+    ],
+  },
+
   /* ---- Travel Itinerary examples ---- */
   'Europe Trip': {
     folder: 'Travel',
