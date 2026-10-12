@@ -38,6 +38,22 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function isDebugEnabled() {
+  if (typeof window === 'undefined') return false;
+  if (window.__WAYMARK_LOCAL) return true;
+  if (window.location && window.location.hostname === 'localhost') return true;
+  try {
+    return window.localStorage.getItem('waymark_floorplan_debug') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function debugLog(...args) {
+  if (!isDebugEnabled()) return;
+  console.log('[floorplan-debug]', ...args);
+}
+
 const TOOL_HINTS = {
   wall: 'Wall: drag to draw, or tap once to drop a short wall segment.',
   room: 'Room: drag to draw room bounds, or tap once to drop a default room.',
@@ -293,6 +309,7 @@ const definition = {
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
       if (hint) hint.textContent = TOOL_HINTS[nextTool] || '';
+      debugLog('tool-change', { tool: nextTool });
     }
 
     function renderScene() {
@@ -495,12 +512,21 @@ const definition = {
       if (isMouseInput && event.button !== 0) return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
       const point = pointFromEvent(svg, event);
+      debugLog('input-start', {
+        eventType: event.type,
+        pointerType: event.pointerType || 'unknown',
+        pointerId: event.pointerId,
+        tool: state.tool,
+        x: point.x,
+        y: point.y,
+      });
       const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
 
       if (state.tool === 'erase') {
         if (targetItem) {
           const itemId = targetItem.dataset.floorplanItem;
           state.items = state.items.filter(item => String(item.id) !== itemId);
+          debugLog('erase-item', { itemId, remaining: state.items.length });
           renderScene();
         }
         return;
@@ -519,13 +545,16 @@ const definition = {
               x2: typeof item.x2 === 'number' ? item.x2 : null,
               y2: typeof item.y2 === 'number' ? item.y2 : null,
             };
+            debugLog('select-start', { itemId: state.dragId, kind: item.kind, x: point.x, y: point.y });
           }
         }
         return;
       }
 
       if (state.tool === 'electrical' || state.tool === 'plumbing') {
-        state.items.push(createItem(state.tool, point, point));
+        const created = createItem(state.tool, point, point);
+        state.items.push(created);
+        debugLog('create-point', { kind: created.kind, id: created.id, x: created.x, y: created.y, count: state.items.length });
         renderScene();
         return;
       }
@@ -549,6 +578,7 @@ const definition = {
           item.y = item.dragOrigin.y + dy;
           if (item.dragOrigin.x2 !== null) item.x2 = item.dragOrigin.x2 + dx;
           if (item.dragOrigin.y2 !== null) item.y2 = item.dragOrigin.y2 + dy;
+          debugLog('select-move', { itemId: state.dragId, x: item.x, y: item.y });
           renderScene();
         }
         return;
@@ -569,6 +599,7 @@ const definition = {
         state.dragId = null;
         state.dragStart = null;
         state.items.forEach(item => { delete item.dragOrigin; });
+        debugLog('select-end');
         renderScene();
         return;
       }
@@ -576,14 +607,19 @@ const definition = {
       if (state.tool !== 'erase' && state.preview) {
         const { kind, start, end } = state.preview;
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
+        debugLog('input-end', { eventType: event?.type, kind, distance, start, end });
         if (distance > 18) {
-          state.items.push(createItem(kind, start, end));
+          const created = createItem(kind, start, end);
+          state.items.push(created);
+          debugLog('create-drag', { kind: created.kind, id: created.id, count: state.items.length });
         } else if (kind === 'wall') {
           const wallEnd = {
             x: clamp(start.x + 80, 20, 940),
             y: start.y,
           };
-          state.items.push(createItem(kind, start, wallEnd));
+          const created = createItem(kind, start, wallEnd);
+          state.items.push(created);
+          debugLog('create-click-wall', { id: created.id, from: start, to: wallEnd, count: state.items.length });
         } else if (kind === 'room') {
           const roomStart = {
             x: clamp(start.x - 60, 20, 880),
@@ -593,7 +629,9 @@ const definition = {
             x: roomStart.x + 120,
             y: roomStart.y + 80,
           };
-          state.items.push(createItem(kind, roomStart, roomEnd));
+          const created = createItem(kind, roomStart, roomEnd);
+          state.items.push(created);
+          debugLog('create-click-room', { id: created.id, from: roomStart, to: roomEnd, count: state.items.length });
         }
       }
       state.preview = null;
@@ -602,6 +640,7 @@ const definition = {
     }
 
     const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
+    debugLog('input-mode', { supportsPointer });
     if (supportsPointer) {
       svg.addEventListener('pointerdown', beginDraft);
       svg.addEventListener('pointermove', updateDraft);
