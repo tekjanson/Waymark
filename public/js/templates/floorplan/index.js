@@ -323,13 +323,17 @@ const definition = {
             x2,
             y2,
             stroke: '#334155',
-            'stroke-width': '5',
+            'stroke-width': '6',
             'stroke-linecap': 'round',
             className: 'floorplan-wall floorplan-item',
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'wall',
           });
-          layer.append(line, label(item.label || 'Wall', (x1 + x2) / 2, Math.min(y1, y2) - 6, '#334155', 'floorplan-wall-label'));
+          layer.append(line);
+
+          if (item.label && item.label !== 'Wall' && item.label !== 'wall') {
+            layer.append(label(item.label, (x1 + x2) / 2, Math.min(y1, y2) - 8, '#334155', 'floorplan-wall-label'));
+          }
         }
 
         if (kind === 'electrical') {
@@ -485,6 +489,7 @@ const definition = {
         return;
       }
 
+      svg.setPointerCapture?.(event.pointerId);
       state.dragStart = point;
       state.preview = { kind: state.tool, start: point, end: point };
       renderScene();
@@ -508,7 +513,8 @@ const definition = {
       }
 
       if (!state.preview) return;
-      state.preview.end = pointFromEvent(svg, event);
+      const point = pointFromEvent(svg, event);
+      state.preview.end = point;
       renderScene();
     }
 
@@ -527,7 +533,7 @@ const definition = {
 
       if (state.tool !== 'erase' && state.preview) {
         const { kind, start, end } = state.preview;
-        if (Math.hypot(end.x - start.x, end.y - start.y) > 10) {
+        if (Math.hypot(end.x - start.x, end.y - start.y) > 18) {
           state.items.push(createItem(kind, start, end));
         }
       }
