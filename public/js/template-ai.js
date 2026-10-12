@@ -74,7 +74,7 @@ let _pendingInlineImages = [];
 
 /**
  * Open the AI overlay panel for the given sheet.
- * @param {{ id: string, title: string, sheetTitle: string, values: string[][], templateKey: string, onRefresh: Function, initialPrompt?: string }} ctx
+ * @param {{ id: string, title: string, sheetTitle: string, values: string[][], templateKey: string, onRefresh: Function, initialPrompt?: string, panelMode?: string, inputPlaceholder?: string, contextNotice?: string, backgroundContext?: string }} ctx
  */
 export function show(ctx) {
   _context = ctx;
@@ -132,7 +132,7 @@ function _render() {
   const inputRow = _buildInputRow(hasKeys);
 
   _panel = el('div', {
-    className: 'template-ai-panel',
+    className: `template-ai-panel ${_context?.panelMode === 'expanded' ? 'template-ai-panel-expanded' : ''}`.trim(),
     role: 'dialog',
     'aria-label': 'Ask AI to update this sheet',
   }, [header, _chatBody, inputRow]);
@@ -210,7 +210,9 @@ function _buildEmptyState() {
     'Mark the first item as complete',
   ];
 
+  const contextNotice = typeof _context?.contextNotice === 'string' ? _context.contextNotice.trim() : '';
   return el('div', { className: 'template-ai-empty' }, [
+    ...(contextNotice ? [el('p', { className: 'template-ai-context-note' }, [contextNotice])] : []),
     el('p', { className: 'template-ai-empty-prompt' }, [
       'What would you like to change about this sheet?'
     ]),
@@ -233,9 +235,12 @@ function _buildEmptyState() {
 
 function _buildInputRow(hasKeys) {
   const initialPrompt = typeof _context?.initialPrompt === 'string' ? _context.initialPrompt : '';
+  const inputPlaceholder = typeof _context?.inputPlaceholder === 'string' && _context.inputPlaceholder.trim()
+    ? _context.inputPlaceholder.trim()
+    : (hasKeys ? 'Ask the AI to update this sheet…' : 'Configure API keys first');
   const input = el('textarea', {
     className: 'template-ai-input',
-    placeholder: hasKeys ? 'Ask the AI to update this sheet…' : 'Configure API keys first',
+    placeholder: inputPlaceholder,
     rows: 2,
     on: {
       keydown: (e) => {
@@ -343,6 +348,9 @@ function _buildSystemPrompt() {
     'Use update_sheet (append_rows or update_cells) to modify the sheet.',
     'Do NOT create new spreadsheets. Do NOT reference other sheets.',
     `After making changes, briefly confirm. Reference this sheet as: [${title}](#/sheet/${id})`,
+    ...(typeof _context?.backgroundContext === 'string' && _context.backgroundContext.trim()
+      ? ['', 'Additional context from the user interface (not typed by the user in chat):', _context.backgroundContext.trim()]
+      : []),
     '',
     OVERLAY_TOOL_PROTOCOL,
   ];

@@ -161,8 +161,11 @@ test('agents: Ask AI button opens popup with tuning prompt', async ({ page }) =>
   await expect(page.locator('.agents-chat-btn').first()).toBeVisible();
   await page.locator('.agents-chat-btn').first().click();
   await expect(page.locator('.template-ai-panel')).toBeVisible();
+  await expect(page.locator('.template-ai-panel')).toHaveClass(/template-ai-panel-expanded/);
   await expect(page.locator('.template-ai-header-title')).toContainText('Ask AI');
-  await expect(page.locator('.template-ai-input')).toHaveValue(/I want to tune the worker agent "waymark-bot"\./);
+  await expect(page.locator('.template-ai-context-note')).toContainText('Loaded waymark-bot\'s current settings in the background.');
+  await expect(page.locator('.template-ai-input')).toHaveValue('');
+  await expect(page.locator('.template-ai-input')).toHaveAttribute('placeholder', /Describe how "waymark-bot" should behave…/);
 });
 
 test('Dev Fleet sidebar button is visible', async ({ page }) => {

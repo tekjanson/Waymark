@@ -1231,7 +1231,8 @@ function renderWithTemplate(values) {
   template._currentDataTitle = currentDataTitle;
   template._currentValues = currentValues;
   template._currentTemplateKey = key;
-  template._openAskAI = (initialPrompt = '') => {
+  template._openAskAI = (options = {}) => {
+    const normalized = typeof options === 'string' ? { initialPrompt: options } : (options || {});
     showTemplateAI({
       id: currentSheetId,
       title: currentDataTitle || '',
@@ -1239,7 +1240,11 @@ function renderWithTemplate(values) {
       values: currentValues || [],
       templateKey: key,
       onRefresh: () => loadSheet(currentSheetId),
-      initialPrompt,
+      initialPrompt: normalized.initialPrompt || '',
+      panelMode: normalized.panelMode || '',
+      inputPlaceholder: normalized.inputPlaceholder || '',
+      contextNotice: normalized.contextNotice || '',
+      backgroundContext: normalized.backgroundContext || '',
     });
   };
   // Expose all workbook tabs so templates can read cross-tab data.

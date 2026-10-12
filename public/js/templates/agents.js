@@ -418,7 +418,12 @@ const definition = {
             `Latest tuning feedback: ${tuningFeedback || '<none>'}`,
           ];
           if (template && typeof template._openAskAI === 'function') {
-            template._openAskAI(promptParts.join('\n'));
+            template._openAskAI({
+              panelMode: 'expanded',
+              inputPlaceholder: `Describe how "${name}" should behave…`,
+              contextNotice: `Loaded ${name}'s current settings in the background.`,
+              backgroundContext: promptParts.join('\n'),
+            });
           }
         }},
       }, ['✨ Ask AI']);
