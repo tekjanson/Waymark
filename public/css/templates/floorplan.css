@@ -8,6 +8,21 @@
   box-shadow: var(--shadow);
 }
 
+.floorplan-board {
+  position: relative;
+}
+
+.floorplan-board.floorplan-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15, 23, 42, 0.96);
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .floorplan-toolbar {
   display: flex;
   align-items: center;
@@ -28,6 +43,22 @@
 
 .floorplan-title-icon {
   font-size: 1.1rem;
+}
+
+.floorplan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.floorplan-secondary-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .floorplan-toolset {

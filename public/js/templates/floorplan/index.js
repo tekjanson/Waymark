@@ -194,10 +194,16 @@ const definition = {
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
         ]),
-        el('button', {
-          className: 'floorplan-export-btn',
-          on: { click: () => window.print() },
-        }, ['Export PDF']),
+        el('div', { className: 'floorplan-actions' }, [
+          el('button', {
+            className: 'floorplan-secondary-btn',
+            on: { click: () => board.classList.toggle('floorplan-fullscreen') },
+          }, ['Full Screen']),
+          el('button', {
+            className: 'floorplan-export-btn',
+            on: { click: () => window.print() },
+          }, ['Export PDF']),
+        ]),
       ]),
       el('div', { className: 'floorplan-legend' }, [
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-room' }, []), 'Rooms']),
