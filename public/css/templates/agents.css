@@ -310,7 +310,7 @@
   color: #64748b;
 }
 
-/* ---------- Live activity feed (chat stream) ---------- */
+/* ---------- Activity feed (burst updates) ---------- */
 .agents-summary {
   border: 1px solid #bfdbfe;
   background: #eff6ff;
@@ -616,7 +616,26 @@
 .agents-card-actions {
   display: flex;
   gap: 6px;
+  align-items: center;
   flex-shrink: 0;
+}
+
+.agents-chat-btn {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+
+.agents-chat-btn:hover {
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 .agents-delete-btn {

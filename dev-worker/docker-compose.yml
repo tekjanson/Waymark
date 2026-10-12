@@ -51,14 +51,15 @@ services:
 
       # ── Named agent identity for multi-agent setups ────────────────────────
       # AGENT_HUMAN_NAME — human name shown in logs and the Agent Registry UI
-      #   (Alex, Sam, Jordan, Morgan…). Set a unique name per container.
+      #   (waymark-bot, Sam, Jordan, Morgan…). Set a unique name per container.
       # AGENT_NAME — legacy unique ID for workboard claiming (defaults to human name)
       - AGENT_HUMAN_NAME=${AGENT_HUMAN_NAME:-}
       - AGENT_NAME=${AGENT_NAME:-${AGENT_HUMAN_NAME:-}}
 
       # ── Language models ──────────────────────────────────────────────────────
-      # Model for Copilot CLI (uses model names from copilot --list-models)
-      - AGENT_MODEL=${AGENT_MODEL:-claude-Haiku-4.5}
+      # Model for Copilot CLI (uses model names from copilot --list-models).
+      # "auto" lets Copilot pick the most cost-effective model tier.
+      - AGENT_MODEL=${AGENT_MODEL:-auto}
       # Model for Claude Code (uses Anthropic model IDs)
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-5}
 
@@ -114,6 +115,12 @@ services:
       - DREAM_EVAL_RETRIES=${DREAM_EVAL_RETRIES:-1}
       # Workboard the agent polls for tasks (also the default Discovery_Tree sheet)
       - WAYMARK_WORKBOARD_ID=${WAYMARK_WORKBOARD_ID:-}
+      # Fleet reporting mode: burst (default) or stream
+      - FLEET_REPORT_MODE=${FLEET_REPORT_MODE:-burst}
+      - FLEET_ACTIVITY_MAX_LINES=${FLEET_ACTIVITY_MAX_LINES:-20}
+      - FLEET_FLUSH_MS=${FLEET_FLUSH_MS:-5000}
+      # Hook heartbeat cadence (seconds) for workboard/registry updates
+      - AGENT_HEARTBEAT_INTERVAL_SEC=${AGENT_HEARTBEAT_INTERVAL_SEC:-300}
 
       # ── Git identity for commits made inside the container ───────────────
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
@@ -213,6 +220,10 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/credentials/gsa-key.json
       - AGENTS_SHEET_ID=${AGENTS_SHEET_ID:-1egJZTEcy0Wh0rl98sO4Voz5LgntCAIBlxt1Ez8_8fqc}
       - WAYMARK_WORKBOARD_ID=${WAYMARK_WORKBOARD_ID:-}
+      - FLEET_REPORT_MODE=${FLEET_REPORT_MODE:-burst}
+      - FLEET_ACTIVITY_MAX_LINES=${FLEET_ACTIVITY_MAX_LINES:-20}
+      - FLEET_FLUSH_MS=${FLEET_FLUSH_MS:-5000}
+      - AGENT_HEARTBEAT_INTERVAL_SEC=${AGENT_HEARTBEAT_INTERVAL_SEC:-300}
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 

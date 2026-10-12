@@ -4,7 +4,8 @@
 # Supports two AI providers side-by-side, selected at runtime:
 #
 #   AI_PROVIDER=copilot  → GitHub Copilot CLI
-#     copilot --allow-all --autopilot --model $AGENT_MODEL --add-dir /workspace -p "$CMD"
+#     AGENT_MODEL=auto omits --model so Copilot auto-selects the model.
+#     copilot --allow-all --autopilot [--model $AGENT_MODEL] --add-dir /workspace -p "$CMD"
 #     Reads: ~/.copilot/config.json (OAuth), ~/.copilot/mcp.json, .github/agents/*.agent.md
 #
 #   AI_PROVIDER=claude   → Anthropic Claude Code
@@ -19,7 +20,7 @@
 #   - Both: Docker socket lets the agent spin up sibling containers
 #
 # Personality:
-#   Each agent has a human name (AGENT_HUMAN_NAME = Alex, Sam, Jordan…).
+#   Each agent has a human name (AGENT_HUMAN_NAME = waymark-bot, Sam, Jordan…).
 #   On boot, read-agent-tuning.sh reads this agent's row from the Agent Registry
 #   sheet and loads the operator-configured tuning string. The tuning string is
 #   prepended to every session prompt so the agent starts with its personality baked in.
@@ -28,9 +29,9 @@
 #   AI_PROVIDER      — copilot | claude (resolved from "auto" by learn-repo.sh)
 #   AGENT_COMMAND    — prompt for Copilot, e.g. "@waymark-builder start"
 #   CLAUDE_COMMAND   — prompt for Claude (defaults to AGENT_COMMAND if not set)
-#   AGENT_MODEL      — model for Copilot CLI (e.g. "claude-sonnet-4.6")
+#   AGENT_MODEL      — model for Copilot CLI (e.g. "claude-sonnet-4.6" or "auto")
 #   CLAUDE_MODEL     — model for Claude Code (e.g. "claude-opus-4-5")
-#   AGENT_HUMAN_NAME — human-readable name (Alex, Sam, Jordan…)
+#   AGENT_HUMAN_NAME — human-readable name (waymark-bot, Sam, Jordan…)
 #   AGENTS_SHEET_ID  — Google Sheet ID of the Agent Registry (for tuning reads)
 #   AGENT_ROLE       — "qa" enables QA patrol mode: polls --qa-details instead of
 #                      the standard To Do queue, dispatches @waymark-qa per task
@@ -55,7 +56,7 @@ AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 # Claude gets its own command var because @-mentions are Copilot-specific.
 # Default: strip the @agent-name mention and pass the rest as a plain prompt.
 CLAUDE_COMMAND="${CLAUDE_COMMAND:-${AGENT_COMMAND/@waymark-builder /}}"
-AGENT_MODEL="${AGENT_MODEL:-claude-sonnet-4.6}"
+AGENT_MODEL="${AGENT_MODEL:-auto}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-flash-latest}"
 AGENT_HUMAN_NAME="${AGENT_HUMAN_NAME:-}"
@@ -161,7 +162,7 @@ validate_claude() {
 # The tuning string (loaded from the Agent Registry sheet) is prepended to every
 # session prompt so the agent's personality is active from the first token.
 #
-# Format: "[AGENT: Alex] Your personality: <tuning>. Now: <base command>"
+# Format: "[AGENT: waymark-bot] Your personality: <tuning>. Now: <base command>"
 build_prompt() {
     local base_prompt="$1"
     local full=""
@@ -185,7 +186,11 @@ run_copilot() {
     local prompt
     prompt="$(build_prompt "${AGENT_COMMAND}")"
     log "  Provider:  GitHub Copilot CLI"
-    log "  Model:     ${AGENT_MODEL}"
+    if [[ "${AGENT_MODEL,,}" == "auto" ]]; then
+        log "  Model:     auto (Copilot-managed)"
+    else
+        log "  Model:     ${AGENT_MODEL}"
+    fi
     log "  Identity:  ${AGENT_HUMAN_NAME:-<unnamed>}"
     log "  MCP:       $( [[ -f "${HOME:-/home/worker}/.copilot/mcp.json" ]] && echo "~/.copilot/mcp.json" || echo "none" )"
     log "  Context:   $( [[ -d "$CONTEXT_DIR" ]] && echo "$CONTEXT_DIR" || echo "none" )"
@@ -194,10 +199,13 @@ run_copilot() {
     local ADD_DIRS=("--add-dir" "/workspace")
     [[ -d "$CONTEXT_DIR" ]] && ADD_DIRS+=("--add-dir" "$CONTEXT_DIR")
 
+    local MODEL_ARGS=()
+    [[ "${AGENT_MODEL,,}" != "auto" ]] && MODEL_ARGS+=(--model "${AGENT_MODEL}")
+
     copilot \
         --allow-all \
         --autopilot \
-        --model "${AGENT_MODEL}" \
+        "${MODEL_ARGS[@]}" \
         "${ADD_DIRS[@]}" \
         -p "${prompt}" \
         || true

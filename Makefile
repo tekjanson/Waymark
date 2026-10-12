@@ -5,7 +5,7 @@
 #   make up    ← THE ONE COMMAND. Starts everything, opens the UI.
 #   make down  ← Stops everything.
 #   make start ← Start ONLY the Gemini AI dev-fleet worker (agent "AI", uses .env board + keys)
-#   make fleet-tail ← Watch the AI fleet worker stream live activity
+#   make fleet-tail ← Watch the AI fleet worker activity (burst updates)
 #
 # After `make up`, use the Waymark UI to drive everything:
 #   • Drop tasks in the kanban workboard → agents pick them up
@@ -27,9 +27,9 @@ FLEET_WEBHOOK_URL  ?= http://localhost:$(FLEET_WEBHOOK_PORT)
 
 # Agent fleet config — comes from .env, not CLI flags
 # Set AGENT_NAMES in .env to control which agents start (space-separated)
-AGENT_NAMES   ?= Alex
+AGENT_NAMES   ?= waymark-bot
 PROVIDER      ?= auto
-MODEL         ?= claude-sonnet-4.6
+MODEL         ?= auto
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
 GEMINI_MODEL  ?= gemini-flash-latest
@@ -43,15 +43,16 @@ FLEET_NAMES   ?= $(AGENT_NAMES)
 
 # Primary fleet identity (first name in AGENT_NAMES) — used by `make restart`.
 # The agent MUST have a name or the fleet reporter + workboard writes are skipped.
-FLEET_ID      := $(if $(strip $(AGENT_NAMES)),$(firstword $(AGENT_NAMES)),Alex)
+FLEET_ID      := $(if $(strip $(AGENT_NAMES)),$(firstword $(AGENT_NAMES)),waymark-bot)
+AGENT_SINGLE_NAME := $(if $(strip $(NAME)),$(NAME),$(FLEET_ID))
 
 # Service-account key
 export GOOGLE_APPLICATION_CREDENTIALS ?= $(HOME)/.config/gcloud/waymark-service-account-key.json
 
 # Derived compose env block
 define AGENT_ENV
-AGENT_HUMAN_NAME="$(NAME)" \
-AGENT_NAME="$(NAME)" \
+AGENT_HUMAN_NAME="$(AGENT_SINGLE_NAME)" \
+AGENT_NAME="$(AGENT_SINGLE_NAME)" \
 AI_PROVIDER="$(PROVIDER)" \
 AGENT_MODEL="$(MODEL)" \
 CLAUDE_MODEL="$(CLAUDE_MODEL)" \
@@ -239,7 +240,7 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "  Configure in .env (not CLI flags):"
-	@echo "    AGENT_NAMES       Space-separated list of agent names  (default: Alex)"
+	@echo "    AGENT_NAMES       Space-separated list of agent names  (default: waymark-bot)"
 	@echo "    PROVIDER          copilot | claude | auto              (default: auto)"
 	@echo "    MODEL             Copilot model                        (default: claude-sonnet-4.6)"
 	@echo "    CLAUDE_MODEL      Anthropic model                      (default: claude-opus-4-5)"
@@ -284,21 +285,22 @@ test-full: ## Run full E2E suite including slow tests
 
 # ── Dev-worker: single agent ──────────────────────────────────────────
 
-agent-start: ## Start one agent container  [NAME=Alex PROVIDER=auto MODEL=...]
-	$(AGENT_ENV) $(COMPOSE) up -d --build
+agent-start: ## Start one agent container  [NAME=waymark-bot PROVIDER=auto MODEL=...]
+	$(AGENT_ENV) $(COMPOSE) up -d --build waymark-dev-worker
 	@echo ""
-	@echo "  ✓ Agent started — $(if $(NAME),$(NAME),<unnamed>) [$(PROVIDER)/$(MODEL)]"
+	@echo "  ✓ Agent started — $(AGENT_SINGLE_NAME) [$(PROVIDER)/$(MODEL)]"
 	@echo "    Logs:   make agent-logs"
 	@echo "    Shell:  make agent-shell"
 	@echo "    Stop:   make agent-stop"
 	@echo ""
 
 agent-stop: ## Stop the agent container
-	CONTAINER_NAME="$(CONTAINER)" $(COMPOSE) down
+	@$(COMPOSE) stop waymark-dev-worker >/dev/null 2>&1 || true
+	@$(COMPOSE) rm -f waymark-dev-worker >/dev/null 2>&1 || true
 	@echo "  ✓ $(CONTAINER) stopped"
 
 agent-restart: ## Restart the agent (picks up new tuning from sheet)
-	CONTAINER_NAME="$(CONTAINER)" $(COMPOSE) restart
+	CONTAINER_NAME="$(CONTAINER)" $(COMPOSE) restart waymark-dev-worker
 	@echo "  ✓ $(CONTAINER) restarted — tuning will reload on next session"
 
 agent-build: ## Rebuild the container image (no cache)
@@ -306,10 +308,11 @@ agent-build: ## Rebuild the container image (no cache)
 	@echo "  ✓ Image rebuilt"
 
 agent-rebuild: ## Stop → rebuild → start (full reset with new image)
-	$(AGENT_ENV) $(COMPOSE) down
+	@$(COMPOSE) stop waymark-dev-worker >/dev/null 2>&1 || true
+	@$(COMPOSE) rm -f waymark-dev-worker >/dev/null 2>&1 || true
 	$(COMPOSE) build --no-cache
-	$(AGENT_ENV) $(COMPOSE) up -d
-	@echo "  ✓ Rebuilt and started — $(if $(NAME),$(NAME),<unnamed>)"
+	$(AGENT_ENV) $(COMPOSE) up -d waymark-dev-worker
+	@echo "  ✓ Rebuilt and started — $(AGENT_SINGLE_NAME)"
 	@echo "    Logs: make agent-logs"
 
 agent-logs: ## Tail live agent output (Ctrl+C to stop)
@@ -377,7 +380,7 @@ dream-run: ## Run ONE Dream-RSI task in the container to experiment  [TASK= requ
 	  -e DREAM_FANOUT_N="$(if $(FANOUT),$(FANOUT),1)" \
 	  -e DREAM_MAX_TURNS="$(if $(TURNS),$(TURNS),8)" \
 	  -e DREAM_PUSH="$(if $(PUSH),$(PUSH),0)" \
-	  -e AGENT_HUMAN_NAME="$(if $(NAME),$(NAME),Alex)" \
+	  -e AGENT_HUMAN_NAME="$(if $(NAME),$(NAME),waymark-bot)" \
 	  --entrypoint bash waymark-dev-worker -lc \
 	  'Xvfb :99 -screen 0 1920x1080x24 >/dev/null 2>&1 & sleep 1; export DISPLAY=:99; cd /workspace && node dev-worker/scripts/dream-rsi.js --task "$(TASK)" $(if $(DESC),--desc "$(DESC)",) $(if $(ROW),--row "$(ROW)",)'
 
@@ -389,7 +392,7 @@ dream-reset: ## Clear the Discovery_Tree memory (dead-end lessons) for a clean e
 
 
 
-fleet-start: ## Start all fleet agents in parallel  [FLEET_NAMES="Alex Sam Jordan" AGENTS_SHEET=...]
+fleet-start: ## Start all fleet agents in parallel  [FLEET_NAMES="waymark-bot Sam Jordan" AGENTS_SHEET=...]
 	@echo "Starting fleet: $(FLEET_NAMES)"
 	@for name in $(FLEET_NAMES); do \
 		cname="dev-worker-$$(echo $$name | tr '[:upper:]' '[:lower:]')"; \
@@ -424,7 +427,7 @@ fleet-status: ## Show status of every named dev-worker container
 		--format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}" 2>/dev/null \
 		|| echo "  (no dev-worker containers running)"
 	@echo ""
-	@echo "  Hint: make fleet-start FLEET_NAMES=\"Alex Sam Jordan\""
+	@echo "  Hint: make fleet-start FLEET_NAMES=\"waymark-bot Sam Jordan\""
 	@echo ""
 
 fleet-sync: ## Sync containers with the Agent Registry sheet (starts missing, leaves existing alone)
@@ -519,7 +522,7 @@ auth-claude: ## Show how to set ANTHROPIC_API_KEY for Claude Code
 	@echo "  2. Add to your shell profile:"
 	@echo "     export ANTHROPIC_API_KEY=sk-ant-..."
 	@echo "  3. Start the agent:"
-	@echo "     make agent-start PROVIDER=claude NAME=Alex"
+	@echo "     make agent-start PROVIDER=claude NAME=waymark-bot"
 	@echo ""
 
 auth-check: ## Check which AI credentials are available
@@ -619,4 +622,3 @@ clean: ## Stop all containers, remove images and volumes (full reset)
 	@docker ps -a --filter "name=dev-worker" --format "{{.Names}}" | xargs -r docker rm -f
 	@$(COMPOSE) down --rmi local -v 2>/dev/null || true
 	@echo "  ✓ Cleaned — re-run: make agent-start"
-

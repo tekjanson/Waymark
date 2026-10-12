@@ -1,12 +1,13 @@
 /* ============================================================
-   lib/fleet-reporter.js — Live agent activity → Agent Registry sheet
+   lib/fleet-reporter.js — Burst activity reporting → Agent Registry sheet
 
    This is the tie-in between the Gemini Dream-RSI engine and the Waymark
    "Dev Fleet" plumbing. The same Agent Registry sheet that agent-runner.sh
    writes Status/Task/Heartbeat to (via write-agent-sheet.sh) is the sheet
-   the AI Fleet tool (templates/agents.js) renders. This reporter streams the
-   agent's live turn-by-turn activity INTO that sheet so the fleet tool shows a
-   real chat-style feed of what the agent is doing right now.
+   the AI Fleet tool (templates/agents.js) renders. By default this reporter
+   buffers updates and writes in larger burst updates (task checkpoints), which
+   avoids write-throttling on Google Sheets. Optional stream mode remains
+   available via FLEET_REPORT_MODE=stream.
 
    It auto-provisions:
      • a "Summary" column (appended to the header if the sheet lacks one),
@@ -21,7 +22,7 @@
    Columns written (discovered by header name, so column order is irrelevant):
      Status    → 'Online' while the agent is working
      Task      → the current task title (set once per task)
-     Activity  → a bounded, newline-joined transcript of recent turns (the feed)
+     Activity  → a bounded, newline-joined transcript of recent turns (burst feed)
      Heartbeat → ISO timestamp, refreshed on every push (drives "last seen")
    ============================================================ */
 
@@ -30,11 +31,13 @@
 const { createSheetsClient } = require('./sheets');
 
 const TAB = 'Sheet1';
-const MAX_LINES = 12; // rolling transcript window shown in the fleet feed
+const MAX_LINES = parseInt(process.env.FLEET_ACTIVITY_MAX_LINES || '20', 10);
 // Coalesce all field updates and write them in ONE batched request per window.
 // This is the fix for blowing past Sheets' 60 writes/min/user quota: instead of
 // a write per field per turn, we buffer and flush at most once per FLUSH_MS.
 const FLUSH_MS = parseInt(process.env.FLEET_FLUSH_MS || '5000', 10);
+const REPORT_MODE = String(process.env.FLEET_REPORT_MODE || 'burst').toLowerCase();
+const STREAMING_ENABLED = REPORT_MODE === 'stream';
 
 /** 0-based column index → A1 letter (Agent Registry stays well under 26 cols). */
 function colLetter(idx) {
@@ -67,12 +70,13 @@ class FleetReporter {
     this.pending = new Map(); // colIdx -> value, coalesced until the next flush
     this.flushTimer = null;
     this.flushing = false;
+    this.isStreaming = STREAMING_ENABLED;
   }
 
   /**
   * Discover columns, ensure Summary/feedback columns exist, and find-or-create this
    * agent's row. Safe to call repeatedly; only does the work once.
-   * @returns {Promise<boolean>} whether the reporter is ready to stream
+   * @returns {Promise<boolean>} whether the reporter is ready
    */
   async init() {
     if (!this.enabled || this.ready) return this.ready;
@@ -153,7 +157,10 @@ class FleetReporter {
       }
 
       this.ready = this.row > 0;
-      if (this.ready) this.log(`  [fleet] streaming to Agent Registry row ${this.row}`);
+      if (this.ready) {
+        const modeLabel = this.isStreaming ? 'stream' : 'burst';
+        this.log(`  [fleet] reporting (${modeLabel}) to Agent Registry row ${this.row}`);
+      }
       return this.ready;
     } catch (e) {
       this.log(`  [fleet] init skipped: ${e.message}`);
@@ -205,7 +212,7 @@ class FleetReporter {
     this._queue(this.cols.keys, v);
   }
 
-  /** Push one live line into the rolling feed (coalesced into the next flush). */
+  /** Push one line into the rolling feed (flushed per mode policy). */
   async pushActivity(line) {
     if (!line || !(await this._ensure())) return;
     const ts = new Date().toISOString().slice(11, 19);
@@ -244,10 +251,11 @@ class FleetReporter {
   _queue(colIdx, value) {
     if (colIdx == null || colIdx < 0) return;
     this.pending.set(colIdx, value);
-    this._scheduleFlush();
+    if (this.isStreaming) this._scheduleFlush();
   }
 
   _scheduleFlush() {
+    if (!this.isStreaming) return;
     if (this.flushTimer || !this.enabled) return;
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;

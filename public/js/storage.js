@@ -414,6 +414,21 @@ export function setAgentConversation(messages) {
   set('agent_conversation', messages || []);
 }
 
+export function getAgentTuneDraft() {
+  return get('agent_tune_draft') || null;
+}
+
+export function setAgentTuneDraft(draft) {
+  if (draft) set('agent_tune_draft', draft);
+  else remove('agent_tune_draft');
+}
+
+export function consumeAgentTuneDraft() {
+  const draft = getAgentTuneDraft();
+  remove('agent_tune_draft');
+  return draft;
+}
+
 /**
  * Get the last-used key index for round-robin rotation.
  * @returns {number}

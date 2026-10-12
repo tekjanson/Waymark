@@ -176,6 +176,7 @@ class DreamRSI {
     this.summaryLastAt = 0;
     this.summaryLastVersion = -1;
     this.tuningText = process.env.AGENT_TUNING || '';
+    this.liveStatusCount = 0;
   }
 
   /** Adapter: one agent turn through the rotating key pool → { text, keyIndex }. */
@@ -275,12 +276,20 @@ class DreamRSI {
 
   async setLiveStatus(text) {
     if (!text) return;
-    // Stream the live line into the Agent Registry (buffered — one Sheets write
-    // per flush window). We intentionally DO NOT write per-turn notes onto the
-    // kanban workboard: that was noisy and doubled the Sheets write rate.
+    // Queue progress lines for the Agent Registry burst feed.
+    // We intentionally DO NOT write per-turn notes onto the kanban workboard:
+    // that was noisy and doubled the Sheets write rate.
     if (this.fleet) await this.fleet.pushActivity(text).catch(() => {});
+    this.liveStatusCount += 1;
     void this.reportKeyStatus();
-    void this.refreshLiveSnapshot().catch(() => {});
+    // In burst mode, summarize less often to avoid unnecessary model churn.
+    // In stream mode, keep the old near-live cadence.
+    if (this.fleet?.isStreaming || this.liveStatusCount % 6 === 0) {
+      void this.refreshLiveSnapshot().catch(() => {});
+    }
+    if (this.fleet && !this.fleet.isStreaming && this.liveStatusCount % 12 === 0) {
+      void this.fleet.flush().catch(() => {});
+    }
   }
 
   /** Format the key pool's live status for the fleet monitor. */
@@ -578,7 +587,7 @@ async function main() {
     if (prov && prov.created) log(`Provisioned Discovery_Tree tab`);
   }
 
-  // Dev Fleet plumbing: stream live activity into the Agent Registry sheet that
+  // Dev Fleet plumbing: burst-write activity into the Agent Registry sheet that
   // the AI Fleet tool renders. Auto-provisions the agent row + Activity column.
   const fleet = new FleetReporter({
     keyFile: KEY_FILE,

@@ -2,7 +2,7 @@
    templates/agents.js — AI Agent Registry: remote personality
    and tuning config panel for dev-worker agents.
 
-   Each row = one named agent (Alex, Sam, Jordan…).
+   Each row = one named agent (waymark-bot, Sam, Jordan…).
    Operators edit tuning strings and target workboards here;
    agents read their row on boot and pick up the config.
    ============================================================ */
@@ -12,6 +12,7 @@ import { api } from '../api-client.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
+const LS_AGENT_TUNE_DRAFT_KEY = 'waymark_agent_tune_draft';
 
 /* ---------- Status config ---------- */
 const STATUS_CYCLE  = ['Online', 'Idle', 'Offline', 'Error'];
@@ -24,7 +25,7 @@ const STATUS_COLORS = {
 
 /* ---------- Human names pool (for new-agent suggestions) ---------- */
 export const AGENT_NAME_POOL = [
-  'Alex', 'Sam', 'Jordan', 'Morgan', 'Casey', 'Riley', 'Quinn',
+  'waymark-bot', 'Sam', 'Jordan', 'Morgan', 'Casey', 'Riley', 'Quinn',
   'Avery', 'Blake', 'Drew', 'Finley', 'Harper', 'Indigo', 'Jules',
   'Kendall', 'Lane', 'Marlow', 'Noel', 'Oakley', 'Payton',
 ];
@@ -293,7 +294,7 @@ const definition = {
           ])
         : null;
 
-      /* -- Live activity feed (chat stream fed by the dev-worker) -- */
+      /* -- Activity feed (burst updates written by the dev-worker) -- */
       const hbMs = heartbeat ? Date.now() - new Date(heartbeat).getTime() : Infinity;
       const isLive = /online|busy/i.test(statusVal) && hbMs < 180000;
       const activityLines = activity.split('\n').map(l => l.trim()).filter(Boolean);
@@ -301,12 +302,12 @@ const definition = {
         ? el('div', { className: 'agents-feed' + (isLive ? ' agents-feed-live' : '') }, [
             el('div', { className: 'agents-feed-header' }, [
               el('span', { className: 'agents-feed-pulse' + (isLive ? '' : ' agents-feed-pulse-off') }),
-              el('span', { className: 'agents-feed-title' }, ['Live activity']),
+              el('span', { className: 'agents-feed-title' }, ['Activity feed']),
             ]),
             el('div', { className: 'agents-feed-body' },
               activityLines.length
                 ? activityLines.map(_feedLine)
-                : [el('div', { className: 'agents-feed-empty' }, ['Waiting for the agent to stream…'])]
+                : [el('div', { className: 'agents-feed-empty' }, ['Waiting for the next burst update…'])]
             ),
           ])
         : null;
@@ -397,6 +398,36 @@ const definition = {
         }},
       }, ['🗑️ Delete']);
 
+      const tuneChatBtn = el('button', {
+        className: 'agents-chat-btn',
+        title: `Open Waymark AI chat to tune "${name}"`,
+        on: { click() {
+          const promptParts = [
+            `I want to tune the worker agent "${name}".`,
+            '',
+            'Please propose an updated tuning string and explain why it improves execution.',
+            'Then return the final tuning text as one copy/paste-ready line.',
+            '',
+            `Current provider: ${provider || 'auto'}`,
+            `Current model: ${model || 'auto'}`,
+            `Current command: ${command || '@waymark-builder start'}`,
+            `Current workboard target: ${workboard || '<none>'}`,
+            `Current task: ${taskVal || 'idle'}`,
+            `Current tuning: ${tuning || '<empty>'}`,
+            `Latest AI summary: ${summary || '<none>'}`,
+            `Latest workboard feedback: ${workboardFeedback || '<none>'}`,
+            `Latest tuning feedback: ${tuningFeedback || '<none>'}`,
+          ];
+          localStorage.setItem(LS_AGENT_TUNE_DRAFT_KEY, JSON.stringify({
+            agentName: name,
+            text: promptParts.join('\n'),
+            createdAt: new Date().toISOString(),
+            source: 'agents-template',
+          }));
+          window.location.hash = '#/agent';
+        }},
+      }, ['💬 Tune in AI']);
+
       /* -- Card assembly -- */
       const metaRow = el('div', { className: 'agents-meta-row' }, [
         statusBadge,
@@ -404,7 +435,7 @@ const definition = {
         ...(modelCell ? [el('span', { className: 'agents-meta-sep' }, ['·']), modelCell] : []),
       ]);
 
-      const cardActions = el('div', { className: 'agents-card-actions' }, [deleteBtn]);
+      const cardActions = el('div', { className: 'agents-card-actions' }, [tuneChatBtn, deleteBtn]);
 
       const card = el('div', {
         className: `agents-card agents-card-status-${statusKey.toLowerCase()}`,

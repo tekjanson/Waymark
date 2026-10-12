@@ -70,7 +70,7 @@ test('agents template detects and renders cards', async ({ page }) => {
 test('agents template renders agent names', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  await expect(page.locator('.agents-name').first()).toContainText('Alex');
+  await expect(page.locator('.agents-name').first()).toContainText('waymark-bot');
 });
 
 test('agents template renders status badges', async ({ page }) => {
@@ -104,15 +104,15 @@ test('agents template renders header stats', async ({ page }) => {
 test('agents template renders avatar initials', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  // "Alex" → 1 word → 1 initial: "A"
-  await expect(page.locator('.agents-avatar').first()).toContainText('A');
+  // "waymark-bot" → 1 word → 1 initial: "W"
+  await expect(page.locator('.agents-avatar').first()).toContainText('W');
 });
 
 test('agents template renders live activity feed', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
   await expect(page.locator('.agents-feed').first()).toBeVisible();
-  await expect(page.locator('.agents-feed-title').first()).toContainText('Live activity');
+  await expect(page.locator('.agents-feed-title').first()).toContainText('Activity feed');
 });
 
 test('agents live feed renders streamed lines', async ({ page }) => {
@@ -153,6 +153,31 @@ test('agents live feed renders a status indicator', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
   await expect(page.locator('.agents-card').first().locator('.agents-feed-pulse')).toBeVisible();
+});
+
+test('agents: tuning chat button opens Waymark AI with a draft prompt', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-057');
+  await expect(page.locator('.agents-chat-btn').first()).toBeVisible();
+  await page.locator('.agents-chat-btn').first().click();
+  await page.waitForSelector('#agent-view:not(.hidden)', { timeout: 10000 });
+
+  const draftState = await page.evaluate(() => {
+    const raw = localStorage.getItem('waymark_agent_tune_draft');
+    const draft = raw ? JSON.parse(raw) : null;
+    const input = document.querySelector('.agent-input');
+    return {
+      draft,
+      inputValue: input ? input.value : '',
+    };
+  });
+
+  if (draftState.draft) {
+    expect(draftState.draft.agentName).toBe('waymark-bot');
+    expect(draftState.draft.text).toContain('Current tuning:');
+  } else {
+    expect(draftState.inputValue).toContain('I want to tune the worker agent "waymark-bot".');
+  }
 });
 
 test('Dev Fleet sidebar button is visible', async ({ page }) => {
@@ -311,11 +336,11 @@ test('agents: editing agent name in UI fires a cell-update record', async ({ pag
   await nameEl.click();
   const input = nameEl.locator('input.editable-cell-input');
   await expect(input).toBeVisible({ timeout: 3000 });
-  await input.fill('Alex-Updated');
+  await input.fill('waymark-bot-updated');
   await input.press('Enter');
   // Verify a cell-update record was created
   const records = await getCreatedRecords(page);
-  expect(records.some(r => r.type === 'cell-update' && r.value === 'Alex-Updated')).toBe(true);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'waymark-bot-updated')).toBe(true);
 });
 
 test('agents: editing tuning textarea in UI fires a cell-update record', async ({ page }) => {
@@ -469,7 +494,7 @@ test('agents: Sync Fleet shows error toast on failure response', async ({ page }
 test('agents: workboard field shows Open link when value is set', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
-  // First agent (Alex) has a workboard Sheet ID in the fixture
+  // First agent (waymark-bot) has a workboard Sheet ID in the fixture
   const openLink = page.locator('.agents-workboard-open').first();
   await expect(openLink).toBeVisible();
   await expect(openLink).toContainText('↗ Open');
@@ -629,7 +654,7 @@ test('agents template delete modal shows agent name', async ({ page }) => {
   await deleteBtn.click();
   
   // Agent name should be in modal
-  await expect(page.locator('.agents-delete-agent-name')).toContainText('Alex');
+  await expect(page.locator('.agents-delete-agent-name')).toContainText('waymark-bot');
 });
 
 test('agents template delete modal cancel button', async ({ page }) => {

@@ -9,7 +9,7 @@
 #   bash /scripts/read-agent-tuning.sh             # prints export statements
 #
 # Required env:
-#   AGENT_HUMAN_NAME              — human name of this agent (Alex, Sam, Jordan…)
+#   AGENT_HUMAN_NAME              — human name of this agent (waymark-bot, Sam, Jordan…)
 #   AGENTS_SHEET_ID               — Google Sheets ID of the Agent Registry sheet
 #   GOOGLE_APPLICATION_CREDENTIALS — path to service account key
 #

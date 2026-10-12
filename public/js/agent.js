@@ -427,6 +427,7 @@ export function show(container) {
     _messages = saved;
   }
   _renderUI();
+  _hydrateTuneDraft();
 }
 
 /**
@@ -468,6 +469,24 @@ function _renderUI() {
   });
   _chatBody = rendered.chatBody;
   _contextBar = rendered.contextBar;
+}
+
+function _hydrateTuneDraft() {
+  const draft = storage.consumeAgentTuneDraft();
+  if (!draft || !draft.text) return;
+
+  const input = _container?.querySelector('.agent-input');
+  if (!input) {
+    showToast(`Tuning draft for ${draft.agentName || 'agent'} is ready once chat input is available`, 'success');
+    storage.setAgentTuneDraft(draft);
+    return;
+  }
+
+  input.value = draft.text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  showToast(`Loaded tuning draft for ${draft.agentName || 'agent'}`, 'success');
 }
 
 function _buildWelcome() {
