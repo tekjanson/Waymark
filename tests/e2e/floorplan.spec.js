@@ -22,6 +22,18 @@ test('floor plan does not render generic placeholder wall labels', async ({ page
   expect(genericText.some(value => /^(room|wall|electrical|plumbing|fixture)$/i.test(value))).toBe(false);
 });
 
+test('wall tool supports single-click placement for immediate feedback', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const beforeCount = await page.locator('.floorplan-wall').count();
+  await page.click('.floorplan-svg', { position: { x: 220, y: 180 } });
+  const afterCount = await page.locator('.floorplan-wall').count();
+
+  expect(afterCount).toBe(beforeCount + 1);
+});
+
 test('export button triggers print workflow for PDF output', async ({ page }) => {
   await page.addInitScript(() => {
     window.__PRINT_CALLED__ = false;

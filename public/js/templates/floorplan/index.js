@@ -38,6 +38,15 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const TOOL_HINTS = {
+  wall: 'Wall: drag to draw, or tap once to drop a short wall segment.',
+  room: 'Room: drag to draw room bounds, or tap once to drop a default room.',
+  electrical: 'Electrical: tap to place a point, drag to preview before release.',
+  plumbing: 'Plumbing: tap to place a point, drag to preview before release.',
+  select: 'Select: drag an existing room/wall/device to reposition it.',
+  erase: 'Erase: tap any drawn item to remove it.',
+};
+
 function hasMeaningfulLabel(label) {
   if (typeof label !== 'string') return false;
   const text = label.trim();
@@ -219,6 +228,7 @@ const definition = {
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-plumbing' }, []), 'Plumbing']),
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-fixture' }, []), 'Fixtures']),
       ]),
+      el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
       el('div', { className: 'floorplan-stage' }, [
         el('svg', {
           className: 'floorplan-svg',
@@ -235,6 +245,7 @@ const definition = {
     ]);
 
     const svg = board.querySelector('.floorplan-svg');
+    const hint = board.querySelector('.floorplan-hint');
     const scene = el('g', { className: 'floorplan-scene' });
     const bg = el('rect', {
       x: 20,
@@ -273,6 +284,7 @@ const definition = {
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
+      if (hint) hint.textContent = TOOL_HINTS[nextTool] || '';
     }
 
     function renderScene() {
@@ -471,7 +483,7 @@ const definition = {
     }
 
     function beginDraft(event) {
-      if (event.button !== undefined && event.button !== 0) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
       event.preventDefault();
       const point = pointFromEvent(svg, event);
       const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
@@ -487,6 +499,7 @@ const definition = {
 
       if (state.tool === 'select') {
         if (targetItem) {
+          svg.setPointerCapture?.(event.pointerId);
           state.dragId = targetItem.dataset.floorplanItem;
           const item = state.items.find(entry => String(entry.id) === state.dragId);
           if (item) {
@@ -499,6 +512,12 @@ const definition = {
             };
           }
         }
+        return;
+      }
+
+      if (state.tool === 'electrical' || state.tool === 'plumbing') {
+        state.items.push(createItem(state.tool, point, point));
+        renderScene();
         return;
       }
 
@@ -546,8 +565,25 @@ const definition = {
 
       if (state.tool !== 'erase' && state.preview) {
         const { kind, start, end } = state.preview;
-        if (Math.hypot(end.x - start.x, end.y - start.y) > 18) {
+        const distance = Math.hypot(end.x - start.x, end.y - start.y);
+        if (distance > 18) {
           state.items.push(createItem(kind, start, end));
+        } else if (kind === 'wall') {
+          const wallEnd = {
+            x: clamp(start.x + 80, 20, 940),
+            y: start.y,
+          };
+          state.items.push(createItem(kind, start, wallEnd));
+        } else if (kind === 'room') {
+          const roomStart = {
+            x: clamp(start.x - 60, 20, 880),
+            y: clamp(start.y - 40, 20, 520),
+          };
+          const roomEnd = {
+            x: roomStart.x + 120,
+            y: roomStart.y + 80,
+          };
+          state.items.push(createItem(kind, roomStart, roomEnd));
         }
       }
       state.preview = null;
@@ -558,7 +594,6 @@ const definition = {
     svg.addEventListener('pointerdown', beginDraft);
     svg.addEventListener('pointermove', updateDraft);
     svg.addEventListener('pointerup', endDraft);
-    svg.addEventListener('pointerleave', endDraft);
     svg.addEventListener('pointercancel', endDraft);
     svg.style.cursor = 'crosshair';
     setTool('wall');

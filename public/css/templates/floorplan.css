@@ -142,6 +142,17 @@
 .floorplan-swatch-plumbing { background: #93c5fd; }
 .floorplan-swatch-fixture { background: #fbbf24; }
 
+.floorplan-hint {
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #eef6ff;
+  color: #1e3a8a;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .floorplan-stage {
   padding: 16px;
   background: #f8fafc;
@@ -211,7 +222,8 @@
     align-items: flex-start;
   }
 
-  .floorplan-export-btn {
+  .floorplan-export-btn,
+  .floorplan-secondary-btn {
     width: 100%;
   }
 }
