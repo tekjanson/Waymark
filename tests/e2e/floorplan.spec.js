@@ -34,6 +34,13 @@ test('wall tool supports single-click placement for immediate feedback', async (
   expect(afterCount).toBe(beforeCount + 1);
 });
 
+test('created-sheet fallback still opens floor plan canvas in local mode', async ({ page }) => {
+  await setupApp(page, { hash: '#/sheet/created-sheet-e2e-fallback' });
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+  await expect(page.locator('#template-badge')).toContainText('Floor Plan');
+  await expect(page.locator('.floorplan-svg')).toBeVisible();
+});
+
 test('export button triggers print workflow for PDF output', async ({ page }) => {
   await page.addInitScript(() => {
     window.__PRINT_CALLED__ = false;

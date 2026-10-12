@@ -60,6 +60,34 @@ async function withAuthRetry(fn) {
 
 /* ---------- Mock state ---------- */
 let mockFixtures = null;
+const MOCK_CREATED_SHEETS_KEY = 'waymark_mock_created_sheets_v1';
+
+function loadPersistedMockSheets() {
+  try {
+    const raw = window.localStorage.getItem(MOCK_CREATED_SHEETS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistMockSheetRecord(sheetId, data) {
+  if (!sheetId || !data) return;
+  try {
+    const existing = loadPersistedMockSheets();
+    existing[sheetId] = data;
+    window.localStorage.setItem(MOCK_CREATED_SHEETS_KEY, JSON.stringify(existing));
+  } catch {
+    // Best-effort persistence in local mode.
+  }
+}
+
+function persistIfCreatedSheet(sheetId, data) {
+  if (!/^created-sheet-/.test(String(sheetId || ''))) return;
+  persistMockSheetRecord(sheetId, data);
+}
 
 async function loadFixtures() {
   if (mockFixtures) return mockFixtures;
@@ -67,7 +95,7 @@ async function loadFixtures() {
     fetch(BASE + '/__fixtures/folders.json').then(r => r.json()),
     fetch(BASE + '/__fixtures/users.json').then(r => r.json()),
   ]);
-  mockFixtures = { folders, users, sheets: {} };
+  mockFixtures = { folders, users, sheets: { ...loadPersistedMockSheets() } };
   return mockFixtures;
 }
 
@@ -148,7 +176,25 @@ async function loadMockSheet(sheetId) {
     'sheet-075': 'floorplan-house',
   };
   const filename = mapping[sheetId];
-  if (!filename) return null;
+  if (!filename) {
+    if (/^created-sheet-/.test(String(sheetId))) {
+      const fallback = {
+        id: sheetId,
+        title: 'My Floor Plan',
+        sheetTitle: 'Sheet1',
+        values: [['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes']],
+        tabs: [{
+          title: 'Sheet1',
+          numericSheetId: 0,
+          values: [['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes']],
+        }],
+      };
+      fix.sheets[sheetId] = fallback;
+      persistMockSheetRecord(sheetId, fallback);
+      return fallback;
+    }
+    return null;
+  }
 
   try {
     const data = await fetch(BASE + `/__fixtures/sheets/${filename}.json`).then(r => r.json());
@@ -880,6 +926,7 @@ export const api = {
           values: rows,
           tabs: [{ title: 'Sheet1', numericSheetId: 0, values: rows }],
         };
+        persistMockSheetRecord(sheetId, fix.sheets[sheetId]);
 
         return record;
       }
@@ -902,6 +949,7 @@ export const api = {
         if (data && data.values) {
           for (const row of rows) data.values.push(row);
         }
+        persistIfCreatedSheet(spreadsheetId, data);
         const record = {
           type: 'row-append',
           spreadsheetId, sheetTitle, rows,
@@ -930,6 +978,7 @@ export const api = {
         if (data && data.values && data.values[row]) {
           data.values[row][col] = value;
         }
+        persistIfCreatedSheet(spreadsheetId, data);
         const record = {
           type: 'cell-update',
           spreadsheetId, sheetTitle, row, col, value,
