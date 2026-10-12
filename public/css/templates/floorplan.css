@@ -61,6 +61,11 @@
   font-weight: 600;
 }
 
+.floorplan-ai-launch-btn,
+.floorplan-ai-render-btn {
+  white-space: nowrap;
+}
+
 .floorplan-toolset {
   display: flex;
   align-items: center;
@@ -214,6 +219,171 @@
   fill: #334155;
   font-size: 12px;
   font-weight: 600;
+}
+
+.floorplan-ai-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(2, 6, 23, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.floorplan-ai-modal {
+  width: min(960px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.floorplan-ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.floorplan-ai-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.floorplan-ai-close {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.floorplan-ai-status {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #eef6ff;
+  color: #1e3a8a;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.floorplan-ai-files {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+}
+
+.floorplan-ai-empty {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+.floorplan-ai-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid #e7edf5;
+}
+
+.floorplan-ai-file-row:last-child {
+  border-bottom: 0;
+}
+
+.floorplan-ai-file-name {
+  font-size: 0.84rem;
+  color: var(--color-text);
+}
+
+.floorplan-ai-remove {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: #9f1239;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.floorplan-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.floorplan-ai-btn {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.floorplan-ai-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.floorplan-ai-btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.floorplan-ai-render-host {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.floorplan-ai-render-svg {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.floorplan-ai-render-details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+
+.floorplan-ai-render-details h4 {
+  margin-bottom: 6px;
+}
+
+.floorplan-ai-render-details p {
+  margin-bottom: 6px;
+}
+
+.floorplan-ai-render-details ul {
+  margin: 0 0 0 18px;
+}
+
+.floorplan-ai-render-prompt {
+  font-style: italic;
+  color: #334155;
 }
 
 @media (max-width: 768px) {

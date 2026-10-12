@@ -6,7 +6,9 @@
    then renders them in a plan view with a simple PDF/print export.
    ============================================================ */
 
-import { cell, el, registerTemplate } from '../shared.js';
+import { cell, el, registerTemplate, showToast } from '../shared.js';
+import { openFloorplanAiModal } from './ai-vision.js';
+import { openFloorplanAiRenderModal } from './ai-render.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function svgEl(tag, attrs = {}, children = []) {
@@ -156,6 +158,20 @@ function createItem(kind, start, end) {
     };
   }
 
+  function makeFixture(point, label = '') {
+    return {
+      id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      kind: 'fixture',
+      type: 'Fixture',
+      label: String(label || '').trim(),
+      layer: 'fixture',
+      x: point.x,
+      y: point.y,
+      width: 16,
+      height: 16,
+    };
+  }
+
   return {
     id,
     kind,
@@ -258,6 +274,18 @@ const definition = {
         ]),
         el('div', { className: 'floorplan-actions' }, [
           el('button', {
+            className: 'floorplan-secondary-btn floorplan-ai-launch-btn',
+            on: {
+              click: () => openFloorplanAiModal({ onApply: applyAiPlanToCanvas }),
+            },
+          }, ['AI From Photos']),
+          el('button', {
+            className: 'floorplan-secondary-btn floorplan-ai-render-btn',
+            on: {
+              click: () => openFloorplanAiRenderModal({ items: state.items }),
+            },
+          }, ['AI Space Render']),
+          el('button', {
             className: 'floorplan-secondary-btn',
             on: { click: () => board.classList.toggle('floorplan-fullscreen') },
           }, ['Full Screen']),
@@ -335,6 +363,65 @@ const definition = {
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
       if (hint) hint.textContent = TOOL_HINTS[nextTool] || '';
       debugLog('tool-change', { tool: nextTool });
+    }
+
+    function applyAiPlanToCanvas(plan) {
+      if (!plan || typeof plan !== 'object') {
+        showToast('AI did not return a usable floor plan.', 'error');
+        return 0;
+      }
+
+      const toX = (pct) => clamp(20 + ((Number(pct) || 0) / 100) * 920, 20, 940);
+      const toY = (pct) => clamp(20 + ((Number(pct) || 0) / 100) * 560, 20, 600);
+      const generated = [];
+
+      for (const room of (plan.rooms || [])) {
+        const start = { x: toX(room.x), y: toY(room.y) };
+        const end = {
+          x: toX((Number(room.x) || 0) + (Number(room.width) || 0)),
+          y: toY((Number(room.y) || 0) + (Number(room.height) || 0)),
+        };
+        const item = createItem('room', start, end);
+        item.label = String(room.label || '').trim();
+        generated.push(item);
+      }
+
+      for (const wall of (plan.walls || [])) {
+        const start = { x: toX(wall.x1), y: toY(wall.y1) };
+        const end = { x: toX(wall.x2), y: toY(wall.y2) };
+        const item = createItem('wall', start, end);
+        item.label = String(wall.label || '').trim();
+        generated.push(item);
+      }
+
+      for (const point of (plan.electrical || [])) {
+        const at = { x: toX(point.x), y: toY(point.y) };
+        const item = createItem('electrical', at, at);
+        item.label = String(point.label || '').trim();
+        generated.push(item);
+      }
+
+      for (const point of (plan.plumbing || [])) {
+        const at = { x: toX(point.x), y: toY(point.y) };
+        const item = createItem('plumbing', at, at);
+        item.label = String(point.label || '').trim();
+        generated.push(item);
+      }
+
+      for (const point of (plan.fixtures || [])) {
+        const at = { x: toX(point.x), y: toY(point.y) };
+        generated.push(makeFixture(at, point.label || ''));
+      }
+
+      if (!generated.length) {
+        showToast('AI draft had no drawable geometry. Try clearer photos.', 'error');
+        return 0;
+      }
+
+      state.items.push(...generated);
+      renderScene();
+      showToast(`AI draft applied: ${generated.length} items`, 'success');
+      return generated.length;
     }
 
     function renderScene() {
