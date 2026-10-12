@@ -1228,6 +1228,20 @@ function renderWithTemplate(values) {
   template._currentSheetId = currentSheetId;
   template._currentNumericSheetId = currentNumericSheetId;
   template._currentSheetTitle = currentSheetTitle;
+  template._currentDataTitle = currentDataTitle;
+  template._currentValues = currentValues;
+  template._currentTemplateKey = key;
+  template._openAskAI = (initialPrompt = '') => {
+    showTemplateAI({
+      id: currentSheetId,
+      title: currentDataTitle || '',
+      sheetTitle: currentSheetTitle || 'Sheet1',
+      values: currentValues || [],
+      templateKey: key,
+      onRefresh: () => loadSheet(currentSheetId),
+      initialPrompt,
+    });
+  };
   // Expose all workbook tabs so templates can read cross-tab data.
   // tab[0] is always the primary tab (same source as the top-level values/sheetTitle).
   template._tabs = currentTabs;

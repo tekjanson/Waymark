@@ -155,29 +155,14 @@ test('agents live feed renders a status indicator', async ({ page }) => {
   await expect(page.locator('.agents-card').first().locator('.agents-feed-pulse')).toBeVisible();
 });
 
-test('agents: tuning chat button opens Waymark AI with a draft prompt', async ({ page }) => {
+test('agents: Ask AI button opens popup with tuning prompt', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
   await expect(page.locator('.agents-chat-btn').first()).toBeVisible();
   await page.locator('.agents-chat-btn').first().click();
-  await page.waitForSelector('#agent-view:not(.hidden)', { timeout: 10000 });
-
-  const draftState = await page.evaluate(() => {
-    const raw = localStorage.getItem('waymark_agent_tune_draft');
-    const draft = raw ? JSON.parse(raw) : null;
-    const input = document.querySelector('.agent-input');
-    return {
-      draft,
-      inputValue: input ? input.value : '',
-    };
-  });
-
-  if (draftState.draft) {
-    expect(draftState.draft.agentName).toBe('waymark-bot');
-    expect(draftState.draft.text).toContain('Current tuning:');
-  } else {
-    expect(draftState.inputValue).toContain('I want to tune the worker agent "waymark-bot".');
-  }
+  await expect(page.locator('.template-ai-panel')).toBeVisible();
+  await expect(page.locator('.template-ai-header-title')).toContainText('Ask AI');
+  await expect(page.locator('.template-ai-input')).toHaveValue(/I want to tune the worker agent "waymark-bot"\./);
 });
 
 test('Dev Fleet sidebar button is visible', async ({ page }) => {

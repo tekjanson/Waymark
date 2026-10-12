@@ -74,7 +74,7 @@ let _pendingInlineImages = [];
 
 /**
  * Open the AI overlay panel for the given sheet.
- * @param {{ id: string, title: string, sheetTitle: string, values: string[][], templateKey: string, onRefresh: Function }} ctx
+ * @param {{ id: string, title: string, sheetTitle: string, values: string[][], templateKey: string, onRefresh: Function, initialPrompt?: string }} ctx
  */
 export function show(ctx) {
   _context = ctx;
@@ -232,6 +232,7 @@ function _buildEmptyState() {
 }
 
 function _buildInputRow(hasKeys) {
+  const initialPrompt = typeof _context?.initialPrompt === 'string' ? _context.initialPrompt : '';
   const input = el('textarea', {
     className: 'template-ai-input',
     placeholder: hasKeys ? 'Ask the AI to update this sheet…' : 'Configure API keys first',
@@ -250,6 +251,7 @@ function _buildInputRow(hasKeys) {
       },
     },
   });
+  if (initialPrompt) input.value = initialPrompt;
   input.disabled = !hasKeys;
 
   const sendBtn = el('button', {

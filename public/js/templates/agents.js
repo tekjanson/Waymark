@@ -12,7 +12,6 @@ import { api } from '../api-client.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
-const LS_AGENT_TUNE_DRAFT_KEY = 'waymark_agent_tune_draft';
 
 /* ---------- Status config ---------- */
 const STATUS_CYCLE  = ['Online', 'Idle', 'Offline', 'Error'];
@@ -92,7 +91,7 @@ const definition = {
     ];
   },
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     container.innerHTML = '';
 
     /* ---------- Fleet webhook URL (server-injected or user-configured) ---------- */
@@ -400,7 +399,7 @@ const definition = {
 
       const tuneChatBtn = el('button', {
         className: 'agents-chat-btn',
-        title: `Open Waymark AI chat to tune "${name}"`,
+        title: `Open Ask AI to tune "${name}"`,
         on: { click() {
           const promptParts = [
             `I want to tune the worker agent "${name}".`,
@@ -418,15 +417,11 @@ const definition = {
             `Latest workboard feedback: ${workboardFeedback || '<none>'}`,
             `Latest tuning feedback: ${tuningFeedback || '<none>'}`,
           ];
-          localStorage.setItem(LS_AGENT_TUNE_DRAFT_KEY, JSON.stringify({
-            agentName: name,
-            text: promptParts.join('\n'),
-            createdAt: new Date().toISOString(),
-            source: 'agents-template',
-          }));
-          window.location.hash = '#/agent';
+          if (template && typeof template._openAskAI === 'function') {
+            template._openAskAI(promptParts.join('\n'));
+          }
         }},
-      }, ['💬 Tune in AI']);
+      }, ['✨ Ask AI']);
 
       /* -- Card assembly -- */
       const metaRow = el('div', { className: 'agents-meta-row' }, [
