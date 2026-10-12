@@ -46,10 +46,40 @@
 }
 
 .floorplan-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
+}
+
+.floorplan-floor-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-right: 2px;
+}
+
+.floorplan-floor-btn {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floorplan-floor-indicator {
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .floorplan-secondary-btn {
@@ -236,15 +266,23 @@
   font-weight: 600;
 }
 
-.floorplan-stage {
+.floorplan-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 10px;
   padding: 10px 12px 12px;
   background: #f8fafc;
+}
+
+.floorplan-stage {
+  padding: 0;
+  background: transparent;
   min-height: 0;
 }
 
 .floorplan-svg {
   width: 100%;
-  height: clamp(360px, 64vh, 680px);
+  height: clamp(380px, 68vh, 780px);
   aspect-ratio: 960 / 620;
   max-height: 68vh;
   border: 1px solid var(--color-border);
@@ -253,6 +291,52 @@
   display: block;
   cursor: crosshair;
   touch-action: none;
+}
+
+.floorplan-interior-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+}
+
+.floorplan-interior-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.floorplan-interior-title {
+  color: var(--color-text);
+}
+
+.floorplan-interior-subtitle {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.floorplan-interior-svg {
+  width: 100%;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.floorplan-interior-face {
+  cursor: pointer;
+  transition: fill 180ms ease;
+}
+
+.floorplan-interior-face:hover {
+  fill: #bfdbfe;
+}
+
+.floorplan-interior-empty {
+  font-size: 12px;
+  fill: #64748b;
 }
 
 .floorplan-scene .floorplan-item {
@@ -305,7 +389,7 @@
 .floorplan-board.floorplan-fullscreen .floorplan-stage {
   flex: 1;
   min-height: 0;
-  padding: 8px 10px;
+  padding: 0;
 }
 
 .floorplan-board.floorplan-fullscreen .floorplan-toolbar {
@@ -318,6 +402,11 @@
 .floorplan-board.floorplan-fullscreen .floorplan-svg {
   height: 100%;
   max-height: none;
+}
+
+.floorplan-board.floorplan-fullscreen .floorplan-workspace {
+  flex: 1;
+  min-height: 0;
 }
 
 .floorplan-symbol-glyph {
@@ -526,7 +615,7 @@
   }
 
   .floorplan-actions {
-    grid-template-columns: 1fr 1fr;
+    justify-content: flex-start;
   }
 
   .floorplan-tool-label {
@@ -534,7 +623,7 @@
   }
 
   .floorplan-stage {
-    padding: 8px;
+    padding: 0;
   }
 
   .floorplan-svg {
@@ -553,6 +642,16 @@
 
   .floorplan-symbol-panel {
     grid-template-columns: 1fr;
+  }
+
+  .floorplan-workspace {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .floorplan-floor-controls {
+    width: 100%;
   }
 }
 

@@ -43,13 +43,23 @@ function parseFloatValue(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+function parseFloorNumber(layer, notes) {
+  const noteText = String(notes || '');
+  const layerText = String(layer || '');
+  const fromNote = noteText.match(/floor\s*[:=-]?\s*(\d+)/i);
+  if (fromNote) return Math.max(1, Number(fromNote[1]) || 1);
+  const fromLayer = layerText.match(/floor\s*[:_-]?(\d+)/i);
+  if (fromLayer) return Math.max(1, Number(fromLayer[1]) || 1);
+  return 1;
+}
+
 function classifyItem(item) {
   const type = String(item.type || item.label || '').toLowerCase();
   const layer = String(item.layer || '').toLowerCase();
 
   if (type.includes('room')) return 'room';
   if (type.includes('wall')) return 'wall';
-  if (type.includes('door') || type.includes('window') || type.includes('opening')) return 'fixture';
+  if (type.includes('door') || type.includes('window') || type.includes('opening') || type.includes('stairs')) return 'fixture';
   if (type.includes('outlet') || type.includes('switch') || type.includes('light') || layer.includes('electrical')) return 'electrical';
   if (type.includes('sink') || type.includes('toilet') || type.includes('pipe') || type.includes('drain') || layer.includes('plumbing')) return 'plumbing';
   if (layer.includes('structure') && !type.includes('door') && !type.includes('window')) return 'wall';
@@ -84,6 +94,7 @@ const TOOL_HINTS = {
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
   door: 'Door: tap near a wall to snap and place an opening.',
   window: 'Window: tap near a wall to snap and place glazing.',
+  stairs: 'Stairs: tap to place stair alignment between floors.',
   symbol: 'Symbol: pick an item and tap to place furniture/appliances.',
   select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
   erase: 'Erase: tap any drawn item to remove it.',
@@ -125,6 +136,7 @@ function fixtureSubtype(item) {
   const text = `${item.type || ''} ${item.label || ''}`.toLowerCase();
   if (text.includes('door')) return 'door';
   if (text.includes('window')) return 'window';
+  if (text.includes('stair')) return 'stairs';
   return 'fixture';
 }
 
@@ -281,7 +293,22 @@ const definition = {
         }
 
         const kind = classifyItem({ type, label, layer });
-        return { id: `sheet-${index + 1}`, index, kind, type, label, layer, x, y, width, height, length, notes };
+        return {
+          id: `sheet-${index + 1}`,
+          index,
+          kind,
+          type,
+          label,
+          layer,
+          x,
+          y,
+          width,
+          height,
+          length,
+          notes,
+          floor: parseFloorNumber(layer, notes),
+          interior: [],
+        };
       })
       .filter(Boolean);
 
@@ -299,6 +326,7 @@ const definition = {
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'stairs' }, on: { click: () => setTool('stairs') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪜']), el('span', { className: 'floorplan-tool-label' }, ['Stairs'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'symbol' }, on: { click: () => setTool('symbol') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🧩']), el('span', { className: 'floorplan-tool-label' }, ['Symbol'])]),
             ]),
           ]),
@@ -340,16 +368,30 @@ const definition = {
           ]),
         ]),
         el('div', { className: 'floorplan-actions' }, [
+          el('div', { className: 'floorplan-floor-controls' }, [
+            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => shiftFloor(-1) } }, ['− Floor']),
+            el('span', { className: 'floorplan-floor-indicator' }, ['Floor 1']),
+            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => shiftFloor(1) } }, ['+ Floor']),
+            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => toggleAlignBelow() } }, ['Align Below: Off']),
+          ]),
           el('button', {
             className: 'floorplan-secondary-btn floorplan-auto-wall-btn',
             on: { click: () => autoGenerateWallsFromRooms() },
           }, ['Auto Walls']),
+          el('button', {
+            className: 'floorplan-secondary-btn floorplan-floor-one-btn',
+            on: { click: () => loadFloorOnePreset() },
+          }, ['Load Floor 1']),
           el('button', {
             className: 'floorplan-secondary-btn floorplan-ai-render-btn',
             on: {
               click: () => openFloorplanAiRenderModal({ items: state.items }),
             },
           }, ['Render Photo']),
+          el('button', {
+            className: 'floorplan-secondary-btn floorplan-interior-toggle-btn',
+            on: { click: () => toggleInteriorView() },
+          }, ['3D Interior: Off']),
           el('button', {
             className: 'floorplan-secondary-btn floorplan-focus-toggle-btn',
             on: { click: () => toggleFocusMode() },
@@ -361,23 +403,39 @@ const definition = {
         ]),
       ]),
       el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
-      el('div', { className: 'floorplan-stage' }, [
-        svgEl('svg', {
-          className: 'floorplan-svg',
-          viewBox: '0 0 960 620',
-          width: '100%',
-          height: '620',
-          preserveAspectRatio: 'xMidYMid meet',
-          role: 'img',
-          'aria-label': 'House floor plan',
-          'data-floorplan-svg': 'true',
-          style: { touchAction: 'none' },
-        }, []),
+      el('div', { className: 'floorplan-workspace' }, [
+        el('div', { className: 'floorplan-stage' }, [
+          svgEl('svg', {
+            className: 'floorplan-svg',
+            viewBox: '0 0 960 620',
+            width: '100%',
+            height: '620',
+            preserveAspectRatio: 'xMidYMid meet',
+            role: 'img',
+            'aria-label': 'House floor plan',
+            'data-floorplan-svg': 'true',
+            style: { touchAction: 'none' },
+          }, []),
+        ]),
+        el('aside', { className: 'floorplan-interior-panel hidden' }, [
+          el('div', { className: 'floorplan-interior-header' }, [
+            el('strong', { className: 'floorplan-interior-title' }, ['Interior Box View']),
+            el('span', { className: 'floorplan-interior-subtitle' }, ['Select a room, then place symbols inside walls/floor.']),
+          ]),
+          svgEl('svg', {
+            className: 'floorplan-interior-svg',
+            viewBox: '0 0 320 260',
+            role: 'img',
+            'aria-label': 'Interior box room view',
+          }, []),
+        ]),
       ]),
     ]);
 
     const svg = board.querySelector('.floorplan-svg');
     const hint = board.querySelector('.floorplan-hint');
+    const interiorPanel = board.querySelector('.floorplan-interior-panel');
+    const interiorSvg = board.querySelector('.floorplan-interior-svg');
     const scene = svgEl('g', { className: 'floorplan-scene' });
     const bg = svgEl('rect', {
       x: 20,
@@ -403,6 +461,9 @@ const definition = {
       tool: 'wall',
       items,
       symbolPreset: HOUSEHOLD_SYMBOLS[0],
+      currentFloor: 1,
+      alignBelow: false,
+      interiorEnabled: false,
       layerVisibility: {
         room: true,
         wall: true,
@@ -431,6 +492,18 @@ const definition = {
       return state.items.find(entry => String(entry.id) === String(itemId)) || null;
     }
 
+    function registerNewItem(item) {
+      if (!item) return null;
+      item.floor = state.currentFloor;
+      if (!Array.isArray(item.interior)) item.interior = [];
+      return item;
+    }
+
+    function getItemFloor(item) {
+      const floor = Number(item.floor);
+      return Number.isFinite(floor) && floor > 0 ? floor : 1;
+    }
+
     function getWallEndpoints(wall) {
       const x1 = wall.x;
       const y1 = wall.y;
@@ -442,6 +515,7 @@ const definition = {
     function getSnapAnchorPoints(skipWallId = null) {
       const anchors = [];
       state.items.forEach((item) => {
+        if (getItemFloor(item) !== state.currentFloor) return;
         const kind = item.kind || classifyItem(item);
         if (kind === 'wall' && String(item.id) !== String(skipWallId)) {
           const edge = getWallEndpoints(item);
@@ -464,6 +538,7 @@ const definition = {
       const x = [];
       const y = [];
       state.items.forEach((item) => {
+        if (getItemFloor(item) !== state.currentFloor) return;
         const kind = item.kind || classifyItem(item);
         if (kind === 'room') {
           const width = Math.max(40, item.width || 120);
@@ -539,7 +614,7 @@ const definition = {
     }
 
     function snapPointToNearestWall(point, maxDistance = 30) {
-      const walls = state.items.filter(item => (item.kind || classifyItem(item)) === 'wall');
+      const walls = state.items.filter(item => (item.kind || classifyItem(item)) === 'wall' && getItemFloor(item) === state.currentFloor);
       let best = null;
       walls.forEach((wall) => {
         const endpoints = getWallEndpoints(wall);
@@ -587,13 +662,28 @@ const definition = {
           symbol: preset.icon,
         };
       }
+      if (tool === 'stairs') {
+        return {
+          id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          kind: 'fixture',
+          type: 'Stairs',
+          label: 'Stairs',
+          layer: 'fixture',
+          x: point.x,
+          y: point.y,
+          width: 30,
+          height: 18,
+          symbolKey: 'stairs',
+          symbol: '🪜',
+        };
+      }
       return createItem(tool, point, point);
     }
 
     function hasWallWithEndpoints(segment, tolerance = 8) {
       const near = (a, b) => Math.abs(a - b) <= tolerance;
       return state.items
-        .filter(item => (item.kind || classifyItem(item)) === 'wall')
+        .filter(item => (item.kind || classifyItem(item)) === 'wall' && getItemFloor(item) === state.currentFloor)
         .some((wall) => {
           const edge = getWallEndpoints(wall);
           const direct = near(edge.x1, segment.x1)
@@ -609,7 +699,7 @@ const definition = {
     }
 
     function autoGenerateWallsFromRooms() {
-      const rooms = state.items.filter(item => (item.kind || classifyItem(item)) === 'room');
+      const rooms = state.items.filter(item => (item.kind || classifyItem(item)) === 'room' && getItemFloor(item) === state.currentFloor);
       if (!rooms.length) {
         showToast('Add at least one room before auto-generating walls.', 'error');
         return;
@@ -632,7 +722,7 @@ const definition = {
 
         segments.forEach((segment) => {
           if (hasWallWithEndpoints(segment)) return;
-          const wall = createItem('wall', { x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 });
+          const wall = registerNewItem(createItem('wall', { x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 }));
           state.items.push(wall);
           added += 1;
         });
@@ -675,6 +765,84 @@ const definition = {
       setTool('symbol');
     }
 
+    function refreshFloorUi() {
+      const floorIndicator = board.querySelector('.floorplan-floor-indicator');
+      const alignButton = board.querySelector('.floorplan-floor-controls .floorplan-floor-btn:last-child');
+      if (floorIndicator) floorIndicator.textContent = `Floor ${state.currentFloor}`;
+      if (alignButton) alignButton.textContent = `Align Below: ${state.alignBelow ? 'On' : 'Off'}`;
+    }
+
+    function shiftFloor(delta) {
+      const next = Math.max(1, state.currentFloor + delta);
+      state.currentFloor = next;
+      state.selectedId = null;
+      refreshFloorUi();
+      renderScene();
+    }
+
+    function toggleAlignBelow() {
+      state.alignBelow = !state.alignBelow;
+      refreshFloorUi();
+      renderScene();
+    }
+
+    function toggleInteriorView() {
+      state.interiorEnabled = !state.interiorEnabled;
+      interiorPanel.classList.toggle('hidden', !state.interiorEnabled);
+      const btn = board.querySelector('.floorplan-interior-toggle-btn');
+      if (btn) btn.textContent = `3D Interior: ${state.interiorEnabled ? 'On' : 'Off'}`;
+      renderScene();
+    }
+
+    function loadFloorOnePreset() {
+      state.currentFloor = 1;
+      state.alignBelow = false;
+      state.selectedId = null;
+      state.items = [];
+      const draftRooms = [
+        { label: 'Foyer', x: 420, y: 70, width: 120, height: 90 },
+        { label: 'Kitchen', x: 420, y: 170, width: 170, height: 120 },
+        { label: 'Living Room', x: 600, y: 120, width: 260, height: 180 },
+        { label: 'Galley Kitchen', x: 250, y: 120, width: 150, height: 220 },
+        { label: 'Hallway', x: 420, y: 300, width: 120, height: 220 },
+        { label: 'Closet', x: 550, y: 365, width: 70, height: 70 },
+        { label: 'Bath', x: 550, y: 440, width: 100, height: 90 },
+        { label: 'Rear Room', x: 380, y: 520, width: 270, height: 130 },
+        { label: 'South Room', x: 700, y: 330, width: 220, height: 180 },
+      ];
+
+      draftRooms.forEach((room) => {
+        const created = registerNewItem(createItem('room', { x: room.x, y: room.y }, { x: room.x + room.width, y: room.y + room.height }));
+        created.label = room.label;
+        state.items.push(created);
+      });
+
+      autoGenerateWallsFromRooms();
+      const stairs = registerNewItem(createPointToolItem('stairs', { x: 330, y: 360 }));
+      if (stairs) {
+        stairs.label = 'Main Stairs';
+        state.items.push(stairs);
+      }
+      const entryDoor = registerNewItem(createPointToolItem('door', { x: 500, y: 70 }));
+      if (entryDoor) {
+        entryDoor.label = 'Front Door';
+        state.items.push(entryDoor);
+      }
+      const livingDoor = registerNewItem(createPointToolItem('door', { x: 600, y: 220 }));
+      if (livingDoor) {
+        livingDoor.label = 'Living Door';
+        state.items.push(livingDoor);
+      }
+      const kitchenWin = registerNewItem(createPointToolItem('window', { x: 250, y: 200 }));
+      if (kitchenWin) {
+        kitchenWin.label = 'Galley Window';
+        state.items.push(kitchenWin);
+      }
+      refreshFloorUi();
+      renderScene();
+      showToast('Loaded Floor 1 house diagram.', 'success');
+    }
+
     function toggleFocusMode() {
       board.classList.toggle('floorplan-fullscreen');
       const focusButton = board.querySelector('.floorplan-focus-toggle-btn');
@@ -697,6 +865,77 @@ const definition = {
         setLayerVisibility(layer, !state.layerVisibility[layer]);
       });
     });
+
+    interiorSvg.addEventListener('click', (event) => {
+      const face = event.target && event.target.closest ? event.target.closest('[data-face]') : null;
+      if (!face || state.tool !== 'symbol') return;
+      const selected = state.selectedId ? findItemById(state.selectedId) : null;
+      if (!selected || (selected.kind || classifyItem(selected)) !== 'room') {
+        showToast('Select a room first to place interior symbols.', 'error');
+        return;
+      }
+      if (!Array.isArray(selected.interior)) selected.interior = [];
+      const rect = interiorSvg.getBoundingClientRect();
+      const clientX = event.clientX || rect.left;
+      const clientY = event.clientY || rect.top;
+      const x = ((clientX - rect.left) / rect.width) * 320;
+      const y = ((clientY - rect.top) / rect.height) * 260;
+      selected.interior.push({
+        face: face.dataset.face,
+        symbol: (state.symbolPreset || HOUSEHOLD_SYMBOLS[0]).icon,
+        x: clamp(x, 86, 234),
+        y: clamp(y, 76, 214),
+      });
+      renderScene();
+    });
+
+    function renderInteriorView() {
+      if (!state.interiorEnabled) return;
+      interiorSvg.innerHTML = '';
+      const selected = state.selectedId ? findItemById(state.selectedId) : null;
+      const selectedRoom = selected && (selected.kind || classifyItem(selected)) === 'room'
+        ? selected
+        : null;
+
+      if (!selectedRoom || getItemFloor(selectedRoom) !== state.currentFloor) {
+        interiorSvg.append(svgEl('text', {
+          x: 160,
+          y: 130,
+          'text-anchor': 'middle',
+          className: 'floorplan-interior-empty',
+        }, ['Select a room to edit interior surfaces']));
+        return;
+      }
+
+      if (!Array.isArray(selectedRoom.interior)) selectedRoom.interior = [];
+      const faces = [
+        { key: 'back', polygon: '80,70 240,70 210,110 110,110', fill: '#dbeafe' },
+        { key: 'left', polygon: '80,70 110,110 110,210 80,180', fill: '#cfe2ff' },
+        { key: 'right', polygon: '240,70 210,110 210,210 240,180', fill: '#cfe2ff' },
+        { key: 'floor', polygon: '110,110 210,110 210,210 110,210', fill: '#f1f5f9' },
+      ];
+
+      faces.forEach((face) => {
+        interiorSvg.append(svgEl('polygon', {
+          points: face.polygon,
+          className: 'floorplan-interior-face',
+          fill: face.fill,
+          stroke: '#64748b',
+          'stroke-width': '1.5',
+          'data-face': face.key,
+        }));
+      });
+
+      selectedRoom.interior.forEach((mark) => {
+        interiorSvg.append(svgEl('text', {
+          x: mark.x,
+          y: mark.y,
+          className: 'floorplan-symbol-glyph',
+          'text-anchor': 'middle',
+          'font-size': '12',
+        }, [mark.symbol]));
+      });
+    }
 
     function renderScene() {
       scene.innerHTML = '';
@@ -721,9 +960,14 @@ const definition = {
 
       state.items.forEach((item) => {
         const kind = item.kind || classifyItem(item);
+        const itemFloor = getItemFloor(item);
+        const isCurrentFloor = itemFloor === state.currentFloor;
+        const isAlignedOverlay = state.alignBelow && itemFloor === (state.currentFloor - 1);
+        if (!isCurrentFloor && !isAlignedOverlay) return;
         if (state.layerVisibility[kind] === false) return;
         const layer = layers[kind] || layers.fixture;
-        const isSelected = String(item.id) === String(state.selectedId);
+        const isSelected = isCurrentFloor && String(item.id) === String(state.selectedId);
+        const itemOpacity = isAlignedOverlay ? 0.32 : 1;
 
         if (kind === 'room') {
           const width = Math.max(60, item.width || 120);
@@ -740,6 +984,7 @@ const definition = {
             className: `floorplan-room floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'room',
+            opacity: itemOpacity,
           });
           layer.append(rect);
           if (hasMeaningfulLabel(item.label)) {
@@ -763,6 +1008,7 @@ const definition = {
             className: `floorplan-wall floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'wall',
+            opacity: itemOpacity,
           });
           layer.append(line);
 
@@ -784,6 +1030,7 @@ const definition = {
             className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'electrical',
+            opacity: itemOpacity,
           });
           layer.append(node);
           if (isSelected && hasMeaningfulLabel(item.label)) {
@@ -806,6 +1053,7 @@ const definition = {
             className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'plumbing',
+            opacity: itemOpacity,
           });
           layer.append(node);
           if (isSelected && hasMeaningfulLabel(item.label)) {
@@ -839,6 +1087,7 @@ const definition = {
               stroke: '#7c2d12',
               'stroke-width': '2',
               transform: `rotate(${rotation} ${x} ${y})`,
+              opacity: itemOpacity,
             }));
           } else if (subtype === 'window') {
             const width = Math.max(18, item.width || 26);
@@ -852,7 +1101,31 @@ const definition = {
               'stroke-width': '4',
               'stroke-linecap': 'round',
               transform: `rotate(${rotation} ${x} ${y})`,
+              opacity: itemOpacity,
             }));
+          } else if (subtype === 'stairs') {
+            const width = Math.max(26, item.width || 30);
+            const height = Math.max(16, item.height || 18);
+            layer.append(svgEl('rect', {
+              ...commonAttrs,
+              x: x - (width / 2),
+              y: y - (height / 2),
+              width,
+              height,
+              rx: 4,
+              fill: '#f1f5f9',
+              stroke: '#475569',
+              'stroke-width': '2',
+              opacity: itemOpacity,
+            }));
+            layer.append(svgEl('text', {
+              x,
+              y: y + 4,
+              className: 'floorplan-symbol-glyph',
+              'text-anchor': 'middle',
+              'font-size': '12',
+              opacity: itemOpacity,
+            }, ['🪜']));
           } else if (symbolGlyph) {
             const width = Math.max(14, item.width || 18);
             const height = Math.max(14, item.height || 18);
@@ -866,6 +1139,7 @@ const definition = {
               fill: '#f8fafc',
               stroke: '#64748b',
               'stroke-width': '1.5',
+              opacity: itemOpacity,
             }));
             layer.append(svgEl('text', {
               x,
@@ -873,6 +1147,7 @@ const definition = {
               className: 'floorplan-symbol-glyph',
               'text-anchor': 'middle',
               'font-size': '12',
+              opacity: itemOpacity,
             }, [symbolGlyph]));
           } else {
             const size = Math.max(12, Math.min(18, item.width || item.height || 16));
@@ -886,6 +1161,7 @@ const definition = {
               fill: '#fbbf24',
               stroke: '#78350f',
               'stroke-width': '2',
+              opacity: itemOpacity,
             }));
           }
 
@@ -1051,6 +1327,7 @@ const definition = {
         }
         scene.append(previewLayer);
       }
+      renderInteriorView();
     }
 
     function beginDraft(event) {
@@ -1075,9 +1352,10 @@ const definition = {
         y: point.y,
       });
       const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
+      const targetItemData = targetItem ? findItemById(targetItem.dataset.floorplanItem) : null;
 
       if (state.tool === 'erase') {
-        if (targetItem) {
+        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
           const itemId = targetItem.dataset.floorplanItem;
           state.items = state.items.filter(item => String(item.id) !== itemId);
           debugLog('erase-item', { itemId, remaining: state.items.length });
@@ -1114,7 +1392,7 @@ const definition = {
           return;
         }
 
-        if (targetItem) {
+        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
           if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
           state.dragId = targetItem.dataset.floorplanItem;
           state.selectedId = state.dragId;
@@ -1137,8 +1415,8 @@ const definition = {
         return;
       }
 
-      if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol') {
-        const created = createPointToolItem(state.tool, point);
+      if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol' || state.tool === 'stairs') {
+        const created = registerNewItem(createPointToolItem(state.tool, point));
         if (!created) return;
         state.items.push(created);
         state.lastCreateAt = Date.now();
@@ -1266,7 +1544,7 @@ const definition = {
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
         debugLog('input-end', { eventType: event?.type, kind, distance, start, end });
         if (distance > 18) {
-          const created = createItem(kind, start, end);
+          const created = registerNewItem(createItem(kind, start, end));
           state.items.push(created);
           state.lastCreateAt = Date.now();
           debugLog('create-drag', { kind: created.kind, id: created.id, count: state.items.length });
@@ -1276,7 +1554,7 @@ const definition = {
             y: start.y,
           };
           const wallEnd = snapPointForTool(wallEndRaw, 'wall');
-          const created = createItem(kind, start, wallEnd);
+          const created = registerNewItem(createItem(kind, start, wallEnd));
           state.items.push(created);
           state.lastCreateAt = Date.now();
           debugLog('create-click-wall', { id: created.id, from: start, to: wallEnd, count: state.items.length });
@@ -1289,7 +1567,7 @@ const definition = {
             x: roomStart.x + 120,
             y: roomStart.y + 80,
           };
-          const created = createItem(kind, roomStart, roomEnd);
+          const created = registerNewItem(createItem(kind, roomStart, roomEnd));
           state.items.push(created);
           state.lastCreateAt = Date.now();
           debugLog('create-click-room', { id: created.id, from: roomStart, to: roomEnd, count: state.items.length });
@@ -1317,10 +1595,11 @@ const definition = {
         };
         const roomEnd = { x: roomStart.x + 120, y: roomStart.y + 80 };
         created = createItem('room', roomStart, roomEnd);
-      } else if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol') {
+      } else if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol' || state.tool === 'stairs') {
         created = createPointToolItem(state.tool, point);
       }
 
+      created = registerNewItem(created);
       if (!created) return;
       state.items.push(created);
       state.lastCreateAt = Date.now();
@@ -1351,6 +1630,7 @@ const definition = {
     }
     svg.addEventListener('click', fallbackClickCreate);
     svg.style.cursor = 'crosshair';
+    refreshFloorUi();
     setTool('wall');
     renderScene();
 

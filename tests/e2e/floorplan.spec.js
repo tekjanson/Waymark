@@ -14,8 +14,8 @@ test('floor plan is detected and rendered', async ({ page }) => {
 
   await expect(page.locator('#template-badge')).toContainText('Floor Plan');
   await expect(page.locator('.floorplan-title')).toContainText('House Plan');
-  await expect(page.locator('.floorplan-room')).toHaveCount(4);
-  await expect(page.locator('.floorplan-wall')).toHaveCount(2);
+  await expect(page.locator('.floorplan-room')).toHaveCount(9);
+  await expect(page.locator('.floorplan-wall')).toHaveCount(3);
   await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
 });
 
@@ -57,12 +57,12 @@ test('layer menu toggles room visibility', async ({ page }) => {
   await navigateToSheet(page, 'sheet-075');
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
 
-  await expect(page.locator('.floorplan-room')).toHaveCount(4);
+  await expect(page.locator('.floorplan-room')).toHaveCount(9);
   await page.click('.floorplan-menu-summary:has-text("Layers")');
   await page.click('.floorplan-layer-toggle[data-layer="room"]');
   await expect(page.locator('.floorplan-room')).toHaveCount(0);
   await page.click('.floorplan-layer-toggle[data-layer="room"]');
-  await expect(page.locator('.floorplan-room')).toHaveCount(4);
+  await expect(page.locator('.floorplan-room')).toHaveCount(9);
 });
 
 test('symbols menu places household fixtures quickly', async ({ page }) => {
@@ -76,6 +76,20 @@ test('symbols menu places household fixtures quickly', async ({ page }) => {
   await page.click('.floorplan-svg', { position: { x: 420, y: 260 } });
 
   await expect(page.locator('.floorplan-symbol-glyph')).toHaveCount(beforeGlyphs + 1);
+});
+
+test('floor controls switch levels and align below overlay', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await expect(page.locator('.floorplan-floor-indicator')).toContainText('Floor 1');
+  await page.click('.floorplan-floor-btn:has-text("+ Floor")');
+  await expect(page.locator('.floorplan-floor-indicator')).toContainText('Floor 2');
+  await expect(page.locator('.floorplan-room')).toHaveCount(0);
+
+  await page.click('.floorplan-floor-btn:has-text("Align Below")');
+  await expect(page.locator('.floorplan-room')).toHaveCount(9);
 });
 
 test('door and window tools snap openings onto nearby walls', async ({ page }) => {
