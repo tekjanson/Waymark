@@ -297,6 +297,9 @@ const definition = {
       preview: null,
       dragStart: null,
       dragId: null,
+      lastCreateAt: 0,
+      lastStartAt: 0,
+      lastStartPoint: null,
     };
 
     function setTool(nextTool) {
@@ -512,6 +515,14 @@ const definition = {
       if (isMouseInput && event.button !== 0) return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
       const point = pointFromEvent(svg, event);
+      const now = Date.now();
+      if (state.lastStartPoint && (now - state.lastStartAt) < 60) {
+        const dx = Math.abs(state.lastStartPoint.x - point.x);
+        const dy = Math.abs(state.lastStartPoint.y - point.y);
+        if (dx < 1 && dy < 1) return;
+      }
+      state.lastStartAt = now;
+      state.lastStartPoint = point;
       debugLog('input-start', {
         eventType: event.type,
         pointerType: event.pointerType || 'unknown',
@@ -554,6 +565,7 @@ const definition = {
       if (state.tool === 'electrical' || state.tool === 'plumbing') {
         const created = createItem(state.tool, point, point);
         state.items.push(created);
+        state.lastCreateAt = Date.now();
         debugLog('create-point', { kind: created.kind, id: created.id, x: created.x, y: created.y, count: state.items.length });
         renderScene();
         return;
@@ -611,6 +623,7 @@ const definition = {
         if (distance > 18) {
           const created = createItem(kind, start, end);
           state.items.push(created);
+          state.lastCreateAt = Date.now();
           debugLog('create-drag', { kind: created.kind, id: created.id, count: state.items.length });
         } else if (kind === 'wall') {
           const wallEnd = {
@@ -619,6 +632,7 @@ const definition = {
           };
           const created = createItem(kind, start, wallEnd);
           state.items.push(created);
+          state.lastCreateAt = Date.now();
           debugLog('create-click-wall', { id: created.id, from: start, to: wallEnd, count: state.items.length });
         } else if (kind === 'room') {
           const roomStart = {
@@ -631,11 +645,40 @@ const definition = {
           };
           const created = createItem(kind, roomStart, roomEnd);
           state.items.push(created);
+          state.lastCreateAt = Date.now();
           debugLog('create-click-room', { id: created.id, from: roomStart, to: roomEnd, count: state.items.length });
         }
       }
       state.preview = null;
       state.dragStart = null;
+      renderScene();
+    }
+
+    function fallbackClickCreate(event) {
+      if (state.tool === 'select' || state.tool === 'erase') return;
+      if (state.preview || state.dragStart || state.dragId) return;
+      if ((Date.now() - state.lastCreateAt) < 150) return;
+
+      const point = pointFromEvent(svg, event);
+      let created = null;
+      if (state.tool === 'wall') {
+        const wallEnd = { x: clamp(point.x + 80, 20, 940), y: point.y };
+        created = createItem('wall', point, wallEnd);
+      } else if (state.tool === 'room') {
+        const roomStart = {
+          x: clamp(point.x - 60, 20, 880),
+          y: clamp(point.y - 40, 20, 520),
+        };
+        const roomEnd = { x: roomStart.x + 120, y: roomStart.y + 80 };
+        created = createItem('room', roomStart, roomEnd);
+      } else if (state.tool === 'electrical' || state.tool === 'plumbing') {
+        created = createItem(state.tool, point, point);
+      }
+
+      if (!created) return;
+      state.items.push(created);
+      state.lastCreateAt = Date.now();
+      debugLog('fallback-click-create', { tool: state.tool, id: created.id, x: point.x, y: point.y, count: state.items.length });
       renderScene();
     }
 
@@ -646,6 +689,10 @@ const definition = {
       svg.addEventListener('pointermove', updateDraft);
       svg.addEventListener('pointerup', endDraft);
       svg.addEventListener('pointercancel', endDraft);
+      svg.addEventListener('touchstart', beginDraft, { passive: false });
+      svg.addEventListener('touchmove', updateDraft, { passive: false });
+      window.addEventListener('touchend', endDraft, { passive: false });
+      window.addEventListener('touchcancel', endDraft, { passive: false });
     } else {
       svg.addEventListener('mousedown', beginDraft);
       svg.addEventListener('mousemove', updateDraft);
@@ -656,6 +703,7 @@ const definition = {
       window.addEventListener('touchend', endDraft, { passive: false });
       window.addEventListener('touchcancel', endDraft, { passive: false });
     }
+    svg.addEventListener('click', fallbackClickCreate);
     svg.style.cursor = 'crosshair';
     setTool('wall');
     renderScene();
