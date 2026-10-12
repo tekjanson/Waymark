@@ -7,6 +7,28 @@
    ============================================================ */
 
 import { cell, el, registerTemplate } from '../shared.js';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs = {}, children = []) {
+  const node = document.createElementNS(SVG_NS, tag);
+
+  for (const [key, val] of Object.entries(attrs)) {
+    if (key === 'className') node.setAttribute('class', val);
+    else if (key === 'dataset') Object.assign(node.dataset, val);
+    else if (key === 'on') {
+      for (const [evt, handler] of Object.entries(val)) {
+        node.addEventListener(evt, handler);
+      }
+    } else if (key === 'style' && typeof val === 'object') Object.assign(node.style, val);
+    else node.setAttribute(key, val);
+  }
+
+  for (const child of [].concat(children)) {
+    if (child == null) continue;
+    node.append(typeof child === 'string' ? document.createTextNode(child) : child);
+  }
+  return node;
+}
 
 function normalizeText(value) {
   const str = String(value ?? '').trim();
@@ -254,7 +276,7 @@ const definition = {
       ]),
       el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
       el('div', { className: 'floorplan-stage' }, [
-        el('svg', {
+        svgEl('svg', {
           className: 'floorplan-svg',
           viewBox: '0 0 960 620',
           width: '100%',
@@ -270,8 +292,8 @@ const definition = {
 
     const svg = board.querySelector('.floorplan-svg');
     const hint = board.querySelector('.floorplan-hint');
-    const scene = el('g', { className: 'floorplan-scene' });
-    const bg = el('rect', {
+    const scene = svgEl('g', { className: 'floorplan-scene' });
+    const bg = svgEl('rect', {
       x: 20,
       y: 20,
       width: 920,
@@ -284,10 +306,10 @@ const definition = {
     svg.append(bg);
 
     for (let x = 40; x <= 920; x += 40) {
-      svg.append(el('line', { x1: x, y1: 20, x2: x, y2: 580, className: 'floorplan-grid-line' }));
+      svg.append(svgEl('line', { x1: x, y1: 20, x2: x, y2: 580, className: 'floorplan-grid-line' }));
     }
     for (let y = 40; y <= 560; y += 40) {
-      svg.append(el('line', { x1: 20, y1: y, x2: 920, y2: y, className: 'floorplan-grid-line' }));
+      svg.append(svgEl('line', { x1: 20, y1: y, x2: 920, y2: y, className: 'floorplan-grid-line' }));
     }
     svg.append(scene);
 
@@ -318,15 +340,15 @@ const definition = {
     function renderScene() {
       scene.innerHTML = '';
       const layers = {
-        room: el('g', { className: 'floorplan-layer floorplan-layer-room' }),
-        wall: el('g', { className: 'floorplan-layer floorplan-layer-wall' }),
-        electrical: el('g', { className: 'floorplan-layer floorplan-layer-electrical' }),
-        plumbing: el('g', { className: 'floorplan-layer floorplan-layer-plumbing' }),
-        fixture: el('g', { className: 'floorplan-layer floorplan-layer-fixture' }),
+        room: svgEl('g', { className: 'floorplan-layer floorplan-layer-room' }),
+        wall: svgEl('g', { className: 'floorplan-layer floorplan-layer-wall' }),
+        electrical: svgEl('g', { className: 'floorplan-layer floorplan-layer-electrical' }),
+        plumbing: svgEl('g', { className: 'floorplan-layer floorplan-layer-plumbing' }),
+        fixture: svgEl('g', { className: 'floorplan-layer floorplan-layer-fixture' }),
       };
       scene.append(...Object.values(layers));
 
-      const label = (text, x, y, fill = '#0f172a', className = 'floorplan-label') => el('text', {
+      const label = (text, x, y, fill = '#0f172a', className = 'floorplan-label') => svgEl('text', {
         x,
         y,
         className,
@@ -343,7 +365,7 @@ const definition = {
         if (kind === 'room') {
           const width = Math.max(60, item.width || 120);
           const height = Math.max(40, item.height || 80);
-          const rect = el('rect', {
+          const rect = svgEl('rect', {
             x: item.x,
             y: item.y,
             width,
@@ -367,7 +389,7 @@ const definition = {
           const y1 = item.y;
           const x2 = typeof item.x2 === 'number' ? item.x2 : item.x + (item.length || item.width || 120);
           const y2 = typeof item.y2 === 'number' ? item.y2 : item.y + (item.height || 0);
-          const line = el('line', {
+          const line = svgEl('line', {
             x1,
             y1,
             x2,
@@ -389,7 +411,7 @@ const definition = {
         if (kind === 'electrical') {
           const x = item.x || 40;
           const y = item.y || 40;
-          const node = el('circle', {
+          const node = svgEl('circle', {
             cx: x,
             cy: y,
             r: 8,
@@ -409,7 +431,7 @@ const definition = {
         if (kind === 'plumbing') {
           const x = item.x || 40;
           const y = item.y || 40;
-          const node = el('rect', {
+          const node = svgEl('rect', {
             x: x - 9,
             y: y - 9,
             width: 18,
@@ -432,7 +454,7 @@ const definition = {
           const x = item.x || 40;
           const y = item.y || 40;
           const size = Math.max(12, Math.min(18, item.width || item.height || 16));
-          const node = el('rect', {
+          const node = svgEl('rect', {
             x: x - (size / 2),
             y: y - (size / 2),
             width: size,
@@ -453,11 +475,11 @@ const definition = {
       });
 
       if (state.preview) {
-        const previewLayer = el('g', { className: 'floorplan-preview-layer' });
+        const previewLayer = svgEl('g', { className: 'floorplan-preview-layer' });
         const preview = state.preview;
         if (preview.kind === 'room') {
           const dims = createFence({}, preview.start, preview.end);
-          previewLayer.append(el('rect', {
+          previewLayer.append(svgEl('rect', {
             x: dims.x,
             y: dims.y,
             width: dims.width,
@@ -470,7 +492,7 @@ const definition = {
           }));
         }
         if (preview.kind === 'wall') {
-          previewLayer.append(el('line', {
+          previewLayer.append(svgEl('line', {
             x1: preview.start.x,
             y1: preview.start.y,
             x2: preview.end.x,
@@ -483,7 +505,7 @@ const definition = {
           }));
         }
         if (preview.kind === 'electrical') {
-          previewLayer.append(el('circle', {
+          previewLayer.append(svgEl('circle', {
             cx: preview.end.x,
             cy: preview.end.y,
             r: 8,
@@ -494,7 +516,7 @@ const definition = {
           }));
         }
         if (preview.kind === 'plumbing') {
-          previewLayer.append(el('rect', {
+          previewLayer.append(svgEl('rect', {
             x: preview.end.x - 9,
             y: preview.end.y - 9,
             width: 18,
@@ -708,10 +730,10 @@ const definition = {
     setTool('wall');
     renderScene();
 
-    const dims = el('g', { className: 'floorplan-dimensions' });
+    const dims = svgEl('g', { className: 'floorplan-dimensions' });
     dims.append(
-      el('line', { x1: 20, y1: 600, x2: 920, y2: 600, stroke: '#64748b', 'stroke-width': '1.5', 'stroke-dasharray': '6 4' }),
-      el('text', { x: 470, y: 620, className: 'floorplan-dimension-text', 'text-anchor': 'middle' }, ['Scale: 1 unit = 1 ft'])
+      svgEl('line', { x1: 20, y1: 600, x2: 920, y2: 600, stroke: '#64748b', 'stroke-width': '1.5', 'stroke-dasharray': '6 4' }),
+      svgEl('text', { x: 470, y: 620, className: 'floorplan-dimension-text', 'text-anchor': 'middle' }, ['Scale: 1 unit = 1 ft'])
     );
     svg.append(dims);
 
