@@ -180,7 +180,6 @@ let _navHistory = [];
  * back button can return to the folder the user came from.
  */
 let _sheetOrigin = {};
-let _deepLinkInviteHandled = false;
 
 /* ---------- Navigation callback ---------- */
 
@@ -516,8 +515,6 @@ async function showApp(user) {
   handleRoute();
   window.addEventListener('hashchange', handleRoute);
 
-  await maybeHandleDeepLinkInvite();
-
   // Show tutorial for first-time users
   if (!userData.getTutorialCompleted()) {
     setTimeout(() => Tutorial.start(), 600);
@@ -705,46 +702,6 @@ function renderHome() {
   renderRecentSheets();
   renderPinnedSheets();
   renderPinnedFolders();
-}
-
-function getDeepLinkInviteParams() {
-  const params = new URLSearchParams(window.location.search);
-  const fileId = params.get('fileId')?.trim();
-  if (!fileId) return null;
-  return {
-    fileId,
-    fileName: (params.get('fileName') || '').trim(),
-    parentFolderId: (params.get('parent') || '').trim(),
-  };
-}
-
-function clearDeepLinkInviteParams() {
-  const url = new URL(window.location.href);
-  url.searchParams.delete('fileId');
-  url.searchParams.delete('fileName');
-  url.searchParams.delete('parent');
-  window.history.replaceState({}, '', url.toString());
-}
-
-async function maybeHandleDeepLinkInvite() {
-  if (_deepLinkInviteHandled) return;
-  const invite = getDeepLinkInviteParams();
-  if (!invite) return;
-  _deepLinkInviteHandled = true;
-
-  try {
-    const picked = await api.picker.pickSpreadsheetForInvite({
-      fileId: invite.fileId,
-      fileName: invite.fileName,
-      parentFolderId: invite.parentFolderId || undefined,
-    });
-    clearDeepLinkInviteParams();
-    if (!picked?.id) return;
-    showToast(`Authorized "${picked.name || invite.fileName || 'shared sheet'}"`, 'success');
-    window.location.hash = `#/sheet/${picked.id}`;
-  } catch (err) {
-    showToast(`Could not open invite: ${err.message}`, 'error');
-  }
 }
 
 /* ---------- Home: Greeting ---------- */

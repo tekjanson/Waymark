@@ -78,26 +78,21 @@ test('share button opens share modal with links', async ({ page }) => {
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
 
-  // Should show four share link inputs (Waymark + Invite + Public + Google)
+  // Should show three share link inputs (Waymark + Public + Google)
   const inputs = page.locator('.share-link-input');
-  expect(await inputs.count()).toBe(4);
+  expect(await inputs.count()).toBe(3);
 
   // Waymark link should contain sheet ID
   const waymarkLink = await inputs.nth(0).inputValue();
   expect(waymarkLink).toContain('sheet-001');
 
-  // Invite link should include deep-link parameters
-  const inviteLink = await inputs.nth(1).inputValue();
-  expect(inviteLink).toContain('fileId=sheet-001');
-  expect(inviteLink).toContain('fileName=');
-
   // Public link should contain /public/ path
-  const publicLink = await inputs.nth(2).inputValue();
+  const publicLink = await inputs.nth(1).inputValue();
   expect(publicLink).toContain('/public/');
   expect(publicLink).toContain('sheet-001');
 
   // Google link should point to docs.google.com
-  const googleLink = await inputs.nth(3).inputValue();
+  const googleLink = await inputs.nth(2).inputValue();
   expect(googleLink).toContain('docs.google.com');
   expect(googleLink).toContain('sheet-001');
 });
@@ -112,45 +107,8 @@ test('share modal has copy buttons', async ({ page }) => {
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
   const copyBtns = page.locator('.share-copy-btn');
-  expect(await copyBtns.count()).toBe(4);
+  expect(await copyBtns.count()).toBe(3);
   await expect(copyBtns.first()).toContainText('Copy');
-});
-
-test('share modal exposes invite permission controls', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
-  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
-
-  await openOverflowMenu(page);
-  await page.locator('#share-btn').click();
-  await page.waitForSelector('#share-modal', { timeout: 5_000 });
-
-  await expect(page.locator('.share-invite-email')).toBeVisible();
-  await expect(page.locator('.share-invite-role')).toBeVisible();
-  await expect(page.locator('.share-invite-grant-btn')).toBeVisible();
-});
-
-test('grant access from share modal records a drive permission request', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
-  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
-
-  await openOverflowMenu(page);
-  await page.locator('#share-btn').click();
-  await page.waitForSelector('#share-modal', { timeout: 5_000 });
-
-  await page.fill('.share-invite-email', 'teammate@example.com');
-  await page.selectOption('.share-invite-role', 'writer');
-  await page.click('.share-invite-grant-btn');
-
-  const records = await getCreatedRecords(page);
-  const permissionRecord = records.find(r =>
-    r.type === 'drive-permission' &&
-    r.fileId === 'sheet-001' &&
-    r.email === 'teammate@example.com' &&
-    r.role === 'writer'
-  );
-  expect(permissionRecord).toBeTruthy();
 });
 
 test('share modal closes on close button', async ({ page }) => {
@@ -195,18 +153,6 @@ test('share modal has manage sharing link', async ({ page }) => {
   await expect(manageLink).toContainText('Manage Sharing');
   const href = await manageLink.getAttribute('href');
   expect(href).toContain('docs.google.com');
-});
-
-test('deep-link invite auto-opens the target sheet after picker authorization', async ({ page }) => {
-  await setupApp(page);
-
-  await page.goto('/?fileId=sheet-001&fileName=Groceries#/');
-  await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 10_000 });
-  await page.waitForURL((url) => url.hash.includes('#/sheet/sheet-001'), { timeout: 10_000 });
-
-  const currentUrl = page.url();
-  expect(currentUrl).not.toContain('fileId=');
-  expect(currentUrl).not.toContain('fileName=');
 });
 
 test('duplicate modal closes on close button', async ({ page }) => {

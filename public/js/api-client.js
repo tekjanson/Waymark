@@ -644,53 +644,6 @@ export const api = {
       const token = await requireToken();
       return driveApi.updateTextFile(token, fileId, content);
     },
-
-    /**
-     * Grant a collaborator read/write access to a file.
-     * @param {string} fileId
-     * @param {string} email
-     * @param {'reader'|'writer'} role
-     * @returns {Promise<void>}
-     */
-    async createDrivePermission(fileId, email, role = 'reader') {
-      if (!fileId) throw new Error('fileId is required');
-      if (!email) throw new Error('email is required');
-      const normalizedRole = role === 'writer' ? 'writer' : 'reader';
-      if (isLocal) {
-        window.__WAYMARK_RECORDS.push({
-          type: 'drive-permission',
-          fileId,
-          email,
-          role: normalizedRole,
-          createdAt: new Date().toISOString(),
-        });
-        return;
-      }
-      return withAuthRetry(async () => {
-        const token = await requireToken();
-        await driveApi.createDrivePermission(token, fileId, email, normalizedRole);
-      });
-    },
-
-    /**
-     * Generate a Waymark deep-link invite for one-click picker authorization.
-     * @param {string} fileId
-     * @param {string} fileName
-     * @param {string} [parentFolderId]
-     * @returns {string}
-     */
-    generateShareLink(fileId, fileName, parentFolderId) {
-      if (!fileId) throw new Error('fileId is required');
-      const base = window.__WAYMARK_BASE || '';
-      const url = new URL(`${window.location.origin}${base}/`);
-      url.searchParams.set('fileId', fileId);
-      url.searchParams.set('fileName', fileName || '');
-      if (parentFolderId) {
-        url.searchParams.set('parent', parentFolderId);
-      }
-      url.hash = '#/';
-      return url.toString();
-    },
   },
 
   /* ---- Picker ---- */
@@ -774,27 +727,6 @@ export const api = {
       }
       const token = await requireToken();
       return pickerApi.pickFilesForImport(token);
-    },
-
-    /**
-     * Open a pre-filtered picker for a deep-link invite flow.
-     * @param {Object} opts
-     * @param {string} opts.fileId
-     * @param {string} [opts.fileName]
-     * @param {string} [opts.parentFolderId]
-     * @returns {Promise<Object|null>}
-     */
-    async pickSpreadsheetForInvite(opts = {}) {
-      if (isLocal) {
-        if (!opts.fileId) return null;
-        return {
-          id: opts.fileId,
-          name: opts.fileName || 'Shared Spreadsheet',
-          mimeType: 'application/vnd.google-apps.spreadsheet',
-        };
-      }
-      const token = await requireToken();
-      return pickerApi.pickSpreadsheetForInvite(token, opts);
     },
   },
 

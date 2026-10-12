@@ -409,27 +409,3 @@ export async function setPublicWritable(token, fileId) {
   });
   if (!res.ok) throw driveError('Drive setPublicWritable', res);
 }
-
-/**
- * Grant an email-based permission to a Drive file.
- * @param {string} token
- * @param {string} fileId
- * @param {string} email
- * @param {'reader'|'writer'} role
- * @returns {Promise<void>}
- */
-export async function createDrivePermission(token, fileId, email, role) {
-  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}/permissions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: 'user',
-      role,
-      emailAddress: email,
-    }),
-  });
-  if (!res.ok) throw driveError('Drive createDrivePermission', res);
-}

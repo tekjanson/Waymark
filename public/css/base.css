@@ -1614,30 +1614,6 @@ ul { list-style: none; }
 .share-copy-btn {
   padding: 8px 12px; font-size: 0.8rem; white-space: nowrap;
 }
-.share-invite-permission-row {
-  margin-top: 8px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.share-invite-email,
-.share-invite-role {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  padding: 8px 10px;
-  font-size: 0.85rem;
-}
-.share-invite-email {
-  flex: 1;
-}
-.share-invite-role {
-  width: 120px;
-}
-.share-invite-grant-btn {
-  white-space: nowrap;
-}
 .share-actions { text-align: center; padding-top: 8px; }
 .btn-share-google {
   display: inline-flex; align-items: center; gap: 6px;
