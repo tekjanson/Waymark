@@ -79,7 +79,7 @@ ACTIVE_AGENT=gemini
 GEMINI_KEY_POOL=AIzaKEY1,AIzaKEY2,AIzaKEY3
 
 # Model (default shown)
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-3.5-flash-lite
 
 # The workboard the agent polls for tasks. The Discovery_Tree memory tab is
 # auto-created inside this same sheet unless you set DISCOVERY_TREE_SHEET_ID.

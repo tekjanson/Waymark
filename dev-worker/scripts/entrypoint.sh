@@ -49,7 +49,10 @@ AGENT_MODEL="${AGENT_MODEL:-auto}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5}"
 AI_PROVIDER="${AI_PROVIDER:-auto}"
 ACTIVE_AGENT="${ACTIVE_AGENT:-copilot}"
-GEMINI_MODEL="${GEMINI_MODEL:-gemini-flash-latest}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+if [[ "${GEMINI_MODEL,,}" == "gemini-flash-latest" ]]; then
+    GEMINI_MODEL="gemini-3.5-flash-lite"
+fi
 AGENTS_SHEET_ID="${AGENTS_SHEET_ID:-}"
 
 cat > /etc/agent-env.sh <<EOF

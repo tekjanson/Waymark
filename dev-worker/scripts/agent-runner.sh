@@ -58,7 +58,10 @@ AGENT_COMMAND="${AGENT_COMMAND:-@waymark-builder start}"
 CLAUDE_COMMAND="${CLAUDE_COMMAND:-${AGENT_COMMAND/@waymark-builder /}}"
 AGENT_MODEL="${AGENT_MODEL:-auto}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-5}"
-GEMINI_MODEL="${GEMINI_MODEL:-gemini-flash-latest}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+if [[ "${GEMINI_MODEL,,}" == "gemini-flash-latest" ]]; then
+    GEMINI_MODEL="gemini-3.5-flash-lite"
+fi
 AGENT_HUMAN_NAME="${AGENT_HUMAN_NAME:-}"
 AGENTS_SHEET_ID="${AGENTS_SHEET_ID:-}"
 RESTART_DELAY=5

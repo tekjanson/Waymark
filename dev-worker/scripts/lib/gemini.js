@@ -22,7 +22,10 @@
 const { KeyManager } = require('../key-manager');
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const DEFAULT_MODEL =
+  (process.env.GEMINI_MODEL || '').toLowerCase() === 'gemini-flash-latest'
+    ? 'gemini-3.5-flash-lite'
+    : (process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite');
 
 class GeminiClient {
   /**

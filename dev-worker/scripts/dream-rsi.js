@@ -66,7 +66,11 @@ const EVAL_RETRIES = parseInt(process.env.DREAM_EVAL_RETRIES || '1', 10);
 const PUSH = process.env.DREAM_PUSH !== '0';
 const SUMMARY_TIMEOUT_MS = parseInt(process.env.DREAM_SUMMARY_TIMEOUT_MS || '15000', 10);
 const SUMMARY_THROTTLE_MS = parseInt(process.env.DREAM_SUMMARY_THROTTLE_MS || '20000', 10);
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const BASE_GEMINI_MODEL =
+  (process.env.GEMINI_MODEL || '').toLowerCase() === 'gemini-flash-latest'
+    ? 'gemini-3.5-flash-lite'
+    : (process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite');
+const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || BASE_GEMINI_MODEL;
 // After this many failed attempts on a row, PARK it (return to Backlog at P3) so
 // the loop stops spinning on one hard task and rotates to the rest of the board.
 const MAX_ROW_ATTEMPTS = parseInt(process.env.DREAM_MAX_ROW_ATTEMPTS || '3', 10);

@@ -32,7 +32,7 @@ PROVIDER      ?= auto
 MODEL         ?= auto
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
-GEMINI_MODEL  ?= gemini-flash-latest
+GEMINI_MODEL  ?= gemini-3.5-flash-lite
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
 
 # Prefer the Gemini engine automatically whenever a key pool is configured.

@@ -99,7 +99,7 @@ services:
       # GEMINI_KEY_POOL: comma-separated Gemini API keys. The loop rotates to
       # the next key on HTTP 429 / quota errors and parks the spent key for 1h.
       - GEMINI_KEY_POOL=${GEMINI_KEY_POOL:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-latest}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - GEMINI_KEY_COOLDOWN_MS=${GEMINI_KEY_COOLDOWN_MS:-3600000}
       # Discovery_Tree memory tab (defaults to the workboard sheet if unset)
       - DISCOVERY_TREE_SHEET_ID=${DISCOVERY_TREE_SHEET_ID:-}
