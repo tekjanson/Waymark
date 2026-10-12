@@ -428,6 +428,7 @@ const definition = {
         ]),
       ]),
       el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
+      el('div', { className: 'floorplan-feedback', 'aria-live': 'polite' }, ['Ready']),
       el('div', { className: 'floorplan-workspace' }, [
         el('div', { className: 'floorplan-stage' }, [
           svgEl('svg', {
@@ -459,6 +460,7 @@ const definition = {
 
     const svg = board.querySelector('.floorplan-svg');
     const hint = board.querySelector('.floorplan-hint');
+    const feedback = board.querySelector('.floorplan-feedback');
     const interiorPanel = board.querySelector('.floorplan-interior-panel');
     const interiorSvg = board.querySelector('.floorplan-interior-svg');
     const scene = svgEl('g', { className: 'floorplan-scene' });
@@ -590,6 +592,33 @@ const definition = {
       }
     }
 
+    function setFeedback(text) {
+      if (!feedback) return;
+      feedback.textContent = text || 'Ready';
+    }
+
+    function itemFeedbackLabel(item) {
+      const kind = item.kind || classifyItem(item);
+      const noun = kind.charAt(0).toUpperCase() + kind.slice(1);
+      let name = normalizeText(item.label);
+      if (!name && kind === 'wall') {
+        const edge = getWallEndpoints(item);
+        const length = Math.round(Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1));
+        name = `Segment ${length}u`;
+      }
+      if (!name) name = normalizeText(item.type) || noun;
+      return `${noun}: ${name} (Floor ${getItemFloor(item)})`;
+    }
+
+    function applyControlLabels() {
+      board.querySelectorAll('button, summary').forEach((node) => {
+        const text = normalizeText(node.textContent || '');
+        if (!text) return;
+        if (!node.getAttribute('title')) node.setAttribute('title', text);
+        if (!node.getAttribute('aria-label')) node.setAttribute('aria-label', text);
+      });
+    }
+
     function snapToGrid(point, grid = 10) {
       return {
         x: clamp(Math.round(point.x / grid) * grid, 20, 940),
@@ -644,6 +673,8 @@ const definition = {
       if (state.tool === 'wall-rect' && hint) {
         hint.textContent = TOOL_HINTS['wall-rect'];
       }
+      applyControlLabels();
+      setFeedback(`Action: Rectangle corners ${state.rectDisconnected ? 'disconnected' : 'connected'}`);
     }
 
     function registerNewItem(item) {
@@ -974,6 +1005,7 @@ const definition = {
       const alignButton = board.querySelector('.floorplan-floor-controls .floorplan-floor-btn:last-child');
       if (floorIndicator) floorIndicator.textContent = `Floor ${state.currentFloor}`;
       if (alignButton) alignButton.textContent = `Align Below: ${state.alignBelow ? 'On' : 'Off'}`;
+      applyControlLabels();
     }
 
     function shiftFloor(delta) {
@@ -989,6 +1021,7 @@ const definition = {
       state.alignBelow = !state.alignBelow;
       refreshFloorUi();
       renderScene();
+      setFeedback(`Action: Align below ${state.alignBelow ? 'on' : 'off'}`);
     }
 
     function toggleInteriorView() {
@@ -996,7 +1029,9 @@ const definition = {
       interiorPanel.classList.toggle('hidden', !state.interiorEnabled);
       const btn = board.querySelector('.floorplan-interior-toggle-btn');
       if (btn) btn.textContent = `3D Interior: ${state.interiorEnabled ? 'On' : 'Off'}`;
+      applyControlLabels();
       renderScene();
+      setFeedback(`Action: 3D interior ${state.interiorEnabled ? 'on' : 'off'}`);
     }
 
     function loadFloorOnePreset() {
@@ -1076,6 +1111,8 @@ const definition = {
       if (focusButton) {
         focusButton.textContent = board.classList.contains('floorplan-fullscreen') ? 'Exit Focus' : 'Enter Focus';
       }
+      applyControlLabels();
+      setFeedback(`Action: ${board.classList.contains('floorplan-fullscreen') ? 'Focus mode on' : 'Focus mode off'}`);
     }
 
     function setLayerVisibility(layer, visible) {
@@ -1091,6 +1128,46 @@ const definition = {
         if (!layer) return;
         setLayerVisibility(layer, !state.layerVisibility[layer]);
       });
+    });
+
+    board.addEventListener('mouseover', (event) => {
+      const control = event.target && event.target.closest ? event.target.closest('button, summary') : null;
+      if (!control) return;
+      const label = normalizeText(control.getAttribute('title') || control.textContent || '');
+      if (label) setFeedback(`Hover: ${label}`);
+    });
+
+    board.addEventListener('focusin', (event) => {
+      const control = event.target && event.target.closest ? event.target.closest('button, summary') : null;
+      if (!control) return;
+      const label = normalizeText(control.getAttribute('title') || control.textContent || '');
+      if (label) setFeedback(`Focus: ${label}`);
+    });
+
+    board.addEventListener('click', (event) => {
+      const control = event.target && event.target.closest ? event.target.closest('button, summary') : null;
+      if (!control) return;
+      const label = normalizeText(control.getAttribute('title') || control.textContent || '');
+      if (label) setFeedback(`Action: ${label}`);
+    });
+
+    svg.addEventListener('pointermove', (event) => {
+      const itemNode = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
+      if (!itemNode) return;
+      const labelText = normalizeText(itemNode.getAttribute('data-floorplan-label') || '');
+      if (labelText) setFeedback(`Hover Item: ${labelText}`);
+    });
+
+    svg.addEventListener('pointerleave', () => {
+      const selectedCount = state.selectedIds.size;
+      if (selectedCount > 1) {
+        setFeedback(`Selected ${selectedCount} items`);
+      } else if (selectedCount === 1 && state.selectedId) {
+        const selected = findItemById(state.selectedId);
+        setFeedback(selected ? `Selected: ${itemFeedbackLabel(selected)}` : 'Ready');
+      } else {
+        setFeedback('Ready');
+      }
     });
 
     interiorSvg.addEventListener('click', (event) => {
@@ -1397,6 +1474,20 @@ const definition = {
         }
       });
 
+      const itemById = new Map(state.items.map(item => [String(item.id), item]));
+      scene.querySelectorAll('[data-floorplan-item]').forEach((node) => {
+        const itemId = String(node.getAttribute('data-floorplan-item') || '');
+        const item = itemById.get(itemId);
+        if (!item) return;
+        const labelText = itemFeedbackLabel(item);
+        node.setAttribute('data-floorplan-label', labelText);
+        if (!node.querySelector('title')) {
+          node.append(svgEl('title', {}, [labelText]));
+        } else {
+          node.querySelector('title').textContent = labelText;
+        }
+      });
+
       if (state.selectedId && state.selectedIds.size === 1) {
         const selected = findItemById(state.selectedId);
         if (selected) {
@@ -1656,6 +1747,7 @@ const definition = {
           if (event.shiftKey || event.ctrlKey || event.metaKey) {
             toggleSelection(itemId);
             renderScene();
+            setFeedback(`Selected ${state.selectedIds.size} item${state.selectedIds.size === 1 ? '' : 's'}`);
             return;
           }
           if (!state.selectedIds.has(itemId)) setSingleSelection(itemId);
@@ -1676,6 +1768,7 @@ const definition = {
           });
           debugLog('select-start', { selected: state.dragIds.length, x: point.x, y: point.y });
           renderScene();
+          setFeedback(`Selected ${state.selectedIds.size} item${state.selectedIds.size === 1 ? '' : 's'}`);
         } else {
           state.dragStart = { x: point.x, y: point.y };
           state.marquee = { x: point.x, y: point.y, width: 0, height: 0 };
@@ -1684,6 +1777,7 @@ const definition = {
             state.selectedId = null;
           }
           renderScene();
+          setFeedback('Selection box started');
         }
         return;
       }
@@ -1961,9 +2055,11 @@ const definition = {
     }
     svg.addEventListener('click', fallbackClickCreate);
     svg.style.cursor = 'crosshair';
+    applyControlLabels();
     refreshFloorUi();
     updateUndoUi();
     setTool('wall');
+    setFeedback('Ready');
     renderScene();
 
     const dims = svgEl('g', { className: 'floorplan-dimensions' });
