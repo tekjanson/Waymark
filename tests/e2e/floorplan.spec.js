@@ -16,6 +16,7 @@ test('floor plan is detected and rendered', async ({ page }) => {
   await expect(page.locator('.floorplan-title')).toContainText('House Plan');
   await expect(page.locator('.floorplan-room')).toHaveCount(4);
   await expect(page.locator('.floorplan-wall')).toHaveCount(2);
+  await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
 });
 
 test('floor plan does not render generic placeholder wall labels', async ({ page }) => {
@@ -62,6 +63,19 @@ test('layer menu toggles room visibility', async ({ page }) => {
   await expect(page.locator('.floorplan-room')).toHaveCount(0);
   await page.click('.floorplan-layer-toggle[data-layer="room"]');
   await expect(page.locator('.floorplan-room')).toHaveCount(4);
+});
+
+test('symbols menu places household fixtures quickly', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const beforeGlyphs = await page.locator('.floorplan-symbol-glyph').count();
+  await page.click('.floorplan-menu-summary:has-text("Symbols")');
+  await page.click('.floorplan-symbol-choice[data-symbol-key="tv"]');
+  await page.click('.floorplan-svg', { position: { x: 420, y: 260 } });
+
+  await expect(page.locator('.floorplan-symbol-glyph')).toHaveCount(beforeGlyphs + 1);
 });
 
 test('door and window tools snap openings onto nearby walls', async ({ page }) => {

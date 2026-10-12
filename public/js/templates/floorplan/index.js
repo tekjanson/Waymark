@@ -84,9 +84,42 @@ const TOOL_HINTS = {
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
   door: 'Door: tap near a wall to snap and place an opening.',
   window: 'Window: tap near a wall to snap and place glazing.',
+  symbol: 'Symbol: pick an item and tap to place furniture/appliances.',
   select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
   erase: 'Erase: tap any drawn item to remove it.',
 };
+
+const HOUSEHOLD_SYMBOLS = [
+  { key: 'tv', label: 'TV', icon: '📺', width: 28, height: 16 },
+  { key: 'fridge', label: 'Fridge', icon: '🧊', width: 18, height: 18 },
+  { key: 'couch', label: 'Couch', icon: '🛋️', width: 26, height: 14 },
+  { key: 'chair', label: 'Chair', icon: '🪑', width: 14, height: 14 },
+  { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 20, height: 20 },
+  { key: 'coffee-table', label: 'Coffee Table', icon: '◼', width: 14, height: 14 },
+  { key: 'bed', label: 'Bed', icon: '🛏️', width: 28, height: 16 },
+  { key: 'nightstand', label: 'Nightstand', icon: '◻', width: 10, height: 10 },
+  { key: 'dresser', label: 'Dresser', icon: '🧰', width: 18, height: 12 },
+  { key: 'stove', label: 'Stove', icon: '🔥', width: 18, height: 12 },
+  { key: 'oven', label: 'Oven', icon: '♨️', width: 18, height: 12 },
+  { key: 'microwave', label: 'Microwave', icon: '📟', width: 14, height: 10 },
+  { key: 'dishwasher', label: 'Dishwasher', icon: '🧼', width: 16, height: 12 },
+  { key: 'sink', label: 'Sink', icon: '🚰', width: 14, height: 10 },
+  { key: 'toilet', label: 'Toilet', icon: '🚽', width: 14, height: 14 },
+  { key: 'shower', label: 'Shower', icon: '🚿', width: 16, height: 16 },
+  { key: 'bathtub', label: 'Bathtub', icon: '🛁', width: 24, height: 12 },
+  { key: 'washer', label: 'Washer', icon: '🌀', width: 16, height: 16 },
+  { key: 'dryer', label: 'Dryer', icon: '🌬️', width: 16, height: 16 },
+  { key: 'desk', label: 'Desk', icon: '🪵', width: 24, height: 12 },
+  { key: 'bookshelf', label: 'Bookshelf', icon: '📚', width: 14, height: 20 },
+  { key: 'lamp', label: 'Lamp', icon: '💡', width: 12, height: 12 },
+  { key: 'plant', label: 'Plant', icon: '🪴', width: 12, height: 12 },
+  { key: 'trash', label: 'Trash', icon: '🗑️', width: 12, height: 14 },
+  { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 16, height: 14 },
+  { key: 'island', label: 'Kitchen Island', icon: '⬛', width: 28, height: 14 },
+  { key: 'rug', label: 'Rug', icon: '🔳', width: 24, height: 14 },
+  { key: 'ac', label: 'AC Unit', icon: '❄️', width: 16, height: 12 },
+  { key: 'water-heater', label: 'Water Heater', icon: '♨', width: 14, height: 14 },
+];
 
 function fixtureSubtype(item) {
   const text = `${item.type || ''} ${item.label || ''}`.toLowerCase();
@@ -252,7 +285,7 @@ const definition = {
       })
       .filter(Boolean);
 
-    const board = el('div', { className: 'floorplan-board' }, [
+    const board = el('div', { className: 'floorplan-board floorplan-fullscreen' }, [
       el('div', { className: 'floorplan-toolbar' }, [
         el('div', { className: 'floorplan-title-wrap' }, [
           el('span', { className: 'floorplan-title-icon' }, ['🏠']),
@@ -266,7 +299,20 @@ const definition = {
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'symbol' }, on: { click: () => setTool('symbol') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🧩']), el('span', { className: 'floorplan-tool-label' }, ['Symbol'])]),
             ]),
+          ]),
+          el('details', { className: 'floorplan-menu floorplan-symbol-menu' }, [
+            el('summary', { className: 'floorplan-menu-summary' }, ['Symbols']),
+            el('div', { className: 'floorplan-menu-panel floorplan-symbol-panel' }, HOUSEHOLD_SYMBOLS.map(symbol => el('button', {
+              className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
+              type: 'button',
+              dataset: { symbolKey: symbol.key },
+              on: { click: () => setSymbolPreset(symbol.key) },
+            }, [
+              el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
+              el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
+            ]))),
           ]),
           el('details', { className: 'floorplan-menu' }, [
             el('summary', { className: 'floorplan-menu-summary' }, ['Systems']),
@@ -305,9 +351,9 @@ const definition = {
             },
           }, ['Render Photo']),
           el('button', {
-            className: 'floorplan-secondary-btn',
-            on: { click: () => board.classList.toggle('floorplan-fullscreen') },
-          }, ['Full Screen']),
+            className: 'floorplan-secondary-btn floorplan-focus-toggle-btn',
+            on: { click: () => toggleFocusMode() },
+          }, ['Exit Focus']),
           el('button', {
             className: 'floorplan-export-btn',
             on: { click: () => window.print() },
@@ -356,6 +402,7 @@ const definition = {
     const state = {
       tool: 'wall',
       items,
+      symbolPreset: HOUSEHOLD_SYMBOLS[0],
       layerVisibility: {
         room: true,
         wall: true,
@@ -524,6 +571,22 @@ const definition = {
         created.angle = snap.angle;
         return created;
       }
+      if (tool === 'symbol') {
+        const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
+        return {
+          id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          kind: 'fixture',
+          type: preset.label,
+          label: preset.label,
+          layer: 'fixture',
+          x: point.x,
+          y: point.y,
+          width: preset.width,
+          height: preset.height,
+          symbolKey: preset.key,
+          symbol: preset.icon,
+        };
+      }
       return createItem(tool, point, point);
     }
 
@@ -591,8 +654,33 @@ const definition = {
         if (menu.hasAttribute('open')) menu.removeAttribute('open');
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
-      if (hint) hint.textContent = TOOL_HINTS[nextTool] || '';
+      if (hint) {
+        if (nextTool === 'symbol') {
+          const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
+          hint.textContent = `Symbol: ${preset.label}. Tap to place.`;
+        } else {
+          hint.textContent = TOOL_HINTS[nextTool] || '';
+        }
+      }
       debugLog('tool-change', { tool: nextTool });
+    }
+
+    function setSymbolPreset(symbolKey) {
+      const preset = HOUSEHOLD_SYMBOLS.find(symbol => symbol.key === symbolKey);
+      if (!preset) return;
+      state.symbolPreset = preset;
+      board.querySelectorAll('.floorplan-symbol-choice').forEach((button) => {
+        button.classList.toggle('active', button.dataset.symbolKey === symbolKey);
+      });
+      setTool('symbol');
+    }
+
+    function toggleFocusMode() {
+      board.classList.toggle('floorplan-fullscreen');
+      const focusButton = board.querySelector('.floorplan-focus-toggle-btn');
+      if (focusButton) {
+        focusButton.textContent = board.classList.contains('floorplan-fullscreen') ? 'Exit Focus' : 'Enter Focus';
+      }
     }
 
     function setLayerVisibility(layer, visible) {
@@ -730,6 +818,7 @@ const definition = {
           const y = item.y || 40;
           const subtype = fixtureSubtype(item);
           const rotation = Number.isFinite(item.angle) ? Number(item.angle) : 0;
+          const symbolGlyph = String(item.symbol || '').trim();
           const commonAttrs = {
             className: `floorplan-fixture floorplan-item floorplan-${subtype}${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
@@ -764,6 +853,27 @@ const definition = {
               'stroke-linecap': 'round',
               transform: `rotate(${rotation} ${x} ${y})`,
             }));
+          } else if (symbolGlyph) {
+            const width = Math.max(14, item.width || 18);
+            const height = Math.max(14, item.height || 18);
+            layer.append(svgEl('rect', {
+              ...commonAttrs,
+              x: x - (width / 2),
+              y: y - (height / 2),
+              width,
+              height,
+              rx: 4,
+              fill: '#f8fafc',
+              stroke: '#64748b',
+              'stroke-width': '1.5',
+            }));
+            layer.append(svgEl('text', {
+              x,
+              y: y + 4,
+              className: 'floorplan-symbol-glyph',
+              'text-anchor': 'middle',
+              'font-size': '12',
+            }, [symbolGlyph]));
           } else {
             const size = Math.max(12, Math.min(18, item.width || item.height || 16));
             layer.append(svgEl('rect', {
@@ -920,6 +1030,25 @@ const definition = {
             'stroke-dasharray': '6 4',
           }));
         }
+        if (preview.kind === 'symbol') {
+          const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
+          previewLayer.append(svgEl('circle', {
+            cx: preview.end.x,
+            cy: preview.end.y,
+            r: 10,
+            fill: 'rgba(100,116,139,0.2)',
+            stroke: '#64748b',
+            'stroke-width': '1.5',
+            'stroke-dasharray': '6 4',
+          }));
+          previewLayer.append(svgEl('text', {
+            x: preview.end.x,
+            y: preview.end.y + 4,
+            className: 'floorplan-symbol-glyph',
+            'text-anchor': 'middle',
+            'font-size': '12',
+          }, [preset.icon]));
+        }
         scene.append(previewLayer);
       }
     }
@@ -1008,7 +1137,7 @@ const definition = {
         return;
       }
 
-      if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window') {
+      if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol') {
         const created = createPointToolItem(state.tool, point);
         if (!created) return;
         state.items.push(created);
@@ -1188,7 +1317,7 @@ const definition = {
         };
         const roomEnd = { x: roomStart.x + 120, y: roomStart.y + 80 };
         created = createItem('room', roomStart, roomEnd);
-      } else if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window') {
+      } else if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol') {
         created = createPointToolItem(state.tool, point);
       }
 
