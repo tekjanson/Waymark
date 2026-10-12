@@ -73,7 +73,7 @@ const definition = {
     cols.workboardFeedback = lower.findIndex(h => /^(workboard feedback|workbook feedback|workbook)/.test(h));
     cols.tuningFeedback = lower.findIndex(h => /^(tuning feedback|tuning note|tuning summary|feedback)/.test(h));
     cols.keys      = lower.findIndex(h => /^(keys|key status|api keys|key pool|tokens)/.test(h));
-    cols.workboard = lower.findIndex(h => /^(workboard|sheet|sheet id|board id|target)$/.test(h));
+    cols.workboard = lower.findIndex(h => /^(workboard( id)?|workbook( id)?|sheet( id)?|board id|target)$/.test(h));
     cols.command   = lower.findIndex(h => /^(command|cmd|initial command|start command)/.test(h));
     cols.folder    = lower.findIndex(h => /^(folder|directory|team|group)/.test(h));
     cols.activity  = lower.findIndex(h => /^(activity|feed|log|stream|live)/.test(h));

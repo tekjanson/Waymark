@@ -132,7 +132,7 @@ services:
       # ── Workspace ──────────────────────────────────────────────────────────
       # Mount a local directory, or leave empty + set REPO_URL to clone.
       # Set WORKSPACE_PATH on the host to use a different local directory.
-      - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace
+      - ${WORKSPACE_PATH:-..}:/workspace
 
       # ── Copilot CLI auth ───────────────────────────────────────────────────
       # Plain JSON file — no gnome-keyring, no SQLite, no password-store.
@@ -230,7 +230,7 @@ services:
     restart: unless-stopped
 
     volumes:
-      - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace
+      - ${WORKSPACE_PATH:-..}:/workspace
       - ${COPILOT_CONFIG_PATH:-/home/tekjanson/.copilot}:/home/worker/.copilot
       - ${CLAUDE_CONFIG_PATH:-/home/tekjanson/.claude}:/home/worker/.claude
       - ${GSA_KEY_PATH:-/home/tekjanson/.config/gcloud/waymark-service-account-key.json}:/credentials/gsa-key.json:ro

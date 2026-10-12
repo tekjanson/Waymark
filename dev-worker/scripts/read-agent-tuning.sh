@@ -88,7 +88,7 @@ RESULT=$(printf '%s' "$SHEET_DATA" | jq -r \
     ($h | map(test("^(tuning|personality|prompt)")) | index(true) // -1)    as $ti |
     ($h | map(test("^(model|ai model)"))            | index(true) // -1)    as $mi |
     ($h | map(test("^(provider|engine|backend)"))   | index(true) // -1)    as $pi |
-    ($h | map(test("^(workboard|sheet id|board)"))  | index(true) // -1)    as $wi |
+    ($h | map(test("^(workboard( id)?|workbook( id)?|sheet( id)?|board id|target)$")) | index(true) // -1) as $wi |
     ($h | map(test("^(command|cmd|start command)")) | index(true) // -1)    as $ci |
     ($rows[1:] | map(select(.[($ni)] != null and (.[($ni)] | ascii_downcase) == ($name | ascii_downcase))) | first) as $row |
     if $row == null then {tuning:"",model:"",provider:"",workboard:"",command:""}
@@ -115,6 +115,13 @@ PROVIDER=$(printf '%s' "$RESULT"  | jq -r '.provider  // ""')
 WORKBOARD=$(printf '%s' "$RESULT" | jq -r '.workboard // ""')
 COMMAND=$(printf '%s' "$RESULT"   | jq -r '.command   // ""')
 
+# Accept either a raw spreadsheet ID or common sheet URLs.
+if [[ "$WORKBOARD" =~ docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]+) ]]; then
+    WORKBOARD="${BASH_REMATCH[1]}"
+elif [[ "$WORKBOARD" =~ /#/sheet/([A-Za-z0-9_-]+) ]]; then
+    WORKBOARD="${BASH_REMATCH[1]}"
+fi
+
 if [[ -n "$TUNING" ]]; then
     log "Tuning loaded: ${TUNING:0:80}..."
 else
@@ -127,5 +134,5 @@ fi
 printf "export AGENT_TUNING=%q\n" "$TUNING"
 [[ -n "$MODEL"     ]] && printf "export AGENT_MODEL=%q\n"            "$MODEL"
 [[ -n "$PROVIDER"  ]] && printf "export AI_PROVIDER=%q\n"            "$PROVIDER"
-[[ -n "$WORKBOARD" ]] && printf "export WAYMARK_WORKBOARD_ID=%q\n"   "$WORKBOARD"
+printf "export WAYMARK_WORKBOARD_ID=%q\n" "$WORKBOARD"
 [[ -n "$COMMAND"   ]] && printf "export AGENT_COMMAND=%q\n"          "$COMMAND"

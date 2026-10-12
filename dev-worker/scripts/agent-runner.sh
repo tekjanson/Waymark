@@ -102,6 +102,24 @@ else
     log "AGENT_HUMAN_NAME or AGENTS_SHEET_ID not set — skipping tuning read"
 fi
 
+refresh_agent_registry_overrides() {
+    if [[ -z "$AGENT_HUMAN_NAME" || -z "$AGENTS_SHEET_ID" ]]; then
+        return
+    fi
+
+    local prev_workboard="${WAYMARK_WORKBOARD_ID:-}"
+    local prev_command="${AGENT_COMMAND:-}"
+
+    source <(bash /workspace/dev-worker/scripts/read-agent-tuning.sh 2>/dev/null) || true
+
+    if [[ "${WAYMARK_WORKBOARD_ID:-}" != "$prev_workboard" ]]; then
+        log "Workboard target updated: ${WAYMARK_WORKBOARD_ID:-<not set>}"
+    fi
+    if [[ "${AGENT_COMMAND:-}" != "$prev_command" ]]; then
+        log "Start command updated from sheet: ${AGENT_COMMAND:-<not set>}"
+    fi
+}
+
 log "Identity: ${AGENT_HUMAN_NAME:-<unnamed>} | Provider: ${AI_PROVIDER} | Model: ${AGENT_MODEL}"
 
 # ── Sheet write-back helper ───────────────────────────────────────────────────
@@ -512,6 +530,8 @@ log "  Workboard:   ${WAYMARK_WORKBOARD_ID:-<not set>}"
 SESSION=0
 IDLE_CYCLES=0
 while true; do
+    refresh_agent_registry_overrides
+
     # ── Poll workboard for next task ──────────────────────────────────────────
     if [[ -n "${WAYMARK_WORKBOARD_ID:-}" ]]; then
         # QA patrol mode: poll the QA stage instead of To Do
