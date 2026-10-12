@@ -83,9 +83,18 @@ const TOOL_HINTS = {
   room: 'Room: drag to draw room bounds, or tap once to drop a default room.',
   electrical: 'Electrical: tap to place a point, drag to preview before release.',
   plumbing: 'Plumbing: tap to place a point, drag to preview before release.',
+  door: 'Door: tap near a wall to snap and place an opening.',
+  window: 'Window: tap near a wall to snap and place glazing.',
   select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
   erase: 'Erase: tap any drawn item to remove it.',
 };
+
+function fixtureSubtype(item) {
+  const text = `${item.type || ''} ${item.label || ''}`.toLowerCase();
+  if (text.includes('door')) return 'door';
+  if (text.includes('window')) return 'window';
+  return 'fixture';
+}
 
 function hasMeaningfulLabel(label) {
   if (typeof label !== 'string') return false;
@@ -267,12 +276,18 @@ const definition = {
         el('div', { className: 'floorplan-toolset' }, [
           el('button', { className: 'floorplan-tool-button active', type: 'button', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'electrical' }, on: { click: () => setTool('electrical') } }, [el('span', { className: 'floorplan-tool-icon' }, ['◉']), el('span', { className: 'floorplan-tool-label' }, ['Electrical'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'plumbing' }, on: { click: () => setTool('plumbing') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▣']), el('span', { className: 'floorplan-tool-label' }, ['Plumbing'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
           el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
         ]),
         el('div', { className: 'floorplan-actions' }, [
+          el('button', {
+            className: 'floorplan-secondary-btn floorplan-auto-wall-btn',
+            on: { click: () => autoGenerateWallsFromRooms() },
+          }, ['Auto Walls']),
           el('button', {
             className: 'floorplan-secondary-btn floorplan-ai-launch-btn',
             on: {
@@ -300,7 +315,7 @@ const definition = {
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-wall' }, []), 'Walls']),
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-electrical' }, []), 'Electrical']),
         el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-plumbing' }, []), 'Plumbing']),
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-fixture' }, []), 'Fixtures']),
+        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-fixture' }, []), 'Fixtures / Openings']),
       ]),
       el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
       el('div', { className: 'floorplan-stage' }, [
@@ -356,6 +371,119 @@ const definition = {
 
     function findItemById(itemId) {
       return state.items.find(entry => String(entry.id) === String(itemId)) || null;
+    }
+
+    function getWallEndpoints(wall) {
+      const x1 = wall.x;
+      const y1 = wall.y;
+      const x2 = typeof wall.x2 === 'number' ? wall.x2 : wall.x + (wall.length || wall.width || 120);
+      const y2 = typeof wall.y2 === 'number' ? wall.y2 : wall.y + (wall.height || 0);
+      return { x1, y1, x2, y2 };
+    }
+
+    function projectPointOnSegment(point, segment) {
+      const vx = segment.x2 - segment.x1;
+      const vy = segment.y2 - segment.y1;
+      const wx = point.x - segment.x1;
+      const wy = point.y - segment.y1;
+      const lenSq = (vx * vx) + (vy * vy);
+      const t = lenSq > 0 ? clamp(((wx * vx) + (wy * vy)) / lenSq, 0, 1) : 0;
+      const px = segment.x1 + (vx * t);
+      const py = segment.y1 + (vy * t);
+      return {
+        x: px,
+        y: py,
+        distance: Math.hypot(point.x - px, point.y - py),
+        angle: Math.atan2(vy, vx) * (180 / Math.PI),
+      };
+    }
+
+    function snapPointToNearestWall(point, maxDistance = 30) {
+      const walls = state.items.filter(item => (item.kind || classifyItem(item)) === 'wall');
+      let best = null;
+      walls.forEach((wall) => {
+        const endpoints = getWallEndpoints(wall);
+        const projected = projectPointOnSegment(point, endpoints);
+        if (!best || projected.distance < best.distance) {
+          best = { ...projected, wallId: wall.id };
+        }
+      });
+      if (!best || best.distance > maxDistance) return null;
+      return best;
+    }
+
+    function createPointToolItem(tool, point) {
+      if (tool === 'door' || tool === 'window') {
+        const snap = snapPointToNearestWall(point, 34);
+        if (!snap) {
+          showToast('Tap closer to a wall to place a door/window.', 'error');
+          return null;
+        }
+        const created = createItem(tool, snap, snap);
+        created.kind = 'fixture';
+        created.type = tool === 'door' ? 'Door' : 'Window';
+        created.layer = 'fixture';
+        created.x = snap.x;
+        created.y = snap.y;
+        created.width = tool === 'door' ? 24 : 26;
+        created.height = tool === 'door' ? 10 : 6;
+        created.wallId = snap.wallId;
+        created.angle = snap.angle;
+        return created;
+      }
+      return createItem(tool, point, point);
+    }
+
+    function hasWallWithEndpoints(segment, tolerance = 8) {
+      const near = (a, b) => Math.abs(a - b) <= tolerance;
+      return state.items
+        .filter(item => (item.kind || classifyItem(item)) === 'wall')
+        .some((wall) => {
+          const edge = getWallEndpoints(wall);
+          const direct = near(edge.x1, segment.x1)
+            && near(edge.y1, segment.y1)
+            && near(edge.x2, segment.x2)
+            && near(edge.y2, segment.y2);
+          const reversed = near(edge.x1, segment.x2)
+            && near(edge.y1, segment.y2)
+            && near(edge.x2, segment.x1)
+            && near(edge.y2, segment.y1);
+          return direct || reversed;
+        });
+    }
+
+    function autoGenerateWallsFromRooms() {
+      const rooms = state.items.filter(item => (item.kind || classifyItem(item)) === 'room');
+      if (!rooms.length) {
+        showToast('Add at least one room before auto-generating walls.', 'error');
+        return;
+      }
+
+      let added = 0;
+      rooms.forEach((room) => {
+        const width = Math.max(40, room.width || 120);
+        const height = Math.max(34, room.height || 80);
+        const left = room.x;
+        const top = room.y;
+        const right = left + width;
+        const bottom = top + height;
+        const segments = [
+          { x1: left, y1: top, x2: right, y2: top },
+          { x1: right, y1: top, x2: right, y2: bottom },
+          { x1: right, y1: bottom, x2: left, y2: bottom },
+          { x1: left, y1: bottom, x2: left, y2: top },
+        ];
+
+        segments.forEach((segment) => {
+          if (hasWallWithEndpoints(segment)) return;
+          const wall = createItem('wall', { x: segment.x1, y: segment.y1 }, { x: segment.x2, y: segment.y2 });
+          state.items.push(wall);
+          added += 1;
+        });
+      });
+
+      renderScene();
+      showToast(added ? `Added ${added} wall segments around rooms.` : 'All room edges already have walls.', 'success');
     }
 
     function setTool(nextTool) {
@@ -547,21 +675,57 @@ const definition = {
         if (kind === 'fixture') {
           const x = item.x || 40;
           const y = item.y || 40;
-          const size = Math.max(12, Math.min(18, item.width || item.height || 16));
-          const node = svgEl('rect', {
-            x: x - (size / 2),
-            y: y - (size / 2),
-            width: size,
-            height: size,
-            rx: 3,
-            fill: '#fbbf24',
-            stroke: '#78350f',
-            'stroke-width': '2',
-            className: `floorplan-fixture floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+          const subtype = fixtureSubtype(item);
+          const rotation = Number.isFinite(item.angle) ? Number(item.angle) : 0;
+          const commonAttrs = {
+            className: `floorplan-fixture floorplan-item floorplan-${subtype}${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'fixture',
-          });
-          layer.append(node);
+          };
+
+          if (subtype === 'door') {
+            const width = Math.max(16, item.width || 24);
+            const height = Math.max(7, item.height || 10);
+            layer.append(svgEl('rect', {
+              ...commonAttrs,
+              x: x - (width / 2),
+              y: y - (height / 2),
+              width,
+              height,
+              rx: 2,
+              fill: '#f59e0b',
+              stroke: '#7c2d12',
+              'stroke-width': '2',
+              transform: `rotate(${rotation} ${x} ${y})`,
+            }));
+          } else if (subtype === 'window') {
+            const width = Math.max(18, item.width || 26);
+            layer.append(svgEl('line', {
+              ...commonAttrs,
+              x1: x - (width / 2),
+              y1: y,
+              x2: x + (width / 2),
+              y2: y,
+              stroke: '#0ea5e9',
+              'stroke-width': '4',
+              'stroke-linecap': 'round',
+              transform: `rotate(${rotation} ${x} ${y})`,
+            }));
+          } else {
+            const size = Math.max(12, Math.min(18, item.width || item.height || 16));
+            layer.append(svgEl('rect', {
+              ...commonAttrs,
+              x: x - (size / 2),
+              y: y - (size / 2),
+              width: size,
+              height: size,
+              rx: 3,
+              fill: '#fbbf24',
+              stroke: '#78350f',
+              'stroke-width': '2',
+            }));
+          }
+
           if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, x + 18, y - 10, '#78350f', 'floorplan-device-label'));
           }
@@ -791,8 +955,9 @@ const definition = {
         return;
       }
 
-      if (state.tool === 'electrical' || state.tool === 'plumbing') {
-        const created = createItem(state.tool, point, point);
+      if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window') {
+        const created = createPointToolItem(state.tool, point);
+        if (!created) return;
         state.items.push(created);
         state.lastCreateAt = Date.now();
         debugLog('create-point', { kind: created.kind, id: created.id, x: created.x, y: created.y, count: state.items.length });
@@ -966,8 +1131,8 @@ const definition = {
         };
         const roomEnd = { x: roomStart.x + 120, y: roomStart.y + 80 };
         created = createItem('room', roomStart, roomEnd);
-      } else if (state.tool === 'electrical' || state.tool === 'plumbing') {
-        created = createItem(state.tool, point, point);
+      } else if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window') {
+        created = createPointToolItem(state.tool, point);
       }
 
       if (!created) return;

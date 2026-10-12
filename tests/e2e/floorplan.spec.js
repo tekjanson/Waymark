@@ -34,6 +34,40 @@ test('wall tool supports single-click placement for immediate feedback', async (
   expect(afterCount).toBe(beforeCount + 1);
 });
 
+test('auto walls generates perimeter walls from rooms', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const beforeCount = await page.locator('.floorplan-wall').count();
+  await page.click('.floorplan-auto-wall-btn');
+  const afterCount = await page.locator('.floorplan-wall').count();
+
+  expect(afterCount).toBeGreaterThan(beforeCount);
+});
+
+test('door and window tools snap openings onto nearby walls', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const wallBox = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!wallBox) throw new Error('Wall geometry missing');
+  const targetX = wallBox.x + (wallBox.width / 2);
+  const targetY = wallBox.y + (wallBox.height / 2);
+
+  const beforeDoors = await page.locator('.floorplan-door').count();
+  const beforeWindows = await page.locator('.floorplan-window').count();
+
+  await page.click('.floorplan-tool-button[data-tool="door"]');
+  await page.mouse.click(targetX, targetY);
+  await page.click('.floorplan-tool-button[data-tool="window"]');
+  await page.mouse.click(targetX + 30, targetY);
+
+  await expect(page.locator('.floorplan-door')).toHaveCount(beforeDoors + 1);
+  await expect(page.locator('.floorplan-window')).toHaveCount(beforeWindows + 1);
+});
+
 test('select mode supports room resize handles', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
