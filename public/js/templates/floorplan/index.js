@@ -375,6 +375,7 @@ const definition = {
           el('details', { className: 'floorplan-menu' }, [
             el('summary', { className: 'floorplan-menu-summary' }, ['Edit']),
             el('div', { className: 'floorplan-menu-panel' }, [
+              el('button', { className: 'floorplan-tool-button floorplan-undo-btn', type: 'button', on: { click: () => undoLatest() } }, [el('span', { className: 'floorplan-tool-icon' }, ['↶']), el('span', { className: 'floorplan-tool-label' }, ['Undo'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', on: { click: () => clearSelection() } }, [el('span', { className: 'floorplan-tool-icon' }, ['☒']), el('span', { className: 'floorplan-tool-label' }, ['Clear Selection'])]),
@@ -504,6 +505,8 @@ const definition = {
       resizeDrag: null,
       selectedId: null,
       selectedIds: new Set(),
+      undoStack: [],
+      redoStack: [],
       lastCreateAt: 0,
       lastStartAt: 0,
       lastStartPoint: null,
@@ -528,6 +531,63 @@ const definition = {
         persistDraftState();
         persistTimer = null;
       }, 350);
+    }
+
+    function snapshotState() {
+      return {
+        items: JSON.parse(JSON.stringify(state.items)),
+        currentFloor: state.currentFloor,
+        alignBelow: state.alignBelow,
+        selectedId: state.selectedId,
+        selectedIds: [...state.selectedIds],
+      };
+    }
+
+    function restoreSnapshot(snapshot) {
+      if (!snapshot) return;
+      state.items = Array.isArray(snapshot.items) ? snapshot.items : [];
+      state.currentFloor = Math.max(1, Number(snapshot.currentFloor) || 1);
+      state.alignBelow = !!snapshot.alignBelow;
+      state.selectedIds = new Set((snapshot.selectedIds || []).map(String));
+      state.selectedId = snapshot.selectedId && state.selectedIds.has(String(snapshot.selectedId))
+        ? String(snapshot.selectedId)
+        : (state.selectedIds.size === 1 ? [...state.selectedIds][0] : null);
+      refreshFloorUi();
+      renderScene();
+      queuePersistDraft();
+      updateUndoUi();
+    }
+
+    function pushUndoCheckpoint() {
+      state.undoStack.push(snapshotState());
+      if (state.undoStack.length > 120) state.undoStack.shift();
+      state.redoStack = [];
+      updateUndoUi();
+    }
+
+    function undoLatest() {
+      if (state.undoStack.length === 0) return;
+      const prev = state.undoStack.pop();
+      state.redoStack.push(snapshotState());
+      restoreSnapshot(prev);
+      showToast('Undo applied', 'success');
+    }
+
+    function redoLatest() {
+      if (state.redoStack.length === 0) return;
+      const next = state.redoStack.pop();
+      state.undoStack.push(snapshotState());
+      restoreSnapshot(next);
+      showToast('Redo applied', 'success');
+    }
+
+    function updateUndoUi() {
+      const button = board.querySelector('.floorplan-undo-btn');
+      if (button) {
+        const hasUndo = state.undoStack.length > 0;
+        button.disabled = !hasUndo;
+        button.setAttribute('aria-disabled', hasUndo ? 'false' : 'true');
+      }
     }
 
     function snapToGrid(point, grid = 10) {
@@ -820,6 +880,7 @@ const definition = {
       }
 
       let added = 0;
+      pushUndoCheckpoint();
       rooms.forEach((room) => {
         const width = Math.max(40, room.width || 120);
         const height = Math.max(34, room.height || 80);
@@ -939,6 +1000,7 @@ const definition = {
     }
 
     function loadFloorOnePreset() {
+      pushUndoCheckpoint();
       state.currentFloor = 1;
       state.alignBelow = false;
       state.selectedId = null;
@@ -948,7 +1010,6 @@ const definition = {
         { label: 'Foyer', x: 550, y: 70, width: 130, height: 90 },
         { label: 'Kitchen', x: 560, y: 170, width: 260, height: 170 },
         { label: 'Long Living Room', x: 230, y: 170, width: 300, height: 320 },
-        { label: 'Galley Kitchen', x: 430, y: 170, width: 110, height: 260 },
         { label: 'Hallway', x: 560, y: 350, width: 130, height: 160 },
         { label: 'Closet', x: 700, y: 350, width: 80, height: 70 },
         { label: 'Bath', x: 700, y: 430, width: 110, height: 80 },
@@ -995,7 +1056,7 @@ const definition = {
       }
       const kitchenWin = registerNewItem(createPointToolItem('window', { x: 430, y: 230 }));
       if (kitchenWin) {
-        kitchenWin.label = 'Galley Window';
+        kitchenWin.label = 'Kitchen West Window';
         state.items.push(kitchenWin);
       }
       const livingWin = registerNewItem(createPointToolItem('window', { x: 230, y: 300 }));
@@ -1041,6 +1102,7 @@ const definition = {
         return;
       }
       if (!Array.isArray(selected.interior)) selected.interior = [];
+      pushUndoCheckpoint();
       const rect = interiorSvg.getBoundingClientRect();
       const clientX = event.clientX || rect.left;
       const clientY = event.clientY || rect.top;
@@ -1545,6 +1607,7 @@ const definition = {
 
       if (state.tool === 'erase') {
         if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
+          pushUndoCheckpoint();
           const itemId = targetItem.dataset.floorplanItem;
           state.items = state.items.filter(item => String(item.id) !== itemId);
           state.selectedIds.delete(String(itemId));
@@ -1567,6 +1630,7 @@ const definition = {
           if (item) {
             if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
             setSingleSelection(itemId);
+            pushUndoCheckpoint();
             state.resizeDrag = {
               itemId,
               handle,
@@ -1595,6 +1659,7 @@ const definition = {
             return;
           }
           if (!state.selectedIds.has(itemId)) setSingleSelection(itemId);
+          pushUndoCheckpoint();
           state.dragIds = [...state.selectedIds];
           state.dragStart = { x: point.x, y: point.y };
           state.dragOrigins = {};
@@ -1624,6 +1689,7 @@ const definition = {
       }
 
       if (state.tool === 'electrical' || state.tool === 'plumbing' || state.tool === 'door' || state.tool === 'window' || state.tool === 'symbol' || state.tool === 'stairs') {
+        pushUndoCheckpoint();
         const created = registerNewItem(createPointToolItem(state.tool, point));
         if (!created) return;
         state.items.push(created);
@@ -1778,17 +1844,20 @@ const definition = {
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
         debugLog('input-end', { eventType: event?.type, kind, distance, start, end });
         if (kind === 'wall-rect') {
+          pushUndoCheckpoint();
           const added = createRectangleWalls(start, end);
           if (added > 0) {
             state.lastCreateAt = Date.now();
             debugLog('create-rect-wall', { added, count: state.items.length });
           }
         } else if (distance > 18) {
+          pushUndoCheckpoint();
           const created = registerNewItem(createItem(kind, start, end));
           state.items.push(created);
           state.lastCreateAt = Date.now();
           debugLog('create-drag', { kind: created.kind, id: created.id, count: state.items.length });
         } else if (kind === 'wall') {
+          pushUndoCheckpoint();
           const wallEndRaw = {
             x: clamp(start.x + 80, 20, 940),
             y: start.y,
@@ -1799,6 +1868,7 @@ const definition = {
           state.lastCreateAt = Date.now();
           debugLog('create-click-wall', { id: created.id, from: start, to: wallEnd, count: state.items.length });
         } else if (kind === 'room') {
+          pushUndoCheckpoint();
           const roomStart = {
             x: clamp(start.x - 60, 20, 880),
             y: clamp(start.y - 40, 20, 520),
@@ -1844,11 +1914,28 @@ const definition = {
 
       created = registerNewItem(created);
       if (!created) return;
+      pushUndoCheckpoint();
       state.items.push(created);
       state.lastCreateAt = Date.now();
       debugLog('fallback-click-create', { tool: state.tool, id: created.id, x: point.x, y: point.y, count: state.items.length });
       renderScene();
       queuePersistDraft();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.__WAYMARK_FLOORPLAN_UNDO_API__ = { undoLatest, redoLatest };
+      if (!window.__WAYMARK_FLOORPLAN_UNDO_BOUND__) {
+        window.addEventListener('keydown', (event) => {
+          if (!(event.ctrlKey || event.metaKey)) return;
+          if (String(event.key || '').toLowerCase() !== 'z') return;
+          const api = window.__WAYMARK_FLOORPLAN_UNDO_API__;
+          if (!api) return;
+          event.preventDefault();
+          if (event.shiftKey) api.redoLatest();
+          else api.undoLatest();
+        });
+        window.__WAYMARK_FLOORPLAN_UNDO_BOUND__ = true;
+      }
     }
 
     const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
@@ -1875,6 +1962,7 @@ const definition = {
     svg.addEventListener('click', fallbackClickCreate);
     svg.style.cursor = 'crosshair';
     refreshFloorUi();
+    updateUndoUi();
     setTool('wall');
     renderScene();
 
