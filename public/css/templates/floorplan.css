@@ -47,7 +47,7 @@
 
 .floorplan-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: 6px;
 }
@@ -64,7 +64,6 @@
   white-space: nowrap;
 }
 
-.floorplan-ai-launch-btn,
 .floorplan-ai-render-btn {
   white-space: nowrap;
 }
@@ -75,6 +74,73 @@
   flex-wrap: wrap;
   gap: 6px;
   max-width: 100%;
+}
+
+.floorplan-toolset-menus {
+  gap: 8px;
+}
+
+.floorplan-menu {
+  position: relative;
+}
+
+.floorplan-menu-summary {
+  list-style: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.floorplan-menu-summary::-webkit-details-marker {
+  display: none;
+}
+
+.floorplan-menu[open] .floorplan-menu-summary {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.floorplan-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  min-width: 220px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.floorplan-layer-menu .floorplan-menu-panel {
+  min-width: 180px;
+}
+
+.floorplan-layer-toggle {
+  border: 1px solid var(--color-border);
+  background: #f8fafc;
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.floorplan-layer-toggle.active {
+  background: #e6f0ff;
+  border-color: #93c5fd;
+  color: #1e3a8a;
 }
 
 .floorplan-tool-button {
@@ -122,37 +188,8 @@
   font-weight: 600;
 }
 
-.floorplan-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  padding: 8px 12px 0;
-  color: var(--color-text-muted);
-  font-size: 0.76rem;
-}
-
-.floorplan-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.floorplan-swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  border: 1px solid rgba(15, 23, 42, 0.2);
-}
-
-.floorplan-swatch-room { background: #dbeafe; }
-.floorplan-swatch-wall { background: #334155; }
-.floorplan-swatch-electrical { background: #4ade80; }
-.floorplan-swatch-plumbing { background: #93c5fd; }
-.floorplan-swatch-fixture { background: #fbbf24; }
-
 .floorplan-hint {
-  margin: 8px 12px 0;
+  margin: 6px 12px 0;
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -441,7 +478,7 @@
   }
 
   .floorplan-actions {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .floorplan-tool-label {
@@ -456,13 +493,17 @@
     height: clamp(340px, 58vh, 560px);
     max-height: 60vh;
   }
+
+  .floorplan-menu-panel {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 520px) {
-  .floorplan-actions {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .floorplan-secondary-btn,
   .floorplan-export-btn {
     width: 100%;
@@ -471,7 +512,8 @@
 
 @media print {
   .floorplan-export-btn,
-  .floorplan-legend {
+  .floorplan-toolset,
+  .floorplan-actions {
     display: none !important;
   }
 

@@ -7,7 +7,6 @@
    ============================================================ */
 
 import { cell, el, registerTemplate, showToast } from '../shared.js';
-import { openFloorplanAiModal } from './ai-vision.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -79,10 +78,10 @@ function debugLog(...args) {
 }
 
 const TOOL_HINTS = {
-  wall: 'Wall: drag to draw, or tap once to drop a short wall segment.',
-  room: 'Room: drag to draw room bounds, or tap once to drop a default room.',
-  electrical: 'Electrical: tap to place a point, drag to preview before release.',
-  plumbing: 'Plumbing: tap to place a point, drag to preview before release.',
+  wall: 'Wall: drag or tap to draw with snap-to-grid and auto-connect anchors.',
+  room: 'Room: drag or tap to draw bounds, snapped cleanly to nearby geometry.',
+  electrical: 'Electrical: tap to place a point with clean snapping.',
+  plumbing: 'Plumbing: tap to place a point with clean snapping.',
   door: 'Door: tap near a wall to snap and place an opening.',
   window: 'Window: tap near a wall to snap and place glazing.',
   select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
@@ -164,20 +163,6 @@ function createItem(kind, start, end) {
       length: Math.hypot(end.x - start.x, end.y - start.y),
       width: Math.max(10, Math.abs(end.x - start.x)),
       height: Math.max(10, Math.abs(end.y - start.y)),
-    };
-  }
-
-  function makeFixture(point, label = '') {
-    return {
-      id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      kind: 'fixture',
-      type: 'Fixture',
-      label: String(label || '').trim(),
-      layer: 'fixture',
-      x: point.x,
-      y: point.y,
-      width: 16,
-      height: 16,
     };
   }
 
@@ -273,15 +258,40 @@ const definition = {
           el('span', { className: 'floorplan-title-icon' }, ['🏠']),
           el('span', { className: 'floorplan-title' }, ['House Plan']),
         ]),
-        el('div', { className: 'floorplan-toolset' }, [
-          el('button', { className: 'floorplan-tool-button active', type: 'button', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'electrical' }, on: { click: () => setTool('electrical') } }, [el('span', { className: 'floorplan-tool-icon' }, ['◉']), el('span', { className: 'floorplan-tool-label' }, ['Electrical'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'plumbing' }, on: { click: () => setTool('plumbing') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▣']), el('span', { className: 'floorplan-tool-label' }, ['Plumbing'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
-          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
+        el('div', { className: 'floorplan-toolset floorplan-toolset-menus' }, [
+          el('details', { className: 'floorplan-menu' }, [
+            el('summary', { className: 'floorplan-menu-summary' }, ['Draw']),
+            el('div', { className: 'floorplan-menu-panel' }, [
+              el('button', { className: 'floorplan-tool-button active', type: 'button', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
+            ]),
+          ]),
+          el('details', { className: 'floorplan-menu' }, [
+            el('summary', { className: 'floorplan-menu-summary' }, ['Systems']),
+            el('div', { className: 'floorplan-menu-panel' }, [
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'electrical' }, on: { click: () => setTool('electrical') } }, [el('span', { className: 'floorplan-tool-icon' }, ['◉']), el('span', { className: 'floorplan-tool-label' }, ['Electrical'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'plumbing' }, on: { click: () => setTool('plumbing') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▣']), el('span', { className: 'floorplan-tool-label' }, ['Plumbing'])]),
+            ]),
+          ]),
+          el('details', { className: 'floorplan-menu' }, [
+            el('summary', { className: 'floorplan-menu-summary' }, ['Edit']),
+            el('div', { className: 'floorplan-menu-panel' }, [
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
+            ]),
+          ]),
+          el('details', { className: 'floorplan-menu floorplan-layer-menu' }, [
+            el('summary', { className: 'floorplan-menu-summary' }, ['Layers']),
+            el('div', { className: 'floorplan-menu-panel floorplan-layer-panel' }, [
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', dataset: { layer: 'room' } }, ['Rooms']),
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', dataset: { layer: 'wall' } }, ['Walls']),
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', dataset: { layer: 'electrical' } }, ['Electrical']),
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', dataset: { layer: 'plumbing' } }, ['Plumbing']),
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', dataset: { layer: 'fixture' } }, ['Fixtures']),
+            ]),
+          ]),
         ]),
         el('div', { className: 'floorplan-actions' }, [
           el('button', {
@@ -289,17 +299,11 @@ const definition = {
             on: { click: () => autoGenerateWallsFromRooms() },
           }, ['Auto Walls']),
           el('button', {
-            className: 'floorplan-secondary-btn floorplan-ai-launch-btn',
-            on: {
-              click: () => openFloorplanAiModal({ onApply: applyAiPlanToCanvas }),
-            },
-          }, ['AI From Photos']),
-          el('button', {
             className: 'floorplan-secondary-btn floorplan-ai-render-btn',
             on: {
               click: () => openFloorplanAiRenderModal({ items: state.items }),
             },
-          }, ['AI Space Render']),
+          }, ['Render Photo']),
           el('button', {
             className: 'floorplan-secondary-btn',
             on: { click: () => board.classList.toggle('floorplan-fullscreen') },
@@ -309,13 +313,6 @@ const definition = {
             on: { click: () => window.print() },
           }, ['Export PDF']),
         ]),
-      ]),
-      el('div', { className: 'floorplan-legend' }, [
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-room' }, []), 'Rooms']),
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-wall' }, []), 'Walls']),
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-electrical' }, []), 'Electrical']),
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-plumbing' }, []), 'Plumbing']),
-        el('span', { className: 'floorplan-legend-item' }, [el('span', { className: 'floorplan-swatch floorplan-swatch-fixture' }, []), 'Fixtures / Openings']),
       ]),
       el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
       el('div', { className: 'floorplan-stage' }, [
@@ -359,6 +356,13 @@ const definition = {
     const state = {
       tool: 'wall',
       items,
+      layerVisibility: {
+        room: true,
+        wall: true,
+        electrical: true,
+        plumbing: true,
+        fixture: true,
+      },
       preview: null,
       dragStart: null,
       dragId: null,
@@ -368,6 +372,13 @@ const definition = {
       lastStartAt: 0,
       lastStartPoint: null,
     };
+
+    function snapToGrid(point, grid = 10) {
+      return {
+        x: clamp(Math.round(point.x / grid) * grid, 20, 940),
+        y: clamp(Math.round(point.y / grid) * grid, 20, 600),
+      };
+    }
 
     function findItemById(itemId) {
       return state.items.find(entry => String(entry.id) === String(itemId)) || null;
@@ -379,6 +390,88 @@ const definition = {
       const x2 = typeof wall.x2 === 'number' ? wall.x2 : wall.x + (wall.length || wall.width || 120);
       const y2 = typeof wall.y2 === 'number' ? wall.y2 : wall.y + (wall.height || 0);
       return { x1, y1, x2, y2 };
+    }
+
+    function getSnapAnchorPoints(skipWallId = null) {
+      const anchors = [];
+      state.items.forEach((item) => {
+        const kind = item.kind || classifyItem(item);
+        if (kind === 'wall' && String(item.id) !== String(skipWallId)) {
+          const edge = getWallEndpoints(item);
+          anchors.push({ x: edge.x1, y: edge.y1 });
+          anchors.push({ x: edge.x2, y: edge.y2 });
+        }
+        if (kind === 'room') {
+          const width = Math.max(40, item.width || 120);
+          const height = Math.max(34, item.height || 80);
+          anchors.push({ x: item.x, y: item.y });
+          anchors.push({ x: item.x + width, y: item.y });
+          anchors.push({ x: item.x, y: item.y + height });
+          anchors.push({ x: item.x + width, y: item.y + height });
+        }
+      });
+      return anchors;
+    }
+
+    function getSnapAxes() {
+      const x = [];
+      const y = [];
+      state.items.forEach((item) => {
+        const kind = item.kind || classifyItem(item);
+        if (kind === 'room') {
+          const width = Math.max(40, item.width || 120);
+          const height = Math.max(34, item.height || 80);
+          x.push(item.x, item.x + width);
+          y.push(item.y, item.y + height);
+        }
+        if (kind === 'wall') {
+          const edge = getWallEndpoints(item);
+          x.push(edge.x1, edge.x2);
+          y.push(edge.y1, edge.y2);
+        }
+      });
+      return { x, y };
+    }
+
+    function snapPointToAnchors(point, anchors, threshold = 14) {
+      let best = null;
+      anchors.forEach((anchor) => {
+        const distance = Math.hypot(point.x - anchor.x, point.y - anchor.y);
+        if (distance <= threshold && (!best || distance < best.distance)) {
+          best = { ...anchor, distance };
+        }
+      });
+      if (!best) return point;
+      return { x: best.x, y: best.y };
+    }
+
+    function snapPointToAxes(point, threshold = 12) {
+      const axes = getSnapAxes();
+      const snapped = { ...point };
+      const nearestX = axes.x.reduce((best, value) => {
+        const dist = Math.abs(point.x - value);
+        if (dist <= threshold && (!best || dist < best.distance)) return { value, distance: dist };
+        return best;
+      }, null);
+      const nearestY = axes.y.reduce((best, value) => {
+        const dist = Math.abs(point.y - value);
+        if (dist <= threshold && (!best || dist < best.distance)) return { value, distance: dist };
+        return best;
+      }, null);
+      if (nearestX) snapped.x = nearestX.value;
+      if (nearestY) snapped.y = nearestY.value;
+      return snapped;
+    }
+
+    function snapPointForTool(point, tool, options = {}) {
+      const base = snapToGrid(point, 10);
+      if (tool === 'wall') {
+        return snapPointToAnchors(base, getSnapAnchorPoints(options.skipWallId), 16);
+      }
+      if (tool === 'room') {
+        return snapPointToAxes(base, 14);
+      }
+      return base;
     }
 
     function projectPointOnSegment(point, segment) {
@@ -494,69 +587,28 @@ const definition = {
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
+      board.querySelectorAll('.floorplan-menu').forEach((menu) => {
+        if (menu.hasAttribute('open')) menu.removeAttribute('open');
+      });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
       if (hint) hint.textContent = TOOL_HINTS[nextTool] || '';
       debugLog('tool-change', { tool: nextTool });
     }
 
-    function applyAiPlanToCanvas(plan) {
-      if (!plan || typeof plan !== 'object') {
-        showToast('AI did not return a usable floor plan.', 'error');
-        return 0;
-      }
-
-      const toX = (pct) => clamp(20 + ((Number(pct) || 0) / 100) * 920, 20, 940);
-      const toY = (pct) => clamp(20 + ((Number(pct) || 0) / 100) * 560, 20, 600);
-      const generated = [];
-
-      for (const room of (plan.rooms || [])) {
-        const start = { x: toX(room.x), y: toY(room.y) };
-        const end = {
-          x: toX((Number(room.x) || 0) + (Number(room.width) || 0)),
-          y: toY((Number(room.y) || 0) + (Number(room.height) || 0)),
-        };
-        const item = createItem('room', start, end);
-        item.label = String(room.label || '').trim();
-        generated.push(item);
-      }
-
-      for (const wall of (plan.walls || [])) {
-        const start = { x: toX(wall.x1), y: toY(wall.y1) };
-        const end = { x: toX(wall.x2), y: toY(wall.y2) };
-        const item = createItem('wall', start, end);
-        item.label = String(wall.label || '').trim();
-        generated.push(item);
-      }
-
-      for (const point of (plan.electrical || [])) {
-        const at = { x: toX(point.x), y: toY(point.y) };
-        const item = createItem('electrical', at, at);
-        item.label = String(point.label || '').trim();
-        generated.push(item);
-      }
-
-      for (const point of (plan.plumbing || [])) {
-        const at = { x: toX(point.x), y: toY(point.y) };
-        const item = createItem('plumbing', at, at);
-        item.label = String(point.label || '').trim();
-        generated.push(item);
-      }
-
-      for (const point of (plan.fixtures || [])) {
-        const at = { x: toX(point.x), y: toY(point.y) };
-        generated.push(makeFixture(at, point.label || ''));
-      }
-
-      if (!generated.length) {
-        showToast('AI draft had no drawable geometry. Try clearer photos.', 'error');
-        return 0;
-      }
-
-      state.items.push(...generated);
+    function setLayerVisibility(layer, visible) {
+      state.layerVisibility[layer] = visible;
+      const button = board.querySelector(`.floorplan-layer-toggle[data-layer="${layer}"]`);
+      if (button) button.classList.toggle('active', visible);
       renderScene();
-      showToast(`AI draft applied: ${generated.length} items`, 'success');
-      return generated.length;
     }
+
+    board.querySelectorAll('.floorplan-layer-toggle').forEach((button) => {
+      button.addEventListener('click', () => {
+        const layer = button.dataset.layer;
+        if (!layer) return;
+        setLayerVisibility(layer, !state.layerVisibility[layer]);
+      });
+    });
 
     function renderScene() {
       scene.innerHTML = '';
@@ -581,6 +633,7 @@ const definition = {
 
       state.items.forEach((item) => {
         const kind = item.kind || classifyItem(item);
+        if (state.layerVisibility[kind] === false) return;
         const layer = layers[kind] || layers.fixture;
         const isSelected = String(item.id) === String(state.selectedId);
 
@@ -875,7 +928,7 @@ const definition = {
       const isMouseInput = event.pointerType === 'mouse' || event.type === 'mousedown';
       if (isMouseInput && event.button !== 0) return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
-      const point = pointFromEvent(svg, event);
+      const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
       const now = Date.now();
       if (state.lastStartPoint && (now - state.lastStartAt) < 60) {
         const dx = Math.abs(state.lastStartPoint.x - point.x);
@@ -979,8 +1032,11 @@ const definition = {
           const item = findItemById(state.resizeDrag.itemId);
           if (!item) return;
           const { handle, origin } = state.resizeDrag;
-          const px = clamp(point.x, 20, 940);
-          const py = clamp(point.y, 20, 600);
+          const snapped = item.kind === 'wall'
+            ? snapPointForTool(point, 'wall', { skipWallId: item.id })
+            : snapPointForTool(point, 'room');
+          const px = clamp(snapped.x, 20, 940);
+          const py = clamp(snapped.y, 20, 600);
 
           if (item.kind === 'room') {
             const left0 = origin.x;
@@ -1056,7 +1112,7 @@ const definition = {
 
       if (!state.dragStart || state.tool === 'erase') return;
       if (!state.preview) return;
-      const point = pointFromEvent(svg, event);
+      const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
       state.preview.end = point;
       renderScene();
     }
@@ -1086,10 +1142,11 @@ const definition = {
           state.lastCreateAt = Date.now();
           debugLog('create-drag', { kind: created.kind, id: created.id, count: state.items.length });
         } else if (kind === 'wall') {
-          const wallEnd = {
+          const wallEndRaw = {
             x: clamp(start.x + 80, 20, 940),
             y: start.y,
           };
+          const wallEnd = snapPointForTool(wallEndRaw, 'wall');
           const created = createItem(kind, start, wallEnd);
           state.items.push(created);
           state.lastCreateAt = Date.now();
@@ -1119,10 +1176,10 @@ const definition = {
       if (state.preview || state.dragStart || state.dragId) return;
       if ((Date.now() - state.lastCreateAt) < 150) return;
 
-      const point = pointFromEvent(svg, event);
+      const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
       let created = null;
       if (state.tool === 'wall') {
-        const wallEnd = { x: clamp(point.x + 80, 20, 940), y: point.y };
+        const wallEnd = snapPointForTool({ x: clamp(point.x + 80, 20, 940), y: point.y }, 'wall');
         created = createItem('wall', point, wallEnd);
       } else if (state.tool === 'room') {
         const roomStart = {

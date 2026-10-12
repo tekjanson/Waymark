@@ -2,6 +2,11 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToSheet } = require('../helpers/test-utils');
 
+async function chooseTool(page, menu, tool) {
+  await page.click(`.floorplan-menu-summary:has-text("${menu}")`);
+  await page.click(`.floorplan-tool-button[data-tool="${tool}"]`);
+}
+
 test('floor plan is detected and rendered', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
@@ -46,6 +51,19 @@ test('auto walls generates perimeter walls from rooms', async ({ page }) => {
   expect(afterCount).toBeGreaterThan(beforeCount);
 });
 
+test('layer menu toggles room visibility', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await expect(page.locator('.floorplan-room')).toHaveCount(4);
+  await page.click('.floorplan-menu-summary:has-text("Layers")');
+  await page.click('.floorplan-layer-toggle[data-layer="room"]');
+  await expect(page.locator('.floorplan-room')).toHaveCount(0);
+  await page.click('.floorplan-layer-toggle[data-layer="room"]');
+  await expect(page.locator('.floorplan-room')).toHaveCount(4);
+});
+
 test('door and window tools snap openings onto nearby walls', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
@@ -59,9 +77,9 @@ test('door and window tools snap openings onto nearby walls', async ({ page }) =
   const beforeDoors = await page.locator('.floorplan-door').count();
   const beforeWindows = await page.locator('.floorplan-window').count();
 
-  await page.click('.floorplan-tool-button[data-tool="door"]');
+  await chooseTool(page, 'Draw', 'door');
   await page.mouse.click(targetX, targetY);
-  await page.click('.floorplan-tool-button[data-tool="window"]');
+  await chooseTool(page, 'Draw', 'window');
   await page.mouse.click(targetX + 30, targetY);
 
   await expect(page.locator('.floorplan-door')).toHaveCount(beforeDoors + 1);
@@ -73,7 +91,7 @@ test('select mode supports room resize handles', async ({ page }) => {
   await navigateToSheet(page, 'sheet-075');
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
 
-  await page.click('.floorplan-tool-button[data-tool="select"]');
+  await chooseTool(page, 'Edit', 'select');
   await page.locator('.floorplan-room').first().click({ position: { x: 14, y: 14 } });
 
   const beforeWidth = await page.locator('.floorplan-room').first().evaluate(node => Number(node.getAttribute('width') || '0'));
@@ -95,28 +113,6 @@ test('created-sheet fallback still opens floor plan canvas in local mode', async
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
   await expect(page.locator('#template-badge')).toContainText('Floor Plan');
   await expect(page.locator('.floorplan-svg')).toBeVisible();
-});
-
-test('ai from photos generates draft from mock vision payload', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.__WAYMARK_FLOORPLAN_VISION_MOCK = {
-      rooms: [{ label: 'Living', x: 15, y: 18, width: 30, height: 24 }],
-      walls: [{ label: 'North wall', x1: 15, y1: 18, x2: 45, y2: 18 }],
-      electrical: [{ label: 'Outlet', x: 22, y: 26 }],
-      plumbing: [{ label: 'Sink', x: 37, y: 29 }],
-      fixtures: [{ label: 'Sofa', x: 30, y: 30 }],
-      notes: ['mock'],
-    };
-  });
-
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-075');
-  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
-
-  await page.click('.floorplan-ai-launch-btn');
-  await page.click('.floorplan-ai-modal .floorplan-ai-btn-primary:has-text("Generate Floor Plan")');
-  await expect(page.locator('.floorplan-ai-status')).toContainText('Draft ready');
-  await expect(page.locator('.floorplan-ai-modal .floorplan-ai-btn-primary:has-text("Apply to Canvas")')).toBeVisible();
 });
 
 test('ai space render opens concept modal with mock output', async ({ page }) => {
