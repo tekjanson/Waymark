@@ -149,6 +149,7 @@ const LEGACY_TEMPLATE_HEADERS = {
   travel:     ['Activity', 'Date', 'Location', 'Booking', 'Cost'],
   roster:     ['Employee', 'Role', 'Shift', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
   recipe:     ['Recipe', 'Servings', 'Prep Time', 'Cook Time', 'Category', 'Difficulty', 'Quantity', 'Ingredient', 'Step', 'Source'],
+  floorplan:  ['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes'],
   testcases:  ['Test Case', 'Result', 'Expected', 'Actual', 'Priority', 'Notes'],
 };
 

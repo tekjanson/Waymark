@@ -39,6 +39,7 @@ const definition = {
   icon: '🏠',
   color: '#0f766e',
   priority: 22,
+  defaultHeaders: ['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes'],
 
   detect(lower) {
     const hasType = lower.some(h => /^(type|kind|category|item|entity)/.test(h));
