@@ -30,6 +30,48 @@
   font-size: 1.1rem;
 }
 
+.floorplan-toolset {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.floorplan-tool-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), color var(--transition), transform var(--transition);
+}
+
+.floorplan-tool-button:hover,
+.floorplan-tool-button:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.floorplan-tool-button.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.floorplan-tool-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.floorplan-tool-label {
+  white-space: nowrap;
+}
+
 .floorplan-export-btn {
   border: 1px solid var(--color-border);
   background: var(--color-primary);
@@ -81,6 +123,16 @@
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   border-radius: var(--radius);
   display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.floorplan-scene .floorplan-item {
+  pointer-events: auto;
+}
+
+.floorplan-preview-layer {
+  pointer-events: none;
 }
 
 .floorplan-grid-line {

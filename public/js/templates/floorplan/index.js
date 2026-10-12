@@ -34,6 +34,79 @@ function classifyItem(item) {
   return 'fixture';
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function pointFromEvent(svg, event) {
+  const rect = svg.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * 960;
+  const y = ((event.clientY - rect.top) / rect.height) * 620;
+  return {
+    x: clamp(x, 20, 940),
+    y: clamp(y, 20, 600),
+  };
+}
+
+function createFence(item, start, end) {
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  return {
+    x,
+    y,
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+}
+
+function createItem(kind, start, end) {
+  const id = `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+
+  if (kind === 'room') {
+    const fence = createFence({}, start, end);
+    return {
+      id,
+      kind,
+      type: 'Room',
+      label: 'Room',
+      layer: 'room',
+      x: fence.x,
+      y: fence.y,
+      width: fence.width,
+      height: fence.height,
+    };
+  }
+
+  if (kind === 'wall') {
+    return {
+      id,
+      kind,
+      type: 'Wall',
+      label: 'Wall',
+      layer: 'structure',
+      x: start.x,
+      y: start.y,
+      x2: end.x,
+      y2: end.y,
+      length: Math.hypot(end.x - start.x, end.y - start.y),
+      width: Math.max(10, Math.abs(end.x - start.x)),
+      height: Math.max(10, Math.abs(end.y - start.y)),
+    };
+  }
+
+  return {
+    id,
+    kind,
+    type: kind === 'electrical' ? 'Electrical' : 'Plumbing',
+    label: kind === 'electrical' ? 'Electrical' : 'Plumbing',
+    layer: kind,
+    x: end.x,
+    y: end.y,
+    width: 18,
+    height: 18,
+  };
+}
+
 const definition = {
   name: 'Floor Plan',
   icon: '🏠',
@@ -102,7 +175,8 @@ const definition = {
           return null;
         }
 
-        return { index, type, label, layer, x, y, width, height, length, notes };
+        const kind = classifyItem({ type, label, layer });
+        return { id: `sheet-${index + 1}`, index, kind, type, label, layer, x, y, width, height, length, notes };
       })
       .filter(Boolean);
 
@@ -111,6 +185,14 @@ const definition = {
         el('div', { className: 'floorplan-title-wrap' }, [
           el('span', { className: 'floorplan-title-icon' }, ['🏠']),
           el('span', { className: 'floorplan-title' }, ['House Plan']),
+        ]),
+        el('div', { className: 'floorplan-toolset' }, [
+          el('button', { className: 'floorplan-tool-button active', type: 'button', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'electrical' }, on: { click: () => setTool('electrical') } }, [el('span', { className: 'floorplan-tool-icon' }, ['◉']), el('span', { className: 'floorplan-tool-label' }, ['Electrical'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'plumbing' }, on: { click: () => setTool('plumbing') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▣']), el('span', { className: 'floorplan-tool-label' }, ['Plumbing'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
+          el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
         ]),
         el('button', {
           className: 'floorplan-export-btn',
@@ -130,12 +212,15 @@ const definition = {
           viewBox: '0 0 960 620',
           role: 'img',
           'aria-label': 'House floor plan',
+          'data-floorplan-svg': 'true',
+          style: { touchAction: 'none' },
         }, []),
       ]),
     ]);
 
     const svg = board.querySelector('.floorplan-svg');
-    const background = el('rect', {
+    const scene = el('g', { className: 'floorplan-scene' });
+    const bg = el('rect', {
       x: 20,
       y: 20,
       width: 920,
@@ -145,7 +230,7 @@ const definition = {
       stroke: '#dbe2ec',
       'stroke-width': '1',
     });
-    svg.append(background);
+    svg.append(bg);
 
     for (let x = 40; x <= 920; x += 40) {
       svg.append(el('line', { x1: x, y1: 20, x2: x, y2: 580, className: 'floorplan-grid-line' }));
@@ -153,32 +238,56 @@ const definition = {
     for (let y = 40; y <= 560; y += 40) {
       svg.append(el('line', { x1: 20, y1: y, x2: 920, y2: y, className: 'floorplan-grid-line' }));
     }
+    svg.append(scene);
 
-    const roomLayer = el('g', { className: 'floorplan-layer floorplan-layer-room' });
-    const wallLayer = el('g', { className: 'floorplan-layer floorplan-layer-wall' });
-    const electricalLayer = el('g', { className: 'floorplan-layer floorplan-layer-electrical' });
-    const plumbingLayer = el('g', { className: 'floorplan-layer floorplan-layer-plumbing' });
-    const fixtureLayer = el('g', { className: 'floorplan-layer floorplan-layer-fixture' });
-    svg.append(roomLayer, wallLayer, electricalLayer, plumbingLayer, fixtureLayer);
+    const state = {
+      tool: 'wall',
+      items,
+      preview: null,
+      dragStart: null,
+      dragId: null,
+    };
 
-    const label = (text, x, y, fill = '#0f172a', className = 'floorplan-label') => el('text', {
-      x,
-      y,
-      className,
-      fill,
-      'font-size': '12',
-      'font-weight': '600',
-      'text-anchor': 'middle',
-    }, [text]);
+    function setTool(nextTool) {
+      state.tool = nextTool;
+      const tools = board.querySelectorAll('.floorplan-tool-button');
+      tools.forEach((button) => {
+        const active = button.dataset.tool === nextTool;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
+    }
 
-    items.forEach((item) => {
-      const kind = classifyItem(item);
+    function renderScene() {
+      scene.innerHTML = '';
+      const layers = {
+        room: el('g', { className: 'floorplan-layer floorplan-layer-room' }),
+        wall: el('g', { className: 'floorplan-layer floorplan-layer-wall' }),
+        electrical: el('g', { className: 'floorplan-layer floorplan-layer-electrical' }),
+        plumbing: el('g', { className: 'floorplan-layer floorplan-layer-plumbing' }),
+        fixture: el('g', { className: 'floorplan-layer floorplan-layer-fixture' }),
+      };
+      scene.append(...Object.values(layers));
 
-      if (kind === 'room') {
-        const width = Math.max(60, item.width || 120);
-        const height = Math.max(40, item.height || 80);
-        roomLayer.append(
-          el('rect', {
+      const label = (text, x, y, fill = '#0f172a', className = 'floorplan-label') => el('text', {
+        x,
+        y,
+        className,
+        fill,
+        'font-size': '12',
+        'font-weight': '600',
+        'text-anchor': 'middle',
+      }, [text]);
+
+      state.items.forEach((item) => {
+        const kind = item.kind || classifyItem(item);
+        const layer = layers[kind] || layers.fixture;
+
+        if (kind === 'room') {
+          const width = Math.max(60, item.width || 120);
+          const height = Math.max(40, item.height || 80);
+          const rect = el('rect', {
             x: item.x,
             y: item.y,
             width,
@@ -187,85 +296,245 @@ const definition = {
             fill: '#dbeafe',
             stroke: '#60a5fa',
             'stroke-width': '2',
-            className: 'floorplan-room',
-          }),
-          label(item.label || 'Room', item.x + (width / 2), item.y + (height / 2) + 4, '#1d4ed8')
-        );
-      }
+            className: 'floorplan-room floorplan-item',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'room',
+          });
+          layer.append(rect, label(item.label || 'Room', item.x + (width / 2), item.y + (height / 2) + 4, '#1d4ed8'));
+        }
 
-      if (kind === 'wall') {
-        const targetX = item.length ? item.x + item.length : item.x + (item.width || 120);
-        wallLayer.append(
-          el('line', {
-            x1: item.x,
-            y1: item.y,
-            x2: targetX,
-            y2: item.y + (item.height || 0),
+        if (kind === 'wall') {
+          const x1 = item.x;
+          const y1 = item.y;
+          const x2 = typeof item.x2 === 'number' ? item.x2 : item.x + (item.length || item.width || 120);
+          const y2 = typeof item.y2 === 'number' ? item.y2 : item.y + (item.height || 0);
+          const line = el('line', {
+            x1,
+            y1,
+            x2,
+            y2,
             stroke: '#334155',
             'stroke-width': '5',
             'stroke-linecap': 'round',
-            className: 'floorplan-wall',
-          }),
-          label(item.label || 'Wall', (item.x + targetX) / 2, item.y - 6, '#334155', 'floorplan-wall-label')
-        );
-      }
+            className: 'floorplan-wall floorplan-item',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'wall',
+          });
+          layer.append(line, label(item.label || 'Wall', (x1 + x2) / 2, Math.min(y1, y2) - 6, '#334155', 'floorplan-wall-label'));
+        }
 
-      if (kind === 'electrical') {
-        const x = item.x || 40;
-        const y = item.y || 40;
-        electricalLayer.append(
-          el('circle', {
-            cx: x,
-            cy: y,
+        if (kind === 'electrical') {
+          const x = item.x || 40;
+          const y = item.y || 40;
+          layer.append(
+            el('circle', {
+              cx: x,
+              cy: y,
+              r: 8,
+              fill: '#4ade80',
+              stroke: '#166534',
+              'stroke-width': '2',
+              className: 'floorplan-electrical floorplan-item',
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'electrical',
+            }),
+            label(item.label || 'Electrical', x + 16, y - 10, '#166534', 'floorplan-device-label')
+          );
+        }
+
+        if (kind === 'plumbing') {
+          const x = item.x || 40;
+          const y = item.y || 40;
+          layer.append(
+            el('rect', {
+              x: x - 9,
+              y: y - 9,
+              width: 18,
+              height: 18,
+              rx: 4,
+              fill: '#93c5fd',
+              stroke: '#1d4ed8',
+              'stroke-width': '2',
+              className: 'floorplan-plumbing floorplan-item',
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'plumbing',
+            }),
+            label(item.label || 'Plumbing', x + 18, y - 10, '#1d4ed8', 'floorplan-device-label')
+          );
+        }
+
+        if (kind === 'fixture') {
+          const x = item.x || 40;
+          const y = item.y || 40;
+          const size = Math.max(12, Math.min(18, item.width || item.height || 16));
+          layer.append(
+            el('rect', {
+              x: x - (size / 2),
+              y: y - (size / 2),
+              width: size,
+              height: size,
+              rx: 3,
+              fill: '#fbbf24',
+              stroke: '#78350f',
+              'stroke-width': '2',
+              className: 'floorplan-fixture floorplan-item',
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'fixture',
+            }),
+            label(item.label || 'Fixture', x + 18, y - 10, '#78350f', 'floorplan-device-label')
+          );
+        }
+      });
+
+      if (state.preview) {
+        const previewLayer = el('g', { className: 'floorplan-preview-layer' });
+        const preview = state.preview;
+        if (preview.kind === 'room') {
+          const dims = createFence({}, preview.start, preview.end);
+          previewLayer.append(el('rect', {
+            x: dims.x,
+            y: dims.y,
+            width: dims.width,
+            height: dims.height,
+            rx: 10,
+            fill: 'rgba(96,165,250,0.18)',
+            stroke: '#60a5fa',
+            'stroke-width': '2',
+            'stroke-dasharray': '8 6',
+          }));
+        }
+        if (preview.kind === 'wall') {
+          previewLayer.append(el('line', {
+            x1: preview.start.x,
+            y1: preview.start.y,
+            x2: preview.end.x,
+            y2: preview.end.y,
+            stroke: '#334155',
+            'stroke-width': '5',
+            'stroke-linecap': 'round',
+            'stroke-dasharray': '10 6',
+            opacity: '0.8',
+          }));
+        }
+        if (preview.kind === 'electrical') {
+          previewLayer.append(el('circle', {
+            cx: preview.end.x,
+            cy: preview.end.y,
             r: 8,
-            fill: '#4ade80',
+            fill: 'rgba(74,222,128,0.35)',
             stroke: '#166534',
             'stroke-width': '2',
-            className: 'floorplan-electrical',
-          }),
-          label(item.label || 'Electrical', x + 16, y - 10, '#166534', 'floorplan-device-label')
-        );
-      }
-
-      if (kind === 'plumbing') {
-        const x = item.x || 40;
-        const y = item.y || 40;
-        plumbingLayer.append(
-          el('rect', {
-            x: x - 9,
-            y: y - 9,
+            'stroke-dasharray': '6 4',
+          }));
+        }
+        if (preview.kind === 'plumbing') {
+          previewLayer.append(el('rect', {
+            x: preview.end.x - 9,
+            y: preview.end.y - 9,
             width: 18,
             height: 18,
             rx: 4,
-            fill: '#93c5fd',
+            fill: 'rgba(147,197,253,0.4)',
             stroke: '#1d4ed8',
             'stroke-width': '2',
-            className: 'floorplan-plumbing',
-          }),
-          label(item.label || 'Plumbing', x + 18, y - 10, '#1d4ed8', 'floorplan-device-label')
-        );
+            'stroke-dasharray': '6 4',
+          }));
+        }
+        scene.append(previewLayer);
+      }
+    }
+
+    function beginDraft(event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      const point = pointFromEvent(svg, event);
+      const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
+
+      if (state.tool === 'erase') {
+        if (targetItem) {
+          const itemId = targetItem.dataset.floorplanItem;
+          state.items = state.items.filter(item => String(item.id) !== itemId);
+          renderScene();
+        }
+        return;
       }
 
-      if (kind === 'fixture') {
-        const x = item.x || 40;
-        const y = item.y || 40;
-        const size = Math.max(12, Math.min(18, item.width || item.height || 16));
-        fixtureLayer.append(
-          el('rect', {
-            x: x - (size / 2),
-            y: y - (size / 2),
-            width: size,
-            height: size,
-            rx: 3,
-            fill: '#fbbf24',
-            stroke: '#78350f',
-            'stroke-width': '2',
-            className: 'floorplan-fixture',
-          }),
-          label(item.label || 'Fixture', x + 18, y - 10, '#78350f', 'floorplan-device-label')
-        );
+      if (state.tool === 'select') {
+        if (targetItem) {
+          state.dragId = targetItem.dataset.floorplanItem;
+          const item = state.items.find(entry => String(entry.id) === state.dragId);
+          if (item) {
+            state.dragStart = { x: point.x, y: point.y };
+            item.dragOrigin = {
+              x: item.x,
+              y: item.y,
+              x2: typeof item.x2 === 'number' ? item.x2 : null,
+              y2: typeof item.y2 === 'number' ? item.y2 : null,
+            };
+          }
+        }
+        return;
       }
-    });
+
+      state.dragStart = point;
+      state.preview = { kind: state.tool, start: point, end: point };
+      renderScene();
+    }
+
+    function updateDraft(event) {
+      if (!state.dragStart || state.tool === 'erase' || state.tool === 'select') {
+        if (state.dragId) {
+          const item = state.items.find(entry => String(entry.id) === state.dragId);
+          if (!item || !item.dragOrigin) return;
+          const point = pointFromEvent(svg, event);
+          const dx = point.x - state.dragStart.x;
+          const dy = point.y - state.dragStart.y;
+          item.x = item.dragOrigin.x + dx;
+          item.y = item.dragOrigin.y + dy;
+          if (item.dragOrigin.x2 !== null) item.x2 = item.dragOrigin.x2 + dx;
+          if (item.dragOrigin.y2 !== null) item.y2 = item.dragOrigin.y2 + dy;
+          renderScene();
+        }
+        return;
+      }
+
+      if (!state.preview) return;
+      state.preview.end = pointFromEvent(svg, event);
+      renderScene();
+    }
+
+    function endDraft(event) {
+      if (event && event.pointerId !== undefined) {
+        svg.releasePointerCapture?.(event.pointerId);
+      }
+
+      if (state.tool === 'select') {
+        state.dragId = null;
+        state.dragStart = null;
+        state.items.forEach(item => { delete item.dragOrigin; });
+        renderScene();
+        return;
+      }
+
+      if (state.tool !== 'erase' && state.preview) {
+        const { kind, start, end } = state.preview;
+        if (Math.hypot(end.x - start.x, end.y - start.y) > 10) {
+          state.items.push(createItem(kind, start, end));
+        }
+      }
+      state.preview = null;
+      state.dragStart = null;
+      renderScene();
+    }
+
+    svg.addEventListener('pointerdown', beginDraft);
+    svg.addEventListener('pointermove', updateDraft);
+    svg.addEventListener('pointerup', endDraft);
+    svg.addEventListener('pointerleave', endDraft);
+    svg.addEventListener('pointercancel', endDraft);
+    svg.style.cursor = 'crosshair';
+    setTool('wall');
+    renderScene();
 
     const dims = el('g', { className: 'floorplan-dimensions' });
     dims.append(
