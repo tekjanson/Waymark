@@ -56,8 +56,16 @@ function hasMeaningfulLabel(label) {
 
 function pointFromEvent(svg, event) {
   const rect = svg.getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / rect.width) * 960;
-  const y = ((event.clientY - rect.top) / rect.height) * 620;
+  const touchPoint = event.touches && event.touches[0]
+    ? event.touches[0]
+    : event.changedTouches && event.changedTouches[0]
+      ? event.changedTouches[0]
+      : null;
+  const source = touchPoint || event;
+  const clientX = source.clientX ?? rect.left;
+  const clientY = source.clientY ?? rect.top;
+  const x = ((clientX - rect.left) / rect.width) * 960;
+  const y = ((clientY - rect.top) / rect.height) * 620;
   return {
     x: clamp(x, 20, 940),
     y: clamp(y, 20, 600),
@@ -483,8 +491,9 @@ const definition = {
     }
 
     function beginDraft(event) {
-      if (event.pointerType === 'mouse' && event.button !== 0) return;
-      event.preventDefault();
+      const isMouseInput = event.pointerType === 'mouse' || event.type === 'mousedown';
+      if (isMouseInput && event.button !== 0) return;
+      if (typeof event.preventDefault === 'function') event.preventDefault();
       const point = pointFromEvent(svg, event);
       const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
 
@@ -499,7 +508,7 @@ const definition = {
 
       if (state.tool === 'select') {
         if (targetItem) {
-          svg.setPointerCapture?.(event.pointerId);
+          if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
           state.dragId = targetItem.dataset.floorplanItem;
           const item = state.items.find(entry => String(entry.id) === state.dragId);
           if (item) {
@@ -521,13 +530,14 @@ const definition = {
         return;
       }
 
-      svg.setPointerCapture?.(event.pointerId);
+      if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
       state.dragStart = point;
       state.preview = { kind: state.tool, start: point, end: point };
       renderScene();
     }
 
     function updateDraft(event) {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
       if (!state.dragStart || state.tool === 'erase' || state.tool === 'select') {
         if (state.dragId) {
           const item = state.items.find(entry => String(entry.id) === state.dragId);
@@ -591,10 +601,22 @@ const definition = {
       renderScene();
     }
 
-    svg.addEventListener('pointerdown', beginDraft);
-    svg.addEventListener('pointermove', updateDraft);
-    svg.addEventListener('pointerup', endDraft);
-    svg.addEventListener('pointercancel', endDraft);
+    const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
+    if (supportsPointer) {
+      svg.addEventListener('pointerdown', beginDraft);
+      svg.addEventListener('pointermove', updateDraft);
+      svg.addEventListener('pointerup', endDraft);
+      svg.addEventListener('pointercancel', endDraft);
+    } else {
+      svg.addEventListener('mousedown', beginDraft);
+      svg.addEventListener('mousemove', updateDraft);
+      window.addEventListener('mouseup', endDraft);
+
+      svg.addEventListener('touchstart', beginDraft, { passive: false });
+      svg.addEventListener('touchmove', updateDraft, { passive: false });
+      window.addEventListener('touchend', endDraft, { passive: false });
+      window.addEventListener('touchcancel', endDraft, { passive: false });
+    }
     svg.style.cursor = 'crosshair';
     setTool('wall');
     renderScene();
