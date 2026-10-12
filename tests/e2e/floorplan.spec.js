@@ -40,6 +40,48 @@ test('wall tool supports single-click placement for immediate feedback', async (
   expect(afterCount).toBe(beforeCount + 1);
 });
 
+test('rectangle wall tool draws connected wall loops', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const beforeCount = await page.locator('.floorplan-wall').count();
+  await chooseTool(page, 'Draw', 'wall-rect');
+  await page.mouse.move(420, 230);
+  await page.mouse.down();
+  await page.mouse.move(560, 330, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator('.floorplan-wall')).toHaveCount(beforeCount + 4);
+});
+
+test('select mode supports multi-select drag moves', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await chooseTool(page, 'Edit', 'select');
+  const room = page.locator('.floorplan-room').first();
+  const wall = page.locator('.floorplan-wall').first();
+  const roomBefore = await room.boundingBox();
+  const wallBefore = await wall.boundingBox();
+  if (!roomBefore || !wallBefore) throw new Error('Expected geometry before drag');
+
+  await page.mouse.click(roomBefore.x + (roomBefore.width / 2), roomBefore.y + (roomBefore.height / 2));
+  await page.keyboard.down('Shift');
+  await page.mouse.click(wallBefore.x + (wallBefore.width / 2), wallBefore.y + Math.max(2, wallBefore.height / 2));
+  await page.keyboard.up('Shift');
+
+  await page.mouse.move(roomBefore.x + 12, roomBefore.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(roomBefore.x + 52, roomBefore.y + 52, { steps: 10 });
+  await page.mouse.up();
+
+  const roomAfter = await room.boundingBox();
+  if (!roomAfter) throw new Error('Expected room geometry after drag');
+  expect(roomAfter.x).toBeGreaterThan(roomBefore.x + 20);
+});
+
 test('auto walls generates perimeter walls from rooms', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');

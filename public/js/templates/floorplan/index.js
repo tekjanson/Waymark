@@ -89,6 +89,7 @@ function debugLog(...args) {
 
 const TOOL_HINTS = {
   wall: 'Wall: drag or tap to draw with snap-to-grid and auto-connect anchors.',
+  'wall-rect': 'Rectangle Walls: drag a box to create wall loops. Toggle corners on/off.',
   room: 'Room: drag or tap to draw bounds, snapped cleanly to nearby geometry.',
   electrical: 'Electrical: tap to place a point with clean snapping.',
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
@@ -96,7 +97,7 @@ const TOOL_HINTS = {
   window: 'Window: tap near a wall to snap and place glazing.',
   stairs: 'Stairs: tap to place stair alignment between floors.',
   symbol: 'Symbol: pick an item and tap to place furniture/appliances.',
-  select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
+  select: 'Select: drag to move, Shift/Ctrl click for multi-select, drag empty space for box-select.',
   erase: 'Erase: tap any drawn item to remove it.',
 };
 
@@ -229,6 +230,7 @@ const definition = {
   icon: '🏠',
   color: '#0f766e',
   priority: 22,
+  noAutoRefresh: true,
   defaultHeaders: ['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes'],
 
   detect(lower) {
@@ -273,10 +275,10 @@ const definition = {
     return cols;
   },
 
-  render(container, rows, cols) {
+  render(container, rows, cols, template) {
     container.innerHTML = '';
 
-    const items = rows
+    let items = rows
       .map((row, index) => {
         const type = normalizeText(cell(row, cols.type) || cell(row, cols.text) || cell(row, cols.name));
         const label = normalizeText(cell(row, cols.label) || cell(row, cols.text) || cell(row, cols.name) || type || `Item ${index + 1}`);
@@ -312,6 +314,21 @@ const definition = {
       })
       .filter(Boolean);
 
+    const sheetId = String(template?._currentSheetId || 'unknown-sheet');
+    const draftStorageKey = `waymark_floorplan_draft_${sheetId}`;
+    try {
+      const rawDraft = window.localStorage.getItem(draftStorageKey);
+      if (rawDraft) {
+        const parsed = JSON.parse(rawDraft);
+        if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          items = parsed.items;
+          debugLog('draft-load', { sheetId, count: items.length });
+        }
+      }
+    } catch (error) {
+      console.warn('[floorplan] draft-load failed:', error);
+    }
+
     const board = el('div', { className: 'floorplan-board floorplan-fullscreen' }, [
       el('div', { className: 'floorplan-toolbar' }, [
         el('div', { className: 'floorplan-title-wrap' }, [
@@ -323,11 +340,17 @@ const definition = {
             el('summary', { className: 'floorplan-menu-summary' }, ['Draw']),
             el('div', { className: 'floorplan-menu-panel' }, [
               el('button', { className: 'floorplan-tool-button active', type: 'button', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'wall-rect' }, on: { click: () => setTool('wall-rect') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▦']), el('span', { className: 'floorplan-tool-label' }, ['Wall Rectangle'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'stairs' }, on: { click: () => setTool('stairs') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪜']), el('span', { className: 'floorplan-tool-label' }, ['Stairs'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'symbol' }, on: { click: () => setTool('symbol') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🧩']), el('span', { className: 'floorplan-tool-label' }, ['Symbol'])]),
+              el('button', {
+                className: 'floorplan-tool-button floorplan-rect-mode-btn',
+                type: 'button',
+                on: { click: () => toggleRectDisconnected() },
+              }, [el('span', { className: 'floorplan-tool-icon' }, ['⛓️']), el('span', { className: 'floorplan-tool-label' }, ['Corners: Connected'])]),
             ]),
           ]),
           el('details', { className: 'floorplan-menu floorplan-symbol-menu' }, [
@@ -354,6 +377,7 @@ const definition = {
             el('div', { className: 'floorplan-menu-panel' }, [
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
               el('button', { className: 'floorplan-tool-button', type: 'button', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
+              el('button', { className: 'floorplan-tool-button', type: 'button', on: { click: () => clearSelection() } }, [el('span', { className: 'floorplan-tool-icon' }, ['☒']), el('span', { className: 'floorplan-tool-label' }, ['Clear Selection'])]),
             ]),
           ]),
           el('details', { className: 'floorplan-menu floorplan-layer-menu' }, [
@@ -461,6 +485,7 @@ const definition = {
       tool: 'wall',
       items,
       symbolPreset: HOUSEHOLD_SYMBOLS[0],
+      rectDisconnected: false,
       currentFloor: 1,
       alignBelow: false,
       interiorEnabled: false,
@@ -473,13 +498,37 @@ const definition = {
       },
       preview: null,
       dragStart: null,
-      dragId: null,
+      dragIds: [],
+      dragOrigins: null,
+      marquee: null,
       resizeDrag: null,
       selectedId: null,
+      selectedIds: new Set(),
       lastCreateAt: 0,
       lastStartAt: 0,
       lastStartPoint: null,
     };
+
+    let persistTimer = null;
+    function persistDraftState() {
+      try {
+        const payload = JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          items: state.items,
+        });
+        window.localStorage.setItem(draftStorageKey, payload);
+      } catch (error) {
+        console.warn('[floorplan] draft-save failed:', error);
+      }
+    }
+
+    function queuePersistDraft() {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => {
+        persistDraftState();
+        persistTimer = null;
+      }, 350);
+    }
 
     function snapToGrid(point, grid = 10) {
       return {
@@ -490,6 +539,51 @@ const definition = {
 
     function findItemById(itemId) {
       return state.items.find(entry => String(entry.id) === String(itemId)) || null;
+    }
+
+    function isItemSelected(itemId) {
+      return state.selectedIds.has(String(itemId));
+    }
+
+    function clearSelection() {
+      state.selectedIds.clear();
+      state.selectedId = null;
+      state.resizeDrag = null;
+      state.dragIds = [];
+      state.dragOrigins = null;
+      state.marquee = null;
+      renderScene();
+    }
+
+    function setSingleSelection(itemId) {
+      const normalized = String(itemId);
+      state.selectedIds = new Set([normalized]);
+      state.selectedId = normalized;
+    }
+
+    function toggleSelection(itemId) {
+      const normalized = String(itemId);
+      if (state.selectedIds.has(normalized)) {
+        state.selectedIds.delete(normalized);
+      } else {
+        state.selectedIds.add(normalized);
+      }
+      state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
+    }
+
+    function selectedItemsOnFloor() {
+      return state.items.filter(item => state.selectedIds.has(String(item.id)) && getItemFloor(item) === state.currentFloor);
+    }
+
+    function toggleRectDisconnected() {
+      state.rectDisconnected = !state.rectDisconnected;
+      const button = board.querySelector('.floorplan-rect-mode-btn');
+      if (button) {
+        button.querySelector('.floorplan-tool-label').textContent = `Corners: ${state.rectDisconnected ? 'Disconnected' : 'Connected'}`;
+      }
+      if (state.tool === 'wall-rect' && hint) {
+        hint.textContent = TOOL_HINTS['wall-rect'];
+      }
     }
 
     function registerNewItem(item) {
@@ -607,7 +701,7 @@ const definition = {
 
     function snapPointForTool(point, tool, options = {}) {
       const base = snapToGrid(point, 10);
-      if (tool === 'wall') {
+      if (tool === 'wall' || tool === 'wall-rect') {
         return snapPointToAnchors(base, getSnapAnchorPoints(options.skipWallId), 16);
       }
       if (tool === 'room') {
@@ -749,7 +843,36 @@ const definition = {
       });
 
       renderScene();
+      queuePersistDraft();
       showToast(added ? `Added ${added} wall segments around rooms.` : 'All room edges already have walls.', 'success');
+    }
+
+    function createRectangleWalls(start, end) {
+      const fence = createFence({}, start, end);
+      const minSize = 24;
+      if (fence.width < minSize || fence.height < minSize) return 0;
+      const left = fence.x;
+      const top = fence.y;
+      const right = fence.x + fence.width;
+      const bottom = fence.y + fence.height;
+      const gap = state.rectDisconnected ? 8 : 0;
+      const segments = [
+        { x1: left + gap, y1: top, x2: right - gap, y2: top },
+        { x1: right, y1: top + gap, x2: right, y2: bottom - gap },
+        { x1: right - gap, y1: bottom, x2: left + gap, y2: bottom },
+        { x1: left, y1: bottom - gap, x2: left, y2: top + gap },
+      ];
+      let added = 0;
+      segments.forEach((segment) => {
+        if (Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) < 12) return;
+        const snappedStart = snapPointForTool({ x: segment.x1, y: segment.y1 }, 'wall');
+        const snappedEnd = snapPointForTool({ x: segment.x2, y: segment.y2 }, 'wall');
+        if (hasWallWithEndpoints({ x1: snappedStart.x, y1: snappedStart.y, x2: snappedEnd.x, y2: snappedEnd.y }, 5)) return;
+        const wall = registerNewItem(createItem('wall', snappedStart, snappedEnd));
+        state.items.push(wall);
+        added += 1;
+      });
+      return added;
     }
 
     function setTool(nextTool) {
@@ -795,6 +918,7 @@ const definition = {
     function shiftFloor(delta) {
       const next = Math.max(1, state.currentFloor + delta);
       state.currentFloor = next;
+      state.selectedIds.clear();
       state.selectedId = null;
       refreshFloorUi();
       renderScene();
@@ -818,17 +942,18 @@ const definition = {
       state.currentFloor = 1;
       state.alignBelow = false;
       state.selectedId = null;
+      state.selectedIds.clear();
       state.items = [];
       const draftRooms = [
-        { label: 'Foyer', x: 520, y: 70, width: 120, height: 80 },
-        { label: 'Kitchen', x: 520, y: 170, width: 170, height: 130 },
-        { label: 'Long Living Room', x: 300, y: 170, width: 200, height: 310 },
-        { label: 'Galley Kitchen', x: 140, y: 170, width: 140, height: 220 },
-        { label: 'Hallway', x: 520, y: 320, width: 110, height: 180 },
-        { label: 'Closet', x: 640, y: 320, width: 70, height: 70 },
-        { label: 'Bath', x: 640, y: 400, width: 100, height: 90 },
-        { label: 'Rear Bedroom', x: 500, y: 470, width: 230, height: 110 },
-        { label: 'South Room', x: 740, y: 370, width: 180, height: 210 },
+        { label: 'Foyer', x: 550, y: 70, width: 130, height: 90 },
+        { label: 'Kitchen', x: 560, y: 170, width: 260, height: 170 },
+        { label: 'Long Living Room', x: 230, y: 170, width: 300, height: 320 },
+        { label: 'Galley Kitchen', x: 430, y: 170, width: 110, height: 260 },
+        { label: 'Hallway', x: 560, y: 350, width: 130, height: 160 },
+        { label: 'Closet', x: 700, y: 350, width: 80, height: 70 },
+        { label: 'Bath', x: 700, y: 430, width: 110, height: 80 },
+        { label: 'Rear Bedroom', x: 540, y: 470, width: 220, height: 120 },
+        { label: 'South Room', x: 330, y: 500, width: 210, height: 90 },
       ];
 
       draftRooms.forEach((room) => {
@@ -838,48 +963,49 @@ const definition = {
       });
 
       autoGenerateWallsFromRooms();
-      const stairs = registerNewItem(createPointToolItem('stairs', { x: 620, y: 345 }));
+      const stairs = registerNewItem(createPointToolItem('stairs', { x: 700, y: 348 }));
       if (stairs) {
         stairs.label = 'Main Stairs';
         state.items.push(stairs);
       }
-      const entryDoor = registerNewItem(createPointToolItem('door', { x: 580, y: 70 }));
+      const entryDoor = registerNewItem(createPointToolItem('door', { x: 610, y: 70 }));
       if (entryDoor) {
         entryDoor.label = 'Front Door';
         state.items.push(entryDoor);
       }
-      const livingDoor = registerNewItem(createPointToolItem('door', { x: 500, y: 240 }));
+      const livingDoor = registerNewItem(createPointToolItem('door', { x: 540, y: 255 }));
       if (livingDoor) {
         livingDoor.label = 'Kitchen-Living Door';
         state.items.push(livingDoor);
       }
-      const hallDoor = registerNewItem(createPointToolItem('door', { x: 575, y: 320 }));
+      const hallDoor = registerNewItem(createPointToolItem('door', { x: 620, y: 350 }));
       if (hallDoor) {
         hallDoor.label = 'Kitchen-Hall Door';
         state.items.push(hallDoor);
       }
-      const bathDoor = registerNewItem(createPointToolItem('door', { x: 640, y: 445 }));
+      const bathDoor = registerNewItem(createPointToolItem('door', { x: 700, y: 465 }));
       if (bathDoor) {
         bathDoor.label = 'Hall-Bath Door';
         state.items.push(bathDoor);
       }
-      const rearDoor = registerNewItem(createPointToolItem('door', { x: 560, y: 470 }));
+      const rearDoor = registerNewItem(createPointToolItem('door', { x: 615, y: 470 }));
       if (rearDoor) {
         rearDoor.label = 'Rear Bedroom Door';
         state.items.push(rearDoor);
       }
-      const kitchenWin = registerNewItem(createPointToolItem('window', { x: 140, y: 230 }));
+      const kitchenWin = registerNewItem(createPointToolItem('window', { x: 430, y: 230 }));
       if (kitchenWin) {
         kitchenWin.label = 'Galley Window';
         state.items.push(kitchenWin);
       }
-      const livingWin = registerNewItem(createPointToolItem('window', { x: 300, y: 300 }));
+      const livingWin = registerNewItem(createPointToolItem('window', { x: 230, y: 300 }));
       if (livingWin) {
         livingWin.label = 'Living Window';
         state.items.push(livingWin);
       }
       refreshFloorUi();
       renderScene();
+      queuePersistDraft();
       showToast('Loaded Floor 1 house diagram.', 'success');
     }
 
@@ -927,6 +1053,7 @@ const definition = {
         y: clamp(y, 76, 214),
       });
       renderScene();
+      queuePersistDraft();
     });
 
     function renderInteriorView() {
@@ -1006,7 +1133,7 @@ const definition = {
         if (!isCurrentFloor && !isAlignedOverlay) return;
         if (state.layerVisibility[kind] === false) return;
         const layer = layers[kind] || layers.fixture;
-        const isSelected = isCurrentFloor && String(item.id) === String(state.selectedId);
+        const isSelected = isCurrentFloor && isItemSelected(item.id);
         const itemOpacity = isAlignedOverlay ? 0.32 : 1;
 
         if (kind === 'room') {
@@ -1208,7 +1335,7 @@ const definition = {
         }
       });
 
-      if (state.selectedId) {
+      if (state.selectedId && state.selectedIds.size === 1) {
         const selected = findItemById(state.selectedId);
         if (selected) {
           const handleLayer = svgEl('g', { className: 'floorplan-handle-layer' });
@@ -1316,6 +1443,20 @@ const definition = {
             opacity: '0.8',
           }));
         }
+        if (preview.kind === 'wall-rect') {
+          const dims = createFence({}, preview.start, preview.end);
+          previewLayer.append(svgEl('rect', {
+            x: dims.x,
+            y: dims.y,
+            width: dims.width,
+            height: dims.height,
+            rx: 6,
+            fill: 'rgba(51,65,85,0.08)',
+            stroke: '#334155',
+            'stroke-width': '2',
+            'stroke-dasharray': state.rectDisconnected ? '4 10' : '8 6',
+          }));
+        }
         if (preview.kind === 'electrical') {
           previewLayer.append(svgEl('circle', {
             cx: preview.end.x,
@@ -1361,6 +1502,20 @@ const definition = {
         }
         scene.append(previewLayer);
       }
+
+      if (state.marquee) {
+        scene.append(svgEl('rect', {
+          x: state.marquee.x,
+          y: state.marquee.y,
+          width: state.marquee.width,
+          height: state.marquee.height,
+          fill: 'rgba(37,99,235,0.08)',
+          stroke: '#2563eb',
+          'stroke-width': '1.5',
+          'stroke-dasharray': '6 5',
+          className: 'floorplan-marquee',
+        }));
+      }
       renderInteriorView();
     }
 
@@ -1392,8 +1547,13 @@ const definition = {
         if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
           const itemId = targetItem.dataset.floorplanItem;
           state.items = state.items.filter(item => String(item.id) !== itemId);
+          state.selectedIds.delete(String(itemId));
+          if (state.selectedId === String(itemId)) {
+            state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
+          }
           debugLog('erase-item', { itemId, remaining: state.items.length });
           renderScene();
+          queuePersistDraft();
         }
         return;
       }
@@ -1406,7 +1566,7 @@ const definition = {
           const item = findItemById(itemId);
           if (item) {
             if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
-            state.selectedId = itemId;
+            setSingleSelection(itemId);
             state.resizeDrag = {
               itemId,
               handle,
@@ -1428,22 +1588,36 @@ const definition = {
 
         if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
           if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
-          state.dragId = targetItem.dataset.floorplanItem;
-          state.selectedId = state.dragId;
-          const item = findItemById(state.dragId);
-          if (item) {
-            state.dragStart = { x: point.x, y: point.y };
-            item.dragOrigin = {
+          const itemId = String(targetItem.dataset.floorplanItem);
+          if (event.shiftKey || event.ctrlKey || event.metaKey) {
+            toggleSelection(itemId);
+            renderScene();
+            return;
+          }
+          if (!state.selectedIds.has(itemId)) setSingleSelection(itemId);
+          state.dragIds = [...state.selectedIds];
+          state.dragStart = { x: point.x, y: point.y };
+          state.dragOrigins = {};
+          state.dragIds.forEach((id) => {
+            const item = findItemById(id);
+            if (!item) return;
+            const wall = getWallEndpoints(item);
+            state.dragOrigins[id] = {
               x: item.x,
               y: item.y,
-              x2: getWallEndpoints(item).x2,
-              y2: getWallEndpoints(item).y2,
+              x2: wall.x2,
+              y2: wall.y2,
             };
-            debugLog('select-start', { itemId: state.dragId, kind: item.kind, x: point.x, y: point.y });
-          }
+          });
+          debugLog('select-start', { selected: state.dragIds.length, x: point.x, y: point.y });
           renderScene();
         } else {
-          state.selectedId = null;
+          state.dragStart = { x: point.x, y: point.y };
+          state.marquee = { x: point.x, y: point.y, width: 0, height: 0 };
+          if (!(event.shiftKey || event.ctrlKey || event.metaKey)) {
+            state.selectedIds.clear();
+            state.selectedId = null;
+          }
           renderScene();
         }
         return;
@@ -1456,6 +1630,7 @@ const definition = {
         state.lastCreateAt = Date.now();
         debugLog('create-point', { kind: created.kind, id: created.id, x: created.x, y: created.y, count: state.items.length });
         renderScene();
+        queuePersistDraft();
         return;
       }
 
@@ -1531,21 +1706,28 @@ const definition = {
           return;
         }
 
-        if (state.dragId && state.dragStart) {
-          const item = findItemById(state.dragId);
-          if (!item || !item.dragOrigin) return;
+        if (state.dragIds.length > 0 && state.dragStart && state.dragOrigins) {
           const dx = point.x - state.dragStart.x;
           const dy = point.y - state.dragStart.y;
-          item.x = item.dragOrigin.x + dx;
-          item.y = item.dragOrigin.y + dy;
-          if (item.dragOrigin.x2 !== null) item.x2 = item.dragOrigin.x2 + dx;
-          if (item.dragOrigin.y2 !== null) item.y2 = item.dragOrigin.y2 + dy;
-          item.x = clamp(item.x, 20, 940);
-          item.y = clamp(item.y, 20, 600);
-          if (typeof item.x2 === 'number') item.x2 = clamp(item.x2, 20, 940);
-          if (typeof item.y2 === 'number') item.y2 = clamp(item.y2, 20, 600);
-          debugLog('select-move', { itemId: state.dragId, x: item.x, y: item.y });
+          state.dragIds.forEach((itemId) => {
+            const item = findItemById(itemId);
+            const origin = state.dragOrigins[itemId];
+            if (!item || !origin) return;
+            item.x = clamp(origin.x + dx, 20, 940);
+            item.y = clamp(origin.y + dy, 20, 600);
+            if (typeof item.x2 === 'number') item.x2 = clamp(origin.x2 + dx, 20, 940);
+            if (typeof item.y2 === 'number') item.y2 = clamp(origin.y2 + dy, 20, 600);
+          });
+          debugLog('select-move', { selected: state.dragIds.length, dx, dy });
           renderScene();
+          return;
+        }
+
+        if (state.marquee && state.dragStart) {
+          const box = createFence({}, state.dragStart, point);
+          state.marquee = box;
+          renderScene();
+          return;
         }
         return;
       }
@@ -1563,12 +1745,31 @@ const definition = {
       }
 
       if (state.tool === 'select') {
-        state.dragId = null;
+        if (state.marquee) {
+          const box = state.marquee;
+          const within = (x, y) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
+          state.items.forEach((item) => {
+            if (getItemFloor(item) !== state.currentFloor) return;
+            const kind = item.kind || classifyItem(item);
+            if (kind === 'wall') {
+              const edge = getWallEndpoints(item);
+              const centerX = (edge.x1 + edge.x2) / 2;
+              const centerY = (edge.y1 + edge.y2) / 2;
+              if (within(centerX, centerY)) state.selectedIds.add(String(item.id));
+            } else {
+              if (within(item.x || 0, item.y || 0)) state.selectedIds.add(String(item.id));
+            }
+          });
+          state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
+        }
+        state.dragIds = [];
+        state.dragOrigins = null;
+        state.marquee = null;
         state.resizeDrag = null;
         state.dragStart = null;
-        state.items.forEach(item => { delete item.dragOrigin; });
         debugLog('select-end');
         renderScene();
+        queuePersistDraft();
         return;
       }
 
@@ -1576,7 +1777,13 @@ const definition = {
         const { kind, start, end } = state.preview;
         const distance = Math.hypot(end.x - start.x, end.y - start.y);
         debugLog('input-end', { eventType: event?.type, kind, distance, start, end });
-        if (distance > 18) {
+        if (kind === 'wall-rect') {
+          const added = createRectangleWalls(start, end);
+          if (added > 0) {
+            state.lastCreateAt = Date.now();
+            debugLog('create-rect-wall', { added, count: state.items.length });
+          }
+        } else if (distance > 18) {
           const created = registerNewItem(createItem(kind, start, end));
           state.items.push(created);
           state.lastCreateAt = Date.now();
@@ -1609,11 +1816,12 @@ const definition = {
       state.preview = null;
       state.dragStart = null;
       renderScene();
+      queuePersistDraft();
     }
 
     function fallbackClickCreate(event) {
       if (state.tool === 'select' || state.tool === 'erase') return;
-      if (state.preview || state.dragStart || state.dragId) return;
+      if (state.preview || state.dragStart || state.dragIds.length > 0) return;
       if ((Date.now() - state.lastCreateAt) < 150) return;
 
       const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
@@ -1621,6 +1829,8 @@ const definition = {
       if (state.tool === 'wall') {
         const wallEnd = snapPointForTool({ x: clamp(point.x + 80, 20, 940), y: point.y }, 'wall');
         created = createItem('wall', point, wallEnd);
+      } else if (state.tool === 'wall-rect') {
+        return;
       } else if (state.tool === 'room') {
         const roomStart = {
           x: clamp(point.x - 60, 20, 880),
@@ -1638,6 +1848,7 @@ const definition = {
       state.lastCreateAt = Date.now();
       debugLog('fallback-click-create', { tool: state.tool, id: created.id, x: point.x, y: point.y, count: state.items.length });
       renderScene();
+      queuePersistDraft();
     }
 
     const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
