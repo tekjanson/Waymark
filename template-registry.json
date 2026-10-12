@@ -1596,10 +1596,53 @@
       "fixtureFiles": [
         "party-birthday"
       ]
+    },
+    {
+      "key": "floorplan",
+      "name": "Floor Plan",
+      "icon": "🏠",
+      "color": "#0f766e",
+      "priority": 22,
+      "category": "Home Design",
+      "detectSignals": [
+        "type",
+        "room",
+        "wall",
+        "fixture",
+        "electrical",
+        "plumbing",
+        "x",
+        "y",
+        "width",
+        "height",
+        "length",
+        "layer"
+      ],
+      "columnRoles": [
+        "type",
+        "label",
+        "layer",
+        "x",
+        "y",
+        "width",
+        "height",
+        "length",
+        "notes"
+      ],
+      "interactive": true,
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "exampleCount": 1,
+      "fixtureIds": [
+        "sheet-075"
+      ],
+      "fixtureFiles": [
+        "floorplan-house"
+      ]
     }
   ],
-  "nextSheetId": "sheet-075",
-  "totalTemplates": 41,
+  "nextSheetId": "sheet-076",
+  "totalTemplates": 42,
   "categories": [
     "Productivity",
     "Engineering",

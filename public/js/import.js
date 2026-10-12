@@ -178,6 +178,16 @@ const ROLE_LABELS = {
   'flow.next': 'Next Step(s)',
   'flow.condition': 'Edge Label / Condition',
   'flow.notes': 'Notes / Description',
+  // Floor Plan
+  'floorplan.type': 'Item Type (room, wall, fixture, electrical, plumbing)',
+  'floorplan.label': 'Room / Fixture Label',
+  'floorplan.layer': 'Layer / Utility Group',
+  'floorplan.x': 'X Coordinate (feet)',
+  'floorplan.y': 'Y Coordinate (feet)',
+  'floorplan.width': 'Width (feet)',
+  'floorplan.height': 'Height (feet)',
+  'floorplan.length': 'Length / Span (feet)',
+  'floorplan.notes': 'Measurement Notes / Detail',
   // Social Feed
   'social.text': 'Post / Message content',
   'social.author': 'Author / Posted by',

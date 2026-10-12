@@ -1,0 +1,148 @@
+/* Floor Plan Template */
+
+.floorplan-board {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.floorplan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.floorplan-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.floorplan-title-icon {
+  font-size: 1.1rem;
+}
+
+.floorplan-export-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-primary);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.floorplan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 16px 0;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+.floorplan-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.floorplan-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+}
+
+.floorplan-swatch-room { background: #dbeafe; }
+.floorplan-swatch-wall { background: #334155; }
+.floorplan-swatch-electrical { background: #4ade80; }
+.floorplan-swatch-plumbing { background: #93c5fd; }
+.floorplan-swatch-fixture { background: #fbbf24; }
+
+.floorplan-stage {
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.floorplan-svg {
+  width: 100%;
+  max-height: 70vh;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: var(--radius);
+  display: block;
+}
+
+.floorplan-grid-line {
+  stroke: #dfe7f1;
+  stroke-width: 1;
+}
+
+.floorplan-room {
+  stroke-dasharray: 8 5;
+}
+
+.floorplan-wall {
+  stroke-linecap: round;
+}
+
+.floorplan-label,
+.floorplan-wall-label,
+.floorplan-device-label {
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.floorplan-wall-label {
+  fill: #334155;
+}
+
+.floorplan-dimension-line {
+  stroke: #64748b;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.floorplan-dimension-text {
+  fill: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .floorplan-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .floorplan-export-btn {
+    width: 100%;
+  }
+}
+
+@media print {
+  .floorplan-export-btn,
+  .floorplan-legend {
+    display: none !important;
+  }
+
+  .floorplan-stage {
+    padding: 0;
+  }
+
+  .floorplan-svg {
+    max-height: none;
+    border: none;
+    box-shadow: none;
+  }
+}
