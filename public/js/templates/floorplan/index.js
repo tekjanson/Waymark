@@ -329,34 +329,109 @@ const definition = {
       console.warn('[floorplan] draft-load failed:', error);
     }
 
+    const toolButton = (tool, icon, label) => el('button', {
+      className: `floorplan-tool-button${tool === 'wall' ? ' active' : ''}`,
+      type: 'button',
+      title: label,
+      dataset: { tool },
+      on: { click: () => setTool(tool) },
+    }, [
+      el('span', { className: 'floorplan-tool-icon' }, [icon]),
+      el('span', { className: 'floorplan-tool-label' }, [label]),
+    ]);
+
+    const actionButton = (className, icon, label, handler) => el('button', {
+      className: `floorplan-tool-button ${className}`,
+      type: 'button',
+      title: label,
+      on: { click: handler },
+    }, [
+      el('span', { className: 'floorplan-tool-icon' }, [icon]),
+      el('span', { className: 'floorplan-tool-label' }, [label]),
+    ]);
+
+    const railSection = (heading, children) => el('div', { className: 'floorplan-rail-section' }, [
+      el('div', { className: 'floorplan-rail-heading' }, [heading]),
+      el('div', { className: 'floorplan-rail-tools' }, children),
+    ]);
+
     const board = el('div', { className: 'floorplan-board floorplan-fullscreen' }, [
-      el('div', { className: 'floorplan-toolbar' }, [
-        el('div', { className: 'floorplan-title-wrap' }, [
+      /* ---------- Top action bar ---------- */
+      el('header', { className: 'floorplan-topbar' }, [
+        el('div', { className: 'floorplan-brand' }, [
           el('span', { className: 'floorplan-title-icon' }, ['🏠']),
           el('span', { className: 'floorplan-title' }, ['House Plan']),
         ]),
-        el('div', { className: 'floorplan-toolset floorplan-toolset-menus' }, [
-          el('details', { className: 'floorplan-menu' }, [
-            el('summary', { className: 'floorplan-menu-summary', title: 'Draw tools', 'aria-label': 'Draw' }, ['Draw']),
-            el('div', { className: 'floorplan-menu-panel' }, [
-              el('button', { className: 'floorplan-tool-button active', type: 'button', title: 'Wall tool', dataset: { tool: 'wall' }, on: { click: () => setTool('wall') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▭']), el('span', { className: 'floorplan-tool-label' }, ['Wall'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Wall rectangle tool', dataset: { tool: 'wall-rect' }, on: { click: () => setTool('wall-rect') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▦']), el('span', { className: 'floorplan-tool-label' }, ['Wall Rectangle'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Room tool', dataset: { tool: 'room' }, on: { click: () => setTool('room') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▢']), el('span', { className: 'floorplan-tool-label' }, ['Room'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Door tool', dataset: { tool: 'door' }, on: { click: () => setTool('door') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🚪']), el('span', { className: 'floorplan-tool-label' }, ['Door'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Window tool', dataset: { tool: 'window' }, on: { click: () => setTool('window') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪟']), el('span', { className: 'floorplan-tool-label' }, ['Window'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Stairs tool', dataset: { tool: 'stairs' }, on: { click: () => setTool('stairs') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🪜']), el('span', { className: 'floorplan-tool-label' }, ['Stairs'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Symbol placement tool', dataset: { tool: 'symbol' }, on: { click: () => setTool('symbol') } }, [el('span', { className: 'floorplan-tool-icon' }, ['🧩']), el('span', { className: 'floorplan-tool-label' }, ['Symbol'])]),
-              el('button', {
-                className: 'floorplan-tool-button floorplan-rect-mode-btn',
-                type: 'button',
-                title: 'Toggle rectangle corner connection mode',
-                on: { click: () => toggleRectDisconnected() },
-              }, [el('span', { className: 'floorplan-tool-icon' }, ['⛓️']), el('span', { className: 'floorplan-tool-label' }, ['Corners: Connected'])]),
-            ]),
+        el('div', { className: 'floorplan-topbar-center' }, [
+          el('div', { className: 'floorplan-floor-controls' }, [
+            el('button', { className: 'floorplan-floor-btn floorplan-floor-prev', type: 'button', title: 'Previous floor', on: { click: () => shiftFloor(-1) } }, ['‹']),
+            el('span', { className: 'floorplan-floor-indicator' }, ['Floor 1']),
+            el('button', { className: 'floorplan-floor-btn floorplan-floor-next', type: 'button', title: 'Next floor', on: { click: () => shiftFloor(1) } }, ['›']),
           ]),
-          el('details', { className: 'floorplan-menu floorplan-symbol-menu' }, [
-            el('summary', { className: 'floorplan-menu-summary', title: 'Household symbols', 'aria-label': 'Symbols' }, ['Symbols']),
-            el('div', { className: 'floorplan-menu-panel floorplan-symbol-panel' }, HOUSEHOLD_SYMBOLS.map(symbol => el('button', {
+          el('button', { className: 'floorplan-toggle-btn floorplan-align-btn', type: 'button', title: 'Overlay the floor below as a reference', on: { click: () => toggleAlignBelow() } }, ['Align Below: Off']),
+          el('button', { className: 'floorplan-toggle-btn floorplan-interior-toggle-btn', type: 'button', title: 'Toggle the 3D interior box view', on: { click: () => toggleInteriorView() } }, ['3D Interior: Off']),
+        ]),
+        el('div', { className: 'floorplan-topbar-right' }, [
+          el('button', { className: 'floorplan-secondary-btn floorplan-auto-wall-btn', type: 'button', title: 'Generate walls around every room', on: { click: () => autoGenerateWallsFromRooms() } }, ['Auto Walls']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-load-preset-btn', type: 'button', title: 'Load the example floor-one layout', on: { click: () => loadFloorOnePreset() } }, ['Load Example']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Render a photo concept from the plan', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Photo']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-focus-toggle-btn', type: 'button', title: 'Toggle fullscreen focus mode', on: { click: () => toggleFocusMode() } }, ['Exit Focus']),
+          el('button', { className: 'floorplan-export-btn', type: 'button', title: 'Export the plan to PDF', on: { click: () => window.print() } }, ['Export PDF']),
+        ]),
+      ]),
+
+      /* ---------- Main body: tool rail + canvas + panel ---------- */
+      el('div', { className: 'floorplan-body' }, [
+        /* Left vertical tool rail */
+        el('aside', { className: 'floorplan-rail' }, [
+          railSection('Draw', [
+            toolButton('wall', '▭', 'Wall'),
+            toolButton('wall-rect', '▦', 'Wall Box'),
+            toolButton('room', '▢', 'Room'),
+            toolButton('door', '🚪', 'Door'),
+            toolButton('window', '🪟', 'Window'),
+            toolButton('stairs', '🪜', 'Stairs'),
+            toolButton('symbol', '🧩', 'Symbol'),
+          ]),
+          railSection('Systems', [
+            toolButton('electrical', '◉', 'Electrical'),
+            toolButton('plumbing', '▣', 'Plumbing'),
+          ]),
+          railSection('Edit', [
+            toolButton('select', '✦', 'Select'),
+            toolButton('erase', '⌫', 'Erase'),
+            actionButton('floorplan-undo-btn', '↶', 'Undo', () => undoLatest()),
+            actionButton('floorplan-rect-mode-btn active', '⛓️', 'Corners: On', () => toggleRectDisconnected()),
+            actionButton('floorplan-clear-btn', '☒', 'Clear', () => clearSelection()),
+          ]),
+        ]),
+
+        /* Center canvas column */
+        el('div', { className: 'floorplan-canvas-col' }, [
+          el('div', { className: 'floorplan-statusbar' }, [
+            el('span', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
+            el('span', { className: 'floorplan-feedback', 'aria-live': 'polite' }, ['Ready']),
+          ]),
+          el('div', { className: 'floorplan-stage' }, [
+            svgEl('svg', {
+              className: 'floorplan-svg',
+              viewBox: '0 0 960 620',
+              width: '100%',
+              height: '620',
+              preserveAspectRatio: 'xMidYMid meet',
+              role: 'img',
+              'aria-label': 'House floor plan',
+              'data-floorplan-svg': 'true',
+              style: { touchAction: 'none' },
+            }, []),
+          ]),
+        ]),
+
+        /* Right panel: Symbols + Layers + Interior */
+        el('aside', { className: 'floorplan-panel' }, [
+          el('div', { className: 'floorplan-panel-section' }, [
+            el('div', { className: 'floorplan-panel-heading' }, ['Symbols']),
+            el('div', { className: 'floorplan-symbol-grid' }, HOUSEHOLD_SYMBOLS.map(symbol => el('button', {
               className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
               type: 'button',
               title: `${symbol.label} symbol`,
@@ -367,95 +442,26 @@ const definition = {
               el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
             ]))),
           ]),
-          el('details', { className: 'floorplan-menu' }, [
-            el('summary', { className: 'floorplan-menu-summary', title: 'System layers', 'aria-label': 'Systems' }, ['Systems']),
-            el('div', { className: 'floorplan-menu-panel' }, [
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Electrical systems layer', dataset: { tool: 'electrical' }, on: { click: () => setTool('electrical') } }, [el('span', { className: 'floorplan-tool-icon' }, ['◉']), el('span', { className: 'floorplan-tool-label' }, ['Electrical'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Plumbing systems layer', dataset: { tool: 'plumbing' }, on: { click: () => setTool('plumbing') } }, [el('span', { className: 'floorplan-tool-icon' }, ['▣']), el('span', { className: 'floorplan-tool-label' }, ['Plumbing'])]),
-            ]),
-          ]),
-          el('details', { className: 'floorplan-menu' }, [
-            el('summary', { className: 'floorplan-menu-summary', title: 'Edit controls', 'aria-label': 'Edit' }, ['Edit']),
-            el('div', { className: 'floorplan-menu-panel' }, [
-              el('button', { className: 'floorplan-tool-button floorplan-undo-btn', type: 'button', title: 'Undo last action', on: { click: () => undoLatest() } }, [el('span', { className: 'floorplan-tool-icon' }, ['↶']), el('span', { className: 'floorplan-tool-label' }, ['Undo'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Select and move items', dataset: { tool: 'select' }, on: { click: () => setTool('select') } }, [el('span', { className: 'floorplan-tool-icon' }, ['✦']), el('span', { className: 'floorplan-tool-label' }, ['Select'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Erase selected item', dataset: { tool: 'erase' }, on: { click: () => setTool('erase') } }, [el('span', { className: 'floorplan-tool-icon' }, ['⌫']), el('span', { className: 'floorplan-tool-label' }, ['Erase'])]),
-              el('button', { className: 'floorplan-tool-button', type: 'button', title: 'Clear current selection', on: { click: () => clearSelection() } }, [el('span', { className: 'floorplan-tool-icon' }, ['☒']), el('span', { className: 'floorplan-tool-label' }, ['Clear Selection'])]),
-            ]),
-          ]),
-          el('details', { className: 'floorplan-menu floorplan-layer-menu' }, [
-            el('summary', { className: 'floorplan-menu-summary', title: 'Layer visibility', 'aria-label': 'Layers' }, ['Layers']),
-            el('div', { className: 'floorplan-menu-panel floorplan-layer-panel' }, [
+          el('div', { className: 'floorplan-panel-section' }, [
+            el('div', { className: 'floorplan-panel-heading' }, ['Layers']),
+            el('div', { className: 'floorplan-layer-grid' }, [
               el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show rooms', dataset: { layer: 'room' } }, ['Rooms']),
               el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show walls', dataset: { layer: 'wall' } }, ['Walls']),
               el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show electrical layer', dataset: { layer: 'electrical' } }, ['Electrical']),
               el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show plumbing layer', dataset: { layer: 'plumbing' } }, ['Plumbing']),
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show fixtures layer', dataset: { layer: 'fixture' } }, ['Fixtures']),
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show fixtures and furniture', dataset: { layer: 'fixture' } }, ['Fixtures']),
             ]),
           ]),
-        ]),
-        el('div', { className: 'floorplan-actions' }, [
-          el('div', { className: 'floorplan-floor-controls' }, [
-            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => shiftFloor(-1) } }, ['− Floor']),
-            el('span', { className: 'floorplan-floor-indicator' }, ['Floor 1']),
-            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => shiftFloor(1) } }, ['+ Floor']),
-            el('button', { className: 'floorplan-floor-btn', type: 'button', on: { click: () => toggleAlignBelow() } }, ['Align Below: Off']),
+          el('div', { className: 'floorplan-panel-section floorplan-interior-panel hidden' }, [
+            el('div', { className: 'floorplan-panel-heading' }, ['3D Interior Box']),
+            el('span', { className: 'floorplan-interior-subtitle' }, ['Select a room, then tap a wall/floor face to place symbols inside.']),
+            svgEl('svg', {
+              className: 'floorplan-interior-svg',
+              viewBox: '0 0 320 260',
+              role: 'img',
+              'aria-label': 'Interior box room view',
+            }, []),
           ]),
-          el('button', {
-            className: 'floorplan-secondary-btn floorplan-auto-wall-btn',
-            on: { click: () => autoGenerateWallsFromRooms() },
-          }, ['Auto Walls']),
-          el('button', {
-            className: 'floorplan-secondary-btn floorplan-floor-one-btn',
-            on: { click: () => loadFloorOnePreset() },
-          }, ['Load Floor 1']),
-          el('button', {
-            className: 'floorplan-secondary-btn floorplan-ai-render-btn',
-            on: {
-              click: () => openFloorplanAiRenderModal({ items: state.items }),
-            },
-          }, ['Render Photo']),
-          el('button', {
-            className: 'floorplan-secondary-btn floorplan-interior-toggle-btn',
-            on: { click: () => toggleInteriorView() },
-          }, ['3D Interior: Off']),
-          el('button', {
-            className: 'floorplan-secondary-btn floorplan-focus-toggle-btn',
-            on: { click: () => toggleFocusMode() },
-          }, ['Exit Focus']),
-          el('button', {
-            className: 'floorplan-export-btn',
-            on: { click: () => window.print() },
-          }, ['Export PDF']),
-        ]),
-      ]),
-      el('div', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
-      el('div', { className: 'floorplan-feedback', 'aria-live': 'polite' }, ['Ready']),
-      el('div', { className: 'floorplan-workspace' }, [
-        el('div', { className: 'floorplan-stage' }, [
-          svgEl('svg', {
-            className: 'floorplan-svg',
-            viewBox: '0 0 960 620',
-            width: '100%',
-            height: '620',
-            preserveAspectRatio: 'xMidYMid meet',
-            role: 'img',
-            'aria-label': 'House floor plan',
-            'data-floorplan-svg': 'true',
-            style: { touchAction: 'none' },
-          }, []),
-        ]),
-        el('aside', { className: 'floorplan-interior-panel hidden' }, [
-          el('div', { className: 'floorplan-interior-header' }, [
-            el('strong', { className: 'floorplan-interior-title' }, ['Interior Box View']),
-            el('span', { className: 'floorplan-interior-subtitle' }, ['Select a room, then place symbols inside walls/floor.']),
-          ]),
-          svgEl('svg', {
-            className: 'floorplan-interior-svg',
-            viewBox: '0 0 320 260',
-            role: 'img',
-            'aria-label': 'Interior box room view',
-          }, []),
         ]),
       ]),
     ]);
@@ -670,7 +676,9 @@ const definition = {
       state.rectDisconnected = !state.rectDisconnected;
       const button = board.querySelector('.floorplan-rect-mode-btn');
       if (button) {
-        button.querySelector('.floorplan-tool-label').textContent = `Corners: ${state.rectDisconnected ? 'Disconnected' : 'Connected'}`;
+        button.querySelector('.floorplan-tool-label').textContent = state.rectDisconnected ? 'Corners: Off' : 'Corners: On';
+        button.classList.toggle('active', !state.rectDisconnected);
+        button.title = `Rectangle corners ${state.rectDisconnected ? 'disconnected' : 'connected'}`;
       }
       if (state.tool === 'wall-rect' && hint) {
         hint.textContent = TOOL_HINTS['wall-rect'];
@@ -971,14 +979,11 @@ const definition = {
 
     function setTool(nextTool) {
       state.tool = nextTool;
-      const tools = board.querySelectorAll('.floorplan-tool-button');
+      const tools = board.querySelectorAll('.floorplan-tool-button[data-tool]');
       tools.forEach((button) => {
         const active = button.dataset.tool === nextTool;
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-      board.querySelectorAll('.floorplan-menu').forEach((menu) => {
-        if (menu.hasAttribute('open')) menu.removeAttribute('open');
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
       if (hint) {
@@ -1004,9 +1009,12 @@ const definition = {
 
     function refreshFloorUi() {
       const floorIndicator = board.querySelector('.floorplan-floor-indicator');
-      const alignButton = board.querySelector('.floorplan-floor-controls .floorplan-floor-btn:last-child');
+      const alignButton = board.querySelector('.floorplan-align-btn');
       if (floorIndicator) floorIndicator.textContent = `Floor ${state.currentFloor}`;
-      if (alignButton) alignButton.textContent = `Align Below: ${state.alignBelow ? 'On' : 'Off'}`;
+      if (alignButton) {
+        alignButton.textContent = `Align Below: ${state.alignBelow ? 'On' : 'Off'}`;
+        alignButton.classList.toggle('active', state.alignBelow);
+      }
       applyControlLabels();
     }
 
@@ -1030,7 +1038,10 @@ const definition = {
       state.interiorEnabled = !state.interiorEnabled;
       interiorPanel.classList.toggle('hidden', !state.interiorEnabled);
       const btn = board.querySelector('.floorplan-interior-toggle-btn');
-      if (btn) btn.textContent = `3D Interior: ${state.interiorEnabled ? 'On' : 'Off'}`;
+      if (btn) {
+        btn.textContent = `3D Interior: ${state.interiorEnabled ? 'On' : 'Off'}`;
+        btn.classList.toggle('active', state.interiorEnabled);
+      }
       applyControlLabels();
       renderScene();
       setFeedback(`Action: 3D interior ${state.interiorEnabled ? 'on' : 'off'}`);
