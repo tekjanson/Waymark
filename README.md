@@ -1,196 +1,210 @@
 # WayMark
 
-***Try for Free***
-[Waymark](https://swiftirons.com/waymark.html)
+Transform Google Sheets into a shared life operating system for families, households, and small teams.
 
+WayMark turns the spreadsheets you already use into beautiful, collaborative tools for planning life together: home projects, budgets, routines, meal planning, travel, family tasks, home design, and more.
 
-**Every project ends with a spreadsheet.**
-
-You know the drill. Somebody says *"we need a database"* and then somebody else opens Google Sheets, types a few headers, and — congratulations — that *is* the database now. Budgets, inventories, guest lists, bug trackers, meal plans, hiring pipelines, school grades — humanity runs on rows and columns maintained by people who never asked for a DBA certification.
-
-Spreadsheets are easy to **make** but harder to **use**. A wall of cells doesn't care about your workflow. It won't show you a progress bar. It won't group your Kanban cards into swim lanes. It won't highlight which test cases are failing. It doesn't know that row 47 is a dinner recipe and row 48 is next Tuesday's meeting.
-
-**WayMark does.**
-
-WayMark reads your Google Sheets and renders them as the interactive tools they were always *meant* to be — checklists, trackers, schedules, dashboards, kanban boards, and more. Your data stays in Google Sheets where everyone can edit it. WayMark just makes it **useful**.
-
-> The people already chose their database. We're just giving them an interface that respects the choice.
+> The spreadsheet was already your database. We just give it the interface your life actually needs.
 
 ---
 
-## What It Does
+## Why WayMark exists
 
-1. **Connect your Google Drive** — browse folders, open any spreadsheet.
-2. **Auto-detect the template** — WayMark examines the column headers and figures out what kind of data you have (checklist? budget? timesheet? CRM pipeline?).
-3. **Render an interactive view** — progress bars, clickable checkboxes, calendar groupings, status badges, swim lanes — whatever fits the data.
-4. **Write changes back** — toggle a checkbox, cycle a status badge, and the edit goes straight back to Google Sheets.
-5. **Keyword search** — quickly find any sheet by name from the search bar.
+Most people live in a mess of tabs, notes, calendars, checklists, shared docs, and half-finished plans.
 
-No extra database. No migration. No export/import. Just your spreadsheet, made better.
+Families and groups do not need a new database. They need a simple way to coordinate the real systems of life:
+
+- weekly routines and household tasks
+- groceries, meals, and home planning
+- budgets and shared expenses
+- trips and family logistics
+- home renovation and floor-plan design
+- home projects, maintenance, and upgrades
+- shared goals and recurring decisions
+
+WayMark keeps everything in Google Sheets — where people already work — and renders it into clear, interactive views that are easy for everyone to use.
+
+No separate app database. No migration hell. No training required.
 
 ---
 
-## 18 Templates
+## Built for family life and shared planning
 
-| Template | What It Renders |
+WayMark is designed for households, families, roommates, and small groups who want one place to keep everything aligned.
+
+### Shared by default
+
+- one Google Sheet, many collaborators
+- each person can update the plan without learning a new system
+- real-time collaborative workflows using the tools people already keep in Google Workspace
+- custom views for different needs without changing the underlying data model
+
+### Life management, not just project tracking
+
+WayMark helps you manage the rhythm of real life:
+
+- chores and recurring tasks
+- household budgets and savings goals
+- meal planning and grocery coordination
+- health and habit tracking
+- travel, logistics, and upcoming events
+- home design and renovation planning
+- household upgrades, repairs, and improvement projects
+
+### Home design included
+
+The new floor-plan template is a first-class example of the WayMark philosophy: make complex, real-world planning easier to visualize without forcing everyone into a separate CAD tool.
+
+Whether you are mapping out a room layout, planning electrical and plumbing placement, or designing a home improvement project, WayMark helps you model the plan in a spreadsheet-backed, visual workspace.
+
+---
+
+## What WayMark does
+
+1. Connect to your Google Drive and open a sheet
+2. Auto-detect the right template from the columns you already have
+3. Render it as a purpose-built tool: dashboard, board, tracker, planner, or map-like view
+4. Edit data directly in the sheet or through the interface
+5. Keep the system collaborative and easy to share with the people who need it
+
+This is not a database replacement. It is a better interface for the spreadsheet system the world already uses.
+
+---
+
+## Template library
+
+WayMark currently includes a broad set of collaborative planning templates, including:
+
+| Template | Use case |
 |---|---|
-| **Checklist** | Toggleable checkboxes with completion state |
-| **Progress Tracker** | Live progress bars with percentage |
-| **Schedule** | Time-grouped events with location info |
-| **Inventory** | Card grid with quantities and categories |
-| **Contacts** | Clickable phone/email links |
-| **Activity Log** | Timestamped entries with type badges and duration |
-| **Test Cases** | Status summary bar, result badges (Pass/Fail/Blocked), priority levels |
-| **Budget** | Income/expense/balance summary, category grouping |
-| **Kanban Board** | Swim-lane columns (Backlog → Done), draggable-feel stage cycling |
-| **Habit Tracker** | Weekly grid with streak counts and toggleable day cells |
-| **Gradebook** | Student rows with score columns and letter grades |
-| **Timesheet** | Hours summary, billable vs non-billable breakdown |
-| **Poll / Survey** | Bar chart with vote counts and percentages |
-| **Changelog** | Version-grouped entries with type badges (Added, Fixed, Breaking) |
-| **CRM** | Pipeline summary, deal cards with stage badges |
-| **Meal Planner** | Day-grouped meals with calorie/macro info |
-| **Travel Itinerary** | Date-grouped activities with booking refs and costs |
-| **Roster** | Employee shift grid with toggleable day assignments |
+| Checklist | chores, personal tasks, recurring jobs |
+| Kanban Board | family projects, home improvements, planning |
+| Budget | household finances and shared spending |
+| Habit Tracker | routines and accountability |
+| Meal Planner | weekly meals and grocery planning |
+| Schedule | calendars, events, and recurring plans |
+| Travel Itinerary | trips, reservations, and trip logistics |
+| Inventory | house supplies, pantry, emergency prep |
+| Progress Tracker | goals and milestones |
+| CRM | sales, customers, and relationship tracking |
+| Contacts | family, friends, vendors, and service providers |
+| Floor Plan | room layouts, home design, electrical and plumbing planning |
+| Roster | family schedules and shift coverage |
+| Poll / Survey | household decisions and group votes |
+| Changelog | release notes and project history |
+| Test Cases | QA and process verification |
+| Timesheet | work tracking and team reporting |
+| More templates keep expanding the platform |
 
-Detection is automatic — name your columns sensibly and WayMark figures out the rest.
+WayMark is intentionally flexible enough to serve both personal planning and household-scale coordination.
 
 ---
 
-## Getting Started
+## The WayMark approach
+
+### Spreadsheets are the people's database
+
+The instinct to reach for a spreadsheet is correct. The data model is already there: rows are records, columns are fields, and sheets are tables.
+
+What people usually lack is not structure — it is clear presentation and a sensible workflow.
+
+WayMark bridges that gap:
+
+- the spreadsheet remains the source of truth
+- the interface becomes the tool people actually want to use
+- the data stays collaborative and editable by the whole household or team
+
+---
+
+## Getting started
 
 ### Prerequisites
 
-- **Node.js** 18+
-- A **Google Cloud** project with Sheets API v4 and Drive API v3 enabled
-- OAuth 2.0 credentials (see `.env.example`)
+- Node.js 18+
+- a Google Cloud project with Sheets API v4 and Drive API v3 enabled
+- OAuth credentials configured in `.env`
 
-### Install & Run
+### Install and run
 
 ```bash
 npm install
-cp .env.example .env   # fill in your Google OAuth credentials
-npm start              # http://localhost:3000
+cp .env.example .env
+npm start
 ```
 
-### Local Development (No Google Account Needed)
+Then open the app locally at `http://localhost:3000`.
+
+### Local mock mode
 
 ```bash
-npm run dev            # starts in mock mode with fixture data
+npm run dev
 ```
 
-This runs the full app with fake Drive/Sheets data — perfect for development, design iteration, and running the test suite.
-
-### Docker
-
-```bash
-docker-compose up
-```
+This starts the app in local mock mode with fixture data, which is useful for development, UI iteration, and end-to-end testing without a Google account.
 
 ---
 
 ## Testing
 
-1175 Playwright tests covering templates, shared rendering paths, auth flow, Drive exploration, search, sharing, storage, and helper modules.
-
-```bash
-npm test                  # headless
-npm run test:changed      # run only impacted specs for your local changes
-npm run test:changed:list # preview which specs the fast runner would select
-npm run test:headed       # watch it run
-npm run test:debug        # step through with Playwright Inspector
-npm run test:agent:live   # real Gemini evals (requires local env keys)
-```
-
-Tests use the mock/local mode — no Google account required.
-
-For day-to-day iteration, `npm run test:changed` inspects your changed files and runs the smallest safe set of specs it can infer. Template-specific edits usually collapse to one template spec plus a matching helper-unit spec. Broad renderer or shared-infrastructure changes intentionally fall back to the full suite.
-
-Before marking work as QA, still run the full gate:
+The project uses Playwright end-to-end tests for the app, templates, and mock-mode flows.
 
 ```bash
 npm test
+npm run test:changed
+npm run test:headed
+npm run test:debug
 ```
 
-For real-agent evals, set `WAYMARK_AGENT_EVAL_KEYS` in your local `.env` as a comma-separated or newline-separated list of Gemini API keys, then run `npm run test:agent:live`. The runner keeps the local mock Drive/Sheets app, but sends real model requests so it can score response quality, Waymark link usage, tool side effects, and multi-sheet behavior. If the default model hits quota limits, set `WAYMARK_AGENT_EVAL_MODEL` to a lighter option such as `gemini-2.0-flash-lite` for that eval run.
-
-Useful live-eval controls:
-
-```bash
-WAYMARK_AGENT_EVAL_DELAY_MS=20000        # cooldown between cases
-WAYMARK_AGENT_EVAL_STEP_DELAY_MS=8000    # cooldown between turns in one scenario
-WAYMARK_AGENT_EVAL_MODEL=gemini-2.0-flash-lite
-WAYMARK_AGENT_EVAL_CASES=vacation-budget-roadtrip,create-then-update-checklist
-WAYMARK_AGENT_EVAL_MAX_CASES=2
-WAYMARK_AGENT_EVAL_RESUME=true
-WAYMARK_AGENT_EVAL_STOP_ON_FAILURE=true
-```
+The test suite covers rendering, mock API flows, shared utilities, and template behavior so the app stays stable while the interface evolves.
 
 ---
 
 ## Architecture
 
-Zero-build vanilla stack. No bundler, no framework, no transpiler. ES Modules in the browser, Node.js + Express on the server.
+WayMark uses a zero-build, browser-first stack with a lightweight Express server for serving static assets and OAuth flow.
 
-```
+```text
 public/
-├── index.html                 # Single-page app shell
+├── index.html
 ├── css/
-│   ├── style.css              # @import aggregator
-│   ├── base.css               # Variables, reset, layout, utilities
-│   └── templates/             # One CSS file per template (17 files)
-├── js/
-│   ├── app.js                 # Entry point, routing, state
-│   ├── checklist.js           # Sheet rendering orchestrator
-│   ├── ui.js                  # DOM helpers (el, showToast, escapeHtml)
-│   ├── api-client.js          # Google API abstraction + mock mode
-│   ├── examples.js            # Example sheet generator
-│   ├── example-data.js        # 33 example sheet definitions
+│   ├── style.css
+│   ├── base.css
 │   └── templates/
-│       ├── index.js            # Barrel — imports all, exports detectTemplate()
-│       ├── shared.js           # Core: TEMPLATES registry, onEdit, cell helpers
-│       └── [18 template files] # Self-registering modules (~50-120 lines each)
+├── js/
+│   ├── app.js
+│   ├── api-client.js
+│   ├── checklist.js
+│   ├── ui.js
+│   ├── example-data.js
+│   └── templates/
 server/
-├── index.js                   # Express server (91 lines)
-└── auth.js                    # OAuth + session management
+├── index.js
+├── auth.js
+└── config.js
 tests/
 ├── playwright.config.js
-├── helpers/                   # Test utilities, fixtures, mock data
-└── e2e/                       # 24 spec files
+├── helpers/
+└── e2e/
 ```
 
-**Key patterns:**
+The key architectural idea is simple:
 
-- **Self-registering templates** — each template module imports `registerTemplate` from `shared.js` and registers itself at load time. No central switch statement, no config file to update. Add a template by creating one file.
-- **CSS `@import` aggregation** — `style.css` is just imports. Template styles are co-located with their logic.
-- **Mock mode** — `WAYMARK_LOCAL=true` swaps the real Google API layer for in-memory fixtures. The entire app works offline.
-
----
-
-## Why Spreadsheets?
-
-Because spreadsheets are the people's database. They always have been.
-
-Every organization on earth — from Fortune 500 companies to a family planning Thanksgiving — has critical data living in a spreadsheet right now. Not because spreadsheets are the best tool. Because they're the most *accessible* tool. Anyone can open one. Anyone can add a row. No schema migrations, no deployment pipelines, no access control meetings.
-
-The instinct to reach for a spreadsheet is **correct**. The data model is already there — rows are records, columns are fields, sheets are tables. That's a database. People figured out relational data without anyone teaching them normal forms.
-
-What's missing isn't structure. What's missing is **presentation**. A checklist shouldn't look like a grid. A budget shouldn't make you squint at column E to find the total. A kanban board shouldn't require you to remember which column means "In Progress."
-
-WayMark bridges that gap. Your spreadsheet stays your spreadsheet. We just make it look and act like the tool you actually needed.
+- keep the data in Google Sheets
+- render the right interface in the browser
+- make the app feel like a purpose-built family/life planner, not a spreadsheet wall of cells
 
 ---
-
-## Legal
-
-- License: GPL-3.0-only (see `LICENSE`)
-- Privacy Policy: `PRIVACY_POLICY.md` and `/privacy.html`
-- End User License Agreement: `EULA.md` and `/eula.html`
 
 ## License
 
 WayMark is licensed under the GNU General Public License v3.0 only.
 
+See `LICENSE` for details.
+
+---
+
 ## Links
+
+[Waymark](https://swiftirons.com/waymark.html)
 
 [![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/waymark)
