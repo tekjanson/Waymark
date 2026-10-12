@@ -83,7 +83,7 @@ const TOOL_HINTS = {
   room: 'Room: drag to draw room bounds, or tap once to drop a default room.',
   electrical: 'Electrical: tap to place a point, drag to preview before release.',
   plumbing: 'Plumbing: tap to place a point, drag to preview before release.',
-  select: 'Select: drag an existing room/wall/device to reposition it.',
+  select: 'Select: drag to move. Drag corner/end handles to resize geometry.',
   erase: 'Erase: tap any drawn item to remove it.',
 };
 
@@ -347,10 +347,16 @@ const definition = {
       preview: null,
       dragStart: null,
       dragId: null,
+      resizeDrag: null,
+      selectedId: null,
       lastCreateAt: 0,
       lastStartAt: 0,
       lastStartPoint: null,
     };
+
+    function findItemById(itemId) {
+      return state.items.find(entry => String(entry.id) === String(itemId)) || null;
+    }
 
     function setTool(nextTool) {
       state.tool = nextTool;
@@ -448,6 +454,7 @@ const definition = {
       state.items.forEach((item) => {
         const kind = item.kind || classifyItem(item);
         const layer = layers[kind] || layers.fixture;
+        const isSelected = String(item.id) === String(state.selectedId);
 
         if (kind === 'room') {
           const width = Math.max(60, item.width || 120);
@@ -461,7 +468,7 @@ const definition = {
             fill: '#dbeafe',
             stroke: '#60a5fa',
             'stroke-width': '2',
-            className: 'floorplan-room floorplan-item',
+            className: `floorplan-room floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'room',
           });
@@ -484,13 +491,13 @@ const definition = {
             stroke: '#334155',
             'stroke-width': '6',
             'stroke-linecap': 'round',
-            className: 'floorplan-wall floorplan-item',
+            className: `floorplan-wall floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'wall',
           });
           layer.append(line);
 
-          if (hasMeaningfulLabel(item.label)) {
+          if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, (x1 + x2) / 2, Math.min(y1, y2) - 8, '#334155', 'floorplan-wall-label'));
           }
         }
@@ -505,12 +512,12 @@ const definition = {
             fill: '#4ade80',
             stroke: '#166534',
             'stroke-width': '2',
-            className: 'floorplan-electrical floorplan-item',
+            className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'electrical',
           });
           layer.append(node);
-          if (hasMeaningfulLabel(item.label)) {
+          if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, x + 16, y - 10, '#166534', 'floorplan-device-label'));
           }
         }
@@ -527,12 +534,12 @@ const definition = {
             fill: '#93c5fd',
             stroke: '#1d4ed8',
             'stroke-width': '2',
-            className: 'floorplan-plumbing floorplan-item',
+            className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'plumbing',
           });
           layer.append(node);
-          if (hasMeaningfulLabel(item.label)) {
+          if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, x + 18, y - 10, '#1d4ed8', 'floorplan-device-label'));
           }
         }
@@ -550,16 +557,97 @@ const definition = {
             fill: '#fbbf24',
             stroke: '#78350f',
             'stroke-width': '2',
-            className: 'floorplan-fixture floorplan-item',
+            className: `floorplan-fixture floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'fixture',
           });
           layer.append(node);
-          if (hasMeaningfulLabel(item.label)) {
+          if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, x + 18, y - 10, '#78350f', 'floorplan-device-label'));
           }
         }
       });
+
+      if (state.selectedId) {
+        const selected = findItemById(state.selectedId);
+        if (selected) {
+          const handleLayer = svgEl('g', { className: 'floorplan-handle-layer' });
+          const addHandle = (x, y, handleId) => {
+            handleLayer.append(svgEl('circle', {
+              cx: x,
+              cy: y,
+              r: 8,
+              fill: '#ffffff',
+              stroke: '#2563eb',
+              'stroke-width': 2,
+              class: 'floorplan-resize-handle',
+              'data-floorplan-item': String(selected.id),
+              'data-floorplan-handle': handleId,
+            }));
+          };
+
+          if (selected.kind === 'room') {
+            const width = Math.max(60, selected.width || 120);
+            const height = Math.max(40, selected.height || 80);
+            const left = selected.x;
+            const top = selected.y;
+            const right = left + width;
+            const bottom = top + height;
+            handleLayer.append(svgEl('rect', {
+              x: left,
+              y: top,
+              width,
+              height,
+              fill: 'none',
+              stroke: '#2563eb',
+              'stroke-width': 1.5,
+              'stroke-dasharray': '6 5',
+              class: 'floorplan-selection-box',
+            }));
+            addHandle(left, top, 'room-nw');
+            addHandle(right, top, 'room-ne');
+            addHandle(left, bottom, 'room-sw');
+            addHandle(right, bottom, 'room-se');
+            handleLayer.append(label(`${Math.round(width)}w x ${Math.round(height)}h`, right - 8, top - 10, '#1e40af', 'floorplan-measure-label'));
+          }
+
+          if (selected.kind === 'wall') {
+            const x1 = selected.x;
+            const y1 = selected.y;
+            const x2 = typeof selected.x2 === 'number' ? selected.x2 : selected.x + (selected.length || selected.width || 120);
+            const y2 = typeof selected.y2 === 'number' ? selected.y2 : selected.y;
+            handleLayer.append(svgEl('line', {
+              x1, y1, x2, y2,
+              stroke: '#2563eb',
+              'stroke-width': 1.5,
+              'stroke-dasharray': '6 5',
+              class: 'floorplan-selection-box',
+            }));
+            addHandle(x1, y1, 'wall-start');
+            addHandle(x2, y2, 'wall-end');
+            const length = Math.hypot(x2 - x1, y2 - y1);
+            handleLayer.append(label(`${Math.round(length)}u`, (x1 + x2) / 2, ((y1 + y2) / 2) - 10, '#1e40af', 'floorplan-measure-label'));
+          }
+
+          if (selected.kind === 'electrical' || selected.kind === 'plumbing' || selected.kind === 'fixture') {
+            const x = selected.x || 40;
+            const y = selected.y || 40;
+            handleLayer.append(svgEl('circle', {
+              cx: x,
+              cy: y,
+              r: 12,
+              fill: 'none',
+              stroke: '#2563eb',
+              'stroke-width': 1.5,
+              'stroke-dasharray': '4 4',
+              class: 'floorplan-selection-box',
+            }));
+            addHandle(x, y, 'point-center');
+          }
+
+          scene.append(handleLayer);
+        }
+      }
 
       if (state.preview) {
         const previewLayer = svgEl('g', { className: 'floorplan-preview-layer' });
@@ -653,10 +741,38 @@ const definition = {
       }
 
       if (state.tool === 'select') {
+        const handleTarget = event.target && event.target.closest ? event.target.closest('[data-floorplan-handle]') : null;
+        if (handleTarget) {
+          const itemId = handleTarget.dataset.floorplanItem;
+          const handle = handleTarget.dataset.floorplanHandle;
+          const item = findItemById(itemId);
+          if (item) {
+            if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
+            state.selectedId = itemId;
+            state.resizeDrag = {
+              itemId,
+              handle,
+              origin: {
+                x: item.x,
+                y: item.y,
+                width: item.width,
+                height: item.height,
+                x2: item.x2,
+                y2: item.y2,
+              },
+            };
+            state.dragStart = { x: point.x, y: point.y };
+            debugLog('resize-start', { itemId, handle, kind: item.kind });
+            renderScene();
+          }
+          return;
+        }
+
         if (targetItem) {
           if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
           state.dragId = targetItem.dataset.floorplanItem;
-          const item = state.items.find(entry => String(entry.id) === state.dragId);
+          state.selectedId = state.dragId;
+          const item = findItemById(state.dragId);
           if (item) {
             state.dragStart = { x: point.x, y: point.y };
             item.dragOrigin = {
@@ -667,6 +783,10 @@ const definition = {
             };
             debugLog('select-start', { itemId: state.dragId, kind: item.kind, x: point.x, y: point.y });
           }
+          renderScene();
+        } else {
+          state.selectedId = null;
+          renderScene();
         }
         return;
       }
@@ -688,23 +808,88 @@ const definition = {
 
     function updateDraft(event) {
       if (typeof event.preventDefault === 'function') event.preventDefault();
-      if (!state.dragStart || state.tool === 'erase' || state.tool === 'select') {
-        if (state.dragId) {
-          const item = state.items.find(entry => String(entry.id) === state.dragId);
+      if (state.tool === 'select') {
+        const point = pointFromEvent(svg, event);
+        if (state.resizeDrag) {
+          const item = findItemById(state.resizeDrag.itemId);
+          if (!item) return;
+          const { handle, origin } = state.resizeDrag;
+          const px = clamp(point.x, 20, 940);
+          const py = clamp(point.y, 20, 600);
+
+          if (item.kind === 'room') {
+            const left0 = origin.x;
+            const top0 = origin.y;
+            const right0 = left0 + Math.max(60, origin.width || 120);
+            const bottom0 = top0 + Math.max(40, origin.height || 80);
+            let left = left0;
+            let top = top0;
+            let right = right0;
+            let bottom = bottom0;
+
+            if (handle === 'room-nw' || handle === 'room-sw') left = Math.min(px, right0 - 40);
+            if (handle === 'room-ne' || handle === 'room-se') right = Math.max(px, left0 + 40);
+            if (handle === 'room-nw' || handle === 'room-ne') top = Math.min(py, bottom0 - 34);
+            if (handle === 'room-sw' || handle === 'room-se') bottom = Math.max(py, top0 + 34);
+
+            left = clamp(left, 20, 900);
+            top = clamp(top, 20, 560);
+            right = clamp(right, left + 40, 940);
+            bottom = clamp(bottom, top + 34, 600);
+
+            item.x = left;
+            item.y = top;
+            item.width = right - left;
+            item.height = bottom - top;
+          }
+
+          if (item.kind === 'wall') {
+            if (handle === 'wall-start') {
+              item.x = px;
+              item.y = py;
+            } else if (handle === 'wall-end') {
+              item.x2 = px;
+              item.y2 = py;
+            }
+            const x2 = typeof item.x2 === 'number' ? item.x2 : (item.x + (item.length || 0));
+            const y2 = typeof item.y2 === 'number' ? item.y2 : item.y;
+            item.length = Math.hypot(x2 - item.x, y2 - item.y);
+            item.width = Math.abs(x2 - item.x);
+            item.height = Math.abs(y2 - item.y);
+          }
+
+          if (item.kind === 'electrical' || item.kind === 'plumbing' || item.kind === 'fixture') {
+            if (handle === 'point-center') {
+              item.x = px;
+              item.y = py;
+            }
+          }
+
+          debugLog('resize-move', { itemId: item.id, handle, x: item.x, y: item.y });
+          renderScene();
+          return;
+        }
+
+        if (state.dragId && state.dragStart) {
+          const item = findItemById(state.dragId);
           if (!item || !item.dragOrigin) return;
-          const point = pointFromEvent(svg, event);
           const dx = point.x - state.dragStart.x;
           const dy = point.y - state.dragStart.y;
           item.x = item.dragOrigin.x + dx;
           item.y = item.dragOrigin.y + dy;
           if (item.dragOrigin.x2 !== null) item.x2 = item.dragOrigin.x2 + dx;
           if (item.dragOrigin.y2 !== null) item.y2 = item.dragOrigin.y2 + dy;
+          item.x = clamp(item.x, 20, 940);
+          item.y = clamp(item.y, 20, 600);
+          if (typeof item.x2 === 'number') item.x2 = clamp(item.x2, 20, 940);
+          if (typeof item.y2 === 'number') item.y2 = clamp(item.y2, 20, 600);
           debugLog('select-move', { itemId: state.dragId, x: item.x, y: item.y });
           renderScene();
         }
         return;
       }
 
+      if (!state.dragStart || state.tool === 'erase') return;
       if (!state.preview) return;
       const point = pointFromEvent(svg, event);
       state.preview.end = point;
@@ -718,6 +903,7 @@ const definition = {
 
       if (state.tool === 'select') {
         state.dragId = null;
+        state.resizeDrag = null;
         state.dragStart = null;
         state.items.forEach(item => { delete item.dragOrigin; });
         debugLog('select-end');

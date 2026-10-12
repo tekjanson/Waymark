@@ -34,6 +34,28 @@ test('wall tool supports single-click placement for immediate feedback', async (
   expect(afterCount).toBe(beforeCount + 1);
 });
 
+test('select mode supports room resize handles', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await page.click('.floorplan-tool-button[data-tool="select"]');
+  await page.locator('.floorplan-room').first().click({ position: { x: 14, y: 14 } });
+
+  const beforeWidth = await page.locator('.floorplan-room').first().evaluate(node => Number(node.getAttribute('width') || '0'));
+  const handle = page.locator('.floorplan-resize-handle[data-floorplan-handle="room-se"]').first();
+  const box = await handle.boundingBox();
+  if (!box) throw new Error('Resize handle not visible');
+
+  await page.mouse.move(box.x + (box.width / 2), box.y + (box.height / 2));
+  await page.mouse.down();
+  await page.mouse.move(box.x + 70, box.y + 55, { steps: 12 });
+  await page.mouse.up();
+
+  const afterWidth = await page.locator('.floorplan-room').first().evaluate(node => Number(node.getAttribute('width') || '0'));
+  expect(afterWidth).toBeGreaterThan(beforeWidth);
+});
+
 test('created-sheet fallback still opens floor plan canvas in local mode', async ({ page }) => {
   await setupApp(page, { hash: '#/sheet/created-sheet-e2e-fallback' });
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
