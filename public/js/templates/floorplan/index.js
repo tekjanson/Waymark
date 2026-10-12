@@ -507,8 +507,28 @@ const definition = {
     function getWallEndpoints(wall) {
       const x1 = wall.x;
       const y1 = wall.y;
-      const x2 = typeof wall.x2 === 'number' ? wall.x2 : wall.x + (wall.length || wall.width || 120);
-      const y2 = typeof wall.y2 === 'number' ? wall.y2 : wall.y + (wall.height || 0);
+      if (typeof wall.x2 === 'number' && typeof wall.y2 === 'number') {
+        return { x1, y1, x2: wall.x2, y2: wall.y2 };
+      }
+
+      const length = Number(wall.length) || 0;
+      const width = Number(wall.width) || 0;
+      const height = Number(wall.height) || 0;
+
+      let x2 = x1 + 120;
+      let y2 = y1;
+
+      if (length !== 0 && Math.abs(length) >= Math.abs(height) && Math.abs(length) >= Math.abs(width)) {
+        x2 = x1 + length;
+        y2 = y1;
+      } else if (height !== 0 && Math.abs(height) >= Math.abs(width)) {
+        x2 = x1;
+        y2 = y1 + height;
+      } else if (width !== 0) {
+        x2 = x1 + width;
+        y2 = y1;
+      }
+
       return { x1, y1, x2, y2 };
     }
 
@@ -800,15 +820,15 @@ const definition = {
       state.selectedId = null;
       state.items = [];
       const draftRooms = [
-        { label: 'Foyer', x: 420, y: 70, width: 120, height: 90 },
-        { label: 'Kitchen', x: 420, y: 170, width: 170, height: 120 },
-        { label: 'Living Room', x: 600, y: 120, width: 260, height: 180 },
-        { label: 'Galley Kitchen', x: 250, y: 120, width: 150, height: 220 },
-        { label: 'Hallway', x: 420, y: 300, width: 120, height: 220 },
-        { label: 'Closet', x: 550, y: 365, width: 70, height: 70 },
-        { label: 'Bath', x: 550, y: 440, width: 100, height: 90 },
-        { label: 'Rear Room', x: 380, y: 520, width: 270, height: 130 },
-        { label: 'South Room', x: 700, y: 330, width: 220, height: 180 },
+        { label: 'Foyer', x: 520, y: 70, width: 120, height: 80 },
+        { label: 'Kitchen', x: 520, y: 170, width: 170, height: 130 },
+        { label: 'Long Living Room', x: 300, y: 170, width: 200, height: 310 },
+        { label: 'Galley Kitchen', x: 140, y: 170, width: 140, height: 220 },
+        { label: 'Hallway', x: 520, y: 320, width: 110, height: 180 },
+        { label: 'Closet', x: 640, y: 320, width: 70, height: 70 },
+        { label: 'Bath', x: 640, y: 400, width: 100, height: 90 },
+        { label: 'Rear Bedroom', x: 500, y: 470, width: 230, height: 110 },
+        { label: 'South Room', x: 740, y: 370, width: 180, height: 210 },
       ];
 
       draftRooms.forEach((room) => {
@@ -818,25 +838,45 @@ const definition = {
       });
 
       autoGenerateWallsFromRooms();
-      const stairs = registerNewItem(createPointToolItem('stairs', { x: 330, y: 360 }));
+      const stairs = registerNewItem(createPointToolItem('stairs', { x: 620, y: 345 }));
       if (stairs) {
         stairs.label = 'Main Stairs';
         state.items.push(stairs);
       }
-      const entryDoor = registerNewItem(createPointToolItem('door', { x: 500, y: 70 }));
+      const entryDoor = registerNewItem(createPointToolItem('door', { x: 580, y: 70 }));
       if (entryDoor) {
         entryDoor.label = 'Front Door';
         state.items.push(entryDoor);
       }
-      const livingDoor = registerNewItem(createPointToolItem('door', { x: 600, y: 220 }));
+      const livingDoor = registerNewItem(createPointToolItem('door', { x: 500, y: 240 }));
       if (livingDoor) {
-        livingDoor.label = 'Living Door';
+        livingDoor.label = 'Kitchen-Living Door';
         state.items.push(livingDoor);
       }
-      const kitchenWin = registerNewItem(createPointToolItem('window', { x: 250, y: 200 }));
+      const hallDoor = registerNewItem(createPointToolItem('door', { x: 575, y: 320 }));
+      if (hallDoor) {
+        hallDoor.label = 'Kitchen-Hall Door';
+        state.items.push(hallDoor);
+      }
+      const bathDoor = registerNewItem(createPointToolItem('door', { x: 640, y: 445 }));
+      if (bathDoor) {
+        bathDoor.label = 'Hall-Bath Door';
+        state.items.push(bathDoor);
+      }
+      const rearDoor = registerNewItem(createPointToolItem('door', { x: 560, y: 470 }));
+      if (rearDoor) {
+        rearDoor.label = 'Rear Bedroom Door';
+        state.items.push(rearDoor);
+      }
+      const kitchenWin = registerNewItem(createPointToolItem('window', { x: 140, y: 230 }));
       if (kitchenWin) {
         kitchenWin.label = 'Galley Window';
         state.items.push(kitchenWin);
+      }
+      const livingWin = registerNewItem(createPointToolItem('window', { x: 300, y: 300 }));
+      if (livingWin) {
+        livingWin.label = 'Living Window';
+        state.items.push(livingWin);
       }
       refreshFloorUi();
       renderScene();
@@ -993,10 +1033,7 @@ const definition = {
         }
 
         if (kind === 'wall') {
-          const x1 = item.x;
-          const y1 = item.y;
-          const x2 = typeof item.x2 === 'number' ? item.x2 : item.x + (item.length || item.width || 120);
-          const y2 = typeof item.y2 === 'number' ? item.y2 : item.y + (item.height || 0);
+          const { x1, y1, x2, y2 } = getWallEndpoints(item);
           const line = svgEl('line', {
             x1,
             y1,
@@ -1215,10 +1252,7 @@ const definition = {
           }
 
           if (selected.kind === 'wall') {
-            const x1 = selected.x;
-            const y1 = selected.y;
-            const x2 = typeof selected.x2 === 'number' ? selected.x2 : selected.x + (selected.length || selected.width || 120);
-            const y2 = typeof selected.y2 === 'number' ? selected.y2 : selected.y;
+            const { x1, y1, x2, y2 } = getWallEndpoints(selected);
             handleLayer.append(svgEl('line', {
               x1, y1, x2, y2,
               stroke: '#2563eb',
@@ -1402,8 +1436,8 @@ const definition = {
             item.dragOrigin = {
               x: item.x,
               y: item.y,
-              x2: typeof item.x2 === 'number' ? item.x2 : null,
-              y2: typeof item.y2 === 'number' ? item.y2 : null,
+              x2: getWallEndpoints(item).x2,
+              y2: getWallEndpoints(item).y2,
             };
             debugLog('select-start', { itemId: state.dragId, kind: item.kind, x: point.x, y: point.y });
           }
@@ -1479,8 +1513,7 @@ const definition = {
               item.x2 = px;
               item.y2 = py;
             }
-            const x2 = typeof item.x2 === 'number' ? item.x2 : (item.x + (item.length || 0));
-            const y2 = typeof item.y2 === 'number' ? item.y2 : item.y;
+            const { x2, y2 } = getWallEndpoints(item);
             item.length = Math.hypot(x2 - item.x, y2 - item.y);
             item.width = Math.abs(x2 - item.x);
             item.height = Math.abs(y2 - item.y);

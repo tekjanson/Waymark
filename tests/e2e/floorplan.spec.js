@@ -15,7 +15,7 @@ test('floor plan is detected and rendered', async ({ page }) => {
   await expect(page.locator('#template-badge')).toContainText('Floor Plan');
   await expect(page.locator('.floorplan-title')).toContainText('House Plan');
   await expect(page.locator('.floorplan-room')).toHaveCount(9);
-  await expect(page.locator('.floorplan-wall')).toHaveCount(3);
+  await expect(page.locator('.floorplan-wall')).toHaveCount(8);
   await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
 });
 
