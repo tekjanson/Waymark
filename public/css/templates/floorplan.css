@@ -114,10 +114,13 @@
 .floorplan-stage {
   padding: 16px;
   background: #f8fafc;
+  min-height: 640px;
 }
 
 .floorplan-svg {
   width: 100%;
+  height: clamp(360px, 68vh, 620px);
+  aspect-ratio: 960 / 620;
   max-height: 70vh;
   border: 1px solid var(--color-border);
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);

@@ -210,6 +210,9 @@ const definition = {
         el('svg', {
           className: 'floorplan-svg',
           viewBox: '0 0 960 620',
+          width: '100%',
+          height: '620',
+          preserveAspectRatio: 'xMidYMid meet',
           role: 'img',
           'aria-label': 'House floor plan',
           'data-floorplan-svg': 'true',
