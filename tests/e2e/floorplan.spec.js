@@ -13,6 +13,15 @@ test('floor plan is detected and rendered', async ({ page }) => {
   await expect(page.locator('.floorplan-wall')).toHaveCount(2);
 });
 
+test('floor plan does not render generic placeholder wall labels', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  const genericText = await page.locator('.floorplan-svg text').evaluateAll(nodes => nodes.map(node => node.textContent.trim()));
+  expect(genericText.some(value => /^(room|wall|electrical|plumbing|fixture)$/i.test(value))).toBe(false);
+});
+
 test('export button triggers print workflow for PDF output', async ({ page }) => {
   await page.addInitScript(() => {
     window.__PRINT_CALLED__ = false;

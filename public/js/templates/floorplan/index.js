@@ -38,6 +38,13 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function hasMeaningfulLabel(label) {
+  if (typeof label !== 'string') return false;
+  const text = label.trim();
+  if (!text) return false;
+  return !/^(room|wall|electrical|plumbing|fixture|item|space)$/i.test(text);
+}
+
 function pointFromEvent(svg, event) {
   const rect = svg.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * 960;
@@ -68,7 +75,7 @@ function createItem(kind, start, end) {
       id,
       kind,
       type: 'Room',
-      label: 'Room',
+      label: '',
       layer: 'room',
       x: fence.x,
       y: fence.y,
@@ -82,7 +89,7 @@ function createItem(kind, start, end) {
       id,
       kind,
       type: 'Wall',
-      label: 'Wall',
+      label: '',
       layer: 'structure',
       x: start.x,
       y: start.y,
@@ -98,7 +105,7 @@ function createItem(kind, start, end) {
     id,
     kind,
     type: kind === 'electrical' ? 'Electrical' : 'Plumbing',
-    label: kind === 'electrical' ? 'Electrical' : 'Plumbing',
+    label: '',
     layer: kind,
     x: end.x,
     y: end.y,
@@ -309,7 +316,10 @@ const definition = {
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'room',
           });
-          layer.append(rect, label(item.label || 'Room', item.x + (width / 2), item.y + (height / 2) + 4, '#1d4ed8'));
+          layer.append(rect);
+          if (hasMeaningfulLabel(item.label)) {
+            layer.append(label(item.label, item.x + (width / 2), item.y + (height / 2) + 4, '#1d4ed8'));
+          }
         }
 
         if (kind === 'wall') {
@@ -331,7 +341,7 @@ const definition = {
           });
           layer.append(line);
 
-          if (item.label && item.label !== 'Wall' && item.label !== 'wall') {
+          if (hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, (x1 + x2) / 2, Math.min(y1, y2) - 8, '#334155', 'floorplan-wall-label'));
           }
         }
@@ -339,63 +349,66 @@ const definition = {
         if (kind === 'electrical') {
           const x = item.x || 40;
           const y = item.y || 40;
-          layer.append(
-            el('circle', {
-              cx: x,
-              cy: y,
-              r: 8,
-              fill: '#4ade80',
-              stroke: '#166534',
-              'stroke-width': '2',
-              className: 'floorplan-electrical floorplan-item',
-              'data-floorplan-item': String(item.id),
-              'data-floorplan-kind': 'electrical',
-            }),
-            label(item.label || 'Electrical', x + 16, y - 10, '#166534', 'floorplan-device-label')
-          );
+          const node = el('circle', {
+            cx: x,
+            cy: y,
+            r: 8,
+            fill: '#4ade80',
+            stroke: '#166534',
+            'stroke-width': '2',
+            className: 'floorplan-electrical floorplan-item',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'electrical',
+          });
+          layer.append(node);
+          if (hasMeaningfulLabel(item.label)) {
+            layer.append(label(item.label, x + 16, y - 10, '#166534', 'floorplan-device-label'));
+          }
         }
 
         if (kind === 'plumbing') {
           const x = item.x || 40;
           const y = item.y || 40;
-          layer.append(
-            el('rect', {
-              x: x - 9,
-              y: y - 9,
-              width: 18,
-              height: 18,
-              rx: 4,
-              fill: '#93c5fd',
-              stroke: '#1d4ed8',
-              'stroke-width': '2',
-              className: 'floorplan-plumbing floorplan-item',
-              'data-floorplan-item': String(item.id),
-              'data-floorplan-kind': 'plumbing',
-            }),
-            label(item.label || 'Plumbing', x + 18, y - 10, '#1d4ed8', 'floorplan-device-label')
-          );
+          const node = el('rect', {
+            x: x - 9,
+            y: y - 9,
+            width: 18,
+            height: 18,
+            rx: 4,
+            fill: '#93c5fd',
+            stroke: '#1d4ed8',
+            'stroke-width': '2',
+            className: 'floorplan-plumbing floorplan-item',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'plumbing',
+          });
+          layer.append(node);
+          if (hasMeaningfulLabel(item.label)) {
+            layer.append(label(item.label, x + 18, y - 10, '#1d4ed8', 'floorplan-device-label'));
+          }
         }
 
         if (kind === 'fixture') {
           const x = item.x || 40;
           const y = item.y || 40;
           const size = Math.max(12, Math.min(18, item.width || item.height || 16));
-          layer.append(
-            el('rect', {
-              x: x - (size / 2),
-              y: y - (size / 2),
-              width: size,
-              height: size,
-              rx: 3,
-              fill: '#fbbf24',
-              stroke: '#78350f',
-              'stroke-width': '2',
-              className: 'floorplan-fixture floorplan-item',
-              'data-floorplan-item': String(item.id),
-              'data-floorplan-kind': 'fixture',
-            }),
-            label(item.label || 'Fixture', x + 18, y - 10, '#78350f', 'floorplan-device-label')
-          );
+          const node = el('rect', {
+            x: x - (size / 2),
+            y: y - (size / 2),
+            width: size,
+            height: size,
+            rx: 3,
+            fill: '#fbbf24',
+            stroke: '#78350f',
+            'stroke-width': '2',
+            className: 'floorplan-fixture floorplan-item',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'fixture',
+          });
+          layer.append(node);
+          if (hasMeaningfulLabel(item.label)) {
+            layer.append(label(item.label, x + 18, y - 10, '#78350f', 'floorplan-device-label'));
+          }
         }
       });
 
