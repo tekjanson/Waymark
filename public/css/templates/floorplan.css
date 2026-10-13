@@ -246,7 +246,62 @@
   min-height: 0;
   padding: 14px;
   display: flex;
+  position: relative;
 }
+
+/* ---------- Floating properties toolbar ---------- */
+.floorplan-prop-toolbar {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+  max-width: calc(100% - 28px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.floorplan-prop-dims {
+  color: #93c5fd;
+  font-weight: 800;
+  font-size: 0.74rem;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.floorplan-prop-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #334155;
+  margin: 2px 2px;
+}
+.floorplan-prop-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background var(--transition), border-color var(--transition);
+}
+.floorplan-prop-btn:hover { background: #2563eb; border-color: #3b82f6; }
+.floorplan-prop-btn:disabled { opacity: 0.4; cursor: not-allowed; background: #1e293b; }
+.floorplan-prop-door { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.01em; }
+.floorplan-prop-delete:hover { background: #dc2626; border-color: #ef4444; }
 
 .floorplan-svg {
   width: 100%;
@@ -315,6 +370,32 @@
 
 .floorplan-layer-grid { display: flex; flex-direction: column; gap: 5px; }
 
+.floorplan-layer-row {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+}
+.floorplan-layer-row .floorplan-layer-toggle { flex: 1 1 auto; }
+
+.floorplan-layer-lock {
+  flex: 0 0 auto;
+  width: 34px;
+  border: 1px solid var(--color-border);
+  background: #f8fafc;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), border-color var(--transition);
+}
+.floorplan-layer-lock:hover { border-color: #94a3b8; }
+.floorplan-layer-lock.locked {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
 .floorplan-layer-toggle {
   border: 1px solid var(--color-border);
   background: #f8fafc;
@@ -359,15 +440,18 @@
 
 /* ---------- SVG scene primitives ---------- */
 .floorplan-scene .floorplan-item { pointer-events: auto; }
+.floorplan-hit { pointer-events: all; cursor: pointer; }
 .floorplan-preview-layer { pointer-events: none; }
 .floorplan-grid-line { stroke: #dfe7f1; stroke-width: 1; }
 .floorplan-room { stroke-dasharray: 8 5; }
 .floorplan-wall { stroke-linecap: round; }
-.floorplan-door { fill: #f59e0b; }
-.floorplan-window { stroke: #0ea5e9; }
-.floorplan-item.floorplan-selected { filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.45)); }
+.floorplan-line { cursor: pointer; }
+.floorplan-symbol-graphic { pointer-events: none; }
+.floorplan-door-leaf, .floorplan-door-arc { pointer-events: none; }
+.floorplan-item.floorplan-selected { filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.55)); }
 .floorplan-selection-box { pointer-events: none; }
-.floorplan-resize-handle { cursor: nwse-resize; }
+.floorplan-handle-layer { pointer-events: auto; }
+.floorplan-resize-handle { cursor: pointer; }
 .floorplan-measure-label { font-size: 11px; font-weight: 700; text-anchor: end; }
 .floorplan-symbol-glyph { font-size: 12px; }
 
@@ -389,12 +473,13 @@
 }
 
 @media (max-width: 760px) {
-  .floorplan-topbar { flex-wrap: wrap; gap: 10px; }
-  .floorplan-topbar-center { margin: 0; order: 3; flex: 1 1 100%; }
-  .floorplan-topbar-right { flex: 1 1 100%; order: 4; }
+  .floorplan-topbar { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+  .floorplan-topbar-center { margin: 0; order: 3; flex: 1 1 100%; justify-content: center; flex-wrap: wrap; }
+  .floorplan-topbar-right { flex: 1 1 100%; order: 4; gap: 6px; }
+  .floorplan-brand { order: 1; }
   .floorplan-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(320px, 1fr) auto;
+    grid-template-rows: auto minmax(340px, 1fr) auto;
   }
   .floorplan-rail {
     flex-direction: row;
@@ -402,21 +487,53 @@
     overflow-y: hidden;
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
-    gap: 14px;
+    gap: 12px;
+    padding: 8px 10px;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
   }
   .floorplan-rail-section { flex: 0 0 auto; }
-  .floorplan-rail-tools { flex-direction: row; }
-  .floorplan-tool-button { flex-direction: column; gap: 3px; padding: 7px 9px; }
-  .floorplan-tool-label { font-size: 0.66rem; }
+  .floorplan-rail-tools { flex-direction: row; gap: 6px; }
+  .floorplan-tool-button {
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    min-width: 54px;
+    min-height: 50px;
+    justify-content: center;
+  }
+  .floorplan-tool-icon { font-size: 1.15rem; width: auto; }
+  .floorplan-tool-label { font-size: 0.64rem; }
   .floorplan-panel {
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
     border-left: 0;
     border-top: 1px solid var(--color-border);
+    -webkit-overflow-scrolling: touch;
   }
-  .floorplan-panel-section { flex: 0 0 auto; min-width: 180px; }
+  .floorplan-panel-section { flex: 0 0 auto; min-width: 200px; }
   .floorplan-symbol-grid { grid-template-columns: 1fr 1fr; }
+  .floorplan-symbol-choice { padding: 9px 9px; }
+  /* Bigger, thumb-friendly selection tools */
+  .floorplan-prop-toolbar { top: auto; bottom: 14px; gap: 6px; padding: 7px 9px; }
+  .floorplan-prop-btn { min-width: 42px; height: 42px; font-size: 1.05rem; }
+  .floorplan-prop-door { font-size: 0.78rem; }
+  .floorplan-layer-lock { width: 42px; }
+}
+
+@media (max-width: 480px) {
+  .floorplan-title { display: none; }
+  .floorplan-floor-indicator { min-width: 54px; }
+  .floorplan-toggle-btn,
+  .floorplan-secondary-btn { padding: 7px 9px; font-size: 0.72rem; }
+  .floorplan-body { grid-template-rows: auto minmax(300px, 1fr) auto; }
+  .floorplan-stage { padding: 8px; }
+}
+
+/* Larger resize handles on touch devices for easy grabbing */
+@media (pointer: coarse) {
+  .floorplan-resize-handle { r: 12px; }
 }
 
 /* ---------- AI render modal ---------- */
