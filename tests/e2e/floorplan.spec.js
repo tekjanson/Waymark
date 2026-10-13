@@ -477,3 +477,77 @@ test('new line layer can be toggled off and on', async ({ page }) => {
   await page.click('.floorplan-layer-toggle[data-layer="line"]');
   await expect(page.locator('.floorplan-line')).toHaveCount(1);
 });
+
+/* ============================================================
+   Iteration 2 — focus-view accuracy, measure, systems, 3D view
+   ============================================================ */
+
+test('objects place under the cursor in fullscreen focus view', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
+  await page.click('.floorplan-symbol-choice[data-symbol-key="couch"]');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  const clickX = svg.x + svg.width * 0.28;
+  const clickY = svg.y + svg.height * 0.72;
+  const expected = await page.evaluate(({ cx, cy }) => {
+    const el = document.querySelector('.floorplan-svg');
+    const pt = el.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    const l = pt.matrixTransform(el.getScreenCTM().inverse());
+    return { x: Math.round(l.x / 10) * 10, y: Math.round(l.y / 10) * 10 };
+  }, { cx: clickX, cy: clickY });
+  await page.mouse.click(clickX, clickY);
+  const t = await page.locator('.floorplan-fixture').last().getAttribute('transform');
+  const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(t || '');
+  if (!m) throw new Error('No fixture transform found');
+  expect(Math.abs(Number(m[1]) - expected.x)).toBeLessThan(12);
+  expect(Math.abs(Number(m[2]) - expected.y)).toBeLessThan(12);
+});
+
+test('measure tool tapes a distance between two points', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-measure-dim')).toHaveCount(0);
+  await selectTool(page, 'measure');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  await page.mouse.move(svg.x + 200, svg.y + 210);
+  await page.mouse.down();
+  await page.mouse.move(svg.x + 360, svg.y + 210, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('.floorplan-measure-dim')).toHaveCount(1);
+});
+
+test('electrical and plumbing sections place system symbols', async ({ page }) => {
+  await openPlan(page);
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+
+  await page.click('.floorplan-symbol-choice[data-symbol-key="outlet"]');
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="outlet"]')).toHaveClass(/active/);
+  await page.mouse.click(svg.x + 300, svg.y + 250);
+  await expect(page.locator('g.floorplan-electrical .floorplan-symbol-graphic')).toHaveCount(1);
+
+  await page.click('.floorplan-symbol-choice[data-symbol-key="kitchen-sink"]');
+  await page.mouse.click(svg.x + 340, svg.y + 250);
+  await expect(page.locator('g.floorplan-plumbing .floorplan-symbol-graphic')).toHaveCount(1);
+});
+
+test('render space modal renders a 3D viewpoint with a camera map', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-ai-render-btn');
+  await page.waitForSelector('.floorplan-cam-map', { timeout: 5_000 });
+  await page.click('.floorplan-ai-view-btn');
+  await expect(page.locator('.floorplan-view-svg')).toBeVisible();
+});
+
+test('camera map responds to clicks without error', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-ai-render-btn');
+  const map = await page.waitForSelector('.floorplan-cam-map', { timeout: 5_000 });
+  const box = await map.boundingBox();
+  if (!box) throw new Error('Camera map not visible');
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await page.click('.floorplan-ai-view-btn');
+  await expect(page.locator('.floorplan-view-svg')).toBeVisible();
+});

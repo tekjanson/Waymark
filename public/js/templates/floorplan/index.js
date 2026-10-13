@@ -99,6 +99,7 @@ const TOOL_HINTS = {
   'wall-rect': 'Rectangle Walls: drag a box to create wall loops. Toggle corners on/off.',
   room: 'Room: drag or tap to draw bounds, snapped cleanly to nearby geometry.',
   line: 'Line: click to add points, click the start point or press Enter to finish, Esc to cancel.',
+  measure: 'Measure: drag between two points to tape a distance. Switch tools to clear the live tape.',
   electrical: 'Electrical: tap to place a point with clean snapping.',
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
   door: 'Door: tap near a wall to snap and place an opening.',
@@ -109,37 +110,108 @@ const TOOL_HINTS = {
   erase: 'Erase: tap any drawn item to remove it.',
 };
 
-const HOUSEHOLD_SYMBOLS = [
-  { key: 'tv', label: 'TV', icon: '📺', width: 50, height: 8 },
-  { key: 'fridge', label: 'Fridge', icon: '🧊', width: 30, height: 28 },
-  { key: 'couch', label: 'Couch', icon: '🛋️', width: 64, height: 32 },
-  { key: 'chair', label: 'Chair', icon: '🪑', width: 16, height: 16 },
-  { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 70, height: 46 },
-  { key: 'coffee-table', label: 'Coffee Table', icon: '◼', width: 36, height: 20 },
-  { key: 'bed', label: 'Bed', icon: '🛏️', width: 52, height: 68 },
-  { key: 'nightstand', label: 'Nightstand', icon: '◻', width: 16, height: 16 },
-  { key: 'dresser', label: 'Dresser', icon: '🧰', width: 44, height: 18 },
-  { key: 'stove', label: 'Stove', icon: '🔥', width: 26, height: 24 },
-  { key: 'oven', label: 'Oven', icon: '♨️', width: 26, height: 24 },
-  { key: 'microwave', label: 'Microwave', icon: '📟', width: 18, height: 12 },
-  { key: 'dishwasher', label: 'Dishwasher', icon: '🧼', width: 22, height: 22 },
-  { key: 'sink', label: 'Sink', icon: '🚰', width: 26, height: 18 },
-  { key: 'toilet', label: 'Toilet', icon: '🚽', width: 18, height: 26 },
-  { key: 'shower', label: 'Shower', icon: '🚿', width: 32, height: 32 },
-  { key: 'bathtub', label: 'Bathtub', icon: '🛁', width: 50, height: 28 },
-  { key: 'washer', label: 'Washer', icon: '🌀', width: 24, height: 24 },
-  { key: 'dryer', label: 'Dryer', icon: '🌬️', width: 24, height: 24 },
-  { key: 'desk', label: 'Desk', icon: '🪵', width: 42, height: 34 },
-  { key: 'bookshelf', label: 'Bookshelf', icon: '📚', width: 30, height: 12 },
-  { key: 'lamp', label: 'Lamp', icon: '💡', width: 14, height: 14 },
-  { key: 'plant', label: 'Plant', icon: '🪴', width: 14, height: 14 },
-  { key: 'trash', label: 'Trash', icon: '🗑️', width: 12, height: 14 },
-  { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 22, height: 22 },
-  { key: 'island', label: 'Kitchen Island', icon: '⬛', width: 62, height: 32 },
-  { key: 'rug', label: 'Rug', icon: '🔳', width: 54, height: 34 },
-  { key: 'ac', label: 'AC Unit', icon: '❄️', width: 22, height: 12 },
-  { key: 'water-heater', label: 'Water Heater', icon: '♨', width: 20, height: 20 },
+const SYMBOL_CATALOG = [
+  {
+    category: 'Living Room', layer: 'fixture', items: [
+      { key: 'couch', label: 'Couch', icon: '🛋️', width: 64, height: 32 },
+      { key: 'sectional', label: 'Sectional', icon: '🛋️', width: 70, height: 50 },
+      { key: 'armchair', label: 'Armchair', icon: '🪑', width: 30, height: 30 },
+      { key: 'ottoman', label: 'Ottoman', icon: '🟫', width: 22, height: 16 },
+      { key: 'coffee-table', label: 'Coffee Table', icon: '◼', width: 36, height: 20 },
+      { key: 'tv', label: 'TV', icon: '📺', width: 50, height: 8 },
+      { key: 'tv-stand', label: 'TV Stand', icon: '🗄️', width: 50, height: 14 },
+      { key: 'console', label: 'Console', icon: '🪵', width: 40, height: 12 },
+      { key: 'fireplace', label: 'Fireplace', icon: '🔥', width: 40, height: 16 },
+      { key: 'bookshelf', label: 'Bookshelf', icon: '📚', width: 30, height: 12 },
+      { key: 'piano', label: 'Piano', icon: '🎹', width: 56, height: 40 },
+      { key: 'rug', label: 'Rug', icon: '🔳', width: 54, height: 34 },
+      { key: 'lamp', label: 'Lamp', icon: '💡', width: 14, height: 14 },
+      { key: 'plant', label: 'Plant', icon: '🪴', width: 14, height: 14 },
+    ],
+  },
+  {
+    category: 'Bedroom', layer: 'fixture', items: [
+      { key: 'bed', label: 'Bed', icon: '🛏️', width: 52, height: 68 },
+      { key: 'crib', label: 'Crib', icon: '🧸', width: 28, height: 52 },
+      { key: 'nightstand', label: 'Nightstand', icon: '◻', width: 16, height: 16 },
+      { key: 'dresser', label: 'Dresser', icon: '🧰', width: 44, height: 18 },
+      { key: 'wardrobe', label: 'Wardrobe', icon: '🚪', width: 48, height: 24 },
+      { key: 'closet', label: 'Closet', icon: '🧥', width: 40, height: 24 },
+      { key: 'mirror', label: 'Mirror', icon: '🪞', width: 24, height: 5 },
+      { key: 'vanity', label: 'Vanity', icon: '💄', width: 30, height: 20 },
+    ],
+  },
+  {
+    category: 'Kitchen & Dining', layer: 'fixture', items: [
+      { key: 'fridge', label: 'Fridge', icon: '🧊', width: 30, height: 28 },
+      { key: 'stove', label: 'Stove', icon: '🍳', width: 26, height: 24 },
+      { key: 'oven', label: 'Oven', icon: '♨️', width: 26, height: 24 },
+      { key: 'microwave', label: 'Microwave', icon: '📟', width: 18, height: 12 },
+      { key: 'dishwasher', label: 'Dishwasher', icon: '🧼', width: 22, height: 22 },
+      { key: 'island', label: 'Island', icon: '⬛', width: 62, height: 32 },
+      { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 22, height: 22 },
+      { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 70, height: 46 },
+      { key: 'chair', label: 'Chair', icon: '🪑', width: 16, height: 16 },
+    ],
+  },
+  {
+    category: 'Office & Misc', layer: 'fixture', items: [
+      { key: 'desk', label: 'Desk', icon: '🪵', width: 42, height: 34 },
+      { key: 'washer', label: 'Washer', icon: '🌀', width: 24, height: 24 },
+      { key: 'dryer', label: 'Dryer', icon: '🌬️', width: 24, height: 24 },
+      { key: 'trash', label: 'Trash', icon: '🗑️', width: 12, height: 14 },
+      { key: 'ac', label: 'AC Unit', icon: '❄️', width: 22, height: 12 },
+      { key: 'pool-table', label: 'Pool Table', icon: '🎱', width: 90, height: 50 },
+      { key: 'treadmill', label: 'Treadmill', icon: '🏃', width: 30, height: 60 },
+      { key: 'grill', label: 'Grill', icon: '🍖', width: 24, height: 20 },
+      { key: 'car', label: 'Car', icon: '🚗', width: 60, height: 110 },
+      { key: 'column', label: 'Column', icon: '⚫', width: 16, height: 16 },
+      { key: 'stairs', label: 'Stairs', icon: '🪜', width: 30, height: 44 },
+    ],
+  },
+  {
+    category: 'Electrical', layer: 'electrical', items: [
+      { key: 'outlet', label: 'Outlet', icon: '🔌', width: 14, height: 14 },
+      { key: 'outlet-gfci', label: 'GFCI', icon: '🔌', width: 14, height: 14 },
+      { key: 'outlet-quad', label: 'Quad Outlet', icon: '🔌', width: 20, height: 12 },
+      { key: 'floor-outlet', label: 'Floor Outlet', icon: '🔌', width: 14, height: 14 },
+      { key: 'switch', label: 'Switch', icon: '🎚️', width: 14, height: 16 },
+      { key: 'switch-3way', label: '3-Way Switch', icon: '🎚️', width: 16, height: 16 },
+      { key: 'dimmer', label: 'Dimmer', icon: '🎚️', width: 16, height: 16 },
+      { key: 'light-ceiling', label: 'Ceiling Light', icon: '💡', width: 18, height: 18 },
+      { key: 'light-recessed', label: 'Recessed Light', icon: '💡', width: 16, height: 16 },
+      { key: 'pendant-light', label: 'Pendant', icon: '💡', width: 16, height: 20 },
+      { key: 'chandelier', label: 'Chandelier', icon: '🕯️', width: 26, height: 26 },
+      { key: 'ceiling-fan', label: 'Ceiling Fan', icon: '🌀', width: 28, height: 28 },
+      { key: 'wall-sconce', label: 'Sconce', icon: '🔦', width: 16, height: 14 },
+      { key: 'smoke-detector', label: 'Smoke Detector', icon: '🚨', width: 16, height: 16 },
+      { key: 'thermostat', label: 'Thermostat', icon: '🌡️', width: 16, height: 16 },
+      { key: 'electrical-panel', label: 'Panel', icon: '⚡', width: 20, height: 26 },
+      { key: 'tv-outlet', label: 'TV / Data Jack', icon: '📺', width: 14, height: 14 },
+    ],
+  },
+  {
+    category: 'Plumbing', layer: 'plumbing', items: [
+      { key: 'sink', label: 'Sink', icon: '🚰', width: 26, height: 18 },
+      { key: 'kitchen-sink', label: 'Kitchen Sink', icon: '🚰', width: 44, height: 24 },
+      { key: 'double-sink', label: 'Double Sink', icon: '🚰', width: 40, height: 22 },
+      { key: 'toilet', label: 'Toilet', icon: '🚽', width: 18, height: 26 },
+      { key: 'bidet', label: 'Bidet', icon: '🚽', width: 18, height: 22 },
+      { key: 'bathtub', label: 'Bathtub', icon: '🛁', width: 50, height: 28 },
+      { key: 'shower', label: 'Shower', icon: '🚿', width: 32, height: 32 },
+      { key: 'water-heater', label: 'Water Heater', icon: '♨️', width: 20, height: 20 },
+      { key: 'floor-drain', label: 'Floor Drain', icon: '⚫', width: 14, height: 14 },
+      { key: 'hose-bib', label: 'Hose Bib', icon: '🚰', width: 10, height: 10 },
+      { key: 'washer-box', label: 'Washer Box', icon: '🧺', width: 18, height: 14 },
+      { key: 'water-meter', label: 'Water Meter', icon: '⏱️', width: 16, height: 16 },
+      { key: 'gas-valve', label: 'Gas Valve', icon: '🔥', width: 12, height: 12 },
+    ],
+  },
 ];
+
+// Flat list (derived) — each symbol carries the layer it places onto.
+const HOUSEHOLD_SYMBOLS = SYMBOL_CATALOG.flatMap(section =>
+  section.items.map(item => ({ ...item, layer: section.layer })));
 
 function fixtureSubtype(item) {
   const text = `${item.type || ''} ${item.label || ''}`.toLowerCase();
@@ -157,17 +229,33 @@ function hasMeaningfulLabel(label) {
 }
 
 function pointFromEvent(svg, event) {
-  const rect = svg.getBoundingClientRect();
   const touchPoint = event.touches && event.touches[0]
     ? event.touches[0]
     : event.changedTouches && event.changedTouches[0]
       ? event.changedTouches[0]
       : null;
   const source = touchPoint || event;
+  const rect = svg.getBoundingClientRect();
   const clientX = source.clientX ?? rect.left;
   const clientY = source.clientY ?? rect.top;
-  const x = ((clientX - rect.left) / rect.width) * 960;
-  const y = ((clientY - rect.top) / rect.height) * 620;
+
+  // Map screen → SVG user units via the live screen CTM. This correctly
+  // accounts for preserveAspectRatio letterboxing (critical in fullscreen
+  // focus mode where the canvas aspect ratio differs from the viewBox).
+  let x;
+  let y;
+  const ctm = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+  if (ctm && typeof svg.createSVGPoint === 'function') {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const local = pt.matrixTransform(ctm.inverse());
+    x = local.x;
+    y = local.y;
+  } else {
+    x = ((clientX - rect.left) / rect.width) * 960;
+    y = ((clientY - rect.top) / rect.height) * 620;
+  }
   return {
     x: clamp(x, 20, 940),
     y: clamp(y, 20, 600),
@@ -382,7 +470,7 @@ const definition = {
         el('div', { className: 'floorplan-topbar-right' }, [
           el('button', { className: 'floorplan-secondary-btn floorplan-auto-wall-btn', type: 'button', title: 'Generate walls around every room', on: { click: () => autoGenerateWallsFromRooms() } }, ['Auto Walls']),
           el('button', { className: 'floorplan-secondary-btn floorplan-load-preset-btn', type: 'button', title: 'Load the example floor-one layout', on: { click: () => loadFloorOnePreset() } }, ['Load Example']),
-          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Render a photo concept from the plan', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Photo']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Pick a viewpoint and render a 3D view of the space', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Space']),
           el('button', { className: 'floorplan-secondary-btn floorplan-focus-toggle-btn', type: 'button', title: 'Toggle fullscreen focus mode', on: { click: () => toggleFocusMode() } }, ['Exit Focus']),
           el('button', { className: 'floorplan-export-btn', type: 'button', title: 'Export the plan to PDF', on: { click: () => window.print() } }, ['Export PDF']),
         ]),
@@ -397,10 +485,10 @@ const definition = {
             toolButton('wall-rect', '▦', 'Wall Box'),
             toolButton('room', '▢', 'Room'),
             toolButton('line', '╱', 'Line'),
+            toolButton('measure', '📏', 'Measure'),
             toolButton('door', '🚪', 'Door'),
             toolButton('window', '🪟', 'Window'),
             toolButton('stairs', '🪜', 'Stairs'),
-            toolButton('symbol', '🧩', 'Symbol'),
           ]),
           railSection('Systems', [
             toolButton('electrical', '◉', 'Electrical'),
@@ -451,18 +539,21 @@ const definition = {
 
         /* Right panel: Symbols + Layers + Interior */
         el('aside', { className: 'floorplan-panel' }, [
-          el('div', { className: 'floorplan-panel-section' }, [
+          el('div', { className: 'floorplan-panel-section floorplan-symbol-panel' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['Symbols']),
-            el('div', { className: 'floorplan-symbol-grid' }, HOUSEHOLD_SYMBOLS.map(symbol => el('button', {
-              className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
-              type: 'button',
-              title: `${symbol.label} symbol`,
-              dataset: { symbolKey: symbol.key },
-              on: { click: () => setSymbolPreset(symbol.key) },
-            }, [
-              el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
-              el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
-            ]))),
+            ...SYMBOL_CATALOG.map(section => el('div', { className: 'floorplan-symbol-group' }, [
+              el('div', { className: 'floorplan-symbol-group-heading' }, [section.category]),
+              el('div', { className: 'floorplan-symbol-grid' }, section.items.map(symbol => el('button', {
+                className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
+                type: 'button',
+                title: `${symbol.label} symbol`,
+                dataset: { symbolKey: symbol.key },
+                on: { click: () => setSymbolPreset(symbol.key) },
+              }, [
+                el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
+                el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
+              ]))),
+            ])),
           ]),
           el('div', { className: 'floorplan-panel-section' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['Layers']),
@@ -840,7 +931,7 @@ const definition = {
 
     function snapPointForTool(point, tool, options = {}) {
       const base = snapToGrid(point, 10);
-      if (tool === 'wall' || tool === 'wall-rect') {
+      if (tool === 'wall' || tool === 'wall-rect' || tool === 'line' || tool === 'measure') {
         return snapPointToAnchors(base, getSnapAnchorPoints(options.skipWallId), 16);
       }
       if (tool === 'room') {
@@ -906,12 +997,14 @@ const definition = {
       }
       if (tool === 'symbol') {
         const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
+        const presetLayer = preset.layer || 'fixture';
+        const kind = presetLayer === 'electrical' ? 'electrical' : presetLayer === 'plumbing' ? 'plumbing' : 'fixture';
         return {
           id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-          kind: 'fixture',
+          kind,
           type: preset.label,
           label: preset.label,
-          layer: 'fixture',
+          layer: presetLayer,
           x: point.x,
           y: point.y,
           width: preset.width,
@@ -1232,9 +1325,18 @@ const definition = {
       });
     });
 
-    function isRotatable(item) {
+    function isSymbolObject(item) {
+      if (!item) return false;
+      const sub = fixtureSubtype(item);
+      if (sub === 'door' || sub === 'window') return false;
       const kind = item.kind || classifyItem(item);
-      return kind === 'fixture';
+      if (kind === 'fixture') return true;
+      // electrical/plumbing items that carry a drawable symbol behave like objects
+      return Boolean(item.symbolKey) && (kind === 'electrical' || kind === 'plumbing');
+    }
+
+    function isRotatable(item) {
+      return isSymbolObject(item);
     }
 
     function editableSelection() {
@@ -1575,6 +1677,37 @@ const definition = {
       group.append(svgEl('rect', { x: -half, y: -t - 3, width: W, height: 2 * t + 6, fill: 'transparent', class: 'floorplan-hit' }));
     }
 
+    /* Build a placed, rotatable/flippable top-down symbol object group
+       (used by furniture fixtures and electrical/plumbing symbols alike). */
+    function buildSymbolItemGroup(item, kindClass, isSelected, itemOpacity) {
+      const x = Number.isFinite(item.x) ? item.x : 40;
+      const y = Number.isFinite(item.y) ? item.y : 40;
+      const rotation = Number.isFinite(item.angle) ? Number(item.angle) : 0;
+      const w = Math.max(8, item.width || 18);
+      const h = Math.max(8, item.height || 18);
+      const group = svgEl('g', {
+        className: `floorplan-item ${kindClass}${isSelected ? ' floorplan-selected' : ''}`,
+        'data-floorplan-item': String(item.id),
+        'data-floorplan-kind': item.kind || 'fixture',
+        transform: `translate(${x} ${y}) rotate(${rotation})`,
+        opacity: itemOpacity,
+      });
+      group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, fill: 'transparent', class: 'floorplan-hit' }));
+      const key = item.symbolKey && hasSymbolDrawing(item.symbolKey)
+        ? item.symbolKey
+        : inferSymbolKey(`${item.label || ''} ${item.type || ''}`);
+      const graphic = key ? buildSymbolGraphic(key, w, h) : null;
+      if (graphic) {
+        const flipH = item.flipH ? -1 : 1;
+        const flipV = item.flipV ? -1 : 1;
+        if (flipH === -1 || flipV === -1) graphic.setAttribute('transform', `scale(${flipH} ${flipV})`);
+        group.append(graphic);
+      } else {
+        group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 4, fill: '#f8fafc', stroke: '#64748b', 'stroke-width': '1.5' }));
+      }
+      return { group, hasGraphic: Boolean(graphic) };
+    }
+
     function renderScene() {
       scene.innerHTML = '';
       const layers = {
@@ -1584,6 +1717,7 @@ const definition = {
         electrical: svgEl('g', { className: 'floorplan-layer floorplan-layer-electrical' }),
         plumbing: svgEl('g', { className: 'floorplan-layer floorplan-layer-plumbing' }),
         fixture: svgEl('g', { className: 'floorplan-layer floorplan-layer-fixture' }),
+        measure: svgEl('g', { className: 'floorplan-layer floorplan-layer-measure' }),
       };
       scene.append(...Object.values(layers));
 
@@ -1596,6 +1730,33 @@ const definition = {
         'font-weight': '600',
         'text-anchor': 'middle',
       }, [text]);
+
+      /* A tape-measure style dimension between two points. */
+      const buildDimension = (p1, p2, opts = {}) => {
+        const group = svgEl('g', { className: opts.className || 'floorplan-dim' });
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        const tick = 6;
+        const stroke = opts.stroke || '#9333ea';
+        if (opts.hit) {
+          group.append(svgEl('line', {
+            x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+            stroke: 'transparent', 'stroke-width': 14, class: 'floorplan-hit',
+          }));
+        }
+        group.append(svgEl('line', { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, stroke, 'stroke-width': opts.sw || 1.6, 'stroke-dasharray': opts.dash || '', 'stroke-linecap': 'round' }));
+        group.append(svgEl('line', { x1: p1.x + nx * tick, y1: p1.y + ny * tick, x2: p1.x - nx * tick, y2: p1.y - ny * tick, stroke, 'stroke-width': 1.6 }));
+        group.append(svgEl('line', { x1: p2.x + nx * tick, y1: p2.y + ny * tick, x2: p2.x - nx * tick, y2: p2.y - ny * tick, stroke, 'stroke-width': 1.6 }));
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        const text = formatFeet(Math.hypot(dx, dy));
+        group.append(svgEl('rect', { x: mx - (text.length * 3.6) - 4, y: my - 18, width: (text.length * 7.2) + 8, height: 15, rx: 4, fill: '#ffffff', stroke, 'stroke-width': 0.8, opacity: 0.95 }));
+        group.append(svgEl('text', { x: mx, y: my - 7, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#6b21a8' }, [text]));
+        return group;
+      };
 
       state.items.forEach((item) => {
         const kind = item.kind || classifyItem(item);
@@ -1673,47 +1834,69 @@ const definition = {
           }
         }
 
+        if (kind === 'measure') {
+          const pts = Array.isArray(item.points) ? item.points : [];
+          if (pts.length >= 2) {
+            const dim = buildDimension(pts[0], pts[1], {
+              className: `floorplan-measure-dim floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              hit: true,
+            });
+            dim.setAttribute('data-floorplan-item', String(item.id));
+            dim.setAttribute('data-floorplan-kind', 'measure');
+            dim.setAttribute('opacity', itemOpacity);
+            layer.append(dim);
+          }
+        }
+
         if (kind === 'electrical') {
-          const x = item.x || 40;
-          const y = item.y || 40;
-          const node = svgEl('circle', {
-            cx: x,
-            cy: y,
-            r: 8,
-            fill: '#4ade80',
-            stroke: '#166534',
-            'stroke-width': '2',
-            className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
-            'data-floorplan-item': String(item.id),
-            'data-floorplan-kind': 'electrical',
-            opacity: itemOpacity,
-          });
-          layer.append(node);
+          if (item.symbolKey && hasSymbolDrawing(item.symbolKey)) {
+            const { group } = buildSymbolItemGroup(item, 'floorplan-electrical', isSelected, itemOpacity);
+            layer.append(group);
+          } else {
+            const x = item.x || 40;
+            const y = item.y || 40;
+            layer.append(svgEl('circle', {
+              cx: x,
+              cy: y,
+              r: 8,
+              fill: '#4ade80',
+              stroke: '#166534',
+              'stroke-width': '2',
+              className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'electrical',
+              opacity: itemOpacity,
+            }));
+          }
           if (isSelected && hasMeaningfulLabel(item.label)) {
-            layer.append(label(item.label, x + 16, y - 10, '#166534', 'floorplan-device-label'));
+            layer.append(label(item.label, (item.x || 40) + 16, (item.y || 40) - 12, '#166534', 'floorplan-device-label'));
           }
         }
 
         if (kind === 'plumbing') {
-          const x = item.x || 40;
-          const y = item.y || 40;
-          const node = svgEl('rect', {
-            x: x - 9,
-            y: y - 9,
-            width: 18,
-            height: 18,
-            rx: 4,
-            fill: '#93c5fd',
-            stroke: '#1d4ed8',
-            'stroke-width': '2',
-            className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
-            'data-floorplan-item': String(item.id),
-            'data-floorplan-kind': 'plumbing',
-            opacity: itemOpacity,
-          });
-          layer.append(node);
+          if (item.symbolKey && hasSymbolDrawing(item.symbolKey)) {
+            const { group } = buildSymbolItemGroup(item, 'floorplan-plumbing', isSelected, itemOpacity);
+            layer.append(group);
+          } else {
+            const x = item.x || 40;
+            const y = item.y || 40;
+            layer.append(svgEl('rect', {
+              x: x - 9,
+              y: y - 9,
+              width: 18,
+              height: 18,
+              rx: 4,
+              fill: '#93c5fd',
+              stroke: '#1d4ed8',
+              'stroke-width': '2',
+              className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'plumbing',
+              opacity: itemOpacity,
+            }));
+          }
           if (isSelected && hasMeaningfulLabel(item.label)) {
-            layer.append(label(item.label, x + 18, y - 10, '#1d4ed8', 'floorplan-device-label'));
+            layer.append(label(item.label, (item.x || 40) + 18, (item.y || 40) - 12, '#1d4ed8', 'floorplan-device-label'));
           }
         }
 
@@ -1833,7 +2016,7 @@ const definition = {
             handleLayer.append(label(formatFeet(length), (x1 + x2) / 2, ((y1 + y2) / 2) - 10, '#1e40af', 'floorplan-measure-label'));
           }
 
-          if (selected.kind === 'electrical' || selected.kind === 'plumbing') {
+          if ((selected.kind === 'electrical' || selected.kind === 'plumbing') && !isSymbolObject(selected)) {
             const x = selected.x || 40;
             const y = selected.y || 40;
             handleLayer.append(svgEl('circle', {
@@ -1849,7 +2032,7 @@ const definition = {
             addHandle(x, y, 'point-center');
           }
 
-          if (selected.kind === 'fixture') {
+          if (isSymbolObject(selected)) {
             const sub = fixtureSubtype(selected);
             const angle = Number.isFinite(selected.angle) ? Number(selected.angle) : 0;
             const radH = (angle * Math.PI) / 180;
@@ -1938,6 +2121,9 @@ const definition = {
             'stroke-width': '2',
             'stroke-dasharray': state.rectDisconnected ? '4 10' : '8 6',
           }));
+        }
+        if (preview.kind === 'measure') {
+          previewLayer.append(buildDimension(preview.start, preview.end, { dash: '6 4', sw: 1.8 }));
         }
         if (preview.kind === 'electrical') {
           previewLayer.append(svgEl('circle', {
@@ -2234,14 +2420,12 @@ const definition = {
             item.height = Math.abs(y2 - item.y);
           }
 
-          if (item.kind === 'electrical' || item.kind === 'plumbing') {
-            if (handle === 'point-center') {
-              item.x = px;
-              item.y = py;
-            }
+          if ((item.kind === 'electrical' || item.kind === 'plumbing') && handle === 'point-center') {
+            item.x = px;
+            item.y = py;
           }
 
-          if (item.kind === 'fixture') {
+          if (isSymbolObject(item) && handle !== 'point-center') {
             const angle = Number.isFinite(origin.angle) ? Number(origin.angle) : 0;
             const rad = (angle * Math.PI) / 180;
             const cos = Math.cos(rad);
@@ -2266,11 +2450,14 @@ const definition = {
               // opposite corner stays fixed in local space
               const fixedX = -signX * (w0 / 2);
               const fixedY = -signY * (h0 / 2);
+              // the dragged corner follows the pointer directly, so dragging
+              // across the fixed corner flips the box naturally (no inversion)
+              const dirX = localX >= fixedX ? 1 : -1;
+              const dirY = localY >= fixedY ? 1 : -1;
               const newW = clamp(Math.abs(localX - fixedX), 8, 400);
               const newH = clamp(Math.abs(localY - fixedY), 8, 400);
-              // local center is midpoint of the fixed corner and the dragged corner
-              const draggedLocalX = fixedX + (signX * newW);
-              const draggedLocalY = fixedY + (signY * newH);
+              const draggedLocalX = fixedX + (dirX * newW);
+              const draggedLocalY = fixedY + (dirY * newH);
               const centerLocalX = (fixedX + draggedLocalX) / 2;
               const centerLocalY = (fixedY + draggedLocalY) / 2;
               item.width = newW;
@@ -2327,7 +2514,7 @@ const definition = {
       }
 
       if (state.tool === 'select') {
-        if (state.marquee) {
+        if (state.marquee && (state.marquee.width > 3 || state.marquee.height > 3)) {
           const box = state.marquee;
           const within = (x, y) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
           state.items.forEach((item) => {
@@ -2366,6 +2553,23 @@ const definition = {
           if (added > 0) {
             state.lastCreateAt = Date.now();
             debugLog('create-rect-wall', { added, count: state.items.length });
+          }
+        } else if (kind === 'measure') {
+          if (distance > 6) {
+            pushUndoCheckpoint();
+            const measure = registerNewItem({
+              id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+              kind: 'measure',
+              type: 'Measure',
+              label: '',
+              layer: 'measure',
+              points: [{ x: start.x, y: start.y }, { x: end.x, y: end.y }],
+              x: start.x,
+              y: start.y,
+            });
+            state.items.push(measure);
+            state.lastCreateAt = Date.now();
+            setFeedback(`Measured ${formatFeet(distance)}`);
           }
         } else if (distance > 18) {
           pushUndoCheckpoint();
@@ -2407,7 +2611,7 @@ const definition = {
     }
 
     function fallbackClickCreate(event) {
-      if (state.tool === 'select' || state.tool === 'erase' || state.tool === 'line') return;
+      if (state.tool === 'select' || state.tool === 'erase' || state.tool === 'line' || state.tool === 'measure') return;
       if (state.preview || state.dragStart || state.dragIds.length > 0) return;
       if ((Date.now() - state.lastCreateAt) < 150) return;
 

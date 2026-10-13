@@ -343,6 +343,20 @@
   gap: 6px;
 }
 
+.floorplan-symbol-group { display: flex; flex-direction: column; gap: 6px; }
+.floorplan-symbol-group + .floorplan-symbol-group { margin-top: 10px; }
+.floorplan-symbol-group-heading {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+  padding: 2px 2px 0;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 7px;
+}
+.floorplan-symbol-group:first-of-type .floorplan-symbol-group-heading { border-top: 0; padding-top: 0; }
+
 .floorplan-symbol-choice {
   border: 1px solid var(--color-border);
   border-radius: 9px;
@@ -446,6 +460,8 @@
 .floorplan-room { stroke-dasharray: 8 5; }
 .floorplan-wall { stroke-linecap: round; }
 .floorplan-line { cursor: pointer; }
+.floorplan-measure-dim { cursor: pointer; }
+.floorplan-layer-measure { pointer-events: auto; }
 .floorplan-symbol-graphic { pointer-events: none; }
 .floorplan-door-leaf, .floorplan-door-arc { pointer-events: none; }
 .floorplan-item.floorplan-selected { filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.55)); }
@@ -645,6 +661,41 @@
   margin-bottom: 10px;
 }
 .floorplan-ai-render-svg { width: 100%; display: block; border-radius: var(--radius-sm); }
+.floorplan-view-svg { width: 100%; display: block; border-radius: var(--radius-sm); background: #0f172a; }
+
+/* ---------- Camera placement map ---------- */
+.floorplan-cam-mapwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.floorplan-cam-maphint { font-size: 0.78rem; font-weight: 700; color: var(--color-text-muted); align-self: flex-start; }
+.floorplan-cam-map {
+  width: 320px;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  cursor: crosshair;
+  touch-action: none;
+}
+.floorplan-cam-headinglabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.floorplan-cam-heading { flex: 1 1 auto; }
+.floorplan-ai-view-btn { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
 
 .floorplan-ai-render-details {
   border: 1px solid var(--color-border);
