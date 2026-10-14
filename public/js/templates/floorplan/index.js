@@ -8,6 +8,13 @@
 
 import { cell, el, registerTemplate, showToast } from '../shared.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
+import {
+  UNITS_PER_FOOT,
+  formatFeet,
+  buildSymbolGraphic,
+  inferSymbolKey,
+  hasSymbolDrawing,
+} from './symbols.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function svgEl(tag, attrs = {}, children = []) {
@@ -91,6 +98,8 @@ const TOOL_HINTS = {
   wall: 'Wall: drag or tap to draw with snap-to-grid and auto-connect anchors.',
   'wall-rect': 'Rectangle Walls: drag a box to create wall loops. Toggle corners on/off.',
   room: 'Room: drag or tap to draw bounds, snapped cleanly to nearby geometry.',
+  line: 'Line: click to add points, click the start point or press Enter to finish, Esc to cancel.',
+  measure: 'Measure: drag between two points to tape a distance. Switch tools to clear the live tape.',
   electrical: 'Electrical: tap to place a point with clean snapping.',
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
   door: 'Door: tap near a wall to snap and place an opening.',
@@ -101,37 +110,108 @@ const TOOL_HINTS = {
   erase: 'Erase: tap any drawn item to remove it.',
 };
 
-const HOUSEHOLD_SYMBOLS = [
-  { key: 'tv', label: 'TV', icon: '📺', width: 28, height: 16 },
-  { key: 'fridge', label: 'Fridge', icon: '🧊', width: 18, height: 18 },
-  { key: 'couch', label: 'Couch', icon: '🛋️', width: 26, height: 14 },
-  { key: 'chair', label: 'Chair', icon: '🪑', width: 14, height: 14 },
-  { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 20, height: 20 },
-  { key: 'coffee-table', label: 'Coffee Table', icon: '◼', width: 14, height: 14 },
-  { key: 'bed', label: 'Bed', icon: '🛏️', width: 28, height: 16 },
-  { key: 'nightstand', label: 'Nightstand', icon: '◻', width: 10, height: 10 },
-  { key: 'dresser', label: 'Dresser', icon: '🧰', width: 18, height: 12 },
-  { key: 'stove', label: 'Stove', icon: '🔥', width: 18, height: 12 },
-  { key: 'oven', label: 'Oven', icon: '♨️', width: 18, height: 12 },
-  { key: 'microwave', label: 'Microwave', icon: '📟', width: 14, height: 10 },
-  { key: 'dishwasher', label: 'Dishwasher', icon: '🧼', width: 16, height: 12 },
-  { key: 'sink', label: 'Sink', icon: '🚰', width: 14, height: 10 },
-  { key: 'toilet', label: 'Toilet', icon: '🚽', width: 14, height: 14 },
-  { key: 'shower', label: 'Shower', icon: '🚿', width: 16, height: 16 },
-  { key: 'bathtub', label: 'Bathtub', icon: '🛁', width: 24, height: 12 },
-  { key: 'washer', label: 'Washer', icon: '🌀', width: 16, height: 16 },
-  { key: 'dryer', label: 'Dryer', icon: '🌬️', width: 16, height: 16 },
-  { key: 'desk', label: 'Desk', icon: '🪵', width: 24, height: 12 },
-  { key: 'bookshelf', label: 'Bookshelf', icon: '📚', width: 14, height: 20 },
-  { key: 'lamp', label: 'Lamp', icon: '💡', width: 12, height: 12 },
-  { key: 'plant', label: 'Plant', icon: '🪴', width: 12, height: 12 },
-  { key: 'trash', label: 'Trash', icon: '🗑️', width: 12, height: 14 },
-  { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 16, height: 14 },
-  { key: 'island', label: 'Kitchen Island', icon: '⬛', width: 28, height: 14 },
-  { key: 'rug', label: 'Rug', icon: '🔳', width: 24, height: 14 },
-  { key: 'ac', label: 'AC Unit', icon: '❄️', width: 16, height: 12 },
-  { key: 'water-heater', label: 'Water Heater', icon: '♨', width: 14, height: 14 },
+const SYMBOL_CATALOG = [
+  {
+    category: 'Living Room', layer: 'fixture', items: [
+      { key: 'couch', label: 'Couch', icon: '🛋️', width: 64, height: 32 },
+      { key: 'sectional', label: 'Sectional', icon: '🛋️', width: 70, height: 50 },
+      { key: 'armchair', label: 'Armchair', icon: '🪑', width: 30, height: 30 },
+      { key: 'ottoman', label: 'Ottoman', icon: '🟫', width: 22, height: 16 },
+      { key: 'coffee-table', label: 'Coffee Table', icon: '◼', width: 36, height: 20 },
+      { key: 'tv', label: 'TV', icon: '📺', width: 50, height: 8 },
+      { key: 'tv-stand', label: 'TV Stand', icon: '🗄️', width: 50, height: 14 },
+      { key: 'console', label: 'Console', icon: '🪵', width: 40, height: 12 },
+      { key: 'fireplace', label: 'Fireplace', icon: '🔥', width: 40, height: 16 },
+      { key: 'bookshelf', label: 'Bookshelf', icon: '📚', width: 30, height: 12 },
+      { key: 'piano', label: 'Piano', icon: '🎹', width: 56, height: 40 },
+      { key: 'rug', label: 'Rug', icon: '🔳', width: 54, height: 34 },
+      { key: 'lamp', label: 'Lamp', icon: '💡', width: 14, height: 14 },
+      { key: 'plant', label: 'Plant', icon: '🪴', width: 14, height: 14 },
+    ],
+  },
+  {
+    category: 'Bedroom', layer: 'fixture', items: [
+      { key: 'bed', label: 'Bed', icon: '🛏️', width: 52, height: 68 },
+      { key: 'crib', label: 'Crib', icon: '🧸', width: 28, height: 52 },
+      { key: 'nightstand', label: 'Nightstand', icon: '◻', width: 16, height: 16 },
+      { key: 'dresser', label: 'Dresser', icon: '🧰', width: 44, height: 18 },
+      { key: 'wardrobe', label: 'Wardrobe', icon: '🚪', width: 48, height: 24 },
+      { key: 'closet', label: 'Closet', icon: '🧥', width: 40, height: 24 },
+      { key: 'mirror', label: 'Mirror', icon: '🪞', width: 24, height: 5 },
+      { key: 'vanity', label: 'Vanity', icon: '💄', width: 30, height: 20 },
+    ],
+  },
+  {
+    category: 'Kitchen & Dining', layer: 'fixture', items: [
+      { key: 'fridge', label: 'Fridge', icon: '🧊', width: 30, height: 28 },
+      { key: 'stove', label: 'Stove', icon: '🍳', width: 26, height: 24 },
+      { key: 'oven', label: 'Oven', icon: '♨️', width: 26, height: 24 },
+      { key: 'microwave', label: 'Microwave', icon: '📟', width: 18, height: 12 },
+      { key: 'dishwasher', label: 'Dishwasher', icon: '🧼', width: 22, height: 22 },
+      { key: 'island', label: 'Island', icon: '⬛', width: 62, height: 32 },
+      { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 22, height: 22 },
+      { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 70, height: 46 },
+      { key: 'chair', label: 'Chair', icon: '🪑', width: 16, height: 16 },
+    ],
+  },
+  {
+    category: 'Office & Misc', layer: 'fixture', items: [
+      { key: 'desk', label: 'Desk', icon: '🪵', width: 42, height: 34 },
+      { key: 'washer', label: 'Washer', icon: '🌀', width: 24, height: 24 },
+      { key: 'dryer', label: 'Dryer', icon: '🌬️', width: 24, height: 24 },
+      { key: 'trash', label: 'Trash', icon: '🗑️', width: 12, height: 14 },
+      { key: 'ac', label: 'AC Unit', icon: '❄️', width: 22, height: 12 },
+      { key: 'pool-table', label: 'Pool Table', icon: '🎱', width: 90, height: 50 },
+      { key: 'treadmill', label: 'Treadmill', icon: '🏃', width: 30, height: 60 },
+      { key: 'grill', label: 'Grill', icon: '🍖', width: 24, height: 20 },
+      { key: 'car', label: 'Car', icon: '🚗', width: 60, height: 110 },
+      { key: 'column', label: 'Column', icon: '⚫', width: 16, height: 16 },
+      { key: 'stairs', label: 'Stairs', icon: '🪜', width: 30, height: 44 },
+    ],
+  },
+  {
+    category: 'Electrical', layer: 'electrical', items: [
+      { key: 'outlet', label: 'Outlet', icon: '🔌', width: 14, height: 14 },
+      { key: 'outlet-gfci', label: 'GFCI', icon: '🔌', width: 14, height: 14 },
+      { key: 'outlet-quad', label: 'Quad Outlet', icon: '🔌', width: 20, height: 12 },
+      { key: 'floor-outlet', label: 'Floor Outlet', icon: '🔌', width: 14, height: 14 },
+      { key: 'switch', label: 'Switch', icon: '🎚️', width: 14, height: 16 },
+      { key: 'switch-3way', label: '3-Way Switch', icon: '🎚️', width: 16, height: 16 },
+      { key: 'dimmer', label: 'Dimmer', icon: '🎚️', width: 16, height: 16 },
+      { key: 'light-ceiling', label: 'Ceiling Light', icon: '💡', width: 18, height: 18 },
+      { key: 'light-recessed', label: 'Recessed Light', icon: '💡', width: 16, height: 16 },
+      { key: 'pendant-light', label: 'Pendant', icon: '💡', width: 16, height: 20 },
+      { key: 'chandelier', label: 'Chandelier', icon: '🕯️', width: 26, height: 26 },
+      { key: 'ceiling-fan', label: 'Ceiling Fan', icon: '🌀', width: 28, height: 28 },
+      { key: 'wall-sconce', label: 'Sconce', icon: '🔦', width: 16, height: 14 },
+      { key: 'smoke-detector', label: 'Smoke Detector', icon: '🚨', width: 16, height: 16 },
+      { key: 'thermostat', label: 'Thermostat', icon: '🌡️', width: 16, height: 16 },
+      { key: 'electrical-panel', label: 'Panel', icon: '⚡', width: 20, height: 26 },
+      { key: 'tv-outlet', label: 'TV / Data Jack', icon: '📺', width: 14, height: 14 },
+    ],
+  },
+  {
+    category: 'Plumbing', layer: 'plumbing', items: [
+      { key: 'sink', label: 'Sink', icon: '🚰', width: 26, height: 18 },
+      { key: 'kitchen-sink', label: 'Kitchen Sink', icon: '🚰', width: 44, height: 24 },
+      { key: 'double-sink', label: 'Double Sink', icon: '🚰', width: 40, height: 22 },
+      { key: 'toilet', label: 'Toilet', icon: '🚽', width: 18, height: 26 },
+      { key: 'bidet', label: 'Bidet', icon: '🚽', width: 18, height: 22 },
+      { key: 'bathtub', label: 'Bathtub', icon: '🛁', width: 50, height: 28 },
+      { key: 'shower', label: 'Shower', icon: '🚿', width: 32, height: 32 },
+      { key: 'water-heater', label: 'Water Heater', icon: '♨️', width: 20, height: 20 },
+      { key: 'floor-drain', label: 'Floor Drain', icon: '⚫', width: 14, height: 14 },
+      { key: 'hose-bib', label: 'Hose Bib', icon: '🚰', width: 10, height: 10 },
+      { key: 'washer-box', label: 'Washer Box', icon: '🧺', width: 18, height: 14 },
+      { key: 'water-meter', label: 'Water Meter', icon: '⏱️', width: 16, height: 16 },
+      { key: 'gas-valve', label: 'Gas Valve', icon: '🔥', width: 12, height: 12 },
+    ],
+  },
 ];
+
+// Flat list (derived) — each symbol carries the layer it places onto.
+const HOUSEHOLD_SYMBOLS = SYMBOL_CATALOG.flatMap(section =>
+  section.items.map(item => ({ ...item, layer: section.layer })));
 
 function fixtureSubtype(item) {
   const text = `${item.type || ''} ${item.label || ''}`.toLowerCase();
@@ -149,17 +229,33 @@ function hasMeaningfulLabel(label) {
 }
 
 function pointFromEvent(svg, event) {
-  const rect = svg.getBoundingClientRect();
   const touchPoint = event.touches && event.touches[0]
     ? event.touches[0]
     : event.changedTouches && event.changedTouches[0]
       ? event.changedTouches[0]
       : null;
   const source = touchPoint || event;
+  const rect = svg.getBoundingClientRect();
   const clientX = source.clientX ?? rect.left;
   const clientY = source.clientY ?? rect.top;
-  const x = ((clientX - rect.left) / rect.width) * 960;
-  const y = ((clientY - rect.top) / rect.height) * 620;
+
+  // Map screen → SVG user units via the live screen CTM. This correctly
+  // accounts for preserveAspectRatio letterboxing (critical in fullscreen
+  // focus mode where the canvas aspect ratio differs from the viewBox).
+  let x;
+  let y;
+  const ctm = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+  if (ctm && typeof svg.createSVGPoint === 'function') {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const local = pt.matrixTransform(ctm.inverse());
+    x = local.x;
+    y = local.y;
+  } else {
+    x = ((clientX - rect.left) / rect.width) * 960;
+    y = ((clientY - rect.top) / rect.height) * 620;
+  }
   return {
     x: clamp(x, 20, 940),
     y: clamp(y, 20, 600),
@@ -374,7 +470,7 @@ const definition = {
         el('div', { className: 'floorplan-topbar-right' }, [
           el('button', { className: 'floorplan-secondary-btn floorplan-auto-wall-btn', type: 'button', title: 'Generate walls around every room', on: { click: () => autoGenerateWallsFromRooms() } }, ['Auto Walls']),
           el('button', { className: 'floorplan-secondary-btn floorplan-load-preset-btn', type: 'button', title: 'Load the example floor-one layout', on: { click: () => loadFloorOnePreset() } }, ['Load Example']),
-          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Render a photo concept from the plan', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Photo']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Pick a viewpoint and render a 3D view of the space', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Space']),
           el('button', { className: 'floorplan-secondary-btn floorplan-focus-toggle-btn', type: 'button', title: 'Toggle fullscreen focus mode', on: { click: () => toggleFocusMode() } }, ['Exit Focus']),
           el('button', { className: 'floorplan-export-btn', type: 'button', title: 'Export the plan to PDF', on: { click: () => window.print() } }, ['Export PDF']),
         ]),
@@ -388,10 +484,11 @@ const definition = {
             toolButton('wall', '▭', 'Wall'),
             toolButton('wall-rect', '▦', 'Wall Box'),
             toolButton('room', '▢', 'Room'),
+            toolButton('line', '╱', 'Line'),
+            toolButton('measure', '📏', 'Measure'),
             toolButton('door', '🚪', 'Door'),
             toolButton('window', '🪟', 'Window'),
             toolButton('stairs', '🪜', 'Stairs'),
-            toolButton('symbol', '🧩', 'Symbol'),
           ]),
           railSection('Systems', [
             toolButton('electrical', '◉', 'Electrical'),
@@ -413,6 +510,19 @@ const definition = {
             el('span', { className: 'floorplan-feedback', 'aria-live': 'polite' }, ['Ready']),
           ]),
           el('div', { className: 'floorplan-stage' }, [
+            el('div', { className: 'floorplan-prop-toolbar hidden', role: 'toolbar', 'aria-label': 'Selected object tools' }, [
+              el('span', { className: 'floorplan-prop-dims' }, ['']),
+              el('span', { className: 'floorplan-prop-divider' }, []),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-rotate-left', type: 'button', title: 'Rotate left 15° (Shift+R)', on: { click: () => rotateSelection(-15) } }, ['⟲']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-rotate-right', type: 'button', title: 'Rotate right 15° (R)', on: { click: () => rotateSelection(15) } }, ['⟳']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-flip-h', type: 'button', title: 'Flip horizontal (F)', on: { click: () => flipSelection('h') } }, ['⇋']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-flip-v', type: 'button', title: 'Flip vertical (Shift+F)', on: { click: () => flipSelection('v') } }, ['⤊']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-door floorplan-prop-hinge hidden', type: 'button', title: 'Flip door hinge side', on: { click: () => toggleDoorSwing('side') } }, ['Hinge']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-door floorplan-prop-swing hidden', type: 'button', title: 'Flip door swing direction', on: { click: () => toggleDoorSwing('dir') } }, ['Swing']),
+              el('span', { className: 'floorplan-prop-divider' }, []),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-duplicate', type: 'button', title: 'Duplicate (Ctrl+D)', on: { click: () => duplicateSelection() } }, ['⧉']),
+              el('button', { className: 'floorplan-prop-btn floorplan-prop-delete', type: 'button', title: 'Delete (Del)', on: { click: () => deleteSelection() } }, ['🗑']),
+            ]),
             svgEl('svg', {
               className: 'floorplan-svg',
               viewBox: '0 0 960 620',
@@ -429,28 +539,35 @@ const definition = {
 
         /* Right panel: Symbols + Layers + Interior */
         el('aside', { className: 'floorplan-panel' }, [
-          el('div', { className: 'floorplan-panel-section' }, [
+          el('div', { className: 'floorplan-panel-section floorplan-symbol-panel' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['Symbols']),
-            el('div', { className: 'floorplan-symbol-grid' }, HOUSEHOLD_SYMBOLS.map(symbol => el('button', {
-              className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
-              type: 'button',
-              title: `${symbol.label} symbol`,
-              dataset: { symbolKey: symbol.key },
-              on: { click: () => setSymbolPreset(symbol.key) },
-            }, [
-              el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
-              el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
-            ]))),
+            ...SYMBOL_CATALOG.map(section => el('div', { className: 'floorplan-symbol-group' }, [
+              el('div', { className: 'floorplan-symbol-group-heading' }, [section.category]),
+              el('div', { className: 'floorplan-symbol-grid' }, section.items.map(symbol => el('button', {
+                className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
+                type: 'button',
+                title: `${symbol.label} symbol`,
+                dataset: { symbolKey: symbol.key },
+                on: { click: () => setSymbolPreset(symbol.key) },
+              }, [
+                el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
+                el('span', { className: 'floorplan-symbol-choice-label' }, [symbol.label]),
+              ]))),
+            ])),
           ]),
           el('div', { className: 'floorplan-panel-section' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['Layers']),
             el('div', { className: 'floorplan-layer-grid' }, [
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show rooms', dataset: { layer: 'room' } }, ['Rooms']),
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show walls', dataset: { layer: 'wall' } }, ['Walls']),
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show electrical layer', dataset: { layer: 'electrical' } }, ['Electrical']),
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show plumbing layer', dataset: { layer: 'plumbing' } }, ['Plumbing']),
-              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: 'Show fixtures and furniture', dataset: { layer: 'fixture' } }, ['Fixtures']),
-            ]),
+              ['room', 'Rooms'],
+              ['wall', 'Walls'],
+              ['electrical', 'Electrical'],
+              ['plumbing', 'Plumbing'],
+              ['fixture', 'Fixtures'],
+              ['line', 'Lines'],
+            ].map(([layer, text]) => el('div', { className: 'floorplan-layer-row' }, [
+              el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: `Show ${text.toLowerCase()}`, dataset: { layer } }, [text]),
+              el('button', { className: 'floorplan-layer-lock', type: 'button', title: `Lock ${text.toLowerCase()} layer`, 'aria-pressed': 'false', dataset: { layer } }, ['🔓']),
+            ]))),
           ]),
           el('div', { className: 'floorplan-panel-section floorplan-interior-panel hidden' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['3D Interior Box']),
@@ -471,6 +588,7 @@ const definition = {
     const feedback = board.querySelector('.floorplan-feedback');
     const interiorPanel = board.querySelector('.floorplan-interior-panel');
     const interiorSvg = board.querySelector('.floorplan-interior-svg');
+    const propToolbar = board.querySelector('.floorplan-prop-toolbar');
     const scene = svgEl('g', { className: 'floorplan-scene' });
     const bg = svgEl('rect', {
       x: 20,
@@ -506,8 +624,19 @@ const definition = {
         electrical: true,
         plumbing: true,
         fixture: true,
+        line: true,
+      },
+      layerLocks: {
+        room: false,
+        wall: false,
+        electrical: false,
+        plumbing: false,
+        fixture: false,
+        line: false,
       },
       preview: null,
+      lineDraft: null,
+      lineCursor: null,
       dragStart: null,
       dragIds: [],
       dragOrigins: null,
@@ -802,7 +931,7 @@ const definition = {
 
     function snapPointForTool(point, tool, options = {}) {
       const base = snapToGrid(point, 10);
-      if (tool === 'wall' || tool === 'wall-rect') {
+      if (tool === 'wall' || tool === 'wall-rect' || tool === 'line' || tool === 'measure') {
         return snapPointToAnchors(base, getSnapAnchorPoints(options.skipWallId), 16);
       }
       if (tool === 'room') {
@@ -855,26 +984,36 @@ const definition = {
         created.layer = 'fixture';
         created.x = snap.x;
         created.y = snap.y;
-        created.width = tool === 'door' ? 24 : 26;
-        created.height = tool === 'door' ? 10 : 6;
+        // Standard openings: doors 3 ft wide, windows 2 ft wide.
+        created.width = tool === 'door' ? 3 * UNITS_PER_FOOT : 2 * UNITS_PER_FOOT;
+        created.height = 8;
         created.wallId = snap.wallId;
         created.angle = snap.angle;
+        if (tool === 'door') {
+          created.swingSide = 'left';
+          created.swingDir = 'in';
+        }
         return created;
       }
       if (tool === 'symbol') {
         const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
+        const presetLayer = preset.layer || 'fixture';
+        const kind = presetLayer === 'electrical' ? 'electrical' : presetLayer === 'plumbing' ? 'plumbing' : 'fixture';
         return {
           id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-          kind: 'fixture',
+          kind,
           type: preset.label,
           label: preset.label,
-          layer: 'fixture',
+          layer: presetLayer,
           x: point.x,
           y: point.y,
           width: preset.width,
           height: preset.height,
           symbolKey: preset.key,
           symbol: preset.icon,
+          angle: 0,
+          flipH: false,
+          flipV: false,
         };
       }
       if (tool === 'stairs') {
@@ -887,9 +1026,12 @@ const definition = {
           x: point.x,
           y: point.y,
           width: 30,
-          height: 18,
+          height: 44,
           symbolKey: 'stairs',
           symbol: '🪜',
+          angle: 0,
+          flipH: false,
+          flipV: false,
         };
       }
       return createItem(tool, point, point);
@@ -978,6 +1120,9 @@ const definition = {
     }
 
     function setTool(nextTool) {
+      if (state.tool === 'line' && nextTool !== 'line' && state.lineDraft) {
+        cancelLineDraft();
+      }
       state.tool = nextTool;
       const tools = board.querySelectorAll('.floorplan-tool-button[data-tool]');
       tools.forEach((button) => {
@@ -1143,6 +1288,226 @@ const definition = {
       });
     });
 
+    function layerKeyForItem(item) {
+      const kind = item.kind || classifyItem(item);
+      return kind === 'line' ? 'line' : kind;
+    }
+
+    function isItemLocked(item) {
+      return Boolean(state.layerLocks[layerKeyForItem(item)]);
+    }
+
+    function toggleLayerLock(layer) {
+      const locked = !state.layerLocks[layer];
+      state.layerLocks[layer] = locked;
+      const button = board.querySelector(`.floorplan-layer-lock[data-layer="${layer}"]`);
+      if (button) {
+        button.classList.toggle('locked', locked);
+        button.setAttribute('aria-pressed', locked ? 'true' : 'false');
+        button.textContent = locked ? '🔒' : '🔓';
+      }
+      if (locked) {
+        // Drop any selection that lives on the now-locked layer.
+        state.items.forEach((item) => {
+          if (layerKeyForItem(item) === layer) state.selectedIds.delete(String(item.id));
+        });
+        state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
+      }
+      setFeedback(`Layer ${layer} ${locked ? 'locked' : 'unlocked'}`);
+      renderScene();
+    }
+
+    board.querySelectorAll('.floorplan-layer-lock').forEach((button) => {
+      button.addEventListener('click', () => {
+        const layer = button.dataset.layer;
+        if (!layer) return;
+        toggleLayerLock(layer);
+      });
+    });
+
+    function isSymbolObject(item) {
+      if (!item) return false;
+      const sub = fixtureSubtype(item);
+      if (sub === 'door' || sub === 'window') return false;
+      const kind = item.kind || classifyItem(item);
+      if (kind === 'fixture') return true;
+      // electrical/plumbing items that carry a drawable symbol behave like objects
+      return Boolean(item.symbolKey) && (kind === 'electrical' || kind === 'plumbing');
+    }
+
+    function isRotatable(item) {
+      return isSymbolObject(item);
+    }
+
+    function editableSelection() {
+      return selectedItemsOnFloor().filter(item => !isItemLocked(item));
+    }
+
+    function rotateSelection(delta) {
+      const targets = editableSelection().filter(isRotatable);
+      if (!targets.length) {
+        showToast('Select a placed object to rotate.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      targets.forEach((item) => {
+        const current = Number.isFinite(item.angle) ? Number(item.angle) : 0;
+        item.angle = ((current + delta) % 360 + 360) % 360;
+      });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Rotated ${targets.length} object${targets.length === 1 ? '' : 's'}`);
+    }
+
+    function flipSelection(axis) {
+      const targets = editableSelection().filter(isRotatable);
+      if (!targets.length) {
+        showToast('Select a placed object to flip.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      targets.forEach((item) => {
+        if (axis === 'v') item.flipV = !item.flipV;
+        else item.flipH = !item.flipH;
+      });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Flipped ${targets.length} object${targets.length === 1 ? '' : 's'}`);
+    }
+
+    function toggleDoorSwing(which) {
+      const doors = editableSelection().filter(item => fixtureSubtype(item) === 'door');
+      if (!doors.length) {
+        showToast('Select a door to change its swing.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      doors.forEach((door) => {
+        if (which === 'dir') door.swingDir = door.swingDir === 'out' ? 'in' : 'out';
+        else door.swingSide = door.swingSide === 'right' ? 'left' : 'right';
+      });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(which === 'dir' ? 'Door swing direction flipped' : 'Door hinge side flipped');
+    }
+
+    function duplicateSelection() {
+      const targets = editableSelection();
+      if (!targets.length) return;
+      pushUndoCheckpoint();
+      const clones = targets.map((item) => {
+        const clone = JSON.parse(JSON.stringify(item));
+        clone.id = `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        clone.floor = state.currentFloor;
+        clone.x = clamp((clone.x || 40) + 16, 20, 940);
+        clone.y = clamp((clone.y || 40) + 16, 20, 600);
+        if (typeof clone.x2 === 'number') clone.x2 = clamp(clone.x2 + 16, 20, 940);
+        if (typeof clone.y2 === 'number') clone.y2 = clamp(clone.y2 + 16, 20, 600);
+        if (Array.isArray(clone.points)) clone.points = clone.points.map(p => ({ x: clamp(p.x + 16, 20, 940), y: clamp(p.y + 16, 20, 600) }));
+        return clone;
+      });
+      state.items.push(...clones);
+      state.selectedIds = new Set(clones.map(clone => String(clone.id)));
+      state.selectedId = clones.length === 1 ? String(clones[0].id) : null;
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Duplicated ${clones.length} object${clones.length === 1 ? '' : 's'}`);
+    }
+
+    function deleteSelection() {
+      const targets = editableSelection();
+      if (!targets.length) return;
+      pushUndoCheckpoint();
+      const removeIds = new Set(targets.map(item => String(item.id)));
+      state.items = state.items.filter(item => !removeIds.has(String(item.id)));
+      state.selectedIds.clear();
+      state.selectedId = null;
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Deleted ${targets.length} object${targets.length === 1 ? '' : 's'}`);
+    }
+
+    function selectionDimsLabel(item) {
+      const kind = item.kind || classifyItem(item);
+      if (kind === 'wall') {
+        const edge = getWallEndpoints(item);
+        return formatFeet(Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1));
+      }
+      if (kind === 'line') {
+        let total = 0;
+        const pts = item.points || [];
+        for (let i = 1; i < pts.length; i += 1) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        return formatFeet(total);
+      }
+      if (kind === 'fixture') {
+        const sub = fixtureSubtype(item);
+        if (sub === 'door' || sub === 'window') return `${formatFeet(item.width || 0)} wide`;
+      }
+      const width = Math.max(1, kind === 'room' ? Math.max(60, item.width || 120) : (item.width || 16));
+      const height = Math.max(1, kind === 'room' ? Math.max(40, item.height || 80) : (item.height || 16));
+      return `${formatFeet(width)} × ${formatFeet(height)}`;
+    }
+
+    function updatePropToolbar() {
+      if (!propToolbar) return;
+      const selection = selectedItemsOnFloor();
+      const editable = selection.filter(item => !isItemLocked(item));
+      if (!editable.length) {
+        propToolbar.classList.add('hidden');
+        return;
+      }
+      propToolbar.classList.remove('hidden');
+      const dims = propToolbar.querySelector('.floorplan-prop-dims');
+      if (dims) {
+        dims.textContent = editable.length === 1
+          ? selectionDimsLabel(editable[0])
+          : `${editable.length} selected`;
+      }
+      const hasDoor = editable.some(item => fixtureSubtype(item) === 'door');
+      propToolbar.querySelectorAll('.floorplan-prop-door').forEach((btn) => {
+        btn.classList.toggle('hidden', !hasDoor);
+      });
+      const hasRotatable = editable.some(isRotatable);
+      propToolbar.querySelectorAll('.floorplan-prop-rotate-left, .floorplan-prop-rotate-right, .floorplan-prop-flip-h, .floorplan-prop-flip-v').forEach((btn) => {
+        btn.disabled = !hasRotatable;
+      });
+    }
+
+    function finalizeLine(closed) {
+      const draft = state.lineDraft;
+      state.lineDraft = null;
+      state.lineCursor = null;
+      if (!draft || draft.points.length < 2) {
+        renderScene();
+        return;
+      }
+      pushUndoCheckpoint();
+      const item = registerNewItem({
+        id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        kind: 'line',
+        type: 'Line',
+        label: '',
+        layer: 'line',
+        points: draft.points.map(p => ({ x: p.x, y: p.y })),
+        closed: Boolean(closed),
+        x: draft.points[0].x,
+        y: draft.points[0].y,
+      });
+      state.items.push(item);
+      state.lastCreateAt = Date.now();
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`${closed ? 'Shape' : 'Line'} added (${draft.points.length} points)`);
+    }
+
+    function cancelLineDraft() {
+      if (!state.lineDraft) return;
+      state.lineDraft = null;
+      state.lineCursor = null;
+      renderScene();
+      setFeedback('Line cancelled');
+    }
+
     board.addEventListener('mouseover', (event) => {
       const control = event.target && event.target.closest ? event.target.closest('button, summary') : null;
       if (!control) return;
@@ -1256,14 +1621,103 @@ const definition = {
       });
     }
 
+    function doorArcPoints(cx, cy, r, a0, a1, steps = 12) {
+      let delta = a1 - a0;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta < -Math.PI) delta += 2 * Math.PI;
+      const pts = [];
+      for (let i = 0; i <= steps; i += 1) {
+        const a = a0 + (delta * i) / steps;
+        pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
+      }
+      return pts.join(' ');
+    }
+
+    /* Draw a door opening with leaf + swing arc in local space
+       (wall runs along the x-axis, opening centered on origin). */
+    function appendDoorGraphic(group, width, side, dir) {
+      const W = Math.max(10, width);
+      const half = W / 2;
+      const hingeX = side === 'right' ? half : -half;
+      const freeX = -hingeX;
+      const sweepY = dir === 'out' ? -W : W;
+      // clear the wall under the opening
+      group.append(svgEl('line', { x1: -half, y1: 0, x2: half, y2: 0, stroke: '#ffffff', 'stroke-width': 7 }));
+      // jamb ticks
+      group.append(svgEl('line', { x1: -half, y1: -4, x2: -half, y2: 4, stroke: '#334155', 'stroke-width': 2 }));
+      group.append(svgEl('line', { x1: half, y1: -4, x2: half, y2: 4, stroke: '#334155', 'stroke-width': 2 }));
+      // door leaf shown in the open position
+      group.append(svgEl('line', { x1: hingeX, y1: 0, x2: hingeX, y2: sweepY, stroke: '#b45309', 'stroke-width': 2.5, 'stroke-linecap': 'round', class: 'floorplan-door-leaf' }));
+      // swing arc from closed free-end to open leaf tip
+      const a0 = Math.atan2(0, freeX - hingeX);
+      const a1 = Math.atan2(sweepY, 0);
+      group.append(svgEl('polyline', {
+        points: doorArcPoints(hingeX, 0, W, a0, a1, 12),
+        fill: 'none',
+        stroke: '#b45309',
+        'stroke-width': 1.2,
+        'stroke-dasharray': '3 3',
+        class: 'floorplan-door-arc',
+      }));
+      // hit area covering the swing
+      group.append(svgEl('rect', { x: -half, y: Math.min(0, sweepY) - 4, width: W, height: Math.abs(sweepY) + 8, fill: 'transparent', class: 'floorplan-hit' }));
+    }
+
+    /* Draw a window in local space (wall along the x-axis). */
+    function appendWindowGraphic(group, width) {
+      const W = Math.max(10, width);
+      const half = W / 2;
+      const t = 3;
+      group.append(svgEl('line', { x1: -half, y1: 0, x2: half, y2: 0, stroke: '#ffffff', 'stroke-width': 7 }));
+      group.append(svgEl('line', { x1: -half, y1: -t, x2: half, y2: -t, stroke: '#0ea5e9', 'stroke-width': 1.6 }));
+      group.append(svgEl('line', { x1: -half, y1: t, x2: half, y2: t, stroke: '#0ea5e9', 'stroke-width': 1.6 }));
+      group.append(svgEl('line', { x1: -half, y1: 0, x2: half, y2: 0, stroke: '#38bdf8', 'stroke-width': 1.2 }));
+      group.append(svgEl('line', { x1: -half, y1: -t, x2: -half, y2: t, stroke: '#334155', 'stroke-width': 1.6 }));
+      group.append(svgEl('line', { x1: half, y1: -t, x2: half, y2: t, stroke: '#334155', 'stroke-width': 1.6 }));
+      group.append(svgEl('rect', { x: -half, y: -t - 3, width: W, height: 2 * t + 6, fill: 'transparent', class: 'floorplan-hit' }));
+    }
+
+    /* Build a placed, rotatable/flippable top-down symbol object group
+       (used by furniture fixtures and electrical/plumbing symbols alike). */
+    function buildSymbolItemGroup(item, kindClass, isSelected, itemOpacity) {
+      const x = Number.isFinite(item.x) ? item.x : 40;
+      const y = Number.isFinite(item.y) ? item.y : 40;
+      const rotation = Number.isFinite(item.angle) ? Number(item.angle) : 0;
+      const w = Math.max(8, item.width || 18);
+      const h = Math.max(8, item.height || 18);
+      const group = svgEl('g', {
+        className: `floorplan-item ${kindClass}${isSelected ? ' floorplan-selected' : ''}`,
+        'data-floorplan-item': String(item.id),
+        'data-floorplan-kind': item.kind || 'fixture',
+        transform: `translate(${x} ${y}) rotate(${rotation})`,
+        opacity: itemOpacity,
+      });
+      group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, fill: 'transparent', class: 'floorplan-hit' }));
+      const key = item.symbolKey && hasSymbolDrawing(item.symbolKey)
+        ? item.symbolKey
+        : inferSymbolKey(`${item.label || ''} ${item.type || ''}`);
+      const graphic = key ? buildSymbolGraphic(key, w, h) : null;
+      if (graphic) {
+        const flipH = item.flipH ? -1 : 1;
+        const flipV = item.flipV ? -1 : 1;
+        if (flipH === -1 || flipV === -1) graphic.setAttribute('transform', `scale(${flipH} ${flipV})`);
+        group.append(graphic);
+      } else {
+        group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 4, fill: '#f8fafc', stroke: '#64748b', 'stroke-width': '1.5' }));
+      }
+      return { group, hasGraphic: Boolean(graphic) };
+    }
+
     function renderScene() {
       scene.innerHTML = '';
       const layers = {
         room: svgEl('g', { className: 'floorplan-layer floorplan-layer-room' }),
         wall: svgEl('g', { className: 'floorplan-layer floorplan-layer-wall' }),
+        line: svgEl('g', { className: 'floorplan-layer floorplan-layer-line' }),
         electrical: svgEl('g', { className: 'floorplan-layer floorplan-layer-electrical' }),
         plumbing: svgEl('g', { className: 'floorplan-layer floorplan-layer-plumbing' }),
         fixture: svgEl('g', { className: 'floorplan-layer floorplan-layer-fixture' }),
+        measure: svgEl('g', { className: 'floorplan-layer floorplan-layer-measure' }),
       };
       scene.append(...Object.values(layers));
 
@@ -1276,6 +1730,33 @@ const definition = {
         'font-weight': '600',
         'text-anchor': 'middle',
       }, [text]);
+
+      /* A tape-measure style dimension between two points. */
+      const buildDimension = (p1, p2, opts = {}) => {
+        const group = svgEl('g', { className: opts.className || 'floorplan-dim' });
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        const tick = 6;
+        const stroke = opts.stroke || '#9333ea';
+        if (opts.hit) {
+          group.append(svgEl('line', {
+            x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+            stroke: 'transparent', 'stroke-width': 14, class: 'floorplan-hit',
+          }));
+        }
+        group.append(svgEl('line', { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, stroke, 'stroke-width': opts.sw || 1.6, 'stroke-dasharray': opts.dash || '', 'stroke-linecap': 'round' }));
+        group.append(svgEl('line', { x1: p1.x + nx * tick, y1: p1.y + ny * tick, x2: p1.x - nx * tick, y2: p1.y - ny * tick, stroke, 'stroke-width': 1.6 }));
+        group.append(svgEl('line', { x1: p2.x + nx * tick, y1: p2.y + ny * tick, x2: p2.x - nx * tick, y2: p2.y - ny * tick, stroke, 'stroke-width': 1.6 }));
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        const text = formatFeet(Math.hypot(dx, dy));
+        group.append(svgEl('rect', { x: mx - (text.length * 3.6) - 4, y: my - 18, width: (text.length * 7.2) + 8, height: 15, rx: 4, fill: '#ffffff', stroke, 'stroke-width': 0.8, opacity: 0.95 }));
+        group.append(svgEl('text', { x: mx, y: my - 7, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#6b21a8' }, [text]));
+        return group;
+      };
 
       state.items.forEach((item) => {
         const kind = item.kind || classifyItem(item);
@@ -1333,153 +1814,129 @@ const definition = {
           }
         }
 
+        if (kind === 'line') {
+          const pts = Array.isArray(item.points) ? item.points : [];
+          if (pts.length >= 2) {
+            const pointString = pts.map(p => `${p.x},${p.y}`).join(' ');
+            const shapeTag = item.closed ? 'polygon' : 'polyline';
+            layer.append(svgEl(shapeTag, {
+              points: pointString,
+              fill: item.closed ? 'rgba(15,118,110,0.08)' : 'none',
+              stroke: '#0f766e',
+              'stroke-width': '3',
+              'stroke-linejoin': 'round',
+              'stroke-linecap': 'round',
+              className: `floorplan-line floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'line',
+              opacity: itemOpacity,
+            }));
+          }
+        }
+
+        if (kind === 'measure') {
+          const pts = Array.isArray(item.points) ? item.points : [];
+          if (pts.length >= 2) {
+            const dim = buildDimension(pts[0], pts[1], {
+              className: `floorplan-measure-dim floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              hit: true,
+            });
+            dim.setAttribute('data-floorplan-item', String(item.id));
+            dim.setAttribute('data-floorplan-kind', 'measure');
+            dim.setAttribute('opacity', itemOpacity);
+            layer.append(dim);
+          }
+        }
+
         if (kind === 'electrical') {
-          const x = item.x || 40;
-          const y = item.y || 40;
-          const node = svgEl('circle', {
-            cx: x,
-            cy: y,
-            r: 8,
-            fill: '#4ade80',
-            stroke: '#166534',
-            'stroke-width': '2',
-            className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
-            'data-floorplan-item': String(item.id),
-            'data-floorplan-kind': 'electrical',
-            opacity: itemOpacity,
-          });
-          layer.append(node);
+          if (item.symbolKey && hasSymbolDrawing(item.symbolKey)) {
+            const { group } = buildSymbolItemGroup(item, 'floorplan-electrical', isSelected, itemOpacity);
+            layer.append(group);
+          } else {
+            const x = item.x || 40;
+            const y = item.y || 40;
+            layer.append(svgEl('circle', {
+              cx: x,
+              cy: y,
+              r: 8,
+              fill: '#4ade80',
+              stroke: '#166534',
+              'stroke-width': '2',
+              className: `floorplan-electrical floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'electrical',
+              opacity: itemOpacity,
+            }));
+          }
           if (isSelected && hasMeaningfulLabel(item.label)) {
-            layer.append(label(item.label, x + 16, y - 10, '#166534', 'floorplan-device-label'));
+            layer.append(label(item.label, (item.x || 40) + 16, (item.y || 40) - 12, '#166534', 'floorplan-device-label'));
           }
         }
 
         if (kind === 'plumbing') {
-          const x = item.x || 40;
-          const y = item.y || 40;
-          const node = svgEl('rect', {
-            x: x - 9,
-            y: y - 9,
-            width: 18,
-            height: 18,
-            rx: 4,
-            fill: '#93c5fd',
-            stroke: '#1d4ed8',
-            'stroke-width': '2',
-            className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
-            'data-floorplan-item': String(item.id),
-            'data-floorplan-kind': 'plumbing',
-            opacity: itemOpacity,
-          });
-          layer.append(node);
+          if (item.symbolKey && hasSymbolDrawing(item.symbolKey)) {
+            const { group } = buildSymbolItemGroup(item, 'floorplan-plumbing', isSelected, itemOpacity);
+            layer.append(group);
+          } else {
+            const x = item.x || 40;
+            const y = item.y || 40;
+            layer.append(svgEl('rect', {
+              x: x - 9,
+              y: y - 9,
+              width: 18,
+              height: 18,
+              rx: 4,
+              fill: '#93c5fd',
+              stroke: '#1d4ed8',
+              'stroke-width': '2',
+              className: `floorplan-plumbing floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'plumbing',
+              opacity: itemOpacity,
+            }));
+          }
           if (isSelected && hasMeaningfulLabel(item.label)) {
-            layer.append(label(item.label, x + 18, y - 10, '#1d4ed8', 'floorplan-device-label'));
+            layer.append(label(item.label, (item.x || 40) + 18, (item.y || 40) - 12, '#1d4ed8', 'floorplan-device-label'));
           }
         }
 
         if (kind === 'fixture') {
-          const x = item.x || 40;
-          const y = item.y || 40;
+          const x = Number.isFinite(item.x) ? item.x : 40;
+          const y = Number.isFinite(item.y) ? item.y : 40;
           const subtype = fixtureSubtype(item);
           const rotation = Number.isFinite(item.angle) ? Number(item.angle) : 0;
-          const symbolGlyph = String(item.symbol || '').trim();
-          const commonAttrs = {
+          const group = svgEl('g', {
             className: `floorplan-fixture floorplan-item floorplan-${subtype}${isSelected ? ' floorplan-selected' : ''}`,
             'data-floorplan-item': String(item.id),
             'data-floorplan-kind': 'fixture',
-          };
+            'data-floorplan-subtype': subtype,
+            transform: `translate(${x} ${y}) rotate(${rotation})`,
+            opacity: itemOpacity,
+          });
 
           if (subtype === 'door') {
-            const width = Math.max(16, item.width || 24);
-            const height = Math.max(7, item.height || 10);
-            layer.append(svgEl('rect', {
-              ...commonAttrs,
-              x: x - (width / 2),
-              y: y - (height / 2),
-              width,
-              height,
-              rx: 2,
-              fill: '#f59e0b',
-              stroke: '#7c2d12',
-              'stroke-width': '2',
-              transform: `rotate(${rotation} ${x} ${y})`,
-              opacity: itemOpacity,
-            }));
+            appendDoorGraphic(group, Math.max(10, item.width || 3 * UNITS_PER_FOOT), item.swingSide, item.swingDir);
           } else if (subtype === 'window') {
-            const width = Math.max(18, item.width || 26);
-            layer.append(svgEl('line', {
-              ...commonAttrs,
-              x1: x - (width / 2),
-              y1: y,
-              x2: x + (width / 2),
-              y2: y,
-              stroke: '#0ea5e9',
-              'stroke-width': '4',
-              'stroke-linecap': 'round',
-              transform: `rotate(${rotation} ${x} ${y})`,
-              opacity: itemOpacity,
-            }));
-          } else if (subtype === 'stairs') {
-            const width = Math.max(26, item.width || 30);
-            const height = Math.max(16, item.height || 18);
-            layer.append(svgEl('rect', {
-              ...commonAttrs,
-              x: x - (width / 2),
-              y: y - (height / 2),
-              width,
-              height,
-              rx: 4,
-              fill: '#f1f5f9',
-              stroke: '#475569',
-              'stroke-width': '2',
-              opacity: itemOpacity,
-            }));
-            layer.append(svgEl('text', {
-              x,
-              y: y + 4,
-              className: 'floorplan-symbol-glyph',
-              'text-anchor': 'middle',
-              'font-size': '12',
-              opacity: itemOpacity,
-            }, ['🪜']));
-          } else if (symbolGlyph) {
-            const width = Math.max(14, item.width || 18);
-            const height = Math.max(14, item.height || 18);
-            layer.append(svgEl('rect', {
-              ...commonAttrs,
-              x: x - (width / 2),
-              y: y - (height / 2),
-              width,
-              height,
-              rx: 4,
-              fill: '#f8fafc',
-              stroke: '#64748b',
-              'stroke-width': '1.5',
-              opacity: itemOpacity,
-            }));
-            layer.append(svgEl('text', {
-              x,
-              y: y + 4,
-              className: 'floorplan-symbol-glyph',
-              'text-anchor': 'middle',
-              'font-size': '12',
-              opacity: itemOpacity,
-            }, [symbolGlyph]));
+            appendWindowGraphic(group, Math.max(10, item.width || 2 * UNITS_PER_FOOT));
           } else {
-            const size = Math.max(12, Math.min(18, item.width || item.height || 16));
-            layer.append(svgEl('rect', {
-              ...commonAttrs,
-              x: x - (size / 2),
-              y: y - (size / 2),
-              width: size,
-              height: size,
-              rx: 3,
-              fill: '#fbbf24',
-              stroke: '#78350f',
-              'stroke-width': '2',
-              opacity: itemOpacity,
-            }));
+            const w = Math.max(8, item.width || 18);
+            const h = Math.max(8, item.height || 18);
+            const key = item.symbolKey && hasSymbolDrawing(item.symbolKey)
+              ? item.symbolKey
+              : inferSymbolKey(`${item.label || ''} ${item.type || ''}`);
+            // transparent hit area so the whole footprint is clickable
+            group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, fill: 'transparent', class: 'floorplan-hit' }));
+            const graphic = key ? buildSymbolGraphic(key, w, h) : null;
+            if (graphic) {
+              const flipH = item.flipH ? -1 : 1;
+              const flipV = item.flipV ? -1 : 1;
+              if (flipH === -1 || flipV === -1) graphic.setAttribute('transform', `scale(${flipH} ${flipV})`);
+              group.append(graphic);
+            } else {
+              group.append(svgEl('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 4, fill: '#f8fafc', stroke: '#64748b', 'stroke-width': '1.5' }));
+            }
           }
+          layer.append(group);
 
           if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, x + 18, y - 10, '#78350f', 'floorplan-device-label'));
@@ -1541,7 +1998,7 @@ const definition = {
             addHandle(right, top, 'room-ne');
             addHandle(left, bottom, 'room-sw');
             addHandle(right, bottom, 'room-se');
-            handleLayer.append(label(`${Math.round(width)}w x ${Math.round(height)}h`, right - 8, top - 10, '#1e40af', 'floorplan-measure-label'));
+            handleLayer.append(label(`${formatFeet(width)} × ${formatFeet(height)}`, right - 8, top - 10, '#1e40af', 'floorplan-measure-label'));
           }
 
           if (selected.kind === 'wall') {
@@ -1556,10 +2013,10 @@ const definition = {
             addHandle(x1, y1, 'wall-start');
             addHandle(x2, y2, 'wall-end');
             const length = Math.hypot(x2 - x1, y2 - y1);
-            handleLayer.append(label(`${Math.round(length)}u`, (x1 + x2) / 2, ((y1 + y2) / 2) - 10, '#1e40af', 'floorplan-measure-label'));
+            handleLayer.append(label(formatFeet(length), (x1 + x2) / 2, ((y1 + y2) / 2) - 10, '#1e40af', 'floorplan-measure-label'));
           }
 
-          if (selected.kind === 'electrical' || selected.kind === 'plumbing' || selected.kind === 'fixture') {
+          if ((selected.kind === 'electrical' || selected.kind === 'plumbing') && !isSymbolObject(selected)) {
             const x = selected.x || 40;
             const y = selected.y || 40;
             handleLayer.append(svgEl('circle', {
@@ -1573,6 +2030,48 @@ const definition = {
               class: 'floorplan-selection-box',
             }));
             addHandle(x, y, 'point-center');
+          }
+
+          if (isSymbolObject(selected)) {
+            const sub = fixtureSubtype(selected);
+            const angle = Number.isFinite(selected.angle) ? Number(selected.angle) : 0;
+            const radH = (angle * Math.PI) / 180;
+            const cosH = Math.cos(radH);
+            const sinH = Math.sin(radH);
+            const cx = selected.x || 40;
+            const cy = selected.y || 40;
+            const toG = (lx, ly) => ({ x: cx + (lx * cosH) - (ly * sinH), y: cy + (lx * sinH) + (ly * cosH) });
+            const w = Math.max(8, selected.width || 18);
+            const h = Math.max(8, selected.height || 18);
+            handleLayer.append(svgEl('rect', {
+              x: -w / 2,
+              y: -h / 2,
+              width: w,
+              height: h,
+              fill: 'none',
+              stroke: '#2563eb',
+              'stroke-width': 1.5,
+              'stroke-dasharray': '6 5',
+              class: 'floorplan-selection-box',
+              transform: `translate(${cx} ${cy}) rotate(${angle})`,
+            }));
+            if (sub === 'door' || sub === 'window') {
+              const lpt = toG(-w / 2, 0);
+              const rpt = toG(w / 2, 0);
+              addHandle(lpt.x, lpt.y, 'width-min');
+              addHandle(rpt.x, rpt.y, 'width-max');
+              handleLayer.append(label(formatFeet(w), cx, cy - 14, '#1e40af', 'floorplan-measure-label'));
+            } else {
+              const nw = toG(-w / 2, -h / 2);
+              const ne = toG(w / 2, -h / 2);
+              const sw = toG(-w / 2, h / 2);
+              const se = toG(w / 2, h / 2);
+              addHandle(nw.x, nw.y, 'fx-nw');
+              addHandle(ne.x, ne.y, 'fx-ne');
+              addHandle(sw.x, sw.y, 'fx-sw');
+              addHandle(se.x, se.y, 'fx-se');
+              handleLayer.append(label(`${formatFeet(w)} × ${formatFeet(h)}`, cx, cy - (h / 2) - 10, '#1e40af', 'floorplan-measure-label'));
+            }
           }
 
           scene.append(handleLayer);
@@ -1622,6 +2121,9 @@ const definition = {
             'stroke-width': '2',
             'stroke-dasharray': state.rectDisconnected ? '4 10' : '8 6',
           }));
+        }
+        if (preview.kind === 'measure') {
+          previewLayer.append(buildDimension(preview.start, preview.end, { dash: '6 4', sw: 1.8 }));
         }
         if (preview.kind === 'electrical') {
           previewLayer.append(svgEl('circle', {
@@ -1682,7 +2184,30 @@ const definition = {
           className: 'floorplan-marquee',
         }));
       }
+
+      if (state.lineDraft && state.lineDraft.points.length > 0) {
+        const previewLayer = svgEl('g', { className: 'floorplan-preview-layer' });
+        const pts = state.lineDraft.points.slice();
+        if (state.lineCursor) pts.push(state.lineCursor);
+        if (pts.length >= 2) {
+          previewLayer.append(svgEl('polyline', {
+            points: pts.map(p => `${p.x},${p.y}`).join(' '),
+            fill: 'none',
+            stroke: '#0f766e',
+            'stroke-width': '2.5',
+            'stroke-dasharray': '8 5',
+            'stroke-linejoin': 'round',
+            'stroke-linecap': 'round',
+          }));
+        }
+        state.lineDraft.points.forEach((p) => {
+          previewLayer.append(svgEl('circle', { cx: p.x, cy: p.y, r: 3.5, fill: '#0f766e', stroke: '#ffffff', 'stroke-width': 1.2 }));
+        });
+        scene.append(previewLayer);
+      }
+
       renderInteriorView();
+      updatePropToolbar();
     }
 
     function beginDraft(event) {
@@ -1709,8 +2234,28 @@ const definition = {
       const targetItem = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
       const targetItemData = targetItem ? findItemById(targetItem.dataset.floorplanItem) : null;
 
+      if (state.tool === 'line') {
+        const snapped = snapPointForTool(point, 'wall');
+        if (!state.lineDraft) state.lineDraft = { points: [] };
+        const pts = state.lineDraft.points;
+        if (pts.length >= 3) {
+          const first = pts[0];
+          if (Math.hypot(snapped.x - first.x, snapped.y - first.y) <= 10) {
+            finalizeLine(true);
+            return;
+          }
+        }
+        const last = pts[pts.length - 1];
+        if (last && Math.hypot(snapped.x - last.x, snapped.y - last.y) < 2) return;
+        pts.push(snapped);
+        state.lineCursor = snapped;
+        setFeedback(`Line: ${pts.length} point${pts.length === 1 ? '' : 's'} — click start or press Enter to finish`);
+        renderScene();
+        return;
+      }
+
       if (state.tool === 'erase') {
-        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
+        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor && !isItemLocked(targetItemData)) {
           pushUndoCheckpoint();
           const itemId = targetItem.dataset.floorplanItem;
           state.items = state.items.filter(item => String(item.id) !== itemId);
@@ -1745,6 +2290,7 @@ const definition = {
                 height: item.height,
                 x2: item.x2,
                 y2: item.y2,
+                angle: Number.isFinite(item.angle) ? Number(item.angle) : 0,
               },
             };
             state.dragStart = { x: point.x, y: point.y };
@@ -1754,7 +2300,7 @@ const definition = {
           return;
         }
 
-        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor) {
+        if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor && !isItemLocked(targetItemData)) {
           if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
           const itemId = String(targetItem.dataset.floorplanItem);
           if (event.shiftKey || event.ctrlKey || event.metaKey) {
@@ -1777,6 +2323,7 @@ const definition = {
               y: item.y,
               x2: wall.x2,
               y2: wall.y2,
+              points: Array.isArray(item.points) ? item.points.map(p => ({ x: p.x, y: p.y })) : null,
             };
           });
           debugLog('select-start', { selected: state.dragIds.length, x: point.x, y: point.y });
@@ -1815,6 +2362,12 @@ const definition = {
 
     function updateDraft(event) {
       if (typeof event.preventDefault === 'function') event.preventDefault();
+      if (state.tool === 'line') {
+        if (!state.lineDraft) return;
+        state.lineCursor = snapPointForTool(pointFromEvent(svg, event), 'wall');
+        renderScene();
+        return;
+      }
       if (state.tool === 'select') {
         const point = pointFromEvent(svg, event);
         if (state.resizeDrag) {
@@ -1867,10 +2420,50 @@ const definition = {
             item.height = Math.abs(y2 - item.y);
           }
 
-          if (item.kind === 'electrical' || item.kind === 'plumbing' || item.kind === 'fixture') {
-            if (handle === 'point-center') {
-              item.x = px;
-              item.y = py;
+          if ((item.kind === 'electrical' || item.kind === 'plumbing') && handle === 'point-center') {
+            item.x = px;
+            item.y = py;
+          }
+
+          if (isSymbolObject(item) && handle !== 'point-center') {
+            const angle = Number.isFinite(origin.angle) ? Number(origin.angle) : 0;
+            const rad = (angle * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const cx0 = origin.x;
+            const cy0 = origin.y;
+            // pointer in the fixture's local (un-rotated) frame
+            const dxp = px - cx0;
+            const dyp = py - cy0;
+            const localX = (dxp * cos) + (dyp * sin);
+            const localY = (-dxp * sin) + (dyp * cos);
+
+            if (handle === 'width-min' || handle === 'width-max') {
+              // doors/windows resize symmetric width about the wall point
+              const newWidth = clamp(Math.abs(localX) * 2, 10, 240);
+              item.width = newWidth;
+            } else if (handle.startsWith('fx-')) {
+              const w0 = Math.max(8, origin.width || 18);
+              const h0 = Math.max(8, origin.height || 18);
+              const signX = handle.includes('e') ? 1 : -1;
+              const signY = handle.includes('s') ? 1 : -1;
+              // opposite corner stays fixed in local space
+              const fixedX = -signX * (w0 / 2);
+              const fixedY = -signY * (h0 / 2);
+              // the dragged corner follows the pointer directly, so dragging
+              // across the fixed corner flips the box naturally (no inversion)
+              const dirX = localX >= fixedX ? 1 : -1;
+              const dirY = localY >= fixedY ? 1 : -1;
+              const newW = clamp(Math.abs(localX - fixedX), 8, 400);
+              const newH = clamp(Math.abs(localY - fixedY), 8, 400);
+              const draggedLocalX = fixedX + (dirX * newW);
+              const draggedLocalY = fixedY + (dirY * newH);
+              const centerLocalX = (fixedX + draggedLocalX) / 2;
+              const centerLocalY = (fixedY + draggedLocalY) / 2;
+              item.width = newW;
+              item.height = newH;
+              item.x = clamp(cx0 + (centerLocalX * cos) - (centerLocalY * sin), 20, 940);
+              item.y = clamp(cy0 + (centerLocalX * sin) + (centerLocalY * cos), 20, 600);
             }
           }
 
@@ -1890,6 +2483,9 @@ const definition = {
             item.y = clamp(origin.y + dy, 20, 600);
             if (typeof item.x2 === 'number') item.x2 = clamp(origin.x2 + dx, 20, 940);
             if (typeof item.y2 === 'number') item.y2 = clamp(origin.y2 + dy, 20, 600);
+            if (origin.points && Array.isArray(item.points)) {
+              item.points = origin.points.map(p => ({ x: clamp(p.x + dx, 20, 940), y: clamp(p.y + dy, 20, 600) }));
+            }
           });
           debugLog('select-move', { selected: state.dragIds.length, dx, dy });
           renderScene();
@@ -1918,11 +2514,12 @@ const definition = {
       }
 
       if (state.tool === 'select') {
-        if (state.marquee) {
+        if (state.marquee && (state.marquee.width > 3 || state.marquee.height > 3)) {
           const box = state.marquee;
           const within = (x, y) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
           state.items.forEach((item) => {
             if (getItemFloor(item) !== state.currentFloor) return;
+            if (isItemLocked(item)) return;
             const kind = item.kind || classifyItem(item);
             if (kind === 'wall') {
               const edge = getWallEndpoints(item);
@@ -1956,6 +2553,23 @@ const definition = {
           if (added > 0) {
             state.lastCreateAt = Date.now();
             debugLog('create-rect-wall', { added, count: state.items.length });
+          }
+        } else if (kind === 'measure') {
+          if (distance > 6) {
+            pushUndoCheckpoint();
+            const measure = registerNewItem({
+              id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+              kind: 'measure',
+              type: 'Measure',
+              label: '',
+              layer: 'measure',
+              points: [{ x: start.x, y: start.y }, { x: end.x, y: end.y }],
+              x: start.x,
+              y: start.y,
+            });
+            state.items.push(measure);
+            state.lastCreateAt = Date.now();
+            setFeedback(`Measured ${formatFeet(distance)}`);
           }
         } else if (distance > 18) {
           pushUndoCheckpoint();
@@ -1997,7 +2611,7 @@ const definition = {
     }
 
     function fallbackClickCreate(event) {
-      if (state.tool === 'select' || state.tool === 'erase') return;
+      if (state.tool === 'select' || state.tool === 'erase' || state.tool === 'line' || state.tool === 'measure') return;
       if (state.preview || state.dragStart || state.dragIds.length > 0) return;
       if ((Date.now() - state.lastCreateAt) < 150) return;
 
@@ -2031,15 +2645,68 @@ const definition = {
 
     if (typeof window !== 'undefined') {
       window.__WAYMARK_FLOORPLAN_UNDO_API__ = { undoLatest, redoLatest };
+      window.__WAYMARK_FLOORPLAN_KEY_API__ = {
+        rotateSelection,
+        flipSelection,
+        duplicateSelection,
+        deleteSelection,
+        toggleDoorSwing,
+        finalizeLine,
+        cancelLineDraft,
+        deselect: () => clearSelection(),
+        hasLineDraft: () => Boolean(state.lineDraft),
+        hasSelection: () => state.selectedIds.size > 0,
+      };
       if (!window.__WAYMARK_FLOORPLAN_UNDO_BOUND__) {
         window.addEventListener('keydown', (event) => {
-          if (!(event.ctrlKey || event.metaKey)) return;
-          if (String(event.key || '').toLowerCase() !== 'z') return;
-          const api = window.__WAYMARK_FLOORPLAN_UNDO_API__;
-          if (!api) return;
-          event.preventDefault();
-          if (event.shiftKey) api.redoLatest();
-          else api.undoLatest();
+          const target = event.target;
+          const tag = target && target.tagName ? String(target.tagName).toLowerCase() : '';
+          if (tag === 'input' || tag === 'textarea' || (target && target.isContentEditable)) return;
+          if (!document.querySelector('.floorplan-board')) return;
+
+          const undoApi = window.__WAYMARK_FLOORPLAN_UNDO_API__;
+          const keyApi = window.__WAYMARK_FLOORPLAN_KEY_API__;
+          const key = String(event.key || '').toLowerCase();
+
+          if ((event.ctrlKey || event.metaKey) && key === 'z') {
+            if (!undoApi) return;
+            event.preventDefault();
+            if (event.shiftKey) undoApi.redoLatest();
+            else undoApi.undoLatest();
+            return;
+          }
+          if (!keyApi) return;
+          if ((event.ctrlKey || event.metaKey) && key === 'd') {
+            event.preventDefault();
+            keyApi.duplicateSelection();
+            return;
+          }
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
+          if (key === 'r') {
+            event.preventDefault();
+            keyApi.rotateSelection(event.shiftKey ? -15 : 15);
+          } else if (key === 'f') {
+            event.preventDefault();
+            keyApi.flipSelection(event.shiftKey ? 'v' : 'h');
+          } else if (key === 'delete' || key === 'backspace') {
+            if (keyApi.hasSelection()) {
+              event.preventDefault();
+              keyApi.deleteSelection();
+            }
+          } else if (key === 'enter') {
+            if (keyApi.hasLineDraft()) {
+              event.preventDefault();
+              keyApi.finalizeLine(false);
+            }
+          } else if (key === 'escape') {
+            if (keyApi.hasLineDraft()) {
+              event.preventDefault();
+              keyApi.cancelLineDraft();
+            } else if (keyApi.hasSelection()) {
+              event.preventDefault();
+              keyApi.deselect();
+            }
+          }
         });
         window.__WAYMARK_FLOORPLAN_UNDO_BOUND__ = true;
       }
@@ -2075,12 +2742,26 @@ const definition = {
     setFeedback('Ready');
     renderScene();
 
-    const dims = svgEl('g', { className: 'floorplan-dimensions' });
-    dims.append(
-      svgEl('line', { x1: 20, y1: 600, x2: 920, y2: 600, stroke: '#64748b', 'stroke-width': '1.5', 'stroke-dasharray': '6 4' }),
-      svgEl('text', { x: 470, y: 620, className: 'floorplan-dimension-text', 'text-anchor': 'middle' }, ['Scale: 1 unit = 1 ft'])
-    );
-    svg.append(dims);
+    const scaleBar = svgEl('g', { className: 'floorplan-dimensions' });
+    const barX = 30;
+    const barY = 606;
+    const feetSpan = 5;
+    const unit = UNITS_PER_FOOT;
+    const barLen = feetSpan * unit;
+    scaleBar.append(svgEl('line', { x1: barX, y1: barY, x2: barX + barLen, y2: barY, stroke: '#334155', 'stroke-width': '2' }));
+    for (let f = 0; f < feetSpan; f += 1) {
+      if (f % 2 === 0) {
+        scaleBar.append(svgEl('rect', { x: barX + (f * unit), y: barY - 3, width: unit, height: 6, fill: '#334155' }));
+      }
+    }
+    for (let f = 0; f <= feetSpan; f += 1) {
+      const tx = barX + (f * unit);
+      scaleBar.append(svgEl('line', { x1: tx, y1: barY - 5, x2: tx, y2: barY + 5, stroke: '#334155', 'stroke-width': '1.5' }));
+    }
+    scaleBar.append(svgEl('text', { x: barX, y: barY - 9, className: 'floorplan-dimension-text', 'text-anchor': 'start' }, ['0']));
+    scaleBar.append(svgEl('text', { x: barX + barLen + 6, y: barY + 4, className: 'floorplan-dimension-text', 'text-anchor': 'start' }, ['5 ft']));
+    scaleBar.append(svgEl('text', { x: 920, y: barY + 4, className: 'floorplan-dimension-text', 'text-anchor': 'end' }, ['Snap: 1 ft · Grid: 4 ft']));
+    svg.append(scaleBar);
 
     container.append(board);
   },

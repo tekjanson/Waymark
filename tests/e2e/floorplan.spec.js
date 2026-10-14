@@ -6,6 +6,24 @@ async function selectTool(page, tool) {
   await page.click(`.floorplan-tool-button[data-tool="${tool}"]`);
 }
 
+async function openPlan(page) {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+}
+
+async function placeAndSelectSymbol(page, key, offset) {
+  await page.click(`.floorplan-symbol-choice[data-symbol-key="${key}"]`);
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  const px = svg.x + offset.x;
+  const py = svg.y + offset.y;
+  await page.mouse.click(px, py);
+  await selectTool(page, 'select');
+  await page.mouse.click(px, py);
+  await expect(page.locator('.floorplan-fixture.floorplan-selected')).toHaveCount(1);
+}
+
 test('floor plan is detected and rendered', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
@@ -148,12 +166,12 @@ test('symbol panel places household fixtures quickly', async ({ page }) => {
   await navigateToSheet(page, 'sheet-075');
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
 
-  const beforeGlyphs = await page.locator('.floorplan-symbol-glyph').count();
+  const beforeSymbols = await page.locator('.floorplan-symbol-graphic').count();
   await page.click('.floorplan-symbol-choice[data-symbol-key="tv"]');
   await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="tv"]')).toHaveClass(/active/);
   await page.click('.floorplan-svg', { position: { x: 420, y: 260 } });
 
-  await expect(page.locator('.floorplan-symbol-glyph')).toHaveCount(beforeGlyphs + 1);
+  await expect(page.locator('.floorplan-symbol-graphic')).toHaveCount(beforeSymbols + 1);
 });
 
 test('floor controls switch levels and align below overlay', async ({ page }) => {
@@ -283,4 +301,253 @@ test('export button triggers print workflow for PDF output', async ({ page }) =>
   await page.click('.floorplan-export-btn');
   const called = await page.evaluate(() => window.__PRINT_CALLED__ === true);
   expect(called).toBe(true);
+});
+
+/* ============================================================
+   Parametric upgrade — new feature coverage
+   ============================================================ */
+
+test('top-down symbols render for furniture loaded from the sheet', async ({ page }) => {
+  await openPlan(page);
+  // Sofa, Dining Table, and Main Stairs all resolve to top-down symbols.
+  const count = await page.locator('.floorplan-symbol-graphic').count();
+  expect(count).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.floorplan-symbol-graphic').first()).toBeVisible();
+});
+
+test('placed doors default to a 3 ft opening', async ({ page }) => {
+  await openPlan(page);
+  const wallBox = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!wallBox) throw new Error('Wall geometry missing');
+  await selectTool(page, 'door');
+  await page.mouse.click(wallBox.x + (wallBox.width / 2), wallBox.y + Math.max(2, wallBox.height / 2));
+  await selectTool(page, 'select');
+  await page.locator('.floorplan-door').last().click();
+  await expect(page.locator('.floorplan-prop-dims')).toContainText("3'");
+});
+
+test('placed windows default to a 2 ft opening', async ({ page }) => {
+  await openPlan(page);
+  const wallBox = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!wallBox) throw new Error('Wall geometry missing');
+  await selectTool(page, 'window');
+  await page.mouse.click(wallBox.x + (wallBox.width / 2), wallBox.y + Math.max(2, wallBox.height / 2));
+  await selectTool(page, 'select');
+  await page.locator('.floorplan-window').last().click();
+  await expect(page.locator('.floorplan-prop-dims')).toContainText("2'");
+});
+
+test('doors render a swing arc that can be flipped', async ({ page }) => {
+  await openPlan(page);
+  const wallBox = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!wallBox) throw new Error('Wall geometry missing');
+  await selectTool(page, 'door');
+  await page.mouse.click(wallBox.x + (wallBox.width / 2), wallBox.y + Math.max(2, wallBox.height / 2));
+  await selectTool(page, 'select');
+  await page.locator('.floorplan-door').last().click();
+
+  const arc = page.locator('.floorplan-door.floorplan-selected .floorplan-door-arc');
+  await expect(arc).toHaveCount(1);
+  const before = await arc.getAttribute('points');
+  await page.click('.floorplan-prop-swing');
+  const after = await page.locator('.floorplan-door.floorplan-selected .floorplan-door-arc').getAttribute('points');
+  expect(after).not.toBe(before);
+});
+
+test('selected objects can be rotated from the properties toolbar', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+
+  const before = await page.locator('.floorplan-fixture.floorplan-selected').getAttribute('transform');
+  expect(before).toContain('rotate(0)');
+  await page.click('.floorplan-prop-rotate-right');
+  const after = await page.locator('.floorplan-fixture.floorplan-selected').getAttribute('transform');
+  expect(after).toContain('rotate(15)');
+});
+
+test('keyboard shortcut rotates the selected object', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+
+  await page.keyboard.press('r');
+  const after = await page.locator('.floorplan-fixture.floorplan-selected').getAttribute('transform');
+  expect(after).toContain('rotate(15)');
+});
+
+test('selected objects can be flipped horizontally', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+
+  await page.click('.floorplan-prop-flip-h');
+  const graphic = page.locator('.floorplan-fixture.floorplan-selected .floorplan-symbol-graphic');
+  await expect(graphic).toHaveAttribute('transform', /scale\(-1 1\)/);
+});
+
+test('placed symbols are parametric and resize from corner handles', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+
+  const boxBefore = await page.locator('.floorplan-selection-box').first().evaluate(node => Number(node.getAttribute('width') || '0'));
+  const handle = page.locator('.floorplan-resize-handle[data-floorplan-handle="fx-se"]');
+  const hbox = await handle.boundingBox();
+  if (!hbox) throw new Error('Resize handle not visible');
+  await page.mouse.move(hbox.x + (hbox.width / 2), hbox.y + (hbox.height / 2));
+  await page.mouse.down();
+  await page.mouse.move(hbox.x + 60, hbox.y + 50, { steps: 12 });
+  await page.mouse.up();
+
+  const boxAfter = await page.locator('.floorplan-selection-box').first().evaluate(node => Number(node.getAttribute('width') || '0'));
+  expect(boxAfter).toBeGreaterThan(boxBefore);
+});
+
+test('duplicate and delete manage the selected object', async ({ page }) => {
+  await openPlan(page);
+  const start = await page.locator('.floorplan-symbol-graphic').count();
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBe(start + 1);
+
+  await page.click('.floorplan-prop-duplicate');
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBe(start + 2);
+
+  await page.keyboard.press('Delete');
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBe(start + 1);
+});
+
+test('layers can be locked to prevent selection', async ({ page }) => {
+  await openPlan(page);
+  const sym = await page.locator('.floorplan-symbol-graphic').first().boundingBox();
+  if (!sym) throw new Error('No symbol to target');
+  const cx = sym.x + (sym.width / 2);
+  const cy = sym.y + (sym.height / 2);
+
+  await page.click('.floorplan-layer-lock[data-layer="fixture"]');
+  await expect(page.locator('.floorplan-layer-lock[data-layer="fixture"]')).toHaveClass(/locked/);
+
+  await selectTool(page, 'select');
+  await page.mouse.click(cx, cy);
+  await expect(page.locator('.floorplan-prop-toolbar')).toBeHidden();
+
+  // Unlock and confirm the same object becomes selectable again.
+  await page.click('.floorplan-layer-lock[data-layer="fixture"]');
+  await page.mouse.click(cx, cy);
+  await expect(page.locator('.floorplan-prop-toolbar')).toBeVisible();
+});
+
+test('line tool draws a custom multi-point shape', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-line')).toHaveCount(0);
+
+  await selectTool(page, 'line');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  await page.mouse.click(svg.x + 120, svg.y + 120);
+  await page.mouse.click(svg.x + 230, svg.y + 150);
+  await page.mouse.click(svg.x + 200, svg.y + 250);
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('.floorplan-line')).toHaveCount(1);
+});
+
+test('properties toolbar appears on selection and hides on escape', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'select');
+  await expect(page.locator('.floorplan-prop-toolbar')).toBeHidden();
+
+  const room = await page.locator('.floorplan-room').first().boundingBox();
+  if (!room) throw new Error('Room geometry missing');
+  await page.mouse.click(room.x + 12, room.y + 12);
+  await expect(page.locator('.floorplan-prop-toolbar')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.floorplan-prop-toolbar')).toBeHidden();
+});
+
+test('new line layer can be toggled off and on', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  await page.mouse.click(svg.x + 120, svg.y + 120);
+  await page.mouse.click(svg.x + 230, svg.y + 150);
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('.floorplan-line')).toHaveCount(1);
+  await page.click('.floorplan-layer-toggle[data-layer="line"]');
+  await expect(page.locator('.floorplan-line')).toHaveCount(0);
+  await page.click('.floorplan-layer-toggle[data-layer="line"]');
+  await expect(page.locator('.floorplan-line')).toHaveCount(1);
+});
+
+/* ============================================================
+   Iteration 2 — focus-view accuracy, measure, systems, 3D view
+   ============================================================ */
+
+test('objects place under the cursor in fullscreen focus view', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
+  await page.click('.floorplan-symbol-choice[data-symbol-key="couch"]');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  const clickX = svg.x + svg.width * 0.28;
+  const clickY = svg.y + svg.height * 0.72;
+  const expected = await page.evaluate(({ cx, cy }) => {
+    const el = document.querySelector('.floorplan-svg');
+    const pt = el.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    const l = pt.matrixTransform(el.getScreenCTM().inverse());
+    return { x: Math.round(l.x / 10) * 10, y: Math.round(l.y / 10) * 10 };
+  }, { cx: clickX, cy: clickY });
+  await page.mouse.click(clickX, clickY);
+  const t = await page.locator('.floorplan-fixture').last().getAttribute('transform');
+  const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(t || '');
+  if (!m) throw new Error('No fixture transform found');
+  expect(Math.abs(Number(m[1]) - expected.x)).toBeLessThan(12);
+  expect(Math.abs(Number(m[2]) - expected.y)).toBeLessThan(12);
+});
+
+test('measure tool tapes a distance between two points', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-measure-dim')).toHaveCount(0);
+  await selectTool(page, 'measure');
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+  await page.mouse.move(svg.x + 200, svg.y + 210);
+  await page.mouse.down();
+  await page.mouse.move(svg.x + 360, svg.y + 210, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('.floorplan-measure-dim')).toHaveCount(1);
+});
+
+test('electrical and plumbing sections place system symbols', async ({ page }) => {
+  await openPlan(page);
+  const svg = await page.locator('.floorplan-svg').boundingBox();
+  if (!svg) throw new Error('Canvas not visible');
+
+  await page.click('.floorplan-symbol-choice[data-symbol-key="outlet"]');
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="outlet"]')).toHaveClass(/active/);
+  await page.mouse.click(svg.x + 300, svg.y + 250);
+  await expect(page.locator('g.floorplan-electrical .floorplan-symbol-graphic')).toHaveCount(1);
+
+  await page.click('.floorplan-symbol-choice[data-symbol-key="kitchen-sink"]');
+  await page.mouse.click(svg.x + 340, svg.y + 250);
+  await expect(page.locator('g.floorplan-plumbing .floorplan-symbol-graphic')).toHaveCount(1);
+});
+
+test('render space modal renders a 3D viewpoint with a camera map', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-ai-render-btn');
+  await page.waitForSelector('.floorplan-cam-map', { timeout: 5_000 });
+  await page.click('.floorplan-ai-view-btn');
+  await expect(page.locator('.floorplan-view-svg')).toBeVisible();
+});
+
+test('camera map responds to clicks without error', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-ai-render-btn');
+  const map = await page.waitForSelector('.floorplan-cam-map', { timeout: 5_000 });
+  const box = await map.boundingBox();
+  if (!box) throw new Error('Camera map not visible');
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await page.click('.floorplan-ai-view-btn');
+  await expect(page.locator('.floorplan-view-svg')).toBeVisible();
 });

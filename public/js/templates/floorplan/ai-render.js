@@ -158,25 +158,336 @@ function renderConceptSvg(container, items, spec) {
   container.appendChild(svg);
 }
 
+/* ============================================================
+   Viewpoint 3D — procedural first-person perspective renderer
+   ============================================================ */
+
+const OBJECT_HEIGHTS = {
+  bed: 16, couch: 15, sectional: 15, armchair: 18, ottoman: 10, chair: 18,
+  'dining-table': 25, 'coffee-table': 14, desk: 25, console: 26, 'tv-stand': 16,
+  tv: 30, fridge: 66, bookshelf: 60, dresser: 32, wardrobe: 70, closet: 70,
+  nightstand: 20, stove: 34, oven: 34, microwave: 48, dishwasher: 34, island: 34,
+  cabinet: 84, sink: 32, 'kitchen-sink': 34, toilet: 16, bathtub: 18, shower: 78,
+  'water-heater': 56, washer: 34, dryer: 34, lamp: 46, plant: 40, piano: 36,
+  'pool-table': 30, fireplace: 40, mirror: 50, vanity: 34, crib: 28, column: 95,
+};
+
+function roomBoxAt(items, x, y) {
+  const rooms = items.filter(i => ((i.kind || '') === 'room') || /room/i.test(String(i.type || '')));
+  const toBox = (r) => ({ x: r.x, y: r.y, w: Math.max(40, r.width || 120), h: Math.max(34, r.height || 80), label: r.label });
+  for (const r of rooms) {
+    const b = toBox(r);
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b;
+  }
+  let best = null;
+  rooms.forEach((r) => {
+    const b = toBox(r);
+    const d = Math.hypot((b.x + b.w / 2) - x, (b.y + b.h / 2) - y);
+    if (!best || d < best.d) best = { b, d };
+  });
+  return best ? best.b : null;
+}
+
+/** Render a stylised first-person 3D view of the space from a viewpoint.
+ * @param {HTMLElement} host — container to render into
+ * @param {Object[]} items — floor plan items
+ * @param {{x:number,y:number,heading:number,fov?:number}} camera — plan-space camera
+ */
+export function renderPerspectiveView(host, items, camera) {
+  host.innerHTML = '';
+  const VW = 900;
+  const VH = 500;
+  const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${VH}`, class: 'floorplan-view-svg', role: 'img', 'aria-label': '3D viewpoint render' });
+  svg.append(svgEl('defs', {}, [
+    svgEl('linearGradient', { id: 'wm-floor', x1: '0', y1: '0', x2: '0', y2: '1' }, [
+      svgEl('stop', { offset: '0%', 'stop-color': '#b8c2d0' }),
+      svgEl('stop', { offset: '100%', 'stop-color': '#8a97a8' }),
+    ]),
+    svgEl('linearGradient', { id: 'wm-ceil', x1: '0', y1: '0', x2: '0', y2: '1' }, [
+      svgEl('stop', { offset: '0%', 'stop-color': '#f8fafc' }),
+      svgEl('stop', { offset: '100%', 'stop-color': '#dde4ee' }),
+    ]),
+  ]));
+
+  const room = roomBoxAt(items, camera.x, camera.y);
+  if (!room) {
+    svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: VH, fill: '#0f172a' }));
+    svg.append(svgEl('text', { x: VW / 2, y: VH / 2, 'text-anchor': 'middle', fill: '#e2e8f0', 'font-size': 20, 'font-weight': 700 }, ['Add a room, then place the camera inside it.']));
+    host.appendChild(svg);
+    return;
+  }
+
+  const ceilH = 95;
+  const eyeH = 55;
+  const near = 5;
+  const fov = ((camera.fov || 72) * Math.PI) / 180;
+  const focal = (VW / 2) / Math.tan(fov / 2);
+  const horizon = VH * 0.46;
+  const hd = ((camera.heading || 0) * Math.PI) / 180;
+  const f = { x: Math.cos(hd), y: Math.sin(hd) };
+  const right = { x: -Math.sin(hd), y: Math.cos(hd) };
+  const cam = { x: camera.x, y: camera.y };
+
+  const toCam = (px, py) => {
+    const rx = px - cam.x;
+    const ry = py - cam.y;
+    return { depth: (rx * f.x) + (ry * f.y), lat: (rx * right.x) + (ry * right.y) };
+  };
+  const proj = (c, z) => ({ x: (VW / 2) + (c.lat / c.depth) * focal, y: horizon - ((z - eyeH) / c.depth) * focal });
+  const clipNear = (a, b) => {
+    if (a.depth < near && b.depth < near) return null;
+    let A = a;
+    let B = b;
+    if (A.depth < near) {
+      const t = (near - A.depth) / (B.depth - A.depth);
+      A = { depth: near, lat: A.lat + (B.lat - A.lat) * t };
+    } else if (B.depth < near) {
+      const t = (near - B.depth) / (A.depth - B.depth);
+      B = { depth: near, lat: B.lat + (A.lat - B.lat) * t };
+    }
+    return [A, B];
+  };
+
+  // Backdrop: ceiling (top) + floor (bottom)
+  svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: horizon, fill: 'url(#wm-ceil)' }));
+  svg.append(svgEl('rect', { x: 0, y: horizon, width: VW, height: VH - horizon, fill: 'url(#wm-floor)' }));
+
+  // Room walls as depth-sorted quads
+  const corners = [
+    { x: room.x, y: room.y },
+    { x: room.x + room.w, y: room.y },
+    { x: room.x + room.w, y: room.y + room.h },
+    { x: room.x, y: room.y + room.h },
+  ];
+  const wallQuads = [];
+  for (let i = 0; i < 4; i += 1) {
+    const p1 = corners[i];
+    const p2 = corners[(i + 1) % 4];
+    const clipped = clipNear(toCam(p1.x, p1.y), toCam(p2.x, p2.y));
+    if (!clipped) continue;
+    const [ca, cb] = clipped;
+    const fa = proj(ca, 0);
+    const fb = proj(cb, 0);
+    const ta = proj(ca, ceilH);
+    const tb = proj(cb, ceilH);
+    wallQuads.push({ pts: `${fa.x},${fa.y} ${fb.x},${fb.y} ${tb.x},${tb.y} ${ta.x},${ta.y}`, depth: (ca.depth + cb.depth) / 2 });
+  }
+  wallQuads.sort((a, b) => b.depth - a.depth);
+  wallQuads.forEach((q) => {
+    const shade = Math.max(0.5, Math.min(1, 1 - q.depth / 900));
+    const base = Math.round(214 * shade + 20);
+    svg.append(svgEl('polygon', { points: q.pts, fill: `rgb(${base},${base + 6},${base + 14})`, stroke: '#94a3b8', 'stroke-width': 1 }));
+  });
+
+  // Billboard entities (doors/windows + furniture), depth sorted
+  const classify = (it) => {
+    const t = `${it.type || ''} ${it.label || ''}`.toLowerCase();
+    if (/door/.test(t)) return 'door';
+    if (/window/.test(t)) return 'window';
+    return 'object';
+  };
+  const entities = items
+    .filter(it => it && Number.isFinite(it.x) && Number.isFinite(it.y))
+    .filter(it => { const k = it.kind || ''; return k === 'fixture' || k === 'electrical' || k === 'plumbing' || /door|window|fixture|sofa|table|bed|desk/i.test(String(it.type || it.label || '')); })
+    .map((it) => ({ it, cam: toCam(it.x, it.y), cls: classify(it) }))
+    .filter(e => e.cam.depth > near)
+    .sort((a, b) => b.cam.depth - a.cam.depth);
+
+  const objColor = (cls, key) => {
+    if (cls === 'door') return '#b45309';
+    if (cls === 'window') return '#38bdf8';
+    if (/plant/.test(key || '')) return '#16a34a';
+    if (/fridge|washer|dryer|dishwasher|stove|oven|sink|toilet|bathtub|shower/.test(key || '')) return '#cbd5e1';
+    return '#64748b';
+  };
+
+  entities.forEach((e) => {
+    const { it, cam: cc, cls } = e;
+    const key = it.symbolKey || '';
+    const objH = cls === 'door' ? 72 : cls === 'window' ? 42 : (OBJECT_HEIGHTS[key] || 22);
+    const base = cls === 'window' ? 32 : 0; // windows float off the floor
+    const footprint = Math.max(10, it.width || 20);
+    const foot = proj(cc, base);
+    const top = proj(cc, base + objH);
+    const wpx = Math.max(6, (footprint / cc.depth) * focal);
+    const x = foot.x - wpx / 2;
+    const yTop = top.y;
+    const hpx = Math.max(6, foot.y - top.y);
+    if (cls === 'door') {
+      svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: hpx, rx: 2, fill: '#7c4a1e', stroke: '#5b370f', 'stroke-width': 1, opacity: 0.95 }));
+      svg.append(svgEl('circle', { cx: x + wpx * 0.82, cy: yTop + hpx * 0.52, r: Math.max(1.5, wpx * 0.05), fill: '#fde68a' }));
+    } else if (cls === 'window') {
+      svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: hpx, rx: 1, fill: 'rgba(186,230,253,0.85)', stroke: '#0ea5e9', 'stroke-width': 1.5 }));
+      svg.append(svgEl('line', { x1: x + wpx / 2, y1: yTop, x2: x + wpx / 2, y2: yTop + hpx, stroke: '#0ea5e9', 'stroke-width': 1 }));
+      svg.append(svgEl('line', { x1: x, y1: yTop + hpx / 2, x2: x + wpx, y2: yTop + hpx / 2, stroke: '#0ea5e9', 'stroke-width': 1 }));
+    } else {
+      // floor shadow
+      svg.append(svgEl('ellipse', { cx: foot.x, cy: foot.y, rx: wpx * 0.56, ry: Math.max(2, wpx * 0.14), fill: 'rgba(15,23,42,0.18)' }));
+      svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: hpx, rx: 3, fill: objColor(cls, key), stroke: '#334155', 'stroke-width': 1, opacity: 0.96 }));
+      svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: Math.max(2, hpx * 0.18), rx: 3, fill: '#ffffff', opacity: 0.18 }));
+      if (it.label) {
+        svg.append(svgEl('text', { x: foot.x, y: Math.max(12, yTop - 3), 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#1e293b' }, [String(it.label).slice(0, 16)]));
+      }
+    }
+  });
+
+  // Vignette + heading badge
+  svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: VH, fill: 'none', stroke: 'rgba(15,23,42,0.18)', 'stroke-width': 10 }));
+  const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+  const dir = dirs[Math.round((((camera.heading || 0) % 360) + 360) % 360 / 45) % 8];
+  svg.append(svgEl('rect', { x: 14, y: 14, width: 150, height: 26, rx: 6, fill: 'rgba(15,23,42,0.72)' }));
+  svg.append(svgEl('text', { x: 24, y: 32, 'font-size': 12, 'font-weight': 700, fill: '#e2e8f0' }, [`${room.label || 'Room'} · facing ${dir}`]));
+  host.appendChild(svg);
+}
+
+function wallEndpoints(wl) {
+  const x1 = wl.x;
+  const y1 = wl.y;
+  if (Number.isFinite(wl.x2) && Number.isFinite(wl.y2)) return { x1, y1, x2: wl.x2, y2: wl.y2 };
+  const L = Number(wl.length) || 0;
+  const W = Number(wl.width) || 0;
+  const H = Number(wl.height) || 0;
+  if (L && Math.abs(L) >= Math.abs(H) && Math.abs(L) >= Math.abs(W)) return { x1, y1, x2: x1 + L, y2: y1 };
+  if (H && Math.abs(H) >= Math.abs(W)) return { x1, y1, x2: x1, y2: y1 + H };
+  return { x1, y1, x2: x1 + (W || 120), y2: y1 };
+}
+
+/** Build an interactive top-down mini-map for placing/aiming the camera. */
+function buildCameraMap(items, camera, onChange) {
+  const planW = 960;
+  const planH = 620;
+  const mapW = 320;
+  const scale = mapW / planW;
+  const mapH = planH * scale;
+  const svg = svgEl('svg', { viewBox: `0 0 ${mapW} ${mapH}`, class: 'floorplan-cam-map', role: 'img', 'aria-label': 'Camera placement map' });
+
+  function redraw() {
+    svg.innerHTML = '';
+    svg.append(svgEl('rect', { x: 0, y: 0, width: mapW, height: mapH, fill: '#f8fafc', stroke: '#cbd5e1' }));
+    items.filter(i => (i.kind === 'room') || /room/i.test(String(i.type || ''))).forEach((r) => {
+      svg.append(svgEl('rect', { x: r.x * scale, y: r.y * scale, width: Math.max(40, r.width || 120) * scale, height: Math.max(34, r.height || 80) * scale, fill: '#dbeafe', stroke: '#60a5fa', 'stroke-width': 1 }));
+    });
+    items.filter(i => i.kind === 'wall' || /wall/i.test(String(i.type || ''))).forEach((wl) => {
+      const e = wallEndpoints(wl);
+      svg.append(svgEl('line', { x1: e.x1 * scale, y1: e.y1 * scale, x2: e.x2 * scale, y2: e.y2 * scale, stroke: '#334155', 'stroke-width': 1.8, 'stroke-linecap': 'round' }));
+    });
+    const cx = camera.x * scale;
+    const cy = camera.y * scale;
+    const hd = ((camera.heading || 0) * Math.PI) / 180;
+    const fov = ((camera.fov || 72) * Math.PI) / 180;
+    const len = 38;
+    const a1 = hd - fov / 2;
+    const a2 = hd + fov / 2;
+    svg.append(svgEl('polygon', { points: `${cx},${cy} ${cx + Math.cos(a1) * len},${cy + Math.sin(a1) * len} ${cx + Math.cos(a2) * len},${cy + Math.sin(a2) * len}`, fill: 'rgba(37,99,235,0.22)', stroke: '#2563eb', 'stroke-width': 0.6 }));
+    svg.append(svgEl('line', { x1: cx, y1: cy, x2: cx + Math.cos(hd) * len, y2: cy + Math.sin(hd) * len, stroke: '#2563eb', 'stroke-width': 1.6 }));
+    svg.append(svgEl('circle', { cx, cy, r: 5, fill: '#2563eb', stroke: '#ffffff', 'stroke-width': 1.5 }));
+  }
+
+  function toPlan(ev) {
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX;
+    pt.y = ev.clientY;
+    const l = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: Math.max(20, Math.min(940, l.x / scale)), y: Math.max(20, Math.min(600, l.y / scale)) };
+  }
+
+  let aiming = false;
+  svg.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    aiming = true;
+    const p = toPlan(ev);
+    camera.x = p.x;
+    camera.y = p.y;
+    redraw();
+    svg.setPointerCapture?.(ev.pointerId);
+  });
+  svg.addEventListener('pointermove', (ev) => {
+    if (!aiming) return;
+    const p = toPlan(ev);
+    const dx = p.x - camera.x;
+    const dy = p.y - camera.y;
+    if (Math.hypot(dx, dy) > 4) {
+      camera.heading = (Math.atan2(dy, dx) * 180) / Math.PI;
+      redraw();
+    }
+  });
+  const end = (ev) => {
+    if (!aiming) return;
+    aiming = false;
+    svg.releasePointerCapture?.(ev.pointerId);
+    if (onChange) onChange();
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+
+  redraw();
+  return { svg, redraw };
+}
+
 export function openFloorplanAiRenderModal({ items }) {
   const overlay = el('div', { className: 'floorplan-ai-overlay' });
   const modal = el('div', { className: 'floorplan-ai-modal floorplan-ai-render-modal' });
   const close = () => overlay.remove();
 
   const header = el('div', { className: 'floorplan-ai-header' }, [
-    el('div', { className: 'floorplan-ai-title' }, ['AI Space Render']),
+    el('div', { className: 'floorplan-ai-title' }, ['Render Space']),
     el('button', { className: 'floorplan-ai-close', type: 'button', 'aria-label': 'Close' }, ['x']),
   ]);
   header.querySelector('.floorplan-ai-close').addEventListener('click', close);
 
-  const status = el('div', { className: 'floorplan-ai-status' }, ['Generate a visual concept from your current floor plan geometry.']);
+  const status = el('div', { className: 'floorplan-ai-status' }, ['Place the camera on the map, aim it, then render a 3D view — or generate a styled concept.']);
+
+  // ---- Camera placement ----
+  const firstRoom = (items || []).find(i => (i.kind === 'room') || /room/i.test(String(i.type || '')));
+  const camera = firstRoom
+    ? { x: firstRoom.x + Math.max(40, firstRoom.width || 120) / 2, y: firstRoom.y + Math.max(34, firstRoom.height || 80) / 2, heading: 0, fov: 72 }
+    : { x: 480, y: 310, heading: 0, fov: 72 };
+
   const renderHost = el('div', { className: 'floorplan-ai-render-host' });
   const details = el('div', { className: 'floorplan-ai-render-details' });
+
+  const headingSlider = el('input', { className: 'floorplan-cam-heading', type: 'range', min: '0', max: '359', step: '1', value: '0' });
+
+  const cam = buildCameraMap(items || [], camera, () => {
+    headingSlider.value = String(Math.round(((camera.heading % 360) + 360) % 360));
+  });
+
+  const renderView = () => {
+    renderPerspectiveView(renderHost, items || [], camera);
+    details.innerHTML = '';
+    details.append(
+      el('h4', {}, ['Viewpoint 3D']),
+      el('p', {}, ['Rendered from the camera position and direction shown on the map. Drag on the map to move the camera; drag away from it or use the slider to aim.']),
+    );
+    status.textContent = '3D viewpoint rendered.';
+  };
+
+  headingSlider.addEventListener('input', () => {
+    camera.heading = Number(headingSlider.value);
+    cam.redraw();
+  });
+
+  const camMapWrap = el('div', { className: 'floorplan-cam-mapwrap' }, [
+    el('div', { className: 'floorplan-cam-maphint' }, ['Camera — tap to place, drag to aim']),
+    cam.svg,
+    el('label', { className: 'floorplan-cam-headinglabel' }, ['Direction', headingSlider]),
+  ]);
+
+  const renderViewBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-btn-primary floorplan-ai-view-btn', type: 'button' }, ['Render 3D View']);
+  renderViewBtn.addEventListener('click', () => {
+    try {
+      renderView();
+      showToast('3D view rendered', 'success');
+    } catch (err) {
+      status.textContent = err.message || 'Could not render view.';
+      showToast(err.message || 'Could not render view', 'error');
+    }
+  });
 
   const generateBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-btn-primary', type: 'button' }, ['Generate Visual']);
   generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = true;
-    status.textContent = 'Generating AI concept render...';
+    status.textContent = 'Generating concept render...';
     try {
       const spec = await generateRenderSpec(items || []);
       renderConceptSvg(renderHost, items || [], spec);
@@ -188,8 +499,8 @@ export function openFloorplanAiRenderModal({ items }) {
         el('p', { className: 'floorplan-ai-render-prompt' }, [spec.renderPrompt || '']),
         el('ul', {}, (spec.designActions || []).map(action => el('li', {}, [String(action)]))),
       );
-      status.textContent = 'AI visual concept ready.';
-      showToast('AI visual generated', 'success');
+      status.textContent = 'Concept render ready.';
+      showToast('Visual generated', 'success');
     } catch (err) {
       status.textContent = err.message || 'Could not generate render.';
       showToast(err.message || 'Could not generate render', 'error');
@@ -202,7 +513,7 @@ export function openFloorplanAiRenderModal({ items }) {
   copyPromptBtn.addEventListener('click', async () => {
     const prompt = details.querySelector('.floorplan-ai-render-prompt')?.textContent?.trim();
     if (!prompt) {
-      showToast('Generate a render first', 'error');
+      showToast('Generate a concept first', 'error');
       return;
     }
     try {
@@ -213,11 +524,13 @@ export function openFloorplanAiRenderModal({ items }) {
     }
   });
 
-  const actions = el('div', { className: 'floorplan-ai-actions' }, [generateBtn, copyPromptBtn]);
-  modal.append(header, status, renderHost, details, actions);
+  const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, copyPromptBtn]);
+  modal.append(header, status, camMapWrap, renderHost, details, actions);
   overlay.append(modal);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
   });
   document.body.appendChild(overlay);
+  // Render an initial 3D view so the modal is immediately useful.
+  if (firstRoom) renderView();
 }
