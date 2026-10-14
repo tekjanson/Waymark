@@ -316,6 +316,254 @@
   touch-action: none;
 }
 
+/* ---------- Floating zoom toolbar (row 18) ---------- */
+.floorplan-zoom-toolbar {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+}
+.floorplan-zoom-btn,
+.floorplan-zoom-readout {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background var(--transition), border-color var(--transition);
+}
+.floorplan-zoom-btn:hover,
+.floorplan-zoom-readout:hover { background: #2563eb; border-color: #3b82f6; }
+.floorplan-zoom-btn:disabled { opacity: 0.4; cursor: not-allowed; background: #1e293b; }
+.floorplan-zoom-readout { min-width: 52px; font-variant-numeric: tabular-nums; }
+.floorplan-zoom-fit { width: auto; font-size: 0.74rem; letter-spacing: 0.01em; }
+
+/* ---------- Line / shape style toolbar (row 24) ---------- */
+.floorplan-line-toolbar {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+  flex-wrap: wrap;
+  max-width: calc(100% - 44px);
+}
+.floorplan-line-toolbar-label {
+  color: #93c5fd;
+  font-weight: 800;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.floorplan-line-type,
+.floorplan-line-weight {
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 6px;
+}
+.floorplan-line-weight { width: 56px; }
+.floorplan-color-control { display: inline-flex; align-items: center; gap: 6px; }
+.floorplan-line-color {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #1e293b;
+  cursor: pointer;
+}
+.floorplan-color-swatches { display: inline-flex; gap: 3px; }
+.floorplan-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  padding: 0;
+}
+.floorplan-color-swatch:hover { transform: scale(1.12); }
+.floorplan-line-finish-btn {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.floorplan-line-finish-btn:hover { filter: brightness(1.08); }
+
+/* ---------- Properties inspector (rows 17, 21, 22, 24, 26, 28) ---------- */
+.floorplan-inspector {
+  position: absolute;
+  right: 22px;
+  top: 22px;
+  z-index: 7;
+  width: 232px;
+  max-width: calc(100% - 44px);
+  max-height: calc(100% - 44px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+}
+.floorplan-insp-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--color-text);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+.floorplan-insp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.floorplan-insp-label { flex: 0 0 64px; color: var(--color-text-muted); }
+.floorplan-insp-input,
+.floorplan-insp-layer {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text);
+  background: #fff;
+}
+.floorplan-insp-input:focus,
+.floorplan-insp-layer:focus { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.floorplan-insp-unit { flex: 0 0 auto; color: var(--color-text-muted); font-size: 0.72rem; }
+.floorplan-insp-style {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+}
+.floorplan-insp-style .floorplan-line-type,
+.floorplan-insp-style .floorplan-line-weight {
+  background: #fff;
+  color: var(--color-text);
+  border-color: var(--color-border);
+  height: 30px;
+}
+.floorplan-insp-style .floorplan-line-color { background: #fff; border-color: var(--color-border); }
+.floorplan-insp-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+.floorplan-insp-actions button {
+  flex: 1 1 auto;
+  min-height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.floorplan-insp-actions button:hover { background: #e2e8f0; }
+.floorplan-insp-lock.locked { background: #fef3c7; border-color: #f59e0b; }
+
+/* ---------- Custom layers (row 22) ---------- */
+.floorplan-custom-layers { display: flex; flex-direction: column; gap: 5px; }
+.floorplan-custom-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.floorplan-custom-layer-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  padding: 0 7px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text);
+  background: #fff;
+}
+.floorplan-custom-layer-row button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.floorplan-custom-layer-row button:hover { background: #f1f5f9; }
+.floorplan-custom-layer-row button:disabled { opacity: 0.35; cursor: not-allowed; }
+.floorplan-custom-lock.locked { background: #fef3c7; border-color: #f59e0b; }
+.floorplan-add-layer-btn {
+  margin-top: 4px;
+  height: 34px;
+  border: 1px dashed var(--color-primary);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--color-primary);
+  font-weight: 800;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.floorplan-add-layer-btn:hover { background: #dbeafe; }
+
+/* ---------- Vertex editing handles (row 25) ---------- */
+.floorplan-vertex-handle { cursor: grab; }
+.floorplan-vertex-mid { cursor: copy; opacity: 0.85; }
+
 /* ---------- Right panel ---------- */
 .floorplan-panel {
   border-left: 1px solid var(--color-border);
@@ -489,10 +737,21 @@
 }
 
 @media (max-width: 760px) {
-  .floorplan-topbar { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
-  .floorplan-topbar-center { margin: 0; order: 3; flex: 1 1 100%; justify-content: center; flex-wrap: wrap; }
-  .floorplan-topbar-right { flex: 1 1 100%; order: 4; gap: 6px; }
-  .floorplan-brand { order: 1; }
+  .floorplan-topbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 6px;
+    padding: 6px 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .floorplan-brand { order: 0; flex: 0 0 auto; }
+  .floorplan-topbar-center { margin: 0; order: 0; flex: 0 0 auto; justify-content: flex-start; flex-wrap: nowrap; }
+  .floorplan-topbar-right { order: 0; flex: 0 0 auto; gap: 6px; flex-wrap: nowrap; }
+  .floorplan-topbar-left { flex: 0 0 auto; }
+  .floorplan-secondary-btn,
+  .floorplan-toggle-btn,
+  .floorplan-export-btn { flex: 0 0 auto; white-space: nowrap; }
   .floorplan-body {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(340px, 1fr) auto;
@@ -532,10 +791,51 @@
   .floorplan-symbol-grid { grid-template-columns: 1fr 1fr; }
   .floorplan-symbol-choice { padding: 9px 9px; }
   /* Bigger, thumb-friendly selection tools */
-  .floorplan-prop-toolbar { top: auto; bottom: 14px; gap: 6px; padding: 7px 9px; }
+  .floorplan-prop-toolbar {
+    top: 10px; bottom: auto; left: 10px; right: 112px;
+    transform: none; justify-content: flex-start;
+    max-width: none; gap: 6px; padding: 6px 8px;
+  }
+  .floorplan-prop-dims { display: none; }
   .floorplan-prop-btn { min-width: 42px; height: 42px; font-size: 1.05rem; }
   .floorplan-prop-door { font-size: 0.78rem; }
   .floorplan-layer-lock { width: 42px; }
+
+  /* ---------- Mobile: maximize the canvas, dock panels as sheets ---------- */
+  .floorplan-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) 148px;
+  }
+  .floorplan-panel { max-height: 148px; }
+  .floorplan-svg { min-height: 300px; }
+
+  /* Zoom controls: top-right, thumb-sized, clear of the properties toolbar. */
+  .floorplan-zoom-toolbar { top: 10px; right: 10px; bottom: auto; }
+  .floorplan-zoom-btn,
+  .floorplan-zoom-readout { min-width: 38px; height: 38px; font-size: 0.95rem; }
+  .floorplan-zoom-readout { min-width: 44px; }
+
+  /* Line-style controls dock to the bottom while drawing a line/circle. */
+  .floorplan-line-toolbar {
+    left: 8px; right: 8px; top: auto; bottom: 8px;
+    max-width: none; justify-content: center;
+  }
+
+  /* Selection inspector becomes a full-width bottom sheet. */
+  .floorplan-inspector {
+    left: 8px; right: 8px; top: auto; bottom: 8px;
+    width: auto; max-width: none; max-height: 48vh;
+  }
+  /* 16px inputs stop iOS Safari from auto-zooming the page on focus. */
+  .floorplan-insp-input,
+  .floorplan-insp-layer,
+  .floorplan-line-type,
+  .floorplan-line-weight,
+  .floorplan-custom-layer-name { height: 42px; font-size: 16px; }
+  .floorplan-insp-actions button,
+  .floorplan-line-finish-btn,
+  .floorplan-add-layer-btn { min-height: 44px; }
+  .floorplan-custom-layer-row button { width: 38px; height: 38px; }
 }
 
 @media (max-width: 480px) {

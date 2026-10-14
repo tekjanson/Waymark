@@ -142,6 +142,36 @@ const SYMBOL_DRAWERS = {
     })));
     return nodes;
   },
+  'dining-table-rect'(w, h) {
+    // Rectangular tabletop with top-down chairs along every edge. The chair
+    // count scales with the parametric width/length so a longer table seats
+    // more people automatically.
+    const nodes = [
+      rect(w, h, { rx: 3, fill: '#f8fafc' }),
+      rect(Math.max(4, w - 8), Math.max(4, h - 8), { rx: 2, stroke: STROKE_SOFT }),
+    ];
+    const chair = (cx, cy, cw, ch) => svgEl('rect', {
+      x: cx - cw / 2, y: cy - ch / 2, width: cw, height: ch,
+      rx: 2, fill: ACCENT, stroke: STROKE_SOFT, 'stroke-width': 1,
+    });
+    const seatRun = 14;          // ~1.4 ft of edge per chair
+    const depth = Math.min(10, Math.max(6, h * 0.3));
+    const perLong = Math.max(1, Math.floor((w - 4) / seatRun));
+    const perShort = h >= 28 ? Math.max(1, Math.floor((h - 4) / seatRun)) : 0;
+    for (let i = 0; i < perLong; i += 1) {
+      const cx = -w / 2 + (w / perLong) * (i + 0.5);
+      const cw = Math.min(seatRun - 3, (w / perLong) - 3);
+      nodes.push(chair(cx, -h / 2 - depth / 2 - 1.5, cw, depth));
+      nodes.push(chair(cx, h / 2 + depth / 2 + 1.5, cw, depth));
+    }
+    for (let i = 0; i < perShort; i += 1) {
+      const cy = -h / 2 + (h / perShort) * (i + 0.5);
+      const ch = Math.min(seatRun - 3, (h / perShort) - 3);
+      nodes.push(chair(-w / 2 - depth / 2 - 1.5, cy, depth, ch));
+      nodes.push(chair(w / 2 + depth / 2 + 1.5, cy, depth, ch));
+    }
+    return nodes;
+  },
   'coffee-table'(w, h) {
     return [rect(w, h, { rx: 5, fill: '#f8fafc' }), rect(w * 0.7, h * 0.7, { rx: 3, stroke: STROKE_SOFT })];
   },
@@ -490,6 +520,7 @@ const LABEL_ALIASES = [
   [/ottoman|foot\s*stool|pouf/, 'ottoman'],
   [/tv\s*stand|media\s*console|entertainment/, 'tv-stand'],
   [/sofa|couch|loveseat/, 'couch'],
+  [/rect(angular)?\s*dining|dining\s*table\s*\(?rect|dining\s*table\s*rect/, 'dining-table-rect'],
   [/dining\s*table|kitchen\s*table/, 'dining-table'],
   [/coffee\s*table/, 'coffee-table'],
   [/console\s*table/, 'console'],

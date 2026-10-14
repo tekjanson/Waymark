@@ -98,7 +98,9 @@ const TOOL_HINTS = {
   wall: 'Wall: drag or tap to draw with snap-to-grid and auto-connect anchors.',
   'wall-rect': 'Rectangle Walls: drag a box to create wall loops. Toggle corners on/off.',
   room: 'Room: drag or tap to draw bounds, snapped cleanly to nearby geometry.',
-  line: 'Line: click to add points, click the start point or press Enter to finish, Esc to cancel.',
+  line: 'Line: click to add points. Click the start to close, or double-click / Enter / Finish Line for an open line. Esc cancels.',
+  circle: 'Circle: press and drag from the centre outward to set the radius. Release to place.',
+  trim: 'Trim: click an overhanging wall/line end to cut it back to the nearest intersection.',
   measure: 'Measure: drag between two points to tape a distance. Switch tools to clear the live tape.',
   electrical: 'Electrical: tap to place a point with clean snapping.',
   plumbing: 'Plumbing: tap to place a point with clean snapping.',
@@ -106,9 +108,23 @@ const TOOL_HINTS = {
   window: 'Window: tap near a wall to snap and place glazing.',
   stairs: 'Stairs: tap to place stair alignment between floors.',
   symbol: 'Symbol: pick an item and tap to place furniture/appliances.',
-  select: 'Select: drag to move, Shift/Ctrl click for multi-select, drag empty space for box-select.',
+  select: 'Select: drag to move, Shift/Ctrl click for multi-select, drag empty space for box-select. Arrow keys nudge.',
   erase: 'Erase: tap any drawn item to remove it.',
 };
+
+/* Line/shape stroke styling (row 24). */
+const DEFAULT_LINE_STYLE = { lineType: 'solid', strokeWidth: 3, strokeColor: '#0f766e' };
+const LINE_TYPES = [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted'], ['dash-dot', 'Dash-dot']];
+const STROKE_SWATCHES = ['#0f766e', '#1e293b', '#dc2626', '#2563eb', '#d97706', '#16a34a', '#9333ea', '#000000'];
+
+/* Map a logical line type to an SVG stroke-dasharray for a given weight. */
+function dashArrayFor(lineType, weight) {
+  const w = Math.max(1, Number(weight) || 1);
+  if (lineType === 'dashed') return `${w * 3} ${w * 2}`;
+  if (lineType === 'dotted') return `${w} ${w * 1.8}`;
+  if (lineType === 'dash-dot') return `${w * 3} ${w * 1.6} ${w} ${w * 1.6}`;
+  return '';
+}
 
 const SYMBOL_CATALOG = [
   {
@@ -151,6 +167,7 @@ const SYMBOL_CATALOG = [
       { key: 'island', label: 'Island', icon: '⬛', width: 62, height: 32 },
       { key: 'cabinet', label: 'Cabinet', icon: '🗄️', width: 22, height: 22 },
       { key: 'dining-table', label: 'Dining Table', icon: '🍽️', width: 70, height: 46 },
+      { key: 'dining-table-rect', label: 'Dining Table (Rect)', icon: '🍽️', width: 60, height: 30 },
       { key: 'chair', label: 'Chair', icon: '🪑', width: 16, height: 16 },
     ],
   },
@@ -321,6 +338,29 @@ function createItem(kind, start, end) {
   };
 }
 
+/* ---------- Geometry helpers for trim & join (row 19) ---------- */
+
+/** Intersection of two infinite lines through segments p1→p2 and p3→p4.
+ * @returns {{x:number,y:number,t:number,u:number}|null} with parametric
+ *   positions t (on seg A) and u (on seg B), or null when parallel.
+ */
+function lineIntersection(p1, p2, p3, p4) {
+  const d = ((p2.x - p1.x) * (p4.y - p3.y)) - ((p2.y - p1.y) * (p4.x - p3.x));
+  if (Math.abs(d) < 1e-6) return null;
+  const t = (((p3.x - p1.x) * (p4.y - p3.y)) - ((p3.y - p1.y) * (p4.x - p3.x))) / d;
+  const u = (((p3.x - p1.x) * (p2.y - p1.y)) - ((p3.y - p1.y) * (p2.x - p1.x))) / d;
+  return { x: p1.x + (t * (p2.x - p1.x)), y: p1.y + (t * (p2.y - p1.y)), t, u };
+}
+
+/** Parametric position (0..1, unclamped) of a point projected onto a segment. */
+function paramOnSegment(point, a, b) {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const lenSq = (vx * vx) + (vy * vy);
+  if (lenSq === 0) return 0;
+  return (((point.x - a.x) * vx) + ((point.y - a.y) * vy)) / lenSq;
+}
+
 const definition = {
   name: 'Floor Plan',
   icon: '🏠',
@@ -412,6 +452,7 @@ const definition = {
 
     const sheetId = String(template?._currentSheetId || 'unknown-sheet');
     const draftStorageKey = `waymark_floorplan_draft_${sheetId}`;
+    let draftCustomLayers = null;
     try {
       const rawDraft = window.localStorage.getItem(draftStorageKey);
       if (rawDraft) {
@@ -419,6 +460,9 @@ const definition = {
         if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
           items = parsed.items;
           debugLog('draft-load', { sheetId, count: items.length });
+        }
+        if (parsed && Array.isArray(parsed.customLayers)) {
+          draftCustomLayers = parsed.customLayers;
         }
       }
     } catch (error) {
@@ -485,6 +529,7 @@ const definition = {
             toolButton('wall-rect', '▦', 'Wall Box'),
             toolButton('room', '▢', 'Room'),
             toolButton('line', '╱', 'Line'),
+            toolButton('circle', '◯', 'Circle'),
             toolButton('measure', '📏', 'Measure'),
             toolButton('door', '🚪', 'Door'),
             toolButton('window', '🪟', 'Window'),
@@ -496,6 +541,7 @@ const definition = {
           ]),
           railSection('Edit', [
             toolButton('select', '✦', 'Select'),
+            toolButton('trim', '✂', 'Trim'),
             toolButton('erase', '⌫', 'Erase'),
             actionButton('floorplan-undo-btn', '↶', 'Undo', () => undoLatest()),
             actionButton('floorplan-rect-mode-btn active', '⛓️', 'Corners: On', () => toggleRectDisconnected()),
@@ -534,6 +580,23 @@ const definition = {
               'data-floorplan-svg': 'true',
               style: { touchAction: 'none' },
             }, []),
+            /* ---------- Floating zoom toolbar (row 18) ---------- */
+            el('div', { className: 'floorplan-zoom-toolbar', role: 'toolbar', 'aria-label': 'Zoom controls' }, [
+              el('button', { className: 'floorplan-zoom-btn floorplan-zoom-out', type: 'button', title: 'Zoom out (Ctrl -)', 'aria-label': 'Zoom out', on: { click: () => zoomByStep(1 / 1.2) } }, ['−']),
+              el('button', { className: 'floorplan-zoom-readout', type: 'button', title: 'Reset zoom to 100% (Ctrl 0)', 'aria-label': 'Reset zoom', on: { click: () => resetView() } }, ['100%']),
+              el('button', { className: 'floorplan-zoom-btn floorplan-zoom-in', type: 'button', title: 'Zoom in (Ctrl +)', 'aria-label': 'Zoom in', on: { click: () => zoomByStep(1.2) } }, ['+']),
+              el('button', { className: 'floorplan-zoom-btn floorplan-zoom-fit', type: 'button', title: 'Zoom to fit the whole drawing', 'aria-label': 'Zoom to fit', on: { click: () => zoomToFit() } }, ['⤢ Fit']),
+            ]),
+            /* ---------- Line/shape style toolbar (row 24) — shown when the line or circle tool is active ---------- */
+            el('div', { className: 'floorplan-line-toolbar hidden', role: 'toolbar', 'aria-label': 'Line style' }, [
+              el('span', { className: 'floorplan-line-toolbar-label' }, ['Line style']),
+              lineTypeSelect(DEFAULT_LINE_STYLE.lineType, (v) => { state.lineStyle.lineType = v; }),
+              strokeWidthInput(DEFAULT_LINE_STYLE.strokeWidth, (v) => { state.lineStyle.strokeWidth = v; }),
+              strokeColorControl(DEFAULT_LINE_STYLE.strokeColor, (v) => { state.lineStyle.strokeColor = v; }),
+              el('button', { className: 'floorplan-line-finish-btn', type: 'button', title: 'Finish the current line as an open path (Enter)', on: { click: () => finalizeLine(false) } }, ['Finish Line']),
+            ]),
+            /* ---------- Selection properties inspector (rows 17, 21, 22, 24, 26, 28) ---------- */
+            el('div', { className: 'floorplan-inspector hidden', role: 'region', 'aria-label': 'Selection properties' }, []),
           ]),
         ]),
 
@@ -568,6 +631,8 @@ const definition = {
               el('button', { className: 'floorplan-layer-toggle active', type: 'button', title: `Show ${text.toLowerCase()}`, dataset: { layer } }, [text]),
               el('button', { className: 'floorplan-layer-lock', type: 'button', title: `Lock ${text.toLowerCase()} layer`, 'aria-pressed': 'false', dataset: { layer } }, ['🔓']),
             ]))),
+            el('div', { className: 'floorplan-custom-layers' }, []),
+            el('button', { className: 'floorplan-add-layer-btn', type: 'button', title: 'Add a custom layer (Electrical, Plumbing, HVAC…)', on: { click: () => addCustomLayer() } }, ['+ Add Layer']),
           ]),
           el('div', { className: 'floorplan-panel-section floorplan-interior-panel hidden' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['3D Interior Box']),
@@ -634,9 +699,14 @@ const definition = {
         fixture: false,
         line: false,
       },
+      customLayers: [],
       preview: null,
       lineDraft: null,
       lineCursor: null,
+      lineStyle: { ...DEFAULT_LINE_STYLE },
+      view: { zoom: 1, x: 0, y: 0 },
+      gestureActive: false,
+      vertexDrag: null,
       dragStart: null,
       dragIds: [],
       dragOrigins: null,
@@ -657,6 +727,7 @@ const definition = {
         const payload = JSON.stringify({
           updatedAt: new Date().toISOString(),
           items: state.items,
+          customLayers: state.customLayers,
         });
         window.localStorage.setItem(draftStorageKey, payload);
       } catch (error) {
@@ -854,6 +925,39 @@ const definition = {
       }
 
       return { x1, y1, x2, y2 };
+    }
+
+    /* Doors/windows hosted on a wall (row 28 keeps them anchored). */
+    function wallHostedOpenings(wall) {
+      if (!wall) return [];
+      return state.items.filter((it) => {
+        if (String(it.wallId || '') !== String(wall.id)) return false;
+        const sub = fixtureSubtype(it);
+        return sub === 'door' || sub === 'window';
+      });
+    }
+
+    /* Re-anchor hosted openings after a wall's endpoints change: each opening
+       keeps its fractional position (t) along the wall and re-aligns its angle
+       to the new wall direction (row 28). */
+    function recomputeWallOpenings(wall, origin) {
+      const openings = wallHostedOpenings(wall);
+      if (!openings.length) return;
+      const ox1 = origin.x1;
+      const oy1 = origin.y1;
+      const ox2 = origin.x2;
+      const oy2 = origin.y2;
+      if (![ox1, oy1, ox2, oy2].every(Number.isFinite)) return;
+      const oLen2 = ((ox2 - ox1) ** 2 + (oy2 - oy1) ** 2) || 1;
+      const now = getWallEndpoints(wall);
+      const angle = (Math.atan2(now.y2 - now.y1, now.x2 - now.x1) * 180) / Math.PI;
+      openings.forEach((op) => {
+        let t = (((op.x - ox1) * (ox2 - ox1)) + ((op.y - oy1) * (oy2 - oy1))) / oLen2;
+        t = clamp(t, 0, 1);
+        op.x = clamp(now.x1 + (now.x2 - now.x1) * t, 20, 940);
+        op.y = clamp(now.y1 + (now.y2 - now.y1) * t, 20, 600);
+        op.angle = angle;
+      });
     }
 
     function getSnapAnchorPoints(skipWallId = null) {
@@ -1131,6 +1235,9 @@ const definition = {
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
+      // Line/shape style toolbar is visible while a stroke-drawing tool is active (row 24).
+      const lineToolbar = board.querySelector('.floorplan-line-toolbar');
+      if (lineToolbar) lineToolbar.classList.toggle('hidden', !(nextTool === 'line' || nextTool === 'circle'));
       if (hint) {
         if (nextTool === 'symbol') {
           const preset = state.symbolPreset || HOUSEHOLD_SYMBOLS[0];
@@ -1290,11 +1397,34 @@ const definition = {
 
     function layerKeyForItem(item) {
       const kind = item.kind || classifyItem(item);
-      return kind === 'line' ? 'line' : kind;
+      return (kind === 'line' || kind === 'circle') ? 'line' : kind;
+    }
+
+    /* ---------- Custom layers (row 22) ---------- */
+    function findCustomLayer(name) {
+      return state.customLayers.find(l => l.name === name) || null;
+    }
+
+    function isCustomLayerHidden(name) {
+      const cl = findCustomLayer(name);
+      return Boolean(cl && cl.visible === false);
+    }
+
+    function isCustomLayerLocked(name) {
+      const cl = findCustomLayer(name);
+      return Boolean(cl && cl.locked);
     }
 
     function isItemLocked(item) {
+      if (item.customLayer && isCustomLayerLocked(item.customLayer)) return true;
       return Boolean(state.layerLocks[layerKeyForItem(item)]);
+    }
+
+    /* Mutation is blocked by a locked layer OR an explicit per-item/group lock
+       (row 21). Per-item locked objects stay selectable so they can be
+       unlocked, but cannot be moved, resized, rotated, nudged, or deleted. */
+    function isMutationLocked(item) {
+      return isItemLocked(item) || Boolean(item.locked);
     }
 
     function toggleLayerLock(layer) {
@@ -1325,6 +1455,147 @@ const definition = {
       });
     });
 
+    /* ---------- Custom layer management (row 22) ---------- */
+    function uniqueLayerName(base) {
+      let name = base;
+      let n = 2;
+      while (findCustomLayer(name)) { name = `${base} ${n}`; n += 1; }
+      return name;
+    }
+
+    function addCustomLayer(initialName) {
+      const name = uniqueLayerName(initialName || `Layer ${state.customLayers.length + 1}`);
+      pushUndoCheckpoint();
+      state.customLayers.push({ name, visible: true, locked: false });
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Added layer “${name}”`);
+      return name;
+    }
+
+    function deleteCustomLayer(name) {
+      const idx = state.customLayers.findIndex(l => l.name === name);
+      if (idx === -1) return;
+      pushUndoCheckpoint();
+      state.customLayers.splice(idx, 1);
+      // Orphaned items fall back to their default kind layer.
+      state.items.forEach((item) => { if (item.customLayer === name) delete item.customLayer; });
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Deleted layer “${name}”`);
+    }
+
+    function renameCustomLayer(name, nextRaw) {
+      const next = normalizeText(nextRaw);
+      const cl = findCustomLayer(name);
+      if (!cl || !next || next === name || findCustomLayer(next)) {
+        renderCustomLayerList();
+        return;
+      }
+      pushUndoCheckpoint();
+      cl.name = next;
+      state.items.forEach((item) => { if (item.customLayer === name) item.customLayer = next; });
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+    }
+
+    function toggleCustomLayerVisibility(name) {
+      const cl = findCustomLayer(name);
+      if (!cl) return;
+      cl.visible = cl.visible === false;
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+    }
+
+    function toggleCustomLayerLock(name) {
+      const cl = findCustomLayer(name);
+      if (!cl) return;
+      cl.locked = !cl.locked;
+      if (cl.locked) {
+        state.items.forEach((item) => { if (item.customLayer === name) state.selectedIds.delete(String(item.id)); });
+        state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
+      }
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+    }
+
+    function moveCustomLayer(name, delta) {
+      const idx = state.customLayers.findIndex(l => l.name === name);
+      const next = idx + delta;
+      if (idx === -1 || next < 0 || next >= state.customLayers.length) return;
+      pushUndoCheckpoint();
+      const [layer] = state.customLayers.splice(idx, 1);
+      state.customLayers.splice(next, 0, layer);
+      renderCustomLayerList();
+      renderScene();
+      queuePersistDraft();
+    }
+
+    function renderCustomLayerList() {
+      const host = board.querySelector('.floorplan-custom-layers');
+      if (!host) return;
+      host.innerHTML = '';
+      state.customLayers.forEach((cl, index) => {
+        const nameInput = el('input', {
+          className: 'floorplan-custom-layer-name',
+          type: 'text', value: cl.name, title: 'Rename layer',
+          on: {
+            change: (e) => renameCustomLayer(cl.name, e.target.value),
+            keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+          },
+        });
+        host.append(el('div', { className: 'floorplan-custom-layer-row', dataset: { layerName: cl.name } }, [
+          el('button', { className: `floorplan-layer-toggle floorplan-custom-visible${cl.visible === false ? '' : ' active'}`, type: 'button', title: 'Toggle visibility', on: { click: () => toggleCustomLayerVisibility(cl.name) } }, [cl.visible === false ? '🙈' : '👁']),
+          nameInput,
+          el('button', { className: `floorplan-layer-lock floorplan-custom-lock${cl.locked ? ' locked' : ''}`, type: 'button', title: 'Lock layer', 'aria-pressed': cl.locked ? 'true' : 'false', on: { click: () => toggleCustomLayerLock(cl.name) } }, [cl.locked ? '🔒' : '🔓']),
+          el('button', { className: 'floorplan-custom-up', type: 'button', title: 'Move up (front)', disabled: index === 0, on: { click: () => moveCustomLayer(cl.name, -1) } }, ['↑']),
+          el('button', { className: 'floorplan-custom-down', type: 'button', title: 'Move down (back)', disabled: index === state.customLayers.length - 1, on: { click: () => moveCustomLayer(cl.name, 1) } }, ['↓']),
+          el('button', { className: 'floorplan-custom-delete', type: 'button', title: 'Delete layer', on: { click: () => deleteCustomLayer(cl.name) } }, ['✕']),
+        ]));
+      });
+    }
+
+    /* Ensure every layer referenced by an item exists in the panel (row 22). */
+    function reconcileCustomLayers() {
+      const names = new Set(state.customLayers.map(l => l.name));
+      state.items.forEach((item) => {
+        if (item.customLayer && !names.has(item.customLayer)) {
+          state.customLayers.push({ name: item.customLayer, visible: true, locked: false });
+          names.add(item.customLayer);
+        }
+      });
+    }
+
+    /* Inspector row: assign the selected item to a layer (row 22). */
+    function layerSelectRow(item) {
+      const sel = el('select', {
+        className: 'floorplan-insp-layer',
+        title: 'Layer assignment',
+        on: {
+          change: (e) => {
+            pushUndoCheckpoint();
+            if (e.target.value === '__default__') delete item.customLayer;
+            else item.customLayer = e.target.value;
+            renderScene();
+            queuePersistDraft();
+          },
+        },
+      }, [
+        el('option', { value: '__default__' }, ['Default']),
+        ...state.customLayers.map(cl => el('option', { value: cl.name }, [cl.name])),
+      ]);
+      sel.value = item.customLayer && findCustomLayer(item.customLayer) ? item.customLayer : '__default__';
+      return el('label', { className: 'floorplan-insp-row' }, [
+        el('span', { className: 'floorplan-insp-label' }, ['Layer']),
+        sel,
+      ]);
+    }
+
     function isSymbolObject(item) {
       if (!item) return false;
       const sub = fixtureSubtype(item);
@@ -1340,7 +1611,7 @@ const definition = {
     }
 
     function editableSelection() {
-      return selectedItemsOnFloor().filter(item => !isItemLocked(item));
+      return selectedItemsOnFloor().filter(item => !isMutationLocked(item));
     }
 
     function rotateSelection(delta) {
@@ -1391,6 +1662,154 @@ const definition = {
       setFeedback(which === 'dir' ? 'Door swing direction flipped' : 'Door hinge side flipped');
     }
 
+    /* ---------- Trim & join (row 19) ---------- */
+    /* All editable wall/line segments on the current floor. */
+    function allSegments() {
+      const segs = [];
+      state.items.forEach((item) => {
+        if (getItemFloor(item) !== state.currentFloor) return;
+        if (isMutationLocked(item)) return;
+        const kind = item.kind || classifyItem(item);
+        if (kind === 'wall') {
+          const e = getWallEndpoints(item);
+          segs.push({ item, kind, segIndex: 0, a: { x: e.x1, y: e.y1 }, b: { x: e.x2, y: e.y2 } });
+        } else if (kind === 'line' && Array.isArray(item.points)) {
+          for (let i = 0; i < item.points.length - 1; i += 1) {
+            segs.push({ item, kind, segIndex: i, a: item.points[i], b: item.points[i + 1] });
+          }
+        }
+      });
+      return segs;
+    }
+
+    /* Move the chosen endpoint of a segment to a target point. */
+    function setSegmentEndpoint(seg, which, pt) {
+      const item = seg.item;
+      if (seg.kind === 'wall') {
+        const origin = { x1: item.x, y1: item.y, x2: getWallEndpoints(item).x2, y2: getWallEndpoints(item).y2 };
+        if (which === 'a') { item.x = clamp(pt.x, 20, 940); item.y = clamp(pt.y, 20, 600); }
+        else { item.x2 = clamp(pt.x, 20, 940); item.y2 = clamp(pt.y, 20, 600); }
+        const e = getWallEndpoints(item);
+        item.length = Math.hypot(e.x2 - item.x, e.y2 - item.y);
+        item.width = Math.abs(e.x2 - item.x);
+        item.height = Math.abs(e.y2 - item.y);
+        recomputeWallOpenings(item, origin);
+      } else if (seg.kind === 'line' && Array.isArray(item.points)) {
+        const idx = which === 'a' ? seg.segIndex : seg.segIndex + 1;
+        item.points[idx] = { x: clamp(pt.x, 20, 940), y: clamp(pt.y, 20, 600) };
+        item.x = item.points[0].x;
+        item.y = item.points[0].y;
+      }
+    }
+
+    function trimAtPoint(point) {
+      const segs = allSegments();
+      let target = null;
+      let bestD = 14;
+      segs.forEach((s) => {
+        const proj = projectPointOnSegment(point, { x1: s.a.x, y1: s.a.y, x2: s.b.x, y2: s.b.y });
+        if (proj.distance < bestD) { bestD = proj.distance; target = s; }
+      });
+      if (!target) {
+        showToast('Click on a wall or line to trim.', 'error');
+        return;
+      }
+      const A = target.a;
+      const B = target.b;
+      const clickT = paramOnSegment(point, A, B);
+      let best = null;
+      segs.forEach((s) => {
+        if (s.item.id === target.item.id && s.segIndex === target.segIndex) return;
+        const I = lineIntersection(A, B, s.a, s.b);
+        if (!I) return;
+        if (I.u < -0.01 || I.u > 1.01) return;
+        if (I.t < -0.6 || I.t > 1.6) return;
+        const d = Math.abs(I.t - clickT);
+        if (!best || d < best.d) best = { I, d };
+      });
+      if (!best) {
+        showToast('No intersection found to trim to.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      // Move whichever endpoint sits on the same side of the intersection as
+      // the click (the overhang) back to the exact intersection point.
+      const which = clickT >= best.I.t ? 'b' : 'a';
+      setSegmentEndpoint(target, which, best.I);
+      renderScene();
+      queuePersistDraft();
+      setFeedback('Trimmed to intersection');
+    }
+
+    /* The end-to-end segment representing an item for joining. */
+    function itemPrimarySegment(item) {
+      const kind = item.kind || classifyItem(item);
+      if (kind === 'wall') {
+        const e = getWallEndpoints(item);
+        return { item, kind, ends: [{ ref: 'start', x: e.x1, y: e.y1 }, { ref: 'end', x: e.x2, y: e.y2 }] };
+      }
+      const pts = item.points || [];
+      const last = pts.length - 1;
+      return {
+        item, kind,
+        a: pts[0], b: pts[last],
+        ends: [{ ref: 0, x: pts[0].x, y: pts[0].y }, { ref: last, x: pts[last].x, y: pts[last].y }],
+      };
+    }
+
+    function joinNearestEndpointTo(item, pt) {
+      const kind = item.kind || classifyItem(item);
+      if (kind === 'wall') {
+        const e = getWallEndpoints(item);
+        const dStart = Math.hypot(e.x1 - pt.x, e.y1 - pt.y);
+        const dEnd = Math.hypot(e.x2 - pt.x, e.y2 - pt.y);
+        const origin = { x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 };
+        if (dStart <= dEnd) { item.x = clamp(pt.x, 20, 940); item.y = clamp(pt.y, 20, 600); }
+        else { item.x2 = clamp(pt.x, 20, 940); item.y2 = clamp(pt.y, 20, 600); }
+        const now = getWallEndpoints(item);
+        item.length = Math.hypot(now.x2 - item.x, now.y2 - item.y);
+        item.width = Math.abs(now.x2 - item.x);
+        item.height = Math.abs(now.y2 - item.y);
+        recomputeWallOpenings(item, origin);
+      } else if (kind === 'line' && Array.isArray(item.points) && item.points.length) {
+        const last = item.points.length - 1;
+        const dStart = Math.hypot(item.points[0].x - pt.x, item.points[0].y - pt.y);
+        const dEnd = Math.hypot(item.points[last].x - pt.x, item.points[last].y - pt.y);
+        const idx = dStart <= dEnd ? 0 : last;
+        item.points[idx] = { x: clamp(pt.x, 20, 940), y: clamp(pt.y, 20, 600) };
+        item.x = item.points[0].x;
+        item.y = item.points[0].y;
+      }
+    }
+
+    function joinSelection() {
+      const sel = selectedItemsOnFloor().filter((i) => {
+        const k = i.kind || classifyItem(i);
+        return k === 'wall' || k === 'line';
+      });
+      if (sel.length !== 2) {
+        showToast('Select exactly two walls or lines to join.', 'error');
+        return;
+      }
+      const segA = itemPrimarySegment(sel[0]);
+      const segB = itemPrimarySegment(sel[1]);
+      const a1 = segA.ends[0];
+      const a2 = segA.ends[1];
+      const b1 = segB.ends[0];
+      const b2 = segB.ends[1];
+      const I = lineIntersection(a1, a2, b1, b2);
+      if (!I) {
+        showToast('These are parallel — cannot join.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      joinNearestEndpointTo(sel[0], I);
+      joinNearestEndpointTo(sel[1], I);
+      renderScene();
+      queuePersistDraft();
+      setFeedback('Joined at corner');
+    }
+
     function duplicateSelection() {
       const targets = editableSelection();
       if (!targets.length) return;
@@ -1427,6 +1846,99 @@ const definition = {
       setFeedback(`Deleted ${targets.length} object${targets.length === 1 ? '' : 's'}`);
     }
 
+    /* Move an endpoint/vertex/anchor by (dx, dy) world units for one item. */
+    function translateItemBy(item, dx, dy) {
+      item.x = clamp((item.x || 0) + dx, 20, 940);
+      item.y = clamp((item.y || 0) + dy, 20, 600);
+      if (typeof item.x2 === 'number') item.x2 = clamp(item.x2 + dx, 20, 940);
+      if (typeof item.y2 === 'number') item.y2 = clamp(item.y2 + dy, 20, 600);
+      if (Array.isArray(item.points)) {
+        item.points = item.points.map(p => ({ x: clamp(p.x + dx, 20, 940), y: clamp(p.y + dy, 20, 600) }));
+      }
+    }
+
+    let nudgeCheckpointPending = false;
+    /* Keyboard arrow-key nudging (row 27). */
+    function nudgeSelection(dx, dy) {
+      const targets = editableSelection();
+      if (!targets.length) return;
+      if (!nudgeCheckpointPending) {
+        pushUndoCheckpoint();
+        nudgeCheckpointPending = true;
+      }
+      const selectedIds = new Set(targets.map(t => String(t.id)));
+      targets.forEach((item) => {
+        translateItemBy(item, dx, dy);
+        if ((item.kind || classifyItem(item)) === 'wall') {
+          wallHostedOpenings(item).forEach((op) => {
+            if (!selectedIds.has(String(op.id))) translateItemBy(op, dx, dy);
+          });
+        }
+      });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Nudged ${targets.length} object${targets.length === 1 ? '' : 's'}`);
+      if (nudgeResetTimer) clearTimeout(nudgeResetTimer);
+      nudgeResetTimer = setTimeout(() => { nudgeCheckpointPending = false; }, 500);
+    }
+    let nudgeResetTimer = null;
+
+    /* Grouping (row 21): assign a shared groupId so any member selects/moves
+       the whole group together. */
+    function groupSelection() {
+      const targets = selectedItemsOnFloor();
+      if (targets.length < 2) {
+        showToast('Select two or more objects to group.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      const groupId = `grp-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
+      targets.forEach((item) => { item.groupId = groupId; });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Grouped ${targets.length} objects`);
+    }
+
+    function ungroupSelection() {
+      const targets = selectedItemsOnFloor().filter(item => item.groupId);
+      if (!targets.length) {
+        showToast('Select a group to ungroup.', 'error');
+        return;
+      }
+      pushUndoCheckpoint();
+      targets.forEach((item) => { delete item.groupId; });
+      renderScene();
+      queuePersistDraft();
+      setFeedback('Ungrouped');
+    }
+
+    /* All items sharing a groupId with the given item (including itself). */
+    function groupMembers(item) {
+      if (!item || !item.groupId) return item ? [item] : [];
+      return state.items.filter(other => other.groupId === item.groupId
+        && getItemFloor(other) === getItemFloor(item));
+    }
+
+    function toggleSelectionLock() {
+      const targets = selectedItemsOnFloor();
+      if (!targets.length) {
+        showToast('Select an object to lock or unlock.', 'error');
+        return;
+      }
+      // Expand to full groups so locking a group locks every member.
+      const expanded = new Map();
+      targets.forEach((item) => {
+        groupMembers(item).forEach(member => expanded.set(String(member.id), member));
+      });
+      const members = [...expanded.values()];
+      const anyUnlocked = members.some(item => !item.locked);
+      pushUndoCheckpoint();
+      members.forEach((item) => { item.locked = anyUnlocked; });
+      renderScene();
+      queuePersistDraft();
+      setFeedback(anyUnlocked ? `Locked ${members.length} object${members.length === 1 ? '' : 's'}` : 'Unlocked');
+    }
+
     function selectionDimsLabel(item) {
       const kind = item.kind || classifyItem(item);
       if (kind === 'wall') {
@@ -1451,7 +1963,7 @@ const definition = {
     function updatePropToolbar() {
       if (!propToolbar) return;
       const selection = selectedItemsOnFloor();
-      const editable = selection.filter(item => !isItemLocked(item));
+      const editable = selection.filter(item => !isMutationLocked(item));
       if (!editable.length) {
         propToolbar.classList.add('hidden');
         return;
@@ -1473,6 +1985,278 @@ const definition = {
       });
     }
 
+    /* ---------- Reusable stroke-style controls (row 24) ---------- */
+    function lineTypeSelect(value, onChange) {
+      const sel = el('select', {
+        className: 'floorplan-line-type',
+        title: 'Line type',
+        on: { change: (e) => onChange(e.target.value) },
+      }, LINE_TYPES.map(([v, l]) => el('option', { value: v }, [l])));
+      sel.value = value;
+      return sel;
+    }
+
+    function strokeWidthInput(value, onChange) {
+      return el('input', {
+        className: 'floorplan-line-weight',
+        type: 'number', min: '1', max: '10', step: '1',
+        value: String(value),
+        title: 'Line weight (px)',
+        inputmode: 'numeric',
+        on: {
+          change: (e) => {
+            const n = clamp(parseInt(e.target.value, 10) || 1, 1, 10);
+            e.target.value = String(n);
+            onChange(n);
+          },
+        },
+      });
+    }
+
+    function strokeColorControl(value, onChange) {
+      const picker = el('input', {
+        className: 'floorplan-line-color', type: 'color', value,
+        title: 'Line color',
+        on: { input: (e) => onChange(e.target.value) },
+      });
+      const swatches = el('div', { className: 'floorplan-color-swatches' }, STROKE_SWATCHES.map(c =>
+        el('button', {
+          className: 'floorplan-color-swatch', type: 'button', title: c,
+          style: { background: c },
+          on: { click: () => { picker.value = c; onChange(c); } },
+        }, [])));
+      return el('div', { className: 'floorplan-color-control' }, [picker, swatches]);
+    }
+
+    /* ---------- Properties inspector (rows 17, 21, 22, 24, 26, 28) ---------- */
+    const inspector = board.querySelector('.floorplan-inspector');
+    let inspectorSig = null;
+    let inspectorRefreshers = [];
+
+    function selectionSignature() {
+      return [...state.selectedIds].sort().join(',');
+    }
+
+    function feetValue(units) {
+      return Math.round((Number(units) || 0) / UNITS_PER_FOOT * 100) / 100;
+    }
+
+    /* A labelled numeric field expressed in feet; commits on Enter or blur. */
+    function feetField(labelText, field, getUnits, setUnits, opts = {}) {
+      const input = el('input', {
+        className: 'floorplan-insp-input',
+        type: 'number', min: String(opts.min ?? 0.25), step: String(opts.step ?? 0.25),
+        inputmode: 'decimal',
+        value: String(feetValue(getUnits())),
+        dataset: { field },
+        on: {
+          change: (e) => {
+            const f = parseFloat(e.target.value);
+            if (!Number.isFinite(f)) return;
+            pushUndoCheckpoint();
+            setUnits(Math.max(0, f) * UNITS_PER_FOOT);
+            renderScene();
+            queuePersistDraft();
+          },
+          keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+        },
+      });
+      inspectorRefreshers.push(() => {
+        if (document.activeElement !== input) input.value = String(feetValue(getUnits()));
+      });
+      return el('label', { className: 'floorplan-insp-row' }, [
+        el('span', { className: 'floorplan-insp-label' }, [labelText]),
+        input,
+        el('span', { className: 'floorplan-insp-unit' }, ['ft']),
+      ]);
+    }
+
+    function plainNumberField(labelText, field, getVal, setVal, opts = {}) {
+      const input = el('input', {
+        className: 'floorplan-insp-input',
+        type: 'number', min: String(opts.min ?? 0), max: opts.max != null ? String(opts.max) : undefined,
+        step: String(opts.step ?? 1),
+        inputmode: 'numeric',
+        value: String(Math.round(getVal())),
+        dataset: { field },
+        on: {
+          change: (e) => {
+            const n = parseFloat(e.target.value);
+            if (!Number.isFinite(n)) return;
+            pushUndoCheckpoint();
+            setVal(n);
+            renderScene();
+            queuePersistDraft();
+          },
+          keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
+        },
+      });
+      inspectorRefreshers.push(() => {
+        if (document.activeElement !== input) input.value = String(Math.round(getVal()));
+      });
+      return el('label', { className: 'floorplan-insp-row' }, [
+        el('span', { className: 'floorplan-insp-label' }, [labelText]),
+        input,
+        opts.unit ? el('span', { className: 'floorplan-insp-unit' }, [opts.unit]) : null,
+      ]);
+    }
+
+    /* Change a wall's length while keeping its start anchored and re-aligning
+       any hosted doors/windows (row 28). */
+    function setWallLength(item, newLen) {
+      const e = getWallEndpoints(item);
+      const origin = { x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 };
+      const curLen = Math.hypot(e.x2 - e.x1, e.y2 - e.y1) || 1;
+      const ux = (e.x2 - e.x1) / curLen;
+      const uy = (e.y2 - e.y1) / curLen;
+      const L = clamp(newLen, UNITS_PER_FOOT * 0.5, 4000);
+      item.x = e.x1;
+      item.y = e.y1;
+      item.x2 = clamp(e.x1 + ux * L, 20, 940);
+      item.y2 = clamp(e.y1 + uy * L, 20, 600);
+      item.length = Math.hypot(item.x2 - item.x, item.y2 - item.y);
+      item.width = Math.abs(item.x2 - item.x);
+      item.height = Math.abs(item.y2 - item.y);
+      recomputeWallOpenings(item, origin);
+    }
+
+    function lockButton(selected) {
+      const anyLocked = selected.some(item => item.locked);
+      return el('button', {
+        className: `floorplan-insp-lock${anyLocked ? ' locked' : ''}`,
+        type: 'button',
+        title: anyLocked ? 'Unlock' : 'Lock (prevents moving, resizing, rotating, deleting)',
+        on: { click: () => toggleSelectionLock() },
+      }, [anyLocked ? '🔒 Locked' : '🔓 Lock']);
+    }
+
+    function styleControls(item) {
+      const lineType = item.lineType || 'solid';
+      const weight = item.strokeWidth || 3;
+      const color = item.strokeColor || '#0f766e';
+      const commit = (patch) => {
+        pushUndoCheckpoint();
+        Object.assign(item, patch);
+        renderScene();
+        queuePersistDraft();
+      };
+      return el('div', { className: 'floorplan-insp-style' }, [
+        el('span', { className: 'floorplan-insp-label' }, ['Style']),
+        lineTypeSelect(lineType, (v) => commit({ lineType: v })),
+        strokeWidthInput(weight, (v) => commit({ strokeWidth: v })),
+        strokeColorControl(color, (v) => commit({ strokeColor: v })),
+      ]);
+    }
+
+    function buildInspector(selected) {
+      inspectorRefreshers = [];
+      inspector.innerHTML = '';
+      if (selected.length > 1) {
+        const anyGrouped = selected.some(item => item.groupId);
+        const linears = selected.filter((i) => {
+          const k = i.kind || classifyItem(i);
+          return k === 'wall' || k === 'line';
+        });
+        inspector.append(
+          el('div', { className: 'floorplan-insp-title' }, [`${selected.length} objects selected`]),
+          el('div', { className: 'floorplan-insp-actions' }, [
+            el('button', { className: 'floorplan-insp-group', type: 'button', title: 'Group (Ctrl+G)', on: { click: () => groupSelection() } }, ['⧉ Group']),
+            anyGrouped ? el('button', { className: 'floorplan-insp-ungroup', type: 'button', title: 'Ungroup (Ctrl+Shift+G)', on: { click: () => ungroupSelection() } }, ['Ungroup']) : null,
+            (selected.length === 2 && linears.length === 2) ? el('button', { className: 'floorplan-insp-join', type: 'button', title: 'Join the two walls/lines at their intersection', on: { click: () => joinSelection() } }, ['⌐ Join']) : null,
+            lockButton(selected),
+          ]),
+        );
+        return;
+      }
+      const item = selected[0];
+      const kind = item.kind || classifyItem(item);
+      const sub = fixtureSubtype(item);
+      const rows = [el('div', { className: 'floorplan-insp-title' }, [inspectorTitle(item, kind, sub)])];
+
+      if (kind === 'wall') {
+        rows.push(feetField('Length', 'length', () => Math.hypot(getWallEndpoints(item).x2 - item.x, getWallEndpoints(item).y2 - item.y), (u) => setWallLength(item, u)));
+      } else if (sub === 'door' || sub === 'window') {
+        rows.push(feetField('Width', 'width', () => item.width || 2 * UNITS_PER_FOOT, (u) => { item.width = clamp(u, 10, 240); }));
+      } else if (kind === 'circle') {
+        rows.push(feetField('Radius', 'radius', () => item.radius || 20, (u) => { item.radius = clamp(u, 2, 2000); }, { min: 0.25 }));
+        rows.push(feetField('Diameter', 'diameter', () => (item.radius || 20) * 2, (u) => { item.radius = clamp(u / 2, 2, 2000); }, { min: 0.5 }));
+      } else if (kind === 'room') {
+        rows.push(feetField('Width', 'width', () => Math.max(60, item.width || 120), (u) => { item.width = clamp(u, 40, 4000); }));
+        rows.push(feetField('Height', 'height', () => Math.max(40, item.height || 80), (u) => { item.height = clamp(u, 34, 4000); }));
+      } else if (kind === 'fixture' || (item.symbolKey && (kind === 'electrical' || kind === 'plumbing'))) {
+        rows.push(feetField('Width', 'width', () => item.width || 18, (u) => { item.width = clamp(u, 6, 4000); }));
+        rows.push(feetField('Height', 'height', () => item.height || 18, (u) => { item.height = clamp(u, 6, 4000); }));
+        rows.push(plainNumberField('Rotation', 'rotation', () => Number(item.angle) || 0, (n) => { item.angle = ((n % 360) + 360) % 360; }, { min: -360, max: 360, unit: '°' }));
+      }
+
+      if (kind === 'line' || kind === 'circle') {
+        rows.push(styleControls(item));
+      }
+
+      rows.push(layerSelectRow(item));
+
+      rows.push(el('div', { className: 'floorplan-insp-actions' }, [lockButton([item])]));
+      inspector.append(...rows.filter(Boolean));
+    }
+
+    function inspectorTitle(item, kind, sub) {
+      if (sub === 'door') return 'Door';
+      if (sub === 'window') return 'Window';
+      if (kind === 'circle') return 'Circle';
+      if (kind === 'line') return item.closed ? 'Shape' : 'Line';
+      const name = normalizeText(item.label) || normalizeText(item.type);
+      return name || (kind.charAt(0).toUpperCase() + kind.slice(1));
+    }
+
+    function refreshInspectorValues() {
+      inspectorRefreshers.forEach(fn => fn());
+    }
+
+    function updateInspector() {
+      if (!inspector) return;
+      const selected = selectedItemsOnFloor();
+      if (!selected.length) {
+        inspector.classList.add('hidden');
+        inspector.innerHTML = '';
+        inspectorSig = null;
+        inspectorRefreshers = [];
+        return;
+      }
+      inspector.classList.remove('hidden');
+      const sig = selectionSignature();
+      if (sig !== inspectorSig) {
+        inspectorSig = sig;
+        buildInspector(selected);
+      } else {
+        refreshInspectorValues();
+      }
+    }
+
+    function focusInspectorField(field) {
+      updateInspector();
+      if (!inspector) return;
+      const input = inspector.querySelector(`.floorplan-insp-input[data-field="${field}"]`);
+      if (input) { input.focus(); if (typeof input.select === 'function') input.select(); }
+    }
+
+    /* Delete a vertex from a line/shape (row 25). */
+    function deleteVertex(item, idx) {
+      if (!item || !Array.isArray(item.points)) return;
+      const canDelete = item.closed ? item.points.length > 3 : item.points.length > 2;
+      if (!canDelete) {
+        showToast('Cannot delete — minimum points reached.', 'error');
+        return;
+      }
+      if (idx < 0 || idx >= item.points.length) return;
+      pushUndoCheckpoint();
+      item.points.splice(idx, 1);
+      item.x = item.points[0].x;
+      item.y = item.points[0].y;
+      renderScene();
+      queuePersistDraft();
+      setFeedback('Vertex deleted');
+    }
+
     function finalizeLine(closed) {
       const draft = state.lineDraft;
       state.lineDraft = null;
@@ -1490,6 +2274,9 @@ const definition = {
         layer: 'line',
         points: draft.points.map(p => ({ x: p.x, y: p.y })),
         closed: Boolean(closed),
+        lineType: state.lineStyle.lineType,
+        strokeWidth: state.lineStyle.strokeWidth,
+        strokeColor: state.lineStyle.strokeColor,
         x: draft.points[0].x,
         y: draft.points[0].y,
       });
@@ -1506,6 +2293,154 @@ const definition = {
       state.lineCursor = null;
       renderScene();
       setFeedback('Line cancelled');
+    }
+
+    /* ---------- Viewport: zoom & pan (row 18) ----------
+       Zoom/pan is driven entirely by the SVG viewBox. Because the browser
+       computes getScreenCTM() from the live viewBox, every existing pointer
+       helper (pointFromEvent) keeps returning correct world coordinates with
+       zero extra math — the viewBox is the single source of truth. */
+    const VIEW_W = 960;
+    const VIEW_H = 620;
+    const ZOOM_MIN = 0.25;
+    const ZOOM_MAX = 4;
+
+    function clampZoom(z) {
+      return clamp(Number.isFinite(z) ? z : 1, ZOOM_MIN, ZOOM_MAX);
+    }
+
+    function applyView() {
+      const z = clampZoom(state.view.zoom);
+      state.view.zoom = z;
+      const w = VIEW_W / z;
+      const h = VIEW_H / z;
+      // Soft clamp so the drawing can never be panned fully off-screen.
+      state.view.x = clamp(state.view.x, -w, VIEW_W);
+      state.view.y = clamp(state.view.y, -h, VIEW_H);
+      svg.setAttribute('viewBox', `${round2(state.view.x)} ${round2(state.view.y)} ${round2(w)} ${round2(h)}`);
+      const readout = board.querySelector('.floorplan-zoom-readout');
+      if (readout) readout.textContent = `${Math.round(z * 100)}%`;
+      const out = board.querySelector('.floorplan-zoom-out');
+      const inc = board.querySelector('.floorplan-zoom-in');
+      if (out) out.disabled = z <= ZOOM_MIN + 0.001;
+      if (inc) inc.disabled = z >= ZOOM_MAX - 0.001;
+    }
+
+    function round2(n) {
+      return Math.round(n * 100) / 100;
+    }
+
+    /* Screen (client) coordinates → world units, without clamping. */
+    function screenToWorld(clientX, clientY) {
+      const ctm = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+      if (ctm && typeof svg.createSVGPoint === 'function') {
+        const pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const local = pt.matrixTransform(ctm.inverse());
+        return { x: local.x, y: local.y };
+      }
+      const rect = svg.getBoundingClientRect();
+      const z = clampZoom(state.view.zoom);
+      return {
+        x: state.view.x + ((clientX - rect.left) / rect.width) * (VIEW_W / z),
+        y: state.view.y + ((clientY - rect.top) / rect.height) * (VIEW_H / z),
+      };
+    }
+
+    /* Zoom to a target level while keeping the world point under (clientX,
+       clientY) fixed on screen. Uses two getScreenCTM reads so it stays exact
+       regardless of preserveAspectRatio letterboxing. */
+    function zoomAtScreen(nextZoom, clientX, clientY) {
+      const z = clampZoom(nextZoom);
+      if (Math.abs(z - state.view.zoom) < 0.0001) return;
+      const before = screenToWorld(clientX, clientY);
+      state.view.zoom = z;
+      applyView();
+      const after = screenToWorld(clientX, clientY);
+      state.view.x += before.x - after.x;
+      state.view.y += before.y - after.y;
+      applyView();
+    }
+
+    function svgCenterClient() {
+      const rect = svg.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+
+    function zoomByStep(factor) {
+      const c = svgCenterClient();
+      zoomAtScreen(state.view.zoom * factor, c.x, c.y);
+    }
+
+    function resetView() {
+      state.view = { zoom: 1, x: 0, y: 0 };
+      applyView();
+    }
+
+    /* Bounding box of every item on the current floor (world units). */
+    function contentBounds() {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      const add = (x, y) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      };
+      state.items.forEach((item) => {
+        if (getItemFloor(item) !== state.currentFloor) return;
+        const kind = item.kind || classifyItem(item);
+        if (kind === 'wall') {
+          const e = getWallEndpoints(item);
+          add(e.x1, e.y1); add(e.x2, e.y2);
+        } else if (kind === 'line' || kind === 'measure') {
+          (item.points || []).forEach(p => add(p.x, p.y));
+        } else if (kind === 'circle') {
+          const r = Math.max(2, item.radius || 20);
+          add((item.x || 0) - r, (item.y || 0) - r);
+          add((item.x || 0) + r, (item.y || 0) + r);
+        } else if (kind === 'room') {
+          const w = Math.max(60, item.width || 120);
+          const h = Math.max(40, item.height || 80);
+          add(item.x, item.y); add(item.x + w, item.y + h);
+        } else {
+          const w = Math.max(8, item.width || 18);
+          const h = Math.max(8, item.height || 18);
+          add((item.x || 0) - w / 2, (item.y || 0) - h / 2);
+          add((item.x || 0) + w / 2, (item.y || 0) + h / 2);
+        }
+      });
+      if (minX === Infinity) return null;
+      return { minX, minY, maxX, maxY };
+    }
+
+    function zoomToFit() {
+      const box = contentBounds();
+      if (!box) {
+        resetView();
+        setFeedback('Zoom reset — nothing drawn yet');
+        return;
+      }
+      const spanX = Math.max(40, box.maxX - box.minX);
+      const spanY = Math.max(40, box.maxY - box.minY);
+      const padX = spanX * 0.1 + 24;
+      const padY = spanY * 0.1 + 24;
+      const bw = spanX + padX * 2;
+      const bh = spanY + padY * 2;
+      const z = clampZoom(Math.min(VIEW_W / bw, VIEW_H / bh));
+      state.view.zoom = z;
+      const w = VIEW_W / z;
+      const h = VIEW_H / z;
+      const cx = (box.minX + box.maxX) / 2;
+      const cy = (box.minY + box.maxY) / 2;
+      state.view.x = cx - w / 2;
+      state.view.y = cy - h / 2;
+      applyView();
+      setFeedback(`Zoom to fit — ${Math.round(z * 100)}%`);
     }
 
     board.addEventListener('mouseover', (event) => {
@@ -1721,6 +2656,16 @@ const definition = {
       };
       scene.append(...Object.values(layers));
 
+      // Custom layers (row 22) render after the built-in layers; their array
+      // order is the z-order (first = front-most within the custom set).
+      const customGroups = {};
+      for (let i = state.customLayers.length - 1; i >= 0; i -= 1) {
+        const cl = state.customLayers[i];
+        const g = svgEl('g', { className: 'floorplan-layer floorplan-custom-layer', 'data-custom-layer': cl.name });
+        customGroups[cl.name] = g;
+        scene.append(g);
+      }
+
       const label = (text, x, y, fill = '#0f172a', className = 'floorplan-label') => svgEl('text', {
         x,
         y,
@@ -1764,8 +2709,15 @@ const definition = {
         const isCurrentFloor = itemFloor === state.currentFloor;
         const isAlignedOverlay = state.alignBelow && itemFloor === (state.currentFloor - 1);
         if (!isCurrentFloor && !isAlignedOverlay) return;
-        if (state.layerVisibility[kind] === false) return;
-        const layer = layers[kind] || layers.fixture;
+        const layerKey = layerKeyForItem(item);
+        if (item.customLayer && findCustomLayer(item.customLayer)) {
+          if (isCustomLayerHidden(item.customLayer)) return;
+        } else if (state.layerVisibility[layerKey] === false) {
+          return;
+        }
+        const layer = (item.customLayer && customGroups[item.customLayer])
+          ? customGroups[item.customLayer]
+          : (layers[layerKey] || layers.fixture);
         const isSelected = isCurrentFloor && isItemSelected(item.id);
         const itemOpacity = isAlignedOverlay ? 0.32 : 1;
 
@@ -1808,6 +2760,18 @@ const definition = {
             opacity: itemOpacity,
           });
           layer.append(line);
+          // Wide transparent hit band (on top) so thin walls are easy to
+          // select, drag, and trim.
+          const wallAngle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+          const wallLen = Math.hypot(x2 - x1, y2 - y1);
+          layer.append(svgEl('rect', {
+            x: 0, y: -8, width: wallLen, height: 16,
+            fill: 'transparent',
+            class: 'floorplan-hit',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'wall',
+            transform: `translate(${x1} ${y1}) rotate(${wallAngle})`,
+          }));
 
           if (isSelected && hasMeaningfulLabel(item.label)) {
             layer.append(label(item.label, (x1 + x2) / 2, Math.min(y1, y2) - 8, '#334155', 'floorplan-wall-label'));
@@ -1819,11 +2783,25 @@ const definition = {
           if (pts.length >= 2) {
             const pointString = pts.map(p => `${p.x},${p.y}`).join(' ');
             const shapeTag = item.closed ? 'polygon' : 'polyline';
+            const stroke = item.strokeColor || '#0f766e';
+            const weight = item.strokeWidth || 3;
+            const dash = dashArrayFor(item.lineType || 'solid', weight);
+            // Wide invisible hit path so thin open lines are easy to grab.
+            layer.append(svgEl(shapeTag, {
+              points: pointString,
+              fill: 'none',
+              stroke: 'transparent',
+              'stroke-width': Math.max(14, weight + 10),
+              class: 'floorplan-hit',
+              'data-floorplan-item': String(item.id),
+              'data-floorplan-kind': 'line',
+            }));
             layer.append(svgEl(shapeTag, {
               points: pointString,
               fill: item.closed ? 'rgba(15,118,110,0.08)' : 'none',
-              stroke: '#0f766e',
-              'stroke-width': '3',
+              stroke,
+              'stroke-width': String(weight),
+              'stroke-dasharray': dash,
               'stroke-linejoin': 'round',
               'stroke-linecap': 'round',
               className: `floorplan-line floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
@@ -1831,6 +2809,38 @@ const definition = {
               'data-floorplan-kind': 'line',
               opacity: itemOpacity,
             }));
+          }
+        }
+
+        if (kind === 'circle') {
+          const cx = Number.isFinite(item.x) ? item.x : 60;
+          const cy = Number.isFinite(item.y) ? item.y : 60;
+          const r = Math.max(2, item.radius || 20);
+          const stroke = item.strokeColor || '#0f766e';
+          const weight = item.strokeWidth || 3;
+          const dash = dashArrayFor(item.lineType || 'solid', weight);
+          layer.append(svgEl('circle', {
+            cx, cy, r,
+            fill: 'none',
+            stroke: 'transparent',
+            'stroke-width': Math.max(14, weight + 10),
+            class: 'floorplan-hit',
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'circle',
+          }));
+          layer.append(svgEl('circle', {
+            cx, cy, r,
+            fill: 'rgba(15,118,110,0.06)',
+            stroke,
+            'stroke-width': String(weight),
+            'stroke-dasharray': dash,
+            className: `floorplan-circle floorplan-item${isSelected ? ' floorplan-selected' : ''}`,
+            'data-floorplan-item': String(item.id),
+            'data-floorplan-kind': 'circle',
+            opacity: itemOpacity,
+          }));
+          if (isSelected) {
+            layer.append(label(`r ${formatFeet(r)}`, cx, cy - r - 8, '#0f766e', 'floorplan-measure-label'));
           }
         }
 
@@ -2074,6 +3084,50 @@ const definition = {
             }
           }
 
+          if (selected.kind === 'circle') {
+            const cx = selected.x || 60;
+            const cy = selected.y || 60;
+            const r = Math.max(2, selected.radius || 20);
+            handleLayer.append(svgEl('circle', {
+              cx, cy, r,
+              fill: 'none', stroke: '#2563eb', 'stroke-width': 1.2, 'stroke-dasharray': '4 4',
+              class: 'floorplan-selection-box',
+            }));
+            addHandle(cx, cy - r, 'circ-n');
+            addHandle(cx + r, cy, 'circ-e');
+            addHandle(cx, cy + r, 'circ-s');
+            addHandle(cx - r, cy, 'circ-w');
+          }
+
+          if (selected.kind === 'line' && Array.isArray(selected.points) && selected.points.length >= 2) {
+            const pts = selected.points;
+            // Midpoint handles (insert a vertex) — drawn first so vertex handles sit on top.
+            const segCount = selected.closed ? pts.length : pts.length - 1;
+            for (let i = 0; i < segCount; i += 1) {
+              const a = pts[i];
+              const b = pts[(i + 1) % pts.length];
+              const mx = (a.x + b.x) / 2;
+              const my = (a.y + b.y) / 2;
+              handleLayer.append(svgEl('rect', {
+                x: mx - 4, y: my - 4, width: 8, height: 8, rx: 2,
+                fill: '#dbeafe', stroke: '#2563eb', 'stroke-width': 1.5,
+                class: 'floorplan-vertex-mid',
+                'data-floorplan-item': String(selected.id),
+                'data-floorplan-handle': `mid-${i}`,
+              }));
+            }
+            // Vertex handles (drag to move, double/right-click to delete).
+            pts.forEach((p, i) => {
+              handleLayer.append(svgEl('circle', {
+                cx: p.x, cy: p.y, r: 6,
+                fill: '#ffffff', stroke: '#0f766e', 'stroke-width': 2,
+                class: 'floorplan-resize-handle floorplan-vertex-handle',
+                'data-floorplan-item': String(selected.id),
+                'data-floorplan-handle': `vtx-${i}`,
+              }));
+            });
+          }
+
           scene.append(handleLayer);
         }
       }
@@ -2124,6 +3178,20 @@ const definition = {
         }
         if (preview.kind === 'measure') {
           previewLayer.append(buildDimension(preview.start, preview.end, { dash: '6 4', sw: 1.8 }));
+        }
+        if (preview.kind === 'circle') {
+          const r = Math.hypot(preview.end.x - preview.start.x, preview.end.y - preview.start.y);
+          previewLayer.append(svgEl('circle', {
+            cx: preview.start.x, cy: preview.start.y, r: Math.max(1, r),
+            fill: 'none',
+            stroke: state.lineStyle.strokeColor || '#0f766e',
+            'stroke-width': String(state.lineStyle.strokeWidth || 3),
+            'stroke-dasharray': '8 5',
+            opacity: 0.85,
+          }));
+          previewLayer.append(svgEl('line', { x1: preview.start.x, y1: preview.start.y, x2: preview.end.x, y2: preview.end.y, stroke: '#64748b', 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+          const text = `r ${formatFeet(r)}`;
+          previewLayer.append(svgEl('text', { x: preview.start.x, y: preview.start.y - Math.max(1, r) - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#0f766e' }, [text]));
         }
         if (preview.kind === 'electrical') {
           previewLayer.append(svgEl('circle', {
@@ -2208,9 +3276,12 @@ const definition = {
 
       renderInteriorView();
       updatePropToolbar();
+      updateInspector();
     }
 
     function beginDraft(event) {
+      if (state.gestureActive) return;
+      if (event.touches && event.touches.length >= 2) return;
       const isMouseInput = event.pointerType === 'mouse' || event.type === 'mousedown';
       if (isMouseInput && event.button !== 0) return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
@@ -2270,16 +3341,31 @@ const definition = {
         return;
       }
 
+      if (state.tool === 'trim') {
+        trimAtPoint(point);
+        return;
+      }
+
       if (state.tool === 'select') {
         const handleTarget = event.target && event.target.closest ? event.target.closest('[data-floorplan-handle]') : null;
         if (handleTarget) {
           const itemId = handleTarget.dataset.floorplanItem;
-          const handle = handleTarget.dataset.floorplanHandle;
+          let handle = handleTarget.dataset.floorplanHandle;
           const item = findItemById(itemId);
           if (item) {
             if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
             setSingleSelection(itemId);
             pushUndoCheckpoint();
+            // Dragging a midpoint handle inserts a new vertex there, then drags it (row 25).
+            if (handle && handle.startsWith('mid-') && Array.isArray(item.points)) {
+              const segIndex = parseInt(handle.slice(4), 10);
+              const a = item.points[segIndex];
+              const b = item.points[(segIndex + 1) % item.points.length];
+              if (a && b) {
+                item.points.splice(segIndex + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+                handle = `vtx-${segIndex + 1}`;
+              }
+            }
             state.resizeDrag = {
               itemId,
               handle,
@@ -2290,6 +3376,7 @@ const definition = {
                 height: item.height,
                 x2: item.x2,
                 y2: item.y2,
+                radius: item.radius,
                 angle: Number.isFinite(item.angle) ? Number(item.angle) : 0,
               },
             };
@@ -2303,13 +3390,29 @@ const definition = {
         if (targetItem && targetItemData && getItemFloor(targetItemData) === state.currentFloor && !isItemLocked(targetItemData)) {
           if (event.pointerId !== undefined) svg.setPointerCapture?.(event.pointerId);
           const itemId = String(targetItem.dataset.floorplanItem);
+          // Clicking any grouped member acts on the whole group (row 21).
+          const groupIds = targetItemData.groupId
+            ? groupMembers(targetItemData).map(m => String(m.id))
+            : [itemId];
           if (event.shiftKey || event.ctrlKey || event.metaKey) {
-            toggleSelection(itemId);
+            const alreadyIn = groupIds.every(id => state.selectedIds.has(id));
+            groupIds.forEach((id) => { if (alreadyIn) state.selectedIds.delete(id); else state.selectedIds.add(id); });
+            state.selectedId = state.selectedIds.size === 1 ? [...state.selectedIds][0] : null;
             renderScene();
             setFeedback(`Selected ${state.selectedIds.size} item${state.selectedIds.size === 1 ? '' : 's'}`);
             return;
           }
-          if (!state.selectedIds.has(itemId)) setSingleSelection(itemId);
+          const alreadySelected = groupIds.every(id => state.selectedIds.has(id)) && state.selectedIds.size === groupIds.length;
+          if (!alreadySelected) {
+            state.selectedIds = new Set(groupIds);
+            state.selectedId = groupIds.length === 1 ? groupIds[0] : null;
+          }
+          // Locked objects stay selectable (to unlock) but cannot be dragged.
+          if (isMutationLocked(targetItemData)) {
+            renderScene();
+            setFeedback('Locked — unlock to move');
+            return;
+          }
           pushUndoCheckpoint();
           state.dragIds = [...state.selectedIds];
           state.dragStart = { x: point.x, y: point.y };
@@ -2361,6 +3464,8 @@ const definition = {
     }
 
     function updateDraft(event) {
+      if (state.gestureActive) return;
+      if (event.touches && event.touches.length >= 2) return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
       if (state.tool === 'line') {
         if (!state.lineDraft) return;
@@ -2407,6 +3512,7 @@ const definition = {
           }
 
           if (item.kind === 'wall') {
+            const originEnds = { x1: origin.x, y1: origin.y, x2: origin.x2, y2: origin.y2 };
             if (handle === 'wall-start') {
               item.x = px;
               item.y = py;
@@ -2418,11 +3524,26 @@ const definition = {
             item.length = Math.hypot(x2 - item.x, y2 - item.y);
             item.width = Math.abs(x2 - item.x);
             item.height = Math.abs(y2 - item.y);
+            recomputeWallOpenings(item, originEnds);
           }
 
           if ((item.kind === 'electrical' || item.kind === 'plumbing') && handle === 'point-center') {
             item.x = px;
             item.y = py;
+          }
+
+          if (item.kind === 'circle' && handle && handle.startsWith('circ-')) {
+            item.radius = clamp(Math.hypot(px - item.x, py - item.y), 2, 2000);
+          }
+
+          if (item.kind === 'line' && handle && handle.startsWith('vtx-') && Array.isArray(item.points)) {
+            const idx = parseInt(handle.slice(4), 10);
+            if (item.points[idx]) {
+              const snapV = snapPointForTool({ x: px, y: py }, 'wall', { skipWallId: item.id });
+              item.points[idx] = { x: clamp(snapV.x, 20, 940), y: clamp(snapV.y, 20, 600) };
+              item.x = item.points[0].x;
+              item.y = item.points[0].y;
+            }
           }
 
           if (isSymbolObject(item) && handle !== 'point-center') {
@@ -2509,6 +3630,7 @@ const definition = {
     }
 
     function endDraft(event) {
+      if (state.gestureActive) return;
       if (event && event.pointerId !== undefined) {
         svg.releasePointerCapture?.(event.pointerId);
       }
@@ -2571,6 +3693,26 @@ const definition = {
             state.lastCreateAt = Date.now();
             setFeedback(`Measured ${formatFeet(distance)}`);
           }
+        } else if (kind === 'circle') {
+          if (distance > 4) {
+            pushUndoCheckpoint();
+            const circle = registerNewItem({
+              id: `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+              kind: 'circle',
+              type: 'Circle',
+              label: '',
+              layer: 'line',
+              x: start.x,
+              y: start.y,
+              radius: clamp(distance, 2, 2000),
+              lineType: state.lineStyle.lineType,
+              strokeWidth: state.lineStyle.strokeWidth,
+              strokeColor: state.lineStyle.strokeColor,
+            });
+            state.items.push(circle);
+            state.lastCreateAt = Date.now();
+            setFeedback(`Circle r ${formatFeet(circle.radius)}`);
+          }
         } else if (distance > 18) {
           pushUndoCheckpoint();
           const created = registerNewItem(createItem(kind, start, end));
@@ -2611,7 +3753,7 @@ const definition = {
     }
 
     function fallbackClickCreate(event) {
-      if (state.tool === 'select' || state.tool === 'erase' || state.tool === 'line' || state.tool === 'measure') return;
+      if (state.tool === 'select' || state.tool === 'erase' || state.tool === 'line' || state.tool === 'measure' || state.tool === 'trim' || state.tool === 'circle') return;
       if (state.preview || state.dragStart || state.dragIds.length > 0) return;
       if ((Date.now() - state.lastCreateAt) < 150) return;
 
@@ -2653,6 +3795,14 @@ const definition = {
         toggleDoorSwing,
         finalizeLine,
         cancelLineDraft,
+        nudgeSelection,
+        groupSelection,
+        ungroupSelection,
+        toggleSelectionLock,
+        zoomIn: () => zoomByStep(1.2),
+        zoomOut: () => zoomByStep(1 / 1.2),
+        zoomReset: () => resetView(),
+        zoomFit: () => zoomToFit(),
         deselect: () => clearSelection(),
         hasLineDraft: () => Boolean(state.lineDraft),
         hasSelection: () => state.selectedIds.size > 0,
@@ -2681,7 +3831,37 @@ const definition = {
             keyApi.duplicateSelection();
             return;
           }
+          if ((event.ctrlKey || event.metaKey) && key === 'g') {
+            event.preventDefault();
+            if (event.shiftKey) keyApi.ungroupSelection();
+            else keyApi.groupSelection();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && (key === '=' || key === '+')) {
+            event.preventDefault();
+            keyApi.zoomIn();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && (key === '-' || key === '_')) {
+            event.preventDefault();
+            keyApi.zoomOut();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && key === '0') {
+            event.preventDefault();
+            keyApi.zoomReset();
+            return;
+          }
           if (event.ctrlKey || event.metaKey || event.altKey) return;
+          const arrowStep = event.shiftKey ? UNITS_PER_FOOT : UNITS_PER_FOOT / 4;
+          if (key === 'arrowup' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowright') {
+            if (!keyApi.hasSelection()) return;
+            event.preventDefault();
+            const dx = key === 'arrowleft' ? -arrowStep : key === 'arrowright' ? arrowStep : 0;
+            const dy = key === 'arrowup' ? -arrowStep : key === 'arrowdown' ? arrowStep : 0;
+            keyApi.nudgeSelection(dx, dy);
+            return;
+          }
           if (key === 'r') {
             event.preventDefault();
             keyApi.rotateSelection(event.shiftKey ? -15 : 15);
@@ -2714,6 +3894,71 @@ const definition = {
 
     const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
     debugLog('input-mode', { supportsPointer });
+
+    /* ---------- Wheel zoom (desktop) ---------- */
+    svg.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAtScreen(state.view.zoom * factor, event.clientX, event.clientY);
+    }, { passive: false });
+
+    /* ---------- Pinch-zoom & two-finger pan (touch) ----------
+       Tracked in the capture phase so a second finger converts an in-progress
+       single-finger draw into a pinch gesture before beginDraft can act. */
+    const activePointers = new Map();
+    let pinch = null;
+    function abortInteractionForGesture() {
+      state.preview = null;
+      state.dragStart = null;
+      state.dragIds = [];
+      state.dragOrigins = null;
+      state.marquee = null;
+      state.resizeDrag = null;
+      state.vertexDrag = null;
+      renderScene();
+    }
+    if (supportsPointer) {
+      svg.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'touch') return;
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activePointers.size === 2) {
+          state.gestureActive = true;
+          abortInteractionForGesture();
+          const pts = [...activePointers.values()];
+          const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+          pinch = { lastDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1, lastMid: mid };
+        }
+      }, true);
+      svg.addEventListener('pointermove', (event) => {
+        if (!activePointers.has(event.pointerId)) return;
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (!pinch || activePointers.size < 2) return;
+        event.preventDefault();
+        const pts = [...activePointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        const factor = dist / pinch.lastDist;
+        if (Math.abs(factor - 1) > 0.002) zoomAtScreen(state.view.zoom * factor, mid.x, mid.y);
+        const worldPrev = screenToWorld(pinch.lastMid.x, pinch.lastMid.y);
+        const worldNow = screenToWorld(mid.x, mid.y);
+        state.view.x += worldPrev.x - worldNow.x;
+        state.view.y += worldPrev.y - worldNow.y;
+        applyView();
+        pinch.lastDist = dist;
+        pinch.lastMid = mid;
+      }, true);
+      const endPointer = (event) => {
+        if (!activePointers.has(event.pointerId)) return;
+        activePointers.delete(event.pointerId);
+        if (activePointers.size < 2) pinch = null;
+        if (activePointers.size === 0) {
+          setTimeout(() => { state.gestureActive = false; }, 0);
+        }
+      };
+      svg.addEventListener('pointerup', endPointer, true);
+      svg.addEventListener('pointercancel', endPointer, true);
+    }
+
     if (supportsPointer) {
       svg.addEventListener('pointerdown', beginDraft);
       svg.addEventListener('pointermove', updateDraft);
@@ -2734,12 +3979,65 @@ const definition = {
       window.addEventListener('touchcancel', endDraft, { passive: false });
     }
     svg.addEventListener('click', fallbackClickCreate);
+
+    /* Double-click: finish an open line (row 23), delete a vertex (row 25),
+       or jump to a wall's Length field (row 28). */
+    svg.addEventListener('dblclick', (event) => {
+      if (state.tool === 'line' && state.lineDraft && state.lineDraft.points.length >= 2) {
+        event.preventDefault();
+        finalizeLine(false);
+        return;
+      }
+      const handleEl = event.target && event.target.closest ? event.target.closest('[data-floorplan-handle]') : null;
+      if (handleEl) {
+        const handle = handleEl.dataset.floorplanHandle;
+        const item = findItemById(handleEl.dataset.floorplanItem);
+        if (item && handle && handle.startsWith('vtx-')) {
+          event.preventDefault();
+          deleteVertex(item, parseInt(handle.slice(4), 10));
+          return;
+        }
+      }
+      const itemEl = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
+      if (itemEl) {
+        const item = findItemById(itemEl.dataset.floorplanItem);
+        if (item && (item.kind || classifyItem(item)) === 'wall' && !isMutationLocked(item)) {
+          event.preventDefault();
+          setTool('select');
+          setSingleSelection(String(item.id));
+          renderScene();
+          focusInspectorField('length');
+        }
+      }
+    });
+
+    /* Right-click a vertex handle to delete it (row 25). */
+    svg.addEventListener('contextmenu', (event) => {
+      const handleEl = event.target && event.target.closest ? event.target.closest('[data-floorplan-handle]') : null;
+      if (handleEl) {
+        const handle = handleEl.dataset.floorplanHandle;
+        const item = findItemById(handleEl.dataset.floorplanItem);
+        if (item && handle && handle.startsWith('vtx-')) {
+          event.preventDefault();
+          deleteVertex(item, parseInt(handle.slice(4), 10));
+        }
+      }
+    });
+
     svg.style.cursor = 'crosshair';
+    if (Array.isArray(draftCustomLayers)) {
+      state.customLayers = draftCustomLayers.filter(l => l && l.name).map(l => ({
+        name: String(l.name), visible: l.visible !== false, locked: Boolean(l.locked),
+      }));
+    }
+    reconcileCustomLayers();
+    renderCustomLayerList();
     applyControlLabels();
     refreshFloorUi();
     updateUndoUi();
     setTool('wall');
     setFeedback('Ready');
+    applyView();
     renderScene();
 
     const scaleBar = svgEl('g', { className: 'floorplan-dimensions' });
