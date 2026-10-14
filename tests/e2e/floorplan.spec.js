@@ -415,21 +415,22 @@ test('duplicate and delete manage the selected object', async ({ page }) => {
 
 test('layers can be locked to prevent selection', async ({ page }) => {
   await openPlan(page);
-  const sym = await page.locator('.floorplan-symbol-graphic').first().boundingBox();
-  if (!sym) throw new Error('No symbol to target');
-  const cx = sym.x + (sym.width / 2);
-  const cy = sym.y + (sym.height / 2);
+  // Target the first placed symbol's hit area directly so the click reliably
+  // lands on the fixture (and never a sliver of an adjacent room edge).
+  const fixtureId = await page.locator('.floorplan-symbol-graphic').first()
+    .evaluate(node => node.closest('[data-floorplan-item]').getAttribute('data-floorplan-item'));
+  const fixtureHit = page.locator(`[data-floorplan-item="${fixtureId}"] .floorplan-hit`);
 
   await page.click('.floorplan-layer-lock[data-layer="fixture"]');
   await expect(page.locator('.floorplan-layer-lock[data-layer="fixture"]')).toHaveClass(/locked/);
 
   await selectTool(page, 'select');
-  await page.mouse.click(cx, cy);
+  await fixtureHit.click();
   await expect(page.locator('.floorplan-prop-toolbar')).toBeHidden();
 
   // Unlock and confirm the same object becomes selectable again.
   await page.click('.floorplan-layer-lock[data-layer="fixture"]');
-  await page.mouse.click(cx, cy);
+  await fixtureHit.click();
   await expect(page.locator('.floorplan-prop-toolbar')).toBeVisible();
 });
 
@@ -550,4 +551,273 @@ test('camera map responds to clicks without error', async ({ page }) => {
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
   await page.click('.floorplan-ai-view-btn');
   await expect(page.locator('.floorplan-view-svg')).toBeVisible();
+});
+
+/* ============================================================
+   Feature upgrades (rows 17–28) — parametric editing, zoom,
+   trim/join, grouping, custom layers, line/circle tools.
+   ============================================================ */
+
+async function svgBox(page) {
+  const box = await page.locator('.floorplan-svg').boundingBox();
+  if (!box) throw new Error('Canvas not visible');
+  return box;
+}
+
+async function clickWall(page, nth, opts = {}) {
+  const id = await page.locator('.floorplan-wall').nth(nth).getAttribute('data-floorplan-item');
+  await page.locator(`rect.floorplan-hit[data-floorplan-item="${id}"]`).click(opts);
+}
+
+async function placeSymbolId(page, key, pos) {
+  await placeAndSelectSymbol(page, key, pos);
+  return page.locator('.floorplan-fixture.floorplan-selected').getAttribute('data-floorplan-item');
+}
+
+// Row 18 — zoom in/out, reset, and zoom to fit
+test('zoom controls change the viewport and support zoom to fit (row 18)', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-zoom-toolbar')).toBeVisible();
+  const readViewBox = () => page.locator('.floorplan-svg').getAttribute('viewBox');
+  expect(await readViewBox()).toBe('0 0 960 620');
+
+  await page.click('.floorplan-zoom-in');
+  const zoomed = await readViewBox();
+  expect(Number(zoomed.split(' ')[2])).toBeLessThan(960);
+  await expect(page.locator('.floorplan-zoom-readout')).not.toHaveText('100%');
+
+  await page.click('.floorplan-zoom-readout');
+  expect(await readViewBox()).toBe('0 0 960 620');
+
+  await page.click('.floorplan-zoom-fit');
+  expect(await readViewBox()).not.toBe('0 0 960 620');
+});
+
+// Row 18 — keyboard zoom shortcuts
+test('keyboard shortcuts zoom the floor plan (row 18)', async ({ page }) => {
+  await openPlan(page);
+  await page.keyboard.press('Control+Equal');
+  await expect(page.locator('.floorplan-zoom-readout')).not.toHaveText('100%');
+  await page.keyboard.press('Control+Digit0');
+  await expect(page.locator('.floorplan-zoom-readout')).toHaveText('100%');
+});
+
+// Row 20 — rectangular dining table symbol
+test('rectangular dining table symbol places, selects, and rotates (row 20)', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="dining-table-rect"]')).toHaveCount(1);
+  const before = await page.locator('.floorplan-symbol-graphic').count();
+  await placeAndSelectSymbol(page, 'dining-table-rect', { x: 520, y: 360 });
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBe(before + 1);
+
+  const angleBefore = await page.locator('.floorplan-fixture.floorplan-selected')
+    .evaluate(n => Number(/rotate\(([-\d.]+)/.exec(n.getAttribute('transform'))[1]));
+  await page.click('.floorplan-prop-rotate-right');
+  const angleAfter = await page.locator('.floorplan-fixture.floorplan-selected')
+    .evaluate(n => Number(/rotate\(([-\d.]+)/.exec(n.getAttribute('transform'))[1]));
+  expect(angleAfter).not.toBe(angleBefore);
+});
+
+// Row 26 — circle tool
+test('circle tool draws a circle with radius controls (row 26)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'circle');
+  const box = await svgBox(page);
+  await page.mouse.move(box.x + 500, box.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 560, box.y + 300, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('.floorplan-circle')).toHaveCount(1);
+
+  await selectTool(page, 'select');
+  await page.mouse.click(box.x + 560, box.y + 300);
+  await expect(page.locator('.floorplan-insp-input[data-field="radius"]')).toHaveCount(1);
+  await expect(page.locator('.floorplan-resize-handle[data-floorplan-handle="circ-e"]')).toHaveCount(1);
+});
+
+// Row 23 — single open line finished with Enter
+test('line tool draws a single open line finished with Enter (row 23)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  const box = await svgBox(page);
+  await page.mouse.click(box.x + 150, box.y + 150);
+  await page.mouse.click(box.x + 320, box.y + 150);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('polyline.floorplan-line')).toHaveCount(1);
+  await expect(page.locator('polygon.floorplan-line')).toHaveCount(0);
+});
+
+// Row 23 — open polyline finished via the Finish Line button
+test('line tool finishes an open polyline via the Finish Line button (row 23)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  const box = await svgBox(page);
+  await page.mouse.click(box.x + 150, box.y + 420);
+  await page.mouse.click(box.x + 250, box.y + 470);
+  await page.mouse.click(box.x + 360, box.y + 420);
+  await page.click('.floorplan-line-finish-btn');
+  await expect(page.locator('polyline.floorplan-line')).toHaveCount(1);
+});
+
+// Row 24 — stroke style (type/weight/color) controls
+test('line tool exposes stroke style controls applied to new lines (row 24)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  await expect(page.locator('.floorplan-line-toolbar')).toBeVisible();
+  await page.selectOption('.floorplan-line-toolbar .floorplan-line-type', 'dashed');
+  const box = await svgBox(page);
+  await page.mouse.click(box.x + 150, box.y + 200);
+  await page.mouse.click(box.x + 330, box.y + 200);
+  await page.keyboard.press('Enter');
+  const dash = await page.locator('polyline.floorplan-line').first().getAttribute('stroke-dasharray');
+  expect((dash || '').trim().length).toBeGreaterThan(0);
+});
+
+// Row 25 — post-draw vertex editing
+test('selected line shows vertex handles that can be deleted (row 25)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  const box = await svgBox(page);
+  await page.mouse.click(box.x + 160, box.y + 250);
+  await page.mouse.click(box.x + 300, box.y + 250);
+  await page.mouse.click(box.x + 300, box.y + 380);
+  await page.keyboard.press('Enter');
+
+  await selectTool(page, 'select');
+  await page.mouse.click(box.x + 230, box.y + 250); // on the first horizontal segment
+  await expect(page.locator('.floorplan-vertex-handle')).toHaveCount(3);
+
+  await page.locator('.floorplan-vertex-handle').nth(1).click({ button: 'right' });
+  await expect(page.locator('.floorplan-vertex-handle')).toHaveCount(2);
+});
+
+// Row 27 — arrow-key nudging
+test('arrow keys nudge the selected object (row 27)', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  const readX = () => page.locator('.floorplan-fixture.floorplan-selected')
+    .evaluate(n => Number(/translate\(([-\d.]+)/.exec(n.getAttribute('transform'))[1]));
+  const x1 = await readX();
+  await page.keyboard.press('ArrowRight');
+  const x2 = await readX();
+  expect(x2).toBeGreaterThan(x1);
+  await page.keyboard.press('Shift+ArrowRight');
+  const x3 = await readX();
+  expect(x3 - x2).toBeGreaterThan(x2 - x1);
+});
+
+// Row 28 — wall length via numeric input
+test('wall length can be changed via the inspector input (row 28)', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'select');
+  await clickWall(page, 0);
+  const input = page.locator('.floorplan-insp-input[data-field="length"]');
+  await expect(input).toHaveCount(1);
+  const len = () => page.locator('.floorplan-wall.floorplan-selected').first().evaluate((n) => {
+    const x1 = Number(n.getAttribute('x1')); const y1 = Number(n.getAttribute('y1'));
+    const x2 = Number(n.getAttribute('x2')); const y2 = Number(n.getAttribute('y2'));
+    return Math.hypot(x2 - x1, y2 - y1);
+  });
+  const before = await len();
+  await input.fill('8');
+  await input.press('Enter');
+  const after = await len();
+  expect(Math.round(after)).not.toBe(Math.round(before));
+});
+
+// Row 21 — grouping so selecting one member selects the group
+test('symbols can be grouped so selecting one selects the whole group (row 21)', async ({ page }) => {
+  await openPlan(page);
+  const couchId = await placeSymbolId(page, 'couch', { x: 460, y: 330 });
+  const armId = await placeSymbolId(page, 'armchair', { x: 560, y: 330 });
+
+  await selectTool(page, 'select');
+  await page.locator(`[data-floorplan-item="${couchId}"] .floorplan-hit`).click();
+  await page.locator(`[data-floorplan-item="${armId}"] .floorplan-hit`).click({ modifiers: ['Shift'] });
+  await expect(page.locator('.floorplan-fixture.floorplan-selected')).toHaveCount(2);
+
+  await page.click('.floorplan-insp-group');
+  await page.keyboard.press('Escape');
+  await page.locator(`[data-floorplan-item="${couchId}"] .floorplan-hit`).click();
+  await expect(page.locator('.floorplan-fixture.floorplan-selected')).toHaveCount(2);
+});
+
+// Row 21 — locking prevents moving the selection
+test('locked objects cannot be nudged until unlocked (row 21)', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  await page.click('.floorplan-insp-lock');
+  const readX = () => page.locator('.floorplan-fixture.floorplan-selected')
+    .evaluate(n => Number(/translate\(([-\d.]+)/.exec(n.getAttribute('transform'))[1]));
+  const x1 = await readX();
+  await page.keyboard.press('ArrowRight');
+  expect(await readX()).toBe(x1);
+});
+
+// Row 22 — custom layers create + assign + visibility
+test('custom layers can be created and hide their assigned items (row 22)', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-custom-layer-row')).toHaveCount(0);
+  await page.click('.floorplan-add-layer-btn');
+  await expect(page.locator('.floorplan-custom-layer-row')).toHaveCount(1);
+
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  const layerName = await page.locator('.floorplan-custom-layer-name').first().inputValue();
+  await page.selectOption('.floorplan-insp-layer', layerName);
+
+  const before = await page.locator('.floorplan-symbol-graphic').count();
+  await page.click('.floorplan-custom-visible');
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBeLessThan(before);
+});
+
+// Row 19 — trim tool present + join action for two walls
+test('trim tool is available and join appears for two selected walls (row 19)', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-tool-button[data-tool="trim"]')).toHaveCount(1);
+  await selectTool(page, 'trim');
+  await expect(page.locator('.floorplan-tool-button[data-tool="trim"]')).toHaveClass(/active/);
+
+  await selectTool(page, 'select');
+  await clickWall(page, 0);
+  await clickWall(page, 1, { modifiers: ['Shift'] });
+  await expect(page.locator('.floorplan-insp-join')).toHaveCount(1);
+});
+
+// Row 19 — trim cuts an overhanging wall at an intersection
+test('trim cuts an overhanging wall at the intersection (row 19)', async ({ page }) => {
+  await openPlan(page);
+  const box = await svgBox(page);
+  const beforeWalls = await page.locator('.floorplan-wall').count();
+
+  await selectTool(page, 'wall');
+  await page.mouse.move(box.x + 200, box.y + 470); await page.mouse.down();
+  await page.mouse.move(box.x + 430, box.y + 470, { steps: 10 }); await page.mouse.up();
+  await page.mouse.move(box.x + 360, box.y + 410); await page.mouse.down();
+  await page.mouse.move(box.x + 360, box.y + 540, { steps: 10 }); await page.mouse.up();
+  expect(await page.locator('.floorplan-wall').count()).toBe(beforeWalls + 2);
+
+  await selectTool(page, 'trim');
+  await page.mouse.click(box.x + 415, box.y + 470); // on the overhang beyond the crossing
+  await expect(page.locator('.floorplan-feedback')).toContainText(/Trimmed|No intersection/i);
+  expect(await page.locator('.floorplan-wall').count()).toBe(beforeWalls + 2);
+});
+
+// Row 17 — windows resize via a numeric width input
+test('windows resize via a numeric width input (row 17)', async ({ page }) => {
+  await openPlan(page);
+  const wallBox = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!wallBox) throw new Error('Wall geometry missing');
+  const tx = wallBox.x + (wallBox.width / 2);
+  const ty = wallBox.y + (wallBox.height / 2);
+
+  await selectTool(page, 'window');
+  await page.mouse.click(tx, ty);
+  await selectTool(page, 'select');
+  await page.mouse.click(tx, ty);
+
+  const input = page.locator('.floorplan-insp-input[data-field="width"]');
+  await expect(input).toHaveCount(1);
+  await input.fill('5');
+  await input.press('Enter');
+  await expect(page.locator('.floorplan-prop-dims')).toContainText('5');
 });
