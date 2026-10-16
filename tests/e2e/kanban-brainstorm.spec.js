@@ -3,7 +3,7 @@ const { setupApp, navigateToSheet } = require('../helpers/test-utils.js');
 
 test('brainstorm toggle button appears in kanban toolbar', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await expect(brainstormBtn).toBeVisible();
@@ -12,7 +12,7 @@ test('brainstorm toggle button appears in kanban toolbar', async ({ page }) => {
 
 test('clicking brainstorm button enters brainstorm mode', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -28,7 +28,7 @@ test('clicking brainstorm button enters brainstorm mode', async ({ page }) => {
 
 test('brainstorm mode shows empty state when no ideas exist', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -39,7 +39,7 @@ test('brainstorm mode shows empty state when no ideas exist', async ({ page }) =
 
 test('new idea button allows creating an idea', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -59,7 +59,7 @@ test('new idea button allows creating an idea', async ({ page }) => {
 
 test('idea card shows discussion count badge', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -79,7 +79,7 @@ test('idea card shows discussion count badge', async ({ page }) => {
 
 test('expanding idea opens discussion panel', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -107,7 +107,7 @@ test('expanding idea opens discussion panel', async ({ page }) => {
 
 test('discussion panel allows adding discussion entries', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -139,7 +139,7 @@ test('discussion panel allows adding discussion entries', async ({ page }) => {
 
 test('idea description can be edited in discussion panel', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -167,7 +167,7 @@ test('idea description can be edited in discussion panel', async ({ page }) => {
 
 test('mark refined button changes idea status', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -199,7 +199,7 @@ test('mark refined button changes idea status', async ({ page }) => {
 
 test('refined idea shows convert to task button', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -231,7 +231,7 @@ test('refined idea shows convert to task button', async ({ page }) => {
 
 test('delete button removes an idea', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -263,7 +263,7 @@ test('delete button removes an idea', async ({ page }) => {
 
 test('back button returns to ideas grid from discussion panel', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -298,7 +298,7 @@ test('back button returns to ideas grid from discussion panel', async ({ page })
 
 test('brainstorm button toggle returns to board view', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   
@@ -320,7 +320,7 @@ test('brainstorm button toggle returns to board view', async ({ page }) => {
 
 test('discussion entry shows author and timestamp', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -353,7 +353,7 @@ test('discussion entry shows author and timestamp', async ({ page }) => {
 
 test('multiple discussion entries display in thread', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   await brainstormBtn.click();
@@ -386,7 +386,7 @@ test('multiple discussion entries display in thread', async ({ page }) => {
 
 test('brainstorm button has active class when in brainstorm mode', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-001');
+  await navigateToSheet(page, 'sheet-028');
   
   const brainstormBtn = page.locator('.kanban-brainstorm-toggle');
   

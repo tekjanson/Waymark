@@ -9,7 +9,7 @@
 
 import {
   NODE_SHAPES, NODE_W, NODE_H,
-  buildStepLookup, getNodePos, svg,
+  getNodePos, svg,
 } from './helpers.js';
 
 /* ---------- Layout ---------- */
@@ -18,6 +18,58 @@ const GAP_X = 60;
 const GAP_Y = 80;
 const LAYER_PADDING_X = 40;
 const LAYER_PADDING_Y = 30;
+const LABEL_CHAR_WIDTH = 7;
+const LABEL_LINE_HEIGHT = 14;
+const MAX_LABEL_LINES = 3;
+
+/**
+ * Wrap a node label into readable short lines.
+ * @param {string} label
+ * @param {number} maxChars
+ * @returns {string[]}
+ */
+function wrapLabel(label, maxChars) {
+  const words = String(label || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length <= MAX_LABEL_LINES) return lines;
+  const kept = lines.slice(0, MAX_LABEL_LINES);
+  const overflow = lines.slice(MAX_LABEL_LINES - 1).join(' ');
+  kept[MAX_LABEL_LINES - 1] = overflow;
+  return kept;
+}
+
+/**
+ * Estimate node dimensions based on title length and shape.
+ * @param {Object} step
+ * @returns {{ w: number, h: number, labelLines: string[] }}
+ */
+function measureNode(step) {
+  const maxChars = step.type === 'decision' ? 14 : 18;
+  const labelLines = wrapLabel(step.step, maxChars);
+  const longest = Math.max(...labelLines.map(line => line.length), 10);
+  const width = Math.max(NODE_W, Math.min(280, longest * LABEL_CHAR_WIDTH + 62));
+  const labelHeight = labelLines.length * LABEL_LINE_HEIGHT;
+  const height = Math.max(
+    step.type === 'decision' ? 88 : NODE_H,
+    labelHeight + 34,
+  );
+  return {
+    w: step.type === 'decision' ? Math.max(width, 210) : width,
+    h: height,
+    labelLines,
+  };
+}
 
 /**
  * Assign BFS layers to steps.
@@ -155,29 +207,42 @@ export function computeLayout(steps, groupKey) {
   const layerNums = [...orderedLayers.keys()].sort((a, b) => a - b);
   const stepByKey = new Map(steps.map(s => [s.step.toLowerCase().trim(), s]));
 
+  const layerHeights = new Map();
   for (const layerIdx of layerNums) {
     const keys = orderedLayers.get(layerIdx);
-    const y = LAYER_PADDING_Y + layerIdx * (NODE_H + GAP_Y);
-    const layerWidth = keys.length * NODE_W + (keys.length - 1) * GAP_X;
+    const maxH = Math.max(...keys.map(k => measureNode(stepByKey.get(k)).h), NODE_H);
+    layerHeights.set(layerIdx, maxH);
+  }
+
+  let yCursor = LAYER_PADDING_Y;
+  for (const layerIdx of layerNums) {
+    const keys = orderedLayers.get(layerIdx);
+    const y = yCursor;
+    const sizes = keys.map(k => measureNode(stepByKey.get(k)));
+    const layerWidth = sizes.reduce((sum, size) => sum + size.w, 0) + (keys.length - 1) * GAP_X;
     const startX = LAYER_PADDING_X + Math.max(0, (600 - layerWidth) / 2);
+    let xCursor = startX;
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       const s = stepByKey.get(key);
       if (!s || positioned.has(key)) continue;
+      const size = sizes[i];
 
-      const autoX = startX + i * (NODE_W + GAP_X);
+      const autoX = xCursor;
       const autoY = y;
+      xCursor += size.w + GAP_X;
 
       /* Use cached position if user dragged this node */
       const cached = getNodePos(`${groupKey}:${key}`);
       const x = cached ? cached.x : autoX;
       const yFinal = cached ? cached.y : autoY;
 
-      const node = { ...s, x, y: yFinal, w: NODE_W, h: NODE_H, index: steps.indexOf(s), key };
+      const node = { ...s, x, y: yFinal, w: size.w, h: size.h, labelLines: size.labelLines, index: steps.indexOf(s), key };
       nodes.push(node);
       positioned.set(key, node);
     }
+    yCursor += (layerHeights.get(layerIdx) || NODE_H) + GAP_Y;
   }
 
   /* Catch any steps not in the layer map (shouldn't happen, but safety) */
@@ -186,11 +251,12 @@ export function computeLayout(steps, groupKey) {
     const key = s.step.toLowerCase().trim();
     if (positioned.has(key)) continue;
     const cached = getNodePos(`${groupKey}:${key}`);
+    const size = measureNode(s);
     const node = {
       ...s,
       x: cached ? cached.x : LAYER_PADDING_X,
       y: cached ? cached.y : LAYER_PADDING_Y + nodes.length * (NODE_H + GAP_Y),
-      w: NODE_W, h: NODE_H, index: i, key,
+      w: size.w, h: size.h, labelLines: size.labelLines, index: i, key,
     };
     nodes.push(node);
     positioned.set(key, node);
@@ -286,23 +352,46 @@ export function renderNodeGroup(node) {
     fill: 'transparent', class: 'flow-node-hit',
   }));
 
-  /* Label */
-  const displayLabel = node.step.length > 22 ? node.step.slice(0, 20) + '\u2026' : node.step;
+  /* Inline type badge */
+  const badgeWidth = Math.max(54, shape.label.length * 6 + 24);
+  const badgeGroup = svg('g', { class: 'flow-node-type-badge' });
+  badgeGroup.append(svg('rect', {
+    x: node.w / 2 - badgeWidth / 2, y: 8,
+    width: badgeWidth, height: 18,
+    rx: 9, ry: 9,
+    class: 'flow-node-type-pill',
+    fill: shape.color + '22',
+    stroke: shape.color,
+    'stroke-width': 1,
+  }));
+  const badgeText = svg('text', {
+    x: node.w / 2, y: 21,
+    'text-anchor': 'middle',
+    class: 'flow-node-type-text',
+    fill: shape.color,
+  });
+  badgeText.textContent = shape.label;
+  badgeGroup.append(badgeText);
+  g.append(badgeGroup);
+
+  /* Wrapped label */
   const text = svg('text', {
-    x: node.w / 2, y: node.h / 2 + 1,
-    'text-anchor': 'middle', 'dominant-baseline': 'central',
+    x: node.w / 2, y: node.h / 2 + (node.labelLines.length > 1 ? -3 : 4),
+    'text-anchor': 'middle',
     class: 'flow-node-label',
   });
-  text.textContent = displayLabel;
-  g.append(text);
-
-  /* Type badge above */
-  const badge = svg('text', {
-    x: node.w / 2, y: -6,
-    'text-anchor': 'middle', class: 'flow-node-type-badge', fill: shape.color,
+  const lines = node.labelLines?.length ? node.labelLines : wrapLabel(node.step, 18);
+  const startDy = -((lines.length - 1) * LABEL_LINE_HEIGHT) / 2;
+  lines.forEach((line, index) => {
+    const tspan = svg('tspan', {
+      x: node.w / 2,
+      dy: index === 0 ? startDy : LABEL_LINE_HEIGHT,
+      class: 'flow-node-label-line',
+    });
+    tspan.textContent = line;
+    text.append(tspan);
   });
-  badge.textContent = shape.label;
-  g.append(badge);
+  g.append(text);
 
   /* Output port — bottom center */
   g.append(svg('circle', {
@@ -310,6 +399,12 @@ export function renderNodeGroup(node) {
     class: 'flow-port flow-port-out',
     fill: '#6366f1', stroke: '#fff', 'stroke-width': 2,
   }));
+
+  const quick = svg('g', { class: 'flow-quick-add', transform: `translate(${node.w + 16}, ${node.h / 2})` });
+  quick.append(svg('circle', { r: 10, class: 'flow-quick-add-circle' }));
+  quick.append(svg('text', { y: 4, 'text-anchor': 'middle', class: 'flow-quick-add-text' }));
+  quick.lastChild.textContent = '+';
+  g.append(quick);
 
   return g;
 }
@@ -324,7 +419,7 @@ export function renderNodeGroup(node) {
  * @returns {SVGElement}
  */
 export function renderEdge(edge, markerId) {
-  const g = svg('g', { class: 'flow-edge' });
+  const g = svg('g', { class: 'flow-edge', 'data-from': edge.from.key, 'data-to': edge.to.key });
 
   const fromCX = edge.from.x + edge.from.w / 2;
   const fromCY = edge.from.y + edge.from.h / 2;
@@ -346,31 +441,27 @@ export function renderEdge(edge, markerId) {
   const midX = (x1 + x2) / 2;
   const midY = (y1 + y2) / 2;
 
-  let path;
-  if (Math.abs(x1 - x2) < 5) {
-    path = svg('line', {
-      x1, y1, x2, y2,
-      class: 'flow-edge-path', 'stroke-width': 2,
-      'marker-end': `url(#${markerId})`,
-    });
-  } else {
-    const d = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
-    path = svg('path', {
-      d, fill: 'none', class: 'flow-edge-path', 'stroke-width': 2,
-      'marker-end': `url(#${markerId})`,
-    });
-  }
+  const bend = Math.max(28, Math.min(90, Math.abs(y2 - y1) / 2));
+  const c1y = y1 + (y2 >= y1 ? bend : -bend);
+  const c2y = y2 - (y2 >= y1 ? bend : -bend);
+  const d = `M${x1},${y1} C${x1},${c1y} ${x2},${c2y} ${x2},${y2}`;
+  const path = svg('path', {
+    d, fill: 'none', class: 'flow-edge-path', 'stroke-width': 2,
+    'marker-end': `url(#${markerId})`,
+  });
   g.append(path);
 
   if (edge.label) {
-    const lx = midX + 8;
-    const ly = midY - 4;
+    const lx = midX;
+    const ly = midY;
+    const labelWidth = Math.max(44, edge.label.length * 7 + 18);
     g.append(svg('rect', {
-      x: lx - 2, y: ly - 10, width: edge.label.length * 7 + 8, height: 16,
-      rx: 3, ry: 3, class: 'flow-edge-label-bg',
+      x: lx - labelWidth / 2, y: ly - 11, width: labelWidth, height: 22,
+      rx: 11, ry: 11, class: 'flow-edge-label-bg',
     }));
     const label = svg('text', {
-      x: lx + 2, y: ly + 2, class: 'flow-edge-label',
+      x: lx, y: ly + 4, class: 'flow-edge-label',
+      'text-anchor': 'middle',
     });
     label.textContent = edge.label;
     g.append(label);

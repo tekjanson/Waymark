@@ -14,7 +14,10 @@ import {
   parseGroups, delegateEvent, cycleStatus, lazySection, getUserName,
   buildDirSyncBtn, isEditLocked, showToast,
 } from '../shared.js';
-import { LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX, nowTimestamp, formatRelativeDate } from './helpers.js';
+import {
+  LANE_LABELS, LANE_PAGE_SIZE, projectColor, priRank, STATUS_PREFIX,
+  nowTimestamp, formatRelativeDate, parseVoiceTask, normalizeVoiceStage,
+} from './helpers.js';
 import { buildCard, buildCardDetail } from './cards.js';
 import { openCardModal } from './modal.js';
 import * as brainstorm from './brainstorm.js';
@@ -348,6 +351,82 @@ const definition = {
     // Project filter pills list (same as allProjects for toolbar)
     const projects = allProjects;
 
+    /**
+     * Add a kanban task from a spoken transcript.
+     * @param {string} transcript
+     * @param {string} defaultStage
+     * @returns {Promise<Object>}
+     */
+    async function addVoiceTask(transcript, defaultStage = 'Backlog') {
+      const parsed = parseVoiceTask(transcript);
+      const stage = parsed.stage || normalizeVoiceStage(defaultStage) || defaultStage || 'Backlog';
+      const title = parsed.title || 'Voice Task';
+      const totalCols = template._totalColumns || Math.max(...Object.values(cols).filter(v => v >= 0), 0) + 1;
+      const row = new Array(totalCols).fill('');
+      if (cols.text >= 0) row[cols.text] = title;
+      if (cols.description >= 0) row[cols.description] = parsed.description || '';
+      if (cols.stage >= 0) row[cols.stage] = stage;
+      if (cols.priority >= 0) row[cols.priority] = parsed.priority || 'P2';
+
+      if (typeof template._onAddRow === 'function') {
+        await template._onAddRow([row]);
+      } else {
+        const newRowIdx = rows.length + 1;
+        for (let i = 0; i < row.length; i++) {
+          if (row[i]) emitEdit(newRowIdx, i, row[i]);
+        }
+      }
+
+      showToast(`Voice task "${title}" added to ${stage}`, 'success');
+      return { ...parsed, title, stage, priority: parsed.priority || 'P2' };
+    }
+
+    /**
+     * Start browser speech intake for a new kanban task.
+     * @param {string} defaultStage
+     */
+    function startVoiceTask(defaultStage = 'Backlog') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        showToast('Voice input is not supported in this browser. Use the test hook or add the task manually.', 'info');
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = async (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0]?.transcript || '')
+          .join(' ')
+          .trim();
+        if (transcript) await addVoiceTask(transcript, defaultStage);
+      };
+      recognition.onerror = () => showToast('Could not capture voice input. Please try again or add the task manually.', 'error');
+      recognition.start();
+      showToast('Listening for a task…', 'info');
+    }
+
+    /**
+     * Build a microphone button for voice task intake.
+     * @param {string} defaultStage
+     * @param {string} extraClass
+     * @returns {HTMLElement}
+     */
+    function buildVoiceButton(defaultStage, extraClass = '') {
+      const label = defaultStage ? `Add voice task to ${defaultStage}` : 'Add voice task';
+      const btn = el('button', {
+        className: `kanban-voice-btn ${extraClass}`.trim(),
+        type: 'button',
+        title: label,
+      }, ['🎙 Voice']);
+      btn.addEventListener('click', () => startVoiceTask(defaultStage || 'Backlog'));
+      return btn;
+    }
+
+    window.__WAYMARK_KANBAN_VOICE = async (transcript, opts = {}) => addVoiceTask(transcript, opts.stage || 'Backlog');
+
     /* ---- Toolbar: filter pills + sort + archive toggle ---- */
 
     const toolbar = el('div', { className: 'kanban-toolbar' });
@@ -432,13 +511,15 @@ const definition = {
     laneVisWrap.append(laneVisBtn, laneVisPanel);
     controls.append(laneVisWrap);
 
+    controls.append(buildVoiceButton('Backlog', 'kanban-voice-header-btn'));
+
     // Brainstorm mode toggle button
     const brainstormBtn = el('button', {
       className: `kanban-brainstorm-toggle ${brainstorm.isBrainstormMode() ? 'active' : ''}`,
       title: 'Toggle brainstorming mode for ideas',
     }, ['💭 Brainstorm']);
     brainstormBtn.addEventListener('click', () => {
-      brainstorm.toggleBrainstormMode(container, cols, (taskRow, ideaTitle) => {
+      brainstorm.toggleBrainstormMode(el('div'), cols, (taskRow, ideaTitle) => {
         if (taskRow) {
           // Add new task row to the sheet via emitEdit
           const newRowIdx = rows.length + 1;
@@ -450,7 +531,8 @@ const definition = {
           setTimeout(() => updateBoard(), 100);
         }
       });
-      brainstormBtn.classList.toggle('active');
+      container.innerHTML = '';
+      template.render(container, rows, cols, template);
     });
     controls.append(brainstormBtn);
 
@@ -509,7 +591,9 @@ const definition = {
 
     /* ---- Check for brainstorm mode ---- */
     if (brainstorm.isBrainstormMode()) {
-      brainstorm.renderBrainstormView(container, cols, (taskRow, ideaTitle) => {
+      const brainstormHost = el('div', { className: 'kanban-brainstorm-host' });
+      container.append(brainstormHost);
+      brainstorm.renderBrainstormView(brainstormHost, cols, (taskRow, ideaTitle) => {
         if (taskRow) {
           // Add new task row to the sheet via emitEdit
           const newRowIdx = rows.length + 1;
@@ -805,6 +889,7 @@ const definition = {
           },
         });
         laneForm.classList.add('add-row-lane');
+        laneForm.append(buildVoiceButton(LANE_LABELS[laneKey] || laneKey, 'kanban-voice-lane-btn'));
         lane.append(laneForm);
       }
 

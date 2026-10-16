@@ -245,6 +245,91 @@ function parseAmount(raw) {
   return negative ? -num : num;
 }
 
+/** Category keywords used by imported statements and quick-add entries */
+const CATEGORY_RULES = [
+  { category: 'Income', re: /\b(payroll|paycheck|salary|deposit|direct deposit|freelance|invoice|refund)\b/i },
+  { category: 'Housing', re: /\b(rent|mortgage|hoa|landlord)\b/i },
+  { category: 'Food', re: /\b(grocery|groceries|restaurant|cafe|coffee|whole foods|trader joe|kroger|safeway|market|dining)\b/i },
+  { category: 'Utilities', re: /\b(electric|water|gas bill|utility|internet|phone|mobile|carrier|comcast|verizon|at&t)\b/i },
+  { category: 'Transport', re: /\b(gas station|fuel|uber|lyft|parking|toll|insurance|auto|car)\b/i },
+  { category: 'Health', re: /\b(gym|fitness|doctor|pharmacy|health|dental|medical)\b/i },
+  { category: 'Entertainment', re: /\b(streaming|netflix|spotify|hulu|movie|cinema|subscription)\b/i },
+  { category: 'Home', re: /\b(home depot|lowe'?s|hardware|garden|solar|repair)\b/i },
+];
+
+/**
+ * Deterministically categorize a budget transaction from text.
+ * @param {string} description
+ * @param {number} amount
+ * @param {string} [hint]
+ * @returns {string}
+ */
+export function categorizeBudgetTransaction(description, amount, hint = '') {
+  const text = `${description || ''} ${hint || ''}`.trim();
+  for (const rule of CATEGORY_RULES) {
+    if (rule.re.test(text)) return rule.category;
+  }
+  return amount > 0 ? 'Income' : 'Uncategorized';
+}
+
+/**
+ * Parse a natural-language budget quick-add entry.
+ * Examples: "Home Depot $142.50 yesterday #solar", "Paycheck 2500 today".
+ * @param {string} input
+ * @param {Date} [now]
+ * @returns {{date:string, description:string, amount:string, category:string, tags:string[]}|null}
+ */
+export function parseQuickAddBudgetEntry(input, now = new Date()) {
+  const raw = (input || '').trim();
+  if (!raw) return null;
+
+  const amountMatch = raw.match(/(?:^|\s)([-+]?[$]?\d[\d,]*(?:\.\d{1,2})?)(?:\s|$)/);
+  if (!amountMatch) return null;
+
+  let amount = parseAmount(amountMatch[1]);
+  const lower = raw.toLowerCase();
+  if (!/[+-]/.test(amountMatch[1]) && !/\b(income|paycheck|salary|deposit|refund|paid)\b/i.test(raw)) {
+    amount = -Math.abs(amount);
+  }
+
+  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let dateText = '';
+  if (/\byesterday\b/i.test(raw)) {
+    date.setDate(date.getDate() - 1);
+    dateText = 'yesterday';
+  } else if (/\btoday\b/i.test(raw)) {
+    dateText = 'today';
+  } else {
+    const explicitDate = raw.match(/\b(\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)\b/);
+    if (explicitDate) dateText = explicitDate[1];
+  }
+
+  const normalDate = dateText && !/^(today|yesterday)$/i.test(dateText)
+    ? normaliseDate(dateText)
+    : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+  const tags = Array.from(raw.matchAll(/#([a-z0-9_-]+)/gi)).map(m => m[1]);
+  const description = raw
+    .replace(amountMatch[0], ' ')
+    .replace(/\b(today|yesterday)\b/gi, ' ')
+    .replace(/\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/g, ' ')
+    .replace(/#[a-z0-9_-]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Quick add transaction';
+
+  const category = tags.length
+    ? tags[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
+    : categorizeBudgetTransaction(description, amount, lower);
+
+  return {
+    date: normalDate,
+    description,
+    amount: String(amount),
+    category,
+    tags,
+  };
+}
+
 /**
  * Parse a CSV bank statement into normalised transaction objects.
  * Handles multi-section CSVs (e.g. BofA) where a summary section
@@ -325,7 +410,8 @@ export function parseCSVStatement(text) {
 
     const date = colMap.date >= 0 ? normaliseDate(row[colMap.date] || '') : '';
     const description = colMap.description >= 0 ? (row[colMap.description] || '').trim() : '';
-    const category = colMap.category >= 0 ? (row[colMap.category] || '').trim() : '';
+    const rawCategory = colMap.category >= 0 ? (row[colMap.category] || '').trim() : '';
+    const category = rawCategory || categorizeBudgetTransaction(description, amount);
 
     transactions.push({
       date,
@@ -387,11 +473,12 @@ export function parseOFXStatement(text) {
     const name = ofxVal(block, 'NAME') || ofxVal(block, 'MEMO') || 'Unknown transaction';
     const memo = ofxVal(block, 'MEMO');
 
+    const description = name + (memo && memo !== name ? ` - ${memo}` : '');
     transactions.push({
       date: parseOFXDate(rawDate),
-      description: name + (memo && memo !== name ? ` - ${memo}` : ''),
+      description,
       amount: String(amount),
-      category: '',
+      category: categorizeBudgetTransaction(description, amount),
     });
   }
 
@@ -641,11 +728,12 @@ function applyColumnMapping(tableRows, colMap) {
     const amount = parseAmount(amtStr);
     if (amount === 0) continue;
 
+    const description = descStr || 'Unknown transaction';
     transactions.push({
       date: hasDate ? normaliseDate(dateStr.match(PDF_DATE_RE)[1]) : '',
-      description: descStr || 'Unknown transaction',
+      description,
       amount: String(amount),
-      category: '',
+      category: categorizeBudgetTransaction(description, amount),
     });
   }
 
@@ -796,7 +884,7 @@ export function parseFixedWidthStatement(text) {
       date: normaliseDate(dateStr),
       description: description || 'Unknown transaction',
       amount: String(amount),
-      category: '',
+      category: categorizeBudgetTransaction(description, amount),
     });
   }
 

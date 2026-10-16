@@ -78,6 +78,11 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function getWorldBoundsFromViewBox(svg) {
+  const parts = String(svg.getAttribute('viewBox') || '0 0 960 620').split(/\s+/).map(Number);
+  return { x: parts[0] || 0, y: parts[1] || 0, width: parts[2] || 960, height: parts[3] || 620 };
+}
+
 function isDebugEnabled() {
   if (typeof window === 'undefined') return false;
   if (window.__WAYMARK_LOCAL) return true;
@@ -273,10 +278,7 @@ function pointFromEvent(svg, event) {
     x = ((clientX - rect.left) / rect.width) * 960;
     y = ((clientY - rect.top) / rect.height) * 620;
   }
-  return {
-    x: clamp(x, 20, 940),
-    y: clamp(y, 20, 600),
-  };
+  return { x, y };
 }
 
 function createFence(item, start, end) {
@@ -446,6 +448,10 @@ const definition = {
           notes,
           floor: parseFloorNumber(layer, notes),
           interior: [],
+          zIndex: index,
+          aiPrompt: '',
+          referencePhoto: '',
+          aspectLocked: true,
         };
       })
       .filter(Boolean);
@@ -502,21 +508,33 @@ const definition = {
           el('span', { className: 'floorplan-title-icon' }, ['🏠']),
           el('span', { className: 'floorplan-title' }, ['House Plan']),
         ]),
-        el('div', { className: 'floorplan-topbar-center' }, [
+        el('div', { className: 'floorplan-topbar-left' }, [
           el('div', { className: 'floorplan-floor-controls' }, [
             el('button', { className: 'floorplan-floor-btn floorplan-floor-prev', type: 'button', title: 'Previous floor', on: { click: () => shiftFloor(-1) } }, ['‹']),
             el('span', { className: 'floorplan-floor-indicator' }, ['Floor 1']),
             el('button', { className: 'floorplan-floor-btn floorplan-floor-next', type: 'button', title: 'Next floor', on: { click: () => shiftFloor(1) } }, ['›']),
           ]),
           el('button', { className: 'floorplan-toggle-btn floorplan-align-btn', type: 'button', title: 'Overlay the floor below as a reference', on: { click: () => toggleAlignBelow() } }, ['Align Below: Off']),
-          el('button', { className: 'floorplan-toggle-btn floorplan-interior-toggle-btn', type: 'button', title: 'Toggle the 3D interior box view', on: { click: () => toggleInteriorView() } }, ['3D Interior: Off']),
+        ]),
+        el('div', { className: 'floorplan-topbar-center floorplan-view-switcher', role: 'tablist', 'aria-label': 'View switcher' }, [
+          el('button', { className: 'floorplan-view-btn active', type: 'button', dataset: { view: 'blueprint' }, on: { click: () => setViewMode('blueprint') } }, ['2D Blueprint']),
+          el('button', { className: 'floorplan-view-btn', type: 'button', dataset: { view: 'interior' }, on: { click: () => setViewMode('interior') } }, ['3D Interior']),
+          el('button', { className: 'floorplan-view-btn floorplan-ai-render-btn', type: 'button', dataset: { view: 'render' }, title: 'Pick a viewpoint and render a 3D view of the space', on: { click: () => { setViewMode('render'); openFloorplanAiRenderModal({ items: state.items }); } } }, ['Render Space']),
         ]),
         el('div', { className: 'floorplan-topbar-right' }, [
           el('button', { className: 'floorplan-secondary-btn floorplan-auto-wall-btn', type: 'button', title: 'Generate walls around every room', on: { click: () => autoGenerateWallsFromRooms() } }, ['Auto Walls']),
           el('button', { className: 'floorplan-secondary-btn floorplan-load-preset-btn', type: 'button', title: 'Load the example floor-one layout', on: { click: () => loadFloorOnePreset() } }, ['Load Example']),
-          el('button', { className: 'floorplan-secondary-btn floorplan-ai-render-btn', type: 'button', title: 'Pick a viewpoint and render a 3D view of the space', on: { click: () => openFloorplanAiRenderModal({ items: state.items }) } }, ['Render Space']),
           el('button', { className: 'floorplan-secondary-btn floorplan-focus-toggle-btn', type: 'button', title: 'Toggle fullscreen focus mode', on: { click: () => toggleFocusMode() } }, ['Exit Focus']),
-          el('button', { className: 'floorplan-export-btn', type: 'button', title: 'Export the plan to PDF', on: { click: () => window.print() } }, ['Export PDF']),
+          el('button', { className: 'floorplan-secondary-btn floorplan-interior-toggle-btn', type: 'button', title: 'Toggle the 3D interior box view', on: { click: () => toggleInteriorView() } }, ['3D Interior: Off']),
+          el('div', { className: 'floorplan-export-wrap' }, [
+            el('button', { className: 'floorplan-export-btn', type: 'button', title: 'Export the plan to PDF', on: { click: () => window.print() } }, ['Export PDF']),
+            el('button', { className: 'floorplan-export-menu-btn', type: 'button', title: 'More export options', on: { click: () => toggleExportMenu() } }, ['▾']),
+            el('div', { className: 'floorplan-export-menu hidden' }, [
+              el('button', { className: 'floorplan-export-jpeg', type: 'button', on: { click: () => exportHighResJpeg() } }, ['High-res JPEG (2x)']),
+              el('button', { className: 'floorplan-export-pdf', type: 'button', on: { click: () => exportPdfReport() } }, ['Project PDF report']),
+            ]),
+          ]),
+          el('button', { className: 'floorplan-mobile-overflow-btn', type: 'button', title: 'More actions', on: { click: () => toggleMobileOverflow() } }, ['⋯']),
         ]),
       ]),
 
@@ -535,23 +553,18 @@ const definition = {
             toolButton('window', '🪟', 'Window'),
             toolButton('stairs', '🪜', 'Stairs'),
           ]),
-          railSection('Systems', [
-            toolButton('electrical', '◉', 'Electrical'),
-            toolButton('plumbing', '▣', 'Plumbing'),
-          ]),
           railSection('Edit', [
             toolButton('select', '✦', 'Select'),
             toolButton('trim', '✂', 'Trim'),
             toolButton('erase', '⌫', 'Erase'),
             actionButton('floorplan-undo-btn', '↶', 'Undo', () => undoLatest()),
-            actionButton('floorplan-rect-mode-btn active', '⛓️', 'Corners: On', () => toggleRectDisconnected()),
-            actionButton('floorplan-clear-btn', '☒', 'Clear', () => clearSelection()),
+            actionButton('floorplan-rect-mode-btn floorplan-toggle-compact active', '⛓️', 'Corners: On', () => toggleRectDisconnected()),
           ]),
         ]),
 
         /* Center canvas column */
         el('div', { className: 'floorplan-canvas-col' }, [
-          el('div', { className: 'floorplan-statusbar' }, [
+          el('div', { className: 'floorplan-statusbar floorplan-floating-hud' }, [
             el('span', { className: 'floorplan-hint', 'aria-live': 'polite' }, [TOOL_HINTS.wall]),
             el('span', { className: 'floorplan-feedback', 'aria-live': 'polite' }, ['Ready']),
           ]),
@@ -587,6 +600,19 @@ const definition = {
               el('button', { className: 'floorplan-zoom-btn floorplan-zoom-in', type: 'button', title: 'Zoom in (Ctrl +)', 'aria-label': 'Zoom in', on: { click: () => zoomByStep(1.2) } }, ['+']),
               el('button', { className: 'floorplan-zoom-btn floorplan-zoom-fit', type: 'button', title: 'Zoom to fit the whole drawing', 'aria-label': 'Zoom to fit', on: { click: () => zoomToFit() } }, ['⤢ Fit']),
             ]),
+            el('div', { className: 'floorplan-snap-hud' }, [
+              el('button', { className: 'floorplan-snap-pill', type: 'button', on: { click: () => cycleSnapUnit() } }, ['Snap: 1 ft']),
+              el('button', { className: 'floorplan-grid-pill', type: 'button', on: { click: () => cycleGridUnit() } }, ['Grid: 4 ft']),
+              el('button', { className: 'floorplan-clear-guard-btn', type: 'button', on: { click: () => toggleClearConfirm() } }, ['Clear']),
+              el('div', { className: 'floorplan-clear-popover hidden' }, [
+                el('span', {}, ['Clear all floor plan objects?']),
+                el('button', { className: 'floorplan-clear-confirm', type: 'button', on: { click: () => clearAllItems() } }, ['Confirm Clear']),
+              ]),
+            ]),
+            el('div', { className: 'floorplan-mobile-dock' }, [
+              el('button', { className: 'floorplan-dock-btn', type: 'button', on: { click: () => setPanelTab('symbols', true) } }, ['Symbols']),
+              el('button', { className: 'floorplan-dock-btn', type: 'button', on: { click: () => setPanelTab('layers', true) } }, ['Layers']),
+            ]),
             /* ---------- Line/shape style toolbar (row 24) — shown when the line or circle tool is active ---------- */
             el('div', { className: 'floorplan-line-toolbar hidden', role: 'toolbar', 'aria-label': 'Line style' }, [
               el('span', { className: 'floorplan-line-toolbar-label' }, ['Line style']),
@@ -602,15 +628,23 @@ const definition = {
 
         /* Right panel: Symbols + Layers + Interior */
         el('aside', { className: 'floorplan-panel' }, [
-          el('div', { className: 'floorplan-panel-section floorplan-symbol-panel' }, [
-            el('div', { className: 'floorplan-panel-heading' }, ['Symbols']),
-            ...SYMBOL_CATALOG.map(section => el('div', { className: 'floorplan-symbol-group' }, [
-              el('div', { className: 'floorplan-symbol-group-heading' }, [section.category]),
+          el('div', { className: 'floorplan-panel-tabs' }, [
+            el('button', { className: 'floorplan-panel-tab active', type: 'button', dataset: { tab: 'symbols' }, on: { click: () => setPanelTab('symbols') } }, ['Symbols']),
+            el('button', { className: 'floorplan-panel-tab', type: 'button', dataset: { tab: 'layers' }, on: { click: () => setPanelTab('layers') } }, ['Layers']),
+          ]),
+          el('div', { className: 'floorplan-panel-section floorplan-symbol-panel', dataset: { panel: 'symbols' } }, [
+            el('input', { className: 'floorplan-symbol-search', type: 'search', placeholder: 'Search symbols...', on: { input: (e) => filterSymbols(e.target.value) } }),
+            el('div', { className: 'floorplan-symbol-jumps' }, SYMBOL_CATALOG.map(section => el('button', {
+              className: 'floorplan-symbol-jump', type: 'button', dataset: { category: section.category.toLowerCase() },
+              on: { click: () => jumpSymbolCategory(section.category) },
+            }, [section.category.replace(' & Dining', '').replace(' & Misc', '')]))),
+            ...SYMBOL_CATALOG.map(section => el('div', { className: 'floorplan-symbol-group', dataset: { category: section.category.toLowerCase() } }, [
+              el('button', { className: 'floorplan-symbol-group-heading', type: 'button', on: { click: () => jumpSymbolCategory(section.category) } }, [section.category]),
               el('div', { className: 'floorplan-symbol-grid' }, section.items.map(symbol => el('button', {
                 className: `floorplan-symbol-choice${symbol.key === HOUSEHOLD_SYMBOLS[0].key ? ' active' : ''}`,
                 type: 'button',
-                title: `${symbol.label} symbol`,
-                dataset: { symbolKey: symbol.key },
+                title: `${symbol.label} · ${formatFeet(symbol.width)} × ${formatFeet(symbol.height)}`,
+                dataset: { symbolKey: symbol.key, symbolLabel: symbol.label.toLowerCase(), symbolCategory: section.category.toLowerCase() },
                 on: { click: () => setSymbolPreset(symbol.key) },
               }, [
                 el('span', { className: 'floorplan-symbol-choice-icon' }, [symbol.icon]),
@@ -618,7 +652,7 @@ const definition = {
               ]))),
             ])),
           ]),
-          el('div', { className: 'floorplan-panel-section' }, [
+          el('div', { className: 'floorplan-panel-section floorplan-layers-panel', dataset: { panel: 'layers' } }, [
             el('div', { className: 'floorplan-panel-heading' }, ['Layers']),
             el('div', { className: 'floorplan-layer-grid' }, [
               ['room', 'Rooms'],
@@ -633,6 +667,12 @@ const definition = {
             ]))),
             el('div', { className: 'floorplan-custom-layers' }, []),
             el('button', { className: 'floorplan-add-layer-btn', type: 'button', title: 'Add a custom layer (Electrical, Plumbing, HVAC…)', on: { click: () => addCustomLayer() } }, ['+ Add Layer']),
+            el('div', { className: 'floorplan-overlay-actions' }, [
+              el('button', { className: 'floorplan-clearance-toggle', type: 'button', on: { click: () => toggleOverlay('clearance') } }, ['Clearance Overlay']),
+              el('button', { className: 'floorplan-lighting-toggle', type: 'button', on: { click: () => toggleOverlay('lighting') } }, ['Coverage Overlay']),
+              el('button', { className: 'floorplan-bom-btn', type: 'button', on: { click: () => renderBomTable() } }, ['Estimate Cost / Send to Budget']),
+              el('div', { className: 'floorplan-bom-table hidden' }, []),
+            ]),
           ]),
           el('div', { className: 'floorplan-panel-section floorplan-interior-panel hidden' }, [
             el('div', { className: 'floorplan-panel-heading' }, ['3D Interior Box']),
@@ -666,13 +706,8 @@ const definition = {
       'stroke-width': '1',
     });
     svg.append(bg);
-
-    for (let x = 40; x <= 920; x += 40) {
-      svg.append(svgEl('line', { x1: x, y1: 20, x2: x, y2: 580, className: 'floorplan-grid-line' }));
-    }
-    for (let y = 40; y <= 560; y += 40) {
-      svg.append(svgEl('line', { x1: 20, y1: y, x2: 920, y2: y, className: 'floorplan-grid-line' }));
-    }
+    const gridLayer = svgEl('g', { className: 'floorplan-grid-layer' });
+    svg.append(gridLayer);
     svg.append(scene);
 
     const state = {
@@ -719,6 +754,16 @@ const definition = {
       lastCreateAt: 0,
       lastStartAt: 0,
       lastStartPoint: null,
+      clipboardItems: [],
+      lastPointer: null,
+      tempTool: null,
+      previousTool: null,
+      panning: null,
+      aspectLocked: true,
+      snapIndex: 0,
+      gridIndex: 0,
+      overlays: { clearance: false, lighting: false },
+      viewMode: 'blueprint',
     };
 
     let persistTimer = null;
@@ -827,10 +872,12 @@ const definition = {
       });
     }
 
-    function snapToGrid(point, grid = 10) {
+    function snapToGrid(point, grid = null) {
+      const step = grid || currentSnapUnits();
+      if (!step) return { x: point.x, y: point.y };
       return {
-        x: clamp(Math.round(point.x / grid) * grid, 20, 940),
-        y: clamp(Math.round(point.y / grid) * grid, 20, 600),
+        x: Math.round(point.x / step) * step,
+        y: Math.round(point.y / step) * step,
       };
     }
 
@@ -891,7 +938,45 @@ const definition = {
       if (!item) return null;
       item.floor = state.currentFloor;
       if (!Array.isArray(item.interior)) item.interior = [];
+      if (!Number.isFinite(Number(item.zIndex))) item.zIndex = nextZIndex();
+      if (item.aspectLocked == null) item.aspectLocked = true;
       return item;
+    }
+
+    function nextZIndex() {
+      return state.items.reduce((max, item) => Math.max(max, Number(item.zIndex) || 0), 0) + 1;
+    }
+
+    function reorderSelection(mode) {
+      const targets = editableSelection();
+      if (!targets.length) return;
+      pushUndoCheckpoint();
+      if (mode === 'front') {
+        let z = nextZIndex();
+        targets.forEach(item => { item.zIndex = z; z += 1; });
+      } else if (mode === 'back') {
+        let z = Math.min(0, ...state.items.map(item => Number(item.zIndex) || 0)) - targets.length;
+        targets.forEach(item => { item.zIndex = z; z += 1; });
+      } else {
+        const delta = mode === 'forward' ? 1 : -1;
+        targets.forEach(item => { item.zIndex = (Number(item.zIndex) || 0) + delta; });
+      }
+      renderScene();
+      queuePersistDraft();
+      setFeedback(`Z order: ${mode}`);
+    }
+
+    function showContextMenu(clientX, clientY, itemId) {
+      board.querySelector('.floorplan-context-menu')?.remove();
+      if (itemId) setSingleSelection(itemId);
+      const menu = el('div', { className: 'floorplan-context-menu', style: { left: `${clientX}px`, top: `${clientY}px` } }, [
+        el('button', { className: 'floorplan-context-front', type: 'button', on: { click: () => { reorderSelection('front'); menu.remove(); } } }, ['Bring to Front']),
+        el('button', { className: 'floorplan-context-forward', type: 'button', on: { click: () => { reorderSelection('forward'); menu.remove(); } } }, ['Bring Forward']),
+        el('button', { className: 'floorplan-context-backward', type: 'button', on: { click: () => { reorderSelection('backward'); menu.remove(); } } }, ['Send Backward']),
+        el('button', { className: 'floorplan-context-back', type: 'button', on: { click: () => { reorderSelection('back'); menu.remove(); } } }, ['Send to Back']),
+      ]);
+      board.append(menu);
+      renderScene();
     }
 
     function getItemFloor(item) {
@@ -1223,6 +1308,123 @@ const definition = {
       return added;
     }
 
+
+    function setViewMode(mode) {
+      state.viewMode = mode;
+      board.dataset.viewMode = mode;
+      board.querySelectorAll('.floorplan-view-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === mode));
+      if (mode === 'interior' && !state.interiorEnabled) toggleInteriorView();
+      if (mode === 'blueprint' && state.interiorEnabled) toggleInteriorView();
+    }
+
+    function toggleExportMenu() {
+      const menu = board.querySelector('.floorplan-export-menu');
+      if (menu) menu.classList.toggle('hidden');
+    }
+
+    function markDownloaded(kind) {
+      board.dataset.lastExport = kind;
+      setFeedback(`Exported ${kind}`);
+    }
+
+    function exportHighResJpeg() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1240;
+      markDownloaded('jpeg-2x');
+      return canvas.toDataURL('image/jpeg', 0.92);
+    }
+
+    function exportPdfReport() {
+      window.__WAYMARK_FLOORPLAN_PDF__ = {
+        title: 'House Plan',
+        date: new Date().toISOString().slice(0, 10),
+        dimensions: contentBounds(),
+      };
+      markDownloaded('pdf-report');
+      window.print();
+    }
+
+    function toggleMobileOverflow() {
+      board.classList.toggle('floorplan-mobile-overflow-open');
+    }
+
+    function setPanelTab(tab, openDrawer = false) {
+      board.querySelectorAll('.floorplan-panel-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+      board.querySelectorAll('[data-panel]').forEach(panel => panel.classList.toggle('hidden', panel.dataset.panel !== tab));
+      if (openDrawer) board.querySelector('.floorplan-panel')?.classList.add('floorplan-panel-open');
+    }
+
+    function filterSymbols(query) {
+      const q = normalizeText(query).toLowerCase();
+      board.querySelectorAll('.floorplan-symbol-choice').forEach((button) => {
+        const label = `${button.dataset.symbolLabel || ''} ${button.dataset.symbolCategory || ''}`;
+        button.classList.toggle('hidden', Boolean(q) && !label.includes(q));
+      });
+    }
+
+    function jumpSymbolCategory(category) {
+      const q = String(category || '').toLowerCase();
+      const input = board.querySelector('.floorplan-symbol-search');
+      if (input) input.value = /electrical|plumbing/.test(q) ? q : '';
+      filterSymbols(/electrical|plumbing/.test(q) ? q : '');
+      const group = board.querySelector(`.floorplan-symbol-group[data-category="${q}"]`);
+      group?.scrollIntoView({ block: 'nearest' });
+      board.querySelectorAll('.floorplan-symbol-jump').forEach(btn => btn.classList.toggle('active', btn.dataset.category === q));
+    }
+
+    const SNAP_VALUES = [10, 5, 2.5, 0];
+    const SNAP_LABELS = ['1 ft', '6 in', '3 in', 'Off'];
+    const GRID_VALUES = [40, 20, 10];
+    function currentSnapUnits() { return SNAP_VALUES[state.snapIndex] ?? 10; }
+    function currentGridUnits() { return GRID_VALUES[state.gridIndex] ?? 40; }
+    function cycleSnapUnit() {
+      state.snapIndex = (state.snapIndex + 1) % SNAP_VALUES.length;
+      const pill = board.querySelector('.floorplan-snap-pill');
+      if (pill) pill.textContent = `Snap: ${SNAP_LABELS[state.snapIndex]}`;
+      setFeedback(`Snap ${SNAP_LABELS[state.snapIndex]}`);
+    }
+    function cycleGridUnit() {
+      state.gridIndex = (state.gridIndex + 1) % GRID_VALUES.length;
+      const pill = board.querySelector('.floorplan-grid-pill');
+      if (pill) pill.textContent = `Grid: ${formatFeet(currentGridUnits())}`;
+      renderDynamicGrid();
+    }
+
+    function toggleClearConfirm() {
+      board.querySelector('.floorplan-clear-popover')?.classList.toggle('hidden');
+    }
+
+    function clearAllItems() {
+      pushUndoCheckpoint();
+      state.items = [];
+      clearSelection();
+      queuePersistDraft();
+      board.querySelector('.floorplan-clear-popover')?.classList.add('hidden');
+    }
+
+    function toggleOverlay(kind) {
+      state.overlays[kind] = !state.overlays[kind];
+      const selector = kind === 'clearance' ? '.floorplan-clearance-toggle' : '.floorplan-lighting-toggle';
+      board.querySelector(selector)?.classList.toggle('active', state.overlays[kind]);
+      renderScene();
+    }
+
+    function renderBomTable() {
+      const host = board.querySelector('.floorplan-bom-table');
+      if (!host) return;
+      host.innerHTML = '';
+      const symbols = state.items.filter(item => ['fixture', 'electrical', 'plumbing'].includes(item.kind || classifyItem(item)));
+      const sqft = state.items.filter(item => (item.kind || classifyItem(item)) === 'room')
+        .reduce((sum, room) => sum + ((Math.max(0, room.width || 0) / UNITS_PER_FOOT) * (Math.max(0, room.height || 0) / UNITS_PER_FOOT)), 0);
+      host.append(el('div', { className: 'floorplan-bom-row floorplan-bom-head' }, [el('span', {}, ['Item']), el('span', {}, ['Qty'])]));
+      host.append(el('div', { className: 'floorplan-bom-row' }, [el('span', {}, ['Room square feet']), el('span', {}, [String(Math.round(sqft))])]));
+      const counts = new Map();
+      symbols.forEach(item => counts.set(item.label || item.type || 'Fixture', (counts.get(item.label || item.type || 'Fixture') || 0) + 1));
+      counts.forEach((count, name) => host.append(el('div', { className: 'floorplan-bom-row' }, [el('span', {}, [name]), el('span', {}, [String(count)])])));
+      host.classList.remove('hidden');
+    }
+
     function setTool(nextTool) {
       if (state.tool === 'line' && nextTool !== 'line' && state.lineDraft) {
         cancelLineDraft();
@@ -1230,11 +1432,12 @@ const definition = {
       state.tool = nextTool;
       const tools = board.querySelectorAll('.floorplan-tool-button[data-tool]');
       tools.forEach((button) => {
-        const active = button.dataset.tool === nextTool;
+        const active = button.dataset.tool === nextTool && ['wall','select','erase','line','room','wall-rect','circle','measure','door','window','stairs','symbol','trim'].includes(nextTool);
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       svg.style.cursor = nextTool === 'erase' ? 'cell' : nextTool === 'select' ? 'grab' : 'crosshair';
+      board.classList.toggle('floorplan-temp-selecting', Boolean(state.tempTool));
       // Line/shape style toolbar is visible while a stroke-drawing tool is active (row 24).
       const lineToolbar = board.querySelector('.floorplan-line-toolbar');
       if (lineToolbar) lineToolbar.classList.toggle('hidden', !(nextTool === 'line' || nextTool === 'circle'));
@@ -1543,7 +1746,7 @@ const definition = {
       state.customLayers.forEach((cl, index) => {
         const nameInput = el('input', {
           className: 'floorplan-custom-layer-name',
-          type: 'text', value: cl.name, title: 'Rename layer',
+          type: 'text', value: cl.name, title: cl.name || 'Rename layer',
           on: {
             change: (e) => renameCustomLayer(cl.name, e.target.value),
             keydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } },
@@ -1818,6 +2021,7 @@ const definition = {
         const clone = JSON.parse(JSON.stringify(item));
         clone.id = `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
         clone.floor = state.currentFloor;
+        clone.zIndex = nextZIndex();
         clone.x = clamp((clone.x || 40) + 16, 20, 940);
         clone.y = clamp((clone.y || 40) + 16, 20, 600);
         if (typeof clone.x2 === 'number') clone.x2 = clamp(clone.x2 + 16, 20, 940);
@@ -1831,6 +2035,43 @@ const definition = {
       renderScene();
       queuePersistDraft();
       setFeedback(`Duplicated ${clones.length} object${clones.length === 1 ? '' : 's'}`);
+    }
+
+    function copySelection() {
+      state.clipboardItems = selectedItemsOnFloor().map(item => JSON.parse(JSON.stringify(item)));
+      setFeedback(`Copied ${state.clipboardItems.length} object${state.clipboardItems.length === 1 ? '' : 's'}`);
+    }
+
+    function pasteSelection() {
+      if (!state.clipboardItems.length) return;
+      pushUndoCheckpoint();
+      const target = state.lastPointer || null;
+      const first = state.clipboardItems[0];
+      const dx = target ? target.x - (first.x || 0) : 20;
+      const dy = target ? target.y - (first.y || 0) : 20;
+      const clones = state.clipboardItems.map((item) => {
+        const clone = JSON.parse(JSON.stringify(item));
+        clone.id = `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        clone.floor = state.currentFloor;
+        clone.zIndex = nextZIndex();
+        translateItemRaw(clone, dx, dy);
+        clone.pasted = true;
+        return clone;
+      });
+      state.items.push(...clones);
+      state.selectedIds = new Set(clones.map(c => String(c.id)));
+      state.selectedId = clones.length === 1 ? String(clones[0].id) : null;
+      renderScene();
+      queuePersistDraft();
+      setFeedback('Pasted at cursor');
+    }
+
+    function translateItemRaw(item, dx, dy) {
+      item.x = (item.x || 0) + dx;
+      item.y = (item.y || 0) + dy;
+      if (typeof item.x2 === 'number') item.x2 += dx;
+      if (typeof item.y2 === 'number') item.y2 += dy;
+      if (Array.isArray(item.points)) item.points = item.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
     }
 
     function deleteSelection() {
@@ -1848,13 +2089,7 @@ const definition = {
 
     /* Move an endpoint/vertex/anchor by (dx, dy) world units for one item. */
     function translateItemBy(item, dx, dy) {
-      item.x = clamp((item.x || 0) + dx, 20, 940);
-      item.y = clamp((item.y || 0) + dy, 20, 600);
-      if (typeof item.x2 === 'number') item.x2 = clamp(item.x2 + dx, 20, 940);
-      if (typeof item.y2 === 'number') item.y2 = clamp(item.y2 + dy, 20, 600);
-      if (Array.isArray(item.points)) {
-        item.points = item.points.map(p => ({ x: clamp(p.x + dx, 20, 940), y: clamp(p.y + dy, 20, 600) }));
-      }
+      translateItemRaw(item, dx, dy);
     }
 
     let nudgeCheckpointPending = false;
@@ -2148,6 +2383,19 @@ const definition = {
       ]);
     }
 
+    function assignLayerToSelection(value) {
+      if (!value) return;
+      const targets = editableSelection();
+      if (!targets.length) return;
+      pushUndoCheckpoint();
+      targets.forEach((item) => {
+        if (value === '__default__') delete item.customLayer;
+        else item.customLayer = value;
+      });
+      renderScene();
+      queuePersistDraft();
+    }
+
     function buildInspector(selected) {
       inspectorRefreshers = [];
       inspector.innerHTML = '';
@@ -2157,8 +2405,18 @@ const definition = {
           const k = i.kind || classifyItem(i);
           return k === 'wall' || k === 'line';
         });
+        const batchLayer = el('select', {
+          className: 'floorplan-insp-layer floorplan-batch-layer',
+          title: 'Batch layer assignment',
+          on: { change: (e) => assignLayerToSelection(e.target.value) },
+        }, [
+          el('option', { value: '' }, ['Mixed / unchanged']),
+          el('option', { value: '__default__' }, ['Default']),
+          ...state.customLayers.map(cl => el('option', { value: cl.name }, [cl.name])),
+        ]);
         inspector.append(
           el('div', { className: 'floorplan-insp-title' }, [`${selected.length} objects selected`]),
+          el('label', { className: 'floorplan-insp-row' }, [el('span', { className: 'floorplan-insp-label' }, ['Layer']), batchLayer]),
           el('div', { className: 'floorplan-insp-actions' }, [
             el('button', { className: 'floorplan-insp-group', type: 'button', title: 'Group (Ctrl+G)', on: { click: () => groupSelection() } }, ['⧉ Group']),
             anyGrouped ? el('button', { className: 'floorplan-insp-ungroup', type: 'button', title: 'Ungroup (Ctrl+Shift+G)', on: { click: () => ungroupSelection() } }, ['Ungroup']) : null,
@@ -2187,6 +2445,15 @@ const definition = {
         rows.push(feetField('Width', 'width', () => item.width || 18, (u) => { item.width = clamp(u, 6, 4000); }));
         rows.push(feetField('Height', 'height', () => item.height || 18, (u) => { item.height = clamp(u, 6, 4000); }));
         rows.push(plainNumberField('Rotation', 'rotation', () => Number(item.angle) || 0, (n) => { item.angle = ((n % 360) + 360) % 360; }, { min: -360, max: 360, unit: '°' }));
+        rows.push(el('button', { className: `floorplan-aspect-lock${item.aspectLocked === false ? '' : ' active'}`, type: 'button', title: 'Toggle aspect-ratio lock', on: { click: () => { item.aspectLocked = item.aspectLocked !== false ? false : true; inspectorSig = null; renderScene(); queuePersistDraft(); } } }, [item.aspectLocked === false ? '🔓 Freeform stretch' : '🔗 Aspect locked']));
+        rows.push(el('label', { className: 'floorplan-insp-row floorplan-ai-prompt-row' }, [
+          el('span', { className: 'floorplan-insp-label' }, ['AI Prompt']),
+          el('input', { className: 'floorplan-ai-prompt-input', value: item.aiPrompt || '', placeholder: 'Material, style, finish...', on: { change: (e) => { item.aiPrompt = e.target.value; queuePersistDraft(); } } }),
+        ]));
+        rows.push(el('label', { className: 'floorplan-insp-row floorplan-ai-ref-row' }, [
+          el('span', { className: 'floorplan-insp-label' }, ['Seed Photo']),
+          el('input', { className: 'floorplan-ai-ref-input', value: item.referencePhoto || '', placeholder: 'Reference URL or note', on: { change: (e) => { item.referencePhoto = e.target.value; queuePersistDraft(); } } }),
+        ]));
       }
 
       if (kind === 'line' || kind === 'circle') {
@@ -2309,15 +2576,33 @@ const definition = {
       return clamp(Number.isFinite(z) ? z : 1, ZOOM_MIN, ZOOM_MAX);
     }
 
+    function renderDynamicGrid() {
+      if (!gridLayer) return;
+      gridLayer.innerHTML = '';
+      const box = getWorldBoundsFromViewBox(svg);
+      const major = currentGridUnits();
+      const minor = Math.max(major / 4, 2.5);
+      const minX = Math.floor((box.x - major) / minor) * minor;
+      const maxX = Math.ceil((box.x + box.width + major) / minor) * minor;
+      const minY = Math.floor((box.y - major) / minor) * minor;
+      const maxY = Math.ceil((box.y + box.height + major) / minor) * minor;
+      for (let x = minX; x <= maxX; x += minor) {
+        const majorLine = Math.abs(x / major - Math.round(x / major)) < 0.001;
+        gridLayer.append(svgEl('line', { x1: x, y1: minY, x2: x, y2: maxY, className: `floorplan-grid-line${majorLine ? ' floorplan-grid-major' : ''}`, 'data-dynamic-grid': 'true' }));
+      }
+      for (let y = minY; y <= maxY; y += minor) {
+        const majorLine = Math.abs(y / major - Math.round(y / major)) < 0.001;
+        gridLayer.append(svgEl('line', { x1: minX, y1: y, x2: maxX, y2: y, className: `floorplan-grid-line${majorLine ? ' floorplan-grid-major' : ''}`, 'data-dynamic-grid': 'true' }));
+      }
+    }
+
     function applyView() {
       const z = clampZoom(state.view.zoom);
       state.view.zoom = z;
       const w = VIEW_W / z;
       const h = VIEW_H / z;
-      // Soft clamp so the drawing can never be panned fully off-screen.
-      state.view.x = clamp(state.view.x, -w, VIEW_W);
-      state.view.y = clamp(state.view.y, -h, VIEW_H);
       svg.setAttribute('viewBox', `${round2(state.view.x)} ${round2(state.view.y)} ${round2(w)} ${round2(h)}`);
+      renderDynamicGrid();
       const readout = board.querySelector('.floorplan-zoom-readout');
       if (readout) readout.textContent = `${Math.round(z * 100)}%`;
       const out = board.querySelector('.floorplan-zoom-out');
@@ -2465,6 +2750,7 @@ const definition = {
     });
 
     svg.addEventListener('pointermove', (event) => {
+      state.lastPointer = screenToWorld(event.clientX, event.clientY);
       const itemNode = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
       if (!itemNode) return;
       const labelText = normalizeText(itemNode.getAttribute('data-floorplan-label') || '');
@@ -2703,7 +2989,7 @@ const definition = {
         return group;
       };
 
-      state.items.forEach((item) => {
+      [...state.items].sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0)).forEach((item) => {
         const kind = item.kind || classifyItem(item);
         const itemFloor = getItemFloor(item);
         const isCurrentFloor = itemFloor === state.currentFloor;
@@ -2740,7 +3026,17 @@ const definition = {
           });
           layer.append(rect);
           if (hasMeaningfulLabel(item.label)) {
-            layer.append(label(item.label, item.x + (width / 2), item.y + (height / 2) + 4, '#1d4ed8'));
+            const cx = item.x + (width / 2);
+            const cy = item.y + (height / 2);
+            const sqft = Math.round((width / UNITS_PER_FOOT) * (height / UNITS_PER_FOOT));
+            const title = item.label;
+            const sub = `${formatFeet(width)} × ${formatFeet(height)} · ${sqft} sq ft`;
+            const pillW = Math.max(92, Math.max(title.length * 7, sub.length * 5.5) + 18);
+            const pill = svgEl('g', { className: 'floorplan-room-label-pill' });
+            pill.append(svgEl('rect', { x: cx - pillW / 2, y: cy - 17, width: pillW, height: 34, rx: 12, fill: 'rgba(255,255,255,0.72)', stroke: 'rgba(96,165,250,0.65)', 'stroke-width': 1 }));
+            pill.append(svgEl('text', { x: cx, y: cy - 2, className: 'floorplan-room-label-title', 'text-anchor': 'middle' }, [title]));
+            pill.append(svgEl('text', { x: cx, y: cy + 11, className: 'floorplan-room-label-sub', 'text-anchor': 'middle' }, [sub]));
+            layer.append(pill);
           }
         }
 
@@ -2953,6 +3249,21 @@ const definition = {
           }
         }
       });
+
+      if (state.overlays.clearance || state.overlays.lighting) {
+        const overlay = svgEl('g', { className: 'floorplan-overlay-layer' });
+        state.items.forEach((item) => {
+          const kind = item.kind || classifyItem(item);
+          if (getItemFloor(item) !== state.currentFloor) return;
+          if (state.overlays.clearance && fixtureSubtype(item) === 'door') {
+            overlay.append(svgEl('circle', { cx: item.x || 0, cy: item.y || 0, r: 30, className: 'floorplan-clearance-arc' }));
+          }
+          if (state.overlays.lighting && /light|recessed|ceiling/i.test(`${item.label || ''} ${item.type || ''}`)) {
+            overlay.append(svgEl('circle', { cx: item.x || 0, cy: item.y || 0, r: 55, className: 'floorplan-lighting-throw' }));
+          }
+        });
+        scene.append(overlay);
+      }
 
       const itemById = new Map(state.items.map(item => [String(item.id), item]));
       scene.querySelectorAll('[data-floorplan-item]').forEach((node) => {
@@ -3284,6 +3595,12 @@ const definition = {
       if (event.touches && event.touches.length >= 2) return;
       const isMouseInput = event.pointerType === 'mouse' || event.type === 'mousedown';
       if (isMouseInput && event.button !== 0) return;
+      if (state.spaceDown && isMouseInput) {
+        event.preventDefault();
+        state.panning = { clientX: event.clientX, clientY: event.clientY, viewX: state.view.x, viewY: state.view.y };
+        svg.setPointerCapture?.(event.pointerId);
+        return;
+      }
       if (typeof event.preventDefault === 'function') event.preventDefault();
       const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
       const now = Date.now();
@@ -3346,6 +3663,14 @@ const definition = {
         return;
       }
 
+      if (state.panning) {
+        const startWorld = screenToWorld(state.panning.clientX, state.panning.clientY);
+        const nowWorld = screenToWorld(event.clientX, event.clientY);
+        state.view.x = state.panning.viewX + (startWorld.x - nowWorld.x);
+        state.view.y = state.panning.viewY + (startWorld.y - nowWorld.y);
+        applyView();
+        return;
+      }
       if (state.tool === 'select') {
         const handleTarget = event.target && event.target.closest ? event.target.closest('[data-floorplan-handle]') : null;
         if (handleTarget) {
@@ -3575,8 +3900,14 @@ const definition = {
               // across the fixed corner flips the box naturally (no inversion)
               const dirX = localX >= fixedX ? 1 : -1;
               const dirY = localY >= fixedY ? 1 : -1;
-              const newW = clamp(Math.abs(localX - fixedX), 8, 400);
-              const newH = clamp(Math.abs(localY - fixedY), 8, 400);
+              let newW = clamp(Math.abs(localX - fixedX), 8, 400);
+              let newH = clamp(Math.abs(localY - fixedY), 8, 400);
+              const lockAspect = event.shiftKey ? item.aspectLocked === false : item.aspectLocked !== false;
+              if (lockAspect) {
+                const ratio = w0 / Math.max(1, h0);
+                if (newW / Math.max(1, newH) > ratio) newW = newH * ratio;
+                else newH = newW / ratio;
+              }
               const draggedLocalX = fixedX + (dirX * newW);
               const draggedLocalY = fixedY + (dirY * newH);
               const centerLocalX = (fixedX + draggedLocalX) / 2;
@@ -3633,6 +3964,10 @@ const definition = {
       if (state.gestureActive) return;
       if (event && event.pointerId !== undefined) {
         svg.releasePointerCapture?.(event.pointerId);
+      }
+      if (state.panning) {
+        state.panning = null;
+        return;
       }
 
       if (state.tool === 'select') {
@@ -3803,6 +4138,11 @@ const definition = {
         zoomOut: () => zoomByStep(1 / 1.2),
         zoomReset: () => resetView(),
         zoomFit: () => zoomToFit(),
+        copySelection,
+        pasteSelection,
+        reorderSelection,
+        tempSelectStart: () => { if (!state.tempTool) { state.previousTool = state.tool; state.tempTool = 'select'; setTool('select'); } },
+        tempSelectEnd: () => { if (state.tempTool) { const prev = state.previousTool || 'wall'; state.tempTool = null; state.previousTool = null; setTool(prev); } },
         deselect: () => clearSelection(),
         hasLineDraft: () => Boolean(state.lineDraft),
         hasSelection: () => state.selectedIds.size > 0,
@@ -3811,12 +4151,14 @@ const definition = {
         window.addEventListener('keydown', (event) => {
           const target = event.target;
           const tag = target && target.tagName ? String(target.tagName).toLowerCase() : '';
+          const key = String(event.key || '').toLowerCase();
+          const activeBoard = document.querySelector('.floorplan-board');
+          if (!activeBoard) return;
+          if (key === ' ') { state.spaceDown = true; activeBoard.classList.add('floorplan-space-panning'); event.preventDefault(); return; }
           if (tag === 'input' || tag === 'textarea' || (target && target.isContentEditable)) return;
-          if (!document.querySelector('.floorplan-board')) return;
 
           const undoApi = window.__WAYMARK_FLOORPLAN_UNDO_API__;
           const keyApi = window.__WAYMARK_FLOORPLAN_KEY_API__;
-          const key = String(event.key || '').toLowerCase();
 
           if ((event.ctrlKey || event.metaKey) && key === 'z') {
             if (!undoApi) return;
@@ -3826,6 +4168,31 @@ const definition = {
             return;
           }
           if (!keyApi) return;
+          if (key === 'alt') {
+            event.preventDefault();
+            keyApi.tempSelectStart();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && key === 'c') {
+            event.preventDefault();
+            keyApi.copySelection();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && key === 'v') {
+            event.preventDefault();
+            keyApi.pasteSelection();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && key === ']') {
+            event.preventDefault();
+            keyApi.reorderSelection(event.shiftKey ? 'front' : 'forward');
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && key === '[') {
+            event.preventDefault();
+            keyApi.reorderSelection(event.shiftKey ? 'back' : 'backward');
+            return;
+          }
           if ((event.ctrlKey || event.metaKey) && key === 'd') {
             event.preventDefault();
             keyApi.duplicateSelection();
@@ -3888,6 +4255,13 @@ const definition = {
             }
           }
         });
+        window.addEventListener('keyup', (event) => {
+          const key = String(event.key || '').toLowerCase();
+          if (key === ' ') { state.spaceDown = false; board.classList.remove('floorplan-space-panning'); }
+          if (key !== 'alt') return;
+          const keyApi = window.__WAYMARK_FLOORPLAN_KEY_API__;
+          keyApi?.tempSelectEnd();
+        });
         window.__WAYMARK_FLOORPLAN_UNDO_BOUND__ = true;
       }
     }
@@ -3898,7 +4272,8 @@ const definition = {
     /* ---------- Wheel zoom (desktop) ---------- */
     svg.addEventListener('wheel', (event) => {
       event.preventDefault();
-      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const delta = Math.max(-180, Math.min(180, event.deltaY || 0));
+      const factor = Math.exp(-delta * 0.0016);
       zoomAtScreen(state.view.zoom * factor, event.clientX, event.clientY);
     }, { passive: false });
 
@@ -4020,7 +4395,13 @@ const definition = {
         if (item && handle && handle.startsWith('vtx-')) {
           event.preventDefault();
           deleteVertex(item, parseInt(handle.slice(4), 10));
+          return;
         }
+      }
+      const itemEl = event.target && event.target.closest ? event.target.closest('[data-floorplan-item]') : null;
+      if (itemEl) {
+        event.preventDefault();
+        showContextMenu(event.clientX, event.clientY, String(itemEl.dataset.floorplanItem));
       }
     });
 

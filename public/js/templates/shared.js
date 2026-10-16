@@ -1515,6 +1515,26 @@ export async function uploadDriveFile(file, parentFolderId) {
 }
 
 /**
+ * Inventory the user's Google Drive files for the Drive Organizer control
+ * plane. Returns an array of { id, name, folder, type, modified }.
+ * @returns {Promise<Array<Object>>}
+ */
+export async function listDriveInventory() {
+  return api.drive.scanInventory();
+}
+
+/**
+ * Move and/or rename a Google Drive file (used by the Drive Organizer batch
+ * runner + undo). In local mode this records the move instead of touching
+ * real files.
+ * @param {string} fileId
+ * @param {{toFolder?:string, name?:string}} opts
+ */
+export async function moveDriveFile(fileId, opts) {
+  return api.drive.moveFile(fileId, opts);
+}
+
+/**
  * Extract a Google Drive file ID from any Drive sharing URL.
  * @param {string} url
  * @returns {string|null}

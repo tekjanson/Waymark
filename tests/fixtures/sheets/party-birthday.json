@@ -20,11 +20,11 @@
       "numericSheetId": 1,
       "values": [
         ["Guest", "RSVP", "Party Size", "Notes"],
-        ["Maria Lopez", "Yes", "2", "Bringing partner"],
-        ["James Chen", "Yes", "1", "Vegetarian"],
-        ["Priya Patel", "No", "1", "Out of town"],
-        ["Tom Wilson", "Pending", "3", "Family of 3"],
-        ["Grandma Rose", "Yes", "1", "Needs a chair in the shade"]
+        ["Maria Lopez", "Attending", "2", "Bringing partner"],
+        ["James Chen", "Attending", "1", "Vegetarian"],
+        ["Priya Patel", "Declined", "1", "Out of town"],
+        ["Tom Wilson", "Tentative", "3", "Family of 3"],
+        ["Grandma Rose", "Attending", "1", "Needs a chair in the shade"]
       ]
     },
     {
@@ -49,6 +49,16 @@
         ["Balloon arch + streamers", "Decor", "120", "134", "Yes"],
         ["DJ / playlist speaker", "Entertainment", "150", "", "No"],
         ["Birthday cake", "Food", "80", "80", "Yes"]
+      ]
+    },
+    {
+      "title": "Thank You Notes",
+      "numericSheetId": 7,
+      "values": [
+        ["Guest Name", "Gift Description", "Date Received", "Note Status", "Sent Date"],
+        ["Maria Lopez", "Ceramic serving platter", "2026-07-18", "Sent", "2026-07-20"],
+        ["James Chen", "Tropical plant arrangement", "2026-07-18", "Pending", ""],
+        ["Grandma Rose", "Handmade photo album", "2026-07-18", "Pending", ""]
       ]
     },
     {
@@ -77,7 +87,7 @@
       "numericSheetId": 6,
       "values": [
         ["Setting", "Value"],
-        ["order", "guests,menu,budget,decorations,links"],
+        ["order", "guests,menu,budget,thankyou,decorations,links"],
         ["collapsed", ""]
       ]
     }

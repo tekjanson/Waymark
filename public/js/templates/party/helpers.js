@@ -10,6 +10,7 @@
      Menu          Dish | Course | Assigned To | Status | Notes
      Budget        Item | Category | Estimated | Actual | Paid
      Decorations   Decoration | Location | Bought | Hung | Notes
+     Thank You    Guest Name | Gift Description | Date Received | Note Status | Sent Date
      Links         Label | URL | Type
      Layout        Setting | Value   (internal: section order + collapsed)
    ============================================================ */
@@ -19,6 +20,7 @@
 export const META_TAB = 'Details';
 export const LINKS_TAB = 'Links';
 export const LAYOUT_TAB = 'Layout';
+export const THANK_YOU_TAB = 'Thank You Notes';
 
 /** Ordered meta fields shown in the hero header. */
 export const META_FIELDS = [
@@ -35,6 +37,8 @@ export const META_HEADER = META_FIELDS.map(f => f.label);
 /* ---------- Field types ----------
    text   — free text input
    status — click-to-cycle badge (options[])
+   rsvp   — segmented RSVP selector
+   sent   — thank-you sent checkbox with sent-date helper
    yesno  — Yes/No toggle chip
    money  — numeric text formatted as currency
 ------------------------------------- */
@@ -65,17 +69,17 @@ export const CATEGORIES = [
     header: ['Guest', 'RSVP', 'Party Size', 'Notes'],
     fields: [
       { role: 'name', label: 'Guest', col: 0, type: 'text', primary: true, required: true },
-      { role: 'rsvp', label: 'RSVP', col: 1, type: 'status', options: ['Yes', 'No', 'Pending'] },
+      { role: 'rsvp', label: 'RSVP', col: 1, type: 'rsvp', options: ['Attending', 'Declined', 'Tentative'] },
       { role: 'size', label: 'Party Size', col: 2, type: 'text', placeholder: '1' },
       { role: 'notes', label: 'Notes', col: 3, type: 'text', placeholder: 'Dietary, +1, etc.' },
     ],
     progress(rows) {
       const total = rows.length;
-      const done = rows.filter(r => /^(yes|no)$/i.test((r[1] || '').trim())).length;
+      const done = rows.filter(r => /^(yes|attending|no|declined)$/i.test((r[1] || '').trim())).length;
       return { done, total, pct: pct(done, total) };
     },
     summary(rows) {
-      const yes = rows.filter(r => /^yes$/i.test((r[1] || '').trim()));
+      const yes = rows.filter(r => /^(yes|attending)$/i.test((r[1] || '').trim()));
       const heads = yes.reduce((n, r) => n + (parseInt(r[2], 10) || 1), 0);
       return `${yes.length} attending · ${heads} heads · ${rows.length} invited`;
     },
@@ -129,6 +133,32 @@ export const CATEGORIES = [
       const est = rows.reduce((n, r) => n + money(r[2]), 0);
       const act = rows.reduce((n, r) => n + money(r[3]), 0);
       return `Est ${fmtMoney(est)} · Actual ${fmtMoney(act)}`;
+    },
+  },
+
+  {
+    key: 'thankyou',
+    tab: THANK_YOU_TAB,
+    title: 'Thank You Notes',
+    icon: '💌',
+    accent: '#14b8a6',
+    noun: 'note',
+    header: ['Guest Name', 'Gift Description', 'Date Received', 'Note Status', 'Sent Date'],
+    fields: [
+      { role: 'guest', label: 'Guest Name', col: 0, type: 'text', primary: true, required: true },
+      { role: 'gift', label: 'Gift Description', col: 1, type: 'text', placeholder: 'Gift or gesture' },
+      { role: 'received', label: 'Date Received', col: 2, type: 'text', placeholder: 'YYYY-MM-DD' },
+      { role: 'status', label: 'Note Status', col: 3, type: 'sent', options: ['Pending', 'Sent'] },
+      { role: 'sentDate', label: 'Sent Date', col: 4, type: 'text', placeholder: 'YYYY-MM-DD' },
+    ],
+    progress(rows) {
+      const total = rows.length;
+      const done = rows.filter(r => /^sent$/i.test((r[3] || '').trim())).length;
+      return { done, total, pct: pct(done, total) };
+    },
+    summary(rows) {
+      const sent = rows.filter(r => /^sent$/i.test((r[3] || '').trim())).length;
+      return `${sent} sent · ${rows.length - sent} pending · ${rows.length} gifts`;
     },
   },
   {

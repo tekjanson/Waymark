@@ -10,6 +10,40 @@
   overflow: hidden;
 }
 
+/* ---------- Sheet Tabs ---------- */
+
+.flow-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+
+.flow-tab {
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.flow-tab-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.flow-tab-new {
+  color: var(--color-primary);
+}
+
 .flow-group-header {
   display: flex;
   align-items: center;
@@ -17,6 +51,35 @@
   padding: 12px 16px;
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
+}
+
+.flow-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.flow-view-btn {
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.flow-view-btn:last-child {
+  border-right: none;
+}
+
+.flow-view-active {
+  background: var(--color-primary);
+  color: var(--color-surface);
 }
 
 .flow-group-icon {
@@ -47,8 +110,9 @@
 .flow-diagram-wrap {
   padding: 16px;
   overflow-x: auto;
-  background: #fafbfc;
+  background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
+  min-height: 62vh;
 }
 
 .flow-svg {
@@ -109,6 +173,10 @@
   pointer-events: none;
 }
 
+.flow-node-label-line {
+  dominant-baseline: middle;
+}
+
 .flow-node-type-badge {
   font-size: 9px;
   font-weight: 600;
@@ -116,6 +184,47 @@
   letter-spacing: 0.05em;
   font-family: inherit;
   pointer-events: none;
+}
+
+.flow-node-type-text {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.flow-node-type-pill {
+  pointer-events: none;
+}
+
+.flow-quick-add {
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.flow-node:hover .flow-quick-add,
+.flow-node-selected .flow-quick-add {
+  opacity: 1;
+}
+
+.flow-quick-add-circle {
+  fill: var(--color-primary);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.45));
+}
+
+.flow-quick-add-text {
+  fill: var(--color-surface);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.flow-node-muted {
+  opacity: 0.45;
 }
 
 /* ---------- SVG fill/stroke tokens (theme-aware) ---------- */
@@ -129,12 +238,12 @@
 }
 
 .flow-edge-label {
-  fill: #64748b;
+  fill: #f8fafc;
 }
 
 .flow-edge-label-bg {
-  fill: #fff;
-  stroke: #e2e8f0;
+  fill: #0f141c;
+  stroke: #1f2937;
   stroke-width: 1;
 }
 
@@ -173,6 +282,17 @@
 .flow-edge-label {
   font-size: 10px;
   font-family: inherit;
+  font-weight: 700;
+}
+
+.flow-edge-highlight .flow-edge-path {
+  stroke: var(--color-primary);
+  stroke-dasharray: 8 5;
+  animation: flow-edge-dash 900ms linear infinite;
+}
+
+@keyframes flow-edge-dash {
+  to { stroke-dashoffset: -26; }
 }
 
 .flow-temp-edge {
@@ -210,6 +330,101 @@
   z-index: 10;
   opacity: 0.85;
   transition: opacity var(--transition);
+}
+
+/* ---------- Floating HUD / Trace / Context Toolbar ---------- */
+
+.flow-hud {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  gap: 4px;
+  z-index: 20;
+  padding: 5px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.flow-hud-btn,
+.flow-trace-toggle,
+.flow-context-toolbar button {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.flow-hud-btn:hover,
+.flow-trace-toggle:hover,
+.flow-context-toolbar button:hover,
+.flow-hud-active,
+.flow-trace-on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.flow-canvas-locked .flow-svg {
+  cursor: default;
+}
+
+.flow-trace-toggle {
+  position: absolute;
+  left: 16px;
+  bottom: 14px;
+  z-index: 20;
+}
+
+.flow-trace-active .flow-edge:first-of-type .flow-edge-path {
+  stroke: var(--color-success);
+  stroke-dasharray: 6 4;
+  animation: flow-edge-dash 900ms linear infinite;
+}
+
+.flow-context-toolbar {
+  position: absolute;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.flow-context-label {
+  width: 150px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.flow-context-label:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.flow-view-table .flow-diagram-wrap,
+.flow-view-table .flow-inspector {
+  display: none;
+}
+
+.flow-view-split .flow-step-table {
+  display: block;
 }
 
 .flow-minimap:hover {

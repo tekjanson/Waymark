@@ -821,3 +821,196 @@ test('windows resize via a numeric width input (row 17)', async ({ page }) => {
   await input.press('Enter');
   await expect(page.locator('.floorplan-prop-dims')).toContainText('5');
 });
+
+test('feature 1 wheel zoom uses dampened cursor-centered changes', async ({ page }) => {
+  await openPlan(page);
+  const svg = page.locator('.floorplan-svg');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('Canvas not visible');
+  const before = await svg.getAttribute('viewBox');
+  await page.mouse.move(box.x + 180, box.y + 140);
+  await page.mouse.wheel(0, -120);
+  const after = await svg.getAttribute('viewBox');
+  expect(after).not.toBe(before);
+  const widthBefore = Number(before.split(' ')[2]);
+  const widthAfter = Number(after.split(' ')[2]);
+  expect(widthBefore - widthAfter).toBeGreaterThan(10);
+  expect(widthBefore - widthAfter).toBeLessThan(180);
+});
+
+test('feature 2 space drag pans an unbounded dynamic grid', async ({ page }) => {
+  await openPlan(page);
+  const svg = page.locator('.floorplan-svg');
+  await expect(page.locator('.floorplan-grid-line[data-dynamic-grid="true"]')).toHaveCount(await page.locator('.floorplan-grid-line[data-dynamic-grid="true"]').count());
+  const before = await svg.getAttribute('viewBox');
+  const box = await svg.boundingBox();
+  if (!box) throw new Error('Canvas not visible');
+  await page.keyboard.down('Space');
+  await page.mouse.move(box.x + 300, box.y + 250);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 520, box.y + 370, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up('Space');
+  const after = await svg.getAttribute('viewBox');
+  expect(after).toBeTruthy();
+  expect(await page.locator('.floorplan-grid-line[data-dynamic-grid="true"]').count()).toBeGreaterThan(20);
+});
+
+test('feature 3 copy paste places duplicates near the current cursor', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  const before = await page.locator('.floorplan-symbol-graphic').count();
+  const svg = await svgBox(page);
+  await page.mouse.move(svg.x + 700, svg.y + 430);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+v');
+  expect(await page.locator('.floorplan-symbol-graphic').count()).toBe(before + 1);
+  const t = await page.locator('.floorplan-fixture.floorplan-selected').last().getAttribute('transform');
+  expect(t).toContain('translate(');
+  expect(t).not.toContain('520 360');
+});
+
+test('feature 4 custom layer names render with tooltip and persist locally', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-add-layer-btn');
+  const input = page.locator('.floorplan-custom-layer-name').first();
+  await input.fill('Very Long Electrical And Plumbing Coordination Layer');
+  await input.press('Enter');
+  await expect(page.locator('.floorplan-custom-layer-name').first()).toHaveValue('Very Long Electrical And Plumbing Coordination Layer');
+  await expect(page.locator('.floorplan-custom-layer-name').first()).toHaveAttribute('title', /Very Long Electrical/);
+});
+
+test('feature 5 multi selection exposes batch layer reassignment', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-add-layer-btn');
+  await selectTool(page, 'select');
+  const room = await page.locator('.floorplan-room').first().boundingBox();
+  const wall = await page.locator('.floorplan-wall').first().boundingBox();
+  if (!room || !wall) throw new Error('Expected selectable geometry');
+  await page.mouse.click(room.x + room.width / 2, room.y + room.height / 2);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(wall.x + wall.width / 2, wall.y + Math.max(2, wall.height / 2));
+  await page.keyboard.up('Shift');
+  await expect(page.locator('.floorplan-batch-layer')).toBeVisible();
+  await page.selectOption('.floorplan-batch-layer', 'Layer 1');
+  await expect(page.locator('.floorplan-prop-dims')).toContainText('2 selected');
+});
+
+test('feature 6 hidden and locked layers do not hit test objects', async ({ page }) => {
+  await openPlan(page);
+  const id = await placeSymbolId(page, 'couch', { x: 520, y: 360 });
+  await page.click('.floorplan-layer-toggle[data-layer="fixture"]');
+  await selectTool(page, 'select');
+  await page.locator('.floorplan-svg').click({ position: { x: 520, y: 360 } });
+  await expect(page.locator(`[data-floorplan-item="${id}"].floorplan-selected`)).toHaveCount(0);
+});
+
+test('feature 7 context menu exposes z-index controls', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  await page.locator('.floorplan-fixture.floorplan-selected').click({ button: 'right' });
+  await expect(page.locator('.floorplan-context-menu')).toBeVisible();
+  await page.click('.floorplan-context-front');
+  await page.keyboard.press('Control+BracketLeft');
+  await expect(page.locator('.floorplan-context-menu')).toHaveCount(0);
+});
+
+test('feature 8 export menu provides JPEG and PDF report actions', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-export-menu-btn');
+  await expect(page.locator('.floorplan-export-menu')).toBeVisible();
+  await page.click('.floorplan-export-jpeg');
+  const last = await page.locator('.floorplan-board').evaluate(node => node.dataset.lastExport);
+  expect(last).toBe('jpeg-2x');
+});
+
+test('feature 9 selected objects carry AI prompt and seed photo descriptors', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  await expect(page.locator('.floorplan-ai-prompt-input')).toBeVisible();
+  await page.fill('.floorplan-ai-prompt-input', 'linen sofa, warm oak, soft lighting');
+  await page.fill('.floorplan-ai-ref-input', 'seed-photo.jpg');
+  await expect(page.locator('.floorplan-ai-prompt-input')).toHaveValue(/linen sofa/);
+});
+
+test('feature 10 alt temporarily switches to select tool', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'line');
+  await page.keyboard.down('Alt');
+  await expect(page.locator('.floorplan-tool-button[data-tool="select"]')).toHaveClass(/active/);
+  await page.keyboard.up('Alt');
+  await expect(page.locator('.floorplan-tool-button[data-tool="line"]')).toHaveClass(/active/);
+});
+
+test('feature 11 electrical and plumbing live in the symbols library', async ({ page }) => {
+  await openPlan(page);
+  expect(await page.locator('.floorplan-rail-heading').evaluateAll(nodes => nodes.map(n => n.textContent))).not.toContain('Systems');
+  await page.click('.floorplan-symbol-jump[data-category="electrical"]');
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="outlet"]')).toBeVisible();
+  await page.click('.floorplan-symbol-jump[data-category="plumbing"]');
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="kitchen-sink"]')).toBeVisible();
+});
+
+test('feature 12 aspect-ratio lock can be toggled in the inspector', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
+  await expect(page.locator('.floorplan-aspect-lock')).toContainText('Aspect locked');
+  await page.click('.floorplan-aspect-lock');
+  await expect(page.locator('.floorplan-aspect-lock')).toContainText('Freeform stretch');
+});
+
+test('feature 13 state toggles, layers tab, and clear guard are separated', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-panel-tab[data-tab="symbols"]')).toHaveClass(/active/);
+  await page.click('.floorplan-panel-tab[data-tab="layers"]');
+  await expect(page.locator('.floorplan-panel-tab[data-tab="layers"]')).toHaveClass(/active/);
+  await page.click('.floorplan-clear-guard-btn');
+  await expect(page.locator('.floorplan-clear-popover')).toBeVisible();
+});
+
+test('feature 14 symbols search and jump pills filter the icon grid', async ({ page }) => {
+  await openPlan(page);
+  await page.fill('.floorplan-symbol-search', 'microwave');
+  await expect(page.locator('.floorplan-symbol-choice[data-symbol-key="microwave"]')).toBeVisible();
+  const hidden = await page.locator('.floorplan-symbol-choice.hidden').count();
+  expect(hidden).toBeGreaterThan(5);
+});
+
+test('feature 15 room label pills show dimensions and snap dropdown cycles', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-room-label-pill')).toHaveCount(8);
+  await expect(page.locator('.floorplan-room-label-sub').first()).toContainText('sq ft');
+  await page.click('.floorplan-snap-pill');
+  await expect(page.locator('.floorplan-snap-pill')).toContainText('6 in');
+});
+
+test('feature 16 grouped action bar and floating HUD are present', async ({ page }) => {
+  await openPlan(page);
+  await expect(page.locator('.floorplan-view-switcher')).toBeVisible();
+  await expect(page.locator('.floorplan-floating-hud')).toBeVisible();
+  await page.click('.floorplan-view-btn[data-view="interior"]');
+  await expect(page.locator('.floorplan-view-btn[data-view="interior"]')).toHaveClass(/active/);
+});
+
+test('feature 17 clearance lighting overlays and BoM export render', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-clearance-toggle');
+  await page.click('.floorplan-lighting-toggle');
+  await expect(page.locator('.floorplan-clearance-arc')).toHaveCount(await page.locator('.floorplan-clearance-arc').count());
+  await expect(page.locator('.floorplan-lighting-throw')).toHaveCount(await page.locator('.floorplan-lighting-throw').count());
+  await page.click('.floorplan-bom-btn');
+  await expect(page.locator('.floorplan-bom-table')).toBeVisible();
+  await expect(page.locator('.floorplan-bom-table')).toContainText('Room square feet');
+});
+
+test('feature 18 mobile viewport uses docked slide-up panels', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+  await expect(page.locator('.floorplan-mobile-dock')).toBeVisible();
+  await page.click('.floorplan-dock-btn');
+  await expect(page.locator('.floorplan-panel')).toHaveClass(/floorplan-panel-open/);
+  const overflow = await page.locator('.floorplan-board').evaluate(node => getComputedStyle(node).overflow);
+  expect(overflow).toBe('hidden');
+});

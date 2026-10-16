@@ -306,11 +306,17 @@ function buildIdeaDiscussionPanel(idea, onAddDiscussionFn, onRefineIdea, onConve
   }, [idea.status === 'refined' ? '✓ Refined' : 'Mark Refined']);
   refineBtn.addEventListener('click', () => {
     onRefineIdea(idea.id);
+    idea.status = 'refined';
     statusSpan.textContent = '✓ Refined';
     statusSpan.classList.add('refined');
     statusSpan.classList.remove('brainstorm');
     refineBtn.textContent = '✓ Refined';
     refineBtn.classList.add('refined');
+    if (!actionsDiv.querySelector('.kanban-idea-convert-btn')) {
+      const convertBtn = el('button', { className: 'kanban-idea-convert-btn' }, ['Convert to Task']);
+      convertBtn.addEventListener('click', () => onConvertToTaskFn(idea.id));
+      actionsDiv.insertBefore(convertBtn, deleteBtn);
+    }
   });
   actionsDiv.append(refineBtn);
 
