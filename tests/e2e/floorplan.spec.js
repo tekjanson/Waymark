@@ -32,7 +32,7 @@ test('floor plan is detected and rendered', async ({ page }) => {
   await expect(page.locator('#template-badge')).toContainText('Floor Plan');
   await expect(page.locator('.floorplan-title')).toHaveText('House Plan');
   await expect(page.locator('.floorplan-room')).toHaveCount(8);
-  await expect(page.locator('.floorplan-wall')).toHaveCount(8);
+  await expect(page.locator('.floorplan-wall')).toHaveCount(12);
   await expect(page.locator('.floorplan-board')).toHaveClass(/floorplan-fullscreen/);
 });
 
@@ -905,6 +905,34 @@ test('feature 6 hidden and locked layers do not hit test objects', async ({ page
   await expect(page.locator(`[data-floorplan-item="${id}"].floorplan-selected`)).toHaveCount(0);
 });
 
+test('hidden layer objects cannot be clicked or marquee-selected and do not block visible rooms', async ({ page }) => {
+  await openPlan(page);
+  const id = await placeSymbolId(page, 'couch', { x: 605, y: 215 });
+  await page.click('.floorplan-layer-toggle[data-layer="fixture"]');
+  await selectTool(page, 'select');
+
+  const svg = await svgBox(page);
+  await page.mouse.move(svg.x + 560, svg.y + 170);
+  await page.mouse.down();
+  await page.mouse.move(svg.x + 660, svg.y + 260, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(`[data-floorplan-item="${id}"].floorplan-selected`)).toHaveCount(0);
+
+  await page.mouse.click(svg.x + 605, svg.y + 215);
+  await expect(page.locator(`[data-floorplan-item="${id}"].floorplan-selected`)).toHaveCount(0);
+  await expect(page.locator('.floorplan-room.floorplan-selected')).toHaveCount(1);
+});
+
+test('custom layer renders as one unified layer row like default layers', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-add-layer-btn');
+  const row = page.locator('.floorplan-custom-layer-row').first();
+  await expect(row.locator('.floorplan-custom-layer-main.floorplan-layer-toggle')).toHaveCount(1);
+  await expect(row.locator(':scope > .floorplan-custom-visible')).toHaveCount(0);
+  await expect(row.locator('.floorplan-custom-layer-main .floorplan-custom-layer-name')).toHaveCount(1);
+  await expect(row.locator(':scope > .floorplan-layer-lock')).toHaveCount(1);
+});
+
 test('feature 7 context menu exposes z-index controls', async ({ page }) => {
   await openPlan(page);
   await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
@@ -913,6 +941,26 @@ test('feature 7 context menu exposes z-index controls', async ({ page }) => {
   await page.click('.floorplan-context-front');
   await page.keyboard.press('Control+BracketLeft');
   await expect(page.locator('.floorplan-context-menu')).toHaveCount(0);
+});
+
+test('selected-object toolbar z-order buttons reorder SVG draw order', async ({ page }) => {
+  await openPlan(page);
+  await placeSymbolId(page, 'couch', { x: 520, y: 360 });
+  await placeSymbolId(page, 'coffee-table', { x: 680, y: 360 });
+  const orderBefore = await page.locator('.floorplan-layer-fixture > g[data-floorplan-item]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-floorplan-item')));
+  const couchId = orderBefore.at(-2);
+  const tableId = orderBefore.at(-1);
+  expect(orderBefore.lastIndexOf(tableId)).toBeGreaterThan(orderBefore.lastIndexOf(couchId));
+
+  await page.click('.floorplan-z-back');
+  const orderAfter = await page.locator('.floorplan-layer-fixture > g[data-floorplan-item]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-floorplan-item')));
+  expect(orderAfter.lastIndexOf(tableId)).toBeLessThan(orderAfter.lastIndexOf(couchId));
+  await expect.poll(async () => page.locator('.floorplan-board').evaluate((node, ids) => {
+    const saved = JSON.parse(localStorage.getItem('waymark_floorplan_draft_sheet-075') || '{"items":[]}').items;
+    const couch = saved.find(item => String(item.id) === ids.couchId);
+    const table = saved.find(item => String(item.id) === ids.tableId);
+    return Number(table?.zIndex || 0) < Number(couch?.zIndex || 0);
+  }, { couchId, tableId })).toBe(true);
 });
 
 test('feature 8 export menu provides JPEG and PDF report actions', async ({ page }) => {
@@ -924,13 +972,72 @@ test('feature 8 export menu provides JPEG and PDF report actions', async ({ page
   expect(last).toBe('jpeg-2x');
 });
 
+test('3D render export actions are discoverable and create download intents', async ({ page }) => {
+  await openPlan(page);
+  await page.click('.floorplan-export-menu-btn');
+  await expect(page.locator('.floorplan-export-3d-jpeg')).toBeVisible();
+  await expect(page.locator('.floorplan-export-3d-pdf')).toBeVisible();
+  await page.click('.floorplan-export-3d-jpeg');
+  const result = await page.locator('.floorplan-board').evaluate(node => ({
+    last: node.dataset.lastExport,
+    url: node.dataset.lastExportUrl,
+    count: window.__WAYMARK_FLOORPLAN_EXPORTS__?.length || 0,
+  }));
+  expect(result.last).toBe('3d-jpeg');
+  expect(result.url).toContain('data:image/svg+xml');
+  expect(result.count).toBeGreaterThan(0);
+});
+
 test('feature 9 selected objects carry AI prompt and seed photo descriptors', async ({ page }) => {
   await openPlan(page);
   await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });
   await expect(page.locator('.floorplan-ai-prompt-input')).toBeVisible();
   await page.fill('.floorplan-ai-prompt-input', 'linen sofa, warm oak, soft lighting');
   await page.fill('.floorplan-ai-ref-input', 'seed-photo.jpg');
+  await page.setInputFiles('.floorplan-ai-seed-file', {
+    name: 'seed-photo.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from([1, 2, 3, 4]),
+  });
   await expect(page.locator('.floorplan-ai-prompt-input')).toHaveValue(/linen sofa/);
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS__ || []);
+  expect(records.some(record => record.type === 'floorplan-object-metadata' && record.field === 'referencePhoto' && record.value === 'seed-photo.jpg')).toBe(true);
+});
+
+test('off-origin placed objects keep world coordinates after re-render', async ({ page }) => {
+  await openPlan(page);
+  await page.locator('.floorplan-svg').evaluate(svg => svg.setAttribute('viewBox', '-520 -320 960 620'));
+  await page.click('.floorplan-symbol-choice[data-symbol-key="chair"]');
+  const svg = await svgBox(page);
+  await page.mouse.click(svg.x + 120, svg.y + 120);
+  const placed = page.locator('.floorplan-fixture').last();
+  const before = await placed.getAttribute('transform');
+  expect(before).toMatch(/translate\(-/);
+  await selectTool(page, 'select');
+  await page.click('.floorplan-layer-toggle[data-layer="fixture"]');
+  await page.click('.floorplan-layer-toggle[data-layer="fixture"]');
+  const after = await placed.getAttribute('transform');
+  expect(after).toBe(before);
+});
+
+test('3D render uses bumpout wall geometry and opens object details from render objects', async ({ page }) => {
+  await openPlan(page);
+  await placeAndSelectSymbol(page, 'fridge', { x: 700, y: 120 });
+  await page.click('.floorplan-ai-render-btn');
+  await page.waitForSelector('.floorplan-ai-render-modal .floorplan-view-svg', { timeout: 5_000 });
+  expect(await page.locator('.floorplan-view-wall').count()).toBeGreaterThan(4);
+  await page.locator('.floorplan-view-object').first().click();
+  await expect(page.locator('.floorplan-object-details')).toBeVisible();
+  await page.fill('.floorplan-render-ai-prompt-input', 'french door bottom freezer silver whirlpool fridge');
+  await page.press('.floorplan-render-ai-prompt-input', 'Tab');
+  await page.setInputFiles('.floorplan-render-ai-seed-file', {
+    name: 'fridge-seed.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from([5, 6, 7, 8]),
+  });
+  const records = await page.evaluate(() => window.__WAYMARK_RECORDS__ || []);
+  expect(records.some(record => record.type === 'floorplan-object-metadata' && record.field === 'aiPrompt' && /french door/.test(record.value))).toBe(true);
+  expect(records.some(record => record.type === 'floorplan-object-metadata' && record.field === 'referencePhoto' && record.value === 'fridge-seed.jpg')).toBe(true);
 });
 
 test('feature 10 alt temporarily switches to select tool', async ({ page }) => {

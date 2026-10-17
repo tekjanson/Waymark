@@ -256,7 +256,7 @@
   top: 22px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 6;
+  z-index: 8;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -520,18 +520,27 @@
   align-items: center;
   gap: 4px;
 }
+.floorplan-custom-layer-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
 .floorplan-custom-layer-name {
   flex: 1 1 auto;
   min-width: 0;
-  height: 30px;
-  border: 1px solid var(--color-border);
-  border-radius: 7px;
-  padding: 0 7px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 4px;
   font-size: 0.76rem;
   font-weight: 700;
   color: var(--color-text);
-  background: #fff;
+  background: transparent;
 }
+.floorplan-custom-layer-name:focus { outline: 2px solid #93c5fd; background: #fff; }
 .floorplan-custom-layer-row button {
   flex: 0 0 auto;
   width: 28px;
@@ -545,6 +554,14 @@
   align-items: center;
   justify-content: center;
 }
+.floorplan-custom-layer-main .floorplan-custom-visible {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.floorplan-custom-layer-main .floorplan-custom-visible:hover { background: rgba(148, 163, 184, 0.18); }
 .floorplan-custom-layer-row button:hover { background: #f1f5f9; }
 .floorplan-custom-layer-row button:disabled { opacity: 0.35; cursor: not-allowed; }
 .floorplan-custom-lock.locked { background: #fef3c7; border-color: #f59e0b; }
@@ -963,6 +980,36 @@
 }
 .floorplan-ai-render-svg { width: 100%; display: block; border-radius: var(--radius-sm); }
 .floorplan-view-svg { width: 100%; display: block; border-radius: var(--radius-sm); background: #0f172a; }
+.floorplan-view-object { cursor: pointer; }
+.floorplan-object-details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  padding: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.floorplan-object-details h4 { margin: 0; color: var(--color-text); }
+.floorplan-object-details-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.floorplan-object-details-row span { flex: 0 0 76px; }
+.floorplan-object-details-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  color: var(--color-text);
+  background: #fff;
+}
 
 /* ---------- Camera placement map ---------- */
 .floorplan-cam-mapwrap {
