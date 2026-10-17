@@ -118,6 +118,31 @@ export function proposeAction(name, type) {
   return classify(name, type).domain === 'Unsorted' ? 'Archive' : 'Move';
 }
 
+/**
+ * Waymark system/config files that must NEVER be moved, renamed, or archived.
+ * The organizer leaves these exactly where they are.
+ */
+export const PROTECTED_PATTERNS = [
+  /^\.waymark/i,                 // .waymark-data.json, .waymarkIgnore, .waymark*
+  /^\.waymark-data\.json$/i,
+];
+
+/**
+ * True when a file is a Waymark system file that must be left in place.
+ * Matches `.waymark*` filenames and anything inside the `_waymark_logs`
+ * system folder.
+ * @param {string} name
+ * @param {string} folder
+ * @returns {boolean}
+ */
+export function isProtectedFile(name, folder) {
+  const n = (name || '').trim();
+  const f = (folder || '').trim();
+  if (PROTECTED_PATTERNS.some(re => re.test(n))) return true;
+  if (/(^|\/)_waymark_logs(\/|$)/i.test(f)) return true;
+  return false;
+}
+
 /** Cycle an action to the next value in ACTIONS (empty → first). */
 export function nextAction(current) {
   const i = ACTIONS.indexOf(current);

@@ -10,14 +10,17 @@
   padding-bottom: 4px;
 }
 .budget-range-btn,
-.budget-range-pill {
+.budget-range-pill,
+.budget-range-month {
   border: 1px solid var(--color-border); border-radius: var(--radius-sm);
   background: var(--color-surface); color: var(--color-text);
   padding: 4px 8px; cursor: pointer; transition: all var(--transition);
 }
 .budget-range-btn:hover,
 .budget-range-pill:hover,
-.budget-range-pill.active { border-color: var(--color-primary); color: var(--color-primary); }
+.budget-range-month:hover,
+.budget-range-pill.active,
+.budget-range-month.active { border-color: var(--color-primary); color: var(--color-primary); }
 .budget-range-month { font-size: 0.85rem; font-weight: 700; margin-right: 4px; }
 .budget-summary-item {
   min-width: 120px; text-align: left;
@@ -274,6 +277,14 @@
 .budget-upload-btn:hover {
   border-color: #059669; color: #059669; background: #ecfdf5;
   transform: translateY(-1px); box-shadow: var(--shadow);
+}
+.budget-statement-dropzone.budget-upload-btn {
+  display: grid; align-items: center; justify-content: start; gap: 4px 10px;
+  padding: 14px 16px; width: 100%;
+  text-align: left; transform: none;
+}
+.budget-statement-dropzone.budget-upload-btn:hover {
+  transform: none;
 }
 .budget-cashflow {
   display: grid; gap: 8px; padding: 12px 16px; margin-bottom: 16px;

@@ -27,7 +27,7 @@ import {
   ACTIONS, ACTIONABLE, AUDIT_TAB, AUDIT_HEADER, ARCHIVE_FOLDER,
   proposeFolder, proposeName, proposeDomain, proposeAction,
   scoreConfidence, nextAction, inventoryToFields, detectFlags,
-  buildDiffTree, buildInsights,
+  buildDiffTree, buildInsights, isProtectedFile,
 } from './helpers.js';
 
 /* ---------- Module state ---------- */
@@ -65,6 +65,7 @@ function parseFiles(rows, cols) {
     proposedName:   cell(row, cols.proposedName),
     confidence:     cell(row, cols.confidence),
     action:         cell(row, cols.action),
+    protected:      isProtectedFile(cell(row, cols.currentName) || cell(row, 0), cell(row, cols.currentFolder)),
   }));
 }
 
@@ -110,7 +111,7 @@ const handlers = {
     fresh.forEach((it, i) => {
       const f = inventoryToFields(it);
       f.flags = flags.get(i) || '';
-      _files.push({ rowIdx: base + i + 1, ...f, proposedFolder: '', proposedName: '', confidence: '', action: '' });
+      _files.push({ rowIdx: base + i + 1, ...f, proposedFolder: '', proposedName: '', confidence: '', action: '', protected: isProtectedFile(f.currentName, f.currentFolder) });
     });
     showToast(`Scanned ${fresh.length} file${fresh.length > 1 ? 's' : ''} into triage`, 'success');
     rerender();
@@ -119,7 +120,18 @@ const handlers = {
   /** Fill proposals for every file via the deterministic taxonomy. */
   propose() {
     let n = 0;
+    let protectedCount = 0;
     for (const f of _files) {
+      if (f.protected) {
+        // Waymark system files are left exactly where they are.
+        if (!f.flags) persistCell(f, 'flags', 'Protected');
+        persistCell(f, 'proposedFolder', '');
+        persistCell(f, 'proposedName', '');
+        persistCell(f, 'confidence', '');
+        persistCell(f, 'action', 'Skip');
+        protectedCount++;
+        continue;
+      }
       const folder = proposeFolder(f.currentName, f.fileType);
       const name = proposeName(f.currentName, f.fileType);
       const conf = String(scoreConfidence(f.currentName, f.fileType));
@@ -130,14 +142,15 @@ const handlers = {
       if (!f.action || f.action === 'Skip') persistCell(f, 'action', act);
       n++;
     }
-    showToast(`Proposed a clean home for ${n} file${n > 1 ? 's' : ''}`, 'success');
+    const suffix = protectedCount ? ` · ${protectedCount} Waymark file${protectedCount > 1 ? 's' : ''} protected` : '';
+    showToast(`Proposed a clean home for ${n} file${n > 1 ? 's' : ''}${suffix}`, 'success');
     rerender();
   },
 
   /** Approve every non-skip file (set its action to the proposed disposition). */
   approveAll() {
     for (const f of _files) {
-      if (f.action === 'Skip') continue;
+      if (f.protected || f.action === 'Skip') continue;
       const act = f.action && ACTIONABLE.has(f.action)
         ? f.action
         : proposeAction(f.currentName, f.fileType);
@@ -151,6 +164,10 @@ const handlers = {
   cycleAction(rowIdx) {
     const f = _files.find(x => x.rowIdx === rowIdx);
     if (!f) return;
+    if (f.protected) {
+      showToast('Protected Waymark file — left in place', 'info');
+      return;
+    }
     persistCell(f, 'action', nextAction(f.action));
     rerender();
   },
@@ -163,7 +180,7 @@ const handlers = {
 
   /** Execute approved moves, create the Audit Log, and refresh the board. */
   async run() {
-    const approved = _files.filter(f => ACTIONABLE.has(f.action));
+    const approved = _files.filter(f => ACTIONABLE.has(f.action) && !f.protected);
     if (!approved.length) { showToast('No approved files to move', 'info'); return; }
 
     const ts = new Date().toISOString();
@@ -269,7 +286,7 @@ function buildToolbar() {
 /** Summary counts + AI insight chips. */
 function buildSummary() {
   const total = _files.length;
-  const approved = _files.filter(f => ACTIONABLE.has(f.action)).length;
+  const approved = _files.filter(f => ACTIONABLE.has(f.action) && !f.protected).length;
   const flagged = _files.filter(f => (f.flags || '').trim()).length;
 
   const stat = (num, label, cls) => el('div', { className: `organizer-stat ${cls || ''}`.trim() }, [
@@ -317,36 +334,45 @@ function buildFileRow(f) {
   const confPct = Number.isNaN(conf) ? 0 : Math.max(0, Math.min(100, conf));
   const actionCls = f.action ? `organizer-action-${f.action.toLowerCase()}` : 'organizer-action-none';
   const flag = (f.flags || '').trim();
+  const flagBadge = f.protected
+    ? el('span', { className: 'organizer-flag organizer-flag-protected' }, ['Protected'])
+    : (flag ? el('span', { className: `organizer-flag organizer-flag-${flag.toLowerCase()}` }, [flag]) : null);
 
-  return el('div', { className: 'organizer-file' }, [
+  const actionControl = f.protected
+    ? el('span', { className: 'organizer-action organizer-action-protected', title: 'Waymark system file — never moved or archived' }, ['🔒 Protected'])
+    : el('button', {
+        className: `organizer-action ${actionCls}`,
+        type: 'button',
+        on: { click: () => handlers.cycleAction(f.rowIdx) },
+      }, [f.action || 'Set action']);
+
+  return el('div', { className: `organizer-file${f.protected ? ' organizer-file-protected' : ''}` }, [
     el('div', { className: 'organizer-file-main' }, [
       el('div', { className: 'organizer-file-head' }, [
         el('span', { className: 'organizer-file-name' }, [f.currentName || '(unnamed)']),
         f.fileType ? el('span', { className: 'organizer-file-type' }, [f.fileType]) : null,
-        flag ? el('span', { className: `organizer-flag organizer-flag-${flag.toLowerCase()}` }, [flag]) : null,
+        flagBadge,
       ]),
       el('div', { className: 'organizer-file-path' }, [
         el('span', { className: 'organizer-file-from' }, [f.currentFolder || '/']),
         el('span', { className: 'organizer-file-arrow' }, ['→']),
-        editableCell('span', { className: 'organizer-file-to' }, f.proposedFolder, f.rowIdx, _cols.proposedFolder),
+        f.protected
+          ? el('span', { className: 'organizer-file-keep' }, ['Keep in place'])
+          : editableCell('span', { className: 'organizer-file-to' }, f.proposedFolder, f.rowIdx, _cols.proposedFolder),
       ]),
-      el('div', { className: 'organizer-file-rename' }, [
+      f.protected ? null : el('div', { className: 'organizer-file-rename' }, [
         el('span', { className: 'organizer-file-rename-label' }, ['Rename:']),
         editableCell('span', { className: 'organizer-file-newname' }, f.proposedName, f.rowIdx, _cols.proposedName),
       ]),
     ]),
     el('div', { className: 'organizer-file-side' }, [
-      el('div', { className: 'organizer-conf' }, [
+      f.protected ? null : el('div', { className: 'organizer-conf' }, [
         el('span', { className: 'organizer-conf-track' }, [
           el('span', { className: 'organizer-conf-fill', style: { width: `${confPct}%` } }),
         ]),
         el('span', { className: 'organizer-conf-num' }, [confPct ? `${confPct}%` : '—']),
       ]),
-      el('button', {
-        className: `organizer-action ${actionCls}`,
-        type: 'button',
-        on: { click: () => handlers.cycleAction(f.rowIdx) },
-      }, [f.action || 'Set action']),
+      actionControl,
     ]),
   ]);
 }

@@ -10,6 +10,7 @@
     ["file-004", "sprint board q4", "/Work", "Sheet", "2026-09-20", "", "", "", "", ""],
     ["file-005", "IMG_2931", "/Camera Uploads", "Image", "2024-01-10", "Stale", "", "", "", ""],
     ["file-006", "oct bank statement", "/Archive", "PDF", "2026-10-02", "Duplicate", "", "", "", ""],
-    ["file-007", "random notes", "/Downloads", "Doc", "2026-07-01", "", "", "", "", ""]
+    ["file-007", "random notes", "/Downloads", "Doc", "2026-07-01", "", "", "", "", ""],
+    ["file-008", ".waymark-data.json", "/Waymark", "JSON", "2026-10-10", "", "", "", "", ""]
   ]
 }

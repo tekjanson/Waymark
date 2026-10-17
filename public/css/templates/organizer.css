@@ -273,6 +273,30 @@
 
 .organizer-flag-duplicate { background: rgba(220, 38, 38, 0.12); color: var(--color-error); }
 .organizer-flag-stale { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+.organizer-flag-protected { background: rgba(13, 148, 136, 0.14); color: #0d9488; }
+
+.organizer-file-protected { background: rgba(13, 148, 136, 0.04); }
+
+.organizer-file-keep {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0d9488;
+}
+
+.organizer-action-protected {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(13, 148, 136, 0.4);
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: default;
+}
 
 .organizer-file-path,
 .organizer-file-rename {
