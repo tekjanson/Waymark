@@ -4238,8 +4238,14 @@ const definition = {
           const key = String(event.key || '').toLowerCase();
           const activeBoard = document.querySelector('.floorplan-board');
           if (!activeBoard) return;
+          if (tag === 'input' || tag === 'textarea' || (target && target.isContentEditable)) {
+            if (key === ' ' && state.spaceDown) {
+              state.spaceDown = false;
+              activeBoard.classList.remove('floorplan-space-panning');
+            }
+            return;
+          }
           if (key === ' ') { state.spaceDown = true; activeBoard.classList.add('floorplan-space-panning'); event.preventDefault(); return; }
-          if (tag === 'input' || tag === 'textarea' || (target && target.isContentEditable)) return;
 
           const undoApi = window.__WAYMARK_FLOORPLAN_UNDO_API__;
           const keyApi = window.__WAYMARK_FLOORPLAN_KEY_API__;
