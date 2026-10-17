@@ -1038,7 +1038,8 @@ test('AI render concept surfaces a photo-real prompt enriched from the room and 
 
   const prompt = await page.locator('.floorplan-ai-render-modal .floorplan-ai-render-prompt').textContent();
   expect(prompt).toMatch(/photorealistic|architectural/i);
-  expect(prompt).toMatch(/lighting|camera|material|shadow|depth/i);
+  expect(prompt).toMatch(/camera|lighting|materials|shadow|depth/i);
+  expect(prompt).toMatch(/no labels|floorplan outlines|schematic overlays/i);
   expect(prompt).toContain('family room');
 });
 

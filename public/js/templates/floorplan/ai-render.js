@@ -19,10 +19,10 @@ const SYSTEM_PROMPT =
   'Use 4-6 designActions max.';
 
 const PHOTO_SYSTEM_PROMPT =
-  'You are an interior photography prompt engineer. Use the actual room geometry, camera position, fixture layout, and design brief to create one final prompt for a photorealistic interior render. ' +
-  'The final prompt must read like an architectural photography shot list: specify camera perspective, lens feel, natural and artificial lighting, material finishes, realistic shadows, depth, and studio-quality realism. ' +
-  'Use the supplied room sizes, headings, and object placements as constraints; avoid generic scene descriptions. ' +
-  'Output plain text only, no JSON, no markdown fences. Write 2-3 vivid sentences.';
+  'You are composing the final prompt for a photorealistic interior photography render. Treat the supplied room, camera, and fixture data as the literal scene to capture, not as a conceptual moodboard. ' +
+  'Write plain English in exactly 3 sentences. Name the actual room sequence visible in frame, the camera angle and lens feel, the material palette, and the lighting setup. Emphasize realistic shadows, soft reflections, depth, and tactile finishes. ' +
+  'The final image must read like a real architectural photography still: no labels, no room tags, no diagram overlays, no CAD-style outlines, and no abstract concept-art framing. ' +
+  'Keep the composition anchored to the real plan and the camera position, and make the scene feel photo-real rather than schematic.';
 
 function cleanPromptText(value) {
   if (!value && value !== '') return '';
@@ -30,15 +30,64 @@ function cleanPromptText(value) {
   return text.replace(/^```(?:json|text)?/i, '').replace(/```$/i, '').trim();
 }
 
+function cameraDirectionLabel(heading = 0) {
+  const normalized = Math.round(((heading % 360) + 360) % 360);
+  const directions = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
+  const index = Math.round(normalized / 45) % directions.length;
+  return `${normalized}° ${directions[index]}`;
+}
+
+function sceneRoomSequence(roomNames) {
+  if (!roomNames.length) return 'the main living spaces';
+  if (roomNames.length === 1) return roomNames[0];
+  if (roomNames.length === 2) return `${roomNames[0]} opening into ${roomNames[1]}`;
+  return `${roomNames[0]}, ${roomNames[1]}, and ${roomNames[2]}`;
+}
+
+function sceneFixtureSummary(scene) {
+  const fixtures = Array.isArray(scene?.fixtures) ? scene.fixtures.map(item => item.name).filter(Boolean) : [];
+  if (fixtures.length) return fixtures.slice(0, 4).join(', ');
+  return 'clean-lined furniture and integrated cabinetry';
+}
+
+function sceneMaterialSummary(scene) {
+  const palette = Array.isArray(scene?.palette) && scene.palette.length ? scene.palette : [];
+  const roomStyles = Array.isArray(scene?.roomStyles) ? scene.roomStyles.map(room => room.styleNotes).filter(Boolean) : [];
+  if (roomStyles.length) return roomStyles.join(', ');
+  if (palette.length >= 2) return palette.slice(0, 4).join(', ');
+  return 'warm oak, stone, and refined neutral textiles';
+}
+
+function buildSceneRenderPrompt(scene) {
+  const title = scene?.title || scene?.spaceTitle || 'contemporary interior';
+  const roomNames = Array.isArray(scene?.rooms) ? scene.rooms.map(room => room.name).filter(Boolean) : [];
+  const primaryRoom = roomNames[0] || 'the main living area';
+  const camera = scene?.camera || null;
+  const direction = camera ? cameraDirectionLabel(camera.heading) : 'eye-level perspective';
+  const focalLength = camera && Number.isFinite(camera.fov) ? `${Math.round(camera.fov)}mm` : '35mm';
+  const lighting = scene?.lighting || 'soft daylight layered with warm architectural lighting';
+  const fixtureSummary = sceneFixtureSummary(scene);
+  const materialSummary = sceneMaterialSummary(scene);
+  const roomSequence = sceneRoomSequence(roomNames);
+
+  return [
+    `Photorealistic architectural interior photograph of ${title}, captured from ${direction} with a ${focalLength} lens aimed across ${roomSequence}.`,
+    `The camera frames ${primaryRoom} in the foreground with clear spatial depth into adjacent spaces, featuring ${fixtureSummary} and tactile materials including ${materialSummary}.`,
+    `Lighting is ${lighting}, producing soft natural shadows, realistic reflections, and subtle material depth; the final image must look like a real interior still, with no labels, no room tags, no floorplan outlines, no schematic overlays, and no abstract concept-art framing.`,
+  ].join(' ');
+}
+
 function buildFallbackPhotoPrompt(spec, items, camera) {
   const rooms = roomSummary(items);
-  const roomNames = rooms.map(room => room.name).join(', ') || 'the main living spaces';
-  const cameraText = camera
-    ? `Camera angle: ${Math.round(((camera.heading || 0) % 360 + 360) % 360)}° heading, positioned from the ${roomNames}.`
-    : 'Camera angle: eye-level architectural perspective.';
-  const mood = spec?.overallMood || 'warm, contemporary, practical living';
-  const lighting = spec?.lighting || 'soft daylight with layered architectural lighting';
-  return `Photorealistic ${spec?.spaceTitle || 'contemporary interior'} scene in a ${mood}, ${lighting}, with ${roomNames} arranged for open-flow living. ${cameraText} Use realistic textures, premium materials, clean architectural lines, subtle shadows, natural wood, stone, and refined finishes for ultra-realistic interior photography.`;
+  const roomNames = rooms.map(room => room.name).filter(Boolean);
+  const scene = {
+    title: spec?.spaceTitle || 'contemporary interior',
+    rooms: roomNames.length ? roomNames.map(name => ({ name })) : [{ name: 'main living areas' }],
+    palette: Array.isArray(spec?.palette) && spec.palette.length ? spec.palette : ['#d4a373', '#dfe6eb', '#7c5f41'],
+    lighting: spec?.lighting || 'soft daylight layered with warm architectural lighting',
+    camera: camera ? { heading: camera.heading, fov: camera.fov || 72 } : { heading: 0, fov: 72 },
+  };
+  return buildSceneRenderPrompt(scene);
 }
 
 function svgEl(tag, attrs = {}, children = []) {
@@ -137,9 +186,18 @@ async function generatePhotoPrompt(items, camera, spec) {
     'Use the actual room geometry, fixture placement, palette, and camera data below to create a photorealistic interior render prompt. ' +
     'Keep the prompt grounded in the plan and camera, not generic style language: ' +
     JSON.stringify(scene);
-  const text = await generateText(PHOTO_SYSTEM_PROMPT, userMessage, { temperature: 0.65, maxTokens: 900 });
-  const prompt = cleanPromptText(text);
-  return prompt || buildFallbackPhotoPrompt(spec, items, camera);
+  const fallback = buildSceneRenderPrompt(scene);
+  try {
+    const text = await generateText(PHOTO_SYSTEM_PROMPT, userMessage, { temperature: 0.25, maxTokens: 900 });
+    const prompt = cleanPromptText(text);
+    if (!prompt) return fallback;
+    const lower = prompt.toLowerCase();
+    const hasSceneGrounding = /camera|lighting|materials|shadow|depth|photorealistic|architectural|interior/i.test(lower);
+    const isConceptual = /moodboard|concept art|design brief|generic|style board|schematic|diagram/.test(lower);
+    return hasSceneGrounding && !isConceptual ? prompt : fallback;
+  } catch (err) {
+    return fallback;
+  }
 }
 
 async function generateRenderSpec(items, camera = null) {
@@ -147,8 +205,9 @@ async function generateRenderSpec(items, camera = null) {
   if (mock) {
     const result = typeof mock === 'function' ? mock(items, camera) : mock;
     const normalized = { ...fallbackSpec(), ...result };
-    normalized.renderPrompt = cleanPromptText(normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
-    normalized.photoPrompt = cleanPromptText(normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
+    const enrichedPrompt = await generatePhotoPrompt(items, camera, normalized);
+    normalized.renderPrompt = cleanPromptText(enrichedPrompt || normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
+    normalized.photoPrompt = cleanPromptText(enrichedPrompt || normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
     return normalized;
   }
 
