@@ -869,6 +869,65 @@ test('feature 2 space drag pans an unbounded dynamic grid', async ({ page }) => 
   expect(await page.locator('.floorplan-grid-line[data-dynamic-grid="true"]').count()).toBeGreaterThan(20);
 });
 
+test('off-center rooms stay off-center after resize updates', async ({ page }) => {
+  await openPlan(page);
+  await selectTool(page, 'room');
+  const box = await page.locator('.floorplan-svg').boundingBox();
+  if (!box) throw new Error('Canvas not visible');
+  await page.mouse.move(box.x + 520, box.y + 260);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 640, box.y + 350, { steps: 8 });
+  await page.mouse.up();
+
+  await selectTool(page, 'select');
+  await page.mouse.click(box.x + 580, box.y + 300);
+  const selectedRoom = page.locator('.floorplan-room.floorplan-selected').first();
+  await expect(selectedRoom).toHaveCount(1);
+  const roomId = await selectedRoom.getAttribute('data-floorplan-item');
+  if (!roomId) throw new Error('Selected room id missing');
+
+  await expect.poll(async () => page.evaluate((id) => {
+    const raw = localStorage.getItem('waymark_floorplan_draft_sheet-075');
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return Boolean((parsed.items || []).find(item => String(item.id) === id));
+  }, roomId)).toBe(true);
+
+  await page.evaluate((id) => {
+    const key = 'waymark_floorplan_draft_sheet-075';
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : { items: [] };
+    const updated = (parsed.items || []).map((item) => {
+      if (String(item.id) !== id) return item;
+      return { ...item, x: 1200, y: 260, width: 140, height: 100 };
+    });
+    localStorage.setItem(key, JSON.stringify({ ...parsed, items: updated }));
+  }, roomId);
+
+  await page.reload();
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+  await page.locator('.floorplan-svg').evaluate((svg) => svg.setAttribute('viewBox', '900 120 960 620'));
+  await selectTool(page, 'select');
+  await page.click(`[data-floorplan-item="${roomId}"]`);
+
+  const handle = page.locator('.floorplan-resize-handle[data-floorplan-handle="room-nw"]').first();
+  await expect(handle).toHaveCount(1);
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error('Resize handle not visible');
+  await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x - 28, handleBox.y - 20, { steps: 6 });
+  await page.mouse.up();
+
+  await expect.poll(async () => page.evaluate((id) => {
+    const raw = localStorage.getItem('waymark_floorplan_draft_sheet-075');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const found = (parsed.items || []).find(item => String(item.id) === id);
+    return found ? Number(found.x) : null;
+  }, roomId)).toBeGreaterThan(1000);
+});
+
 test('feature 3 copy paste places duplicates near the current cursor', async ({ page }) => {
   await openPlan(page);
   await placeAndSelectSymbol(page, 'couch', { x: 520, y: 360 });

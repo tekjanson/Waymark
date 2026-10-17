@@ -78,6 +78,15 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const WORLD_COORD_MIN = -200000;
+const WORLD_COORD_MAX = 200000;
+
+function clampWorldCoord(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return clamp(numeric, WORLD_COORD_MIN, WORLD_COORD_MAX);
+}
+
 function getWorldBoundsFromViewBox(svg) {
   const parts = String(svg.getAttribute('viewBox') || '0 0 960 620').split(/\s+/).map(Number);
   return { x: parts[0] || 0, y: parts[1] || 0, width: parts[2] || 960, height: parts[3] || 620 };
@@ -1959,8 +1968,8 @@ const definition = {
       const item = seg.item;
       if (seg.kind === 'wall') {
         const origin = { x1: item.x, y1: item.y, x2: getWallEndpoints(item).x2, y2: getWallEndpoints(item).y2 };
-        if (which === 'a') { item.x = clamp(pt.x, 20, 940); item.y = clamp(pt.y, 20, 600); }
-        else { item.x2 = clamp(pt.x, 20, 940); item.y2 = clamp(pt.y, 20, 600); }
+        if (which === 'a') { item.x = clampWorldCoord(pt.x); item.y = clampWorldCoord(pt.y); }
+        else { item.x2 = clampWorldCoord(pt.x); item.y2 = clampWorldCoord(pt.y); }
         const e = getWallEndpoints(item);
         item.length = Math.hypot(e.x2 - item.x, e.y2 - item.y);
         item.width = Math.abs(e.x2 - item.x);
@@ -1968,7 +1977,7 @@ const definition = {
         recomputeWallOpenings(item, origin);
       } else if (seg.kind === 'line' && Array.isArray(item.points)) {
         const idx = which === 'a' ? seg.segIndex : seg.segIndex + 1;
-        item.points[idx] = { x: clamp(pt.x, 20, 940), y: clamp(pt.y, 20, 600) };
+        item.points[idx] = { x: clampWorldCoord(pt.x), y: clampWorldCoord(pt.y) };
         item.x = item.points[0].x;
         item.y = item.points[0].y;
       }
@@ -2036,8 +2045,8 @@ const definition = {
         const dStart = Math.hypot(e.x1 - pt.x, e.y1 - pt.y);
         const dEnd = Math.hypot(e.x2 - pt.x, e.y2 - pt.y);
         const origin = { x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 };
-        if (dStart <= dEnd) { item.x = clamp(pt.x, 20, 940); item.y = clamp(pt.y, 20, 600); }
-        else { item.x2 = clamp(pt.x, 20, 940); item.y2 = clamp(pt.y, 20, 600); }
+        if (dStart <= dEnd) { item.x = clampWorldCoord(pt.x); item.y = clampWorldCoord(pt.y); }
+        else { item.x2 = clampWorldCoord(pt.x); item.y2 = clampWorldCoord(pt.y); }
         const now = getWallEndpoints(item);
         item.length = Math.hypot(now.x2 - item.x, now.y2 - item.y);
         item.width = Math.abs(now.x2 - item.x);
@@ -2048,7 +2057,7 @@ const definition = {
         const dStart = Math.hypot(item.points[0].x - pt.x, item.points[0].y - pt.y);
         const dEnd = Math.hypot(item.points[last].x - pt.x, item.points[last].y - pt.y);
         const idx = dStart <= dEnd ? 0 : last;
-        item.points[idx] = { x: clamp(pt.x, 20, 940), y: clamp(pt.y, 20, 600) };
+        item.points[idx] = { x: clampWorldCoord(pt.x), y: clampWorldCoord(pt.y) };
         item.x = item.points[0].x;
         item.y = item.points[0].y;
       }
@@ -2091,11 +2100,11 @@ const definition = {
         clone.id = `floorplan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
         clone.floor = state.currentFloor;
         clone.zIndex = nextZIndex();
-        clone.x = clamp((clone.x || 40) + 16, 20, 940);
-        clone.y = clamp((clone.y || 40) + 16, 20, 600);
-        if (typeof clone.x2 === 'number') clone.x2 = clamp(clone.x2 + 16, 20, 940);
-        if (typeof clone.y2 === 'number') clone.y2 = clamp(clone.y2 + 16, 20, 600);
-        if (Array.isArray(clone.points)) clone.points = clone.points.map(p => ({ x: clamp(p.x + 16, 20, 940), y: clamp(p.y + 16, 20, 600) }));
+        clone.x = clampWorldCoord((clone.x || 40) + 16);
+        clone.y = clampWorldCoord((clone.y || 40) + 16);
+        if (typeof clone.x2 === 'number') clone.x2 = clampWorldCoord(clone.x2 + 16);
+        if (typeof clone.y2 === 'number') clone.y2 = clampWorldCoord(clone.y2 + 16);
+        if (Array.isArray(clone.points)) clone.points = clone.points.map(p => ({ x: clampWorldCoord(p.x + 16), y: clampWorldCoord(p.y + 16) }));
         return clone;
       });
       state.items.push(...clones);
@@ -3890,8 +3899,8 @@ const definition = {
           const snapped = item.kind === 'wall'
             ? snapPointForTool(point, 'wall', { skipWallId: item.id })
             : snapPointForTool(point, 'room');
-          const px = clamp(snapped.x, 20, 940);
-          const py = clamp(snapped.y, 20, 600);
+          const px = clampWorldCoord(snapped.x);
+          const py = clampWorldCoord(snapped.y);
 
           if (item.kind === 'room') {
             const left0 = origin.x;
@@ -3908,10 +3917,10 @@ const definition = {
             if (handle === 'room-nw' || handle === 'room-ne') top = Math.min(py, bottom0 - 34);
             if (handle === 'room-sw' || handle === 'room-se') bottom = Math.max(py, top0 + 34);
 
-            left = clamp(left, 20, 900);
-            top = clamp(top, 20, 560);
-            right = clamp(right, left + 40, 940);
-            bottom = clamp(bottom, top + 34, 600);
+            left = clamp(left, WORLD_COORD_MIN, WORLD_COORD_MAX - 40);
+            top = clamp(top, WORLD_COORD_MIN, WORLD_COORD_MAX - 34);
+            right = clamp(right, left + 40, WORLD_COORD_MAX);
+            bottom = clamp(bottom, top + 34, WORLD_COORD_MAX);
 
             item.x = left;
             item.y = top;
@@ -3948,7 +3957,7 @@ const definition = {
             const idx = parseInt(handle.slice(4), 10);
             if (item.points[idx]) {
               const snapV = snapPointForTool({ x: px, y: py }, 'wall', { skipWallId: item.id });
-              item.points[idx] = { x: clamp(snapV.x, 20, 940), y: clamp(snapV.y, 20, 600) };
+              item.points[idx] = { x: clampWorldCoord(snapV.x), y: clampWorldCoord(snapV.y) };
               item.x = item.points[0].x;
               item.y = item.points[0].y;
             }
@@ -4141,8 +4150,8 @@ const definition = {
         } else if (kind === 'wall') {
           pushUndoCheckpoint();
           const wallEndRaw = {
-            x: clamp(start.x + 80, 20, 940),
-            y: start.y,
+            x: clampWorldCoord(start.x + 80),
+            y: clampWorldCoord(start.y),
           };
           const wallEnd = snapPointForTool(wallEndRaw, 'wall');
           const created = registerNewItem(createItem(kind, start, wallEnd));
@@ -4152,8 +4161,8 @@ const definition = {
         } else if (kind === 'room') {
           pushUndoCheckpoint();
           const roomStart = {
-            x: clamp(start.x - 60, 20, 880),
-            y: clamp(start.y - 40, 20, 520),
+            x: clampWorldCoord(start.x - 60),
+            y: clampWorldCoord(start.y - 40),
           };
           const roomEnd = {
             x: roomStart.x + 120,
@@ -4179,14 +4188,14 @@ const definition = {
       const point = snapPointForTool(pointFromEvent(svg, event), state.tool);
       let created = null;
       if (state.tool === 'wall') {
-        const wallEnd = snapPointForTool({ x: clamp(point.x + 80, 20, 940), y: point.y }, 'wall');
+        const wallEnd = snapPointForTool({ x: clampWorldCoord(point.x + 80), y: clampWorldCoord(point.y) }, 'wall');
         created = createItem('wall', point, wallEnd);
       } else if (state.tool === 'wall-rect') {
         return;
       } else if (state.tool === 'room') {
         const roomStart = {
-          x: clamp(point.x - 60, 20, 880),
-          y: clamp(point.y - 40, 20, 520),
+          x: clampWorldCoord(point.x - 60),
+          y: clampWorldCoord(point.y - 40),
         };
         const roomEnd = { x: roomStart.x + 120, y: roomStart.y + 80 };
         created = createItem('room', roomStart, roomEnd);
