@@ -73,7 +73,7 @@ export function openItemModal(cat, row, isNew, onSave, onDelete) {
 
   const body = cat.fields.map((f) => {
     let control;
-    if (f.type === 'status') {
+    if (f.type === 'status' || f.type === 'rsvp' || f.type === 'sent') {
       control = el('select', { className: 'party-field-input' },
         [''].concat(f.options).map(opt =>
           el('option', opt === values[f.col] ? { value: opt, selected: 'selected' } : { value: opt }, [opt || '—']),

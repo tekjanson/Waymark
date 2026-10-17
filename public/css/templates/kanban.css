@@ -32,6 +32,25 @@
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
 }
 
+.kanban-voice-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 3px 10px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); background: var(--color-surface);
+  color: var(--color-text); cursor: pointer;
+  font-size: 0.78rem; font-weight: 600;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.kanban-voice-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.kanban-voice-lane-btn {
+  width: 100%; margin-top: 6px;
+}
+
 .kanban-sort-label {
   font-size: 0.78rem; color: var(--color-text-muted);
   display: flex; align-items: center; gap: 4px;

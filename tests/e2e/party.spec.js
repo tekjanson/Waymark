@@ -29,15 +29,15 @@ test('overall readiness ring renders a percentage', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
   await page.waitForSelector('.party-ring-num', { timeout: 5_000 });
-  // done 13 / total 23 = 57%
-  await expect(page.locator('.party-ring-num')).toHaveText('57%');
+  // done 14 / total 26 = 54%
+  await expect(page.locator('.party-ring-num')).toHaveText('54%');
 });
 
-test('all four category cards plus links render', async ({ page }) => {
+test('all party category cards plus links render', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
   await page.waitForSelector('.party-board', { timeout: 5_000 });
-  for (const key of ['guests', 'menu', 'budget', 'decorations', 'links']) {
+  for (const key of ['guests', 'menu', 'budget', 'thankyou', 'decorations', 'links']) {
     await expect(card(page, key)).toHaveCount(1);
   }
 });
@@ -46,7 +46,7 @@ test('guest category shows the correct percent complete', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
   await page.waitForSelector('.party-card-guests', { timeout: 5_000 });
-  // 4 of 5 responded (Yes/No) = 80%
+  // 4 of 5 responded (Attending/Declined) = 80%
   await expect(card(page, 'guests').locator('.party-card-pct')).toHaveText('80%');
 });
 
@@ -62,16 +62,42 @@ test('clicking a card header collapses and expands its body', async ({ page }) =
   await expect(body).toBeVisible();
 });
 
-test('cycling an RSVP status persists to the Guests tab', async ({ page }) => {
+test('RSVP segmented selector persists deliberate status changes to Guests', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, SHEET);
-  await page.waitForSelector('.party-card-guests .party-badge', { timeout: 5_000 });
-  const firstBadge = card(page, 'guests').locator('.party-item .party-badge').first();
-  await expect(firstBadge).toHaveText('Yes');
-  await firstBadge.click();
-  await expect(card(page, 'guests').locator('.party-item .party-badge').first()).toHaveText('No');
+  await page.waitForSelector('.party-card-guests .party-segmented', { timeout: 5_000 });
+  const firstRsvp = card(page, 'guests').locator('.party-item .party-segmented').first();
+  await expect(firstRsvp.locator('.party-segment-active')).toHaveText('Attending');
+  await firstRsvp.locator('.party-segment').nth(1).click();
+  await expect(card(page, 'guests').locator('.party-item .party-segmented').first().locator('.party-segment-active')).toHaveText('Declined');
   const records = await getCreatedRecords(page);
   expect(records.some(r => r.type === 'tab-write' && r.tabTitle === 'Guests')).toBe(true);
+});
+
+
+test('thank you notes render progress and persist sent toggles', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.party-card-thankyou', { timeout: 5_000 });
+  await expect(card(page, 'thankyou')).toContainText('Thank You Notes');
+  await expect(card(page, 'thankyou').locator('.party-card-pct')).toHaveText('33%');
+  await expect(card(page, 'thankyou').locator('.party-item')).toHaveCount(3);
+  await card(page, 'thankyou').locator('.party-note-check').nth(1).click();
+  await expect(card(page, 'thankyou').locator('.party-card-pct')).toHaveText('67%');
+  await expect(card(page, 'thankyou').locator('.party-note-check').nth(1)).toContainText('Sent');
+  const today = new Date().toISOString().slice(0, 10);
+  await expect(card(page, 'thankyou').locator('.party-cell-sentDate .party-cell-input').nth(1)).toHaveValue(today);
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'tab-write' && r.tabTitle === 'Thank You Notes')).toBe(true);
+});
+
+test('RSVP segments expose mobile-sized touch targets', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.party-card-guests .party-segment', { timeout: 5_000 });
+  const box = await card(page, 'guests').locator('.party-segment').first().boundingBox();
+  expect(box.height).toBeGreaterThanOrEqual(44);
 });
 
 test('toggling a decoration yes/no persists to the Decorations tab', async ({ page }) => {

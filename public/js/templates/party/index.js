@@ -3,7 +3,7 @@
 
    A collaborative, single-page party planning dashboard rendered from a
    MULTI-TAB Google Sheets workbook. Each planning category is its own tab
-   (Guests, Menu, Budget, Decorations, Links) so the backend data stays
+   (Guests, Menu, Budget, Thank You Notes, Decorations, Links) so the backend data stays
    clean and human-editable. The Details tab drives the hero header and is
    what template detection matches on.
 
@@ -120,6 +120,16 @@ const handlers = {
     persistCategory(catKey);
   },
 
+  updateRow(catKey, rowIdx, updates) {
+    const rows = _catRows[catKey];
+    if (!rows || !rows[rowIdx]) return;
+    for (const [col, value] of Object.entries(updates)) {
+      rows[rowIdx][Number(col)] = value;
+    }
+    rerender();
+    persistCategory(catKey);
+  },
+
   addItem(catKey) {
     const cat = categoryByKey(catKey);
     if (!cat) return;
@@ -161,7 +171,7 @@ const handlers = {
 
 /* ---------- Overall readiness ---------- */
 
-/** Aggregate completion across the four planning categories. */
+/** Aggregate completion across all planning categories. */
 function overallProgress() {
   let done = 0, total = 0;
   for (const cat of CATEGORIES) {

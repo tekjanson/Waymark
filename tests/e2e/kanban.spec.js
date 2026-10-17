@@ -730,6 +730,64 @@ test('kanban add-row description is a textarea', async ({ page }) => {
   await expect(textarea).toBeVisible();
 });
 
+test('kanban voice intake button renders in header and quick-entry form', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-board', { timeout: 5_000 });
+
+  await expect(page.locator('.kanban-toolbar .kanban-voice-btn')).toBeVisible();
+
+  await page.locator('.add-row-trigger').first().click();
+  await page.waitForSelector('.add-row-form:not(.hidden)', { timeout: 3_000 });
+  await expect(page.locator('.add-row-lane .kanban-voice-btn').first()).toBeVisible();
+});
+
+test('kanban voice intake hook parses transcript and creates card in requested lane', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-board', { timeout: 5_000 });
+
+  const parsed = await page.evaluate(async () => {
+    return window.__WAYMARK_KANBAN_VOICE(
+      'create task called Voice Follow Up with details Call partners tomorrow priority P1 stage QA'
+    );
+  });
+
+  expect(parsed.title).toBe('Voice Follow Up');
+  expect(parsed.description).toBe('Call partners tomorrow');
+  expect(parsed.priority).toBe('P1');
+  expect(parsed.stage).toBe('QA');
+
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'row-append' && r.rows && r.rows.some(row => row[0] === 'Voice Follow Up'));
+  }, { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const append = records.find(r => r.type === 'row-append' && r.rows.some(row => row[0] === 'Voice Follow Up'));
+  expect(append).toBeTruthy();
+  expect(append.rows[0][1]).toBe('Call partners tomorrow');
+  expect(append.rows[0][2]).toBe('QA');
+  expect(append.rows[0][5]).toBe('P1');
+
+  await expect(page.locator('.kanban-lane-qa')).toContainText('Voice Follow Up');
+  await expect(page.locator('.toast').last()).toContainText('Voice task "Voice Follow Up" added to QA');
+});
+
+test('kanban voice intake unsupported browser path shows graceful toast', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-board', { timeout: 5_000 });
+
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true });
+  });
+
+  await page.locator('.kanban-toolbar .kanban-voice-btn').click();
+  await expect(page.locator('.toast')).toContainText('Voice input is not supported');
+});
+
 test('kanban lane collapse button hides cards', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-028');
@@ -2036,4 +2094,3 @@ test('kanban branch copy badge not shown for regular notes', async ({ page }) =>
   const badgesInCard = card.locator('.kanban-branch-copy');
   await expect(badgesInCard).toHaveCount(0);
 });
-

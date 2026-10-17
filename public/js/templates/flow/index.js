@@ -85,16 +85,43 @@ const definition = {
       return;
     }
 
-    for (const group of groups) {
+    const tabs = el('div', { className: 'flow-tabs' });
+    const groupSections = [];
+    const tabButtons = [];
+    container.append(tabs);
+
+    function activateGroup(index) {
+      groupSections.forEach((section, i) => section.classList.toggle('hidden', i !== index));
+      tabButtons.forEach((button, i) => button.classList.toggle('flow-tab-active', i === index));
+    }
+
+    groups.forEach((group, index) => {
+      const tab = el('button', {
+        className: `flow-tab${index === 0 ? ' flow-tab-active' : ''}`,
+        on: { click: () => activateGroup(index) },
+      }, [`${group.name} (${group.steps.length})`]);
+      tabButtons.push(tab);
+      tabs.append(tab);
+    });
+    tabs.append(el('button', { className: 'flow-tab flow-tab-new', title: 'New flow' }, ['+ New Flow']));
+
+    for (const [groupIndex, group] of groups.entries()) {
       const groupKey = group.name;
-      const section = el('div', { className: 'flow-group' });
+      const section = el('div', { className: `flow-group${groupIndex === 0 ? '' : ' hidden'}` });
+      groupSections.push(section);
 
       /* ---------- Group header ---------- */
       const realignBtn = el('button', { className: 'flow-realign-btn', title: 'Auto-align nodes' }, ['\u2B50 Auto-Align']);
+      const viewToggle = el('div', { className: 'flow-view-toggle' }, [
+        el('button', { className: 'flow-view-btn flow-view-active', dataset: { view: 'canvas' } }, ['Canvas']),
+        el('button', { className: 'flow-view-btn', dataset: { view: 'split' } }, ['Split View']),
+        el('button', { className: 'flow-view-btn', dataset: { view: 'table' } }, ['Table']),
+      ]);
       section.append(el('div', { className: 'flow-group-header' }, [
         el('span', { className: 'flow-group-icon' }, ['\uD83D\uDD00']),
         el('h3', { className: 'flow-group-title' }, [group.name]),
         el('span', { className: 'flow-group-count' }, [`${group.steps.length} steps`]),
+        viewToggle,
         realignBtn,
       ]));
 
@@ -174,6 +201,10 @@ const definition = {
       /* ---------- Build interactive SVG ---------- */
       const markerId = `flow-arrow-${Math.random().toString(36).slice(2, 8)}`;
       const diagramWrap = el('div', { className: 'flow-diagram-wrap flow-canvas' });
+      let selectedNode = null;
+      let dragState = null;
+      let connectState = null;
+      let _quickAddCount = 0;
 
       const svgEl = svg('svg', {
         viewBox: `0 0 ${layout.width} ${layout.height}`,
@@ -221,6 +252,7 @@ const definition = {
         for (const edge of layout.edges) {
           edgesGroup.append(renderEdge(edge, markerId));
         }
+        updateEdgeHighlights();
       }
       function rerenderEdges() {
         if (_rafEdgeId) return;
@@ -262,6 +294,45 @@ const definition = {
 
       diagramWrap.append(svgEl);
 
+      /* ---------- Floating HUD ---------- */
+      let zoomLevel = 1;
+      function setZoom(nextZoom) {
+        zoomLevel = Math.max(0.5, Math.min(1.75, nextZoom));
+        svgEl.style.width = `${zoomLevel * 100}%`;
+        diagramWrap.dataset.zoom = String(zoomLevel.toFixed(2));
+      }
+      const hud = el('div', { className: 'flow-hud' }, [
+        el('button', { className: 'flow-hud-btn flow-zoom-out', title: 'Zoom out', on: { click: () => setZoom(zoomLevel - 0.1) } }, ['−']),
+        el('button', { className: 'flow-hud-btn flow-zoom-in', title: 'Zoom in', on: { click: () => setZoom(zoomLevel + 0.1) } }, ['+']),
+        el('button', { className: 'flow-hud-btn flow-fit-btn', title: 'Fit to screen', on: { click: () => setZoom(1) } }, ['Fit']),
+        el('button', { className: 'flow-hud-btn flow-lock-btn', title: 'Lock canvas', on: { click: (e) => {
+          diagramWrap.classList.toggle('flow-canvas-locked');
+          e.currentTarget.classList.toggle('flow-hud-active');
+        } } }, ['Lock']),
+        el('button', { className: 'flow-hud-btn flow-minimap-btn', title: 'Minimap' }, ['Map']),
+      ]);
+      diagramWrap.append(hud);
+
+      const traceToggle = el('button', {
+        className: 'flow-trace-toggle',
+        on: { click: () => {
+          diagramWrap.classList.toggle('flow-trace-active');
+          traceToggle.classList.toggle('flow-trace-on');
+          traceToggle.textContent = diagramWrap.classList.contains('flow-trace-active') ? 'Trace On' : 'Trace Flow';
+        } },
+      }, ['Trace Flow']);
+      diagramWrap.append(traceToggle);
+
+      const contextToolbar = el('div', { className: 'flow-context-toolbar hidden' }, [
+        el('button', { className: 'flow-context-type', dataset: { type: 'process' } }, ['Process']),
+        el('button', { className: 'flow-context-type', dataset: { type: 'decision' } }, ['Decision']),
+        el('button', { className: 'flow-context-type', dataset: { type: 'input' } }, ['Input']),
+        el('button', { className: 'flow-context-type', dataset: { type: 'end' } }, ['End']),
+        el('input', { className: 'flow-context-label', type: 'text', ariaLabel: 'Edit node label' }),
+        el('button', { className: 'flow-context-delete' }, ['Delete']),
+      ]);
+      diagramWrap.append(contextToolbar);
+
       /* Canvas hint */
       diagramWrap.append(el('div', { className: 'flow-canvas-hint' }, [
         'Drag nodes to reposition \u2022 Click to inspect \u2022 Drag from \u25CF port to connect \u2022 Double-click for details',
@@ -285,9 +356,6 @@ const definition = {
       section.append(inspector);
 
       /* ---------- Interaction state ---------- */
-      let selectedNode = null;
-      let dragState = null;
-      let connectState = null;
 
       /* ---------- Inspector (update-in-place) ---------- */
       function deselectNode() {
@@ -295,6 +363,8 @@ const definition = {
           nodeElMap.get(selectedNode.key)?.classList.remove('flow-node-selected');
           selectedNode = null;
         }
+        updateEdgeHighlights();
+        contextToolbar.classList.add('hidden');
         inspectorAPI.hide();
       }
 
@@ -314,8 +384,91 @@ const definition = {
         }
         selectedNode = node;
         nodeElMap.get(node.key)?.classList.add('flow-node-selected');
+        updateEdgeHighlights();
+        showContextToolbar(node);
         inspectorAPI.show(node);
       }
+
+      function updateEdgeHighlights() {
+        if (!edgesGroup) return;
+        edgesGroup.querySelectorAll('.flow-edge').forEach(edgeEl => {
+          const active = selectedNode &&
+            (edgeEl.getAttribute('data-from') === selectedNode.key || edgeEl.getAttribute('data-to') === selectedNode.key);
+          edgeEl.classList.toggle('flow-edge-highlight', Boolean(active));
+        });
+      }
+
+      function showContextToolbar(node) {
+        const left = Math.max(8, node.x + node.w + 18);
+        const top = Math.max(8, node.y - 8);
+        contextToolbar.style.left = `${left}px`;
+        contextToolbar.style.top = `${top}px`;
+        const input = contextToolbar.querySelector('.flow-context-label');
+        input.value = node.step;
+        contextToolbar.classList.remove('hidden');
+      }
+
+      function addConnectedChild(node, type = 'process') {
+        _quickAddCount++;
+        const childStep = `${node.step} Child ${_quickAddCount}`;
+        const childKey = childStep.toLowerCase();
+        const nextValue = node.next ? `${node.next},${childStep}` : childStep;
+        emitEdit(node.idx + 1, cols.next, nextValue);
+        node.next = nextValue;
+        const child = {
+          ...node,
+          step: childStep,
+          key: childKey,
+          type,
+          next: '',
+          condition: '',
+          notes: '',
+          x: Math.round((node.x + node.w + 120) / GRID_SIZE) * GRID_SIZE,
+          y: Math.round(node.y / GRID_SIZE) * GRID_SIZE,
+          idx: node.idx,
+          index: layout.nodes.length,
+        };
+        layout.nodes.push(child);
+        layout.edges.push({ from: node, to: child, label: 'new' });
+        const childEl = renderNodeGroup(child);
+        nodeElMap.set(child.key, childEl);
+        nodesGroup.append(childEl);
+        rerenderEdges();
+        selectNode(child);
+      }
+
+      delegateEvent(contextToolbar, 'click', '.flow-context-type', (_e, button) => {
+        if (!selectedNode || cols.type < 0) return;
+        selectedNode.type = button.dataset.type;
+        emitEdit(selectedNode.idx + 1, cols.type, selectedNode.type);
+        const old = nodeElMap.get(selectedNode.key);
+        const fresh = renderNodeGroup(selectedNode);
+        old?.replaceWith(fresh);
+        nodeElMap.set(selectedNode.key, fresh);
+        fresh.classList.add('flow-node-selected');
+        inspectorAPI.show(selectedNode);
+      });
+
+      delegateEvent(contextToolbar, 'click', '.flow-context-delete', () => {
+        if (!selectedNode) return;
+        emitEdit(selectedNode.idx + 1, cols.next, '');
+        selectedNode.next = '';
+        layout.edges = layout.edges.filter(edge => edge.from !== selectedNode && edge.to !== selectedNode);
+        nodeElMap.get(selectedNode.key)?.classList.add('flow-node-muted');
+        rerenderEdges();
+        inspectorAPI.show(selectedNode);
+      });
+
+      const toolbarInput = contextToolbar.querySelector('.flow-context-label');
+      toolbarInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || !selectedNode) return;
+        e.preventDefault();
+        const value = toolbarInput.value.trim();
+        if (!value) return;
+        emitEdit(selectedNode.idx + 1, cols.step, value);
+        selectedNode.step = value;
+        inspectorAPI.show(selectedNode);
+      });
 
       /* ---------- Resolve node from DOM element ---------- */
 
@@ -327,7 +480,7 @@ const definition = {
 
       function onNodeMouseDown(e, node) {
         if (e.button !== 0) return;
-        if (e.target.closest('.flow-port')) return;
+        if (e.target.closest('.flow-port') || e.target.closest('.flow-quick-add') || diagramWrap.classList.contains('flow-canvas-locked')) return;
         const pt = clientToSVG(svgEl, e.clientX, e.clientY);
         dragState = { node, startX: pt.x, startY: pt.y, origX: node.x, origY: node.y, moved: false };
         e.preventDefault();
@@ -362,10 +515,18 @@ const definition = {
       });
 
       delegateEvent(nodesGroup, 'mousedown', '.flow-node', (e, match) => {
-        if (e.target.closest('.flow-port')) return;
+        if (e.target.closest('.flow-port') || e.target.closest('.flow-quick-add')) return;
         const key = match.getAttribute('data-key');
         const node = key && nodeFromKey(key);
         if (node) onNodeMouseDown(e, node);
+      });
+
+      delegateEvent(nodesGroup, 'click', '.flow-quick-add', (e, match) => {
+        e.stopPropagation();
+        const nodeEl = match.closest('.flow-node');
+        const key = nodeEl?.getAttribute('data-key');
+        const node = key && nodeFromKey(key);
+        if (node) addConnectedChild(node, 'process');
       });
 
       /* ---------- SVG-level mouse handling ---------- */
@@ -592,6 +753,26 @@ const definition = {
           inspectorAPI.show(node);
         }
 
+        if (selectedNode && e.key === 'Tab') {
+          e.preventDefault();
+          addConnectedChild(selectedNode, e.shiftKey ? 'decision' : 'process');
+          return;
+        }
+
+        if (selectedNode && ['1', '2', '3', '4'].includes(e.key)) {
+          e.preventDefault();
+          const types = ['start', 'process', 'decision', 'end'];
+          const type = types[Number(e.key) - 1];
+          selectedNode.type = type;
+          emitEdit(selectedNode.idx + 1, cols.type, type);
+          const old = nodeElMap.get(selectedNode.key);
+          const fresh = renderNodeGroup(selectedNode);
+          old?.replaceWith(fresh);
+          nodeElMap.set(selectedNode.key, fresh);
+          fresh.classList.add('flow-node-selected');
+          inspectorAPI.show(selectedNode);
+        }
+
         /* Ctrl+Z — undo last action */
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && undoStack.length) {
           e.preventDefault();
@@ -771,6 +952,16 @@ const definition = {
 
       tableSection.append(tableToggle, table);
       section.append(tableSection);
+
+      delegateEvent(viewToggle, 'click', '.flow-view-btn', (_e, button) => {
+        viewToggle.querySelectorAll('.flow-view-btn').forEach(btn => btn.classList.remove('flow-view-active'));
+        button.classList.add('flow-view-active');
+        const view = button.dataset.view;
+        section.classList.toggle('flow-view-table', view === 'table');
+        section.classList.toggle('flow-view-split', view === 'split');
+        table.classList.toggle('hidden', view === 'canvas');
+        tableToggle.textContent = table.classList.contains('hidden') ? '\u25B8 Show Step Table' : '\u25BE Hide Step Table';
+      });
 
       container.append(section);
     }

@@ -483,12 +483,8 @@ test('flow Delete key removes selected node connections', async ({ page }) => {
   await page.locator('.flow-canvas').first().focus();
   await page.keyboard.press('Delete');
 
-  // Wait for RAF to flush edge re-render
-  await page.waitForTimeout(100);
-
   // Should have fewer edges (at least one removed)
-  const edgesAfter = await page.locator('.flow-edge').count();
-  expect(edgesAfter).toBeLessThan(edgesBefore);
+  await expect.poll(async () => page.locator('.flow-edge').count()).toBeLessThan(edgesBefore);
 
   // emitEdit should have been called to clear the Next field
   const records = await getCreatedRecords(page);
@@ -509,17 +505,13 @@ test('flow Ctrl+Z undoes Delete and restores connections', async ({ page }) => {
   // Delete connections
   await page.locator('.flow-canvas').first().focus();
   await page.keyboard.press('Delete');
-  await page.waitForTimeout(100); // wait for RAF edge re-render
-  const edgesAfterDelete = await page.locator('.flow-edge').count();
-  expect(edgesAfterDelete).toBeLessThan(edgesBefore);
+  await expect.poll(async () => page.locator('.flow-edge').count()).toBeLessThan(edgesBefore);
 
   // Undo with Ctrl+Z
   await page.keyboard.press('Control+z');
-  await page.waitForTimeout(100); // wait for RAF edge re-render
 
   // Edges should be restored
-  const edgesAfterUndo = await page.locator('.flow-edge').count();
-  expect(edgesAfterUndo).toBe(edgesBefore);
+  await expect.poll(async () => page.locator('.flow-edge').count()).toBe(edgesBefore);
 });
 
 /* ---------- Minimap ---------- */
@@ -665,15 +657,84 @@ test('flow positions persist across re-renders via localStorage', async ({ page 
     await page.mouse.move(box.x + box.width / 2 + 50, box.y + box.height / 2 + 30, { steps: 5 });
     await page.mouse.up();
 
-    // Give localStorage time to save
-    await page.waitForTimeout(500);
-
     // Check that localStorage has flow positions
-    const stored = await page.evaluate(() => localStorage.getItem('waymark:flow-positions'));
-    expect(stored).not.toBeNull();
-    const parsed = JSON.parse(stored);
+    const stored = await page.waitForFunction(() => localStorage.getItem('waymark:flow-positions'));
+    const value = await stored.jsonValue();
+    expect(value).not.toBeNull();
+    const parsed = JSON.parse(value);
     expect(Object.keys(parsed).length).toBeGreaterThan(0);
   }
+});
+
+/* ---------- Buildout features ---------- */
+
+test('flow nodes wrap long titles and render inline type badges inside nodes', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  const longNode = page.locator('.flow-node[data-key="enter user credentials for access"]');
+  await expect(longNode.locator('.flow-node-label-line')).toHaveCount(3);
+  await expect(longNode).not.toContainText('…');
+
+  const nodeBox = await longNode.locator('.flow-node-shape').boundingBox();
+  const badgeBox = await longNode.locator('.flow-node-type-badge').boundingBox();
+  expect(badgeBox.y).toBeGreaterThanOrEqual(nodeBox.y);
+  expect(badgeBox.y + badgeBox.height).toBeLessThan(nodeBox.y + nodeBox.height);
+});
+
+test('flow edges use curved routes with centered pill labels and selected highlights', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-svg', { timeout: 5_000 });
+
+  expect(await page.locator('.flow-edge path.flow-edge-path').count()).toBeGreaterThan(0);
+  const labelBg = page.locator('.flow-edge-label-bg').first();
+  await expect(labelBg).toBeVisible();
+  await expect(labelBg).toHaveAttribute('rx', '11');
+
+  await page.locator('.flow-node').first().click();
+  await page.waitForSelector('.flow-edge-highlight', { timeout: 3_000 });
+  await expect(page.locator('.flow-edge-highlight .flow-edge-path').first()).toHaveCSS('stroke-dasharray', /8px, 5px|8 5/);
+});
+
+test('flow renders horizontal tabs, floating HUD, and header view toggle', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-tabs', { timeout: 5_000 });
+
+  await expect(page.locator('.flow-tab-active')).toContainText('User Login Flow (9)');
+  await expect(page.locator('.flow-tab-new')).toContainText('+ New Flow');
+  await expect(page.locator('.flow-hud')).toBeVisible();
+  await expect(page.locator('.flow-view-toggle')).toBeVisible();
+
+  await page.locator('.flow-view-btn[data-view="table"]').click();
+  await expect(page.locator('.flow-group')).toHaveClass(/flow-view-table/);
+  await expect(page.locator('.flow-step-table')).not.toHaveClass(/hidden/);
+});
+
+test('flow supports quick add, context toolbar, keyboard node creation, and trace mode', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-029');
+  await page.waitForSelector('.flow-node', { timeout: 5_000 });
+
+  const firstNode = page.locator('.flow-node').first();
+  await firstNode.hover();
+  await expect(firstNode.locator('.flow-quick-add')).toBeVisible();
+  await firstNode.locator('.flow-quick-add').click();
+  await expect.poll(async () => page.locator('.flow-node').count()).toBe(10);
+
+  await expect(page.locator('.flow-context-toolbar:not(.hidden)')).toBeVisible();
+  await page.locator('.flow-canvas').first().focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect.poll(async () => page.locator('.flow-node').count()).toBe(11);
+  await page.keyboard.press('3');
+
+  const records = await getCreatedRecords(page);
+  expect(records.some(r => r.type === 'cell-update' && r.value === 'decision')).toBe(true);
+
+  await page.locator('.flow-trace-toggle').click();
+  await expect(page.locator('.flow-diagram-wrap')).toHaveClass(/flow-trace-active/);
 });
 
 /* ---------- Directory view ---------- */

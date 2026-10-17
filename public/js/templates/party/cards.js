@@ -102,6 +102,33 @@ export function buildHero(ctx) {
 
 /** Build an inline editable control for a field in an expanded row. */
 function fieldControl(ctx, cat, rowIdx, field, value) {
+  if (field.type === 'rsvp') {
+    const current = rsvpValue(value);
+    return el('div', { className: 'party-segmented', role: 'group', 'aria-label': 'RSVP status' },
+      field.options.map(opt => el('button', {
+        className: `party-segment${opt === current ? ' party-segment-active' : ''}`,
+        type: 'button',
+        'aria-pressed': opt === current ? 'true' : 'false',
+        on: { click: () => ctx.handlers.inlineEdit(cat.key, rowIdx, field.col, opt) },
+      }, [opt])),
+    );
+  }
+  if (field.type === 'sent') {
+    const sent = /^sent$/i.test((value || '').trim());
+    return el('button', {
+      className: `party-note-check${sent ? ' party-note-check-sent' : ''}`,
+      type: 'button',
+      'aria-pressed': sent ? 'true' : 'false',
+      on: {
+        click: () => {
+          const nextSent = !sent;
+          const updates = { [field.col]: nextSent ? 'Sent' : 'Pending' };
+          updates[4] = nextSent ? todayIso() : '';
+          ctx.handlers.updateRow(cat.key, rowIdx, updates);
+        },
+      },
+    }, [sent ? '✓ Sent' : '○ Pending']);
+  }
   if (field.type === 'status') {
     const opts = field.options;
     const badge = el('button', {
@@ -351,6 +378,18 @@ function wireDrag(ctx, card, key) {
 
 function slug(v) {
   return (v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+function rsvpValue(v) {
+  const raw = (v || '').trim();
+  if (/^yes$/i.test(raw)) return 'Attending';
+  if (/^no$/i.test(raw)) return 'Declined';
+  if (/^pending$/i.test(raw)) return 'Tentative';
+  return raw || 'Tentative';
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export { META_FIELDS };

@@ -189,3 +189,64 @@ test('budget directoryView shows folder refresh button in header', async ({ page
   await page.waitForSelector('.budget-directory', { timeout: 8_000 });
   await expect(page.locator('#folder-refresh-btn')).toBeVisible();
 });
+
+/* ---------- Buildout: onboarding preview + statement dropzone ---------- */
+
+test('budget preview toggle renders sample dashboard with clear banner', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-preview-toggle', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-statement-dropzone')).toBeVisible();
+  await expect(page.locator('.budget-statement-hint')).toContainText('CSV');
+
+  await page.click('.budget-preview-toggle');
+  await page.waitForSelector('.budget-preview-banner', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-preview-banner')).toContainText('Clear & Start Mine');
+  await expect(page.locator('.budget-cashflow')).toBeVisible();
+  await expect(page.locator('.budget-chart .chart-svg')).toBeVisible();
+  expect(await page.locator('.budget-row').count()).toBeGreaterThanOrEqual(5);
+});
+
+/* ---------- Buildout: KPI strip + envelope progress ---------- */
+
+test('budget KPI strip shows date range controls and envelope warning bars', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-summary', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-range-switcher')).toBeVisible();
+  await expect(page.locator('.budget-range-month')).toContainText('Oct 2026');
+  await expect(page.locator('.budget-rate-track')).toBeVisible();
+  await expect(page.locator('.budget-delta')).toHaveCount(3);
+
+  await page.waitForSelector('.budget-envelope', { timeout: 5_000 });
+  expect(await page.locator('.budget-envelope-amber').count()).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('.budget-envelope-label').first()).toContainText('Planned vs Actual');
+});
+
+/* ---------- Buildout: quick-add, badges, insights ---------- */
+
+test('budget quick-add parses natural language and records appended row', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-quick-add-input', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-insight-chip').first()).toContainText('recurring');
+  await expect(page.locator('.budget-row-recurring').first()).toBeVisible();
+  await expect(page.locator('.budget-row-split').first()).toBeVisible();
+
+  await page.fill('.budget-quick-add-input', 'Home Depot $142.50 yesterday #solar');
+  await page.press('.budget-quick-add-input', 'Enter');
+  await page.waitForSelector('.toast', { timeout: 3_000 });
+
+  const records = await getCreatedRecords(page);
+  const appendRecord = records.find(r => r.type === 'row-append');
+  expect(appendRecord).toBeTruthy();
+  const added = appendRecord.rows[0];
+  expect(added[0]).toBe('Home Depot');
+  expect(added[1]).toBe('-142.5');
+  expect(added[2]).toBe('Solar');
+  await expect(page.locator('.budget-row-text').last()).toContainText('Home Depot');
+});

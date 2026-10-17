@@ -24,6 +24,79 @@ export const LANE_PAGE_SIZE = 50;
 /* ---------- Pure Functions ---------- */
 
 /**
+ * Normalize spoken stage words to canonical lane labels.
+ * @param {string} value
+ * @returns {string}
+ */
+export function normalizeVoiceStage(value) {
+  const v = (value || '').toLowerCase().trim().replace(/[-_]+/g, ' ');
+  if (!v) return '';
+  if (/^(backlog|back log|idea|ideas)$/.test(v)) return 'Backlog';
+  if (/^(to do|todo|ready|planned|queued|next)$/.test(v)) return 'To Do';
+  if (/^(in progress|progress|doing|active|wip|started)$/.test(v)) return 'In Progress';
+  if (/^(qa|q a|review|testing|verify|verification)$/.test(v)) return 'QA';
+  if (/^(done|complete|completed|finished|closed|shipped)$/.test(v)) return 'Done';
+  if (/^(rejected|reject|declined|invalid|wontfix|won't fix)$/.test(v)) return 'Rejected';
+  if (/^(archived|archive)$/.test(v)) return 'Archived';
+  return '';
+}
+
+/**
+ * Parse a spoken task transcript into kanban row fields.
+ * @param {string} transcript
+ * @returns {{title: string, description: string, priority: string, stage: string}}
+ */
+export function parseVoiceTask(transcript) {
+  const original = (transcript || '').trim();
+  const result = { title: '', description: '', priority: 'P2', stage: '' };
+  if (!original) return result;
+
+  const priorityMatch = original.match(/\b(?:priority\s*)?(p[0-3]|critical|urgent|high|medium|normal|low)\b/i);
+  if (priorityMatch) {
+    const pri = priorityMatch[1].toLowerCase();
+    if (pri === 'critical' || pri === 'urgent' || pri === 'p0') result.priority = 'P0';
+    else if (pri === 'high' || pri === 'p1') result.priority = 'P1';
+    else if (pri === 'low' || pri === 'p3') result.priority = 'P3';
+    else result.priority = 'P2';
+  }
+
+  const stageWords = '(backlog|back log|to do|todo|in progress|doing|active|wip|qa|q a|review|testing|done|complete|completed|rejected|reject|archived|archive)';
+  const stageMatch = original.match(new RegExp(`\\b(?:stage|column|lane|status)\\s+(?:is\\s+)?${stageWords}\\b`, 'i'))
+    || original.match(new RegExp(`\\b(?:in|into|to|on|under)\\s+(?:the\\s+)?${stageWords}(?:\\s+(?:column|lane|stage))?\\b`, 'i'));
+  if (stageMatch) result.stage = normalizeVoiceStage(stageMatch[1]);
+
+  const descriptionMatch = original.match(/\b(?:description|details|detail|notes?|with details?)\s+(.*?)(?=\s+\b(?:priority|stage|column|lane|status)\b|\s+\bp[0-3]\b|$)/i);
+  if (descriptionMatch) result.description = descriptionMatch[1].trim().replace(/[.。]+$/, '');
+
+  const quotedTitle = original.match(/\b(?:called|named|titled|title)\s+["“”']([^"“”']+)["“”']/i);
+  if (quotedTitle) {
+    result.title = quotedTitle[1].trim();
+  } else {
+    const titleMatch = original.match(/\b(?:called|named|titled|title|task|card)\s+(.*?)(?=\s+\b(?:description|details|detail|notes?|with details?|priority|stage|column|lane|status)\b|\s+\bp[0-3]\b|$)/i);
+    if (titleMatch) result.title = titleMatch[1].trim();
+  }
+
+  if (!result.title) {
+    let cleaned = original
+      .replace(/\b(?:please\s+)?(?:create|add|make|new)\s+(?:a\s+)?(?:task|card|ticket)?\b/ig, ' ')
+      .replace(/\b(?:description|details|detail|notes?|with details?)\s+.*$/i, ' ')
+      .replace(/\b(?:priority\s*)?(?:p[0-3]|critical|urgent|high|medium|normal|low)\b/ig, ' ')
+      .replace(new RegExp(`\\b(?:stage|column|lane|status)\\s+(?:is\\s+)?${stageWords}\\b`, 'ig'), ' ')
+      .replace(new RegExp(`\\b(?:in|into|to|on|under)\\s+(?:the\\s+)?${stageWords}(?:\\s+(?:column|lane|stage))?\\b`, 'ig'), ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    cleaned = cleaned.replace(/^(?:called|named|titled|title|task|card)\s+/i, '').trim();
+    result.title = cleaned;
+  }
+
+  result.title = (result.title || 'Voice Task')
+    .replace(/^(?:called|named|titled|title)\s+/i, '')
+    .replace(/[.。]+$/, '')
+    .trim();
+  return result;
+}
+
+/**
  * Deterministic color for a project name.
  * @param {string} name
  * @returns {string} hex color

@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn } from '../shared.js';
-import { parseStatement, reParsePDFTransactions } from './parser.js';
+import { parseStatement, reParsePDFTransactions, parseQuickAddBudgetEntry } from './parser.js';
 
 /* ---------- Helpers ---------- */
 
@@ -15,6 +15,75 @@ function parseAmt(raw) {
 
 /** Stable color palette for category chart segments */
 const CAT_COLORS = ['#059669','#2563eb','#d97706','#7c3aed','#dc2626','#0891b2','#be185d','#65a30d'];
+
+/** Sample onboarding transactions shown before users add their own data */
+const SAMPLE_ROWS = [
+  ['Paycheck', '5200', 'Income', '2026-10-01', ''],
+  ['Rent', '-1500', 'Housing', '2026-10-01', '1500'],
+  ['Groceries', '-420', 'Food', '2026-10-05', '500'],
+  ['Home Depot Solar Parts', '-142.50', 'Home', '2026-10-08', '300'],
+  ['Internet', '-70', 'Utilities', '2026-10-10', '90'],
+  ['Streaming Services', '-32', 'Entertainment', '2026-10-12', '45'],
+];
+
+/** Format a number as whole-dollar currency */
+function money(value) {
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
+/** Return YYYY-MM from a row date */
+function rowMonth(row, dateCol) {
+  const date = cell(row, dateCol);
+  return /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : '';
+}
+
+/** Compute income and expense totals for a row set */
+function computeTotals(rows, cols) {
+  let income = 0, expense = 0;
+  for (const row of rows) {
+    const amt = parseAmt(cell(row, cols.amount));
+    if (amt > 0) income += amt; else expense += Math.abs(amt);
+  }
+  return { income, expense, balance: income - expense };
+}
+
+/** Compute month-over-month delta for a metric */
+function computeDelta(rows, cols, metric) {
+  if (cols.date < 0) return 0;
+  const byMonth = new Map();
+  for (const row of rows) {
+    const month = rowMonth(row, cols.date);
+    if (!month) continue;
+    const amt = parseAmt(cell(row, cols.amount));
+    const totals = byMonth.get(month) || { income: 0, expense: 0 };
+    if (amt > 0) totals.income += amt; else totals.expense += Math.abs(amt);
+    byMonth.set(month, totals);
+  }
+  const months = [...byMonth.keys()].sort();
+  if (months.length < 2) return 0;
+  const current = byMonth.get(months[months.length - 1]);
+  const previous = byMonth.get(months[months.length - 2]);
+  const currentValue = metric === 'balance' ? current.income - current.expense : current[metric];
+  const previousValue = metric === 'balance' ? previous.income - previous.expense : previous[metric];
+  if (!previousValue) return 0;
+  return Math.round(((currentValue - previousValue) / Math.abs(previousValue)) * 100);
+}
+
+/** Build a short month label for the date range switcher */
+function currentMonthLabel() {
+  const now = new Date();
+  return now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/** Recurring payment heuristic used for badges and insights */
+function isRecurringTransaction(text, category) {
+  return /\b(rent|mortgage|internet|streaming|subscription|membership|gym|insurance|electric|utility)\b/i.test(`${text} ${category}`);
+}
+
+/** Split transaction heuristic used for row badges */
+function isSplitTransaction(text, category) {
+  return /\bsplit\b/i.test(text) || /[/+]/.test(category);
+}
 
 /* ---------- Statement Upload Modal ---------- */
 
@@ -400,32 +469,110 @@ const definition = {
   },
 
   render(container, rows, cols, template) {
-    /* ---------- Compute totals ---------- */
-    let totalIncome = 0, totalExpense = 0;
-    for (const row of rows) {
-      const amt = parseAmt(cell(row, cols.amount));
-      if (amt > 0) totalIncome += amt; else totalExpense += Math.abs(amt);
-    }
-    const balance = totalIncome - totalExpense;
+    container.innerHTML = '';
+    const isPreviewing = Boolean(template._budgetPreviewing);
+    const activeRows = isPreviewing ? SAMPLE_ROWS : rows;
 
-    /* ---------- Summary bar with upload button ---------- */
+    /* ---------- Empty/onboarding actions ---------- */
+    const previewBtn = el('button', {
+      className: 'btn budget-preview-toggle',
+      type: 'button',
+    }, ['Preview with Sample Data']);
+
+    previewBtn.addEventListener('click', () => {
+      template._budgetPreviewing = true;
+      definition.render(container, rows, cols, template);
+    });
+
+    const statementCard = el('div', {
+      className: 'budget-statement-dropzone',
+      role: 'button',
+      tabindex: '0',
+    }, [
+      el('div', { className: 'budget-statement-icon' }, ['\uD83C\uDFE6']),
+      el('div', { className: 'budget-statement-title' }, ['Upload Statement']),
+      el('div', { className: 'budget-statement-hint' }, ['Drop CSV, OFX, TXT, or PDF statements for parsing and auto-categorization']),
+    ]);
+
+    const openUpload = () => {
+      const totalCols = template._totalColumns || 5;
+      openUploadModal(cols, totalCols, template._onAddRow);
+    };
+    statementCard.addEventListener('click', openUpload);
+    statementCard.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openUpload();
+      }
+    });
+
+    if (activeRows.length === 0) {
+      container.append(el('div', { className: 'budget-empty' }, [
+        el('div', { className: 'budget-empty-copy' }, [
+          el('strong', {}, ['Start with a statement or a sample budget']),
+          el('span', {}, ['Preview the full dashboard instantly, then clear it when you are ready to add your own transactions.']),
+        ]),
+        el('div', { className: 'budget-empty-actions' }, [previewBtn, statementCard]),
+      ]));
+      return;
+    }
+
+    if (isPreviewing) {
+      const clearBtn = el('button', {
+        className: 'btn btn-secondary budget-preview-clear',
+        type: 'button',
+      }, ['Clear & Start Mine']);
+      clearBtn.addEventListener('click', () => {
+        template._budgetPreviewing = false;
+        definition.render(container, rows, cols, template);
+      });
+      container.append(el('div', { className: 'budget-preview-banner' }, [
+        el('span', {}, ['Sample data preview — explore rings, cashflow, and transactions without saving anything.']),
+        clearBtn,
+      ]));
+    }
+
+    /* ---------- Compute totals ---------- */
+    const { income: totalIncome, expense: totalExpense, balance } = computeTotals(activeRows, cols);
+    const burnRate = totalIncome > 0 ? Math.min(100, Math.round((totalExpense / totalIncome) * 100)) : 0;
+    const savingsRate = totalIncome > 0 ? Math.max(0, Math.round((balance / totalIncome) * 100)) : 0;
+    const monthLabel = currentMonthLabel();
+
+    /* ---------- KPI strip with date range switcher ---------- */
     const summaryBar = el('div', { className: 'budget-summary' }, [
-      el('div', { className: 'budget-summary-item budget-income' }, [
+      el('div', { className: 'budget-range-switcher' }, [
+        el('button', { className: 'budget-range-btn', type: 'button' }, ['‹']),
+        el('span', { className: 'budget-range-month' }, [monthLabel]),
+        el('button', { className: 'budget-range-btn', type: 'button' }, ['›']),
+        el('button', { className: 'budget-range-pill', type: 'button' }, ['YTD']),
+        el('button', { className: 'budget-range-pill active', type: 'button' }, ['All Time']),
+      ]),
+      el('div', { className: 'budget-summary-item budget-kpi-card budget-income' }, [
         el('span', { className: 'budget-summary-label' }, ['Income']),
-        el('span', { className: 'budget-summary-value' }, [`$${totalIncome.toLocaleString()}`]),
+        el('span', { className: 'budget-summary-value' }, [money(totalIncome)]),
+        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'income') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'income')}% MoM`]),
       ]),
-      el('div', { className: 'budget-summary-item budget-expense' }, [
+      el('div', { className: 'budget-summary-item budget-kpi-card budget-expense' }, [
         el('span', { className: 'budget-summary-label' }, ['Expenses']),
-        el('span', { className: 'budget-summary-value' }, [`$${totalExpense.toLocaleString()}`]),
+        el('span', { className: 'budget-summary-value' }, [money(totalExpense)]),
+        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'expense') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'expense')}% MoM`]),
       ]),
-      el('div', { className: `budget-summary-item ${balance >= 0 ? 'budget-positive' : 'budget-negative'}` }, [
+      el('div', { className: `budget-summary-item budget-kpi-card ${balance >= 0 ? 'budget-positive' : 'budget-negative'}` }, [
         el('span', { className: 'budget-summary-label' }, ['Balance']),
-        el('span', { className: 'budget-summary-value' }, [`$${balance.toLocaleString()}`]),
+        el('span', { className: 'budget-summary-value' }, [money(balance)]),
+        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'balance') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'balance')}% MoM`]),
+      ]),
+      el('div', { className: 'budget-rate-panel' }, [
+        el('div', { className: 'budget-rate-label' }, [`Burn ${burnRate}% · Save ${savingsRate}%`]),
+        el('div', { className: 'budget-rate-track' }, [
+          el('span', { className: 'budget-rate-fill budget-rate-burn', style: { width: `${burnRate}%` } }),
+          el('span', { className: 'budget-rate-fill budget-rate-save', style: { width: `${savingsRate}%` } }),
+        ]),
       ]),
     ]);
     container.append(summaryBar);
 
-    /* ---------- Upload Statement button ---------- */
+    /* ---------- Upload and preview actions ---------- */
     const uploadBtn = el('button', {
       className: 'btn budget-upload-btn',
       type: 'button',
@@ -439,8 +586,83 @@ const definition = {
 
     container.append(el('div', { className: 'budget-actions' }, [uploadBtn]));
 
+    if (!isPreviewing) {
+      container.append(el('div', { className: 'budget-onboarding-actions' }, [previewBtn, statementCard]));
+    }
+
+    /* ---------- Cashflow bars ---------- */
+    const maxCash = Math.max(totalIncome, totalExpense, 1);
+    container.append(el('div', { className: 'budget-cashflow' }, [
+      el('div', { className: 'budget-cashflow-row' }, [
+        el('span', { className: 'budget-cashflow-label' }, ['Income']),
+        el('div', { className: 'budget-cashflow-track' }, [
+          el('span', { className: 'budget-cashflow-fill budget-cashflow-income', style: { width: `${Math.round((totalIncome / maxCash) * 100)}%` } }),
+        ]),
+        el('span', { className: 'budget-cashflow-value' }, [money(totalIncome)]),
+      ]),
+      el('div', { className: 'budget-cashflow-row' }, [
+        el('span', { className: 'budget-cashflow-label' }, ['Expenses']),
+        el('div', { className: 'budget-cashflow-track' }, [
+          el('span', { className: 'budget-cashflow-fill budget-cashflow-expense', style: { width: `${Math.round((totalExpense / maxCash) * 100)}%` } }),
+        ]),
+        el('span', { className: 'budget-cashflow-value' }, [money(totalExpense)]),
+      ]),
+    ]));
+
     /* ---------- Group by category ---------- */
-    const groups = groupByColumn(rows, cols.category, 'Uncategorized');
+    const groups = groupByColumn(activeRows, cols.category, 'Uncategorized');
+
+    /* ---------- Quick-add and deterministic insight chips ---------- */
+    const quickAddInput = el('input', {
+      className: 'budget-quick-add-input',
+      type: 'text',
+      placeholder: 'Quick add: Home Depot $142.50 yesterday #solar',
+    });
+    quickAddInput.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const parsed = parseQuickAddBudgetEntry(quickAddInput.value);
+      if (!parsed) {
+        showToast('Add an amount, merchant, and optional date/tag', 'error');
+        return;
+      }
+      const totalCols = template._totalColumns || 5;
+      const row = new Array(totalCols).fill('');
+      if (cols.text >= 0) row[cols.text] = parsed.description;
+      if (cols.amount >= 0) row[cols.amount] = parsed.amount;
+      if (cols.category >= 0) row[cols.category] = parsed.category;
+      if (cols.date >= 0) row[cols.date] = parsed.date;
+      if (template._onAddRow) await template._onAddRow([row]);
+      rows.push(row);
+      quickAddInput.value = '';
+      showToast('Quick-added transaction', 'success');
+      template._budgetPreviewing = false;
+      definition.render(container, rows, cols, template);
+    });
+
+    const recurringCount = activeRows.filter(row => isRecurringTransaction(cell(row, cols.text), cell(row, cols.category))).length;
+    let anomalyText = 'No envelope anomalies';
+    for (const [cat, items] of groups) {
+      let spent = 0, planned = 0;
+      for (const { row } of items) {
+        const amt = parseAmt(cell(row, cols.amount));
+        if (amt < 0) spent += Math.abs(amt);
+        if (cols.budget >= 0) planned += parseAmt(cell(row, cols.budget));
+      }
+      if (planned > 0 && spent / planned >= 0.85) {
+        anomalyText = `${cat} is at ${Math.round((spent / planned) * 100)}% of plan`;
+        break;
+      }
+    }
+    const insightChips = [
+      el('span', { className: 'budget-insight-chip' }, [`${recurringCount} recurring payments projected`]),
+      el('span', { className: 'budget-insight-chip budget-insight-anomaly' }, [anomalyText]),
+    ];
+
+    container.append(el('div', { className: 'budget-table-tools' }, [
+      quickAddInput,
+      el('div', { className: 'budget-insights' }, insightChips),
+    ]));
 
     /* ---------- Category chart (SVG donut pie) ---------- */
     if (cols.category >= 0 && totalExpense > 0) {
@@ -490,10 +712,21 @@ const definition = {
       const subtotalText = cols.budget >= 0 && catBudgeted > 0
         ? `$${Math.abs(catSpent).toLocaleString()} / $${catBudgeted.toLocaleString()}`
         : `$${Math.abs(catSpent).toLocaleString()}`;
+      const actualSpent = Math.abs(catSpent);
+      const progress = catBudgeted > 0 ? Math.round((actualSpent / catBudgeted) * 100) : 0;
+      const envelopeClass = progress > 100 ? 'budget-envelope-red'
+        : progress >= 85 ? 'budget-envelope-amber'
+          : 'budget-envelope-green';
 
       container.append(el('div', { className: `budget-category-label ${overBudget ? 'budget-category-over' : ''}` }, [
         el('span', {}, [cat]),
         el('span', { className: 'budget-category-subtotal' }, [subtotalText]),
+        catBudgeted > 0 ? el('div', { className: `budget-envelope ${envelopeClass}` }, [
+          el('span', { className: 'budget-envelope-label' }, [`Planned vs Actual · ${progress}%`]),
+          el('span', { className: 'budget-envelope-track' }, [
+            el('span', { className: 'budget-envelope-fill', style: { width: `${Math.min(progress, 120)}%` } }),
+          ]),
+        ]) : null,
       ]));
 
       /* Individual rows */
@@ -505,11 +738,20 @@ const definition = {
         const budget = cell(row, cols.budget);
         const amtNum = parseAmt(amount);
         const isIncome = amtNum > 0;
+        const category = cell(row, cols.category);
+        const badges = [];
+        if (isRecurringTransaction(text, category)) {
+          badges.push(el('span', { className: 'budget-row-badge budget-row-recurring' }, ['Recurring']));
+        }
+        if (isSplitTransaction(text, category)) {
+          badges.push(el('span', { className: 'budget-row-badge budget-row-split' }, ['Split']));
+        }
 
         container.append(el('div', { className: 'budget-row' }, [
           el('div', { className: 'budget-row-info' }, [
             editableCell('span', { className: 'budget-row-text' }, text, rowIdx, cols.text),
             cols.date >= 0 ? editableCell('span', { className: 'budget-row-date' }, date, rowIdx, cols.date) : null,
+            badges.length ? el('span', { className: 'budget-row-badges' }, badges) : null,
           ]),
           cols.budget >= 0 ? editableCell('span', { className: 'budget-row-limit' }, budget, rowIdx, cols.budget) : null,
           editableCell('span', { className: `budget-amount ${isIncome ? 'budget-amt-positive' : 'budget-amt-negative'}` }, amount || '$0', rowIdx, cols.amount),
