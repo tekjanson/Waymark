@@ -221,6 +221,7 @@
   min-width: 0;
   min-height: 0;
   background: #eef2f9;
+  position: relative;
 }
 
 .floorplan-statusbar {
@@ -1084,17 +1085,19 @@
 .floorplan-export-menu button:hover { background: var(--color-bg); }
 .floorplan-floating-hud {
   position: absolute;
-  left: 50%;
+  left: 14px;
   top: 12px;
-  transform: translateX(-50%);
+  transform: none;
   z-index: 5;
   width: auto;
-  max-width: calc(100% - 44px);
+  max-width: calc(100% - 28px);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.82);
   backdrop-filter: blur(10px);
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.22);
+  pointer-events: none;
 }
+.floorplan-floating-hud * { pointer-events: none; }
 .floorplan-snap-hud {
   position: absolute;
   right: 22px;

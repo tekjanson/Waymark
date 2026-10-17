@@ -1014,3 +1014,57 @@ test('feature 18 mobile viewport uses docked slide-up panels', async ({ page }) 
   const overflow = await page.locator('.floorplan-board').evaluate(node => getComputedStyle(node).overflow);
   expect(overflow).toBe('hidden');
 });
+
+/* ---------- Regression: the floating status HUD must never cover or block toolbar buttons ---------- */
+
+test('floating HUD never covers or blocks the top toolbar buttons', async ({ page }) => {
+  await openPlan(page);
+  await page.waitForSelector('.floorplan-floating-hud', { timeout: 5_000 });
+
+  const result = await page.evaluate(() => {
+    const hud = document.querySelector('.floorplan-floating-hud');
+    const topbar = document.querySelector('.floorplan-topbar');
+    const buttons = [...document.querySelectorAll(
+      '.floorplan-view-btn, .floorplan-secondary-btn, .floorplan-export-btn'
+    )];
+    const coveredButtons = [];
+    for (const btn of buttons) {
+      const r = btn.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue; // hidden (e.g. mobile overflow)
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const topEl = document.elementFromPoint(cx, cy);
+      // Only the HUD covering a button is a regression — the HUD must never sit on top of a control.
+      if (hud && topEl && hud.contains(topEl)) {
+        coveredButtons.push((btn.textContent || '').trim());
+      }
+    }
+    const hudRect = hud ? hud.getBoundingClientRect() : null;
+    const barRect = topbar ? topbar.getBoundingClientRect() : null;
+    return {
+      hudPointerEvents: hud ? getComputedStyle(hud).pointerEvents : 'MISSING',
+      coveredButtons,
+      hudBelowToolbar: !!(hudRect && barRect) && hudRect.top >= barRect.bottom - 1,
+    };
+  });
+
+  // The HUD must not intercept pointer input...
+  expect(result.hudPointerEvents).toBe('none');
+  // ...must sit below the toolbar row (not overlapping the button area)...
+  expect(result.hudBelowToolbar).toBe(true);
+  // ...and must never visually sit on top of any toolbar button.
+  expect(result.coveredButtons).toEqual([]);
+});
+
+test('view-switcher buttons remain clickable (not blocked by the HUD)', async ({ page }) => {
+  await openPlan(page);
+  await page.waitForSelector('.floorplan-floating-hud', { timeout: 5_000 });
+
+  const interior = page.locator('.floorplan-view-btn[data-view="interior"]');
+  await interior.click();
+  await expect(interior).toHaveClass(/active/);
+
+  const blueprint = page.locator('.floorplan-view-btn[data-view="blueprint"]');
+  await blueprint.click();
+  await expect(blueprint).toHaveClass(/active/);
+});
