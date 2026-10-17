@@ -517,30 +517,48 @@
 .floorplan-custom-layers { display: flex; flex-direction: column; gap: 5px; }
 .floorplan-custom-layer-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  gap: 5px;
 }
 .floorplan-custom-layer-main {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: #f8fafc;
+  transition: background var(--transition), border-color var(--transition);
+}
+.floorplan-custom-layer-main:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+.floorplan-custom-layer-main.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e3a8a;
 }
 .floorplan-custom-layer-name {
   flex: 1 1 auto;
   min-width: 0;
-  height: 24px;
+  height: 20px;
   border: 0;
-  border-radius: 5px;
-  padding: 0 4px;
-  font-size: 0.76rem;
+  border-radius: 0;
+  padding: 0;
+  font-size: 0.78rem;
   font-weight: 700;
   color: var(--color-text);
   background: transparent;
+  line-height: 1.2;
 }
-.floorplan-custom-layer-name:focus { outline: 2px solid #93c5fd; background: #fff; }
+.floorplan-custom-layer-name:focus {
+  outline: none;
+  background: transparent;
+}
 .floorplan-custom-layer-row button {
   flex: 0 0 auto;
   width: 28px;
@@ -554,16 +572,29 @@
   align-items: center;
   justify-content: center;
 }
+.floorplan-custom-layer-row button:hover { background: #f1f5f9; }
+.floorplan-custom-layer-row button:disabled { opacity: 0.35; cursor: not-allowed; }
 .floorplan-custom-layer-main .floorplan-custom-visible {
   width: 22px;
   height: 22px;
-  border: 0;
-  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
   padding: 0;
+  font-size: 0.68rem;
+  line-height: 1;
 }
-.floorplan-custom-layer-main .floorplan-custom-visible:hover { background: rgba(148, 163, 184, 0.18); }
-.floorplan-custom-layer-row button:hover { background: #f1f5f9; }
-.floorplan-custom-layer-row button:disabled { opacity: 0.35; cursor: not-allowed; }
+.floorplan-custom-layer-main.active .floorplan-custom-visible {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.floorplan-custom-layer-main .floorplan-custom-visible:hover {
+  background: rgba(148, 163, 184, 0.18);
+}
+.floorplan-custom-layer-main.active .floorplan-custom-visible:hover {
+  background: #1d4ed8;
+}
 .floorplan-custom-lock.locked { background: #fef3c7; border-color: #f59e0b; }
 .floorplan-add-layer-btn {
   margin-top: 4px;

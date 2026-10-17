@@ -174,6 +174,23 @@ test('layer panel toggles room visibility', async ({ page }) => {
   await expect(page.locator('.floorplan-room')).toHaveCount(8);
 });
 
+test('custom layer rows stay editable and visible in the layer panel', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await page.click('.floorplan-panel-tab[data-tab="layers"]');
+  await page.click('.floorplan-add-layer-btn');
+
+  const nameInput = page.locator('.floorplan-custom-layer-name').first();
+  await expect(nameInput).toBeVisible();
+  await nameInput.fill('Accent Lighting');
+  await nameInput.blur();
+  await expect(nameInput).toHaveValue('Accent Lighting');
+  await expect(page.locator('.floorplan-custom-layer-row').first()).toBeVisible();
+  await expect(page.locator('.floorplan-layer-lock.floorplan-custom-lock')).toHaveCount(1);
+});
+
 test('symbol panel places household fixtures quickly', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
