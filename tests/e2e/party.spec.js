@@ -91,13 +91,29 @@ test('thank you notes render progress and persist sent toggles', async ({ page }
   expect(records.some(r => r.type === 'tab-write' && r.tabTitle === 'Thank You Notes')).toBe(true);
 });
 
-test('RSVP segments expose mobile-sized touch targets', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 800 });
+test('RSVP segmented selector spans the guest row on phone viewports', async ({ page }) => {
   await setupApp(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await navigateToSheet(page, SHEET);
-  await page.waitForSelector('.party-card-guests .party-segment', { timeout: 5_000 });
-  const box = await card(page, 'guests').locator('.party-segment').first().boundingBox();
-  expect(box.height).toBeGreaterThanOrEqual(44);
+  await page.waitForSelector('.party-card-guests .party-segmented', { timeout: 5_000 });
+  const guestRow = card(page, 'guests').locator('.party-item').first();
+  const segmented = guestRow.locator('.party-segmented');
+  const rowBox = await guestRow.boundingBox();
+  const segmentedBox = await segmented.boundingBox();
+  expect(segmentedBox.width).toBeGreaterThanOrEqual(rowBox.width - 8);
+
+  const segmentBoxes = await segmented.locator('.party-segment').evaluateAll(nodes =>
+    nodes.map(node => {
+      const rect = node.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    }),
+  );
+  expect(segmentBoxes).toHaveLength(3);
+  for (const box of segmentBoxes) {
+    expect(box.height).toBeGreaterThanOrEqual(40);
+  }
+  const widths = segmentBoxes.map(box => box.width);
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
 });
 
 test('toggling a decoration yes/no persists to the Decorations tab', async ({ page }) => {

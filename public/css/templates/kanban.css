@@ -51,6 +51,61 @@
   width: 100%; margin-top: 6px;
 }
 
+.kanban-voice-input-wrap {
+  display: flex; flex-direction: column; gap: 6px;
+  width: 100%; padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+
+.kanban-voice-input-row {
+  display: flex; align-items: center; gap: 6px;
+}
+
+.kanban-voice-input {
+  flex: 1; min-width: 180px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.kanban-voice-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.kanban-voice-submit,
+.kanban-voice-cancel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.kanban-voice-submit {
+  padding: 6px 10px;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.kanban-voice-cancel {
+  width: 30px; height: 30px;
+}
+
+.kanban-voice-help {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
 .kanban-sort-label {
   font-size: 0.78rem; color: var(--color-text-muted);
   display: flex; align-items: center; gap: 4px;

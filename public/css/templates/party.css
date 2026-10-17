@@ -590,6 +590,39 @@
 @media (max-width: 480px) {
   .party-hero-title { font-size: 1.35rem; }
   .party-links { grid-template-columns: 1fr; }
+
+  .party-card-guests .party-item {
+    display: block;
+  }
+
+  .party-card-guests .party-item-cells {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .party-card-guests .party-cell-rsvp {
+    width: 100%;
+  }
+
+  .party-card-guests .party-segmented {
+    display: flex;
+    width: 100%;
+    align-self: stretch;
+    gap: 5px;
+    margin-top: 2px;
+    padding: 5px;
+  }
+
+  .party-card-guests .party-segment {
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 10px 8px;
+    text-align: center;
+  }
+
+  .party-card-guests .party-row-del {
+    margin-top: 8px;
+  }
 }
 
 /* RSVP segmented selector */

@@ -194,6 +194,7 @@ function roomBoxAt(items, x, y) {
  * @param {{x:number,y:number,heading:number,fov?:number}} camera — plan-space camera
  */
 export function renderPerspectiveView(host, items, camera) {
+  const options = arguments[3] || {};
   host.innerHTML = '';
   const VW = 900;
   const VH = 500;
@@ -252,7 +253,12 @@ export function renderPerspectiveView(host, items, camera) {
   svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: horizon, fill: 'url(#wm-ceil)' }));
   svg.append(svgEl('rect', { x: 0, y: horizon, width: VW, height: VH - horizon, fill: 'url(#wm-floor)' }));
 
-  // Room walls as depth-sorted quads
+  const planWalls = (items || [])
+    .filter(i => i && (i.kind === 'wall' || /wall/i.test(String(i.type || ''))))
+    .map(wallEndpoints);
+
+  // Room/wall segments as depth-sorted quads. Prefer authored walls so
+  // bumpouts and non-rectangular shells render instead of a plain box.
   const corners = [
     { x: room.x, y: room.y },
     { x: room.x + room.w, y: room.y },
@@ -260,23 +266,24 @@ export function renderPerspectiveView(host, items, camera) {
     { x: room.x, y: room.y + room.h },
   ];
   const wallQuads = [];
-  for (let i = 0; i < 4; i += 1) {
-    const p1 = corners[i];
-    const p2 = corners[(i + 1) % 4];
+  const sourceWalls = planWalls.length > 0
+    ? planWalls.map(e => [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }])
+    : corners.map((p, i) => [p, corners[(i + 1) % corners.length]]);
+  sourceWalls.forEach(([p1, p2]) => {
     const clipped = clipNear(toCam(p1.x, p1.y), toCam(p2.x, p2.y));
-    if (!clipped) continue;
+    if (!clipped) return;
     const [ca, cb] = clipped;
     const fa = proj(ca, 0);
     const fb = proj(cb, 0);
     const ta = proj(ca, ceilH);
     const tb = proj(cb, ceilH);
     wallQuads.push({ pts: `${fa.x},${fa.y} ${fb.x},${fb.y} ${tb.x},${tb.y} ${ta.x},${ta.y}`, depth: (ca.depth + cb.depth) / 2 });
-  }
+  });
   wallQuads.sort((a, b) => b.depth - a.depth);
   wallQuads.forEach((q) => {
     const shade = Math.max(0.5, Math.min(1, 1 - q.depth / 900));
     const base = Math.round(214 * shade + 20);
-    svg.append(svgEl('polygon', { points: q.pts, fill: `rgb(${base},${base + 6},${base + 14})`, stroke: '#94a3b8', 'stroke-width': 1 }));
+    svg.append(svgEl('polygon', { points: q.pts, class: 'floorplan-view-wall', fill: `rgb(${base},${base + 6},${base + 14})`, stroke: '#94a3b8', 'stroke-width': 1 }));
   });
 
   // Billboard entities (doors/windows + furniture), depth sorted
@@ -323,8 +330,13 @@ export function renderPerspectiveView(host, items, camera) {
     } else {
       // floor shadow
       svg.append(svgEl('ellipse', { cx: foot.x, cy: foot.y, rx: wpx * 0.56, ry: Math.max(2, wpx * 0.14), fill: 'rgba(15,23,42,0.18)' }));
-      svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: hpx, rx: 3, fill: objColor(cls, key), stroke: '#334155', 'stroke-width': 1, opacity: 0.96 }));
+      const objectRect = svgEl('rect', { x, y: yTop, width: wpx, height: hpx, rx: 3, class: 'floorplan-view-object', 'data-floorplan-render-item': String(it.id || ''), fill: objColor(cls, key), stroke: '#334155', 'stroke-width': 1, opacity: 0.96 });
+      objectRect.addEventListener('click', () => options.onObjectClick?.(it));
+      svg.append(objectRect);
       svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: Math.max(2, hpx * 0.18), rx: 3, fill: '#ffffff', opacity: 0.18 }));
+      if (it.aiPrompt) {
+        svg.append(svgEl('text', { x: foot.x, y: Math.min(VH - 14, foot.y + 14), 'text-anchor': 'middle', 'font-size': 8, 'font-weight': 700, fill: '#0f172a' }, [String(it.aiPrompt).slice(0, 22)]));
+      }
       if (it.label) {
         svg.append(svgEl('text', { x: foot.x, y: Math.max(12, yTop - 3), 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#1e293b' }, [String(it.label).slice(0, 16)]));
       }
@@ -445,6 +457,53 @@ export function openFloorplanAiRenderModal({ items }) {
 
   const renderHost = el('div', { className: 'floorplan-ai-render-host' });
   const details = el('div', { className: 'floorplan-ai-render-details' });
+  const objectDetails = el('div', { className: 'floorplan-object-details hidden' });
+
+  const recordObjectMetadata = (item, field, value) => {
+    if (!window.__WAYMARK_RECORDS__) window.__WAYMARK_RECORDS__ = [];
+    window.__WAYMARK_RECORDS__.push({ type: 'floorplan-object-metadata', itemId: String(item.id), field, value });
+  };
+
+  const showObjectDetails = (item) => {
+    objectDetails.innerHTML = '';
+    objectDetails.classList.remove('hidden');
+    const promptInput = el('input', {
+      className: 'floorplan-ai-prompt-input floorplan-render-ai-prompt-input',
+      value: item.aiPrompt || '',
+      placeholder: 'Describe finish, style, model...',
+      on: { change: (event) => {
+        item.aiPrompt = event.target.value;
+        recordObjectMetadata(item, 'aiPrompt', item.aiPrompt);
+      } },
+    });
+    const refInput = el('input', {
+      className: 'floorplan-ai-ref-input floorplan-render-ai-ref-input',
+      value: item.referencePhoto || '',
+      placeholder: 'Seed photo filename or URL',
+      on: { change: (event) => {
+        item.referencePhoto = event.target.value;
+        recordObjectMetadata(item, 'referencePhoto', item.referencePhoto);
+      } },
+    });
+    const fileInput = el('input', {
+      className: 'floorplan-ai-seed-file floorplan-render-ai-seed-file',
+      type: 'file',
+      accept: 'image/*',
+      on: { change: (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        item.referencePhoto = file.name;
+        refInput.value = file.name;
+        recordObjectMetadata(item, 'referencePhoto', file.name);
+      } },
+    });
+    objectDetails.append(
+      el('h4', {}, [item.label || item.type || 'Object details']),
+      el('label', { className: 'floorplan-object-details-row' }, [el('span', {}, ['AI prompt']), promptInput]),
+      el('label', { className: 'floorplan-object-details-row' }, [el('span', {}, ['Seed photo']), refInput]),
+      el('label', { className: 'floorplan-object-details-row' }, [el('span', {}, ['Upload']), fileInput]),
+    );
+  };
 
   const headingSlider = el('input', { className: 'floorplan-cam-heading', type: 'range', min: '0', max: '359', step: '1', value: '0' });
 
@@ -453,7 +512,7 @@ export function openFloorplanAiRenderModal({ items }) {
   });
 
   const renderView = () => {
-    renderPerspectiveView(renderHost, items || [], camera);
+    renderPerspectiveView(renderHost, items || [], camera, { onObjectClick: showObjectDetails });
     details.innerHTML = '';
     details.append(
       el('h4', {}, ['Viewpoint 3D']),
@@ -525,7 +584,7 @@ export function openFloorplanAiRenderModal({ items }) {
   });
 
   const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, copyPromptBtn]);
-  modal.append(header, status, camMapWrap, renderHost, details, actions);
+  modal.append(header, status, camMapWrap, renderHost, objectDetails, details, actions);
   overlay.append(modal);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();

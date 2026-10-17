@@ -204,7 +204,7 @@ test('budget preview toggle renders sample dashboard with clear banner', async (
   await page.waitForSelector('.budget-preview-banner', { timeout: 5_000 });
 
   await expect(page.locator('.budget-preview-banner')).toContainText('Clear & Start Mine');
-  await expect(page.locator('.budget-cashflow')).toBeVisible();
+  await expect(page.locator('.budget-cashflow')).toHaveCount(0);
   await expect(page.locator('.budget-chart .chart-svg')).toBeVisible();
   expect(await page.locator('.budget-row').count()).toBeGreaterThanOrEqual(5);
 });
@@ -217,13 +217,46 @@ test('budget KPI strip shows date range controls and envelope warning bars', asy
   await page.waitForSelector('.budget-summary', { timeout: 5_000 });
 
   await expect(page.locator('.budget-range-switcher')).toBeVisible();
-  await expect(page.locator('.budget-range-month')).toContainText('Oct 2026');
+  await expect(page.locator('.budget-range-month')).toContainText('Mar 2026');
   await expect(page.locator('.budget-rate-track')).toBeVisible();
   await expect(page.locator('.budget-delta')).toHaveCount(3);
+  await expect(page.locator('.budget-cashflow')).toHaveCount(0);
+  await expect(page.locator('.budget-summary')).toHaveCount(1);
+  await expect(page.locator('.budget-upload-btn')).toHaveCount(1);
 
   await page.waitForSelector('.budget-envelope', { timeout: 5_000 });
   expect(await page.locator('.budget-envelope-amber').count()).toBeGreaterThanOrEqual(1);
   await expect(page.locator('.budget-envelope-label').first()).toContainText('Planned vs Actual');
+});
+
+test('budget hides meaningless delta badges when no prior month exists', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-033');
+  await page.waitForSelector('.budget-summary', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-delta')).toHaveCount(0);
+  const summaryText = await page.locator('.budget-summary').textContent();
+  expect(summaryText).not.toContain('+0%');
+  expect(summaryText).not.toContain('MoM');
+});
+
+test('budget month switcher filters displayed totals and rows', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-016');
+  await page.waitForSelector('.budget-summary', { timeout: 5_000 });
+
+  await expect(page.locator('.budget-summary-value').first()).toContainText('$10,300');
+  const allRows = await page.locator('.budget-row').count();
+  expect(allRows).toBeGreaterThan(10);
+
+  await page.click('.budget-range-prev');
+  await expect(page.locator('.budget-range-month')).toContainText('Feb 2026');
+  await expect(page.locator('.budget-summary-value').first()).toContainText('$4,500');
+  await expect(page.locator('.budget-row')).toHaveCount(3);
+
+  await page.locator('.budget-range-pill').nth(1).click();
+  await expect(page.locator('.budget-summary-value').first()).toContainText('$10,300');
+  expect(await page.locator('.budget-row').count()).toBe(allRows);
 });
 
 /* ---------- Buildout: quick-add, badges, insights ---------- */

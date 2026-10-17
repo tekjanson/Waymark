@@ -72,7 +72,7 @@ export function parseVoiceTask(transcript) {
   if (quotedTitle) {
     result.title = quotedTitle[1].trim();
   } else {
-    const titleMatch = original.match(/\b(?:called|named|titled|title|task|card)\s+(.*?)(?=\s+\b(?:description|details|detail|notes?|with details?|priority|stage|column|lane|status)\b|\s+\bp[0-3]\b|$)/i);
+    const titleMatch = original.match(new RegExp(`\\b(?:called|named|titled|title|task|card)\\s+(.*?)(?=\\s+\\b(?:description|details|detail|notes?|with details?|priority|stage|column|lane|status)\\b|\\s+\\bp[0-3]\\b|\\s+\\b(?:in|into|to|on|under)\\s+(?:the\\s+)?${stageWords}(?:\\s+(?:column|lane|stage))?\\b|$)`, 'i'));
     if (titleMatch) result.title = titleMatch[1].trim();
   }
 

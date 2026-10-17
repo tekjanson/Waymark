@@ -3,7 +3,7 @@
    subtotals, chart, and statement upload
    ============================================================ */
 
-import { el, cell, editableCell, showToast, delegateEvent, groupByColumn, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn } from '../shared.js';
+import { el, cell, editableCell, showToast, delegateEvent, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn } from '../shared.js';
 import { parseStatement, reParsePDFTransactions, parseQuickAddBudgetEntry } from './parser.js';
 
 /* ---------- Helpers ---------- */
@@ -48,7 +48,7 @@ function computeTotals(rows, cols) {
 }
 
 /** Compute month-over-month delta for a metric */
-function computeDelta(rows, cols, metric) {
+function computeDelta(rows, cols, metric, month) {
   if (cols.date < 0) return 0;
   const byMonth = new Map();
   for (const row of rows) {
@@ -60,19 +60,70 @@ function computeDelta(rows, cols, metric) {
     byMonth.set(month, totals);
   }
   const months = [...byMonth.keys()].sort();
-  if (months.length < 2) return 0;
-  const current = byMonth.get(months[months.length - 1]);
-  const previous = byMonth.get(months[months.length - 2]);
+  const currentMonth = month || months[months.length - 1];
+  const currentIndex = months.indexOf(currentMonth);
+  if (currentIndex < 1) return null;
+  const current = byMonth.get(months[currentIndex]);
+  const previous = byMonth.get(months[currentIndex - 1]);
   const currentValue = metric === 'balance' ? current.income - current.expense : current[metric];
   const previousValue = metric === 'balance' ? previous.income - previous.expense : previous[metric];
-  if (!previousValue) return 0;
+  if (!previousValue) return null;
   return Math.round(((currentValue - previousValue) / Math.abs(previousValue)) * 100);
 }
 
 /** Build a short month label for the date range switcher */
-function currentMonthLabel() {
-  const now = new Date();
-  return now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+function monthLabel(month) {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) return 'All dates';
+  const [year, monthNum] = month.split('-').map(Number);
+  return new Date(year, monthNum - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/** Return the latest YYYY-MM present in budget rows */
+function latestBudgetMonth(rows, cols) {
+  const months = rows.map(row => rowMonth(row, cols.date)).filter(Boolean).sort();
+  return months[months.length - 1] || '';
+}
+
+/** Shift a YYYY-MM month by an offset */
+function shiftMonth(month, offset) {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) return month;
+  const [year, monthNum] = month.split('-').map(Number);
+  const date = new Date(year, monthNum - 1 + offset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Return rows visible for the selected budget period */
+function filterRowsForPeriod(rows, cols, mode, month) {
+  if (mode === 'all' || cols.date < 0) return rows;
+  if (mode === 'month') return rows.filter(row => rowMonth(row, cols.date) === month);
+  if (mode === 'ytd') {
+    const year = (month || latestBudgetMonth(rows, cols)).slice(0, 4);
+    return rows.filter(row => rowMonth(row, cols.date).slice(0, 4) === year);
+  }
+  return rows;
+}
+
+/** Group entries while preserving original sheet row indices */
+function groupBudgetEntries(entries, cols) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = cols.category >= 0 ? (cell(entry.row, cols.category) || 'Uncategorized') : 'Uncategorized';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  }
+  return groups;
+}
+
+/** Build a KPI card with an optional real delta badge */
+function kpiCard(label, value, className, delta) {
+  const children = [
+    el('span', { className: 'budget-summary-label' }, [label]),
+    el('span', { className: 'budget-summary-value' }, [money(value)]),
+  ];
+  if (delta !== null) {
+    children.push(el('span', { className: 'budget-delta' }, [`${delta >= 0 ? '+' : ''}${delta}% MoM`]));
+  }
+  return el('div', { className: `budget-summary-item budget-kpi-card ${className}` }, children);
 }
 
 /** Recurring payment heuristic used for badges and insights */
@@ -485,7 +536,7 @@ const definition = {
     });
 
     const statementCard = el('div', {
-      className: 'budget-statement-dropzone',
+      className: 'budget-statement-dropzone budget-upload-btn',
       role: 'button',
       tabindex: '0',
     }, [
@@ -532,36 +583,51 @@ const definition = {
       ]));
     }
 
+    /* ---------- Date range filtering ---------- */
+    if (!template._budgetPeriodMode) template._budgetPeriodMode = 'all';
+    if (!template._budgetPeriodMonth) template._budgetPeriodMonth = latestBudgetMonth(activeRows, cols);
+    const selectedMonth = template._budgetPeriodMonth || latestBudgetMonth(activeRows, cols);
+    const visibleRows = filterRowsForPeriod(activeRows, cols, template._budgetPeriodMode, selectedMonth);
+    const visibleEntries = activeRows
+      .map((row, originalIndex) => ({ row, originalIndex }))
+      .filter(entry => visibleRows.includes(entry.row));
+
+    const setPeriod = (mode, month = selectedMonth) => {
+      template._budgetPeriodMode = mode;
+      template._budgetPeriodMonth = month;
+      definition.render(container, rows, cols, template);
+    };
+
     /* ---------- Compute totals ---------- */
-    const { income: totalIncome, expense: totalExpense, balance } = computeTotals(activeRows, cols);
+    const { income: totalIncome, expense: totalExpense, balance } = computeTotals(visibleRows, cols);
     const burnRate = totalIncome > 0 ? Math.min(100, Math.round((totalExpense / totalIncome) * 100)) : 0;
     const savingsRate = totalIncome > 0 ? Math.max(0, Math.round((balance / totalIncome) * 100)) : 0;
-    const monthLabel = currentMonthLabel();
+    const deltaMonth = template._budgetPeriodMode === 'month' ? selectedMonth : latestBudgetMonth(visibleRows, cols);
+    const incomeDelta = computeDelta(activeRows, cols, 'income', deltaMonth);
+    const expenseDelta = computeDelta(activeRows, cols, 'expense', deltaMonth);
+    const balanceDelta = computeDelta(activeRows, cols, 'balance', deltaMonth);
 
     /* ---------- KPI strip with date range switcher ---------- */
+    const prevBtn = el('button', { className: 'budget-range-btn budget-range-prev', type: 'button' }, ['‹']);
+    const nextBtn = el('button', { className: 'budget-range-btn budget-range-next', type: 'button' }, ['›']);
+    const ytdBtn = el('button', { className: `budget-range-pill ${template._budgetPeriodMode === 'ytd' ? 'active' : ''}`, type: 'button' }, ['YTD']);
+    const allBtn = el('button', { className: `budget-range-pill ${template._budgetPeriodMode === 'all' ? 'active' : ''}`, type: 'button' }, ['All Time']);
+    prevBtn.addEventListener('click', () => setPeriod('month', shiftMonth(selectedMonth, -1)));
+    nextBtn.addEventListener('click', () => setPeriod('month', shiftMonth(selectedMonth, 1)));
+    ytdBtn.addEventListener('click', () => setPeriod('ytd'));
+    allBtn.addEventListener('click', () => setPeriod('all'));
+
     const summaryBar = el('div', { className: 'budget-summary' }, [
       el('div', { className: 'budget-range-switcher' }, [
-        el('button', { className: 'budget-range-btn', type: 'button' }, ['‹']),
-        el('span', { className: 'budget-range-month' }, [monthLabel]),
-        el('button', { className: 'budget-range-btn', type: 'button' }, ['›']),
-        el('button', { className: 'budget-range-pill', type: 'button' }, ['YTD']),
-        el('button', { className: 'budget-range-pill active', type: 'button' }, ['All Time']),
+        prevBtn,
+        el('button', { className: `budget-range-month ${template._budgetPeriodMode === 'month' ? 'active' : ''}`, type: 'button', on: { click: () => setPeriod('month') } }, [monthLabel(selectedMonth)]),
+        nextBtn,
+        ytdBtn,
+        allBtn,
       ]),
-      el('div', { className: 'budget-summary-item budget-kpi-card budget-income' }, [
-        el('span', { className: 'budget-summary-label' }, ['Income']),
-        el('span', { className: 'budget-summary-value' }, [money(totalIncome)]),
-        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'income') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'income')}% MoM`]),
-      ]),
-      el('div', { className: 'budget-summary-item budget-kpi-card budget-expense' }, [
-        el('span', { className: 'budget-summary-label' }, ['Expenses']),
-        el('span', { className: 'budget-summary-value' }, [money(totalExpense)]),
-        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'expense') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'expense')}% MoM`]),
-      ]),
-      el('div', { className: `budget-summary-item budget-kpi-card ${balance >= 0 ? 'budget-positive' : 'budget-negative'}` }, [
-        el('span', { className: 'budget-summary-label' }, ['Balance']),
-        el('span', { className: 'budget-summary-value' }, [money(balance)]),
-        el('span', { className: 'budget-delta' }, [`${computeDelta(activeRows, cols, 'balance') >= 0 ? '+' : ''}${computeDelta(activeRows, cols, 'balance')}% MoM`]),
-      ]),
+      kpiCard('Income', totalIncome, 'budget-income', incomeDelta),
+      kpiCard('Expenses', totalExpense, 'budget-expense', expenseDelta),
+      kpiCard('Balance', balance, balance >= 0 ? 'budget-positive' : 'budget-negative', balanceDelta),
       el('div', { className: 'budget-rate-panel' }, [
         el('div', { className: 'budget-rate-label' }, [`Burn ${burnRate}% · Save ${savingsRate}%`]),
         el('div', { className: 'budget-rate-track' }, [
@@ -572,45 +638,12 @@ const definition = {
     ]);
     container.append(summaryBar);
 
-    /* ---------- Upload and preview actions ---------- */
-    const uploadBtn = el('button', {
-      className: 'btn budget-upload-btn',
-      type: 'button',
-      title: 'Upload a bank or credit card statement',
-    }, ['\uD83C\uDFE6 Upload Statement']);
-
-    uploadBtn.addEventListener('click', () => {
-      const totalCols = template._totalColumns || 5;
-      openUploadModal(cols, totalCols, template._onAddRow);
-    });
-
-    container.append(el('div', { className: 'budget-actions' }, [uploadBtn]));
-
     if (!isPreviewing) {
       container.append(el('div', { className: 'budget-onboarding-actions' }, [previewBtn, statementCard]));
     }
 
-    /* ---------- Cashflow bars ---------- */
-    const maxCash = Math.max(totalIncome, totalExpense, 1);
-    container.append(el('div', { className: 'budget-cashflow' }, [
-      el('div', { className: 'budget-cashflow-row' }, [
-        el('span', { className: 'budget-cashflow-label' }, ['Income']),
-        el('div', { className: 'budget-cashflow-track' }, [
-          el('span', { className: 'budget-cashflow-fill budget-cashflow-income', style: { width: `${Math.round((totalIncome / maxCash) * 100)}%` } }),
-        ]),
-        el('span', { className: 'budget-cashflow-value' }, [money(totalIncome)]),
-      ]),
-      el('div', { className: 'budget-cashflow-row' }, [
-        el('span', { className: 'budget-cashflow-label' }, ['Expenses']),
-        el('div', { className: 'budget-cashflow-track' }, [
-          el('span', { className: 'budget-cashflow-fill budget-cashflow-expense', style: { width: `${Math.round((totalExpense / maxCash) * 100)}%` } }),
-        ]),
-        el('span', { className: 'budget-cashflow-value' }, [money(totalExpense)]),
-      ]),
-    ]));
-
     /* ---------- Group by category ---------- */
-    const groups = groupByColumn(activeRows, cols.category, 'Uncategorized');
+    const groups = groupBudgetEntries(visibleEntries, cols);
 
     /* ---------- Quick-add and deterministic insight chips ---------- */
     const quickAddInput = el('input', {

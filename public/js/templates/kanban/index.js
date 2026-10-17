@@ -382,13 +382,81 @@ const definition = {
     }
 
     /**
+     * Show a manual transcript input when speech capture is unavailable.
+     * @param {string} defaultStage
+     * @param {HTMLElement} anchor
+     * @param {string} message
+     */
+    function showVoiceTranscriptInput(defaultStage = 'Backlog', anchor = null, message = '') {
+      document.querySelectorAll('.kanban-voice-input-wrap').forEach(node => node.remove());
+
+      const input = el('input', {
+        className: 'kanban-voice-input',
+        type: 'text',
+        placeholder: 'Type a task, e.g. Add high priority task fix login bug to In Progress',
+        'aria-label': 'Task transcript',
+      });
+      const submitBtn = el('button', {
+        className: 'kanban-voice-submit',
+        type: 'button',
+      }, ['Add']);
+      const cancelBtn = el('button', {
+        className: 'kanban-voice-cancel',
+        type: 'button',
+        title: 'Cancel voice task input',
+      }, ['×']);
+      const helper = el('div', { className: 'kanban-voice-help' }, [
+        message || 'Speech is unavailable. Type the task instead.',
+      ]);
+      const wrap = el('div', { className: 'kanban-voice-input-wrap' }, [
+        helper,
+        el('div', { className: 'kanban-voice-input-row' }, [input, submitBtn, cancelBtn]),
+      ]);
+
+      async function submitTranscript() {
+        const transcript = input.value.trim();
+        if (!transcript) {
+          input.focus();
+          return;
+        }
+        submitBtn.disabled = true;
+        await addVoiceTask(transcript, defaultStage);
+        wrap.remove();
+      }
+
+      submitBtn.addEventListener('click', submitTranscript);
+      cancelBtn.addEventListener('click', () => wrap.remove());
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submitTranscript();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          wrap.remove();
+        }
+      });
+
+      const target = anchor?.closest('.add-row-root') || anchor?.parentElement || document.querySelector('.kanban-controls');
+      if (target && target.parentElement && target.classList.contains('add-row-root')) {
+        target.append(wrap);
+      } else if (target) {
+        target.append(wrap);
+      } else {
+        container.prepend(wrap);
+      }
+      input.focus();
+    }
+
+    /**
      * Start browser speech intake for a new kanban task.
      * @param {string} defaultStage
+     * @param {HTMLElement} anchor
      */
-    function startVoiceTask(defaultStage = 'Backlog') {
+    function startVoiceTask(defaultStage = 'Backlog', anchor = null) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        showToast('Voice input is not supported in this browser. Use the test hook or add the task manually.', 'info');
+        showVoiceTranscriptInput(defaultStage, anchor, 'Speech is not supported here. Type the task instead.');
         return;
       }
 
@@ -401,11 +469,24 @@ const definition = {
           .map(result => result[0]?.transcript || '')
           .join(' ')
           .trim();
-        if (transcript) await addVoiceTask(transcript, defaultStage);
+        if (transcript) {
+          await addVoiceTask(transcript, defaultStage);
+        } else {
+          showVoiceTranscriptInput(defaultStage, anchor, 'No speech was captured. Type the task instead.');
+        }
       };
-      recognition.onerror = () => showToast('Could not capture voice input. Please try again or add the task manually.', 'error');
-      recognition.start();
-      showToast('Listening for a task…', 'info');
+      recognition.onerror = () => {
+        showVoiceTranscriptInput(defaultStage, anchor, 'Could not capture voice input. Type the task instead.');
+      };
+      recognition.onnomatch = () => {
+        showVoiceTranscriptInput(defaultStage, anchor, 'No speech match was found. Type the task instead.');
+      };
+      try {
+        recognition.start();
+        showToast('Listening for a task…', 'info');
+      } catch (err) {
+        showVoiceTranscriptInput(defaultStage, anchor, 'Could not start voice input. Type the task instead.');
+      }
     }
 
     /**
@@ -421,7 +502,7 @@ const definition = {
         type: 'button',
         title: label,
       }, ['🎙 Voice']);
-      btn.addEventListener('click', () => startVoiceTask(defaultStage || 'Backlog'));
+      btn.addEventListener('click', () => startVoiceTask(defaultStage || 'Backlog', btn));
       return btn;
     }
 

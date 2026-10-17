@@ -17,7 +17,7 @@ test('drive cleanup sheet detected as Drive Organizer template', async ({ page }
 
 test('organizer renders a triage row per file', async ({ page }) => {
   await openOrganizer(page);
-  await expect(page.locator('.organizer-file')).toHaveCount(7);
+  await expect(page.locator('.organizer-file')).toHaveCount(8);
 });
 
 test('organizer groups files into domain clusters', async ({ page }) => {
@@ -115,15 +115,51 @@ test('undo batch reverses the moves', async ({ page }) => {
 
 test('scan drive appends newly discovered files to the board', async ({ page }) => {
   await openOrganizer(page);
-  await expect(page.locator('.organizer-file')).toHaveCount(7);
+  await expect(page.locator('.organizer-file')).toHaveCount(8);
   await page.click('.organizer-btn-scan');
   await page.waitForFunction(
-    () => document.querySelectorAll('.organizer-file').length > 7,
+    () => document.querySelectorAll('.organizer-file').length > 8,
     undefined,
     { timeout: 5_000 },
   );
-  expect(await page.locator('.organizer-file').count()).toBeGreaterThan(7);
+  expect(await page.locator('.organizer-file').count()).toBeGreaterThan(8);
 
   const records = await getCreatedRecords(page);
   expect(records.some(r => r.type === 'row-append')).toBe(true);
+});
+
+/* ---------- Protection: Waymark system files must never be moved or archived ---------- */
+
+test('organizer marks Waymark system files as protected', async ({ page }) => {
+  await openOrganizer(page);
+  // The .waymark-data.json fixture row must render as protected and locked.
+  await expect(page.locator('.organizer-flag-protected')).toHaveCount(1);
+  await expect(page.locator('.organizer-action-protected')).toHaveCount(1);
+  await expect(page.locator('.organizer-file-protected')).toContainText('.waymark-data.json');
+});
+
+test('AI Propose never suggests moving or archiving a protected Waymark file', async ({ page }) => {
+  await openOrganizer(page);
+  await page.click('.organizer-btn-propose');
+  await page.waitForSelector('.organizer-conf-num', { timeout: 3_000 });
+
+  const protectedRow = page.locator('.organizer-file-protected');
+  // Still locked, still "keep in place", never an actionable Move/Archive button.
+  await expect(protectedRow.locator('.organizer-action-protected')).toHaveCount(1);
+  await expect(protectedRow.locator('.organizer-file-keep')).toHaveCount(1);
+  await expect(protectedRow.locator('.organizer-action-move, .organizer-action-archive, .organizer-action-rename')).toHaveCount(0);
+});
+
+test('running a batch never moves a protected Waymark file', async ({ page }) => {
+  await openOrganizer(page);
+  await page.click('.organizer-btn-propose');
+  await page.click('.organizer-btn-approveall');
+  await page.click('.organizer-btn-run');
+  await page.waitForSelector('.organizer-action-done', { timeout: 5_000 });
+
+  const records = await getCreatedRecords(page);
+  const movedProtected = records.filter(r => r.type === 'drive-move' && r.fileId === 'file-008');
+  expect(movedProtected).toHaveLength(0);
+  // The protected file is still shown as protected (never marked Done).
+  await expect(page.locator('.organizer-action-protected')).toHaveCount(1);
 });

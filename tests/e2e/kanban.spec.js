@@ -774,7 +774,24 @@ test('kanban voice intake hook parses transcript and creates card in requested l
   await expect(page.locator('.toast').last()).toContainText('Voice task "Voice Follow Up" added to QA');
 });
 
-test('kanban voice intake unsupported browser path shows graceful toast', async ({ page }) => {
+test('kanban voice intake unsupported browser path opens manual transcript input', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-028');
+  await page.waitForSelector('.kanban-board', { timeout: 5_000 });
+  const pageErrors = [];
+  page.on('pageerror', err => pageErrors.push(err.message));
+
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true });
+  });
+
+  await page.locator('.kanban-toolbar .kanban-voice-btn').click();
+  await expect(page.locator('.kanban-toolbar .kanban-voice-input')).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test('kanban manual voice transcript input creates parsed card in requested lane', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-board', { timeout: 5_000 });
@@ -785,7 +802,16 @@ test('kanban voice intake unsupported browser path shows graceful toast', async 
   });
 
   await page.locator('.kanban-toolbar .kanban-voice-btn').click();
-  await expect(page.locator('.toast')).toContainText('Voice input is not supported');
+  await page.locator('.kanban-toolbar .kanban-voice-input').fill('Add high priority task Fix Login Bug to In Progress');
+  await page.locator('.kanban-toolbar .kanban-voice-submit').click();
+
+  await page.waitForFunction(() => {
+    const recs = window.__WAYMARK_RECORDS || [];
+    return recs.some(r => r.type === 'row-append' && r.rows && r.rows.some(row => row[0] === 'Fix Login Bug'));
+  }, { timeout: 5_000 });
+
+  await expect(page.locator('.kanban-lane-inprogress')).toContainText('Fix Login Bug');
+  await expect(page.locator('.toast').last()).toContainText('Voice task "Fix Login Bug" added to In Progress');
 });
 
 test('kanban lane collapse button hides cards', async ({ page }) => {
