@@ -64,6 +64,17 @@ test('AI Propose fills proposed folder, name and confidence and persists', async
   expect(records.some(r => r.type === 'cell-update')).toBe(true);
 });
 
+test('AI Propose creates structured destinations instead of one dump bucket', async ({ page }) => {
+  await openOrganizer(page);
+  await page.click('.organizer-btn-propose');
+  await page.waitForSelector('.organizer-file-to', { timeout: 3_000 });
+
+  const targets = await page.locator('.organizer-file:not(.organizer-file-protected) .organizer-file-to').allTextContents();
+  const uniqueTargets = [...new Set(targets.map(t => t.trim()).filter(Boolean))];
+  expect(uniqueTargets.length).toBeGreaterThanOrEqual(3);
+  expect(uniqueTargets).not.toContain('/Archive/Unsorted');
+});
+
 test('cycling a file action changes its disposition and persists', async ({ page }) => {
   await openOrganizer(page);
   const action = page.locator('.organizer-action').first();

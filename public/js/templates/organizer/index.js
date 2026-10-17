@@ -132,10 +132,10 @@ const handlers = {
         protectedCount++;
         continue;
       }
-      const folder = proposeFolder(f.currentName, f.fileType);
+      const folder = proposeFolder(f.currentName, f.fileType, f.currentFolder);
       const name = proposeName(f.currentName, f.fileType);
-      const conf = String(scoreConfidence(f.currentName, f.fileType));
-      const act = proposeAction(f.currentName, f.fileType);
+      const conf = String(scoreConfidence(f.currentName, f.fileType, f.currentFolder));
+      const act = proposeAction(f.currentName, f.fileType, f.currentFolder);
       persistCell(f, 'proposedFolder', folder);
       persistCell(f, 'proposedName', name);
       persistCell(f, 'confidence', conf);
@@ -153,7 +153,7 @@ const handlers = {
       if (f.protected || f.action === 'Skip') continue;
       const act = f.action && ACTIONABLE.has(f.action)
         ? f.action
-        : proposeAction(f.currentName, f.fileType);
+        : proposeAction(f.currentName, f.fileType, f.currentFolder);
       persistCell(f, 'action', act);
     }
     showToast('All files approved for the next batch run', 'success');
@@ -381,7 +381,7 @@ function buildFileRow(f) {
 function buildBoard() {
   const groups = new Map();
   for (const f of _files) {
-    const domain = proposeDomain(f.currentName, f.fileType);
+    const domain = proposeDomain(f.currentName, f.fileType, f.currentFolder);
     if (!groups.has(domain)) groups.set(domain, []);
     groups.get(domain).push(f);
   }

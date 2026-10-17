@@ -32,16 +32,26 @@ export const AUDIT_HEADER = [
 export const TAXONOMY = [
   { test: /(floor ?plan|blueprint|room|house|layout)/i, folder: '/Projects/Home Renovation', domain: 'Home Renovation' },
   { test: /(budget|finance|expense|statement|ledger)/i, folder: '/Finance/2026', domain: 'Finance' },
+  { test: /(invoice|receipt|contract|agreement|legal|tax|w-?2|1099)/i, folder: '/Documents/Legal', domain: 'Documents' },
   { test: /(flow|diagram|pipeline|architecture|workflow)/i, folder: '/Engineering/Diagrams', domain: 'Engineering' },
+  { test: /(agent|registry|automation|orchestrator|worker|script|cli|devops)/i, folder: '/Engineering/Automation', domain: 'Engineering' },
   { test: /(kanban|board|sprint|backlog|roadmap|task)/i, folder: '/Projects/Active', domain: 'Projects' },
-  { test: /(recipe|meal|menu|grocery)/i, folder: '/Personal/Kitchen', domain: 'Personal' },
+  { test: /(recipe|meal|menu|grocery|taco|kitchen)/i, folder: '/Personal/Kitchen', domain: 'Personal' },
+  { test: /(calorie|fitness|workout|health|habit|tracker)/i, folder: '/Personal/Health', domain: 'Personal' },
+  { test: /(resume|cv|cover letter|proposal|plan|notes?)/i, folder: '/Documents/General', domain: 'Documents' },
   { test: /(photo|image|img|screenshot|png|jpe?g)/i, folder: '/Media/Images', domain: 'Media' },
-  { test: /(invoice|receipt|contract|agreement|legal)/i, folder: '/Documents/Legal', domain: 'Documents' },
+  { test: /(video|recording|mp4|mov|webm)/i, folder: '/Media/Videos', domain: 'Media' },
+  { test: /(presentation|slides?|deck)/i, folder: '/Documents/Presentations', domain: 'Documents' },
   { test: /(party|event|wedding|birthday|guest)/i, folder: '/Personal/Events', domain: 'Personal' },
 ];
 
 /** Fallback bucket for anything that doesn't match the taxonomy. */
 export const ARCHIVE_FOLDER = '/Archive/Unsorted';
+
+/** Folder labels that usually mean "inbox" and should not anchor taxonomy. */
+const GENERIC_FOLDER_PARTS = new Set([
+  '', '/', 'my drive', 'drive', 'root', 'archive', 'unsorted', 'downloads', 'desktop',
+]);
 
 /* ---------- Pure helpers ---------- */
 
@@ -68,22 +78,24 @@ export function fileExt(name) {
  * Pick the taxonomy rule for a file from its name + type signal.
  * @returns {{folder:string, domain:string}}
  */
-export function classify(name, type) {
+export function classify(name, type, currentFolder = '') {
   const hay = `${name || ''} ${type || ''}`;
   for (const rule of TAXONOMY) {
     if (rule.test.test(hay)) return { folder: rule.folder, domain: rule.domain };
   }
-  return { folder: ARCHIVE_FOLDER, domain: 'Unsorted' };
+  const fromFolder = classifyFromCurrentFolder(currentFolder);
+  if (fromFolder) return fromFolder;
+  return fallbackByType(type);
 }
 
 /** Proposed clean destination folder for a file. */
-export function proposeFolder(name, type) {
-  return classify(name, type).folder;
+export function proposeFolder(name, type, currentFolder = '') {
+  return classify(name, type, currentFolder).folder;
 }
 
 /** Human domain/cluster label used to group the triage board. */
-export function proposeDomain(name, type) {
-  return classify(name, type).domain;
+export function proposeDomain(name, type, currentFolder = '') {
+  return classify(name, type, currentFolder).domain;
 }
 
 /**
@@ -105,17 +117,19 @@ export function proposeName(name, type) {
  * Confidence (0–100) that the proposal is correct. Strong keyword matches
  * and a recognised type score higher; archive fallbacks score lower.
  */
-export function scoreConfidence(name, type) {
-  const { domain } = classify(name, type);
-  let score = domain === 'Unsorted' ? 35 : 72;
+export function scoreConfidence(name, type, currentFolder = '') {
+  const result = classify(name, type, currentFolder);
+  let score = result.domain === 'Unsorted' ? 35 : 72;
+  if (result.domain === 'By Folder') score = 64;
   if (type && /sheet|doc|floorplan|budget|flow|kanban|image/i.test(type)) score += 14;
   if ((name || '').length > 6) score += 8;
   return Math.max(10, Math.min(99, score));
 }
 
 /** Suggested disposition for a file (Archive for unsorted, else Move). */
-export function proposeAction(name, type) {
-  return classify(name, type).domain === 'Unsorted' ? 'Archive' : 'Move';
+export function proposeAction(name, type, currentFolder = '') {
+  const domain = classify(name, type, currentFolder).domain;
+  return domain === 'Unsorted' ? 'Archive' : 'Move';
 }
 
 /**
@@ -230,10 +244,45 @@ export function buildInsights(files) {
   if (stale) chips.push(`${stale} stale file${stale > 1 ? 's' : ''} (1yr+)`);
   const domains = {};
   for (const f of files) {
-    const d = proposeDomain(f.currentName, f.fileType);
+    const d = proposeDomain(f.currentName, f.fileType, f.currentFolder);
     domains[d] = (domains[d] || 0) + 1;
   }
   const top = Object.entries(domains).sort((a, b) => b[1] - a[1])[0];
   if (top && top[1] > 1) chips.push(`${top[1]} files cluster into ${top[0]}`);
   return chips;
+}
+
+/** Infer destination from current folder when filename keywords are weak. */
+function classifyFromCurrentFolder(currentFolder) {
+  const normalized = normalizeFolder(currentFolder);
+  if (!normalized) return null;
+  const parts = normalized.split('/').filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.every(part => GENERIC_FOLDER_PARTS.has(part.toLowerCase()))) return null;
+  const meaningful = parts.filter(part => !GENERIC_FOLDER_PARTS.has(part.toLowerCase()));
+  if (!meaningful.length) return null;
+  return {
+    folder: `/${meaningful.join('/')}`,
+    domain: 'By Folder',
+  };
+}
+
+/** Type-driven fallback to avoid dumping everything into one archive bucket. */
+function fallbackByType(type) {
+  const t = (type || '').toLowerCase();
+  if (/sheet/.test(t)) return { folder: '/Projects/General', domain: 'Projects' };
+  if (/doc|document|txt/.test(t)) return { folder: '/Documents/General', domain: 'Documents' };
+  if (/pdf/.test(t)) return { folder: '/Documents/PDFs', domain: 'Documents' };
+  if (/image|png|jpe?g|heic|gif/.test(t)) return { folder: '/Media/Images', domain: 'Media' };
+  if (/slide|presentation/.test(t)) return { folder: '/Documents/Presentations', domain: 'Documents' };
+  return { folder: ARCHIVE_FOLDER, domain: 'Unsorted' };
+}
+
+function normalizeFolder(folder) {
+  const raw = (folder || '').trim();
+  if (!raw) return '';
+  if (!/[\\/]/.test(raw) && /^[A-Za-z0-9_-]{15,}$/.test(raw)) return '';
+  const cleaned = raw.replace(/\\/g, '/').replace(/\/+/g, '/');
+  if (cleaned === '/') return '/';
+  return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
 }
