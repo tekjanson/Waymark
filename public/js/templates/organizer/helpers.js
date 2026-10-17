@@ -47,10 +47,12 @@ export const TAXONOMY = [
 
 /** Fallback bucket for anything that doesn't match the taxonomy. */
 export const ARCHIVE_FOLDER = '/Archive/Unsorted';
+export const REVIEW_FOLDER = '/Inbox/Needs Review';
 
-/** Folder labels that usually mean "inbox" and should not anchor taxonomy. */
+/** Folder labels that usually mean "generic" and should not anchor taxonomy. */
 const GENERIC_FOLDER_PARTS = new Set([
   '', '/', 'my drive', 'drive', 'root', 'archive', 'unsorted', 'downloads', 'desktop',
+  'general', 'misc', 'miscellaneous', 'inbox', 'needs review',
 ]);
 
 /* ---------- Pure helpers ---------- */
@@ -119,14 +121,16 @@ export function proposeName(name, type) {
  */
 export function scoreConfidence(name, type, currentFolder = '') {
   const result = classify(name, type, currentFolder);
-  let score = result.domain === 'Unsorted' ? 35 : 72;
+  let score = 72;
+  if (result.domain === 'Unsorted') score = 35;
+  if (result.domain === 'Needs Review') score = 42;
   if (result.domain === 'By Folder') score = 64;
   if (type && /sheet|doc|floorplan|budget|flow|kanban|image/i.test(type)) score += 14;
   if ((name || '').length > 6) score += 8;
   return Math.max(10, Math.min(99, score));
 }
 
-/** Suggested disposition for a file (Archive for unsorted, else Move). */
+/** Suggested disposition for a file (Archive for truly unsorted, else Move). */
 export function proposeAction(name, type, currentFolder = '') {
   const domain = classify(name, type, currentFolder).domain;
   return domain === 'Unsorted' ? 'Archive' : 'Move';
@@ -258,6 +262,7 @@ function classifyFromCurrentFolder(currentFolder) {
   if (!normalized) return null;
   const parts = normalized.split('/').filter(Boolean);
   if (!parts.length) return null;
+  if (parts.some(part => /^(general|misc|miscellaneous|inbox|needs review)$/i.test(part))) return null;
   if (parts.every(part => GENERIC_FOLDER_PARTS.has(part.toLowerCase()))) return null;
   const meaningful = parts.filter(part => !GENERIC_FOLDER_PARTS.has(part.toLowerCase()));
   if (!meaningful.length) return null;
@@ -267,10 +272,10 @@ function classifyFromCurrentFolder(currentFolder) {
   };
 }
 
-/** Type-driven fallback to avoid dumping everything into one archive bucket. */
+/** Type-driven fallback to avoid dumping everything into one project bucket. */
 function fallbackByType(type) {
   const t = (type || '').toLowerCase();
-  if (/sheet/.test(t)) return { folder: '/Projects/General', domain: 'Projects' };
+  if (/sheet/.test(t)) return { folder: REVIEW_FOLDER, domain: 'Needs Review' };
   if (/doc|document|txt/.test(t)) return { folder: '/Documents/General', domain: 'Documents' };
   if (/pdf/.test(t)) return { folder: '/Documents/PDFs', domain: 'Documents' };
   if (/image|png|jpe?g|heic|gif/.test(t)) return { folder: '/Media/Images', domain: 'Media' };
