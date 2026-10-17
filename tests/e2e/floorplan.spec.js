@@ -1017,6 +1017,31 @@ test('feature 9 selected objects carry AI prompt and seed photo descriptors', as
   expect(records.some(record => record.type === 'floorplan-object-metadata' && record.field === 'referencePhoto' && record.value === 'seed-photo.jpg')).toBe(true);
 });
 
+test('AI render concept surfaces a photo-real prompt enriched from the room and camera data', async ({ page }) => {
+  await openPlan(page);
+  await page.evaluate(() => {
+    window.__WAYMARK_FLOORPLAN_RENDER_MOCK = (items, camera) => ({
+      spaceTitle: 'Open-plan family room',
+      overallMood: 'Warm modern living',
+      palette: ['#c8a97e', '#d4d9dd', '#7c5f41'],
+      lighting: 'soft daylight with layered architectural lighting',
+      rooms: [{ name: 'Living room', styleNotes: 'Warm oak, stone, and soft textiles', color: '#d4a373' }],
+      renderPrompt: `Photorealistic open-plan family room with camera heading ${Math.round((camera.heading || 0) % 360)}° in a warm modern interior, natural daylight, layered architectural lighting, natural oak finishes, stone textures, realistic shadows, and material depth for premium architectural photography.`,
+      designActions: ['Warm the palette with natural wood', 'Highlight layered lighting', 'Keep materials realistic and tactile'],
+    });
+  });
+
+  await page.click('.floorplan-ai-render-btn');
+  await page.waitForSelector('.floorplan-ai-render-modal', { timeout: 5_000 });
+  await page.click('.floorplan-ai-render-modal .floorplan-ai-btn-primary:has-text("Generate Visual")');
+  await page.waitForSelector('.floorplan-ai-render-modal .floorplan-ai-render-prompt', { timeout: 5_000 });
+
+  const prompt = await page.locator('.floorplan-ai-render-modal .floorplan-ai-render-prompt').textContent();
+  expect(prompt).toMatch(/photorealistic|architectural/i);
+  expect(prompt).toMatch(/lighting|camera|material|shadow|depth/i);
+  expect(prompt).toContain('family room');
+});
+
 test('off-origin placed objects keep world coordinates after re-render', async ({ page }) => {
   await openPlan(page);
   await page.locator('.floorplan-svg').evaluate(svg => svg.setAttribute('viewBox', '-520 -320 960 620'));

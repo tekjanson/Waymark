@@ -11,6 +11,8 @@ Thumbs.db
 # Playwright
 test-results/
 playwright-report/
+.playwright-output/
+.playwright-report/
 blob-report/
 
 # Test reports

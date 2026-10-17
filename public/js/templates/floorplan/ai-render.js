@@ -14,7 +14,32 @@ const SYSTEM_PROMPT =
   '{"spaceTitle":"string","overallMood":"string","palette":["#hex"],' +
   '"lighting":"string","rooms":[{"name":"string","styleNotes":"string","color":"#hex"}],' +
   '"renderPrompt":"string","designActions":["string"]}. ' +
+  'The renderPrompt must be a photorealistic architectural photography brief built from the actual room geometry, camera position, materials, and lighting plan. ' +
+  'Reference the real room layout and view direction, not generic styling language. ' +
   'Use 4-6 designActions max.';
+
+const PHOTO_SYSTEM_PROMPT =
+  'You are an interior photography prompt engineer. Use the actual room geometry, camera position, fixture layout, and design brief to create one final prompt for a photorealistic interior render. ' +
+  'The final prompt must read like an architectural photography shot list: specify camera perspective, lens feel, natural and artificial lighting, material finishes, realistic shadows, depth, and studio-quality realism. ' +
+  'Use the supplied room sizes, headings, and object placements as constraints; avoid generic scene descriptions. ' +
+  'Output plain text only, no JSON, no markdown fences. Write 2-3 vivid sentences.';
+
+function cleanPromptText(value) {
+  if (!value && value !== '') return '';
+  const text = String(value).trim();
+  return text.replace(/^```(?:json|text)?/i, '').replace(/```$/i, '').trim();
+}
+
+function buildFallbackPhotoPrompt(spec, items, camera) {
+  const rooms = roomSummary(items);
+  const roomNames = rooms.map(room => room.name).join(', ') || 'the main living spaces';
+  const cameraText = camera
+    ? `Camera angle: ${Math.round(((camera.heading || 0) % 360 + 360) % 360)}° heading, positioned from the ${roomNames}.`
+    : 'Camera angle: eye-level architectural perspective.';
+  const mood = spec?.overallMood || 'warm, contemporary, practical living';
+  const lighting = spec?.lighting || 'soft daylight with layered architectural lighting';
+  return `Photorealistic ${spec?.spaceTitle || 'contemporary interior'} scene in a ${mood}, ${lighting}, with ${roomNames} arranged for open-flow living. ${cameraText} Use realistic textures, premium materials, clean architectural lines, subtle shadows, natural wood, stone, and refined finishes for ultra-realistic interior photography.`;
+}
 
 function svgEl(tag, attrs = {}, children = []) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -65,9 +90,67 @@ function roomSummary(items) {
     }));
 }
 
-async function generateRenderSpec(items) {
+async function buildScenePackage(items, camera, spec = {}) {
+  const roomList = roomSummary(items).map(room => ({
+    name: room.name,
+    size: `${Math.round(room.width)}x${Math.round(room.height)}`,
+    position: { x: Math.round(room.x), y: Math.round(room.y) },
+  }));
+
+  const roomStyles = Array.isArray(spec.rooms) ? spec.rooms.map(room => ({
+    name: room.name || 'Room',
+    styleNotes: room.styleNotes || '',
+    color: room.color || '',
+  })) : [];
+
+  const fixtures = (items || [])
+    .filter(item => item && (item.kind === 'fixture' || item.kind === 'electrical' || item.kind === 'plumbing'))
+    .slice(0, 18)
+    .map(item => ({
+      name: item.label || item.type || 'Object',
+      type: item.type || item.kind || 'fixture',
+      aiPrompt: item.aiPrompt || '',
+      referencePhoto: item.referencePhoto || '',
+      x: Number.isFinite(item.x) ? item.x : null,
+      y: Number.isFinite(item.y) ? item.y : null,
+    }));
+
+  return {
+    title: spec.spaceTitle || 'Interior concept',
+    overallMood: spec.overallMood || 'warm and practical',
+    palette: Array.isArray(spec.palette) ? spec.palette : [],
+    lighting: spec.lighting || 'soft daylight and layered task lighting',
+    camera: camera ? { x: camera.x, y: camera.y, heading: camera.heading, fov: camera.fov || 72 } : null,
+    roomCount: roomList.length,
+    rooms: roomList,
+    roomStyles,
+    fixtures,
+    walls: (items || []).filter(item => item.kind === 'wall').length,
+    electrical: (items || []).filter(item => item.kind === 'electrical').length,
+    plumbing: (items || []).filter(item => item.kind === 'plumbing').length,
+  };
+}
+
+async function generatePhotoPrompt(items, camera, spec) {
+  const scene = await buildScenePackage(items, camera, spec);
+  const userMessage =
+    'Use the actual room geometry, fixture placement, palette, and camera data below to create a photorealistic interior render prompt. ' +
+    'Keep the prompt grounded in the plan and camera, not generic style language: ' +
+    JSON.stringify(scene);
+  const text = await generateText(PHOTO_SYSTEM_PROMPT, userMessage, { temperature: 0.65, maxTokens: 900 });
+  const prompt = cleanPromptText(text);
+  return prompt || buildFallbackPhotoPrompt(spec, items, camera);
+}
+
+async function generateRenderSpec(items, camera = null) {
   const mock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_RENDER_MOCK : null;
-  if (mock) return typeof mock === 'function' ? mock(items) : mock;
+  if (mock) {
+    const result = typeof mock === 'function' ? mock(items, camera) : mock;
+    const normalized = { ...fallbackSpec(), ...result };
+    normalized.renderPrompt = cleanPromptText(normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
+    normalized.photoPrompt = cleanPromptText(normalized.photoPrompt || normalized.renderPrompt || buildFallbackPhotoPrompt(normalized, items, camera));
+    return normalized;
+  }
 
   const rooms = roomSummary(items);
   if (!rooms.length) throw new Error('Draw at least one room before generating an AI render.');
@@ -80,10 +163,19 @@ async function generateRenderSpec(items) {
       walls: items.filter(item => item.kind === 'wall').length,
       electrical: items.filter(item => item.kind === 'electrical').length,
       plumbing: items.filter(item => item.kind === 'plumbing').length,
+      camera: camera ? { x: camera.x, y: camera.y, heading: camera.heading, fov: camera.fov || 72 } : null,
     });
 
   const text = await generateText(SYSTEM_PROMPT, userMessage, { temperature: 0.45, maxTokens: 1200 });
-  return parseJson(text) || fallbackSpec();
+  const spec = parseJson(text) || fallbackSpec();
+  spec.photoPrompt = cleanPromptText(spec.photoPrompt || spec.renderPrompt || '');
+  try {
+    spec.photoPrompt = await generatePhotoPrompt(items, camera, spec);
+  } catch (err) {
+    spec.photoPrompt = buildFallbackPhotoPrompt(spec, items, camera);
+  }
+  spec.renderPrompt = cleanPromptText(spec.photoPrompt || spec.renderPrompt || buildFallbackPhotoPrompt(spec, items, camera));
+  return spec;
 }
 
 function renderConceptSvg(container, items, spec) {
@@ -548,14 +640,14 @@ export function openFloorplanAiRenderModal({ items }) {
     generateBtn.disabled = true;
     status.textContent = 'Generating concept render...';
     try {
-      const spec = await generateRenderSpec(items || []);
+      const spec = await generateRenderSpec(items || [], camera);
       renderConceptSvg(renderHost, items || [], spec);
       details.innerHTML = '';
       details.append(
         el('h4', {}, [spec.spaceTitle || 'AI Space Concept']),
         el('p', {}, [spec.overallMood || '']),
         el('p', {}, [`Lighting: ${spec.lighting || 'Not specified'}`]),
-        el('p', { className: 'floorplan-ai-render-prompt' }, [spec.renderPrompt || '']),
+        el('p', { className: 'floorplan-ai-render-prompt' }, [spec.renderPrompt || spec.photoPrompt || '']),
         el('ul', {}, (spec.designActions || []).map(action => el('li', {}, [String(action)]))),
       );
       status.textContent = 'Concept render ready.';
