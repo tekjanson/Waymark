@@ -207,19 +207,36 @@ export async function getFile(token, fileId) {
  */
 export async function listAllFiles(token) {
   const q = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
-  const res = await fetch(
-    `${BASE}/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,modifiedTime,parents)&pageSize=200`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) throw driveError('Drive listAllFiles', res);
-  const data = await res.json();
-  return (data.files || []).map(f => ({
-    id: f.id,
-    name: f.name,
-    type: f.mimeType,
-    modified: (f.modifiedTime || '').slice(0, 10),
-    folder: (f.parents && f.parents[0]) || '/',
-  }));
+  const files = [];
+  let pageToken = '';
+
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,parents)',
+      pageSize: '200',
+      includeItemsFromAllDrives: 'true',
+      supportsAllDrives: 'true',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const res = await fetch(`${BASE}/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw driveError('Drive listAllFiles', res);
+
+    const data = await res.json();
+    files.push(...(data.files || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      type: f.mimeType,
+      modified: (f.modifiedTime || '').slice(0, 10),
+      folder: (f.parents && f.parents[0]) || '/',
+    })));
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+
+  return files;
 }
 
 /**
