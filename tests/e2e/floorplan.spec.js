@@ -47,6 +47,19 @@ test('workspace shows a persistent tool rail, canvas, and side panel', async ({ 
   await expect(page.locator('.floorplan-tool-button[data-tool="wall"]')).toHaveClass(/active/);
 });
 
+test('space bar can be used while typing in floorplan inputs', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-symbol-search', { timeout: 5_000 });
+
+  const input = page.locator('.floorplan-symbol-search');
+  await input.focus();
+  await page.keyboard.type('living room');
+
+  await expect(input).toHaveValue('living room');
+  await expect(page.locator('.floorplan-board')).not.toHaveClass(/floorplan-space-panning/);
+});
+
 test('floor plan does not render generic placeholder wall labels', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-075');
