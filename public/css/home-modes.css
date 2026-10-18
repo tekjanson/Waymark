@@ -1,0 +1,414 @@
+/* ============================================================
+   home-modes.css — 50 Wayboard home-page architectures
+   AUTO-ADAPTED from the WayMark UX Studio reference. Every rule is
+   scoped to #wayboard-root so the Wayboard is self-themed and cannot
+   leak styles into the rest of the app. Apply one of .mode-1 … .mode-50
+   on #wayboard-root to switch layout topology.
+   ============================================================ */
+
+/* Container sizing: fit the Wayboard into the home view below the top bar. */
+#wayboard-root {
+  height: calc(100vh - var(--topbar-height, 56px));
+  min-height: 420px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.35s cubic-bezier(0.16, 1, 0.3, 1), color 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#wayboard-root * { box-sizing: border-box; }
+
+#wayboard-root { --bg: #0d1117; --panel: #161b22; --card: #21262d; --border: #30363d;
+    --accent: #3b82f6; --green: #10b981; --amber: #f59e0b; --pink: #ec4899;
+    --text: #f0f6fc; --muted: #8b949e; --radius: 12px; --font: system-ui, -apple-system, sans-serif; }
+#wayboard-root * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+#wayboard-root { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; transition: background 0.35s ease, color 0.35s ease; }
+#wayboard-root header.app-header { height: 48px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 18px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root .brand { font-weight: 800; font-size: 16px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+#wayboard-root .search-bar { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 99px; width: 300px; font-size: 11px; transition: all 0.3s; }
+#wayboard-root .workspace { display: flex; flex: 1; overflow: hidden; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root aside.left-nav { width: 190px; background: var(--panel); border-right: 1px solid var(--border); padding: 12px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root .nav-item { padding: 8px 10px; border-radius: 7px; color: var(--muted); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+#wayboard-root .nav-item.active,
+#wayboard-root .nav-item:hover { background: rgba(59,130,246,0.15); color: var(--accent); font-weight: 600; }
+#wayboard-root main.canvas { flex: 1; padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root .greeting-banner { background: var(--panel); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; transition: all 0.35s; }
+#wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: rgba(16,185,129,0.15); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+#wayboard-root .badge.blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+#wayboard-root .section-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+#wayboard-root .markers-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; transition: all 0.35s; }
+#wayboard-root .marker-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: all 0.25s; display: flex; flex-direction: column; position: relative; }
+#wayboard-root .marker-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+#wayboard-root .marker-thumb { height: 52px; background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.22)); display: flex; align-items: center; justify-content: center; font-size: 22px; transition: all 0.3s; }
+#wayboard-root .marker-meta { padding: 9px; font-size: 11px; font-weight: 600; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+#wayboard-root .marker-social { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 5px; }
+#wayboard-root .wayboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; flex: 1; transition: all 0.35s; }
+#wayboard-root .widget { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.3s; position: relative; }
+#wayboard-root .widget:hover { border-color: var(--accent); }
+#wayboard-root .viewport-box { flex: 1; min-height: 105px; margin: 8px 0; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px dashed var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; text-align: center; font-size: 11px; color: var(--muted); }
+#wayboard-root .btn { background: var(--accent); color: #fff; border: none; padding: 5px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; }
+#wayboard-root aside.wayside { width: 270px; background: var(--panel); border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--card); border-radius: 6px; margin-top: 4px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
+#wayboard-root .crew-row.active,
+#wayboard-root .crew-row:hover { border-color: var(--accent); }
+#wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
+#wayboard-root .avatar-row { display: flex; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
+#wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
+#wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px; display: flex; flex-direction: column; gap: 5px; font-size: 10px; height: 165px; }
+#wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+#wayboard-root.mode-2 .greeting-banner { background: transparent; border: none; padding: 0 0 8px 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+#wayboard-root.mode-2 .markers-row { display: flex; gap: 10px; overflow-x: auto; }
+#wayboard-root.mode-2 .marker-card { flex-direction: row; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border-radius: 999px; border: 2px solid var(--accent); min-width: max-content; }
+#wayboard-root.mode-2 .marker-thumb { width: 32px; height: 32px; border-radius: 50%; font-size: 15px; }
+#wayboard-root.mode-2 .wayboard-grid { grid-template-columns: 1.8fr 1.1fr 1fr; }
+#wayboard-root.mode-2 .widget.hero,
+#wayboard-root.mode-2 .widget.tall { grid-row: span 2; }
+#wayboard-root.mode-3 aside.wayside { position: absolute; top: 10px; right: 20px; width: auto; height: auto; background: var(--card); border: 1px solid var(--accent); border-radius: 99px; flex-direction: row; align-items: center; padding: 6px 14px; gap: 12px; z-index: 20; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+#wayboard-root.mode-3 aside.wayside .chat-box,
+#wayboard-root.mode-3 aside.wayside .crews-block { display: none; }
+#wayboard-root.mode-3 .greeting-banner { padding-right: 330px; }
+#wayboard-root.mode-3 .wayboard-grid { grid-template-columns: 2fr 1fr 1fr 1fr; }
+#wayboard-root.mode-4 aside.left-nav { width: 64px; align-items: center; padding: 12px 6px; }
+#wayboard-root.mode-4 aside.left-nav .nav-text { display: none; }
+#wayboard-root.mode-4 aside.wayside { order: -1; border-left: none; border-right: 1px solid var(--border); width: 240px; background: #11161f; }
+#wayboard-root.mode-5 { background: radial-gradient(circle at 20% 20%, #1e1b4b, #090d16 70%); }
+#wayboard-root.mode-5 aside.left-nav { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); width: auto; height: 50px; flex-direction: row; border-radius: 99px; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(16px); z-index: 50; padding: 6px 16px; background: rgba(22,27,34,0.7); }
+#wayboard-root.mode-5 main.canvas { padding-bottom: 76px; }
+#wayboard-root.mode-6 { --bg: #fbfaf8; --panel: #f3f1ed; --card: #ffffff; --border: #e4e1da; --text: #1c1917; --muted: #78716c; --accent: #d97706; --green: #059669; }
+#wayboard-root.mode-6 .greeting-banner { background: transparent; border: none; border-bottom: 2px solid #e4e1da; border-radius: 0; padding: 6px 0; }
+#wayboard-root.mode-7 main.canvas { flex-direction: row; gap: 18px; }
+#wayboard-root.mode-7 .greeting-banner { display: none; }
+#wayboard-root.mode-7 .markers-section { width: 250px; flex-shrink: 0; overflow-y: auto; }
+#wayboard-root.mode-7 .markers-row { grid-template-columns: 1fr; }
+#wayboard-root.mode-7 .wayboard-section { flex: 1; }
+#wayboard-root.mode-7 .wayboard-grid { grid-template-columns: repeat(2, 1fr); }
+#wayboard-root.mode-8 { --bg: #08090a; --panel: #0d0f12; --card: #12151a; --border: #22262e; --accent: #818cf8; --radius: 4px; --font: 'JetBrains Mono', monospace; }
+#wayboard-root.mode-8 .marker-thumb { height: 28px; font-size: 14px; }
+#wayboard-root.mode-9 main.canvas { background-image: radial-gradient(#334155 1.5px, transparent 1.5px); background-size: 22px 22px; }
+#wayboard-root.mode-9 .marker-card:nth-child(odd) { transform: rotate(-1.5deg); }
+#wayboard-root.mode-9 .marker-card:nth-child(even) { transform: rotate(1.5deg); }
+#wayboard-root.mode-9 aside.wayside { margin: 14px; border-radius: 16px; border: 1px solid var(--border); }
+#wayboard-root.mode-10 { --bg: #050807; --panel: #0a100d; --card: #0f1914; --border: #1b3b2b; --accent: #00f5d4; --green: #00f5d4; --text: #e2f1ea; --muted: #6b9e88; --radius: 4px; }
+#wayboard-root.mode-10 .widget,
+#wayboard-root.mode-10 .marker-card,
+#wayboard-root.mode-10 .greeting-banner { border-left: 3px solid var(--accent); }
+#wayboard-root.mode-11 .workspace { flex-direction: column; }
+#wayboard-root.mode-11 aside.left-nav { width: 100%; height: 40px; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 4px 16px; }
+#wayboard-root.mode-11 aside.wayside { width: 100%; height: 140px; border-left: none; border-top: 2px solid var(--accent); flex-direction: row; align-items: center; padding: 10px 20px; }
+#wayboard-root.mode-11 aside.wayside .chat-box { height: 115px; width: 350px; margin-top: 0; }
+#wayboard-root.mode-12 .marker-thumb { height: 85px; font-size: 32px; }
+#wayboard-root.mode-12 .wayboard-grid { grid-template-columns: repeat(4, 1fr); }
+#wayboard-root.mode-13 aside.left-nav,
+#wayboard-root.mode-13 header.app-header { display: none; }
+#wayboard-root.mode-13 .workspace { max-width: 920px; margin: 0 auto; width: 100%; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+#wayboard-root.mode-13 main.canvas { padding: 24px 36px; }
+#wayboard-root.mode-13 .wayboard-grid { display: flex; flex-direction: column; gap: 12px; }
+#wayboard-root.mode-13 aside.wayside { width: 230px; background: transparent; border-left: 1px dashed var(--border); }
+#wayboard-root.mode-14 header.app-header,
+#wayboard-root.mode-14 aside.left-nav,
+#wayboard-root.mode-14 .greeting-banner { display: none; }
+#wayboard-root.mode-14 .widget.hero { position: fixed; inset: 54px 0 0 0; z-index: 1; border-radius: 0; background: radial-gradient(circle at center, #1e293b 0%, #060911 100%); padding: 20px; }
+#wayboard-root.mode-14 .markers-section { position: fixed; top: 68px; left: 18px; z-index: 10; width: 300px; background: rgba(15,20,28,0.85); backdrop-filter: blur(12px); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); }
+#wayboard-root.mode-14 .markers-row { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+#wayboard-root.mode-14 .marker-thumb { height: 28px; font-size: 14px; }
+#wayboard-root.mode-14 .widget:not(.hero) { position: fixed; bottom: 18px; left: 18px; width: 240px; z-index: 10; background: rgba(15,20,28,0.88); backdrop-filter: blur(12px); }
+#wayboard-root.mode-14 .widget:nth-child(3) { left: 270px; }
+#wayboard-root.mode-14 .widget:nth-child(4) { left: 522px; }
+#wayboard-root.mode-14 aside.wayside { position: fixed; top: 68px; right: 18px; bottom: 18px; z-index: 10; background: rgba(15,20,28,0.88); backdrop-filter: blur(14px); border-radius: 14px; border: 1px solid rgba(255,255,255,0.15); }
+#wayboard-root.mode-15 aside.left-nav,
+#wayboard-root.mode-15 header.app-header { display: none; }
+#wayboard-root.mode-15 main.canvas { background: radial-gradient(circle at center, #172554 0%, #060911 70%); align-items: center; justify-content: center; text-align: center; }
+#wayboard-root.mode-15 .greeting-banner { width: 220px; height: 220px; border-radius: 50%; flex-direction: column; justify-content: center; gap: 8px; background: radial-gradient(circle, #2563eb, #1e1b4b); border: 4px solid #60a5fa; box-shadow: 0 0 50px rgba(59,130,246,0.5); }
+#wayboard-root.mode-15 .markers-row { display: flex; gap: 14px; justify-content: center; }
+#wayboard-root.mode-15 .marker-card { width: 120px; height: 120px; border-radius: 50%; align-items: center; justify-content: center; text-align: center; padding: 8px; border: 2px solid #f472b6; }
+#wayboard-root.mode-15 .marker-thumb { background: transparent; height: auto; font-size: 24px; }
+#wayboard-root.mode-15 .wayboard-grid { display: flex; gap: 14px; width: 100%; justify-content: center; }
+#wayboard-root.mode-15 .widget { width: 240px; border-radius: 20px; }
+#wayboard-root.mode-16 { --bg: #111a15; --panel: #16241c; --card: #1c3024; --border: #2a4635; --accent: #fbbf24; --green: #4ade80; }
+#wayboard-root.mode-16 main.canvas { background-image: linear-gradient(#203428 1px, transparent 1px), linear-gradient(90deg, #203428 1px, transparent 1px); background-size: 28px 28px; }
+#wayboard-root.mode-16 .widget,
+#wayboard-root.mode-16 .marker-card { border: 3px solid #fbbf24; border-radius: 14px; box-shadow: 0 6px 0 #0d1410; position: relative; }
+#wayboard-root.mode-16 .widget::after { content: "🟢 KL + ML Inside Room"; position: absolute; top: -10px; right: 10px; background: #065f46; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 99px; border: 2px solid #4ade80; }
+#wayboard-root.mode-17 { --bg: #f4f4f0; --panel: #eaeae4; --card: #ffffff; --border: #111111; --text: #000; --muted: #333; --accent: #000; --green: #000; --radius: 0px; --font: 'Georgia', serif; }
+#wayboard-root.mode-17 .widget,
+#wayboard-root.mode-17 .marker-card,
+#wayboard-root.mode-17 .greeting-banner,
+#wayboard-root.mode-17 .chat-box { border: 2px solid #000 !important; background: #fff !important; box-shadow: none !important; }
+#wayboard-root.mode-18 aside.left-nav { display: none; }
+#wayboard-root.mode-18 main.canvas { flex-direction: row; overflow-x: auto; gap: 20px; align-items: stretch; }
+#wayboard-root.mode-18 .greeting-banner { writing-mode: vertical-rl; transform: rotate(180deg); width: 64px; flex-shrink: 0; justify-content: center; background: #1e1b4b; }
+#wayboard-root.mode-18 .markers-section { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
+#wayboard-root.mode-18 .markers-row { grid-template-columns: 1fr; flex: 1; }
+#wayboard-root.mode-18 .wayboard-section { flex: 1; min-width: 660px; }
+#wayboard-root.mode-18 .wayboard-grid { grid-template-columns: repeat(2, 1fr); }
+#wayboard-root.mode-19 aside.left-nav { display: none; }
+#wayboard-root.mode-19 main.canvas { background: linear-gradient(135deg, #0f172a 0%, #311042 50%, #0f172a 100%); display: block; position: relative; overflow: hidden; }
+#wayboard-root.mode-19 .greeting-banner { width: 440px; position: absolute; top: 14px; left: 18px; z-index: 4; border-top: 20px solid #334155; }
+#wayboard-root.mode-19 .markers-section { width: 500px; position: absolute; top: 115px; left: 32px; background: var(--panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border); border-top: 20px solid #3b82f6; z-index: 5; box-shadow: 0 20px 50px rgba(0,0,0,0.65); }
+#wayboard-root.mode-19 .markers-row { grid-template-columns: repeat(3, 1fr); }
+#wayboard-root.mode-19 .wayboard-section { width: 620px; position: absolute; top: 32px; right: 24px; background: var(--panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border); border-top: 20px solid #10b981; z-index: 6; box-shadow: 0 20px 50px rgba(0,0,0,0.7); }
+#wayboard-root.mode-19 .wayboard-grid { grid-template-columns: repeat(2, 1fr); }
+#wayboard-root.mode-20 { --bg: #080b10; --panel: #0d121c; --card: #121824; --accent: #10b981; }
+#wayboard-root.mode-20 .markers-row { display: table; width: 100%; border-collapse: collapse; background: #0b1018; border: 1px solid #1e293b; }
+#wayboard-root.mode-20 .marker-card { display: table-row; border-bottom: 1px solid #1e293b; }
+#wayboard-root.mode-20 .marker-thumb,
+#wayboard-root.mode-20 .marker-meta,
+#wayboard-root.mode-20 .marker-social { display: table-cell; padding: 6px 12px; height: auto; vertical-align: middle; font-family: monospace; font-size: 11px; }
+#wayboard-root.mode-21 { --bg: #0d1117; --panel: #010409; --card: #161b22; --border: #30363d; --radius: 0px; --font: 'JetBrains Mono', monospace; }
+#wayboard-root.mode-21 .greeting-banner { padding: 4px 12px; background: #1f242c; border-bottom: 1px solid #30363d; font-size: 11px; }
+#wayboard-root.mode-21 .markers-row { display: flex; gap: 1px; background: #010409; border-bottom: 1px solid #30363d; }
+#wayboard-root.mode-21 .marker-card { flex-direction: row; align-items: center; padding: 6px 14px; background: #161b22; border: none; border-top: 2px solid var(--accent); width: auto; }
+#wayboard-root.mode-21 .marker-thumb { height: auto; width: auto; background: none; font-size: 13px; margin-right: 6px; }
+#wayboard-root.mode-21 .marker-social { display: none; }
+#wayboard-root.mode-21 main.canvas { padding: 0; gap: 0; }
+#wayboard-root.mode-21 .wayboard-grid { gap: 1px; background: #30363d; grid-template-columns: 1.5fr 1fr; }
+#wayboard-root.mode-21 .widget { border: none; }
+#wayboard-root.mode-22 main.canvas { perspective: 1200px; align-items: center; background: radial-gradient(circle at 50% 30%, #1e293b, #05070b); }
+#wayboard-root.mode-22 .markers-row { display: flex; justify-content: center; gap: -20px; transform-style: preserve-3d; padding: 15px 0; }
+#wayboard-root.mode-22 .marker-card { width: 165px; transform: rotateY(28deg) scale(0.92); box-shadow: -12px 10px 24px rgba(0,0,0,0.6); }
+#wayboard-root.mode-22 .marker-card:nth-child(3) { transform: rotateY(0deg) scale(1.12) translateZ(40px); z-index: 10; border-color: #60a5fa; }
+#wayboard-root.mode-22 .marker-card:nth-child(4),
+#wayboard-root.mode-22 .marker-card:nth-child(5) { transform: rotateY(-28deg) scale(0.92); }
+#wayboard-root.mode-22 .wayboard-grid { width: 100%; transform: rotateX(8deg); }
+#wayboard-root.mode-23 { --bg: #090d14; --panel: #111722; --card: #0c121b; --border: #2563eb; --radius: 2px; }
+#wayboard-root.mode-23 aside.left-nav,
+#wayboard-root.mode-23 .greeting-banner { display: none; }
+#wayboard-root.mode-23 main.canvas { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; padding: 4px; background: #1e3a8a; }
+#wayboard-root.mode-23 .markers-section { background: #090d14; padding: 12px; border: 1px solid #3b82f6; overflow: auto; }
+#wayboard-root.mode-23 .markers-row { grid-template-columns: repeat(2, 1fr); }
+#wayboard-root.mode-23 .wayboard-section { grid-column: span 2; grid-row: 1; background: #090d14; padding: 12px; border: 1px solid #3b82f6; }
+#wayboard-root.mode-23 .wayboard-grid { grid-template-columns: 2fr 1fr 1fr; height: 100%; }
+#wayboard-root.mode-24 { --bg: #f2f0eb; --panel: #f2f0eb; --card: #f2f0eb; --border: #111111; --text: #111111; --muted: #555555; --accent: #ff2a00; --radius: 0px; --font: 'Helvetica Neue', Arial, sans-serif; }
+#wayboard-root.mode-24 header.app-header { border-bottom: 4px solid #111; }
+#wayboard-root.mode-24 aside.left-nav { border-right: 4px solid #111; }
+#wayboard-root.mode-24 .greeting-banner { border: none; border-bottom: 4px solid #111; padding: 20px 0; }
+#wayboard-root.mode-24 .greeting-banner h2 { font-size: 38px !important; font-weight: 900; letter-spacing: -1.5px; text-transform: uppercase; }
+#wayboard-root.mode-24 .widget,
+#wayboard-root.mode-24 .marker-card { border: none; border-top: 3px solid #111; padding-top: 12px; }
+#wayboard-root.mode-24 aside.wayside { border-left: 4px solid #111; }
+#wayboard-root.mode-25 header.app-header { display: none; }
+#wayboard-root.mode-25 .workspace { padding: 10px; gap: 10px; background: linear-gradient(135deg, #311042, #0f172a, #064e3b); }
+#wayboard-root.mode-25 aside.left-nav { width: 230px; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; }
+#wayboard-root.mode-25 main.canvas { background: #0f141c; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+#wayboard-root.mode-25 aside.wayside { background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; }
+#wayboard-root.mode-26 aside.left-nav,
+#wayboard-root.mode-26 .greeting-banner { display: none; }
+#wayboard-root.mode-26 main.canvas { flex-direction: row; gap: 14px; align-items: stretch; overflow-x: auto; }
+#wayboard-root.mode-26 .markers-section { width: 290px; background: var(--panel); padding: 12px; border-radius: 12px; border: 1px solid var(--border); flex-shrink: 0; }
+#wayboard-root.mode-26 .markers-row { grid-template-columns: 1fr; gap: 10px; }
+#wayboard-root.mode-26 .wayboard-section { flex: 1; }
+#wayboard-root.mode-26 .wayboard-grid { grid-template-columns: repeat(3, 1fr); height: 100%; }
+#wayboard-root.mode-26 .widget.hero,
+#wayboard-root.mode-26 .widget.tall { grid-row: span 2; }
+#wayboard-root.mode-27 aside.left-nav { display: none; }
+#wayboard-root.mode-27 main.canvas { background:
+      radial-gradient(circle at center, transparent 140px, rgba(16,185,129,0.2) 141px, transparent 143px),
+      radial-gradient(circle at center, transparent 280px, rgba(16,185,129,0.15) 281px, transparent 283px),
+      radial-gradient(circle at center, #041f18 0%, #020806 75%); }
+#wayboard-root.mode-27 .widget,
+#wayboard-root.mode-27 .marker-card { border-color: #059669; background: rgba(4,31,24,0.75); border-radius: 16px; }
+#wayboard-root.mode-28 aside.left-nav { display: none; }
+#wayboard-root.mode-28 main.canvas { perspective: 1400px; background: #070a0f; overflow: visible; align-items: center; justify-content: center; }
+#wayboard-root.mode-28 .greeting-banner,
+#wayboard-root.mode-28 .markers-section,
+#wayboard-root.mode-28 .wayboard-section { width: 92%; transform: rotateX(22deg) rotateZ(-4deg); transform-style: preserve-3d;
+    box-shadow: -15px 20px 35px rgba(0,0,0,0.7); }
+#wayboard-root.mode-28 .widget:hover,
+#wayboard-root.mode-28 .marker-card:hover { transform: translateZ(30px); border-color: #38bdf8; }
+#wayboard-root.mode-29 header.app-header,
+#wayboard-root.mode-29 aside.left-nav,
+#wayboard-root.mode-29 .greeting-banner { display: none; }
+#wayboard-root.mode-29 aside.wayside { position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+    width: auto; height: 44px; border-radius: 999px; background: #000; border: 1px solid #334155;
+    flex-direction: row; align-items: center; padding: 4px 20px; z-index: 100; box-shadow: 0 12px 30px rgba(0,0,0,0.8); }
+#wayboard-root.mode-29 aside.wayside .crews-block,
+#wayboard-root.mode-29 aside.wayside .chat-box { display: none; }
+#wayboard-root.mode-29 main.canvas { padding-top: 64px; max-width: 1250px; margin: 0 auto; }
+#wayboard-root.mode-30 { --bg: #111216; --panel: #18191e; --card: #1f2128; --border: #2e313d; --accent: #a855f7; }
+#wayboard-root.mode-30 main.canvas { background-image: radial-gradient(circle at 30% 40%, rgba(168,85,247,0.12) 0%, transparent 45%),
+                      radial-gradient(circle at 75% 65%, rgba(59,130,246,0.12) 0%, transparent 45%); }
+#wayboard-root.mode-30 .marker-card { border-radius: 99px; flex-direction: row; align-items: center; padding: 4px 12px; border: 1px dashed #a855f7; }
+#wayboard-root.mode-30 .marker-thumb { width: 28px; height: 28px; border-radius: 50%; }
+#wayboard-root.mode-30 .marker-social { display: none; }
+#wayboard-root.mode-31 aside.left-nav,
+#wayboard-root.mode-31 .greeting-banner { display: none; }
+#wayboard-root.mode-31 main.canvas { background-color: #121316;
+    background-image: linear-gradient(#1f2229 1px, transparent 1px), linear-gradient(90deg, #1f2229 1px, transparent 1px);
+    background-size: 20px 20px; }
+#wayboard-root.mode-31 .widget,
+#wayboard-root.mode-31 .marker-card { border-radius: 8px; border: 2px solid #475569; border-top: 18px solid #2563eb; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
+#wayboard-root.mode-31 .widget::before,
+#wayboard-root.mode-31 .marker-card::before { content: "● IN ────────── OUT ●"; font-size: 8px; color: #94a3b8; letter-spacing: 1px; margin-bottom: 4px; display: block; }
+#wayboard-root.mode-32 { --bg: #f4f1ea; --panel: #eae5db; --card: transparent; --border: #1c1917; --text: #1c1917; --muted: #57534e; --accent: #b91c1c; --radius: 0px; --font: 'Georgia', serif; }
+#wayboard-root.mode-32 aside.left-nav { display: none; }
+#wayboard-root.mode-32 .greeting-banner { border: none; border-top: 4px double #1c1917; border-bottom: 4px double #1c1917; text-align: center; justify-content: center; }
+#wayboard-root.mode-32 .markers-row { border-bottom: 2px solid #1c1917; padding-bottom: 12px; }
+#wayboard-root.mode-32 .marker-card,
+#wayboard-root.mode-32 .widget { border: none; border-right: 1px solid #1c1917; box-shadow: none; }
+#wayboard-root.mode-33 aside.left-nav { display: none; }
+#wayboard-root.mode-33 .workspace { flex-direction: row-reverse; }
+#wayboard-root.mode-33 aside.wayside { width: 45%; background: #0b0f17; border-left: none; border-right: 2px solid var(--accent); padding: 20px; }
+#wayboard-root.mode-33 aside.wayside .chat-box { height: 280px; }
+#wayboard-root.mode-34 header.app-header,
+#wayboard-root.mode-34 aside.left-nav,
+#wayboard-root.mode-34 .greeting-banner,
+#wayboard-root.mode-34 .section-head { display: none; }
+#wayboard-root.mode-34 .workspace { padding: 8px; gap: 8px; background: #05070a; }
+#wayboard-root.mode-34 main.canvas { padding: 0; gap: 8px; }
+#wayboard-root.mode-34 .widget,
+#wayboard-root.mode-34 .marker-card,
+#wayboard-root.mode-34 aside.wayside { border: 2px solid #00f5d4; border-radius: 6px; background: #0d131a; }
+#wayboard-root.mode-35 aside.left-nav,
+#wayboard-root.mode-35 .greeting-banner { display: none; }
+#wayboard-root.mode-35 main.canvas { flex-direction: row; gap: 8px; padding: 10px; }
+#wayboard-root.mode-35 .markers-section { width: 220px; }
+#wayboard-root.mode-35 .markers-row { grid-template-columns: 1fr; }
+#wayboard-root.mode-35 .wayboard-section { flex: 1; }
+#wayboard-root.mode-35 .wayboard-grid { display: flex; flex-direction: row; gap: 8px; height: 100%; }
+#wayboard-root.mode-35 .widget { flex: 1; transition: flex 0.35s ease; }
+#wayboard-root.mode-35 .widget:hover { flex: 2.2; border-color: #f472b6; }
+#wayboard-root.mode-36 header.app-header,
+#wayboard-root.mode-36 aside.left-nav { display: none; }
+#wayboard-root.mode-36 .workspace { background: radial-gradient(circle, #111827 0%, #030712 100%); }
+#wayboard-root.mode-36 .greeting-banner { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); background: rgba(0,245,212,0.08); border: 1px solid #00f5d4; border-radius: 99px; padding: 6px 24px; }
+#wayboard-root.mode-36 .markers-section { position: fixed; bottom: 16px; left: 16px; right: 300px; }
+#wayboard-root.mode-36 .wayboard-grid { grid-template-columns: repeat(2, 260px); justify-content: space-between; }
+#wayboard-root.mode-36 .widget { background: rgba(10,20,28,0.55); border: 1px solid rgba(0,245,212,0.4); backdrop-filter: blur(8px); }
+#wayboard-root.mode-37 { --bg: #0a2558; --panel: #0d2e6e; --card: rgba(13,46,110,0.7); --border: #93c5fd; --text: #ffffff; --muted: #bfdbfe; --accent: #ffffff; --radius: 0px; --font: 'Courier New', monospace; }
+#wayboard-root.mode-37 aside.left-nav { display: none; }
+#wayboard-root.mode-37 main.canvas { background-image: linear-gradient(rgba(147,197,253,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(147,197,253,0.18) 1px, transparent 1px);
+    background-size: 24px 24px; border: 4px solid #fff; margin: 10px; }
+#wayboard-root.mode-37 aside.wayside { border: 4px solid #fff; margin: 10px 10px 10px 0; }
+#wayboard-root.mode-38 aside.left-nav,
+#wayboard-root.mode-38 .markers-section { display: none; }
+#wayboard-root.mode-38 main.canvas { display: flex; align-items: center; justify-content: center; }
+#wayboard-root.mode-38 .greeting-banner { position: absolute; z-index: 20; width: 210px; height: 210px; border-radius: 50%; text-align: center; flex-direction: column; justify-content: center; background: #1e1b4b; border: 4px solid #38bdf8; box-shadow: 0 0 40px rgba(56,189,248,0.4); }
+#wayboard-root.mode-38 .wayboard-section { width: 100%; height: 100%; }
+#wayboard-root.mode-38 .wayboard-grid { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 36px; height: 100%; }
+#wayboard-root.mode-39 aside.left-nav,
+#wayboard-root.mode-39 .greeting-banner { display: none; }
+#wayboard-root.mode-39 main.canvas { display: flex; flex-direction: column; padding: 12px; gap: 12px; }
+#wayboard-root.mode-39 .wayboard-section { order: -1; flex: 2; }
+#wayboard-root.mode-39 .wayboard-grid { grid-template-columns: 2.2fr 1fr 1fr; height: 100%; }
+#wayboard-root.mode-39 .markers-section { flex: 0.7; }
+#wayboard-root.mode-40 aside.left-nav,
+#wayboard-root.mode-40 aside.wayside { opacity: 0.18; transition: opacity 0.3s; }
+#wayboard-root.mode-40 aside.left-nav:hover,
+#wayboard-root.mode-40 aside.wayside:hover { opacity: 1; }
+#wayboard-root.mode-40 .markers-section { opacity: 0.25; transition: 0.3s; }
+#wayboard-root.mode-40 .markers-section:hover { opacity: 1; }
+#wayboard-root.mode-40 .widget:not(.hero) { opacity: 0.25; }
+#wayboard-root.mode-40 .widget:not(.hero):hover { opacity: 1; }
+#wayboard-root.mode-40 .widget.hero { border: 2px solid #38bdf8; box-shadow: 0 0 45px rgba(56,189,248,0.2); }
+#wayboard-root.mode-41 aside.left-nav { display: none; }
+#wayboard-root.mode-41 main.canvas { max-width: 880px; margin: 0 auto; gap: 18px; }
+#wayboard-root.mode-41 .markers-row,
+#wayboard-root.mode-41 .wayboard-grid { display: flex; flex-direction: column; gap: 14px; }
+#wayboard-root.mode-41 .widget,
+#wayboard-root.mode-41 .marker-card { border-left: 5px solid #3b82f6; border-radius: 4px; position: relative; padding-left: 20px; }
+#wayboard-root.mode-41 .widget::before { content: "In [1]: waymark.render_widget()"; font-family: monospace; font-size: 10px; color: #60a5fa; margin-bottom: 6px; }
+#wayboard-root.mode-42 { --bg: #d4d4d8; --panel: #e4e4e7; --card: #f4f4f5; --border: #a1a1aa; --text: #18181b; --muted: #52525b; --accent: #ff5500; --green: #00aa55; --radius: 10px; --font: 'Courier New', monospace; }
+#wayboard-root.mode-42 .widget,
+#wayboard-root.mode-42 .marker-card,
+#wayboard-root.mode-42 .greeting-banner { background: #f4f4f5; border: 2px solid #71717a; box-shadow: 0 5px 0 #71717a, inset 0 1px 0 #fff; }
+#wayboard-root.mode-42 .btn { background: #ff5500; box-shadow: 0 3px 0 #9a3412; }
+#wayboard-root.mode-43 .workspace { perspective: 1100px; background: #030508; padding: 12px; gap: 10px; }
+#wayboard-root.mode-43 aside.left-nav { transform: rotateY(22deg) translateZ(10px); transform-origin: left center; border: 1px solid #3b82f6; border-radius: 12px; }
+#wayboard-root.mode-43 aside.wayside { transform: rotateY(-22deg) translateZ(10px); transform-origin: right center; border: 1px solid #3b82f6; border-radius: 12px; }
+#wayboard-root.mode-44 .markers-row { grid-template-columns: repeat(5, 1fr); }
+#wayboard-root.mode-44 .marker-card:nth-child(even) { margin-top: 18px; }
+#wayboard-root.mode-44 .wayboard-grid { grid-template-columns: repeat(4, 1fr); align-items: start; }
+#wayboard-root.mode-44 .widget:nth-child(2) { margin-top: 24px; }
+#wayboard-root.mode-44 .widget:nth-child(4) { margin-top: -16px; }
+#wayboard-root.mode-45 main.canvas { background:
+      linear-gradient(90deg, transparent 49.5%, #ef4444 49.5%, #ef4444 50.5%, transparent 50.5%),
+      linear-gradient(180deg, transparent 49.5%, #3b82f6 49.5%, #3b82f6 50.5%, transparent 50.5%),
+      #0c1017; }
+#wayboard-root.mode-45 .widget,
+#wayboard-root.mode-45 .marker-card { border: 3px solid #fff; border-radius: 18px; box-shadow: 0 0 0 4px #ef4444; }
+#wayboard-root.mode-46 .widget,
+#wayboard-root.mode-46 .marker-card,
+#wayboard-root.mode-46 .greeting-banner { border-radius: 48px !important; padding: 18px 24px; background: radial-gradient(circle at top left, rgba(59,130,246,0.2), rgba(15,23,42,0.9));
+    border: 1px solid rgba(96,165,250,0.4); }
+#wayboard-root.mode-47 aside.left-nav,
+#wayboard-root.mode-47 .greeting-banner { display: none; }
+#wayboard-root.mode-47 .workspace { flex-direction: row-reverse; }
+#wayboard-root.mode-47 main.canvas { flex-direction: row; gap: 14px; }
+#wayboard-root.mode-47 .markers-section { width: 240px; }
+#wayboard-root.mode-47 .markers-row { grid-template-columns: 1fr; }
+#wayboard-root.mode-47 .wayboard-section { flex: 1; }
+#wayboard-root.mode-47 .wayboard-grid { grid-template-columns: 1fr; }
+#wayboard-root.mode-48 { --bg: #271c15; --panel: #1f1610; --card: #faf8f5; --text: #1c1917; --muted: #57534e; }
+#wayboard-root.mode-48 main.canvas { background: repeating-linear-gradient(35deg, rgba(220,38,38,0.25) 0px, rgba(220,38,38,0.25) 2px, transparent 2px, transparent 140px), #271c15; }
+#wayboard-root.mode-48 .marker-card,
+#wayboard-root.mode-48 .widget { background: #faf8f5; color: #111; border: 8px solid #fff; border-bottom: 24px solid #fff; border-radius: 2px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.55); transform: rotate(-1.5deg); }
+#wayboard-root.mode-48 .widget:nth-child(even) { transform: rotate(1.8deg); }
+#wayboard-root.mode-49 { --bg: #030407; --panel: #080b11; --card: #0c111a; --border: #1e293b; --radius: 2px; --font: 'JetBrains Mono', monospace; }
+#wayboard-root.mode-49 aside.left-nav { width: 52px; }
+#wayboard-root.mode-49 aside.left-nav .nav-text { display: none; }
+#wayboard-root.mode-49 .wayboard-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#wayboard-root.mode-49 .markers-row { gap: 6px; }
+#wayboard-root.mode-50 aside.left-nav,
+#wayboard-root.mode-50 header.app-header { display: none; }
+#wayboard-root.mode-50 main.canvas { align-items: center; justify-content: center; background: radial-gradient(circle at center, #1e1b4b 0%, #05070b 75%); }
+#wayboard-root.mode-50 .greeting-banner { width: 680px; border-radius: 99px; border: 2px solid #60a5fa; box-shadow: 0 0 40px rgba(59,130,246,0.35); padding: 16px 28px; }
+#wayboard-root.mode-50 .markers-section,
+#wayboard-root.mode-50 .wayboard-section { width: 920px; }
+
+/* ---------- Final container overrides (last rule wins over body-derived height) ---------- */
+/* Let the Wayboard fill the content area and own its own padding. */
+#content:has(> #home-view.home-wayboard:not(.hidden)) { padding: 0; overflow: hidden; }
+#home-view.home-wayboard { padding: 0; height: 100%; }
+#wayboard-root { height: calc(100vh - var(--topbar-height, 56px)); min-height: 440px; overflow: hidden; }
+
+/* Keep the legacy home helpers usable inside the Wayboard canvas. */
+#wayboard-root .home-quick-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+#wayboard-root .home-action-card {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius); font-size: 12px; font-weight: 600;
+}
+#wayboard-root .home-action-card:hover { border-color: var(--accent); }
+#wayboard-root .home-section-title { font-size: 11px; color: var(--muted); margin: 10px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+#wayboard-root .home-section.hidden, #wayboard-root .hidden { display: none; }
+#wayboard-root .home-empty-hint { font-size: 11px; color: var(--muted); }
+#wayboard-root .wayboard-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+#wayboard-root .wayboard-head-action { color: var(--accent); cursor: pointer; }
+
+/* Smooth cross-mode morphing. */
+#wayboard-root,
+#wayboard-root .workspace,
+#wayboard-root main.canvas,
+#wayboard-root aside.wayside,
+#wayboard-root aside.left-nav,
+#wayboard-root .markers-row,
+#wayboard-root .wayboard-grid,
+#wayboard-root .greeting-banner {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---------- Wayboard widget + Wayside internals (scoped) ---------- */
+#wayboard-root .widget-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#wayboard-root .widget-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#wayboard-root .widget-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; font-size: 11px; }
+#wayboard-root .widget-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+#wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: center; }
+#wayboard-root .wayside-webrtc { font-size: 10px; color: var(--green); }
+#wayboard-root .wayside-label { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-top: 4px; }
+#wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.4; }
+#wayboard-root .crews-block { display: flex; flex-direction: column; }
+
+#wayboard-root .chat-box-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+#wayboard-root .chat-box-actions { display: flex; gap: 3px; }
+#wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
+#wayboard-root .btn-muted { background: #334155; }
+#wayboard-root .chat-sheet-line { font-size: 9px; color: var(--accent); }
+#wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 5px; border-radius: 4px; font-size: 10px; }
+#wayboard-root .chat-self { color: var(--text); }
+#wayboard-root .chat-peer { color: var(--muted); }
+
+/* Presence rings on wayfarer avatars */
+#wayboard-root .avatar-online { border-color: var(--green); }
+#wayboard-root .avatar-away { border-color: var(--amber); }
+#wayboard-root .avatar-offline { border-color: var(--muted); opacity: 0.6; }

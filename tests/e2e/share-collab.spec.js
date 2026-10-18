@@ -122,3 +122,35 @@ test('ledger id is written back into the Contacts Waymark share column', async (
 
   expect(wroteBack.shareCell).toBe(wroteBack.ledgerId);
 });
+
+test('social pipeline: presence publish/read round-trips through the ledger', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
+
+  const presence = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const target = { group: 'Family Crew' };
+    await collab.publishPresence(target, { status: 'online', activeWaymarkId: 'home' });
+    return collab.readPresence(target);
+  });
+
+  expect(presence.length).toBeGreaterThanOrEqual(1);
+  expect(presence[0].email).toBe('testuser@gmail.com');
+  expect(presence[0].status).toBe('online');
+});
+
+test('social pipeline: chat send/read round-trips through the ledger', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
+
+  const chat = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const target = { contactEmail: 'pal@example.com' };
+    await collab.sendChat(target, 'On my way to the trailhead!');
+    return collab.readChat(target);
+  });
+
+  expect(chat.length).toBe(1);
+  expect(chat[0].text).toBe('On my way to the trailhead!');
+  expect(chat[0].sender).toBe('testuser@gmail.com');
+});

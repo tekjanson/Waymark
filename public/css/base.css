@@ -2700,6 +2700,11 @@ html.waymark-android #search-input {
 .settings-theme-toggle {
   display: flex; align-items: center; gap: 6px;
 }
+.settings-home-template-picker {
+  display: flex; align-items: center; gap: 6px;
+}
+.settings-home-template-picker .settings-select { min-width: 220px; }
+.settings-home-template-picker .btn-sm { padding: 4px 10px; font-weight: 700; line-height: 1; }
 .settings-theme-btn {
   padding: 5px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 500;
   border: 1px solid var(--color-border); background: transparent;

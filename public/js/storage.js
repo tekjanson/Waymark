@@ -54,6 +54,21 @@ export function setPinnedSheets(sheets) {
 
 /* --- Preferences --- */
 
+/**
+ * Selected Home Page layout architecture (1–50). Mirrored to Drive via
+ * user-data; this localStorage copy gives a zero-flash load on startup.
+ * @returns {number}
+ */
+export function getHomeTemplateMode() {
+  const v = parseInt(get('home_template_mode'), 10);
+  return (v >= 1 && v <= 50) ? v : 1;
+}
+
+export function setHomeTemplateMode(mode) {
+  const n = parseInt(mode, 10);
+  set('home_template_mode', (n >= 1 && n <= 50) ? n : 1);
+}
+
 export function getAutoRefresh() {
   const v = get('auto_refresh');
   return v === null ? true : v;   // default on

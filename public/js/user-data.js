@@ -51,6 +51,7 @@ function defaultUserData() {
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       mqttBridge: false,          // MQTT debug bridge enabled
       mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
+      homeTemplateMode: 1,        // selected Home Page layout architecture (1–50)
     },
 
     /* ── Tutorial ── */
@@ -469,6 +470,25 @@ export function getAutoRefresh() {
 
 export async function setAutoRefresh(enabled) {
   const prefs = { ...(_userData?.preferences || {}), autoRefresh: !!enabled };
+  await save({ preferences: prefs });
+}
+
+/**
+ * Selected Home Page layout architecture (1–50). Falls back to the localStorage
+ * mirror (zero-flash) when Drive data hasn't hydrated yet.
+ * @returns {number}
+ */
+export function getHomeTemplateMode() {
+  const v = parseInt(_userData?.preferences?.homeTemplateMode, 10);
+  if (v >= 1 && v <= 50) return v;
+  try { return storage.getHomeTemplateMode(); } catch { return 1; }
+}
+
+export async function setHomeTemplateMode(mode) {
+  const n = parseInt(mode, 10);
+  const value = (n >= 1 && n <= 50) ? n : 1;
+  const prefs = { ...(_userData?.preferences || {}), homeTemplateMode: value };
+  try { storage.setHomeTemplateMode(value); } catch { /* localStorage mirror is best-effort */ }
   await save({ preferences: prefs });
 }
 

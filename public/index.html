@@ -130,57 +130,85 @@
       <!-- Main Content -->
       <main id="content">
 
-        <!-- Home View -->
-        <section id="home-view" class="view" data-view="home">
+        <!-- Home View — Unified Wayboard -->
+        <section id="home-view" class="view home-wayboard" data-view="home">
+          <div id="wayboard-root" class="wayboard-root mode-1">
+            <div class="workspace">
+              <main class="canvas">
 
-          <!-- Greeting -->
-          <div id="home-greeting" class="home-greeting">
-            <h2 id="home-greeting-text">Welcome back</h2>
-            <p id="home-greeting-sub" class="home-greeting-sub">Welcome back to your Wayboard</p>
+                <!-- Top Greeting / Trailhead Banner -->
+                <div id="home-greeting" class="greeting-banner home-greeting">
+                  <div>
+                    <h2 id="home-greeting-text">Welcome back</h2>
+                    <p id="home-greeting-sub" class="home-greeting-sub">Welcome back to your Wayboard</p>
+                  </div>
+                  <div id="home-status-badges" class="wayboard-badges"></div>
+                </div>
+
+                <!-- Way Markers -->
+                <div id="home-markers" class="markers-section">
+                  <div class="section-head">
+                    <span>📌 Way Markers</span>
+                  </div>
+
+                  <!-- Quick Actions -->
+                  <div class="home-quick-actions">
+                    <button id="home-action-create" class="home-action-card">
+                      <span class="home-action-icon">📝</span>
+                      <span class="home-action-label">New Waymark</span>
+                    </button>
+                    <button id="home-action-import" class="home-action-card">
+                      <span class="home-action-icon">📥</span>
+                      <span class="home-action-label">Import</span>
+                    </button>
+                    <button id="home-action-browse" class="home-action-card">
+                      <span class="home-action-icon">📂</span>
+                      <span class="home-action-label">Browse</span>
+                    </button>
+                    <button id="home-action-examples" class="home-action-card">
+                      <span class="home-action-icon">✨</span>
+                      <span class="home-action-label">Examples</span>
+                    </button>
+                  </div>
+
+                  <!-- Recent Sheets -->
+                  <div id="home-recent" class="home-section hidden">
+                    <h3 class="home-section-title">📋 Recently Opened</h3>
+                    <div id="home-recent-list" class="home-recent-list markers-row"></div>
+                  </div>
+
+                  <!-- Pinned Sheets -->
+                  <div id="home-pinned-sheets" class="home-section hidden">
+                    <h3 class="home-section-title">📌 Pinned Sheets</h3>
+                    <div id="pinned-sheets" class="pinned-grid markers-row"></div>
+                  </div>
+
+                  <!-- Pinned Folders -->
+                  <div id="home-pinned" class="home-section">
+                    <h3 class="home-section-title">📌 Pinned Folders</h3>
+                    <div id="pinned-folders" class="pinned-grid markers-row"></div>
+                    <p id="no-pinned" class="home-empty-hint hidden">
+                      No pins yet — open a sheet or folder and tap 📌 to pin it.
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Wayboard Dashboard -->
+                <div id="home-wayboard-section" class="wayboard-section">
+                  <div class="section-head">
+                    <span>🎛️ Wayboard Canvas</span>
+                    <span id="wayboard-add-widget" class="wayboard-head-action">+ Add Widget</span>
+                  </div>
+                  <div id="wayboard-grid" class="wayboard-grid"></div>
+                </div>
+
+                <div id="generate-progress" class="generate-progress hidden"></div>
+              </main>
+
+              <!-- The Wayside (social: crews, presence, chat, WebRTC) -->
+              <aside id="home-wayside" class="wayside"></aside>
+            </div>
           </div>
-
-          <!-- Quick Actions -->
-          <div class="home-quick-actions">
-            <button id="home-action-create" class="home-action-card">
-              <span class="home-action-icon">📝</span>
-              <span class="home-action-label">New Waymark</span>
-            </button>
-            <button id="home-action-import" class="home-action-card">
-              <span class="home-action-icon">📥</span>
-              <span class="home-action-label">Import</span>
-            </button>
-            <button id="home-action-browse" class="home-action-card">
-              <span class="home-action-icon">📂</span>
-              <span class="home-action-label">Browse</span>
-            </button>
-            <button id="home-action-examples" class="home-action-card">
-              <span class="home-action-icon">✨</span>
-              <span class="home-action-label">Examples</span>
-            </button>
-          </div>
-
-          <!-- Recent Sheets -->
-          <div id="home-recent" class="home-section hidden">
-            <h3 class="home-section-title">📋 Recently Opened</h3>
-            <div id="home-recent-list" class="home-recent-list"></div>
-          </div>
-
-          <!-- Pinned Sheets -->
-          <div id="home-pinned-sheets" class="home-section hidden">
-            <h3 class="home-section-title">📌 Pinned Sheets</h3>
-            <div id="pinned-sheets" class="pinned-grid"></div>
-          </div>
-
-          <!-- Pinned Folders -->
-          <div id="home-pinned" class="home-section">
-            <h3 class="home-section-title">📌 Pinned Folders</h3>
-            <div id="pinned-folders" class="pinned-grid"></div>
-            <p id="no-pinned" class="home-empty-hint hidden">
-              No pins yet — open a sheet or folder and tap 📌 to pin it.
-            </p>
-          </div>
-
-          <div id="generate-progress" class="generate-progress hidden"></div>
         </section>
 
         <!-- Drive Explorer View (main content) -->
@@ -369,6 +397,25 @@
 
         <!-- Folder browser (hidden until Choose is clicked) -->
         <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
+      </div>
+
+      <!-- Home Page Layout Section -->
+      <div class="settings-section">
+        <h4 class="settings-section-title">Home Page Layout Template</h4>
+        <p class="settings-hint">Pick one of 50 spatial architectures for your Wayboard. Your data stays the same — only the layout changes. Default is 1.</p>
+
+        <div class="settings-row">
+          <span class="settings-label">Architecture</span>
+          <div class="settings-home-template-picker">
+            <button id="settings-home-template-prev" class="btn btn-secondary btn-sm" title="Previous layout" aria-label="Previous layout">‹</button>
+            <select id="settings-home-template" class="settings-select"></select>
+            <button id="settings-home-template-next" class="btn btn-secondary btn-sm" title="Next layout" aria-label="Next layout">›</button>
+          </div>
+        </div>
+        <label class="settings-row">
+          <span class="settings-label">Live preview on Home</span>
+          <input type="checkbox" id="settings-home-template-preview" class="settings-toggle" checked>
+        </label>
       </div>
 
       <!-- AI Models Section -->

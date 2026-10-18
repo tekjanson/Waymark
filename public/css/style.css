@@ -6,6 +6,9 @@
 /* Core: variables, reset, layout, shared components */
 @import url('./base.css');
 
+/* Unified Wayboard home — 50 selectable layout architectures */
+@import url('./home-modes.css');
+
 /* Per-template styles */
 @import url('./templates/checklist.css');
 @import url('./templates/tracker.css');
