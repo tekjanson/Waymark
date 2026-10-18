@@ -979,6 +979,7 @@
   margin-bottom: 10px;
 }
 .floorplan-ai-render-svg { width: 100%; display: block; border-radius: var(--radius-sm); }
+.floorplan-ai-photoreal-img { width: 100%; display: block; border-radius: var(--radius-sm); }
 .floorplan-view-svg { width: 100%; display: block; border-radius: var(--radius-sm); background: #0f172a; }
 .floorplan-view-object { cursor: pointer; }
 .floorplan-object-details {
@@ -1060,10 +1061,28 @@
 
 /* ---------- Print ---------- */
 @media print {
+  /* Hide every interactive chrome element so the printed PDF shows ONLY the
+     floor plan canvas (walls, rooms, room labels) and the scale bar. */
   .floorplan-topbar,
   .floorplan-rail,
   .floorplan-panel,
-  .floorplan-statusbar { display: none !important; }
+  .floorplan-statusbar,
+  .floorplan-floating-hud,
+  .floorplan-prop-toolbar,
+  .floorplan-zoom-toolbar,
+  .floorplan-snap-hud,
+  .floorplan-snap-pill,
+  .floorplan-grid-pill,
+  .floorplan-clear-guard-btn,
+  .floorplan-clear-popover,
+  .floorplan-mobile-dock,
+  .floorplan-line-toolbar,
+  .floorplan-export-menu,
+  .floorplan-export-menu-btn,
+  .floorplan-context-menu,
+  .floorplan-overlay-actions,
+  .floorplan-ai-overlay,
+  .floorplan .no-print { display: none !important; }
   .floorplan-board, .floorplan-body, .floorplan-canvas-col { display: block; }
   .floorplan-stage { padding: 0; }
   .floorplan-svg { border: none; box-shadow: none; height: auto; }

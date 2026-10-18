@@ -10,6 +10,7 @@ import {
   getAgentProvider,
   getClaudeKeys,
   getClaudeModel,
+  getOpenAIKeys,
   resetDailyKeyCounters,
 } from '../storage.js';
 import * as vault from './vault.js';
@@ -24,6 +25,10 @@ export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
 export const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
 export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+
+export const OPENAI_API_BASE = 'https://api.openai.com/v1';
+export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+export const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1';
 
 // Fallback list used when no API key is present yet (dropdown won't auto-refresh).
 // The live list is always preferred once a key is available — see fetchGeminiModels().
@@ -79,6 +84,18 @@ export const OLLAMA_MODEL_OPTIONS = [
   { value: 'qwen2.5-coder:3b', label: 'Qwen 2.5 Coder 3B (fastest)' },
   { value: 'mistral:latest', label: 'Mistral (balanced)' },
   { value: 'neural-chat:latest', label: 'Neural Chat (good reasoning)' },
+];
+
+export const OPENAI_MODEL_OPTIONS = [
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini (cheapest, vision)' },
+  { value: 'gpt-4o', label: 'GPT-4o (balanced, vision)' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini (cheap)' },
+  { value: 'gpt-4.1', label: 'GPT-4.1 (best)' },
+];
+
+export const OPENAI_IMAGE_MODEL_OPTIONS = [
+  { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic)' },
+  { value: 'dall-e-3', label: 'DALL·E 3 (photorealistic)' },
 ];
 
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
@@ -186,6 +203,34 @@ export function claudeHeaders(apiKey) {
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
     'anthropic-version': CLAUDE_ANTHROPIC_VERSION,
+  };
+}
+
+/**
+ * Build the OpenAI chat completions URL.
+ * @returns {string}
+ */
+export function openAiChatUrl() {
+  return `${OPENAI_API_BASE}/chat/completions`;
+}
+
+/**
+ * Build the OpenAI image generation URL.
+ * @returns {string}
+ */
+export function openAiImageUrl() {
+  return `${OPENAI_API_BASE}/images/generations`;
+}
+
+/**
+ * Build headers for OpenAI API requests.
+ * @param {string} apiKey
+ * @returns {Object}
+ */
+export function openAiHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
   };
 }
 
@@ -616,6 +661,27 @@ export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
   };
 }
 
+/**
+ * Build an OpenAI chat-completions request body from Gemini-format contents.
+ * OpenAI uses the same user/assistant roles as Claude plus a leading system
+ * message.
+ * @param {Array} geminiContents
+ * @param {string} systemPrompt
+ * @param {string} model
+ * @returns {Object}
+ */
+export function buildOpenAiRequestBody(geminiContents, systemPrompt, model) {
+  const messages = convertGeminiContentsToClaudeMessages(geminiContents);
+  return {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+    max_tokens: MAX_OUTPUT_TOKENS,
+  };
+}
+
 /* ---------- Key Rotation (shared by agent.js and templates via shared.js) ---------- */
 
 /** Module-level date cache to detect day rollovers without importing Date every call. */
@@ -735,6 +801,27 @@ export function pickBestClaudeKey() {
 }
 
 /**
+ * Return the best available OpenAI key using the same LRU strategy.
+ * @returns {{ key: string, idx: number } | null}
+ */
+export function pickBestOpenAIKey() {
+  const keys = getOpenAIKeys();
+  if (!keys.length) return null;
+
+  const now = Date.now();
+  const annotated = keys.map((k, i) => ({
+    ...k,
+    idx: i,
+    hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000),
+  }));
+
+  const available = annotated.filter(k => !k.hasRecentError);
+  const pool = available.length > 0 ? available : annotated;
+  pool.sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+  return { key: pool[0].key, idx: pool[0].idx };
+}
+
+/**
  * Return the best key for the current provider and vault state.
  * When vault is active and unlocked, returns from vault keys.
  * Falls back to localStorage keys when no vault.
@@ -833,6 +920,36 @@ export async function fetchClaudeModels(apiKey) {
  */
 function _humanizeModelId(id) {
   return id.replace('models/', '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Fetch the list of available OpenAI chat models for a given API key.
+ * Caches results per key for the session. Falls back to OPENAI_MODEL_OPTIONS on error.
+ * @param {string} apiKey
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function fetchOpenAIModels(apiKey) {
+  if (!apiKey) return OPENAI_MODEL_OPTIONS;
+  const cacheKey = `openai:${apiKey.slice(-6)}`;
+  const hit = _modelCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < MODEL_CACHE_MS) return hit.models;
+
+  try {
+    const res = await fetch(`${OPENAI_API_BASE}/models`, {
+      headers: openAiHeaders(apiKey),
+    });
+    if (!res.ok) return OPENAI_MODEL_OPTIONS;
+    const { data = [] } = await res.json();
+    const opts = data
+      .filter(m => /^(gpt-|o\d|chatgpt)/.test(m.id) && !/embedding|whisper|tts|audio|realtime|image|dall/.test(m.id))
+      .map(m => ({ value: m.id, label: _humanizeModelId(m.id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!opts.length) return OPENAI_MODEL_OPTIONS;
+    _modelCache.set(cacheKey, { models: opts, ts: Date.now() });
+    return opts;
+  } catch {
+    return OPENAI_MODEL_OPTIONS;
+  }
 }
 
 /** Re-export vault so agent.js can import a single path */

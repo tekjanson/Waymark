@@ -14,13 +14,23 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
   GEMINI_MODEL_OPTIONS,
   CLAUDE_MODEL_OPTIONS,
   OLLAMA_MODEL_OPTIONS,
+  OPENAI_MODEL_OPTIONS,
   fetchGeminiModels,
   fetchClaudeModels,
+  fetchOpenAIModels,
   pickSmartDefault,
 } from './config.js';
+import {
+  ALL_PROVIDERS,
+  getProviderStatus,
+  providerHasConfig,
+  tierBadge,
+  testProviderConnection,
+} from '../ai-router.js';
 
 /* ---------- Settings Modal ---------- */
 
@@ -36,9 +46,11 @@ export function showSettingsModal(onRefresh) {
   let activeProvider = storage.getAgentProvider() || 'gemini';
   let geminiKeys = storage.getAgentKeys();
   let claudeKeys = storage.getClaudeKeys();
+  let openaiKeys = storage.getOpenAIKeys();
   let geminiModel = storage.getAgentModel() || DEFAULT_MODEL;
   let claudeModel = storage.getClaudeModel() || DEFAULT_CLAUDE_MODEL;
   let ollamaModel = storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL;
+  let openaiModel = storage.getOpenAIModel() || DEFAULT_OPENAI_MODEL;
   let ollamaBaseUrl = storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_URL;
   const driveSettings = userData.getAgentSettings();
   const cloudSyncEnabled = driveSettings !== null;
@@ -62,7 +74,13 @@ export function showSettingsModal(onRefresh) {
     on: { click: () => switchProvider('ollama') },
   }, ['🟢 Ollama']);
 
-  const providerToggle = el('div', { className: 'agent-provider-toggle' }, [geminiBtn, claudeBtn, ollamaBtn]);
+  const openaiBtn = el('button', {
+    className: 'agent-provider-btn' + (activeProvider === 'openai' ? ' active' : ''),
+    type: 'button',
+    on: { click: () => switchProvider('openai') },
+  }, ['⚫ OpenAI']);
+
+  const providerToggle = el('div', { className: 'agent-provider-toggle' }, [geminiBtn, claudeBtn, ollamaBtn, openaiBtn]);
 
   /* ---------- Key ring list ---------- */
   const keyListContainer = el('div', { className: 'agent-keyring-list' });
@@ -71,11 +89,13 @@ export function showSettingsModal(onRefresh) {
     if (activeProvider === 'ollama') return [];
     // When keys sheet is unlocked, show its keys; otherwise localStorage ring
     if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
-      return activeProvider === 'claude'
-        ? vault.getClaudeKeys()
-        : vault.getGeminiKeys();
+      if (activeProvider === 'claude') return vault.getClaudeKeys();
+      if (activeProvider === 'gemini') return vault.getGeminiKeys();
+      // OpenAI keys are not vault-backed yet — use the localStorage ring.
     }
-    return activeProvider === 'claude' ? claudeKeys : geminiKeys;
+    if (activeProvider === 'claude') return claudeKeys;
+    if (activeProvider === 'openai') return openaiKeys;
+    return geminiKeys;
   }
 
   function renderKeyList() {
@@ -103,6 +123,9 @@ export function showSettingsModal(onRefresh) {
               if (activeProvider === 'claude') {
                 claudeKeys = claudeKeys.filter((_, i) => i !== index);
                 storage.setClaudeKeys(claudeKeys);
+              } else if (activeProvider === 'openai') {
+                openaiKeys = openaiKeys.filter((_, i) => i !== index);
+                storage.setOpenAIKeys(openaiKeys);
               } else {
                 geminiKeys = geminiKeys.filter((_, i) => i !== index);
                 storage.setAgentKeys(geminiKeys);
@@ -130,6 +153,11 @@ export function showSettingsModal(onRefresh) {
       hintPara.append(
         'Add your Anthropic Claude API key. ',
         el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, ['Get a key →'])
+      );
+    } else if (activeProvider === 'openai') {
+      hintPara.append(
+        'Add your OpenAI API key — the only provider that can generate photorealistic images (gpt-image-1 / DALL·E 3). ',
+        el('a', { href: 'https://platform.openai.com/api-keys', target: '_blank', rel: 'noopener' }, ['Get a key →'])
       );
     } else {
       hintPara.append('No API key is required. Point Waymark at your local Ollama server and choose a local model.');
@@ -163,8 +191,9 @@ export function showSettingsModal(onRefresh) {
         const nickname = newNicknameInput.value.trim();
         const isBilled = billedToggle.checked;
 
-        /* If a keys sheet is linked and unlocked, write the key there */
-        if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+        /* If a keys sheet is linked and unlocked, write the key there (Gemini /
+           Claude are vault-backed; OpenAI uses the localStorage ring). */
+        if (activeProvider !== 'openai' && vault.isVaultSetUp() && vault.isVaultUnlocked()) {
           const ok = await vault.addKeyToSheet({
             key, nickname, isBilled, provider: activeProvider,
           });
@@ -193,6 +222,18 @@ export function showSettingsModal(onRefresh) {
             isBilled,
           });
           storage.setClaudeKeys(claudeKeys);
+        } else if (activeProvider === 'openai') {
+          if (openaiKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
+          openaiKeys.push({
+            key,
+            nickname: nickname || `Key ${openaiKeys.length + 1}`,
+            addedAt: new Date().toISOString(),
+            requestsToday: 0,
+            lastUsed: null,
+            lastError: null,
+            isBilled,
+          });
+          storage.setOpenAIKeys(openaiKeys);
         } else {
           if (geminiKeys.some(k => k.key === key)) { showToast('This key is already in your ring', 'error'); return; }
           geminiKeys.push({
@@ -251,6 +292,9 @@ export function showSettingsModal(onRefresh) {
     } else if (activeProvider === 'ollama') {
       opts = OLLAMA_MODEL_OPTIONS;
       current = ollamaModel;
+    } else if (activeProvider === 'openai') {
+      opts = OPENAI_MODEL_OPTIONS;
+      current = openaiModel;
     }
     for (const opt of opts) {
       modelSelect.appendChild(el('option', { value: opt.value, ...(current === opt.value ? { selected: 'selected' } : {}) }, [opt.label]));
@@ -265,9 +309,10 @@ export function showSettingsModal(onRefresh) {
     const key = activeKeys()[0]?.key;
     if (!key) return;
     try {
-      const opts = activeProvider === 'claude'
-        ? await fetchClaudeModels(key)
-        : await fetchGeminiModels(key);
+      let opts;
+      if (activeProvider === 'claude') opts = await fetchClaudeModels(key);
+      else if (activeProvider === 'openai') opts = await fetchOpenAIModels(key);
+      else opts = await fetchGeminiModels(key);
       const currentVal = modelSelect.value;
       modelSelect.innerHTML = '';
       for (const opt of opts) {
@@ -285,6 +330,9 @@ export function showSettingsModal(onRefresh) {
         } else if (activeProvider === 'claude') {
           claudeModel = modelSelect.value;
           storage.setClaudeModel(modelSelect.value);
+        } else if (activeProvider === 'openai') {
+          openaiModel = modelSelect.value;
+          storage.setOpenAIModel(modelSelect.value);
         }
       }
     } catch {
@@ -298,6 +346,8 @@ export function showSettingsModal(onRefresh) {
       claudeModel = modelSelect.value;
     } else if (activeProvider === 'ollama') {
       ollamaModel = modelSelect.value;
+    } else if (activeProvider === 'openai') {
+      openaiModel = modelSelect.value;
     } else {
       geminiModel = modelSelect.value;
     }
@@ -306,7 +356,12 @@ export function showSettingsModal(onRefresh) {
     geminiBtn.className = 'agent-provider-btn' + (p === 'gemini' ? ' active' : '');
     claudeBtn.className = 'agent-provider-btn' + (p === 'claude' ? ' active' : '');
     ollamaBtn.className = 'agent-provider-btn' + (p === 'ollama' ? ' active' : '');
-    newKeyInput.placeholder = p === 'claude' ? 'Paste a Claude API key (sk-ant-...)...' : 'Paste a Gemini API key...';
+    openaiBtn.className = 'agent-provider-btn' + (p === 'openai' ? ' active' : '');
+    newKeyInput.placeholder = p === 'claude'
+      ? 'Paste a Claude API key (sk-ant-...)...'
+      : p === 'openai'
+        ? 'Paste an OpenAI API key (sk-...)...'
+        : 'Paste a Gemini API key...';
     addKeyForm.style.display = p === 'ollama' ? 'none' : '';
     keyListContainer.style.display = p === 'ollama' ? 'none' : '';
     ollamaSettingsRow.style.display = p === 'ollama' ? '' : 'none';
@@ -333,7 +388,9 @@ export function showSettingsModal(onRefresh) {
           storage.setClaudeModel(modelSelect.value);
         } else if (activeProvider === 'ollama') {
           storage.setOllamaModel(modelSelect.value);
-          storage.setOllamaBaseUrl(baseUrlInput.value.trim());
+          storage.setOllamaBaseUrl(baseUrlInput.value.trim() || DEFAULT_OLLAMA_BASE_URL);
+        } else if (activeProvider === 'openai') {
+          storage.setOpenAIModel(modelSelect.value);
         } else {
           storage.setAgentModel(modelSelect.value);
         }
@@ -371,6 +428,11 @@ export function showSettingsModal(onRefresh) {
           storage.setClaudeKeys([]);
           showToast('All Claude API keys removed', 'info');
           renderKeyList();
+        } else if (activeProvider === 'openai') {
+          openaiKeys = [];
+          storage.setOpenAIKeys([]);
+          showToast('All OpenAI API keys removed', 'info');
+          renderKeyList();
         } else if (activeProvider === 'ollama') {
           showToast('No API keys are needed for Ollama', 'info');
         } else {
@@ -390,6 +452,89 @@ export function showSettingsModal(onRefresh) {
     type: 'button',
     on: { click: () => overlay.remove() },
   }, ['✕']);
+
+  /* ---------- Cost-aware routing section ---------- */
+  function badgeClass(badge) {
+    if (badge === 'LOCAL/FREE' || badge === 'FREE TIER') return 'free';
+    if (badge === '$') return 'low';
+    if (badge === '$$') return 'mid';
+    return 'high';
+  }
+
+  function buildRoutingSection() {
+    const container = el('div', { className: 'agent-routing-section' });
+
+    function render() {
+      container.innerHTML = '';
+      container.append(
+        el('label', { className: 'agent-settings-label' }, ['Active Providers — cost-aware routing']),
+        el('p', { className: 'agent-settings-hint' }, [
+          'Enable any mix of providers. Each task runs on the cheapest capable provider: local/free first, then paid tiers. Photorealistic image generation needs OpenAI.',
+        ]),
+      );
+
+      const statuses = getProviderStatus();
+      for (const s of statuses) {
+        const enableToggle = el('input', {
+          type: 'checkbox',
+          className: 'agent-provider-enable',
+          ...(s.enabled ? { checked: 'checked' } : {}),
+          ...(s.configured ? {} : { disabled: 'disabled' }),
+        });
+        enableToggle.addEventListener('change', () => {
+          const current = new Set(
+            storage.getEnabledProviders()
+            || getProviderStatus().filter(x => x.configured).map(x => x.provider)
+          );
+          if (enableToggle.checked) current.add(s.provider);
+          else current.delete(s.provider);
+          storage.setEnabledProviders([...current]);
+        });
+
+        const row = el('div', { className: 'agent-provider-row' }, [
+          el('label', { className: 'agent-provider-enable-label' }, [enableToggle, ` ${s.label}`]),
+          el('span', { className: `agent-tier-badge agent-tier-${badgeClass(s.badge)}` }, [s.badge]),
+          el('span', { className: s.configured ? 'agent-provider-configured' : 'agent-provider-unconfigured' }, [
+            s.configured ? 'configured' : 'not configured',
+          ]),
+          el('button', {
+            className: 'agent-provider-test-btn',
+            type: 'button',
+            ...(s.configured ? {} : { disabled: 'disabled' }),
+            on: {
+              click: async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                btn.textContent = 'Testing…';
+                const result = await testProviderConnection(s.provider);
+                btn.textContent = result.ok ? '✓ OK' : '✕ Fail';
+                showToast(`${s.label}: ${result.message}`, result.ok ? 'success' : 'error');
+                setTimeout(() => { btn.textContent = 'Test'; btn.disabled = false; }, 2500);
+              },
+            },
+          }, ['Test']),
+        ]);
+        container.append(row);
+
+        if (s.provider === 'gemini') {
+          const tier = storage.getGeminiTier();
+          const tierSel = el('select', { className: 'agent-gemini-tier-select' }, [
+            el('option', { value: 'free', ...(tier === 'free' ? { selected: 'selected' } : {}) }, ['Free Tier']),
+            el('option', { value: 'paid', ...(tier === 'paid' ? { selected: 'selected' } : {}) }, ['Paid Tier']),
+          ]);
+          tierSel.addEventListener('change', () => { storage.setGeminiTier(tierSel.value); render(); });
+          container.append(el('div', { className: 'agent-provider-subrow' }, [
+            el('span', { className: 'agent-provider-subrow-label' }, ['Gemini billing tier']),
+            tierSel,
+            el('span', { className: 'agent-settings-hint' }, [' Free Tier cannot generate photorealistic images.']),
+          ]));
+        }
+      }
+    }
+
+    render();
+    return container;
+  }
 
   const modal = el('div', { className: 'modal agent-settings-modal' }, [
     el('div', { className: 'modal-header' }, [
@@ -414,10 +559,12 @@ export function showSettingsModal(onRefresh) {
         'When enabled, your key ring and model are stored in your Google Drive so they work across all your devices.',
       ]),
       el('hr', { className: 'agent-settings-divider' }),
+      buildRoutingSection(),
+      el('hr', { className: 'agent-settings-divider' }),
       buildKeysSheetSection(onRefresh),
     ]),
     el('div', { className: 'modal-footer' }, [
-      (activeProvider === 'ollama' || (geminiKeys.length === 0 && claudeKeys.length === 0)) ? el('span') : removeAllBtn,
+      (activeProvider === 'ollama' || (geminiKeys.length === 0 && claudeKeys.length === 0 && openaiKeys.length === 0)) ? el('span') : removeAllBtn,
       saveBtn,
     ]),
   ]);

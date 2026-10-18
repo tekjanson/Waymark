@@ -1301,73 +1301,29 @@ export {
 
 /* ---------- AI text generation ---------- */
 
-import {
-  geminiUrl,
-  geminiHeaders,
-  DEFAULT_MODEL,
-  pickBestKey,
-} from '../agent/config.js';
-import {
-  getAgentModel,
-  recordKeyUsage,
-  recordKeyError,
-} from '../storage.js';
+import { routeAI, CAP } from '../ai-router.js';
 
 /**
- * Call the Gemini API and return the text response.
- * Retries with the next available key on 429/503 errors.
- * Uses the same key rotation strategy as the main agent (via pickBestKey()).
+ * Generate text via the cost-aware AI router. Routes to the cheapest capable
+ * provider (local Ollama / Gemini Free Tier first), falling back automatically.
  * Templates use this for AI-powered features (§1.5-compliant).
  * @param {string} systemPrompt
  * @param {string} userMessage
- * @param {{ temperature?: number, maxTokens?: number }} [opts]
+ * @param {{ temperature?: number, maxTokens?: number, json?: boolean }} [opts]
  * @returns {Promise<string>}
  */
 export async function generateText(systemPrompt, userMessage, opts = {}) {
-  const keys = pickBestKey();
-  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
-
-  const model = getAgentModel() || DEFAULT_MODEL;
-  const url = geminiUrl(model, 'generateContent');
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      temperature: opts.temperature ?? 0.7,
-      maxOutputTokens: opts.maxTokens ?? 1024,
-    },
-  };
-
-  let lastErr;
-  for (const keyEntry of keys) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: geminiHeaders(keyEntry.key),
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
-      const errBody = await res.json().catch(() => ({}));
-      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
-      if (res.status === 429 || res.status === 503) continue;
-      throw lastErr;
-    }
-
-    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-    if (!text) throw new Error('No response from AI. Try again.');
-    return text;
-  }
-
-  throw lastErr || new Error('All API keys exhausted. Try again later.');
+  const capability = opts.json ? CAP.STRUCTURED_JSON : CAP.TEXT_BASIC;
+  return routeAI(capability, { systemPrompt, userMessage }, {
+    temperature: opts.temperature ?? 0.7,
+    maxTokens: opts.maxTokens ?? 1024,
+  });
 }
 
 /**
- * Call the Gemini multimodal API with an inline image and return the text
- * response. Same key-rotation strategy as generateText(). Templates use this
- * for vision features (e.g. meal-photo macro estimation) — §1.5-compliant.
+ * Analyse an inline image via the cost-aware router (vision capability).
+ * Routes to the cheapest vision-capable provider (Gemini Free Tier first, then
+ * OpenAI), with automatic fallback. Templates use this for vision features.
  * @param {string} systemPrompt
  * @param {string} base64Image   raw base64 (no data: prefix)
  * @param {string} [mimeType]
@@ -1375,52 +1331,16 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
  * @returns {Promise<string>}
  */
 export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
-  const keys = pickBestKey();
-  if (!keys.length) throw new Error('No API key configured. Add a Gemini key in AI agent settings.');
-
-  const model = getAgentModel() || DEFAULT_MODEL;
-  const url = geminiUrl(model, 'generateContent');
-  const parts = [{ inlineData: { mimeType, data: base64Image } }];
-  if (opts.userMessage) parts.unshift({ text: opts.userMessage });
-  const body = {
-    contents: [{ role: 'user', parts }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      temperature: opts.temperature ?? 0.4,
-      maxOutputTokens: opts.maxTokens ?? 1024,
-    },
-  };
-
-  let lastErr;
-  for (const keyEntry of keys) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: geminiHeaders(keyEntry.key),
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
-      const errBody = await res.json().catch(() => ({}));
-      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
-      if (res.status === 429 || res.status === 503) continue;
-      throw lastErr;
-    }
-
-    if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-    if (!text) throw new Error('No response from AI. Try again.');
-    return text;
-  }
-
-  throw lastErr || new Error('All API keys exhausted. Try again later.');
+  return routeAI(CAP.VISION_ANALYSIS, {
+    systemPrompt, base64Image, mimeType, userMessage: opts.userMessage,
+  }, {
+    temperature: opts.temperature ?? 0.4,
+    maxTokens: opts.maxTokens ?? 1024,
+  });
 }
 
 /**
- * Call the Gemini multimodal API with an inline audio clip and return the
- * text response. Thin wrapper over the same inlineData plumbing as
- * generateVision — used for voice-driven features (e.g. speak-to-log meals).
+ * Transcribe / analyse an inline audio clip (audio capability — Gemini only).
  * @param {string} systemPrompt
  * @param {string} base64Audio   raw base64 (no data: prefix)
  * @param {string} [mimeType]    e.g. 'audio/webm', 'audio/mp4', 'audio/ogg'
@@ -1428,7 +1348,27 @@ export async function generateVision(systemPrompt, base64Image, mimeType = 'imag
  * @returns {Promise<string>}
  */
 export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
-  return generateVision(systemPrompt, base64Audio, mimeType, opts);
+  return routeAI(CAP.AUDIO_ANALYSIS, {
+    systemPrompt, base64Audio, mimeType, userMessage: opts.userMessage,
+  }, {
+    temperature: opts.temperature ?? 0.4,
+    maxTokens: opts.maxTokens ?? 1024,
+  });
+}
+
+/**
+ * Generate a photorealistic image from a text prompt (image generation
+ * capability). Routes to an image-capable provider — currently OpenAI
+ * (gpt-image-1 / DALL·E 3); Gemini Free Tier cannot generate images, so the
+ * router automatically uses OpenAI when configured.
+ * @param {string} prompt
+ * @param {{ size?: string, n?: number }} [opts]
+ * @returns {Promise<string>}  image data URL (or remote URL)
+ */
+export async function generateImage(prompt, opts = {}) {
+  return routeAI(CAP.IMAGE_GENERATION_PHOTOREAL, {
+    prompt, size: opts.size, n: opts.n,
+  }, {});
 }
 
 /* ---------- Sheet data helpers (for lazy-loaded sub-sheets) ---------- */
@@ -1512,26 +1452,6 @@ export function readSheetTab(tabs, tabTitle) {
 export async function uploadDriveFile(file, parentFolderId) {
   const data = await api.drive.uploadFile(file, parentFolderId);
   return `https://drive.google.com/file/d/${data.id}/view`;
-}
-
-/**
- * Inventory the user's Google Drive files for the Drive Organizer control
- * plane. Returns an array of { id, name, folder, type, modified }.
- * @returns {Promise<Array<Object>>}
- */
-export async function listDriveInventory() {
-  return api.drive.scanInventory();
-}
-
-/**
- * Move and/or rename a Google Drive file (used by the Drive Organizer batch
- * runner + undo). In local mode this records the move instead of touching
- * real files.
- * @param {string} fileId
- * @param {{toFolder?:string, name?:string}} opts
- */
-export async function moveDriveFile(fileId, opts) {
-  return api.drive.moveFile(fileId, opts);
 }
 
 /**

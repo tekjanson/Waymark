@@ -174,7 +174,6 @@ async function loadMockSheet(sheetId) {
     'sheet-073': 'kanban-multitab',
     'sheet-074': 'party-birthday',
     'sheet-075': 'floorplan-house',
-    'sheet-076': 'organizer-messy',
   };
   const filename = mapping[sheetId];
   if (!filename) {
@@ -324,50 +323,6 @@ export const api = {
       }
       const token = await requireToken();
       return driveApi.createFile(token, name, mimeType, parents);
-    },
-
-    /**
-     * Inventory the user's Drive files for the Organizer control plane.
-     * Local mode returns a deterministic canned set so triage is testable.
-     */
-    async scanInventory() {
-      if (isLocal) {
-        if (window.__WAYMARK_MOCK_ERROR === 'drive') throw new Error('Mock Drive error');
-        return [
-          { id: 'drive-101', name: 'Untitled spreadsheet', folder: '/', type: 'application/vnd.google-apps.spreadsheet', modified: '2026-05-01' },
-          { id: 'drive-102', name: 'vacation budget', folder: '/Downloads', type: 'application/pdf', modified: '2026-06-01' },
-          { id: 'drive-103', name: 'office layout sketch', folder: '/Downloads', type: 'application/vnd.google-apps.spreadsheet', modified: '2026-07-01' },
-        ];
-      }
-      return withAuthRetry(async () => {
-        const token = await requireToken();
-        return driveApi.listAllFiles(token);
-      });
-    },
-
-    /**
-     * Move and/or rename a Drive file. Local mode records the move for test
-     * assertions and 1-click undo instead of touching real files.
-     * @param {string} fileId
-     * @param {{toFolder?:string, name?:string}} opts
-     */
-    async moveFile(fileId, opts = {}) {
-      if (isLocal) {
-        if (window.__WAYMARK_MOCK_ERROR === 'drive') throw new Error('Mock Drive error');
-        const record = {
-          type: 'drive-move',
-          fileId,
-          toFolder: opts.toFolder || '',
-          name: opts.name || '',
-          createdAt: new Date().toISOString(),
-        };
-        window.__WAYMARK_RECORDS.push(record);
-        return record;
-      }
-      return withAuthRetry(async () => {
-        const token = await requireToken();
-        return driveApi.moveFile(token, fileId, opts);
-      });
     },
 
     async findFolder(name, parentId) {
@@ -534,6 +489,26 @@ export const api = {
       }
       const token = await requireToken();
       return driveApi.findFile(token, name, parentId);
+    },
+
+    /**
+     * Find a file anywhere in the user's Drive by exact name (incl. shared).
+     * Used for find-or-create of bilateral sharing sheets.
+     * @param {string} name
+     * @returns {Promise<{id: string, name: string}|null>}
+     */
+    async findFileGlobal(name) {
+      if (isLocal) {
+        const fix = await loadFixtures();
+        for (const [id, data] of Object.entries(fix.sheets || {})) {
+          if (data && data.title === name) return { id, name };
+        }
+        return null;
+      }
+      return withAuthRetry(async () => {
+        const token = await requireToken();
+        return driveApi.findFileGlobal(token, name);
+      });
     },
 
     async createJsonFile(name, content, parents) {
@@ -991,8 +966,24 @@ export const api = {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
         const fix = await loadFixtures();
         const data = fix.sheets[spreadsheetId];
-        if (data && data.values) {
-          for (const row of rows) data.values.push(row);
+        if (data) {
+          // Route the append to the named tab when the sheet has multiple tabs
+          // (e.g. bilateral sharing sheets). Falls back to the primary values
+          // array for legacy single-tab fixtures.
+          let tab = null;
+          if (Array.isArray(data.tabs) && sheetTitle) {
+            tab = data.tabs.find(t => (t.title || '').toLowerCase() === sheetTitle.toLowerCase());
+          }
+          if (tab) {
+            if (!Array.isArray(tab.values)) tab.values = [];
+            for (const row of rows) tab.values.push(row);
+            // Keep the primary values array in sync when appending to tab 0.
+            if (data.tabs[0] === tab && data.values && data.values !== tab.values) {
+              for (const row of rows) data.values.push(row);
+            }
+          } else if (data.values) {
+            for (const row of rows) data.values.push(row);
+          }
         }
         persistIfCreatedSheet(spreadsheetId, data);
         const record = {

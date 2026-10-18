@@ -7,13 +7,14 @@
  * interaction without any shared state between tests.
  */
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet, waitForChecklistRows } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet, waitForChecklistRows, openOverflowMenu } = require('../helpers/test-utils');
 
 test('Edit in Sheets button is visible when viewing a sheet', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await waitForChecklistRows(page);
 
+  await openOverflowMenu(page);
   await expect(page.locator('#open-in-sheets-btn')).toBeVisible();
 });
 
@@ -33,13 +34,15 @@ test('Edit in Sheets button opens correct Google Sheets URL', async ({ page }) =
   await navigateToSheet(page, 'sheet-001');
   await waitForChecklistRows(page);
 
-  // Listen for the popup (new tab) that the button opens
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
+  await page.evaluate(() => {
+    window.__openedUrl = '';
+    window.open = (url) => { window.__openedUrl = url; return null; };
+  });
+  await openOverflowMenu(page);
+  await page.locator('#open-in-sheets-btn').click();
 
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-001');
+  const url = await page.evaluate(() => window.__openedUrl);
+  expect(url).toContain('docs.google.com/spreadsheets/d/sheet-001');
 });
 
 test('Edit in Sheets button opens correct URL for a different sheet', async ({ page }) => {
@@ -47,12 +50,15 @@ test('Edit in Sheets button opens correct URL for a different sheet', async ({ p
   await navigateToSheet(page, 'sheet-002');
   await waitForChecklistRows(page);
 
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
+  await page.evaluate(() => {
+    window.__openedUrl = '';
+    window.open = (url) => { window.__openedUrl = url; return null; };
+  });
+  await openOverflowMenu(page);
+  await page.locator('#open-in-sheets-btn').click();
 
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-002');
+  const url = await page.evaluate(() => window.__openedUrl);
+  expect(url).toContain('docs.google.com/spreadsheets/d/sheet-002');
 });
 
 test('Edit in Sheets button updates URL when navigating between sheets', async ({ page }) => {
@@ -66,12 +72,14 @@ test('Edit in Sheets button updates URL when navigating between sheets', async (
   await navigateToSheet(page, 'sheet-002');
   await waitForChecklistRows(page);
 
-  // Verify button opens the second sheet, not the first
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#open-in-sheets-btn').click(),
-  ]);
+  await page.evaluate(() => {
+    window.__openedUrl = '';
+    window.open = (url) => { window.__openedUrl = url; return null; };
+  });
+  await openOverflowMenu(page);
+  await page.locator('#open-in-sheets-btn').click();
 
-  expect(popup.url()).toContain('docs.google.com/spreadsheets/d/sheet-002');
-  expect(popup.url()).not.toContain('sheet-001');
+  const url = await page.evaluate(() => window.__openedUrl);
+  expect(url).toContain('docs.google.com/spreadsheets/d/sheet-002');
+  expect(url).not.toContain('sheet-001');
 });
