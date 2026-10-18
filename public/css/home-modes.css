@@ -131,12 +131,11 @@
 #wayboard-root.mode-16 main.canvas { background-image: linear-gradient(#203428 1px, transparent 1px), linear-gradient(90deg, #203428 1px, transparent 1px); background-size: 28px 28px; }
 #wayboard-root.mode-16 .widget,
 #wayboard-root.mode-16 .marker-card { border: 3px solid #fbbf24; border-radius: 14px; box-shadow: 0 6px 0 #0d1410; position: relative; }
-#wayboard-root.mode-16 .widget::after { content: "🟢 KL + ML Inside Room"; position: absolute; top: -10px; right: 10px; background: #065f46; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 99px; border: 2px solid #4ade80; }
 #wayboard-root.mode-17 { --bg: #f4f4f0; --panel: #eaeae4; --card: #ffffff; --border: #111111; --text: #000; --muted: #333; --accent: #000; --green: #000; --radius: 0px; --font: 'Georgia', serif; }
 #wayboard-root.mode-17 .widget,
 #wayboard-root.mode-17 .marker-card,
 #wayboard-root.mode-17 .greeting-banner,
-#wayboard-root.mode-17 .chat-box { border: 2px solid #000 !important; background: #fff !important; box-shadow: none !important; }
+#wayboard-root.mode-17 .chat-box { border: 2px solid #000; background: #fff; box-shadow: none; }
 #wayboard-root.mode-18 aside.left-nav { display: none; }
 #wayboard-root.mode-18 main.canvas { flex-direction: row; overflow-x: auto; gap: 20px; align-items: stretch; }
 #wayboard-root.mode-18 .greeting-banner { writing-mode: vertical-rl; transform: rotate(180deg); width: 64px; flex-shrink: 0; justify-content: center; background: #1e1b4b; }
@@ -240,8 +239,6 @@
     background-size: 20px 20px; }
 #wayboard-root.mode-31 .widget,
 #wayboard-root.mode-31 .marker-card { border-radius: 8px; border: 2px solid #475569; border-top: 18px solid #2563eb; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
-#wayboard-root.mode-31 .widget::before,
-#wayboard-root.mode-31 .marker-card::before { content: "● IN ────────── OUT ●"; font-size: 8px; color: #94a3b8; letter-spacing: 1px; margin-bottom: 4px; display: block; }
 #wayboard-root.mode-32 { --bg: #f4f1ea; --panel: #eae5db; --card: transparent; --border: #1c1917; --text: #1c1917; --muted: #57534e; --accent: #b91c1c; --radius: 0px; --font: 'Georgia', serif; }
 #wayboard-root.mode-32 aside.left-nav { display: none; }
 #wayboard-root.mode-32 .greeting-banner { border: none; border-top: 4px double #1c1917; border-bottom: 4px double #1c1917; text-align: center; justify-content: center; }
@@ -309,7 +306,6 @@
 #wayboard-root.mode-41 .wayboard-grid { display: flex; flex-direction: column; gap: 14px; }
 #wayboard-root.mode-41 .widget,
 #wayboard-root.mode-41 .marker-card { border-left: 5px solid #3b82f6; border-radius: 4px; position: relative; padding-left: 20px; }
-#wayboard-root.mode-41 .widget::before { content: "In [1]: waymark.render_widget()"; font-family: monospace; font-size: 10px; color: #60a5fa; margin-bottom: 6px; }
 #wayboard-root.mode-42 { --bg: #d4d4d8; --panel: #e4e4e7; --card: #f4f4f5; --border: #a1a1aa; --text: #18181b; --muted: #52525b; --accent: #ff5500; --green: #00aa55; --radius: 10px; --font: 'Courier New', monospace; }
 #wayboard-root.mode-42 .widget,
 #wayboard-root.mode-42 .marker-card,
@@ -404,7 +400,7 @@
 #wayboard-root .widget-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; font-size: 11px; }
 #wayboard-root .widget-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: center; }
-#wayboard-root .wayside-webrtc { font-size: 10px; color: var(--green); }
+#wayboard-root .wayside-status { font-size: 10px; color: var(--muted); }
 #wayboard-root .wayside-label { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-top: 4px; }
 #wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.4; }
 #wayboard-root .crews-block { display: flex; flex-direction: column; }
@@ -490,4 +486,334 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   --accent: #2563eb;
   --green: #059669;
   --border: #bfdbfe;
+}
+
+/* ---------- User dashboard widgets ---------- */
+#wayboard-root .wayboard-grid {
+  align-content: start;
+  align-items: stretch;
+  grid-auto-rows: minmax(170px, auto);
+  min-width: 0;
+}
+#wayboard-root .wayboard-widget {
+  min-width: 0;
+  min-height: 170px;
+  height: auto;
+  justify-content: flex-start;
+  gap: 14px;
+  overflow: hidden;
+  padding: 16px;
+}
+#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
+#wayboard-root .wayboard-widget-head,
+#wayboard-root .wayboard-widget-heading,
+#wayboard-root .wayboard-widget-form-actions,
+#wayboard-root .wayboard-widget-current-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+#wayboard-root .wayboard-widget-heading { justify-content: flex-start; }
+#wayboard-root .wayboard-widget-icon { font-size: 1.05rem; flex: 0 0 auto; }
+#wayboard-root .wayboard-widget-title { font-size: 0.95rem; line-height: 1.35; overflow-wrap: anywhere; }
+#wayboard-root .wayboard-widget-edit {
+  flex: 0 0 auto;
+  min-width: 32px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--inset-bg);
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+#wayboard-root .wayboard-widget-edit:hover { border-color: var(--accent); color: var(--accent); }
+#wayboard-root .wayboard-widget-body { min-width: 0; flex: 1; }
+#wayboard-root .wayboard-data-list { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+#wayboard-root .wayboard-data-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--inset-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+#wayboard-root .wayboard-data-row:hover { border-color: var(--accent); transform: translateY(-1px); }
+#wayboard-root .wayboard-data-icon { flex: 0 0 auto; font-size: 1rem; }
+#wayboard-root .wayboard-data-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 2px; }
+#wayboard-root .wayboard-data-name,
+#wayboard-root .wayboard-data-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#wayboard-root .wayboard-data-name { font-size: 0.82rem; font-weight: 650; }
+#wayboard-root .wayboard-data-detail { color: var(--muted); font-size: 0.72rem; }
+#wayboard-root .wayboard-data-arrow { flex: 0 0 auto; color: var(--accent); }
+#wayboard-root .wayboard-widget-empty,
+#wayboard-root .wayboard-widget-loading,
+#wayboard-root .wayboard-widget-error,
+#wayboard-root .wayboard-widget-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+#wayboard-root .wayboard-widget-empty { min-height: 115px; justify-content: center; }
+#wayboard-root .wayboard-widget-empty-icon { font-size: 1.25rem; }
+#wayboard-root .wayboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+#wayboard-root .wayboard-metric {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--inset-bg);
+}
+#wayboard-root .wayboard-metric-icon { grid-row: span 2; }
+#wayboard-root .wayboard-metric-value { font-size: 1.2rem; font-weight: 750; line-height: 1.1; }
+#wayboard-root .wayboard-metric-label { overflow: hidden; color: var(--muted); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+#wayboard-root .wayboard-sheet-preview { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#wayboard-root .wayboard-sheet-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+#wayboard-root .wayboard-sheet-stats span {
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: var(--inset-bg);
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+#wayboard-root .wayboard-progress-copy { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 0.72rem; }
+#wayboard-root .wayboard-progress-track { height: 6px; margin-top: 5px; overflow: hidden; border-radius: 99px; background: var(--inset-bg); }
+#wayboard-root .wayboard-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--green); transition: width 200ms ease; }
+#wayboard-root .wayboard-sheet-rows { display: flex; flex-direction: column; gap: 5px; }
+#wayboard-root .wayboard-sheet-row { display: flex; justify-content: space-between; gap: 10px; min-width: 0; padding: 6px 0; border-bottom: 1px solid var(--border); }
+#wayboard-root .wayboard-sheet-row-title,
+#wayboard-root .wayboard-sheet-row-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#wayboard-root .wayboard-sheet-row-title { font-size: 0.78rem; font-weight: 600; }
+#wayboard-root .wayboard-sheet-row-detail { color: var(--muted); font-size: 0.72rem; }
+#wayboard-root .wayboard-empty-dashboard { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 30px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); text-align: center; }
+#wayboard-root .wayboard-empty-dashboard p { max-width: 520px; }
+#wayboard-root .wayboard-head-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+#wayboard-root .wayboard-head-action:hover { border-color: var(--accent); }
+
+/* Widget manager */
+.wayboard-widget-overlay { z-index: 2200; }
+.wayboard-widget-dialog { max-width: 680px; max-height: min(86vh, 780px); }
+.wayboard-widget-dialog-header { align-items: flex-start; padding-bottom: 12px; }
+.wayboard-widget-dialog-header .btn-icon { flex: 0 0 auto; }
+.wayboard-widget-manager-hint { margin-top: 5px; color: var(--color-text-secondary); font-size: 0.82rem; line-height: 1.45; }
+.wayboard-widget-dialog-body { display: flex; flex-direction: column; gap: 22px; padding-bottom: 22px; }
+.wayboard-widget-add-section,
+.wayboard-widget-current-section { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+.wayboard-widget-add-section h4,
+.wayboard-widget-current-section h4 { font-size: 0.9rem; }
+.wayboard-widget-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.wayboard-widget-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--color-text-secondary); font-size: 0.76rem; font-weight: 600; }
+.wayboard-widget-control { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; }
+.wayboard-widget-form-actions { grid-column: 1 / -1; justify-content: flex-end; }
+.wayboard-widget-form-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
+.wayboard-widget-current-heading { justify-content: space-between; }
+.wayboard-widget-count { color: var(--color-text-muted); font-size: 0.76rem; }
+.wayboard-widget-manager-list { display: flex; flex-direction: column; gap: 7px; }
+.wayboard-widget-manager-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px; border: 1px solid var(--color-border); border-radius: 9px; }
+.wayboard-widget-manager-icon { flex: 0 0 auto; font-size: 1.1rem; }
+.wayboard-widget-manager-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 2px; }
+.wayboard-widget-manager-copy b,
+.wayboard-widget-manager-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wayboard-widget-manager-copy b { font-size: 0.82rem; }
+.wayboard-widget-manager-copy small { color: var(--color-text-muted); font-size: 0.7rem; }
+.wayboard-widget-manager-actions { display: flex; flex: 0 0 auto; gap: 5px; }
+.wayboard-widget-manager-actions button { padding: 5px 8px; font-size: 0.72rem; }
+.wayboard-widget-manager-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
+.wayboard-widget-manager-empty { color: var(--color-text-muted); font-size: 0.82rem; }
+
+/* Keep every composition in normal document flow so user widgets never overlap. */
+#wayboard-root#wayboard-root .workspace { min-width: 0; min-height: 0; }
+#wayboard-root#wayboard-root main.canvas {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-x: hidden;
+}
+#wayboard-root#wayboard-root .greeting-banner,
+#wayboard-root#wayboard-root .markers-section,
+#wayboard-root#wayboard-root .wayboard-section {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  transform: none;
+  writing-mode: horizontal-tb;
+}
+#wayboard-root#wayboard-root .wayboard-section { flex: 1 1 auto; }
+#wayboard-root#wayboard-root .markers-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  grid-auto-flow: row;
+  width: 100%;
+  min-width: 0;
+}
+#wayboard-root#wayboard-root .marker-card {
+  position: relative;
+  inset: auto;
+  display: flex;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  transform: none;
+}
+#wayboard-root#wayboard-root .wayboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  grid-template-rows: none;
+  grid-auto-flow: row;
+  grid-auto-rows: minmax(170px, auto);
+  align-content: start;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  max-width: 100%;
+  transform: none;
+  gap: 14px;
+}
+#wayboard-root#wayboard-root .wayboard-widget {
+  position: relative;
+  inset: auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 170px;
+  max-height: none;
+  flex: initial;
+  grid-column: auto;
+  grid-row: auto;
+  margin: 0;
+  transform: none;
+}
+#wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
+#wayboard-root#wayboard-root aside.left-nav {
+  position: static;
+  inset: auto;
+  transform: none;
+}
+#wayboard-root#wayboard-root aside.wayside {
+  position: static;
+  inset: auto;
+  width: auto;
+  min-width: 0;
+  max-width: 32%;
+  height: auto;
+  max-height: none;
+  flex: 0 1 270px;
+  margin: 0;
+  transform: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Keep the 50 compositions usable on medium desktop windows. */
+@media (min-width: 769px) and (max-width: 1199px) {
+  #wayboard-root#wayboard-root .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 26%); min-width: 0; }
+  #wayboard-root#wayboard-root main.canvas { flex-direction: column; min-width: 0; min-height: 0; padding: 14px; }
+  #wayboard-root#wayboard-root aside.wayside { width: auto; min-width: 0; max-width: none; }
+  #wayboard-root#wayboard-root .wayboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+  #wayboard-root#wayboard-root .markers-row { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
+  #wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
+}
+
+@media (max-width: 768px) {
+  #content:has(> #home-view.home-wayboard:not(.hidden)) { height: auto; min-height: 0; overflow: visible; }
+  #home-view.home-wayboard { height: auto; min-height: 0; overflow: visible; }
+  #wayboard-root#wayboard-root { width: 100%; height: auto; min-height: 0; overflow: visible; }
+  #wayboard-root#wayboard-root .workspace { display: flex; flex-direction: column; gap: 12px; overflow: visible; }
+  #wayboard-root#wayboard-root main.canvas { width: 100%; min-width: 0; min-height: 0; padding: 12px; overflow: visible; }
+  #wayboard-root#wayboard-root .greeting-banner,
+  #wayboard-root#wayboard-root .section-head,
+  #wayboard-root#wayboard-root .markers-section,
+  #wayboard-root#wayboard-root .wayboard-section { display: flex; }
+  #wayboard-root#wayboard-root .markers-section,
+  #wayboard-root#wayboard-root .wayboard-section { flex-direction: column; }
+  #wayboard-root#wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #wayboard-root#wayboard-root .wayboard-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  #wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1; }
+  #wayboard-root#wayboard-root .wayboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #wayboard-root#wayboard-root aside.wayside { display: flex; position: static; width: auto; max-width: none; min-height: 240px; margin: 0 12px 12px; }
+  #wayboard-root#wayboard-root aside.left-nav,
+  #wayboard-root#wayboard-root header.app-header { display: none; }
+  .wayboard-widget-dialog { max-height: 92vh; }
+  .wayboard-widget-dialog .modal-header,
+  .wayboard-widget-dialog .modal-body { padding-left: 16px; padding-right: 16px; }
+  .wayboard-widget-form { grid-template-columns: minmax(0, 1fr); }
+  .wayboard-widget-form-actions { grid-column: 1; }
+  .wayboard-widget-manager-item { align-items: flex-start; flex-wrap: wrap; }
+  .wayboard-widget-manager-copy { flex-basis: calc(100% - 42px); }
+  .wayboard-widget-manager-actions { width: 100%; justify-content: flex-end; }
+}
+
+@media (max-width: 420px) {
+  #wayboard-root#wayboard-root .markers-row { grid-template-columns: minmax(0, 1fr); }
+  #wayboard-root#wayboard-root .wayboard-widget { padding: 13px; }
+  #wayboard-root#wayboard-root .wayboard-data-row { padding: 8px; }
+  #wayboard-root#wayboard-root .wayboard-metric { padding: 8px; }
+}
+
+/* Strong theme tokens beat the fixed palettes embedded in older modes. */
+html[data-theme] #wayboard-root#wayboard-root,
+html[data-theme] #wayboard-root#wayboard-root .workspace,
+html[data-theme] #wayboard-root#wayboard-root main.canvas {
+  background: var(--bg);
+  color: var(--text);
+}
+html[data-theme] #wayboard-root#wayboard-root aside.left-nav,
+html[data-theme] #wayboard-root#wayboard-root aside.wayside,
+html[data-theme] #wayboard-root#wayboard-root .greeting-banner {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+html[data-theme] #wayboard-root#wayboard-root .wayboard-widget,
+html[data-theme] #wayboard-root#wayboard-root .marker-card,
+html[data-theme] #wayboard-root#wayboard-root .crew-row,
+html[data-theme] #wayboard-root#wayboard-root .chat-box {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
 }

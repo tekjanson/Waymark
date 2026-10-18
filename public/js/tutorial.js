@@ -25,8 +25,8 @@ const STEPS = [
   },
   {
     title: 'Pin Your Favorites',
-    body: 'Found a folder you use often? Pin it for quick access. Pinned folders appear on your home screen so you can jump back in instantly.',
-    target: '#pinned-folders',
+    body: 'Found a folder you use often? Pin it for quick access. Once pinned, it appears in a Pinned folders widget; use Add Widget to arrange or customize your home screen.',
+    target: '#home-wayboard-section',
     position: 'bottom',
   },
   {

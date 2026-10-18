@@ -69,6 +69,16 @@ export function setHomeTemplateMode(mode) {
   set('home_template_mode', (n >= 1 && n <= 50) ? n : 1);
 }
 
+/* --- Wayboard widgets --- */
+
+export function getHomeWidgets() {
+  return get('home_widgets');
+}
+
+export function setHomeWidgets(widgets) {
+  set('home_widgets', widgets);
+}
+
 export function getAutoRefresh() {
   const v = get('auto_refresh');
   return v === null ? true : v;   // default on

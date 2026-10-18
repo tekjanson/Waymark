@@ -830,13 +830,14 @@ function renderPinnedFolders() {
   const container = document.getElementById('pinned-folders');
   const emptyMsg  = document.getElementById('no-pinned');
   const pinnedSheets = userData.getPinnedSheets();
+  if (!container) return;
 
   container.innerHTML = '';
 
   // Show empty hint only when BOTH pinned folders and pinned sheets are empty
-  if (pinned.length === 0 && pinnedSheets.length === 0) {
+  if (emptyMsg && pinned.length === 0 && pinnedSheets.length === 0) {
     emptyMsg.classList.remove('hidden');
-  } else {
+  } else if (emptyMsg) {
     emptyMsg.classList.add('hidden');
   }
 

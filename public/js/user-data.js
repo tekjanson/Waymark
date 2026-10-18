@@ -85,6 +85,7 @@ function defaultUserData() {
 
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
+    homeWidgets: null,           // null = starter widgets; [] = intentionally empty; otherwise saved Wayboard widgets
 
     /* ── WebRTC Signaling ── */
     signalingSheetId: null,          // spreadsheetId of the private .waymark-signaling sheet (key storage)
@@ -154,6 +155,9 @@ async function _doInit() {
         ..._userData,
         preferences: { ...defaults.preferences, ...(_userData.preferences || {}) },
       };
+      if (!Array.isArray(_userData.homeWidgets) && Array.isArray(storage.getHomeWidgets?.())) {
+        _userData.homeWidgets = storage.getHomeWidgets();
+      }
     } else {
       // Seed from localStorage for migration
       _userData = migrateFromLocalStorage();
@@ -882,6 +886,22 @@ export function getDashboards() {
 }
 
 /**
+ * Get the user's Wayboard widgets. `null` means use the starter widgets;
+ * an empty array means the user chose to clear the dashboard.
+ * @returns {Array<{id:string,type:string,title:string,sheetId?:string,size?:string}>|null}
+ */
+export function getHomeWidgets() {
+  if (Array.isArray(_userData?.homeWidgets)) return _userData.homeWidgets;
+  const cached = storage.getHomeWidgets?.();
+  return Array.isArray(cached) ? cached : null;
+}
+
+/** Save the user's Wayboard widget configuration to Drive and local storage. */
+export async function setHomeWidgets(widgets) {
+  await save({ homeWidgets: Array.isArray(widgets) ? widgets.slice(0, 8) : [] });
+}
+
+/**
  * Save or update a dashboard definition.
  * @param {{ id: string, name: string, layout: string, panels: Array }} dashboard
  */
@@ -930,6 +950,7 @@ function migrateFromLocalStorage() {
     dismissedItems: storage.getDismissedItems?.() || [],
     hiddenItems: storage.getHiddenItems?.() || [],
     dashboards: storage.getDashboards?.() || [],
+    homeWidgets: storage.getHomeWidgets?.() ?? null,
   };
 }
 
@@ -954,6 +975,7 @@ function syncToLocalStorage(data) {
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setDashboards) storage.setDashboards(data.dashboards || []);
+    if (storage.setHomeWidgets) storage.setHomeWidgets(data.homeWidgets ?? null);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
     if (storage.setTheme) storage.setTheme(data.preferences?.theme || 'light');
     if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
