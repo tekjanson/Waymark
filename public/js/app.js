@@ -218,7 +218,15 @@ async function boot() {
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
-  wayboard.initWayboard({ navigate, openExamples: openExamplesModal });
+  wayboard.initWayboard({
+    navigate,
+    quickMarkActions: {
+      create: openCreateSheetModal,
+      import: () => { if (importModal) importModal.classList.remove('hidden'); },
+      browse: () => { window.location.hash = '#/explorer'; },
+      examples: openExamplesModal,
+    },
+  });
   // Sync collaborator shares from Share Ledgers into the bell —
   // once on boot, then on a 60s polling cycle.
   collab.pollBilateralSheets().catch(() => {});
@@ -696,7 +704,6 @@ let _userName = '';
  */
 function renderHome() {
   renderGreeting();
-  wireQuickActions();
   renderRecentSheets();
   renderPinnedSheets();
   renderPinnedFolders();
@@ -767,25 +774,6 @@ function renderGreeting() {
   } else {
     subEl.textContent = 'Welcome back to your Wayboard. Pick up where you left a mark.';
   }
-}
-
-/* ---------- Home: Quick Actions ---------- */
-
-let _quickActionsWired = false;
-
-function wireQuickActions() {
-  if (_quickActionsWired) return;
-  _quickActionsWired = true;
-
-  const wire = (id, fn) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.addEventListener('click', fn);
-  };
-
-  wire('home-action-create',   () => { openCreateSheetModal(); });
-  wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
-  wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
-  wire('home-action-examples', () => { openExamplesModal(); });
 }
 
 /* ---------- Home: Recent Sheets ---------- */

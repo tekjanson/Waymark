@@ -54,6 +54,43 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
   await expect(bread).toHaveAttribute('class', breadState);
 });
 
+test('Quick marks can be selected and reordered inside their own widget', async ({ page }) => {
+  page.on('pageerror', error => console.log('WAYBOARD PAGE ERROR:', error.stack || error.message));
+  await setupApp(page);
+  const quickmarks = page.locator('.wayboard-widget-quickmarks');
+  await expect(quickmarks.locator('.home-action-card')).toHaveCount(4);
+  await quickmarks.getByRole('button', { name: 'Edit Quick marks' }).click();
+  console.log('WAYBOARD MANAGER STATE:', await page.evaluate(() => ({
+    overlay: document.querySelector('.wayboard-widget-overlay')?.className,
+    bodyChildren: document.querySelector('.wayboard-widget-overlay')?.children.length,
+    select: document.querySelector('.wayboard-widget-overlay select[name="type"]')?.outerHTML,
+  })));
+
+  const options = page.locator('.wayboard-widget-quickmark-options');
+  await expect(options.locator('input[type="checkbox"]')).toHaveCount(4);
+  await options.locator('input[value="import"]').uncheck();
+  await options.locator('input[value="browse"]').uncheck();
+  const moveGuidesEarlier = options.getByRole('button', { name: 'Move Waymark guides earlier' });
+  await moveGuidesEarlier.click();
+  await moveGuidesEarlier.click();
+  await moveGuidesEarlier.click();
+  await page.locator('.wayboard-widget-form button[type="submit"]').click();
+
+  await expect(quickmarks.locator('.home-action-label')).toHaveText(['Waymark guides', 'New Waymark']);
+  await page.locator('#home-action-create').click();
+  await expect(page.locator('#create-sheet-modal')).toBeVisible();
+});
+
+test('expanded Wayboard gives widgets the full home canvas and can be restored', async ({ page }) => {
+  await setupApp(page);
+  await page.click('#wayboard-expand-toggle');
+  await expect(page.locator('#wayboard-root')).toHaveClass(/wayboard-expanded/);
+  await expect(page.locator('#home-wayside')).toBeHidden();
+  await page.getByRole('button', { name: 'Restore layout' }).click();
+  await expect(page.locator('#wayboard-root')).not.toHaveClass(/wayboard-expanded/);
+  await expect(page.locator('#home-wayside')).toBeVisible();
+});
+
 test('Wayboard can add a spreadsheet directly from Drive without pinning it first', async ({ page }) => {
   await setupApp(page);
   await page.click('#wayboard-add-widget');
@@ -88,6 +125,10 @@ test('home templates retain their defining layouts with user widgets enabled', a
       const section = getComputedStyle(root.querySelector('.wayboard-section'));
       const widget = getComputedStyle(root.querySelector('.wayboard-widget'));
       const greeting = getComputedStyle(root.querySelector('.greeting-banner'));
+      const quickmarks = root.querySelector('.wayboard-widget-quickmarks');
+      const quickmarkStyle = getComputedStyle(quickmarks);
+      const markRow = getComputedStyle(quickmarks.querySelector('.markers-row'));
+      const markAction = getComputedStyle(quickmarks.querySelector('.marker-card'));
       return {
         gridDisplay: grid.display,
         gridWrap: grid.flexWrap,
@@ -95,6 +136,15 @@ test('home templates retain their defining layouts with user widgets enabled', a
         widgetPosition: widget.position,
         greetingPosition: greeting.position,
         greetingBorder: greeting.borderBottomStyle,
+        quickmarkDisplay: quickmarkStyle.display,
+        quickmarkRowDisplay: markRow.display,
+        quickmarkRadius: markAction.borderRadius,
+        quickmarkIconHeight: getComputedStyle(quickmarks.querySelector('.marker-thumb')).height,
+        quickmarkBackground: quickmarkStyle.backgroundColor,
+        quickmarkTopBorder: quickmarkStyle.borderTopWidth,
+        quickmarkBottomBorder: quickmarkStyle.borderBottomWidth,
+        quickmarkAfter: getComputedStyle(quickmarks, '::after').content,
+        quickmarkLeftBorder: quickmarkStyle.borderLeftWidth,
       };
     };
     return {
@@ -106,6 +156,12 @@ test('home templates retain their defining layouts with user widgets enabled', a
       accordion: read(35),
       compass: read(38),
       telemetry: read(49),
+      tavern: read(16),
+      gallery: read(12),
+      corkboard: read(48),
+      notebook: read(41),
+      pipeline: read(31),
+      allModes: Array.from({ length: 50 }, (_, index) => read(index + 1)),
     };
   });
 
@@ -117,6 +173,15 @@ test('home templates retain their defining layouts with user widgets enabled', a
   expect(layouts.accordion.gridWrap).toBe('wrap');
   expect(layouts.compass.greetingPosition).toBe('relative');
   expect(layouts.telemetry.gridDisplay).toBe('grid');
+  expect(layouts.tavern.quickmarkAfter).toContain('WAYMARK PARTY');
+  expect(layouts.gallery.quickmarkIconHeight).toBe('85px');
+  expect(layouts.corkboard.quickmarkBackground).toBe('rgb(250, 248, 245)');
+  expect(layouts.corkboard.quickmarkBottomBorder).toBe('24px');
+  expect(layouts.notebook.quickmarkLeftBorder).toBe('5px');
+  expect(layouts.pipeline.quickmarkTopBorder).toBe('18px');
+  expect(layouts.allModes).toHaveLength(50);
+  expect(layouts.allModes.every(layout => layout.quickmarkDisplay !== 'none' && layout.quickmarkRowDisplay !== 'none')).toBe(true);
+  expect(new Set(layouts.allModes.map(layout => `${layout.gridDisplay}:${layout.quickmarkRowDisplay}:${layout.quickmarkRadius}:${layout.quickmarkBackground}:${layout.quickmarkBottomBorder}`)).size).toBeGreaterThan(10);
 });
 
 test('Profile settings lists all 50 home layout templates', async ({ page }) => {

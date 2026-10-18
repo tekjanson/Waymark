@@ -145,39 +145,14 @@
                   <div id="home-status-badges" class="wayboard-badges"></div>
                 </div>
 
-                <!-- Quick actions -->
-                <div id="home-markers" class="markers-section">
-                  <div class="section-head">
-                    <span>⚡ Quick marks</span>
-                  </div>
-
-                  <!-- Quick Actions -->
-                  <div class="home-quick-actions">
-                    <button id="home-action-create" class="home-action-card">
-                      <span class="home-action-icon">📝</span>
-                      <span class="home-action-label">New Waymark</span>
-                    </button>
-                    <button id="home-action-import" class="home-action-card">
-                      <span class="home-action-icon">📥</span>
-                      <span class="home-action-label">Import Waymarks</span>
-                    </button>
-                    <button id="home-action-browse" class="home-action-card">
-                      <span class="home-action-icon">📂</span>
-                      <span class="home-action-label">Find Waymarks</span>
-                    </button>
-                    <button id="home-action-examples" class="home-action-card">
-                      <span class="home-action-icon">✨</span>
-                      <span class="home-action-label">Waymark trail guides</span>
-                    </button>
-                  </div>
-
-                </div>
-
                 <!-- Wayboard Dashboard -->
                 <div id="home-wayboard-section" class="wayboard-section">
                   <div class="section-head">
                     <span>🎛️ Your Wayboard</span>
-                    <button id="wayboard-add-widget" class="wayboard-head-action" type="button" aria-haspopup="dialog">+ Add Waymark Widget</button>
+                    <div class="wayboard-head-actions">
+                      <button id="wayboard-expand-toggle" class="wayboard-head-action" type="button" aria-pressed="false" title="Give the Wayboard more room">⤢ Expand Wayboard</button>
+                      <button id="wayboard-add-widget" class="wayboard-head-action" type="button" aria-haspopup="dialog">+ Add Waymark Widget</button>
+                    </div>
                   </div>
                   <div id="wayboard-grid" class="wayboard-grid"></div>
                 </div>

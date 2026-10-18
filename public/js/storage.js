@@ -79,6 +79,14 @@ export function setHomeWidgets(widgets) {
   set('home_widgets', widgets);
 }
 
+export function getHomeWidgetsVersion() {
+  return get('home_widgets_version') || 0;
+}
+
+export function setHomeWidgetsVersion(version) {
+  set('home_widgets_version', Number(version) || 0);
+}
+
 export function getAutoRefresh() {
   const v = get('auto_refresh');
   return v === null ? true : v;   // default on

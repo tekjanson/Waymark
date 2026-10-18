@@ -131,6 +131,7 @@
 #wayboard-root.mode-16 main.canvas { background-image: linear-gradient(#203428 1px, transparent 1px), linear-gradient(90deg, #203428 1px, transparent 1px); background-size: 28px 28px; }
 #wayboard-root.mode-16 .widget,
 #wayboard-root.mode-16 .marker-card { border: 3px solid #fbbf24; border-radius: 14px; box-shadow: 0 6px 0 #0d1410; position: relative; }
+#wayboard-root.mode-16 .widget::after { content: "⚑ WAYMARK PARTY"; position: absolute; top: -10px; right: 10px; z-index: 2; background: #065f46; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 99px; border: 2px solid #4ade80; }
 #wayboard-root.mode-17 { --bg: #f4f4f0; --panel: #eaeae4; --card: #ffffff; --border: #111111; --text: #000; --muted: #333; --accent: #000; --green: #000; --radius: 0px; --font: 'Georgia', serif; }
 #wayboard-root.mode-17 .widget,
 #wayboard-root.mode-17 .marker-card,
@@ -239,6 +240,7 @@
     background-size: 20px 20px; }
 #wayboard-root.mode-31 .widget,
 #wayboard-root.mode-31 .marker-card { border-radius: 8px; border: 2px solid #475569; border-top: 18px solid #2563eb; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
+#wayboard-root.mode-31 .widget:not(.wayboard-widget-quickmarks)::before { content: "● MARK IN ───── MARK OUT ●"; font-family: monospace; font-size: 8px; color: #94a3b8; letter-spacing: 1px; margin-bottom: 4px; display: block; }
 #wayboard-root.mode-32 { --bg: #f4f1ea; --panel: #eae5db; --card: transparent; --border: #1c1917; --text: #1c1917; --muted: #57534e; --accent: #b91c1c; --radius: 0px; --font: 'Georgia', serif; }
 #wayboard-root.mode-32 aside.left-nav { display: none; }
 #wayboard-root.mode-32 .greeting-banner { border: none; border-top: 4px double #1c1917; border-bottom: 4px double #1c1917; text-align: center; justify-content: center; }
@@ -279,8 +281,7 @@
 #wayboard-root.mode-37 main.canvas { background-image: linear-gradient(rgba(147,197,253,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(147,197,253,0.18) 1px, transparent 1px);
     background-size: 24px 24px; border: 4px solid #fff; margin: 10px; }
 #wayboard-root.mode-37 aside.wayside { border: 4px solid #fff; margin: 10px 10px 10px 0; }
-#wayboard-root.mode-38 aside.left-nav,
-#wayboard-root.mode-38 .markers-section { display: none; }
+#wayboard-root.mode-38 aside.left-nav { display: none; }
 #wayboard-root.mode-38 main.canvas { display: flex; align-items: center; justify-content: center; }
 #wayboard-root.mode-38 .greeting-banner { position: absolute; z-index: 20; width: 210px; height: 210px; border-radius: 50%; text-align: center; flex-direction: column; justify-content: center; background: #1e1b4b; border: 4px solid #38bdf8; box-shadow: 0 0 40px rgba(56,189,248,0.4); }
 #wayboard-root.mode-38 .wayboard-section { width: 100%; height: 100%; }
@@ -306,6 +307,7 @@
 #wayboard-root.mode-41 .wayboard-grid { display: flex; flex-direction: column; gap: 14px; }
 #wayboard-root.mode-41 .widget,
 #wayboard-root.mode-41 .marker-card { border-left: 5px solid #3b82f6; border-radius: 4px; position: relative; padding-left: 20px; }
+#wayboard-root.mode-41 .widget:not(.wayboard-widget-quickmarks)::before { content: "In [1]: waymark.render_widget()"; font-family: monospace; font-size: 10px; color: #60a5fa; margin-bottom: 6px; }
 #wayboard-root.mode-42 { --bg: #d4d4d8; --panel: #e4e4e7; --card: #f4f4f5; --border: #a1a1aa; --text: #18181b; --muted: #52525b; --accent: #ff5500; --green: #00aa55; --radius: 10px; --font: 'Courier New', monospace; }
 #wayboard-root.mode-42 .widget,
 #wayboard-root.mode-42 .marker-card,
@@ -379,9 +381,8 @@
 /* ---------- Final container overrides + legacy home helpers ---------- */
 #content:has(> #home-view.home-wayboard:not(.hidden)) { padding: 0; overflow: hidden; }
 #home-view.home-wayboard { padding: 0; height: 100%; }
-#wayboard-root { height: calc(100vh - var(--topbar-height, 56px)); min-height: 440px; overflow: hidden; }
+#wayboard-root { height: calc(100dvh - var(--topbar-height, 56px)); min-height: 440px; overflow: hidden; }
 
-#wayboard-root .home-quick-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 #wayboard-root .home-action-card {
   display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer;
   background: var(--card); border: 1px solid var(--border); color: var(--text);
@@ -393,6 +394,7 @@
 #wayboard-root .home-empty-hint { font-size: 11px; color: var(--muted); }
 #wayboard-root .wayboard-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 #wayboard-root .wayboard-head-action { color: var(--accent); cursor: pointer; }
+#wayboard-root .wayboard-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* ---------- Wayboard widget + Wayside internals ---------- */
 #wayboard-root .widget-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -439,31 +441,8 @@ html[data-theme="dark"] #wayboard-root {
   color-scheme: dark;
 }
 
-/* Mode-specific hard-coded palettes must not mask the app's theme toggle. */
-html[data-theme] #wayboard-root,
-html[data-theme] #wayboard-root .workspace,
-html[data-theme] #wayboard-root main.canvas {
-  background-color: var(--bg);
-  color: var(--text);
-}
-
-html[data-theme] #wayboard-root aside.left-nav,
-html[data-theme] #wayboard-root aside.wayside,
-html[data-theme] #wayboard-root .greeting-banner {
-  background-color: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-html[data-theme] #wayboard-root .widget,
-html[data-theme] #wayboard-root .marker-card,
-html[data-theme] #wayboard-root .crew-row,
-html[data-theme] #wayboard-root .chat-box {
-  background-color: var(--card);
-  color: var(--text);
-  border-color: var(--border);
-}
-
+/* Variable-driven surfaces follow the app theme; explicit mode surfaces keep
+   their own character (paper, glass, cork, neon, and editorial treatments). */
 html[data-theme] #wayboard-root .viewport-box {
   background: var(--inset-bg);
   border-color: var(--border);
@@ -492,19 +471,22 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 #wayboard-root .wayboard-grid {
   align-content: start;
   align-items: stretch;
-  grid-auto-rows: minmax(170px, auto);
+  grid-auto-rows: minmax(220px, auto);
   min-width: 0;
 }
 #wayboard-root .wayboard-widget {
   min-width: 0;
-  min-height: 170px;
+  min-height: 220px;
   height: auto;
   justify-content: flex-start;
   gap: 14px;
-  overflow: hidden;
+  overflow: visible;
   padding: 16px;
 }
-#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
+#wayboard-root .wayboard-widget-compact { min-height: 150px; }
+#wayboard-root .wayboard-widget-wide { grid-column: span 2; }
+#wayboard-root .wayboard-widget-tall { grid-row: span 2; }
+#wayboard-root .wayboard-widget-full { grid-column: 1 / -1; }
 #wayboard-root .wayboard-widget-head,
 #wayboard-root .wayboard-widget-heading,
 #wayboard-root .wayboard-widget-form-actions,
@@ -611,6 +593,12 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 }
 #wayboard-root .wayboard-head-action:hover { border-color: var(--accent); }
 
+#wayboard-root .wayboard-widget-quickmarks { min-width: 0; }
+#wayboard-root .wayboard-widget-quickmarks .wayboard-widget-body { min-height: 0; }
+#wayboard-root .wayboard-widget-quickmarks .marker-meta { min-width: 0; }
+#wayboard-root .wayboard-widget-quickmarks .home-action-label { overflow-wrap: anywhere; }
+#wayboard-root .wayboard-widget-quickmarks .marker-social { line-height: 1.35; }
+
 /* Widget manager */
 .wayboard-widget-overlay { z-index: 2200; }
 .wayboard-widget-dialog { max-width: 680px; max-height: min(86vh, 780px); }
@@ -624,6 +612,16 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 .wayboard-widget-current-section h4 { font-size: 0.9rem; }
 .wayboard-widget-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .wayboard-widget-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--color-text-secondary); font-size: 0.76rem; font-weight: 600; }
+.wayboard-widget-field-label { color: var(--color-text-secondary); }
+.wayboard-widget-quickmark-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.wayboard-widget-quickmark-options.hidden { display: none; }
+.wayboard-widget-quickmark-options > .wayboard-widget-field-label { grid-column: 1 / -1; }
+.wayboard-widget-quickmark-option { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-width: 0; padding: 7px 8px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
+.wayboard-widget-quickmark-option label { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; }
+.wayboard-widget-quickmark-icon { font-size: 1rem; }
+.wayboard-widget-quickmark-order { display: flex; gap: 3px; }
+.wayboard-widget-quickmark-order button { padding: 3px 6px; font-size: 0.7rem; }
+.wayboard-widget-quickmark-order button:disabled { cursor: not-allowed; opacity: 0.4; }
 .wayboard-widget-sheet-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; min-width: 0; }
 .wayboard-widget-drive-button { align-self: stretch; white-space: nowrap; }
 .wayboard-widget-control { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; }
@@ -655,7 +653,7 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 #wayboard-root .wayboard-template-wrap {
   min-width: 0;
   max-width: 100%;
-  max-height: clamp(210px, 42vh, 460px);
+  max-height: clamp(260px, 48vh, 560px);
   overflow: auto;
   overscroll-behavior: contain;
   font-size: 0.85rem;
@@ -668,7 +666,7 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 #wayboard-root#wayboard-root.mode-14 .wayboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
-  grid-auto-rows: minmax(170px, auto);
+  grid-auto-rows: minmax(220px, auto);
   height: auto;
   min-width: 0;
 }
@@ -677,10 +675,11 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   inset: auto;
   width: auto;
   min-width: 0;
-  min-height: 170px;
+  min-height: 220px;
   margin: 0;
 }
-#wayboard-root#wayboard-root.mode-14 .wayboard-widget-wide { grid-column: 1 / -1; }
+#wayboard-root#wayboard-root.mode-14 .wayboard-widget-wide { grid-column: span 2; }
+#wayboard-root#wayboard-root.mode-14 .wayboard-widget-full { grid-column: 1 / -1; }
 
 /* These two architectures use floating panels; cap their scroll area so extra
    Waymarks stay available without hiding the rest of the home view. */
@@ -696,7 +695,9 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 #wayboard-root.mode-15 .wayboard-grid,
 #wayboard-root.mode-35 .wayboard-grid { flex-wrap: wrap; min-width: 0; }
 #wayboard-root.mode-15 .wayboard-widget-wide,
-#wayboard-root.mode-35 .wayboard-widget-wide {
+#wayboard-root.mode-35 .wayboard-widget-wide,
+#wayboard-root.mode-15 .wayboard-widget-full,
+#wayboard-root.mode-35 .wayboard-widget-full {
   flex: 1 1 100%;
   width: auto;
 }
@@ -710,12 +711,12 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   height: auto;
 }
 
-/* Medium windows preserve the chosen composition and can scroll the canvas. */
+/* Medium windows keep the chosen architecture while sharing the available width. */
 @media (min-width: 769px) and (max-width: 1199px) {
-  #wayboard-root { overflow: auto; }
-  #wayboard-root .workspace { min-width: 1040px; min-height: 0; }
-  #wayboard-root main.canvas { min-width: 540px; }
-  #wayboard-root aside.wayside { min-width: 210px; }
+  #wayboard-root .workspace { min-width: 0; min-height: 0; }
+  #wayboard-root main.canvas { min-width: 0; padding: 16px; }
+  #wayboard-root aside.wayside { width: clamp(220px, 24vw, 300px); min-width: 0; }
+  #wayboard-root .wayboard-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
 }
 
 @media (max-width: 768px) {
@@ -732,7 +733,8 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   #wayboard-root#wayboard-root .wayboard-section { flex-direction: column; }
   #wayboard-root#wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   #wayboard-root#wayboard-root .wayboard-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  #wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1; }
+  #wayboard-root#wayboard-root .wayboard-widget-wide,
+  #wayboard-root#wayboard-root .wayboard-widget-full { grid-column: 1; }
   #wayboard-root#wayboard-root .wayboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #wayboard-root#wayboard-root aside.wayside { display: flex; position: static; width: auto; max-width: none; min-height: 240px; margin: 0 12px 12px; }
   #wayboard-root#wayboard-root aside.left-nav,
@@ -746,6 +748,15 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   .wayboard-widget-manager-copy { flex-basis: calc(100% - 42px); }
   .wayboard-widget-manager-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* Expanded mode gives custom Waymarks the full home canvas while retaining the
+   selected architecture and an easy route back to the Wayside. */
+#wayboard-root.wayboard-expanded .workspace { min-width: 0; overflow: auto; }
+#wayboard-root.wayboard-expanded aside.wayside { display: none; }
+#wayboard-root.wayboard-expanded main.canvas { width: 100%; max-width: none; }
+#wayboard-root.wayboard-expanded.mode-13 .workspace { max-width: 100%; }
+#wayboard-root.wayboard-expanded.mode-50 .markers-section,
+#wayboard-root.wayboard-expanded.mode-50 .wayboard-section { width: min(1200px, 100%); }
 
 @media (max-width: 420px) {
   #wayboard-root#wayboard-root .markers-row { grid-template-columns: minmax(0, 1fr); }

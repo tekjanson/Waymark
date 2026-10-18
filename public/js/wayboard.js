@@ -37,20 +37,29 @@ export const MODE_GROUPS = [
   { label: '36–50 Experimental Mechanics', range: [36, 50] },
 ];
 
-const MAX_HOME_WIDGETS = 8;
+const MAX_HOME_WIDGETS = 16;
 const DEFAULT_HOME_WIDGETS = [
+  { id: 'starter-quickmarks', type: 'quickmarks', title: 'Quick marks', actions: ['create', 'import', 'browse', 'examples'], size: 'normal' },
   { id: 'starter-overview', type: 'overview', title: 'Your Waymark overview', size: 'normal' },
   { id: 'starter-recent', type: 'recent', title: 'Recent Waymarks', size: 'normal' },
   { id: 'starter-pinned', type: 'pinned', title: 'Pinned Waymarks', size: 'normal' },
   { id: 'starter-folders', type: 'folders', title: 'Pinned waypoints', size: 'normal' },
 ];
 const WIDGET_TYPES = {
+  quickmarks: { label: 'Quick marks', icon: '⚡' },
   overview: { label: 'Waymark overview', icon: '📊' },
   recent: { label: 'Recent Waymarks', icon: '🕒' },
   pinned: { label: 'Pinned Waymarks', icon: '📌' },
   folders: { label: 'Waymark waypoints', icon: '📁' },
   sheet: { label: 'Any Waymark', icon: '📄' },
 };
+const QUICK_MARK_ACTIONS = [
+  { id: 'create', label: 'Mark a fresh trail', shortLabel: 'New Waymark', icon: '📝', detail: 'Start a new Waymark' },
+  { id: 'import', label: 'Bring marks along', shortLabel: 'Import Waymarks', icon: '📥', detail: 'Import a Waymark' },
+  { id: 'browse', label: 'Find your Waymarks', shortLabel: 'Find Waymarks', icon: '📂', detail: 'Browse your Drive trail' },
+  { id: 'examples', label: 'Follow a trail guide', shortLabel: 'Waymark guides', icon: '✨', detail: 'Explore example Waymarks' },
+];
+const QUICK_MARK_ACTION_IDS = QUICK_MARK_ACTIONS.map(action => action.id);
 const sheetPreviewCache = new Map();
 
 /* ---------- Mode application ---------- */
@@ -63,12 +72,15 @@ export function applyHomeMode(mode) {
   const root = document.getElementById('wayboard-root');
   if (!root) return;
   const n = (mode >= 1 && mode <= 50) ? mode : 1;
+  const expanded = root.classList.contains('wayboard-expanded');
   root.className = `wayboard-root mode-${n}`;
+  if (expanded) root.classList.add('wayboard-expanded');
 }
 
 /* ---------- Wayboard render ---------- */
 
 let _navigate = null;
+let _quickMarkActions = {};
 
 /**
  * One-time wiring of Wayboard navigation callbacks.
@@ -76,6 +88,7 @@ let _navigate = null;
  */
 export function initWayboard(deps = {}) {
   _navigate = deps.navigate || null;
+  _quickMarkActions = deps.quickMarkActions || {};
 }
 
 /**
@@ -96,6 +109,19 @@ export function renderWayboard(opts = {}) {
       openWidgetManager();
     });
   }
+
+  const expand = document.getElementById('wayboard-expand-toggle');
+  if (expand && !expand._wired) {
+    expand._wired = true;
+    expand.addEventListener('click', () => {
+      const root = document.getElementById('wayboard-root');
+      if (!root) return;
+      const expanded = root.classList.toggle('wayboard-expanded');
+      expand.setAttribute('aria-pressed', String(expanded));
+      expand.textContent = expanded ? '↙ Restore layout' : '⤢ Expand Wayboard';
+      expand.title = expanded ? 'Restore the Wayside panel' : 'Give the Wayboard more room';
+    });
+  }
 }
 
 function renderStatusBadges() {
@@ -114,12 +140,18 @@ function renderStatusBadges() {
 
 function getConfiguredWidgets() {
   const saved = userData.getHomeWidgets();
-  const source = Array.isArray(saved) ? saved : DEFAULT_HOME_WIDGETS.filter(widget =>
+  const source = Array.isArray(saved) ? [...saved] : DEFAULT_HOME_WIDGETS.filter(widget =>
     widget.type === 'overview'
+      || widget.type === 'quickmarks'
       || (widget.type === 'recent' && userData.getRecentSheets().length > 0)
       || (widget.type === 'pinned' && userData.getPinnedSheets().length > 0)
       || (widget.type === 'folders' && userData.getPinnedFolders().length > 0)
   );
+  if (Array.isArray(saved)
+      && (userData.getHomeWidgetsVersion?.() || 0) < 2
+      && !source.some(widget => widget?.type === 'quickmarks')) {
+    source.unshift({ ...DEFAULT_HOME_WIDGETS[0] });
+  }
   const usedIds = new Set();
   return source
     .filter(w => w && WIDGET_TYPES[w.type])
@@ -135,7 +167,10 @@ function getConfiguredWidgets() {
         sheetId: w.sheetId ? String(w.sheetId) : '',
         sheetName: String(w.sheetName || '').slice(0, 120),
         templateKey: String(w.templateKey || ''),
-        size: w.size === 'wide' ? 'wide' : 'normal',
+        actions: w.type === 'quickmarks'
+          ? (Array.isArray(w.actions) ? [...new Set(w.actions.filter(id => QUICK_MARK_ACTION_IDS.includes(id)))] : [...QUICK_MARK_ACTION_IDS])
+          : [],
+        size: ['compact', 'normal', 'wide', 'tall', 'full'].includes(w.size) ? w.size : 'normal',
       };
     });
 }
@@ -306,14 +341,42 @@ function renderCustomSheetWidget(widget, body, card) {
   });
 }
 
+function renderQuickmarksWidget(widget) {
+  const actions = widget.actions
+    .map(id => QUICK_MARK_ACTIONS.find(action => action.id === id))
+    .filter(Boolean);
+  if (!actions.length) {
+    return emptyWidgetMessage('No quick marks on this leg yet. Edit this widget to choose a few.', 'Edit quick marks', () => openWidgetManager(widget.id));
+  }
+  return el('div', { className: 'markers-row home-quick-actions' }, actions.map(action => {
+    const attrs = {
+      className: 'marker-card home-action-card',
+      type: 'button',
+      title: action.detail,
+      'aria-label': action.label,
+      dataset: { quickmarkAction: action.id },
+      on: { click: () => _quickMarkActions[action.id]?.() },
+    };
+    if (widget.id === 'starter-quickmarks') attrs.id = `home-action-${action.id}`;
+    return el('button', attrs, [
+      el('span', { className: 'marker-thumb home-action-icon', 'aria-hidden': 'true' }, [action.icon]),
+      el('span', { className: 'marker-meta' }, [
+        el('span', { className: 'home-action-label' }, [action.shortLabel]),
+        el('span', { className: 'marker-social' }, [action.detail]),
+      ]),
+    ]);
+  }));
+}
+
 function makeWidget(widget) {
   const type = WIDGET_TYPES[widget.type] || WIDGET_TYPES.overview;
   const body = el('div', { className: 'wayboard-widget-body' });
+  const quickmarks = widget.type === 'quickmarks';
   const card = el('article', {
-    className: `widget wayboard-widget wayboard-widget-${widget.type}${widget.size === 'wide' ? ' wayboard-widget-wide' : ''}`,
+    className: `widget wayboard-widget wayboard-widget-${widget.type} wayboard-widget-size-${widget.size}${quickmarks ? ' markers-section' : ''}${['wide', 'full'].includes(widget.size) ? ` wayboard-widget-${widget.size}` : ''}${widget.size === 'tall' ? ' wayboard-widget-tall' : ''}`,
     dataset: { widgetId: widget.id },
   }, [
-    el('header', { className: 'wayboard-widget-head' }, [
+    el('header', { className: `wayboard-widget-head${quickmarks ? ' section-head' : ''}` }, [
       el('span', { className: 'wayboard-widget-heading' }, [
         el('span', { className: 'wayboard-widget-icon', 'aria-hidden': 'true' }, [type.icon]),
         el('span', { className: 'wayboard-widget-title' }, [widget.title]),
@@ -326,7 +389,8 @@ function makeWidget(widget) {
     body,
   ]);
 
-  if (widget.type === 'overview') body.replaceChildren(renderOverviewWidget());
+  if (quickmarks) body.replaceChildren(renderQuickmarksWidget(widget));
+  else if (widget.type === 'overview') body.replaceChildren(renderOverviewWidget());
   else if (widget.type === 'recent' || widget.type === 'pinned' || widget.type === 'folders') body.replaceChildren(renderSheetListWidget(widget.type));
   else if (widget.type === 'sheet') renderCustomSheetWidget(widget, body, card);
   return card;
@@ -388,14 +452,22 @@ function ensureWidgetManager() {
     el('div', { className: 'wayboard-widget-sheet-picker' }, [sheetSelect, browseDriveButton]),
   ]);
   const sizeSelect = el('select', { className: 'wayboard-widget-control', name: 'size' }, [
-    el('option', { value: 'normal' }, ['Single mark']),
-    el('option', { value: 'wide' }, ['Trail wide']),
+    el('option', { value: 'normal' }, ['Roomy mark']),
+    el('option', { value: 'compact' }, ['Compact mark']),
+    el('option', { value: 'wide' }, ['Two lanes wide']),
+    el('option', { value: 'tall' }, ['Two lanes tall']),
+    el('option', { value: 'full' }, ['Full trail']),
   ]);
   const submitButton = el('button', { className: 'btn btn-primary', type: 'submit' }, ['Add Waymark widget']);
+  const quickmarkOptions = el('div', {
+    className: 'wayboard-widget-field wayboard-widget-quickmark-options hidden',
+    role: 'group', 'aria-label': 'Choose and arrange quick marks',
+  });
   const form = el('form', { className: 'wayboard-widget-form' }, [
     el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Waymark widget']), typeSelect]),
     el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Mark name']), titleInput]),
     sheetLabel,
+    quickmarkOptions,
     el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Trail footprint']), sizeSelect]),
     el('div', { className: 'wayboard-widget-form-actions' }, [submitButton]),
   ]);
@@ -428,6 +500,60 @@ function ensureWidgetManager() {
   overlay.addEventListener('keydown', event => { if (event.key === 'Escape') closeWidgetManager(); });
   closeButton.addEventListener('click', closeWidgetManager);
 
+  const selectedQuickmarks = () => Array.from(quickmarkOptions.children)
+    .filter(row => row.querySelector('input[type="checkbox"]')?.checked)
+    .map(row => row.dataset.actionId);
+  const updateQuickmarkOrderButtons = () => {
+    const rows = Array.from(quickmarkOptions.children);
+    rows.forEach((row, index) => {
+      row.querySelector('[data-move="up"]').disabled = index === 0;
+      row.querySelector('[data-move="down"]').disabled = index === rows.length - 1;
+    });
+  };
+  const updateSubmitState = () => {
+    submitButton.disabled = (typeSelect.value === 'sheet' && !sheetSelect.value)
+      || (typeSelect.value === 'quickmarks' && !selectedQuickmarks().length);
+  };
+  const refreshQuickmarkOptions = (selected = QUICK_MARK_ACTION_IDS) => {
+    const selectedSet = new Set(selected.filter(id => QUICK_MARK_ACTION_IDS.includes(id)));
+    const ordered = [...selected, ...QUICK_MARK_ACTION_IDS]
+      .filter((id, index, list) => QUICK_MARK_ACTION_IDS.includes(id) && list.indexOf(id) === index);
+    quickmarkOptions.replaceChildren();
+    quickmarkOptions.classList.toggle('hidden', typeSelect.value !== 'quickmarks');
+    quickmarkOptions.append(el('span', { className: 'wayboard-widget-field-label' }, ['Quick marks to pack'])) ;
+    for (const id of ordered) {
+      const action = QUICK_MARK_ACTIONS.find(option => option.id === id);
+      const checkbox = el('input', { type: 'checkbox', name: 'quickmarkAction', value: id });
+      checkbox.checked = selectedSet.has(id);
+      checkbox.defaultChecked = checkbox.checked;
+      checkbox.addEventListener('change', updateSubmitState);
+      const moveUp = el('button', {
+        className: 'btn-secondary btn-sm', type: 'button', 'data-move': 'up',
+        title: `Move ${action.shortLabel} earlier`, 'aria-label': `Move ${action.shortLabel} earlier`,
+        on: { click: event => {
+          const row = event.currentTarget.closest('.wayboard-widget-quickmark-option');
+          if (row?.previousElementSibling) quickmarkOptions.insertBefore(row, row.previousElementSibling);
+          updateQuickmarkOrderButtons();
+        } },
+      }, ['↑']);
+      const moveDown = el('button', {
+        className: 'btn-secondary btn-sm', type: 'button', 'data-move': 'down',
+        title: `Move ${action.shortLabel} later`, 'aria-label': `Move ${action.shortLabel} later`,
+        on: { click: event => {
+          const row = event.currentTarget.closest('.wayboard-widget-quickmark-option');
+          if (row?.nextElementSibling) quickmarkOptions.insertBefore(row.nextElementSibling, row);
+          updateQuickmarkOrderButtons();
+        } },
+      }, ['↓']);
+      quickmarkOptions.append(el('div', { className: 'wayboard-widget-quickmark-option', dataset: { actionId: id } }, [
+        el('label', {}, [checkbox, el('span', { className: 'wayboard-widget-quickmark-icon' }, [action.icon]), action.shortLabel]),
+        el('div', { className: 'wayboard-widget-quickmark-order' }, [moveUp, moveDown]),
+      ]));
+    }
+    updateQuickmarkOrderButtons();
+    updateSubmitState();
+  };
+
   const refreshSheetOptions = () => {
     const selectedId = sheetSelect.value;
     sheetSelect.replaceChildren();
@@ -442,12 +568,16 @@ function ensureWidgetManager() {
     sheetSelect.disabled = false;
     if (selectedId && Array.from(sheetSelect.options).some(option => option.value === selectedId)) sheetSelect.value = selectedId;
     sheetLabel.classList.toggle('hidden', typeSelect.value !== 'sheet');
-    submitButton.disabled = typeSelect.value === 'sheet' && !sheetSelect.value;
+    quickmarkOptions.classList.toggle('hidden', typeSelect.value !== 'quickmarks');
+    updateSubmitState();
   };
 
-  typeSelect.addEventListener('change', refreshSheetOptions);
+  typeSelect.addEventListener('change', () => {
+    refreshSheetOptions();
+    if (typeSelect.value === 'quickmarks' && !quickmarkOptions.children.length) refreshQuickmarkOptions();
+  });
   sheetSelect.addEventListener('change', () => {
-    submitButton.disabled = typeSelect.value === 'sheet' && !sheetSelect.value;
+    updateSubmitState();
     if (!titleInput.value.trim() && typeSelect.value === 'sheet') titleInput.placeholder = widgetTitle('sheet', sheetSelect.value);
   });
 
@@ -468,7 +598,7 @@ function ensureWidgetManager() {
       widgetManager.driveSheets.set(file.id, { id: file.id, name: file.name || 'Untitled Waymark', templateKey: '' });
       refreshSheetOptions();
       sheetSelect.value = file.id;
-      submitButton.disabled = false;
+      updateSubmitState();
       if (!titleInput.value.trim()) titleInput.placeholder = file.name || 'Any Waymark';
       sheetSelect.focus();
       showToast(`${file.name || 'Waymark'} is ready to add to your Wayboard.`, 'success');
@@ -484,8 +614,13 @@ function ensureWidgetManager() {
     event.preventDefault();
     const type = typeSelect.value;
     const sheetId = type === 'sheet' ? sheetSelect.value : '';
+    const actions = type === 'quickmarks' ? selectedQuickmarks() : [];
     if (type === 'sheet' && !sheetId) {
       showToast('Choose a Waymark from Drive before adding it to your Wayboard.', 'info');
+      return;
+    }
+    if (type === 'quickmarks' && !actions.length) {
+      showToast('Choose at least one quick mark for this widget.', 'info');
       return;
     }
     const current = getConfiguredWidgets();
@@ -503,20 +638,22 @@ function ensureWidgetManager() {
       sheetId,
       sheetName: selectedSheet?.name || previous?.sheetName || '',
       templateKey: selectedSheet?.templateKey || previous?.templateKey || '',
-      size: sizeSelect.value === 'wide' ? 'wide' : 'normal',
+      actions,
+      size: ['compact', 'normal', 'wide', 'tall', 'full'].includes(sizeSelect.value) ? sizeSelect.value : 'normal',
     };
     const next = editingId ? current.map(widget => widget.id === editingId ? item : widget) : [...current, item];
     await saveWidgets(next);
     form.dataset.editingId = '';
     form.reset();
     submitButton.textContent = 'Add Waymark widget';
+    refreshQuickmarkOptions();
     refreshSheetOptions();
     renderWidgets();
     renderWidgetManagerList();
     showToast(editingId ? 'Wayboard mark updated' : 'Wayboard mark added', 'success');
   });
 
-  widgetManager = { overlay, dialog, form, typeSelect, titleInput, sheetSelect, sheetLabel, sizeSelect, submitButton, list, refreshSheetOptions, driveSheets: new Map() };
+  widgetManager = { overlay, dialog, form, typeSelect, titleInput, sheetSelect, sheetLabel, sizeSelect, submitButton, list, refreshSheetOptions, refreshQuickmarkOptions, driveSheets: new Map() };
   document.body.append(overlay);
   return widgetManager;
 }
@@ -529,6 +666,7 @@ function openWidgetManager(editingId = '') {
   manager.form.dataset.editingId = '';
   manager.form.reset();
   manager.submitButton.textContent = 'Add Waymark widget';
+  manager.refreshQuickmarkOptions(QUICK_MARK_ACTION_IDS);
   manager.refreshSheetOptions();
   renderWidgetManagerList();
   manager.overlay.classList.remove('hidden');
@@ -567,7 +705,7 @@ function renderWidgetManagerList() {
         el('b', {}, [widget.title]),
         el('small', {}, [widget.type === 'sheet'
           ? (findWidgetSheet(widget.sheetId)?.name || widget.sheetName || 'Any Waymark')
-          : type.label]),
+          : widget.type === 'quickmarks' ? `${widget.actions.length} quick marks` : type.label]),
       ]),
       el('div', { className: 'wayboard-widget-manager-actions' }, [
         el('button', { className: 'btn-secondary btn-sm', type: 'button', title: 'Edit Waymark widget', on: { click: () => editWidget(widget) } }, ['Edit mark']),
@@ -588,6 +726,7 @@ function editWidget(widget) {
   manager.typeSelect.value = widget.type;
   manager.titleInput.value = widget.title;
   manager.sizeSelect.value = widget.size;
+  manager.refreshQuickmarkOptions(widget.actions || QUICK_MARK_ACTION_IDS);
   manager.refreshSheetOptions();
   if (widget.sheetId && !Array.from(manager.sheetSelect.options).some(option => option.value === widget.sheetId)) {
     manager.sheetSelect.append(el('option', { value: widget.sheetId }, [`📄 ${widget.sheetName || widget.title}`]));

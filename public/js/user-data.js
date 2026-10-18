@@ -86,6 +86,7 @@ function defaultUserData() {
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
     homeWidgets: null,           // null = starter widgets; [] = intentionally empty; otherwise saved Wayboard widgets
+    homeWidgetsVersion: 0,       // Wayboard widget schema migration marker
 
     /* ── WebRTC Signaling ── */
     signalingSheetId: null,          // spreadsheetId of the private .waymark-signaling sheet (key storage)
@@ -896,9 +897,14 @@ export function getHomeWidgets() {
   return Array.isArray(cached) ? cached : null;
 }
 
+/** Get the synced Wayboard widget schema version for one-time migrations. */
+export function getHomeWidgetsVersion() {
+  return Number(_userData?.homeWidgetsVersion ?? storage.getHomeWidgetsVersion?.() ?? 0);
+}
+
 /** Save the user's Wayboard widget configuration to Drive and local storage. */
 export async function setHomeWidgets(widgets) {
-  await save({ homeWidgets: Array.isArray(widgets) ? widgets.slice(0, 8) : [] });
+  await save({ homeWidgets: Array.isArray(widgets) ? widgets.slice(0, 16) : [], homeWidgetsVersion: 2 });
 }
 
 /**
@@ -951,6 +957,7 @@ function migrateFromLocalStorage() {
     hiddenItems: storage.getHiddenItems?.() || [],
     dashboards: storage.getDashboards?.() || [],
     homeWidgets: storage.getHomeWidgets?.() ?? null,
+    homeWidgetsVersion: storage.getHomeWidgetsVersion?.() ?? 0,
   };
 }
 
@@ -976,6 +983,7 @@ function syncToLocalStorage(data) {
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setDashboards) storage.setDashboards(data.dashboards || []);
     if (storage.setHomeWidgets) storage.setHomeWidgets(data.homeWidgets ?? null);
+    if (storage.setHomeWidgetsVersion) storage.setHomeWidgetsVersion(data.homeWidgetsVersion ?? 0);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
     if (storage.setTheme) storage.setTheme(data.preferences?.theme || 'light');
     if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
