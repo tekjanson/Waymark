@@ -419,3 +419,75 @@
 #wayboard-root .avatar-online { border-color: var(--green); }
 #wayboard-root .avatar-away { border-color: var(--amber); }
 #wayboard-root .avatar-offline { border-color: var(--muted); opacity: 0.6; }
+
+/* ---------- Shared light / dark theme for every Wayboard layout ---------- */
+html[data-theme="light"] #wayboard-root {
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --card: #ffffff;
+  --border: #d8e1ec;
+  --text: #1e293b;
+  --muted: #64748b;
+  --inset-bg: #eaf0f6;
+  color-scheme: light;
+}
+
+html[data-theme="dark"] #wayboard-root {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --card: #202b3b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --inset-bg: #111827;
+  color-scheme: dark;
+}
+
+/* Mode-specific hard-coded palettes must not mask the app's theme toggle. */
+html[data-theme] #wayboard-root,
+html[data-theme] #wayboard-root .workspace,
+html[data-theme] #wayboard-root main.canvas {
+  background: var(--bg);
+  color: var(--text);
+}
+
+html[data-theme] #wayboard-root aside.left-nav,
+html[data-theme] #wayboard-root aside.wayside,
+html[data-theme] #wayboard-root .greeting-banner {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+html[data-theme] #wayboard-root .widget,
+html[data-theme] #wayboard-root .marker-card,
+html[data-theme] #wayboard-root .crew-row,
+html[data-theme] #wayboard-root .chat-box {
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+html[data-theme] #wayboard-root .viewport-box {
+  background: var(--inset-bg);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+html[data-theme] #wayboard-root .chat-input {
+  background: var(--inset-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme] #wayboard-root .btn-muted {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* Mode 37 uses white as its dark-mode accent; give light mode a readable one. */
+html[data-theme="light"] #wayboard-root.mode-37 {
+  --accent: #2563eb;
+  --green: #059669;
+  --border: #bfdbfe;
+}
