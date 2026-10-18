@@ -87,17 +87,13 @@ export const OLLAMA_MODEL_OPTIONS = [
 ];
 
 export const OPENAI_MODEL_OPTIONS = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o mini (cheapest, vision)' },
-  { value: 'gpt-4o', label: 'GPT-4o (balanced, vision)' },
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini (cheap)' },
-  { value: 'gpt-4.1', label: 'GPT-4.1 (best)' },
+  { value: 'gpt-6-luna', label: 'GPT-6 Luna (cheapest, nano)' }
 ];
 
 export const OPENAI_IMAGE_MODEL_OPTIONS = [
-  { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic)' },
-  { value: 'dall-e-3', label: 'DALL·E 3 (photorealistic)' },
+  { value: 'gpt-image-2', label: 'GPT Image 2 (standard)' },
+  { value: 'gpt-image-2.5', label: 'GPT Image 2.5 (best, photorealistic)' },
 ];
-
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
