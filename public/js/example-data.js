@@ -142,6 +142,17 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
+  'Wayfarer Crews': {
+    folder: 'Contacts',
+    headers: ['Name', 'Phone', 'Email', 'Role', 'Group', 'Share_Data_Sheet', 'Social_Data_Location'],
+    rows: [
+      ['Kailey Levine',  '555-0101', 'kailey@example.com',  'Spouse',    'Family Crew',      '', ''],
+      ['Mike Levine',    '555-0102', 'mike@example.com',    'Brother',   'Family Crew',      '', ''],
+      ['Dana Ruiz',      '555-0201', 'dana@site.example.com','Site Lead','Site AI Team',     '', ''],
+      ['Priya Shah',     '555-0301', 'priya@example.com',   'Guide',     'White Mtn Hikers', '', ''],
+    ],
+  },
+
   /* ---- Log examples ---- */
   'Workout Log': {
     folder: 'Logs',

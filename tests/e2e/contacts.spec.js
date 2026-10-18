@@ -18,6 +18,22 @@ test('emergency contacts detected as Contacts template', async ({ page }) => {
   expect(names).toContain('Dr. Sarah Johnson');
 });
 
+test('contacts with Group + Share_Data_Sheet render crew and share-sheet chips', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-077');
+  await page.waitForSelector('.template-contact-card', { timeout: 5_000 });
+
+  // Wayfarer Crew (Group) chips render.
+  await expect(page.locator('.contacts-group-chip', { hasText: 'Family Crew' }).first()).toBeVisible();
+
+  // Kailey Levine has a Share_Data_Sheet → a clickable "Share Sheet" chip.
+  const shareChip = page.locator('.contacts-share-chip').first();
+  await expect(shareChip).toBeVisible();
+  await expect(shareChip).toContainText('Share Sheet');
+  const href = await shareChip.getAttribute('href');
+  expect(href).toContain('#/sheet/sheet-069');
+});
+
 test('contacts show editable phone and email fields', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-013');

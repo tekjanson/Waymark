@@ -1,0 +1,14 @@
+{
+  "id": "sheet-077",
+  "title": "Wayfarer Crews",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Name", "Phone", "Email", "Role", "Group", "Share_Data_Sheet", "Social_Data_Location"],
+    ["Kailey Levine", "555-0101", "kailey@example.com", "Spouse", "Family Crew", "sheet-069", "sheet-069"],
+    ["Mike Levine", "555-0102", "mike@example.com", "Brother", "Family Crew", "", ""],
+    ["Stewart Levine", "555-0103", "stewart@example.com", "Father", "Family Crew", "", ""],
+    ["Dana Ruiz", "555-0201", "dana@site.example.com", "Site Lead", "Site AI Team", "", ""],
+    ["Owen Park", "555-0202", "owen@site.example.com", "Estimator", "Site AI Team", "", ""],
+    ["Priya Shah", "555-0301", "priya@example.com", "Guide", "White Mtn Hikers", "", ""]
+  ]
+}

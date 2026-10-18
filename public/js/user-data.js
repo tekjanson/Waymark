@@ -90,7 +90,7 @@ function defaultUserData() {
     publicSignalingSheetId: null,    // spreadsheetId of the public .waymark-public-signaling sheet (encrypted P2P)
 
     /* ── Bilateral sharing sheets ── */
-    bilateralSheets: [],             // { contactEmail, sheetId, createdAt }[] — one per sharing contact
+    shareLedgers: [],                // { key, contactEmail?, group?, sheetId, createdAt }[] — one per contact/crew
 
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
@@ -977,36 +977,40 @@ export function getPublicSignalingSheetId() {
   return _userData?.publicSignalingSheetId ?? null;
 }
 
-/* ---------- Bilateral Sharing Sheets ---------- */
+/* ---------- Share Ledgers (per contact / Wayfarer Crew) ---------- */
 
 /**
- * Get all bilateral sharing sheets (one per sharing contact).
- * @returns {Array<{contactEmail: string, sheetId: string, createdAt: string}>}
+ * Get all auto-provisioned Share Ledger mappings.
+ * @returns {Array<{key: string, contactEmail?: string, group?: string, sheetId: string, createdAt: string}>}
  */
-export function getBilateralSheets() {
-  return (_userData?.bilateralSheets) || [];
+export function getShareLedgers() {
+  return (_userData?.shareLedgers) || [];
 }
 
 /**
- * Find the bilateral sharing sheet for a contact email, or null.
- * @param {string} contactEmail
- * @returns {{contactEmail: string, sheetId: string, createdAt: string}|null}
+ * Find the Share Ledger for a ledger key (contact:email or group:name).
+ * @param {string} key
+ * @returns {{key: string, sheetId: string}|null}
  */
-export function getBilateralSheetFor(contactEmail) {
-  const email = (contactEmail || '').trim().toLowerCase();
-  return getBilateralSheets().find(b => b.contactEmail === email) || null;
+export function getShareLedgerFor(key) {
+  return getShareLedgers().find(l => l.key === key) || null;
 }
 
 /**
- * Record a bilateral sharing sheet mapping (idempotent by contact email).
- * @param {{contactEmail: string, sheetId: string}} entry
+ * Record a Share Ledger mapping (idempotent by ledger key).
+ * @param {{key: string, contactEmail?: string, group?: string, sheetId: string}} entry
  */
-export async function addBilateralSheet({ contactEmail, sheetId }) {
-  const email = (contactEmail || '').trim().toLowerCase();
-  if (!email || !sheetId) return;
-  const existing = getBilateralSheets().filter(b => b.contactEmail !== email);
-  existing.push({ contactEmail: email, sheetId, createdAt: new Date().toISOString() });
-  await save({ bilateralSheets: existing });
+export async function addShareLedger({ key, contactEmail, group, sheetId }) {
+  if (!key || !sheetId) return;
+  const existing = getShareLedgers().filter(l => l.key !== key);
+  existing.push({
+    key,
+    contactEmail: (contactEmail || '').trim().toLowerCase() || undefined,
+    group: group || undefined,
+    sheetId,
+    createdAt: new Date().toISOString(),
+  });
+  await save({ shareLedgers: existing });
 }
 
 /**
