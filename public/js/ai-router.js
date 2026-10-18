@@ -476,9 +476,12 @@ async function callOpenAIImage(payload, opts) {
 }
 
 async function callOpenAIImageEdit(picked, model, payload) {
-  const source = await fetch(payload.referenceImage);
-  if (!source.ok) throw new Error('Could not prepare the 3D view for image editing.');
-  const imageBlob = await source.blob();
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z\d+/=]+)$/i.exec(String(payload.referenceImage || ''));
+  if (!match) throw new Error('Could not prepare the 3D view for image editing.');
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const imageBlob = new Blob([bytes], { type: match[1].toLowerCase() });
   const form = new FormData();
   form.append('model', model);
   form.append('prompt', payload.prompt || '');

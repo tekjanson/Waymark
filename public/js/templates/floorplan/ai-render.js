@@ -362,30 +362,26 @@ async function renderPhotorealReference(items, camera) {
   const svg = referenceHost.querySelector('svg');
   if (!svg) throw new Error('Could not render the current 3D view.');
 
-  const svgBlob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' });
-  const objectUrl = URL.createObjectURL(svgBlob);
-  try {
-    const image = new Image();
-    const imageReady = typeof image.decode === 'function'
-      ? null
-      : new Promise((resolve, reject) => {
-        image.onload = resolve;
-        image.onerror = () => reject(new Error('Could not prepare the current 3D view.'));
-      });
-    image.src = objectUrl;
-    if (typeof image.decode === 'function') await image.decode();
-    else await imageReady;
+  // img-src allows data: but blocks blob: in the deployed CSP.
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+  const image = new Image();
+  const imageReady = typeof image.decode === 'function'
+    ? null
+    : new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('Could not prepare the current 3D view.'));
+    });
+  image.src = svgDataUrl;
+  if (typeof image.decode === 'function') await image.decode();
+  else await imageReady;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 1800;
-    canvas.height = 1000;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('Could not prepare the current 3D view.');
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/png');
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 1800;
+  canvas.height = 1000;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not prepare the current 3D view.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
 }
 
 function photorealPrompt(items) {
