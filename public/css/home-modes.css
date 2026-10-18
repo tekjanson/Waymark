@@ -2,14 +2,15 @@
    home-modes.css — 50 Wayboard home-page architectures
    AUTO-ADAPTED from the WayMark UX Studio reference. Every rule is
    scoped to #wayboard-root so the Wayboard is self-themed and cannot
-   leak styles into the rest of the app. Apply one of .mode-1 … .mode-50
-   on #wayboard-root to switch layout topology.
+   leak into the rest of the app. The 50 architectures (mode-1 … mode-50)
+   apply only on wide viewports (>= 769px); narrow screens fall back to a
+   clean, overflow-safe stacked layout.
    ============================================================ */
 
 /* Container sizing: fit the Wayboard into the home view below the top bar. */
 #wayboard-root {
   height: calc(100vh - var(--topbar-height, 56px));
-  min-height: 420px;
+  min-height: 440px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -55,6 +56,9 @@
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
 #wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px; display: flex; flex-direction: column; gap: 5px; font-size: 10px; height: 165px; }
 #wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+
+/* ---------- 50 layout architectures (wide screens only) ---------- */
+@media (min-width: 769px) {
 #wayboard-root.mode-2 .greeting-banner { background: transparent; border: none; padding: 0 0 8px 0; border-bottom: 1px solid var(--border); border-radius: 0; }
 #wayboard-root.mode-2 .markers-row { display: flex; gap: 10px; overflow-x: auto; }
 #wayboard-root.mode-2 .marker-card { flex-direction: row; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border-radius: 999px; border: 2px solid var(--accent); min-width: max-content; }
@@ -354,14 +358,33 @@
 #wayboard-root.mode-50 .greeting-banner { width: 680px; border-radius: 99px; border: 2px solid #60a5fa; box-shadow: 0 0 40px rgba(59,130,246,0.35); padding: 16px 28px; }
 #wayboard-root.mode-50 .markers-section,
 #wayboard-root.mode-50 .wayboard-section { width: 920px; }
+}
 
-/* ---------- Final container overrides (last rule wins over body-derived height) ---------- */
-/* Let the Wayboard fill the content area and own its own padding. */
+/* ---------- Mobile / narrow: clean stacked layout (overrides all modes) ---------- */
+@media (max-width: 768px) {
+  /* Doubled id raises specificity above #wayboard-root.mode-N selectors. */
+  #wayboard-root#wayboard-root { height: auto; min-height: 0; overflow-x: hidden; }
+  #wayboard-root#wayboard-root .workspace { flex-direction: column; overflow: visible; position: static; perspective: none; }
+  #wayboard-root#wayboard-root main.canvas { padding: 12px; overflow: visible; display: flex; flex-direction: column; }
+  #wayboard-root#wayboard-root aside.left-nav,
+  #wayboard-root#wayboard-root aside.wayside,
+  #wayboard-root#wayboard-root .markers-section,
+  #wayboard-root#wayboard-root .wayboard-section,
+  #wayboard-root#wayboard-root .greeting-banner,
+  #wayboard-root#wayboard-root .widget,
+  #wayboard-root#wayboard-root .marker-card {
+    position: static; width: auto; max-width: 100%; inset: auto; transform: none; writing-mode: horizontal-tb;
+  }
+  #wayboard-root#wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  #wayboard-root#wayboard-root .wayboard-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  #wayboard-root#wayboard-root header.app-header { display: none; }
+}
+
+/* ---------- Final container overrides + legacy home helpers ---------- */
 #content:has(> #home-view.home-wayboard:not(.hidden)) { padding: 0; overflow: hidden; }
 #home-view.home-wayboard { padding: 0; height: 100%; }
 #wayboard-root { height: calc(100vh - var(--topbar-height, 56px)); min-height: 440px; overflow: hidden; }
 
-/* Keep the legacy home helpers usable inside the Wayboard canvas. */
 #wayboard-root .home-quick-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 #wayboard-root .home-action-card {
   display: flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer;
@@ -375,30 +398,16 @@
 #wayboard-root .wayboard-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 #wayboard-root .wayboard-head-action { color: var(--accent); cursor: pointer; }
 
-/* Smooth cross-mode morphing. */
-#wayboard-root,
-#wayboard-root .workspace,
-#wayboard-root main.canvas,
-#wayboard-root aside.wayside,
-#wayboard-root aside.left-nav,
-#wayboard-root .markers-row,
-#wayboard-root .wayboard-grid,
-#wayboard-root .greeting-banner {
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* ---------- Wayboard widget + Wayside internals (scoped) ---------- */
+/* ---------- Wayboard widget + Wayside internals ---------- */
 #wayboard-root .widget-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 #wayboard-root .widget-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 #wayboard-root .widget-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; font-size: 11px; }
 #wayboard-root .widget-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-
 #wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: center; }
 #wayboard-root .wayside-webrtc { font-size: 10px; color: var(--green); }
 #wayboard-root .wayside-label { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-top: 4px; }
 #wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.4; }
 #wayboard-root .crews-block { display: flex; flex-direction: column; }
-
 #wayboard-root .chat-box-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
 #wayboard-root .chat-box-actions { display: flex; gap: 3px; }
 #wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
@@ -407,8 +416,6 @@
 #wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 5px; border-radius: 4px; font-size: 10px; }
 #wayboard-root .chat-self { color: var(--text); }
 #wayboard-root .chat-peer { color: var(--muted); }
-
-/* Presence rings on wayfarer avatars */
 #wayboard-root .avatar-online { border-color: var(--green); }
 #wayboard-root .avatar-away { border-color: var(--amber); }
 #wayboard-root .avatar-offline { border-color: var(--muted); opacity: 0.6; }
