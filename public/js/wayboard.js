@@ -504,7 +504,7 @@ function ensureWidgetManager() {
     .filter(row => row.querySelector('input[type="checkbox"]')?.checked)
     .map(row => row.dataset.actionId);
   const updateQuickmarkOrderButtons = () => {
-    const rows = Array.from(quickmarkOptions.children);
+    const rows = Array.from(quickmarkOptions.querySelectorAll('.wayboard-widget-quickmark-option'));
     rows.forEach((row, index) => {
       row.querySelector('[data-move="up"]').disabled = index === 0;
       row.querySelector('[data-move="down"]').disabled = index === rows.length - 1;

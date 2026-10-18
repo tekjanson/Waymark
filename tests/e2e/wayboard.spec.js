@@ -55,16 +55,10 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
 });
 
 test('Quick marks can be selected and reordered inside their own widget', async ({ page }) => {
-  page.on('pageerror', error => console.log('WAYBOARD PAGE ERROR:', error.stack || error.message));
   await setupApp(page);
   const quickmarks = page.locator('.wayboard-widget-quickmarks');
   await expect(quickmarks.locator('.home-action-card')).toHaveCount(4);
   await quickmarks.getByRole('button', { name: 'Edit Quick marks' }).click();
-  console.log('WAYBOARD MANAGER STATE:', await page.evaluate(() => ({
-    overlay: document.querySelector('.wayboard-widget-overlay')?.className,
-    bodyChildren: document.querySelector('.wayboard-widget-overlay')?.children.length,
-    select: document.querySelector('.wayboard-widget-overlay select[name="type"]')?.outerHTML,
-  })));
 
   const options = page.locator('.wayboard-widget-quickmark-options');
   await expect(options.locator('input[type="checkbox"]')).toHaveCount(4);
@@ -77,6 +71,7 @@ test('Quick marks can be selected and reordered inside their own widget', async 
   await page.locator('.wayboard-widget-form button[type="submit"]').click();
 
   await expect(quickmarks.locator('.home-action-label')).toHaveText(['Waymark guides', 'New Waymark']);
+  await page.locator('.wayboard-widget-dialog-header .btn-icon').click();
   await page.locator('#home-action-create').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
 });
@@ -118,6 +113,9 @@ test('default home layout is mode-1', async ({ page }) => {
 test('home templates retain their defining layouts with user widgets enabled', async ({ page }) => {
   await setupApp(page, { theme: 'dark' });
   const layouts = await page.evaluate(() => {
+    const noTransitions = document.createElement('style');
+    noTransitions.textContent = '#wayboard-root, #wayboard-root * { transition: none !important; }';
+    document.head.append(noTransitions);
     const root = document.getElementById('wayboard-root');
     const read = mode => {
       root.className = `wayboard-root mode-${mode}`;
