@@ -7,6 +7,69 @@
 import { el } from './ui.js';
 import * as storage from './storage.js';
 
+/* ---------- Notification store (top-bar bell) ---------- */
+
+const MAX_NOTIFICATIONS = 50;
+
+/**
+ * Add a notification to the top-bar bell store and refresh the badge.
+ * Deduplicates by id so repeated polls don't create duplicates.
+ * @param {{ id?: string, type?: string, title: string, body?: string, sheetId?: string, from?: string }} notif
+ */
+export function addNotification(notif) {
+  if (!notif || !notif.title) return;
+  const items = storage.getNotifications();
+  const id = notif.id || `${notif.sheetId || ''}:${notif.title}:${Date.now()}`;
+  if (items.some(n => n.id === id)) return;
+  items.unshift({
+    id,
+    type: notif.type || 'info',
+    title: notif.title,
+    body: notif.body || '',
+    sheetId: notif.sheetId || '',
+    from: notif.from || '',
+    ts: new Date().toISOString(),
+    read: false,
+  });
+  if (items.length > MAX_NOTIFICATIONS) items.length = MAX_NOTIFICATIONS;
+  storage.setNotifications(items);
+  _refreshBellBadge();
+}
+
+/** @returns {number} count of unread notifications */
+export function getUnreadCount() {
+  return storage.getNotifications().filter(n => !n.read).length;
+}
+
+/** Mark every notification as read and refresh the badge. */
+export function markAllRead() {
+  const items = storage.getNotifications().map(n => ({ ...n, read: true }));
+  storage.setNotifications(items);
+  _refreshBellBadge();
+}
+
+/** Update the unread-count badge on the bell. */
+function _refreshBellBadge() {
+  const bell = document.querySelector('.notif-bell');
+  if (!bell) return;
+  let badge = bell.querySelector('.notif-bell-badge');
+  const count = getUnreadCount();
+  if (count <= 0) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = el('span', { className: 'notif-bell-badge' }, []);
+    bell.appendChild(badge);
+  }
+  badge.textContent = count > 9 ? '9+' : String(count);
+}
+
+/** Public: refresh the bell badge (called after polling). */
+export function refreshBell() {
+  _refreshBellBadge();
+}
+
 /* ---------- Operators ---------- */
 
 const OPERATORS = {
@@ -313,14 +376,38 @@ function _openPanel(bellEl) {
     );
   }
 
-  children.push(
-    el('div', { className: 'notif-empty' }, [
-      '🔔',
-      el('div', { className: 'notif-empty-hint' }, ['No recent notifications']),
-    ])
-  );
+  const notifs = storage.getNotifications();
+  if (notifs.length) {
+    const list = el('div', { className: 'notif-list' },
+      notifs.slice(0, 20).map(n => {
+        const card = el('div', { className: 'notif-item' + (n.read ? '' : ' notif-item-unread') }, [
+          el('div', { className: 'notif-item-title' }, [n.title]),
+          n.body ? el('div', { className: 'notif-item-body' }, [n.body]) : null,
+        ]);
+        if (n.sheetId) {
+          card.classList.add('notif-item-link');
+          card.addEventListener('click', () => {
+            window.location.hash = `#/sheet/${n.sheetId}`;
+            if (_panel) { _panel.remove(); _panel = null; }
+          });
+        }
+        return card;
+      })
+    );
+    children.push(list);
+  } else {
+    children.push(
+      el('div', { className: 'notif-empty' }, [
+        '🔔',
+        el('div', { className: 'notif-empty-hint' }, ['No recent notifications']),
+      ])
+    );
+  }
 
   _panel = el('div', { className: 'notif-panel' }, children);
+
+  // Opening the panel clears the unread badge.
+  markAllRead();
 
   // Position below bell
   const rect = bellEl.getBoundingClientRect();
@@ -359,4 +446,7 @@ export function initBell() {
 
   const topBarRight = document.querySelector('.top-bar-right');
   if (topBarRight) topBarRight.prepend(bellBtn);
+
+  // Reflect any unread notifications already in the store.
+  _refreshBellBadge();
 }

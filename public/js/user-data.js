@@ -89,6 +89,9 @@ function defaultUserData() {
     signalingSheetId: null,          // spreadsheetId of the private .waymark-signaling sheet (key storage)
     publicSignalingSheetId: null,    // spreadsheetId of the public .waymark-public-signaling sheet (encrypted P2P)
 
+    /* ── Bilateral sharing sheets ── */
+    bilateralSheets: [],             // { contactEmail, sheetId, createdAt }[] — one per sharing contact
+
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
 
@@ -972,6 +975,38 @@ export function getSignalingSheetId() {
  */
 export function getPublicSignalingSheetId() {
   return _userData?.publicSignalingSheetId ?? null;
+}
+
+/* ---------- Bilateral Sharing Sheets ---------- */
+
+/**
+ * Get all bilateral sharing sheets (one per sharing contact).
+ * @returns {Array<{contactEmail: string, sheetId: string, createdAt: string}>}
+ */
+export function getBilateralSheets() {
+  return (_userData?.bilateralSheets) || [];
+}
+
+/**
+ * Find the bilateral sharing sheet for a contact email, or null.
+ * @param {string} contactEmail
+ * @returns {{contactEmail: string, sheetId: string, createdAt: string}|null}
+ */
+export function getBilateralSheetFor(contactEmail) {
+  const email = (contactEmail || '').trim().toLowerCase();
+  return getBilateralSheets().find(b => b.contactEmail === email) || null;
+}
+
+/**
+ * Record a bilateral sharing sheet mapping (idempotent by contact email).
+ * @param {{contactEmail: string, sheetId: string}} entry
+ */
+export async function addBilateralSheet({ contactEmail, sheetId }) {
+  const email = (contactEmail || '').trim().toLowerCase();
+  if (!email || !sheetId) return;
+  const existing = getBilateralSheets().filter(b => b.contactEmail !== email);
+  existing.push({ contactEmail: email, sheetId, createdAt: new Date().toISOString() });
+  await save({ bilateralSheets: existing });
 }
 
 /**
