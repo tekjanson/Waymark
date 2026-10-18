@@ -38,6 +38,7 @@ import {
   openAiImageUrl,
   openAiImageEditUrl,
   openAiHeaders,
+  openAiGenerationParams,
   pickBestKey,
   pickBestClaudeKey,
   pickBestOpenAIKey,
@@ -233,12 +234,17 @@ export async function testProviderConnection(provider) {
  *   vision:  { systemPrompt, userMessage?, base64Image, mimeType }
  *   audio:   { systemPrompt, userMessage?, base64Audio, mimeType }
  *   image:   { prompt, size?, n? }
- * @param {{ temperature?: number, maxTokens?: number }} [opts]
+ * @param {{ temperature?: number, maxTokens?: number, provider?: string }} [opts]
  * @returns {Promise<string>} text, or an image data URL / URL for image generation
  */
 export async function routeAI(capability, payload = {}, opts = {}) {
-  const providers = providersForCapability(capability);
-  if (!providers.length) throw new Error(noProviderMessage(capability));
+  const capableProviders = providersForCapability(capability);
+  const providers = opts.provider ? capableProviders.filter(provider => provider === opts.provider) : capableProviders;
+  if (!providers.length) {
+    throw new Error(opts.provider
+      ? `${PROVIDER_META[opts.provider]?.label || opts.provider} is not enabled and configured for this task.`
+      : noProviderMessage(capability));
+  }
 
   let lastErr;
   for (const provider of providers) {
@@ -279,6 +285,14 @@ function callProvider(provider, capability, payload, opts) {
 
 /* ---------- Gemini adapter ---------- */
 
+function providerError(provider, model, res, body) {
+  const error = new Error(`${provider} (${model}): ${body?.error?.message || `API error ${res.status}`}`);
+  error.status = res.status;
+  error.code = body?.error?.code;
+  error.param = body?.error?.param;
+  return error;
+}
+
 async function callGemini(capability, payload, opts) {
   const keys = pickBestKey();
   if (!keys.length) throw new Error('No Gemini key configured.');
@@ -296,9 +310,11 @@ async function callGemini(capability, payload, opts) {
   }
 
   const generationConfig = {
-    temperature: opts.temperature ?? 0.4,
     maxOutputTokens: opts.maxTokens ?? 1024,
   };
+  // Gemini 3+ uses its default sampling settings for reasoning.
+  const geminiVersion = Number(model.replace(/^models\//, '').match(/^gemini-(\d+)/)?.[1] || 0);
+  if (geminiVersion < 3) generationConfig.temperature = opts.temperature ?? 0.4;
   if (capability === CAP.STRUCTURED_JSON) generationConfig.responseMimeType = 'application/json';
 
   const body = {
@@ -308,13 +324,20 @@ async function callGemini(capability, payload, opts) {
   };
 
   let lastErr;
-  for (const keyEntry of keys) {
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const keyEntry = keys[attempt % keys.length];
     const res = await fetch(url, { method: 'POST', headers: geminiHeaders(keyEntry.key), body: JSON.stringify(body) });
     if (!res.ok) {
       if (keyEntry.idx >= 0) recordKeyError(keyEntry.idx);
       const errBody = await res.json().catch(() => ({}));
-      lastErr = new Error(errBody?.error?.message || `Gemini API error ${res.status}`);
-      if (res.status === 429 || res.status === 503) continue;
+      lastErr = providerError('Gemini', model, res, errBody);
+      if ((res.status === 408 || res.status === 429 || res.status >= 500) && attempt < maxAttempts - 1) {
+        const retryAfter = Number(res.headers?.get?.('Retry-After'));
+        const delay = retryAfter > 0 ? retryAfter * 1000 : 1000 * (2 ** attempt);
+        await new Promise(resolve => setTimeout(resolve, Math.min(delay, 5000) + Math.floor(Math.random() * 200)));
+        continue;
+      }
       throw lastErr;
     }
     if (keyEntry.idx >= 0) recordKeyUsage(keyEntry.idx);
@@ -417,8 +440,7 @@ async function callOpenAIChat(capability, payload, opts) {
       { role: 'system', content: payload.systemPrompt || '' },
       { role: 'user', content: userContent },
     ],
-    max_tokens: opts.maxTokens ?? 1024,
-    temperature: opts.temperature ?? 0.4,
+    ...openAiGenerationParams(model, { maxTokens: opts.maxTokens ?? 1024, temperature: opts.temperature ?? 0.4 }),
     ...(capability === CAP.STRUCTURED_JSON ? { response_format: { type: 'json_object' } } : {}),
   };
 
@@ -426,7 +448,7 @@ async function callOpenAIChat(capability, payload, opts) {
   if (!res.ok) {
     if (picked.idx >= 0) recordOpenAIKeyError(picked.idx);
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody?.error?.message || `OpenAI API error ${res.status}`);
+    throw providerError('OpenAI', model, res, errBody);
   }
   if (picked.idx >= 0) recordOpenAIKeyUsage(picked.idx);
   const data = await res.json();
@@ -438,34 +460,40 @@ async function callOpenAIChat(capability, payload, opts) {
 async function callOpenAIImage(payload, opts) {
   const picked = pickBestOpenAIKey() || serverKeyEntry('__WAYMARK_OPENAI_KEY');
   if (!picked) throw new Error('No OpenAI key configured for image generation.');
-  const model = getOpenAIImageModel() || DEFAULT_OPENAI_IMAGE_MODEL;
+  const selectedModel = getOpenAIImageModel() || DEFAULT_OPENAI_IMAGE_MODEL;
+  // DALL·E image models have been retired. Existing saved settings should use
+  // the app's GPT Image default instead of repeatedly sending rejected calls.
+  const model = /^dall-e-[23]$/.test(selectedModel) ? DEFAULT_OPENAI_IMAGE_MODEL : selectedModel;
+  if (!/^(?:gpt-image-|chatgpt-image-latest$)/.test(model)) {
+    throw new Error('Photoreal rendering requires a GPT Image model.');
+  }
+  const n = payload.n ?? 1;
+  if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error('Image count must be between 1 and 10.');
+  const legacySizes = { '1792x1024': '1536x1024', '1024x1792': '1024x1536', '256x256': '1024x1024', '512x512': '1024x1024' };
+  const size = legacySizes[payload.size] || payload.size || 'auto';
+  if (/^gpt-image-1(?:[.-]|$)/.test(model) && !['auto', '1024x1024', '1536x1024', '1024x1536'].includes(size)) {
+    throw new Error('This GPT Image model supports auto, 1024x1024, 1536x1024, or 1024x1536 image sizes.');
+  }
+  const imagePayload = { ...payload, n, size };
 
   if (payload.referenceImage) {
-    if (!model.startsWith('gpt-image-')) {
-      throw new Error('Using the 3D view as a geometry reference requires a GPT Image model. Choose gpt-image-1 in AI settings.');
-    }
-    return callOpenAIImageEdit(picked, model, payload);
+    return callOpenAIImageEdit(picked, model, imagePayload);
   }
 
   const body = {
     model,
     prompt: payload.prompt || '',
-    n: payload.n || 1,
-    size: payload.size || '1024x1024',
+    n,
+    size,
   };
-  // Inject the drawing seed so iterative renders stay locked to the layout
-  // (ignored by models that don't support it).
-  if (payload.seed != null && Number.isFinite(Number(payload.seed))) {
-    body.seed = Number(payload.seed);
-  }
-  // dall-e-3 returns a URL unless asked for base64; gpt-image-1 always returns base64.
-  if (model === 'dall-e-3') body.response_format = 'b64_json';
+  // GPT Image does not accept seed or response_format. Its base64 result is
+  // returned by default; reference edits supply the actual drawing geometry.
 
   const res = await fetch(openAiImageUrl(), { method: 'POST', headers: openAiHeaders(picked.key), body: JSON.stringify(body) });
   if (!res.ok) {
     if (picked.idx >= 0) recordOpenAIKeyError(picked.idx);
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody?.error?.message || `OpenAI image API error ${res.status}`);
+    throw providerError('OpenAI image', model, res, errBody);
   }
   if (picked.idx >= 0) recordOpenAIKeyUsage(picked.idx);
   const data = await res.json();
@@ -485,11 +513,13 @@ async function callOpenAIImageEdit(picked, model, payload) {
   const form = new FormData();
   form.append('model', model);
   form.append('prompt', payload.prompt || '');
-  form.append('image', imageBlob, 'floorplan-3d-view.png');
+  const extension = match[1].toLowerCase().split('/')[1];
+  form.append('image', imageBlob, `floorplan-3d-view.${extension}`);
   if (model === 'gpt-image-1' || model === 'gpt-image-1.5') {
     form.append('input_fidelity', 'high');
   }
-  if (payload.n) form.append('n', String(payload.n));
+  form.append('n', String(payload.n));
+  form.append('size', payload.size);
 
   // The browser supplies the multipart boundary; setting Content-Type here
   // would prevent the API from reading the uploaded reference image.
@@ -501,7 +531,7 @@ async function callOpenAIImageEdit(picked, model, payload) {
   if (!res.ok) {
     if (picked.idx >= 0) recordOpenAIKeyError(picked.idx);
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody?.error?.message || `OpenAI image edit API error ${res.status}`);
+    throw providerError('OpenAI image edit', model, res, errBody);
   }
   if (picked.idx >= 0) recordOpenAIKeyUsage(picked.idx);
   const data = await res.json();
