@@ -19,6 +19,7 @@ import { scrapeRecipe } from './recipe-scraper.js';
 import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
+import * as collab from './collab.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
@@ -212,6 +213,10 @@ async function boot() {
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
+  // Sync collaborator shares/updates from bilateral sheets into the bell —
+  // once on boot, then on a 60s polling cycle.
+  collab.pollBilateralSheets().catch(() => {});
+  setInterval(() => { collab.pollBilateralSheets().catch(() => {}); }, 60_000);
   await initializeModelSwap();
   initializeModelSwapUI();
 

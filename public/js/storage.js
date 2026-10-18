@@ -629,6 +629,22 @@ export function getAllNotificationRules() {
   return get('notification_rules') || {};
 }
 
+/* --- Bilateral sharing cursors (last-seen row counts per shared sheet) --- */
+
+export function getBilateralCursors() {
+  return get('bilateral_cursors') || {};
+}
+
+export function getBilateralCursor(sheetId) {
+  return getBilateralCursors()[sheetId] || 0;
+}
+
+export function setBilateralCursor(sheetId, count) {
+  const all = getBilateralCursors();
+  all[sheetId] = count;
+  set('bilateral_cursors', all);
+}
+
 /* ---------- Cross-Feature Links ---------- */
 
 /**

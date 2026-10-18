@@ -10,6 +10,7 @@ import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { showPinMenu } from './pin-menu.js';
 import { mountContactsPicker } from './contacts-picker.js';
+import * as collab from './collab.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
@@ -1623,6 +1624,16 @@ async function openShareModal(sheetId, sheetName) {
       grantBtn.textContent = 'Granting…';
       try {
         await api.drive.createDrivePermission(sheetId, email, role);
+        // Provision the bilateral sharing sheet and log the share so the
+        // collaborator sees it in their notification bell.
+        try {
+          await collab.recordSharedWaymark(email, {
+            sheetId,
+            title: sheetName,
+            changeType: 'shared',
+            summary: `Shared "${sheetName}" with ${role === 'writer' ? 'edit' : 'view'} access`,
+          });
+        } catch { /* sharing ledger is best-effort */ }
         showToast(`Access granted to ${email}`, 'success');
         emailInput.value = '';
       } catch (err) {
