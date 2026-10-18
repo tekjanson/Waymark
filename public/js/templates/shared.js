@@ -1357,17 +1357,17 @@ export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio
 }
 
 /**
- * Generate a photorealistic image from a text prompt (image generation
- * capability). Routes to an image-capable provider — currently OpenAI
- * (gpt-image-1 / DALL·E 3); Gemini Free Tier cannot generate images, so the
- * router automatically uses OpenAI when configured.
+ * Generate a photorealistic image from a text prompt, optionally guided by a
+ * reference image. Reference edits require a GPT Image model; text-only image
+ * generation can also use DALL·E 3.
  * @param {string} prompt
- * @param {{ size?: string, n?: number }} [opts]
+ * @param {{ size?: string, n?: number, seed?: number, referenceImage?: string }} [opts]
  * @returns {Promise<string>}  image data URL (or remote URL)
  */
 export async function generateImage(prompt, opts = {}) {
   return routeAI(CAP.IMAGE_GENERATION_PHOTOREAL, {
     prompt, size: opts.size, n: opts.n, seed: opts.seed,
+    referenceImage: opts.referenceImage,
   }, {});
 }
 

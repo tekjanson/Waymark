@@ -36,6 +36,7 @@ import {
   ollamaChatUrl,
   openAiChatUrl,
   openAiImageUrl,
+  openAiImageEditUrl,
   openAiHeaders,
   pickBestKey,
   pickBestClaudeKey,
@@ -439,6 +440,13 @@ async function callOpenAIImage(payload, opts) {
   if (!picked) throw new Error('No OpenAI key configured for image generation.');
   const model = getOpenAIImageModel() || DEFAULT_OPENAI_IMAGE_MODEL;
 
+  if (payload.referenceImage) {
+    if (!model.startsWith('gpt-image-')) {
+      throw new Error('Using the 3D view as a geometry reference requires a GPT Image model. Choose gpt-image-1 in AI settings.');
+    }
+    return callOpenAIImageEdit(picked, model, payload);
+  }
+
   const body = {
     model,
     prompt: payload.prompt || '',
@@ -458,6 +466,42 @@ async function callOpenAIImage(payload, opts) {
     if (picked.idx >= 0) recordOpenAIKeyError(picked.idx);
     const errBody = await res.json().catch(() => ({}));
     throw new Error(errBody?.error?.message || `OpenAI image API error ${res.status}`);
+  }
+  if (picked.idx >= 0) recordOpenAIKeyUsage(picked.idx);
+  const data = await res.json();
+  const item = (data.data && data.data[0]) || {};
+  if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
+  if (item.url) return item.url;
+  throw new Error('No image returned from OpenAI.');
+}
+
+async function callOpenAIImageEdit(picked, model, payload) {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z\d+/=]+)$/i.exec(String(payload.referenceImage || ''));
+  if (!match) throw new Error('Could not prepare the 3D view for image editing.');
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const imageBlob = new Blob([bytes], { type: match[1].toLowerCase() });
+  const form = new FormData();
+  form.append('model', model);
+  form.append('prompt', payload.prompt || '');
+  form.append('image', imageBlob, 'floorplan-3d-view.png');
+  if (model === 'gpt-image-1' || model === 'gpt-image-1.5') {
+    form.append('input_fidelity', 'high');
+  }
+  if (payload.n) form.append('n', String(payload.n));
+
+  // The browser supplies the multipart boundary; setting Content-Type here
+  // would prevent the API from reading the uploaded reference image.
+  const res = await fetch(openAiImageEditUrl(), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${picked.key}` },
+    body: form,
+  });
+  if (!res.ok) {
+    if (picked.idx >= 0) recordOpenAIKeyError(picked.idx);
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody?.error?.message || `OpenAI image edit API error ${res.status}`);
   }
   if (picked.idx >= 0) recordOpenAIKeyUsage(picked.idx);
   const data = await res.json();

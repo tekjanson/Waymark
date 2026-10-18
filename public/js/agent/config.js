@@ -94,8 +94,8 @@ export const OPENAI_MODEL_OPTIONS = [
 ];
 
 export const OPENAI_IMAGE_MODEL_OPTIONS = [
-  { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic)' },
-  { value: 'dall-e-3', label: 'DALL·E 3 (photorealistic)' },
+  { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic + 3D view reference)' },
+  { value: 'dall-e-3', label: 'DALL·E 3 (text-only image generation)' },
 ];
 
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
@@ -220,6 +220,11 @@ export function openAiChatUrl() {
  */
 export function openAiImageUrl() {
   return `${OPENAI_API_BASE}/images/generations`;
+}
+
+/** Build the OpenAI image editing URL. */
+export function openAiImageEditUrl() {
+  return `${OPENAI_API_BASE}/images/edits`;
 }
 
 /**

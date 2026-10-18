@@ -86,76 +86,6 @@ async function generateRenderSpec(items) {
   return parseJson(text) || fallbackSpec();
 }
 
-/* ---------- Photoreal pipeline: geometry-locked enrichment + seed ---------- */
-
-const ENRICH_SYSTEM_PROMPT =
-  'You are an architectural specification translator. Describe ONLY the exact ' +
-  'spatial geometry, wall boundaries, door/window placements, materials, and ' +
-  'fixtures explicitly defined in the provided drawing schema. Do not invent ' +
-  'additional rooms, furniture, props, or structural features. Output a precise, ' +
-  'geometry-locked architectural rendering prompt as a single paragraph.';
-
-/**
- * Build a compact JSON schema of the drawing's exact geometry — walls as
- * vectors, rooms with dimensions, doors, windows, and explicitly placed
- * fixtures — for the Gemini enrichment step.
- * @param {Object[]} items
- * @returns {Object}
- */
-function buildDrawingSchema(items) {
-  const list = items || [];
-  const rooms = list.filter(i => i.kind === 'room').map(r => ({
-    name: r.label || 'Room',
-    x: Math.round(r.x || 0), y: Math.round(r.y || 0),
-    width: Math.round(r.width || 0), height: Math.round(r.height || 0),
-  }));
-  const walls = list.filter(i => i.kind === 'wall').map(w => ({
-    x1: Math.round(w.x1 ?? w.x ?? 0), y1: Math.round(w.y1 ?? w.y ?? 0),
-    x2: Math.round(w.x2 ?? (w.x || 0) + (w.width || 0)), y2: Math.round(w.y2 ?? (w.y || 0) + (w.height || 0)),
-  }));
-  const classify = (it) => `${it.type || ''} ${it.label || ''} ${it.symbolKey || ''}`.toLowerCase();
-  const doors = list.filter(i => /door/.test(classify(i))).map(d => ({ x: Math.round(d.x || 0), y: Math.round(d.y || 0) }));
-  const windows = list.filter(i => /window/.test(classify(i))).map(w => ({ x: Math.round(w.x || 0), y: Math.round(w.y || 0) }));
-  const fixtures = list
-    .filter(i => (i.kind === 'fixture' || i.kind === 'electrical' || i.kind === 'plumbing') && !/door|window/.test(classify(i)))
-    .map(f => ({ type: f.symbolKey || f.type || f.label || 'fixture', x: Math.round(f.x || 0), y: Math.round(f.y || 0) }));
-  return { rooms, walls, doors, windows, fixtures };
-}
-
-/**
- * Step 1 of the photoreal pipeline: translate the raw drawing geometry into a
- * strict, geometry-locked rendering prompt via Gemini (no hallucinated rooms,
- * furniture, or features).
- * @param {Object[]} items
- * @returns {Promise<string>}
- */
-export async function enrichFloorplanPrompt(items) {
-  const schema = buildDrawingSchema(items);
-  if (!schema.rooms.length && !schema.walls.length) {
-    throw new Error('Draw walls or a room before enriching the render prompt.');
-  }
-  const userMessage = 'Drawing schema (geometry to lock to):\n' + JSON.stringify(schema);
-  const text = await generateText(ENRICH_SYSTEM_PROMPT, userMessage, { temperature: 0.2, maxTokens: 700 });
-  return (text || '').trim();
-}
-
-/**
- * Deterministic numeric seed derived from the drawing geometry, so repeat
- * renders of the SAME layout stay locked to the SAME seed.
- * @param {Object[]} items
- * @returns {number}  0–99999
- */
-export function computeDrawingSeed(items) {
-  const schema = buildDrawingSchema(items);
-  const str = JSON.stringify(schema);
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Math.abs(h) % 100000;
-}
-
 function renderConceptSvg(container, items, spec) {
   container.innerHTML = '';
   const svg = svgEl('svg', {
@@ -265,10 +195,11 @@ function roomBoxAt(items, x, y) {
  */
 export function renderPerspectiveView(host, items, camera) {
   const options = arguments[3] || {};
+  const showAnnotations = options.annotations !== false;
   host.innerHTML = '';
   const VW = 900;
   const VH = 500;
-  const svg = svgEl('svg', { viewBox: `0 0 ${VW} ${VH}`, class: 'floorplan-view-svg', role: 'img', 'aria-label': '3D viewpoint render' });
+  const svg = svgEl('svg', { width: VW, height: VH, viewBox: `0 0 ${VW} ${VH}`, class: 'floorplan-view-svg', role: 'img', 'aria-label': '3D viewpoint render' });
   svg.append(svgEl('defs', {}, [
     svgEl('linearGradient', { id: 'wm-floor', x1: '0', y1: '0', x2: '0', y2: '1' }, [
       svgEl('stop', { offset: '0%', 'stop-color': '#b8c2d0' }),
@@ -404,22 +335,66 @@ export function renderPerspectiveView(host, items, camera) {
       objectRect.addEventListener('click', () => options.onObjectClick?.(it));
       svg.append(objectRect);
       svg.append(svgEl('rect', { x, y: yTop, width: wpx, height: Math.max(2, hpx * 0.18), rx: 3, fill: '#ffffff', opacity: 0.18 }));
-      if (it.aiPrompt) {
+      if (showAnnotations && it.aiPrompt) {
         svg.append(svgEl('text', { x: foot.x, y: Math.min(VH - 14, foot.y + 14), 'text-anchor': 'middle', 'font-size': 8, 'font-weight': 700, fill: '#0f172a' }, [String(it.aiPrompt).slice(0, 22)]));
       }
-      if (it.label) {
+      if (showAnnotations && it.label) {
         svg.append(svgEl('text', { x: foot.x, y: Math.max(12, yTop - 3), 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#1e293b' }, [String(it.label).slice(0, 16)]));
       }
     }
   });
 
-  // Vignette + heading badge
-  svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: VH, fill: 'none', stroke: 'rgba(15,23,42,0.18)', 'stroke-width': 10 }));
-  const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
-  const dir = dirs[Math.round((((camera.heading || 0) % 360) + 360) % 360 / 45) % 8];
-  svg.append(svgEl('rect', { x: 14, y: 14, width: 150, height: 26, rx: 6, fill: 'rgba(15,23,42,0.72)' }));
-  svg.append(svgEl('text', { x: 24, y: 32, 'font-size': 12, 'font-weight': 700, fill: '#e2e8f0' }, [`${room.label || 'Room'} · facing ${dir}`]));
+  if (showAnnotations) {
+    // Vignette + heading badge are useful in the preview, but are not part of
+    // the scene and should not become text or borders in the AI reference.
+    svg.append(svgEl('rect', { x: 0, y: 0, width: VW, height: VH, fill: 'none', stroke: 'rgba(15,23,42,0.18)', 'stroke-width': 10 }));
+    const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+    const dir = dirs[Math.round((((camera.heading || 0) % 360) + 360) % 360 / 45) % 8];
+    svg.append(svgEl('rect', { x: 14, y: 14, width: 150, height: 26, rx: 6, fill: 'rgba(15,23,42,0.72)' }));
+    svg.append(svgEl('text', { x: 24, y: 32, 'font-size': 12, 'font-weight': 700, fill: '#e2e8f0' }, [`${room.label || 'Room'} · facing ${dir}`]));
+  }
   host.appendChild(svg);
+}
+
+async function renderPhotorealReference(items, camera) {
+  const referenceHost = document.createElement('div');
+  renderPerspectiveView(referenceHost, items, camera, { annotations: false });
+  const svg = referenceHost.querySelector('svg');
+  if (!svg) throw new Error('Could not render the current 3D view.');
+
+  // img-src allows data: but blocks blob: in the deployed CSP.
+  const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+  const image = new Image();
+  const imageReady = typeof image.decode === 'function'
+    ? null
+    : new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('Could not prepare the current 3D view.'));
+    });
+  image.src = svgDataUrl;
+  if (typeof image.decode === 'function') await image.decode();
+  else await imageReady;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1800;
+  canvas.height = 1000;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not prepare the current 3D view.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
+function photorealPrompt(items) {
+  const notes = (items || [])
+    .filter(item => item && String(item.aiPrompt || '').trim())
+    .map(item => `${item.label || item.type || item.symbolKey || 'Object'}: ${String(item.aiPrompt).trim()}`);
+  const styleNotes = notes.length ? ` User finish and style notes: ${notes.join('; ')}.` : '';
+  return 'Photorealistically render the supplied 3D interior view as an architectural photograph. ' +
+    'Treat the reference image as the source of truth for the actual model. Preserve its camera position, viewing direction, perspective, framing, room proportions, wall runs, openings, visible objects, their silhouettes, positions, and relative sizes. ' +
+    'Keep the model exactly as drawn, including awkward, incomplete, or imperfect parts; do not fix, complete, redesign, or rearrange it. ' +
+    'Do not add any windows, doors, cabinetry, furniture, fixtures, or props absent from the reference. ' +
+    'Only replace the flat placeholder appearance with realistic materials, natural lighting, and believable shadows. ' +
+    'Keep the same eye-level view and composition; no labels, text, plan view, or alternate camera angle.' + styleNotes;
 }
 
 function wallEndpoints(wl) {
@@ -517,7 +492,7 @@ export function openFloorplanAiRenderModal({ items }) {
   ]);
   header.querySelector('.floorplan-ai-close').addEventListener('click', close);
 
-  const status = el('div', { className: 'floorplan-ai-status' }, ['Place the camera on the map, aim it, then render a 3D view — or generate a styled concept.']);
+  const status = el('div', { className: 'floorplan-ai-status' }, ['Place and aim the camera, render the 3D view, then generate a photo from that same model view.']);
 
   // ---- Camera placement ----
   const firstRoom = (items || []).find(i => (i.kind === 'room') || /room/i.test(String(i.type || '')));
@@ -642,7 +617,7 @@ export function openFloorplanAiRenderModal({ items }) {
   copyPromptBtn.addEventListener('click', async () => {
     const prompt = details.querySelector('.floorplan-ai-render-prompt')?.textContent?.trim();
     if (!prompt) {
-      showToast('Generate a concept first', 'error');
+      showToast('Generate a concept or photoreal view first', 'error');
       return;
     }
     try {
@@ -653,36 +628,23 @@ export function openFloorplanAiRenderModal({ items }) {
     }
   });
 
-  // Photorealistic image generation — 2-step geometry-locked pipeline:
-  //   Step 1: Gemini enriches a geometry-locked prompt from the drawing JSON.
-  //   Step 2: the enriched prompt + numeric drawing seed go to the image model
-  //           (routes to OpenAI — Gemini Free Tier cannot generate images).
-  const drawingSeed = computeDrawingSeed(items || []);
-  const seedChip = el('span', { className: 'badge floorplan-ai-seed-chip' }, [`🔒 Seed #${drawingSeed}`]);
+  // Use a clean raster of the selected 3D camera view as the image model's
+  // reference, so the scene structure comes from the model itself.
+  const photorealHint = el('span', { className: 'badge floorplan-ai-view-hint' }, ['📐 Uses the current 3D view as its geometry reference']);
 
-  const photorealBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-btn-primary floorplan-ai-photoreal-btn', type: 'button' }, ['✨ Gemini Enrich & Render']);
+  const photorealBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-btn-primary floorplan-ai-photoreal-btn', type: 'button' }, ['✨ Render Photoreal View']);
   photorealBtn.addEventListener('click', async () => {
     photorealBtn.disabled = true;
     try {
-      status.textContent = 'Step 1/2: Gemini enriching prompt from wall/door vectors…';
-      let enriched;
-      const enrichMock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_ENRICH_MOCK : null;
-      if (enrichMock) {
-        enriched = typeof enrichMock === 'function' ? await enrichMock(items) : String(enrichMock);
-      } else {
-        enriched = await enrichFloorplanPrompt(items || []);
-      }
-
-      status.textContent = `Step 2/2: Rendering Seed #${drawingSeed} with strict geometry lock…`;
-      const fullPrompt =
-        'Photorealistic interior architectural visualization at eye level, strictly geometry-locked. ' +
-        enriched +
-        ' Natural lighting, realistic materials, clean composition, high detail, wide-angle lens. ' +
-        'Do not add rooms, furniture, or features not described above.';
+      if (!firstRoom) throw new Error('Add a room before generating a photoreal view.');
+      status.textContent = 'Preparing a clean reference from the current 3D view…';
+      const referenceImage = await renderPhotorealReference(items || [], camera);
+      const fullPrompt = photorealPrompt(items || []);
+      status.textContent = 'Rendering a photo while preserving the model geometry…';
       const mock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_IMAGE_MOCK : null;
       const src = mock
-        ? (typeof mock === 'function' ? await mock(fullPrompt) : mock)
-        : await generateImage(fullPrompt, { size: '1024x1024', seed: Number(drawingSeed) });
+        ? (typeof mock === 'function' ? await mock(fullPrompt, { referenceImage }) : mock)
+        : await generateImage(fullPrompt, { referenceImage });
       renderHost.innerHTML = '';
       renderHost.append(el('img', {
         className: 'floorplan-ai-photoreal-img',
@@ -691,11 +653,11 @@ export function openFloorplanAiRenderModal({ items }) {
       }));
       details.innerHTML = '';
       details.append(
-        el('h4', {}, [`Photoreal Render — Seed #${drawingSeed}`]),
-        el('p', { className: 'floorplan-ai-render-prompt' }, [enriched]),
-        el('p', { style: 'font-size:10px;color:var(--color-text-secondary);' }, ['Zero-hallucination pipeline: walls, doors & fixtures locked to the drawing schema.']),
+        el('h4', {}, ['Photoreal Render — Based on the current 3D view']),
+        el('p', { className: 'floorplan-ai-render-prompt' }, [fullPrompt]),
+        el('p', { style: 'font-size:10px;color:var(--color-text-secondary);' }, ['The rendered view is supplied as the image reference so the camera, layout, and visible objects stay grounded in the model.']),
       );
-      status.textContent = `Seed #${drawingSeed} rendered with strict geometry lock.`;
+      status.textContent = 'Photoreal view generated from the current 3D model.';
       showToast('Photorealistic image generated', 'success');
     } catch (err) {
       status.textContent = err.message || 'Could not generate image.';
@@ -706,7 +668,7 @@ export function openFloorplanAiRenderModal({ items }) {
   });
 
   const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, photorealBtn, copyPromptBtn]);
-  modal.append(header, el('div', { className: 'floorplan-ai-seedbar' }, [seedChip]), status, camMapWrap, renderHost, objectDetails, details, actions);
+  modal.append(header, el('div', { className: 'floorplan-ai-referencebar' }, [photorealHint]), status, camMapWrap, renderHost, objectDetails, details, actions);
   overlay.append(modal);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();

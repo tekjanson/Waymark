@@ -304,7 +304,6 @@ test('ai space render generates a photorealistic image through the router', asyn
     // 1x1 transparent PNG — stands in for the OpenAI image result.
     window.__WAYMARK_FLOORPLAN_IMAGE_MOCK =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    window.__WAYMARK_FLOORPLAN_ENRICH_MOCK = 'A single rectangular room with two walls, one door and one window.';
     window.__WAYMARK_FLOORPLAN_RENDER_MOCK = {
       spaceTitle: 'Concept', overallMood: 'warm', palette: ['#dbeafe'],
       lighting: 'ambient', rooms: [], renderPrompt: 'Cozy living room', designActions: ['x'],
@@ -316,8 +315,8 @@ test('ai space render generates a photorealistic image through the router', asyn
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
 
   await page.click('.floorplan-ai-render-btn');
-  // The modal shows the geometry-locked seed badge.
-  await expect(page.locator('.floorplan-ai-seed-chip')).toContainText('Seed #');
+  // The modal clarifies that photoreal output uses the active 3D view as its reference.
+  await expect(page.locator('.floorplan-ai-view-hint')).toContainText('current 3D view');
   await page.click('.floorplan-ai-photoreal-btn');
   await expect(page.locator('.floorplan-ai-photoreal-img')).toBeVisible({ timeout: 5_000 });
 });
