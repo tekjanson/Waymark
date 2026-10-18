@@ -4,7 +4,7 @@
    Generates a styled "space concept" from current floorplan geometry.
    ============================================================ */
 
-import { el, generateText, generateImage, showToast } from '../shared.js';
+import { el, generateText, generateVision, generateImage, showToast } from '../shared.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -397,6 +397,28 @@ function photorealPrompt(items) {
     'Keep the same eye-level view and composition; no labels, text, plan view, or alternate camera angle.' + styleNotes;
 }
 
+async function enrichFloorplanPrompt(items, camera, referenceImage) {
+  const basePrompt = photorealPrompt(items);
+  const room = roomBoxAt(items, camera.x, camera.y);
+  const notes = items.filter(item => String(item.aiPrompt || '').trim()).map(item => ({
+    name: item.label || item.type || item.symbolKey || 'Object',
+    finish: item.aiPrompt,
+  }));
+  const text = await generateVision(
+    'Describe realistic surface finishes and lighting for the supplied 3D model view in two or three sentences. ' +
+    'Keep every modeled imperfection. Do not add, remove, complete, move, or resize objects, walls, openings, or furniture. ' +
+    'Do not invent windows or change the camera. Use the scene notes to identify objects, and only describe objects actually visible in the image. ' +
+    'Return plain text describing materials, textures, and shadows; no headings or redesign suggestions.',
+    referenceImage.slice(referenceImage.indexOf(',') + 1),
+    'image/png',
+    { provider: 'gemini', maxTokens: 700, userMessage: JSON.stringify({ camera, room, notes, constraints: basePrompt }) }
+  );
+  const finishDetails = String(text).replace(/^```(?:text)?/i, '').replace(/```$/i, '').trim();
+  if (!finishDetails) throw new Error('Gemini returned no finish details.');
+  return `${basePrompt}\n\nSurface and lighting detail: ${finishDetails}\n\n` +
+    'The supplied 3D reference and its exact geometry take precedence over any styling description. Do not add or redesign anything.';
+}
+
 function wallEndpoints(wl) {
   const x1 = wl.x;
   const y1 = wl.y;
@@ -639,7 +661,16 @@ export function openFloorplanAiRenderModal({ items }) {
       if (!firstRoom) throw new Error('Add a room before generating a photoreal view.');
       status.textContent = 'Preparing a clean reference from the current 3D view…';
       const referenceImage = await renderPhotorealReference(items || [], camera);
-      const fullPrompt = photorealPrompt(items || []);
+      let fullPrompt = photorealPrompt(items || []);
+      let enriched = false;
+      status.textContent = 'Refining surface and lighting details with Gemini…';
+      try {
+        fullPrompt = await enrichFloorplanPrompt(items || [], camera, referenceImage);
+        enriched = true;
+      } catch {
+        // Enrichment is optional: temporary provider outages must not prevent
+        // OpenAI from rendering the original model and its finish notes.
+      }
       status.textContent = 'Rendering a photo while preserving the model geometry…';
       const mock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_IMAGE_MOCK : null;
       const src = mock
@@ -655,6 +686,9 @@ export function openFloorplanAiRenderModal({ items }) {
       details.append(
         el('h4', {}, ['Photoreal Render — Based on the current 3D view']),
         el('p', { className: 'floorplan-ai-render-prompt' }, [fullPrompt]),
+        el('p', { className: 'floorplan-ai-enrichment-status' }, [enriched
+          ? 'Gemini refined the surface and lighting details.'
+          : 'Gemini enrichment was unavailable; rendered with the original scene instructions.']),
         el('p', { style: 'font-size:10px;color:var(--color-text-secondary);' }, ['The rendered view is supplied as the image reference so the camera, layout, and visible objects stay grounded in the model.']),
       );
       status.textContent = 'Photoreal view generated from the current 3D model.';

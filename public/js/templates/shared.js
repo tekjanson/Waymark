@@ -1309,7 +1309,7 @@ import { routeAI, CAP } from '../ai-router.js';
  * Templates use this for AI-powered features (§1.5-compliant).
  * @param {string} systemPrompt
  * @param {string} userMessage
- * @param {{ temperature?: number, maxTokens?: number, json?: boolean }} [opts]
+ * @param {{ temperature?: number, maxTokens?: number, json?: boolean, provider?: string }} [opts]
  * @returns {Promise<string>}
  */
 export async function generateText(systemPrompt, userMessage, opts = {}) {
@@ -1317,6 +1317,7 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
   return routeAI(capability, { systemPrompt, userMessage }, {
     temperature: opts.temperature ?? 0.7,
     maxTokens: opts.maxTokens ?? 1024,
+    provider: opts.provider,
   });
 }
 
@@ -1327,7 +1328,7 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
  * @param {string} systemPrompt
  * @param {string} base64Image   raw base64 (no data: prefix)
  * @param {string} [mimeType]
- * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @param {{ temperature?: number, maxTokens?: number, userMessage?: string, provider?: string }} [opts]
  * @returns {Promise<string>}
  */
 export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
@@ -1336,6 +1337,7 @@ export async function generateVision(systemPrompt, base64Image, mimeType = 'imag
   }, {
     temperature: opts.temperature ?? 0.4,
     maxTokens: opts.maxTokens ?? 1024,
+    provider: opts.provider,
   });
 }
 
@@ -1358,15 +1360,14 @@ export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio
 
 /**
  * Generate a photorealistic image from a text prompt, optionally guided by a
- * reference image. Reference edits require a GPT Image model; text-only image
- * generation can also use DALL·E 3.
+ * reference image. Uses GPT Image for both reference edits and text prompts.
  * @param {string} prompt
- * @param {{ size?: string, n?: number, seed?: number, referenceImage?: string }} [opts]
+ * @param {{ size?: string, n?: number, referenceImage?: string }} [opts]
  * @returns {Promise<string>}  image data URL (or remote URL)
  */
 export async function generateImage(prompt, opts = {}) {
   return routeAI(CAP.IMAGE_GENERATION_PHOTOREAL, {
-    prompt, size: opts.size, n: opts.n, seed: opts.seed,
+    prompt, size: opts.size, n: opts.n,
     referenceImage: opts.referenceImage,
   }, {});
 }

@@ -95,7 +95,8 @@ export const OPENAI_MODEL_OPTIONS = [
 
 export const OPENAI_IMAGE_MODEL_OPTIONS = [
   { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic + 3D view reference)' },
-  { value: 'dall-e-3', label: 'DALL·E 3 (text-only image generation)' },
+  { value: 'gpt-image-1.5', label: 'gpt-image-1.5 (photorealistic + 3D view reference)' },
+  { value: 'gpt-image-1-mini', label: 'gpt-image-1-mini (lower cost)' },
 ];
 
 export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
@@ -666,15 +667,16 @@ export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
   };
 }
 
-/**
- * Build an OpenAI chat-completions request body from Gemini-format contents.
- * OpenAI uses the same user/assistant roles as Claude plus a leading system
- * message.
- * @param {Array} geminiContents
- * @param {string} systemPrompt
- * @param {string} model
- * @returns {Object}
- */
+/** Select token and sampling parameters supported by the configured model. */
+export function openAiGenerationParams(model, { maxTokens = MAX_OUTPUT_TOKENS, temperature } = {}) {
+  const gptVersion = Number(String(model).match(/^gpt-(\d+)/i)?.[1] || 0);
+  const reasoningModel = /^o\d(?:[-.]|$)/i.test(model) || gptVersion >= 5;
+  return reasoningModel
+    ? { max_completion_tokens: maxTokens }
+    : { max_tokens: maxTokens, ...(temperature != null ? { temperature } : {}) };
+}
+
+/** Build an OpenAI chat-completions request from Gemini-format contents. */
 export function buildOpenAiRequestBody(geminiContents, systemPrompt, model) {
   const messages = convertGeminiContentsToClaudeMessages(geminiContents);
   return {
@@ -683,7 +685,7 @@ export function buildOpenAiRequestBody(geminiContents, systemPrompt, model) {
       { role: 'system', content: systemPrompt },
       ...messages,
     ],
-    max_tokens: MAX_OUTPUT_TOKENS,
+    ...openAiGenerationParams(model),
   };
 }
 
