@@ -51,6 +51,7 @@ function defaultUserData() {
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       mqttBridge: false,          // MQTT debug bridge enabled
       mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
+      homeTemplateMode: 1,        // selected Home Page layout architecture (1–50)
     },
 
     /* ── Tutorial ── */
@@ -84,13 +85,15 @@ function defaultUserData() {
 
     /* ── Dashboards ── */
     dashboards: [],             // { id, name, layout, panels[] }[] — multi-sheet composite views
+    homeWidgets: null,           // null = starter widgets; [] = intentionally empty; otherwise saved Wayboard widgets
+    homeWidgetsVersion: 0,       // Wayboard widget schema migration marker
 
     /* ── WebRTC Signaling ── */
     signalingSheetId: null,          // spreadsheetId of the private .waymark-signaling sheet (key storage)
     publicSignalingSheetId: null,    // spreadsheetId of the public .waymark-public-signaling sheet (encrypted P2P)
 
     /* ── Bilateral sharing sheets ── */
-    bilateralSheets: [],             // { contactEmail, sheetId, createdAt }[] — one per sharing contact
+    shareLedgers: [],                // { key, contactEmail?, group?, sheetId, createdAt }[] — one per contact/crew
 
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
@@ -153,6 +156,9 @@ async function _doInit() {
         ..._userData,
         preferences: { ...defaults.preferences, ...(_userData.preferences || {}) },
       };
+      if (!Array.isArray(_userData.homeWidgets) && Array.isArray(storage.getHomeWidgets?.())) {
+        _userData.homeWidgets = storage.getHomeWidgets();
+      }
     } else {
       // Seed from localStorage for migration
       _userData = migrateFromLocalStorage();
@@ -469,6 +475,25 @@ export function getAutoRefresh() {
 
 export async function setAutoRefresh(enabled) {
   const prefs = { ...(_userData?.preferences || {}), autoRefresh: !!enabled };
+  await save({ preferences: prefs });
+}
+
+/**
+ * Selected Home Page layout architecture (1–50). Falls back to the localStorage
+ * mirror (zero-flash) when Drive data hasn't hydrated yet.
+ * @returns {number}
+ */
+export function getHomeTemplateMode() {
+  const v = parseInt(_userData?.preferences?.homeTemplateMode, 10);
+  if (v >= 1 && v <= 50) return v;
+  try { return storage.getHomeTemplateMode(); } catch { return 1; }
+}
+
+export async function setHomeTemplateMode(mode) {
+  const n = parseInt(mode, 10);
+  const value = (n >= 1 && n <= 50) ? n : 1;
+  const prefs = { ...(_userData?.preferences || {}), homeTemplateMode: value };
+  try { storage.setHomeTemplateMode(value); } catch { /* localStorage mirror is best-effort */ }
   await save({ preferences: prefs });
 }
 
@@ -862,6 +887,27 @@ export function getDashboards() {
 }
 
 /**
+ * Get the user's Wayboard widgets. `null` means use the starter widgets;
+ * an empty array means the user chose to clear the dashboard.
+ * @returns {Array<{id:string,type:string,title:string,sheetId?:string,size?:string}>|null}
+ */
+export function getHomeWidgets() {
+  if (Array.isArray(_userData?.homeWidgets)) return _userData.homeWidgets;
+  const cached = storage.getHomeWidgets?.();
+  return Array.isArray(cached) ? cached : null;
+}
+
+/** Get the synced Wayboard widget schema version for one-time migrations. */
+export function getHomeWidgetsVersion() {
+  return Number(_userData?.homeWidgetsVersion ?? storage.getHomeWidgetsVersion?.() ?? 0);
+}
+
+/** Save the user's Wayboard widget configuration to Drive and local storage. */
+export async function setHomeWidgets(widgets) {
+  await save({ homeWidgets: Array.isArray(widgets) ? widgets.slice(0, 16) : [], homeWidgetsVersion: 2 });
+}
+
+/**
  * Save or update a dashboard definition.
  * @param {{ id: string, name: string, layout: string, panels: Array }} dashboard
  */
@@ -910,6 +956,8 @@ function migrateFromLocalStorage() {
     dismissedItems: storage.getDismissedItems?.() || [],
     hiddenItems: storage.getHiddenItems?.() || [],
     dashboards: storage.getDashboards?.() || [],
+    homeWidgets: storage.getHomeWidgets?.() ?? null,
+    homeWidgetsVersion: storage.getHomeWidgetsVersion?.() ?? 0,
   };
 }
 
@@ -934,6 +982,8 @@ function syncToLocalStorage(data) {
     if (storage.setDismissedItems) storage.setDismissedItems(data.dismissedItems || []);
     if (storage.setHiddenItems) storage.setHiddenItems(data.hiddenItems || []);
     if (storage.setDashboards) storage.setDashboards(data.dashboards || []);
+    if (storage.setHomeWidgets) storage.setHomeWidgets(data.homeWidgets ?? null);
+    if (storage.setHomeWidgetsVersion) storage.setHomeWidgetsVersion(data.homeWidgetsVersion ?? 0);
     if (storage.setSortOrder) storage.setSortOrder(data.preferences?.sortOrder || 'name');
     if (storage.setTheme) storage.setTheme(data.preferences?.theme || 'light');
     if (storage.setImportFolderId) storage.setImportFolderId(data.preferences?.importFolderId || null);
@@ -977,36 +1027,40 @@ export function getPublicSignalingSheetId() {
   return _userData?.publicSignalingSheetId ?? null;
 }
 
-/* ---------- Bilateral Sharing Sheets ---------- */
+/* ---------- Share Ledgers (per contact / Waymarker Crew) ---------- */
 
 /**
- * Get all bilateral sharing sheets (one per sharing contact).
- * @returns {Array<{contactEmail: string, sheetId: string, createdAt: string}>}
+ * Get all auto-provisioned Share Ledger mappings.
+ * @returns {Array<{key: string, contactEmail?: string, group?: string, sheetId: string, createdAt: string}>}
  */
-export function getBilateralSheets() {
-  return (_userData?.bilateralSheets) || [];
+export function getShareLedgers() {
+  return (_userData?.shareLedgers) || [];
 }
 
 /**
- * Find the bilateral sharing sheet for a contact email, or null.
- * @param {string} contactEmail
- * @returns {{contactEmail: string, sheetId: string, createdAt: string}|null}
+ * Find the Share Ledger for a ledger key (contact:email or group:name).
+ * @param {string} key
+ * @returns {{key: string, sheetId: string}|null}
  */
-export function getBilateralSheetFor(contactEmail) {
-  const email = (contactEmail || '').trim().toLowerCase();
-  return getBilateralSheets().find(b => b.contactEmail === email) || null;
+export function getShareLedgerFor(key) {
+  return getShareLedgers().find(l => l.key === key) || null;
 }
 
 /**
- * Record a bilateral sharing sheet mapping (idempotent by contact email).
- * @param {{contactEmail: string, sheetId: string}} entry
+ * Record a Share Ledger mapping (idempotent by ledger key).
+ * @param {{key: string, contactEmail?: string, group?: string, sheetId: string}} entry
  */
-export async function addBilateralSheet({ contactEmail, sheetId }) {
-  const email = (contactEmail || '').trim().toLowerCase();
-  if (!email || !sheetId) return;
-  const existing = getBilateralSheets().filter(b => b.contactEmail !== email);
-  existing.push({ contactEmail: email, sheetId, createdAt: new Date().toISOString() });
-  await save({ bilateralSheets: existing });
+export async function addShareLedger({ key, contactEmail, group, sheetId }) {
+  if (!key || !sheetId) return;
+  const existing = getShareLedgers().filter(l => l.key !== key);
+  existing.push({
+    key,
+    contactEmail: (contactEmail || '').trim().toLowerCase() || undefined,
+    group: group || undefined,
+    sheetId,
+    createdAt: new Date().toISOString(),
+  });
+  await save({ shareLedgers: existing });
 }
 
 /**

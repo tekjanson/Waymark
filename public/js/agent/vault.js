@@ -25,7 +25,7 @@ const LS_SHEET_NAME = 'waymark_agent_keys_sheet_name';
 
 /* ---------- In-memory session ---------- */
 
-/** @type {{ geminiKeys: Array, claudeKeys: Array } | null} */
+/** @type {{ geminiKeys: Array, claudeKeys: Array, openaiKeys: Array } | null} */
 let _session = null;
 
 /* ---------- Link / Unlink ---------- */
@@ -181,6 +181,7 @@ export async function unlockVault(password) {
     /* Read and classify rows */
     const geminiKeys = [];
     const claudeKeys = [];
+    const openaiKeys = [];
 
     for (const row of rows) {
       const site      = siteCol     >= 0 ? String(row[siteCol]     || '') : '';
@@ -208,14 +209,16 @@ export async function unlockVault(password) {
         isBilled:      /billed|paid|pro/i.test(searchText),
       };
 
-      if (/gemini|google|aistudio|ai\.google/i.test(searchText)) {
+      if (/openai|gpt|dall.?e|gpt-image|platform\.openai/i.test(searchText)) {
+        openaiKeys.push(entry);
+      } else if (/gemini|google|aistudio|ai\.google/i.test(searchText)) {
         geminiKeys.push(entry);
       } else if (/claude|anthropic|sonnet|haiku|opus/i.test(searchText)) {
         claudeKeys.push(entry);
       }
     }
 
-    _session = { geminiKeys, claudeKeys };
+    _session = { geminiKeys, claudeKeys, openaiKeys };
     return true;
   } catch (err) {
     console.error('[keys-sheet] unlock failed:', err);
@@ -230,6 +233,9 @@ export function getGeminiKeys() { return _session?.geminiKeys || []; }
 
 /** @returns {Array} Claude key entries (empty when locked) */
 export function getClaudeKeys() { return _session?.claudeKeys || []; }
+
+/** @returns {Array} OpenAI key entries (empty when locked) */
+export function getOpenAIKeys() { return _session?.openaiKeys || []; }
 
 /* ---------- Write a new key into the linked sheet ---------- */
 
@@ -262,10 +268,16 @@ export async function addKeyToSheet(keyEntry) {
     // Site name describes the provider
     const siteName = keyEntry.provider === 'claude'
       ? `Claude API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`
-      : `Gemini API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`;
+      : keyEntry.provider === 'openai'
+        ? `OpenAI API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`
+        : `Gemini API Key${keyEntry.nickname ? ` (${keyEntry.nickname})` : ''}`;
 
     if (siteCol >= 0) row[siteCol] = siteName;
-    if (usernameCol >= 0) row[usernameCol] = keyEntry.provider === 'claude' ? 'anthropic' : 'google';
+    if (usernameCol >= 0) {
+      row[usernameCol] = keyEntry.provider === 'claude' ? 'anthropic'
+        : keyEntry.provider === 'openai' ? 'openai'
+        : 'google';
+    }
 
     // Encrypt the key value if the password column is encrypted on other rows
     const existingRows = (sheet.values || []).slice(1);
@@ -281,7 +293,9 @@ export async function addKeyToSheet(keyEntry) {
     if (urlCol >= 0) {
       row[urlCol] = keyEntry.provider === 'claude'
         ? 'https://console.anthropic.com'
-        : 'https://aistudio.google.com';
+        : keyEntry.provider === 'openai'
+          ? 'https://platform.openai.com'
+          : 'https://aistudio.google.com';
     }
     if (categoryCol >= 0) row[categoryCol] = 'AI';
     if (notesCol >= 0) row[notesCol] = keyEntry.isBilled ? 'Billed key' : '';
@@ -301,6 +315,8 @@ export async function addKeyToSheet(keyEntry) {
     };
     if (keyEntry.provider === 'claude') {
       _session.claudeKeys.push(entry);
+    } else if (keyEntry.provider === 'openai') {
+      (_session.openaiKeys = _session.openaiKeys || []).push(entry);
     } else {
       _session.geminiKeys.push(entry);
     }

@@ -4,13 +4,31 @@
 
 import { el, cell, editableCell, delegateEvent, registerTemplate, buildDirSyncBtn } from './shared.js';
 
+/**
+ * Resolve a Share_Data_Sheet cell value to a Waymark internal link.
+ * Accepts a raw sheet ID, a Waymark hash route, or a Google Sheets URL.
+ * @param {string} raw
+ * @returns {string|null}
+ */
+function resolveShareLink(raw) {
+  const v = (raw || '').trim();
+  if (!v) return null;
+  const base = (typeof window !== 'undefined' && window.__WAYMARK_BASE) || '';
+  const hash = v.match(/#\/(?:sheet|public)\/([a-zA-Z0-9_-]{3,60})/);
+  if (hash) return `${base}/#/sheet/${hash[1]}`;
+  const gurl = v.match(/spreadsheets\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (gurl) return `${base}/#/sheet/${gurl[1]}`;
+  if (/^(sheet-\d+|[a-zA-Z0-9_-]{10,})$/.test(v)) return `${base}/#/sheet/${v}`;
+  return null;
+}
+
 const definition = {
   name: 'Contacts',
   icon: '📇',
   color: '#ec4899',
   priority: 15,
   itemNoun: 'Contact',
-  defaultHeaders: ['Name', 'Phone', 'Email', 'Role'],
+  defaultHeaders: ['Name', 'Phone', 'Email', 'Role', 'Group', 'Share_Data_Sheet', 'Social_Data_Location'],
 
   detect(lower) {
     return lower.some(h => /^(email|phone|mobile|cell|telephone)/.test(h))
@@ -18,12 +36,15 @@ const definition = {
   },
 
   columns(lower) {
-    const cols = { name: -1, email: -1, phone: -1, role: -1 };
+    const cols = { name: -1, email: -1, phone: -1, role: -1, group: -1, shareSheet: -1, socialLocation: -1 };
     cols.name  = lower.findIndex(h => /^(name|contact|person|who|first)/.test(h));
     if (cols.name === -1) cols.name = 0;
     cols.email = lower.findIndex(h => /^(email|e-mail)/.test(h));
     cols.phone = lower.findIndex(h => /^(phone|mobile|cell|telephone|tel)/.test(h));
-    cols.role  = lower.findIndex(h => /^(role|title|relationship|department|company|org|group|type)/.test(h));
+    cols.group = lower.findIndex(h => /^(group|crew|waymarker|wayfarer|contact.?group)/.test(h));
+    cols.shareSheet = lower.findIndex(h => /^(share.?data.?sheet|share.?sheet|share.?ledger|share_sheet|share.?id)/.test(h));
+    cols.socialLocation = lower.findIndex(h => /^(social.?data|social.?channel|social.?location)/.test(h));
+    cols.role  = lower.findIndex((h, i) => i !== cols.group && /^(role|title|relationship|department|company|org|type)/.test(h));
     return cols;
   },
 
@@ -33,6 +54,9 @@ const definition = {
       { role: 'email', label: 'Email', colIndex: cols.email, type: 'text', placeholder: 'email@example.com' },
       { role: 'phone', label: 'Phone', colIndex: cols.phone, type: 'text', placeholder: '(555) 000-0000' },
       { role: 'role',  label: 'Role',  colIndex: cols.role,  type: 'text', placeholder: 'Title or relationship' },
+      { role: 'group', label: 'Group', colIndex: cols.group, type: 'text', placeholder: 'Waymarker Crew (e.g. Family)' },
+      { role: 'shareSheet', label: 'Share Sheet', colIndex: cols.shareSheet, type: 'text', placeholder: 'Auto-provisioned on first share' },
+      { role: 'socialLocation', label: 'Social Channel', colIndex: cols.socialLocation, type: 'text', placeholder: 'Auto-linked presence/chat location' },
     ];
   },
 
@@ -83,6 +107,8 @@ const definition = {
       const email = cell(row, cols.email);
       const phone = cell(row, cols.phone);
       const role  = cell(row, cols.role);
+      const group = cell(row, cols.group);
+      const shareRef = cell(row, cols.shareSheet);
       const ch = (name[0] || '?').toUpperCase();
       const letter = /[A-Z]/.test(ch) ? ch : '#';
 
@@ -94,14 +120,23 @@ const definition = {
         currentLetter = letter;
       }
 
-      grid.append(el('div', { className: 'template-contact-card', dataset: { letter } }, [
+      const shareLink = resolveShareLink(shareRef);
+      const cardChildren = [
         editableCell('div', { className: 'template-contact-name' }, name, rowIdx, cols.name),
         cols.role >= 0 ? editableCell('div', { className: 'template-contact-role' }, role, rowIdx, cols.role) : null,
         el('div', { className: 'template-contact-details' }, [
           cols.phone >= 0 ? editableCell('span', { className: 'template-contact-link' }, phone, rowIdx, cols.phone) : null,
           cols.email >= 0 ? editableCell('span', { className: 'template-contact-link' }, email, rowIdx, cols.email) : null,
         ]),
-      ]));
+        el('div', { className: 'contacts-card-chips' }, [
+          (cols.group >= 0 && group) ? el('span', { className: 'contacts-group-chip' }, [`\uD83E\uDDED ${group}`]) : null,
+          shareLink
+            ? el('a', { className: 'contacts-share-chip', href: shareLink, title: 'Open the share ledger sheet' }, ['\uD83D\uDD17 Share Sheet \u2197'])
+            : null,
+        ]),
+      ];
+
+      grid.append(el('div', { className: 'template-contact-card', dataset: { letter } }, cardChildren));
     }
 
     /* ---------- Alphabetical jump (delegated) ---------- */

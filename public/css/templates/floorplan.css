@@ -980,6 +980,8 @@
 }
 .floorplan-ai-render-svg { width: 100%; display: block; border-radius: var(--radius-sm); }
 .floorplan-ai-photoreal-img { width: 100%; display: block; border-radius: var(--radius-sm); }
+.floorplan-ai-seedbar { display: flex; justify-content: flex-end; gap: 6px; margin: 2px 0 4px; }
+.floorplan-ai-seed-chip { background: rgba(16,185,129,0.15); color: #10b981; font-weight: 700; }
 .floorplan-view-svg { width: 100%; display: block; border-radius: var(--radius-sm); background: #0f172a; }
 .floorplan-view-object { cursor: pointer; }
 .floorplan-object-details {

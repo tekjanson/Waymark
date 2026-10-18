@@ -74,3 +74,16 @@
 [data-theme="dark"] .contacts-alpha-btn:hover { background: rgba(236, 72, 153, 0.15); }
 [data-theme="dark"] .contacts-letter-header { color: #f472b6; border-bottom-color: rgba(236, 72, 153, 0.25); }
 [data-theme="dark"] .contacts-search:focus { box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.2); }
+
+/* Group + share-ledger chips on contact cards */
+.contacts-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.contacts-group-chip {
+  font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--color-primary-light); color: var(--color-primary-dark);
+}
+.contacts-share-chip {
+  font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: rgba(59,130,246,0.15); color: var(--color-primary);
+  text-decoration: none;
+}
+.contacts-share-chip:hover { background: rgba(59,130,246,0.28); }

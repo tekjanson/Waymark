@@ -91,7 +91,7 @@ export function providerHasConfig(provider) {
   switch (provider) {
     case 'gemini': return pickBestKey().length > 0;
     case 'claude': return !!pickBestClaudeKey() || !!serverKeyEntry('__WAYMARK_CLAUDE_KEY');
-    case 'openai': return (getOpenAIKeys().length > 0) || !!serverKeyEntry('__WAYMARK_OPENAI_KEY');
+    case 'openai': return (getOpenAIKeys().length > 0) || !!pickBestOpenAIKey() || !!serverKeyEntry('__WAYMARK_OPENAI_KEY');
     case 'ollama': return !!(getOllamaBaseUrl() || getOllamaModel());
     default: return false;
   }
@@ -445,6 +445,11 @@ async function callOpenAIImage(payload, opts) {
     n: payload.n || 1,
     size: payload.size || '1024x1024',
   };
+  // Inject the drawing seed so iterative renders stay locked to the layout
+  // (ignored by models that don't support it).
+  if (payload.seed != null && Number.isFinite(Number(payload.seed))) {
+    body.seed = Number(payload.seed);
+  }
   // dall-e-3 returns a URL unless asked for base64; gpt-image-1 always returns base64.
   if (model === 'dall-e-3') body.response_format = 'b64_json';
 

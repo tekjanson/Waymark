@@ -20,6 +20,7 @@ import { TEMPLATES, detectTemplate } from './templates/index.js';
 import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as collab from './collab.js';
+import * as wayboard from './wayboard.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
@@ -207,13 +208,26 @@ function navigate(type, id, name) {
 async function boot() {
   showLoading();
 
+  // Zero-flash: apply the saved Home layout mode from the localStorage mirror
+  // before the home view paints.
+  try { wayboard.applyHomeMode(storage.getHomeTemplateMode()); } catch { /* non-fatal */ }
+
   // Init sub-modules
   checklist.init();
   explorer.init(document.getElementById('explorer'), navigate);
   search.init(navigate);
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
-  // Sync collaborator shares/updates from bilateral sheets into the bell —
+  wayboard.initWayboard({
+    navigate,
+    quickMarkActions: {
+      create: openCreateSheetModal,
+      import: () => { if (importModal) importModal.classList.remove('hidden'); },
+      browse: () => { window.location.hash = '#/explorer'; },
+      examples: openExamplesModal,
+    },
+  });
+  // Sync collaborator shares from Share Ledgers into the bell —
   // once on boot, then on a 60s polling cycle.
   collab.pollBilateralSheets().catch(() => {});
   setInterval(() => { collab.pollBilateralSheets().catch(() => {}); }, 60_000);
@@ -685,14 +699,15 @@ function goBack() {
 let _userName = '';
 
 /**
- * Render the full home page: greeting, quick actions, recent sheets, pinned folders.
+ * Render the full home page: greeting, quick actions, recent sheets, pinned
+ * folders, Wayboard widgets, and the Wayside social pane.
  */
 function renderHome() {
   renderGreeting();
-  wireQuickActions();
   renderRecentSheets();
   renderPinnedSheets();
   renderPinnedFolders();
+  wayboard.renderWayboard({ userName: _userName });
 }
 
 function getDeepLinkInviteParams() {
@@ -755,29 +770,10 @@ function renderGreeting() {
   const pinned  = userData.getPinnedFolders().length + userData.getPinnedSheets().length;
   const recent  = userData.getRecentSheets().length;
   if (pinned === 0 && recent === 0) {
-    subEl.textContent = 'Welcome to your Wayboard — pin sheets and folders to get started';
+    subEl.textContent = 'Welcome to your Wayboard — pin a Waymark or folder to leave your first mark';
   } else {
-    subEl.textContent = 'Welcome back to your Wayboard';
+    subEl.textContent = 'Welcome back to your Wayboard. Pick up where you left a mark.';
   }
-}
-
-/* ---------- Home: Quick Actions ---------- */
-
-let _quickActionsWired = false;
-
-function wireQuickActions() {
-  if (_quickActionsWired) return;
-  _quickActionsWired = true;
-
-  const wire = (id, fn) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.addEventListener('click', fn);
-  };
-
-  wire('home-action-create',   () => { openCreateSheetModal(); });
-  wire('home-action-import',   () => { if (importModal) importModal.classList.remove('hidden'); });
-  wire('home-action-browse',   () => { window.location.hash = '#/explorer'; });
-  wire('home-action-examples', () => { openExamplesModal(); });
 }
 
 /* ---------- Home: Recent Sheets ---------- */
@@ -822,13 +818,14 @@ function renderPinnedFolders() {
   const container = document.getElementById('pinned-folders');
   const emptyMsg  = document.getElementById('no-pinned');
   const pinnedSheets = userData.getPinnedSheets();
+  if (!container) return;
 
   container.innerHTML = '';
 
   // Show empty hint only when BOTH pinned folders and pinned sheets are empty
-  if (pinned.length === 0 && pinnedSheets.length === 0) {
+  if (emptyMsg && pinned.length === 0 && pinnedSheets.length === 0) {
     emptyMsg.classList.remove('hidden');
-  } else {
+  } else if (emptyMsg) {
     emptyMsg.classList.add('hidden');
   }
 
@@ -836,7 +833,7 @@ function renderPinnedFolders() {
 
   for (const folder of pinned) {
     const card = el('div', {
-      className: 'pinned-card',
+      className: 'pinned-card marker-card',
       on: {
         click() { navigate('folder', folder.id, folder.name); },
       },
@@ -879,7 +876,7 @@ function renderPinnedSheets() {
     const icon = tpl ? tpl.icon : '📊';
 
     const card = el('div', {
-      className: 'pinned-card',
+      className: 'pinned-card marker-card',
       on: { click() { navigate('sheet', sheet.id); } },
     }, [
       el('span', { className: 'folder-emoji' }, [icon]),
@@ -2574,6 +2571,10 @@ function openSettingsModal() {
   settingsMqttUrl.value = userData.getMqttBrokerUrl();
   settingsSortOrder.value = userData.getSortOrder();
 
+  // Sync the Home Page Layout selector to the saved mode.
+  const homeTemplateSelect = document.getElementById('settings-home-template');
+  if (homeTemplateSelect) homeTemplateSelect.value = String(userData.getHomeTemplateMode());
+
   // Sync theme buttons
   const currentTheme = storage.getTheme();
   document.querySelectorAll('.settings-theme-btn').forEach(btn => {
@@ -2608,6 +2609,55 @@ function openSettingsModal() {
 function closeSettingsModal() {
   if (settingsModal) settingsModal.classList.add('hidden');
   if (settingsFolderBrowser) settingsFolderBrowser.classList.add('hidden');
+}
+
+/* ---------- Home Page Layout Template selector (50 architectures) ---------- */
+
+/**
+ * Populate the 50-mode selector (grouped), and wire live-preview + persistence.
+ * Called once from initSettingsModal.
+ */
+function wireHomeTemplateSelector() {
+  const select = document.getElementById('settings-home-template');
+  const prev = document.getElementById('settings-home-template-prev');
+  const next = document.getElementById('settings-home-template-next');
+  const preview = document.getElementById('settings-home-template-preview');
+  if (!select) return;
+
+  // Build grouped options from the Wayboard mode catalogue.
+  select.innerHTML = '';
+  for (const group of wayboard.MODE_GROUPS) {
+    const og = document.createElement('optgroup');
+    og.label = group.label;
+    for (let n = group.range[0]; n <= group.range[1]; n++) {
+      const opt = document.createElement('option');
+      opt.value = String(n);
+      opt.textContent = `${n}: ${wayboard.MODE_NAMES[n] || `Mode ${n}`}`;
+      og.appendChild(opt);
+    }
+    select.appendChild(og);
+  }
+  select.value = String(userData.getHomeTemplateMode());
+
+  const applyMode = async (mode) => {
+    const n = Math.min(50, Math.max(1, parseInt(mode, 10) || 1));
+    select.value = String(n);
+    // Persist to Drive + localStorage mirror.
+    await userData.setHomeTemplateMode(n);
+    // Live preview on the Home view.
+    if (!preview || preview.checked) wayboard.applyHomeMode(n);
+    showToast(`Home layout: ${n} — ${wayboard.MODE_NAMES[n] || ''}`.trim(), 'success');
+  };
+
+  select.addEventListener('change', () => applyMode(select.value));
+  if (prev) prev.addEventListener('click', () => {
+    const cur = parseInt(select.value, 10) || 1;
+    applyMode(cur <= 1 ? 50 : cur - 1);
+  });
+  if (next) next.addEventListener('click', () => {
+    const cur = parseInt(select.value, 10) || 1;
+    applyMode(cur >= 50 ? 1 : cur + 1);
+  });
 }
 
 /* ---------- Version Picker helpers ---------- */
@@ -2734,6 +2784,8 @@ function initSettingsModal() {
   settingsModal.addEventListener('click', (e) => {
     if (e.target === settingsModal) closeSettingsModal();
   });
+
+  wireHomeTemplateSelector();
 
   // Auto-refresh toggle
   settingsAutoRefresh.addEventListener('change', () => {

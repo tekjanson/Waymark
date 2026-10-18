@@ -91,7 +91,10 @@ export function showSettingsModal(onRefresh) {
     if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
       if (activeProvider === 'claude') return vault.getClaudeKeys();
       if (activeProvider === 'gemini') return vault.getGeminiKeys();
-      // OpenAI keys are not vault-backed yet — use the localStorage ring.
+      if (activeProvider === 'openai') {
+        const vk = vault.getOpenAIKeys();
+        if (vk.length) return vk;
+      }
     }
     if (activeProvider === 'claude') return claudeKeys;
     if (activeProvider === 'openai') return openaiKeys;
@@ -191,19 +194,35 @@ export function showSettingsModal(onRefresh) {
         const nickname = newNicknameInput.value.trim();
         const isBilled = billedToggle.checked;
 
-        /* If a keys sheet is linked and unlocked, write the key there (Gemini /
-           Claude are vault-backed; OpenAI uses the localStorage ring). */
-        if (activeProvider !== 'openai' && vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+        /* If a keys sheet (Vault) is linked and unlocked, persist the key to
+           that Google Sheet for all providers, including OpenAI. The write is
+           awaited so the success badge only shows once Sheets confirms. */
+        if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
           const ok = await vault.addKeyToSheet({
             key, nickname, isBilled, provider: activeProvider,
           });
           if (ok) {
+            // Mirror OpenAI into the localStorage ring too so the router can use
+            // it immediately before the next vault hydrate.
+            if (activeProvider === 'openai' && !openaiKeys.some(k => k.key === key)) {
+              openaiKeys.push({
+                key, nickname: nickname || `Key ${openaiKeys.length + 1}`,
+                addedAt: new Date().toISOString(), requestsToday: 0,
+                lastUsed: null, lastError: null, isBilled,
+              });
+              storage.setOpenAIKeys(openaiKeys);
+            }
             newKeyInput.value = '';
             newNicknameInput.value = '';
             billedToggle.checked = false;
             renderKeyList();
             _refreshModelDropdown().catch(() => {});
-            showToast('Key added to your passwords sheet', 'success');
+            showToast(
+              activeProvider === 'openai'
+                ? '🔑 OpenAI Vault: Synced'
+                : 'Key added to your passwords sheet',
+              'success',
+            );
             return;
           }
           // Fall through to localStorage if sheet write fails

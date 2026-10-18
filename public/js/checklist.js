@@ -1624,14 +1624,15 @@ async function openShareModal(sheetId, sheetName) {
       grantBtn.textContent = 'Granting…';
       try {
         await api.drive.createDrivePermission(sheetId, email, role);
-        // Provision the bilateral sharing sheet and log the share so the
-        // collaborator sees it in their notification bell.
+        // Provision the per-contact Share Ledger (auto-created + linked back into
+        // Contacts) and log this document so the collaborator sees it in their bell.
         try {
-          await collab.recordSharedWaymark(email, {
-            sheetId,
-            title: sheetName,
-            changeType: 'shared',
-            summary: `Shared "${sheetName}" with ${role === 'writer' ? 'edit' : 'view'} access`,
+          await collab.shareDocumentWithContact({
+            contactEmail: email,
+            docId: sheetId,
+            docTitle: sheetName,
+            waymarkType: currentTemplateKey || '',
+            permission: role,
           });
         } catch { /* sharing ledger is best-effort */ }
         showToast(`Access granted to ${email}`, 'success');

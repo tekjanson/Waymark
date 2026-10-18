@@ -47,6 +47,9 @@ const ROLE_LABELS = {
   'contacts.email': 'Email Address',
   'contacts.phone': 'Phone Number',
   'contacts.role': 'Role / Relationship',
+  'contacts.group': 'Group / Waymarker Crew',
+  'contacts.shareSheet': 'Share Data Sheet (link/ID)',
+  'contacts.socialLocation': 'Social Data Location',
   // Log
   'log.text': 'Activity / Entry',
   'log.timestamp': 'Date / Timestamp',
@@ -359,6 +362,7 @@ const CANONICAL_HEADERS = {
   // Contacts
   'contacts.name': 'Name', 'contacts.email': 'Email',
   'contacts.phone': 'Phone', 'contacts.role': 'Role',
+  'contacts.group': 'Group', 'contacts.shareSheet': 'Share Sheet', 'contacts.socialLocation': 'Social',
   // Log
   'log.text': 'Activity', 'log.timestamp': 'Date',
   'log.type': 'Type', 'log.duration': 'Duration',

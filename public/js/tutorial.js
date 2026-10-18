@@ -12,8 +12,8 @@ import * as userData from './user-data.js';
 
 const STEPS = [
   {
-    title: 'Welcome to WayMark!',
-    body: 'WayMark turns your Google Sheets into beautiful, interactive views — checklists, trackers, kanban boards, budgets, and more. Let\'s take a quick tour!',
+    title: 'Welcome to Waymark!',
+    body: 'Waymark turns your Google Sheets into trail-ready checklists, trackers, boards, budgets, and more. Let\'s find your way around!',
     target: null, // no spotlight — centered welcome
     position: 'center',
   },
@@ -25,13 +25,13 @@ const STEPS = [
   },
   {
     title: 'Pin Your Favorites',
-    body: 'Found a folder you use often? Pin it for quick access. Pinned folders appear on your home screen so you can jump back in instantly.',
-    target: '#pinned-folders',
+    body: 'Found a folder you use often? Pin it as a waypoint. It appears in your Wayboard, where you can add and arrange widgets to chart your own course.',
+    target: '#home-wayboard-section',
     position: 'bottom',
   },
   {
-    title: 'Search Your Sheets',
-    body: 'Looking for a specific sheet? Use the search bar to find sheets by name — results appear instantly as you type.',
+    title: 'Find Your Waymarks',
+    body: 'Looking for a specific Waymark? Search by name and find your mark as you type.',
     target: '#search-form',
     position: 'bottom',
   },

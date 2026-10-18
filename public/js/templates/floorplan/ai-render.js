@@ -86,6 +86,76 @@ async function generateRenderSpec(items) {
   return parseJson(text) || fallbackSpec();
 }
 
+/* ---------- Photoreal pipeline: geometry-locked enrichment + seed ---------- */
+
+const ENRICH_SYSTEM_PROMPT =
+  'You are an architectural specification translator. Describe ONLY the exact ' +
+  'spatial geometry, wall boundaries, door/window placements, materials, and ' +
+  'fixtures explicitly defined in the provided drawing schema. Do not invent ' +
+  'additional rooms, furniture, props, or structural features. Output a precise, ' +
+  'geometry-locked architectural rendering prompt as a single paragraph.';
+
+/**
+ * Build a compact JSON schema of the drawing's exact geometry — walls as
+ * vectors, rooms with dimensions, doors, windows, and explicitly placed
+ * fixtures — for the Gemini enrichment step.
+ * @param {Object[]} items
+ * @returns {Object}
+ */
+function buildDrawingSchema(items) {
+  const list = items || [];
+  const rooms = list.filter(i => i.kind === 'room').map(r => ({
+    name: r.label || 'Room',
+    x: Math.round(r.x || 0), y: Math.round(r.y || 0),
+    width: Math.round(r.width || 0), height: Math.round(r.height || 0),
+  }));
+  const walls = list.filter(i => i.kind === 'wall').map(w => ({
+    x1: Math.round(w.x1 ?? w.x ?? 0), y1: Math.round(w.y1 ?? w.y ?? 0),
+    x2: Math.round(w.x2 ?? (w.x || 0) + (w.width || 0)), y2: Math.round(w.y2 ?? (w.y || 0) + (w.height || 0)),
+  }));
+  const classify = (it) => `${it.type || ''} ${it.label || ''} ${it.symbolKey || ''}`.toLowerCase();
+  const doors = list.filter(i => /door/.test(classify(i))).map(d => ({ x: Math.round(d.x || 0), y: Math.round(d.y || 0) }));
+  const windows = list.filter(i => /window/.test(classify(i))).map(w => ({ x: Math.round(w.x || 0), y: Math.round(w.y || 0) }));
+  const fixtures = list
+    .filter(i => (i.kind === 'fixture' || i.kind === 'electrical' || i.kind === 'plumbing') && !/door|window/.test(classify(i)))
+    .map(f => ({ type: f.symbolKey || f.type || f.label || 'fixture', x: Math.round(f.x || 0), y: Math.round(f.y || 0) }));
+  return { rooms, walls, doors, windows, fixtures };
+}
+
+/**
+ * Step 1 of the photoreal pipeline: translate the raw drawing geometry into a
+ * strict, geometry-locked rendering prompt via Gemini (no hallucinated rooms,
+ * furniture, or features).
+ * @param {Object[]} items
+ * @returns {Promise<string>}
+ */
+export async function enrichFloorplanPrompt(items) {
+  const schema = buildDrawingSchema(items);
+  if (!schema.rooms.length && !schema.walls.length) {
+    throw new Error('Draw walls or a room before enriching the render prompt.');
+  }
+  const userMessage = 'Drawing schema (geometry to lock to):\n' + JSON.stringify(schema);
+  const text = await generateText(ENRICH_SYSTEM_PROMPT, userMessage, { temperature: 0.2, maxTokens: 700 });
+  return (text || '').trim();
+}
+
+/**
+ * Deterministic numeric seed derived from the drawing geometry, so repeat
+ * renders of the SAME layout stay locked to the SAME seed.
+ * @param {Object[]} items
+ * @returns {number}  0–99999
+ */
+export function computeDrawingSeed(items) {
+  const schema = buildDrawingSchema(items);
+  const str = JSON.stringify(schema);
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h) % 100000;
+}
+
 function renderConceptSvg(container, items, spec) {
   container.innerHTML = '';
   const svg = svgEl('svg', {
@@ -583,34 +653,49 @@ export function openFloorplanAiRenderModal({ items }) {
     }
   });
 
-  // Photorealistic image generation — routes through the cost-aware AI router.
-  // Gemini Free Tier cannot generate images, so the router automatically uses
-  // OpenAI (gpt-image-1 / DALL·E 3) when it is configured.
-  const photorealBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-photoreal-btn', type: 'button' }, ['Generate Photorealistic']);
+  // Photorealistic image generation — 2-step geometry-locked pipeline:
+  //   Step 1: Gemini enriches a geometry-locked prompt from the drawing JSON.
+  //   Step 2: the enriched prompt + numeric drawing seed go to the image model
+  //           (routes to OpenAI — Gemini Free Tier cannot generate images).
+  const drawingSeed = computeDrawingSeed(items || []);
+  const seedChip = el('span', { className: 'badge floorplan-ai-seed-chip' }, [`🔒 Seed #${drawingSeed}`]);
+
+  const photorealBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-btn-primary floorplan-ai-photoreal-btn', type: 'button' }, ['✨ Gemini Enrich & Render']);
   photorealBtn.addEventListener('click', async () => {
     photorealBtn.disabled = true;
-    status.textContent = 'Rendering a photorealistic image...';
     try {
-      let prompt = details.querySelector('.floorplan-ai-render-prompt')?.textContent?.trim();
-      if (!prompt) {
-        const spec = await generateRenderSpec(items || []);
-        prompt = spec.renderPrompt || spec.overallMood || 'A well-designed interior space.';
+      status.textContent = 'Step 1/2: Gemini enriching prompt from wall/door vectors…';
+      let enriched;
+      const enrichMock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_ENRICH_MOCK : null;
+      if (enrichMock) {
+        enriched = typeof enrichMock === 'function' ? await enrichMock(items) : String(enrichMock);
+      } else {
+        enriched = await enrichFloorplanPrompt(items || []);
       }
+
+      status.textContent = `Step 2/2: Rendering Seed #${drawingSeed} with strict geometry lock…`;
       const fullPrompt =
-        'Photorealistic interior architectural visualization at eye level. ' +
-        prompt +
-        ' Natural lighting, realistic materials and furniture, clean composition, high detail, wide-angle lens.';
+        'Photorealistic interior architectural visualization at eye level, strictly geometry-locked. ' +
+        enriched +
+        ' Natural lighting, realistic materials, clean composition, high detail, wide-angle lens. ' +
+        'Do not add rooms, furniture, or features not described above.';
       const mock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_IMAGE_MOCK : null;
       const src = mock
         ? (typeof mock === 'function' ? await mock(fullPrompt) : mock)
-        : await generateImage(fullPrompt, { size: '1024x1024' });
+        : await generateImage(fullPrompt, { size: '1024x1024', seed: Number(drawingSeed) });
       renderHost.innerHTML = '';
       renderHost.append(el('img', {
         className: 'floorplan-ai-photoreal-img',
         src,
         alt: 'Photorealistic space render',
       }));
-      status.textContent = 'Photorealistic render ready.';
+      details.innerHTML = '';
+      details.append(
+        el('h4', {}, [`Photoreal Render — Seed #${drawingSeed}`]),
+        el('p', { className: 'floorplan-ai-render-prompt' }, [enriched]),
+        el('p', { style: 'font-size:10px;color:var(--color-text-secondary);' }, ['Zero-hallucination pipeline: walls, doors & fixtures locked to the drawing schema.']),
+      );
+      status.textContent = `Seed #${drawingSeed} rendered with strict geometry lock.`;
       showToast('Photorealistic image generated', 'success');
     } catch (err) {
       status.textContent = err.message || 'Could not generate image.';
@@ -621,7 +706,7 @@ export function openFloorplanAiRenderModal({ items }) {
   });
 
   const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, photorealBtn, copyPromptBtn]);
-  modal.append(header, status, camMapWrap, renderHost, objectDetails, details, actions);
+  modal.append(header, el('div', { className: 'floorplan-ai-seedbar' }, [seedChip]), status, camMapWrap, renderHost, objectDetails, details, actions);
   overlay.append(modal);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
