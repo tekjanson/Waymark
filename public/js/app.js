@@ -219,7 +219,7 @@ async function boot() {
   dashboard.init(document.getElementById('dashboard-view'));
   notifications.initBell();
   wayboard.initWayboard({ navigate, openExamples: openExamplesModal });
-  // Sync collaborator shares/updates from bilateral sheets into the bell —
+  // Sync collaborator shares from Share Ledgers into the bell —
   // once on boot, then on a 60s polling cycle.
   collab.pollBilateralSheets().catch(() => {});
   setInterval(() => { collab.pollBilateralSheets().catch(() => {}); }, 60_000);
