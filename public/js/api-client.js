@@ -499,16 +499,22 @@ export const api = {
      * @returns {Promise<{id: string, name: string}|null>}
      */
     async findFileGlobal(name) {
+      const matches = await api.drive.findFilesGlobal(name);
+      return matches[0] || null;
+    },
+
+    /** Find all exact-name Drive files visible to this account, stably ordered. */
+    async findFilesGlobal(name) {
       if (isLocal) {
         const fix = await loadFixtures();
-        for (const [id, data] of Object.entries(fix.sheets || {})) {
-          if (data && data.title === name) return { id, name };
-        }
-        return null;
+        return Object.entries(fix.sheets || {})
+          .filter(([, data]) => data && data.title === name)
+          .map(([id]) => ({ id, name }))
+          .sort((a, b) => a.id.localeCompare(b.id));
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
-        return driveApi.findFileGlobal(token, name);
+        return driveApi.findFilesGlobal(token, name);
       });
     },
 
@@ -1080,6 +1086,7 @@ export const api = {
             const nextId = Math.max(0, ...data.tabs.map(t => t.numericSheetId || 0)) + 1;
             data.tabs.push({ title: tabTitle, numericSheetId: nextId, values: rows });
           }
+          persistIfCreatedSheet(spreadsheetId, data);
         }
         const record = {
           type: 'tab-write',

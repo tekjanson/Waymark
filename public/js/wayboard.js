@@ -817,7 +817,7 @@ async function renderWayside() {
     crewsBlock.append(el('div', { className: 'wayside-empty' }, ['Add a Contacts Waymark with a Group column to form crews.']));
   }
   for (const crew of crews) {
-    const ledger = userData.getShareLedgerFor(`group:${crew.name.toLowerCase()}`);
+    const ledger = await collab.findExistingShareLedger({ group: crew.name });
     const row = el('div', { className: 'crew-row', dataset: { group: crew.name } }, [
       el('span', {}, [`🏠 ${crew.name}`]),
       ledger
@@ -886,8 +886,7 @@ async function selectTarget(target, host) {
   // Presence is only published once a ledger already exists for this target
   // (i.e. after the first share), so merely opening Home never creates sheets.
   try {
-    const key = target.group ? `group:${target.group.toLowerCase()}` : `contact:${(target.contactEmail || '').toLowerCase()}`;
-    const ledger = userData.getShareLedgerFor(key);
+    const ledger = await collab.findExistingShareLedger(target);
     const sheetLine = host.querySelector('#wayside-sheet-line');
     if (sheetLine) sheetLine.textContent = ledger ? `Linked: ${ledger.sheetId}` : 'Linked on first share';
     if (ledger) {
