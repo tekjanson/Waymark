@@ -241,6 +241,17 @@
   font-weight: 700;
   white-space: nowrap;
 }
+.floorplan-grant-access-btn {
+  margin-left: 8px;
+  padding: 3px 8px;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  background: transparent;
+  color: #e2e8f0;
+  font: inherit;
+  cursor: pointer;
+}
+.floorplan-grant-access-btn:disabled { opacity: 0.65; cursor: wait; }
 
 .floorplan-stage {
   flex: 1 1 auto;

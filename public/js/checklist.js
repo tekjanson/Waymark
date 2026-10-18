@@ -1215,6 +1215,7 @@ function renderWithTemplate(values) {
   template._currentSheetId = currentSheetId;
   template._currentNumericSheetId = currentNumericSheetId;
   template._currentSheetTitle = currentSheetTitle;
+  template._currentSpreadsheetTitle = currentDataTitle;
   // Expose all workbook tabs so templates can read cross-tab data.
   // tab[0] is always the primary tab (same source as the top-level values/sheetTitle).
   template._tabs = currentTabs;

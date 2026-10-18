@@ -14,6 +14,7 @@ import {
   showToast,
   writeSheetTab,
 } from '../shared.js';
+import { api } from '../../api-client.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
 import {
   UNITS_PER_FOOT,
@@ -477,6 +478,8 @@ const definition = {
     const sheetId = String(template?._currentSheetId || 'unknown-sheet');
     const draftStorageKey = `waymark_floorplan_draft_${sheetId}`;
     let loadedSheetState = false;
+    let needsSheetMigration = false;
+    let requiresDrivePicker = false;
     let draftCustomLayers = null;
     let savedSheetState = null;
     const stateTab = readSheetTab(template?._tabs, FLOORPLAN_STATE_TAB);
@@ -510,11 +513,15 @@ const definition = {
         items = localDraft.items;
         draftCustomLayers = Array.isArray(localDraft.customLayers) ? localDraft.customLayers : null;
         loadedSheetState = false;
+        needsSheetMigration = true;
+        requiresDrivePicker = Boolean(localDraft.requiresDrivePicker);
       }
       debugLog('sheet-state-load', { sheetId, count: items.length });
     } else if (Array.isArray(localDraft?.items)) {
       items = localDraft.items;
       draftCustomLayers = Array.isArray(localDraft.customLayers) ? localDraft.customLayers : null;
+      needsSheetMigration = true;
+      requiresDrivePicker = Boolean(localDraft.requiresDrivePicker);
       debugLog('draft-load', { sheetId, count: items.length });
     }
 
@@ -817,7 +824,8 @@ const definition = {
     let persistTimer = null;
     let cloudSaveQueue = Promise.resolve();
     let pendingCloudWrites = 0;
-    let cloudSaveFailed = false;
+    let cloudSaveBlocked = requiresDrivePicker;
+    let cloudSaveFailed = cloudSaveBlocked;
     let cloudSaveErrorShown = false;
 
     function buildStatePayload() {
@@ -832,6 +840,8 @@ const definition = {
 
     function persistDraftState(payload) {
       try {
+        if (cloudSaveBlocked) payload.requiresDrivePicker = true;
+        else delete payload.requiresDrivePicker;
         window.localStorage.setItem(draftStorageKey, JSON.stringify(payload));
       } catch (error) {
         console.warn('[floorplan] draft-save failed:', error);
@@ -854,6 +864,7 @@ const definition = {
         const draft = JSON.parse(window.localStorage.getItem(draftStorageKey) || 'null');
         if (draft?.updatedAt !== payload.updatedAt) return;
         draft.syncedAt = payload.updatedAt;
+        delete draft.requiresDrivePicker;
         window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
       } catch (error) {
         console.warn('[floorplan] draft-sync-marker failed:', error);
@@ -866,11 +877,19 @@ const definition = {
       const chunks = serialized.match(new RegExp(`[\\s\\S]{1,${FLOORPLAN_STATE_CHUNK_SIZE}}`, 'g')) || [''];
       const rows = [[FLOORPLAN_STATE_HEADER], ...chunks.map(chunk => [chunk])];
       updateCachedSheetTab(rows);
+      if (cloudSaveBlocked) {
+        setFeedback('Saved locally · Drive access needed');
+        return;
+      }
 
       pendingCloudWrites += 1;
       cloudSaveFailed = false;
       setFeedback('Saving to sheet');
       cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(async () => {
+        if (cloudSaveBlocked) {
+          setFeedback('Saved locally · Drive access needed');
+          return;
+        }
         await writeSheetTab(sheetId, FLOORPLAN_STATE_TAB, rows);
         markLocalDraftSynced(payload);
         cloudSaveFailed = false;
@@ -879,9 +898,28 @@ const definition = {
       }).catch(error => {
         cloudSaveFailed = true;
         console.warn('[floorplan] sheet-state-save failed:', error);
-        setFeedback('Saved locally · sheet sync failed');
+        if (error?.status === 403) {
+          cloudSaveBlocked = true;
+          try {
+            const draft = JSON.parse(window.localStorage.getItem(draftStorageKey) || 'null');
+            if (draft) {
+              draft.requiresDrivePicker = true;
+              window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
+            }
+          } catch (storageError) {
+            console.warn('[floorplan] draft-access-marker failed:', storageError);
+          }
+          setFeedback('Sheet access needed');
+        } else {
+          setFeedback('Saved locally · sheet sync failed');
+        }
         if (!cloudSaveErrorShown) {
-          showToast('Floor plan saved locally; sheet sync failed', 'error');
+          showToast(
+            error?.status === 403
+              ? 'Select this sheet in Drive Picker and confirm you have Editor access'
+              : 'Floor plan saved locally; sheet sync failed',
+            'error'
+          );
           cloudSaveErrorShown = true;
         }
       }).finally(() => {
@@ -974,9 +1012,52 @@ const definition = {
       }
     }
 
-    function setFeedback(text) {
+    async function grantDriveAccess() {
+      if (!sheetId || sheetId === 'unknown-sheet') return;
+      if (grantAccessButton) {
+        grantAccessButton.disabled = true;
+        grantAccessButton.textContent = 'Opening Picker…';
+      }
+      try {
+        const picked = await api.picker.pickSpreadsheetForInvite({
+          fileId: sheetId,
+          fileName: template?._currentSpreadsheetTitle || '',
+        });
+        if (!picked?.id) return;
+        if (String(picked.id) !== sheetId) {
+          showToast('Select the sheet currently open in Waymark to grant access', 'error');
+          return;
+        }
+
+        cloudSaveBlocked = false;
+        cloudSaveFailed = false;
+        cloudSaveErrorShown = false;
+        const payload = buildStatePayload();
+        persistDraftState(payload);
+        queueSheetStateWrite(payload);
+      } catch (error) {
+        showToast(`Could not open Drive Picker: ${error.message}`, 'error');
+      } finally {
+        if (grantAccessButton?.isConnected) {
+          grantAccessButton.disabled = false;
+          grantAccessButton.textContent = 'Grant access';
+        }
+      }
+    }
+
+    let grantAccessButton = null;
+    function setFeedback(text, needsDriveAccess = cloudSaveBlocked) {
       if (!feedback) return;
       feedback.textContent = text || 'Ready';
+      grantAccessButton = null;
+      if (needsDriveAccess) {
+        grantAccessButton = el('button', {
+          className: 'floorplan-grant-access-btn',
+          type: 'button',
+          on: { click: grantDriveAccess },
+        }, ['Grant access']);
+        feedback.append(grantAccessButton);
+      }
     }
 
     function itemFeedbackLabel(item) {
@@ -4631,7 +4712,8 @@ const definition = {
     refreshFloorUi();
     updateUndoUi();
     setTool('wall');
-    setFeedback('Ready');
+    if (cloudSaveBlocked) setFeedback('Sheet access needed');
+    else setFeedback('Ready');
     applyView();
     renderScene();
 
@@ -4657,7 +4739,7 @@ const definition = {
     svg.append(scaleBar);
 
     container.append(board);
-    if (!loadedSheetState && sheetId !== 'unknown-sheet') queuePersistDraft();
+    if (needsSheetMigration && !cloudSaveBlocked && sheetId !== 'unknown-sheet') queuePersistDraft();
   },
 };
 
