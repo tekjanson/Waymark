@@ -23,7 +23,7 @@ test('contacts with Group + Share_Data_Sheet render crew and share-sheet chips',
   await navigateToSheet(page, 'sheet-077');
   await page.waitForSelector('.template-contact-card', { timeout: 5_000 });
 
-  // Wayfarer Crew (Group) chips render.
+  // Waymarker Crew (Group) chips render.
   await expect(page.locator('.contacts-group-chip', { hasText: 'Family Crew' }).first()).toBeVisible();
 
   // Kailey Levine has a Share_Data_Sheet → a clickable "Share Sheet" chip.

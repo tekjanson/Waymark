@@ -1019,7 +1019,7 @@ export function getPublicSignalingSheetId() {
   return _userData?.publicSignalingSheetId ?? null;
 }
 
-/* ---------- Share Ledgers (per contact / Wayfarer Crew) ---------- */
+/* ---------- Share Ledgers (per contact / Waymarker Crew) ---------- */
 
 /**
  * Get all auto-provisioned Share Ledger mappings.

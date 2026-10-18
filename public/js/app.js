@@ -763,9 +763,9 @@ function renderGreeting() {
   const pinned  = userData.getPinnedFolders().length + userData.getPinnedSheets().length;
   const recent  = userData.getRecentSheets().length;
   if (pinned === 0 && recent === 0) {
-    subEl.textContent = 'Welcome to your Wayboard — pin sheets and folders to get started';
+    subEl.textContent = 'Welcome to your Wayboard — pin a Waymark or folder to leave your first mark';
   } else {
-    subEl.textContent = 'Welcome back to your Wayboard';
+    subEl.textContent = 'Welcome back to your Wayboard. Pick up where you left a mark.';
   }
 }
 

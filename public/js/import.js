@@ -47,7 +47,7 @@ const ROLE_LABELS = {
   'contacts.email': 'Email Address',
   'contacts.phone': 'Phone Number',
   'contacts.role': 'Role / Relationship',
-  'contacts.group': 'Group / Wayfarer Crew',
+  'contacts.group': 'Group / Waymarker Crew',
   'contacts.shareSheet': 'Share Data Sheet (link/ID)',
   'contacts.socialLocation': 'Social Data Location',
   // Log

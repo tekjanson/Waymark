@@ -1,7 +1,7 @@
 /* ============================================================
    collab.js — Auto-provisioned Share Ledger + social pipeline
    ------------------------------------------------------------
-   Each sharing contact or Wayfarer Crew (Group) gets ONE dedicated
+   Each sharing contact or Waymarker Crew (Group) gets ONE dedicated
    "WayMark Share Ledger" Google Sheet with four tabs:
      • Shared_Docs       — ledger of every document shared + its permission.
      • Presence          — live online/away/offline presence per user.

@@ -443,14 +443,14 @@ html[data-theme="dark"] #wayboard-root {
 html[data-theme] #wayboard-root,
 html[data-theme] #wayboard-root .workspace,
 html[data-theme] #wayboard-root main.canvas {
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text);
 }
 
 html[data-theme] #wayboard-root aside.left-nav,
 html[data-theme] #wayboard-root aside.wayside,
 html[data-theme] #wayboard-root .greeting-banner {
-  background: var(--panel);
+  background-color: var(--panel);
   color: var(--text);
   border-color: var(--border);
 }
@@ -459,7 +459,7 @@ html[data-theme] #wayboard-root .widget,
 html[data-theme] #wayboard-root .marker-card,
 html[data-theme] #wayboard-root .crew-row,
 html[data-theme] #wayboard-root .chat-box {
-  background: var(--card);
+  background-color: var(--card);
   color: var(--text);
   border-color: var(--border);
 }
@@ -531,7 +531,14 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   cursor: pointer;
 }
 #wayboard-root .wayboard-widget-edit:hover { border-color: var(--accent); color: var(--accent); }
-#wayboard-root .wayboard-widget-body { min-width: 0; flex: 1; }
+#wayboard-root .wayboard-widget-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
 #wayboard-root .wayboard-data-list { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 #wayboard-root .wayboard-data-row {
   display: flex;
@@ -586,24 +593,6 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 #wayboard-root .wayboard-metric-icon { grid-row: span 2; }
 #wayboard-root .wayboard-metric-value { font-size: 1.2rem; font-weight: 750; line-height: 1.1; }
 #wayboard-root .wayboard-metric-label { overflow: hidden; color: var(--muted); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
-#wayboard-root .wayboard-sheet-preview { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-#wayboard-root .wayboard-sheet-stats { display: flex; flex-wrap: wrap; gap: 6px; }
-#wayboard-root .wayboard-sheet-stats span {
-  padding: 3px 8px;
-  border-radius: 99px;
-  background: var(--inset-bg);
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-#wayboard-root .wayboard-progress-copy { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 0.72rem; }
-#wayboard-root .wayboard-progress-track { height: 6px; margin-top: 5px; overflow: hidden; border-radius: 99px; background: var(--inset-bg); }
-#wayboard-root .wayboard-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--green); transition: width 200ms ease; }
-#wayboard-root .wayboard-sheet-rows { display: flex; flex-direction: column; gap: 5px; }
-#wayboard-root .wayboard-sheet-row { display: flex; justify-content: space-between; gap: 10px; min-width: 0; padding: 6px 0; border-bottom: 1px solid var(--border); }
-#wayboard-root .wayboard-sheet-row-title,
-#wayboard-root .wayboard-sheet-row-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#wayboard-root .wayboard-sheet-row-title { font-size: 0.78rem; font-weight: 600; }
-#wayboard-root .wayboard-sheet-row-detail { color: var(--muted); font-size: 0.72rem; }
 #wayboard-root .wayboard-empty-dashboard { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 30px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); text-align: center; }
 #wayboard-root .wayboard-empty-dashboard p { max-width: 520px; }
 #wayboard-root .wayboard-head-action {
@@ -653,108 +642,78 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 .wayboard-widget-manager-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
 .wayboard-widget-manager-empty { color: var(--color-text-muted); font-size: 0.82rem; }
 
-/* Keep every composition in normal document flow so user widgets never overlap. */
-#wayboard-root#wayboard-root .workspace { min-width: 0; min-height: 0; }
-#wayboard-root#wayboard-root main.canvas {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  align-items: stretch;
-  justify-content: flex-start;
-  overflow-x: hidden;
-}
-#wayboard-root#wayboard-root .greeting-banner,
-#wayboard-root#wayboard-root .markers-section,
-#wayboard-root#wayboard-root .wayboard-section {
-  position: static;
-  inset: auto;
-  width: auto;
-  height: auto;
+/* Keep user-selected content inside each architecture without flattening its layout. */
+#wayboard-root .workspace,
+#wayboard-root main.canvas,
+#wayboard-root .wayboard-section,
+#wayboard-root .wayboard-grid,
+#wayboard-root .wayboard-widget { min-width: 0; }
+#wayboard-root .wayboard-widget { box-sizing: border-box; max-width: 100%; }
+#wayboard-root .wayboard-widget-body { min-width: 0; min-height: 0; }
+#wayboard-root .wayboard-template-wrap {
   min-width: 0;
   max-width: 100%;
-  margin: 0;
-  transform: none;
-  writing-mode: horizontal-tb;
-}
-#wayboard-root#wayboard-root .wayboard-section { flex: 1 1 auto; }
-#wayboard-root#wayboard-root .markers-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
-  grid-auto-flow: row;
-  width: 100%;
-  min-width: 0;
-}
-#wayboard-root#wayboard-root .marker-card {
-  position: relative;
-  inset: auto;
-  display: flex;
-  width: auto;
-  min-width: 0;
-  max-width: 100%;
-  height: auto;
-  margin: 0;
-  transform: none;
-}
-#wayboard-root#wayboard-root .wayboard-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  grid-template-rows: none;
-  grid-auto-flow: row;
-  grid-auto-rows: minmax(170px, auto);
-  align-content: start;
-  align-items: stretch;
-  justify-content: stretch;
-  width: 100%;
-  height: auto;
-  min-width: 0;
-  max-width: 100%;
-  transform: none;
-  gap: 14px;
-}
-#wayboard-root#wayboard-root .wayboard-widget {
-  position: relative;
-  inset: auto;
-  width: auto;
-  min-width: 0;
-  max-width: none;
-  height: auto;
-  min-height: 170px;
-  max-height: none;
-  flex: initial;
-  grid-column: auto;
-  grid-row: auto;
-  margin: 0;
-  transform: none;
-}
-#wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
-#wayboard-root#wayboard-root aside.left-nav {
-  position: static;
-  inset: auto;
-  transform: none;
-}
-#wayboard-root#wayboard-root aside.wayside {
-  position: static;
-  inset: auto;
-  width: auto;
-  min-width: 0;
-  max-width: 32%;
-  height: auto;
-  max-height: none;
-  flex: 0 1 270px;
-  margin: 0;
-  transform: none;
-  overflow-y: auto;
+  max-height: clamp(210px, 42vh, 460px);
+  overflow: auto;
   overscroll-behavior: contain;
+  font-size: 0.85rem;
+  transform-origin: top left;
 }
 
-/* Keep the 50 compositions usable on medium desktop windows. */
+/* The world-stage canvas positions every widget as a floating overlay. User
+   widgets can be added in any order or quantity, so keep the stage style while
+   returning those cards to its responsive grid. */
+#wayboard-root#wayboard-root.mode-14 .wayboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  grid-auto-rows: minmax(170px, auto);
+  height: auto;
+  min-width: 0;
+}
+#wayboard-root#wayboard-root.mode-14 .wayboard-widget {
+  position: relative;
+  inset: auto;
+  width: auto;
+  min-width: 0;
+  min-height: 170px;
+  margin: 0;
+}
+#wayboard-root#wayboard-root.mode-14 .wayboard-widget-wide { grid-column: 1 / -1; }
+
+/* These two architectures use floating panels; cap their scroll area so extra
+   Waymarks stay available without hiding the rest of the home view. */
+#wayboard-root.mode-19 .wayboard-section {
+  max-height: calc(100% - 46px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#wayboard-root.mode-19 .wayboard-grid { grid-auto-rows: minmax(150px, auto); }
+
+/* Retain the orbital and accordion compositions, while allowing a wide custom
+   widget to claim a row and letting the rest wrap instead of disappear offscreen. */
+#wayboard-root.mode-15 .wayboard-grid,
+#wayboard-root.mode-35 .wayboard-grid { flex-wrap: wrap; min-width: 0; }
+#wayboard-root.mode-15 .wayboard-widget-wide,
+#wayboard-root.mode-35 .wayboard-widget-wide {
+  flex: 1 1 100%;
+  width: auto;
+}
+#wayboard-root.mode-38 .greeting-banner {
+  position: relative;
+  inset: auto;
+  margin: 0 auto;
+}
+#wayboard-root.mode-38 .wayboard-grid {
+  grid-template-rows: repeat(2, minmax(170px, auto));
+  height: auto;
+}
+
+/* Medium windows preserve the chosen composition and can scroll the canvas. */
 @media (min-width: 769px) and (max-width: 1199px) {
-  #wayboard-root#wayboard-root .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 26%); min-width: 0; }
-  #wayboard-root#wayboard-root main.canvas { flex-direction: column; min-width: 0; min-height: 0; padding: 14px; }
-  #wayboard-root#wayboard-root aside.wayside { width: auto; min-width: 0; max-width: none; }
-  #wayboard-root#wayboard-root .wayboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
-  #wayboard-root#wayboard-root .markers-row { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
-  #wayboard-root#wayboard-root .wayboard-widget-wide { grid-column: 1 / -1; }
+  #wayboard-root { overflow: auto; }
+  #wayboard-root .workspace { min-width: 1040px; min-height: 0; }
+  #wayboard-root main.canvas { min-width: 540px; }
+  #wayboard-root aside.wayside { min-width: 210px; }
 }
 
 @media (max-width: 768px) {
@@ -791,29 +750,4 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   #wayboard-root#wayboard-root .wayboard-widget { padding: 13px; }
   #wayboard-root#wayboard-root .wayboard-data-row { padding: 8px; }
   #wayboard-root#wayboard-root .wayboard-metric { padding: 8px; }
-}
-
-/* Strong theme tokens beat the fixed palettes embedded in older modes. */
-html[data-theme] #wayboard-root#wayboard-root,
-html[data-theme] #wayboard-root#wayboard-root .workspace,
-html[data-theme] #wayboard-root#wayboard-root main.canvas {
-  background: var(--bg);
-  color: var(--text);
-}
-html[data-theme] #wayboard-root#wayboard-root aside.left-nav,
-html[data-theme] #wayboard-root#wayboard-root aside.wayside,
-html[data-theme] #wayboard-root#wayboard-root .greeting-banner {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-}
-html[data-theme] #wayboard-root#wayboard-root .wayboard-widget,
-html[data-theme] #wayboard-root#wayboard-root .marker-card,
-html[data-theme] #wayboard-root#wayboard-root .crew-row,
-html[data-theme] #wayboard-root#wayboard-root .chat-box {
-  background: var(--card);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: none;
 }

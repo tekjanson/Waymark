@@ -41,7 +41,7 @@ const definition = {
     if (cols.name === -1) cols.name = 0;
     cols.email = lower.findIndex(h => /^(email|e-mail)/.test(h));
     cols.phone = lower.findIndex(h => /^(phone|mobile|cell|telephone|tel)/.test(h));
-    cols.group = lower.findIndex(h => /^(group|crew|wayfarer|contact.?group)/.test(h));
+    cols.group = lower.findIndex(h => /^(group|crew|waymarker|wayfarer|contact.?group)/.test(h));
     cols.shareSheet = lower.findIndex(h => /^(share.?data.?sheet|share.?sheet|share.?ledger|share_sheet|share.?id)/.test(h));
     cols.socialLocation = lower.findIndex(h => /^(social.?data|social.?channel|social.?location)/.test(h));
     cols.role  = lower.findIndex((h, i) => i !== cols.group && /^(role|title|relationship|department|company|org|type)/.test(h));
@@ -54,7 +54,7 @@ const definition = {
       { role: 'email', label: 'Email', colIndex: cols.email, type: 'text', placeholder: 'email@example.com' },
       { role: 'phone', label: 'Phone', colIndex: cols.phone, type: 'text', placeholder: '(555) 000-0000' },
       { role: 'role',  label: 'Role',  colIndex: cols.role,  type: 'text', placeholder: 'Title or relationship' },
-      { role: 'group', label: 'Group', colIndex: cols.group, type: 'text', placeholder: 'Wayfarer Crew (e.g. Family)' },
+      { role: 'group', label: 'Group', colIndex: cols.group, type: 'text', placeholder: 'Waymarker Crew (e.g. Family)' },
       { role: 'shareSheet', label: 'Share Sheet', colIndex: cols.shareSheet, type: 'text', placeholder: 'Auto-provisioned on first share' },
       { role: 'socialLocation', label: 'Social Channel', colIndex: cols.socialLocation, type: 'text', placeholder: 'Auto-linked presence/chat location' },
     ];

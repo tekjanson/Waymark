@@ -142,7 +142,7 @@ export const EXAMPLE_SHEETS = {
     ],
   },
 
-  'Wayfarer Crews': {
+  'Waymarker Crews': {
     folder: 'Contacts',
     headers: ['Name', 'Phone', 'Email', 'Role', 'Group', 'Share_Data_Sheet', 'Social_Data_Location'],
     rows: [

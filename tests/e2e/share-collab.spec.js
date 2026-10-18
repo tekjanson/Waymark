@@ -101,9 +101,9 @@ test('polling does not notify about documents I shared with others', async ({ pa
 });
 
 test('ledger id is written back into the Contacts Waymark share column', async ({ page }) => {
-  // Pin the Wayfarer Crews contacts book so the write-back can find it.
+  // Pin the Waymarker Crews contacts book so the write-back can find it.
   await setupApp(page, {
-    pinnedSheets: [{ id: 'sheet-077', name: 'Wayfarer Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
   });
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
 
