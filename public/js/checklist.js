@@ -9,6 +9,7 @@ import { el, showToast, timeAgo } from './ui.js';
 import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { showPinMenu } from './pin-menu.js';
+import { mountContactsPicker } from './contacts-picker.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
@@ -1521,6 +1522,7 @@ async function openShareModal(sheetId, sheetName) {
               dataset: { link: inviteLink },
             }, ['📋 Copy']),
           ]),
+          el('div', { className: 'share-invite-contacts hidden' }),
           el('div', { className: 'share-invite-permission-row' }, [
             el('input', {
               className: 'share-invite-email',
@@ -1633,4 +1635,12 @@ async function openShareModal(sheetId, sheetName) {
   }
 
   document.body.append(modal);
+
+  // Populate the collaborator picker from the user's Contacts Waymarks.
+  // Async + non-blocking: the modal is fully usable with manual entry while
+  // contacts load, and the picker stays hidden if the user has none.
+  const contactsContainer = modal.querySelector('.share-invite-contacts');
+  if (contactsContainer && emailInput) {
+    mountContactsPicker(contactsContainer, emailInput).catch(() => {});
+  }
 }
