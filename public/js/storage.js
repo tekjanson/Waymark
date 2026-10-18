@@ -406,6 +406,87 @@ export function setOllamaBaseUrl(url) {
   else remove('agent_ollama_base_url');
 }
 
+/* ---------- OpenAI key ring ---------- */
+
+export function getOpenAIKeys() {
+  return get('agent_openai_keys') || [];
+}
+
+export function setOpenAIKeys(keys) {
+  if (Array.isArray(keys) && keys.length > 0) set('agent_openai_keys', keys);
+  else remove('agent_openai_keys');
+}
+
+export function getOpenAIModel() {
+  return get('agent_openai_model') || '';
+}
+
+export function setOpenAIModel(model) {
+  if (model) set('agent_openai_model', model);
+  else remove('agent_openai_model');
+}
+
+export function getOpenAIImageModel() {
+  return get('agent_openai_image_model') || '';
+}
+
+export function setOpenAIImageModel(model) {
+  if (model) set('agent_openai_image_model', model);
+  else remove('agent_openai_image_model');
+}
+
+export function recordOpenAIKeyUsage(idx) {
+  const keys = getOpenAIKeys();
+  if (keys[idx]) {
+    keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
+    keys[idx].lastUsed = new Date().toISOString();
+    keys[idx].lastError = null;
+    setOpenAIKeys(keys);
+  }
+}
+
+export function recordOpenAIKeyError(idx) {
+  const keys = getOpenAIKeys();
+  if (keys[idx]) {
+    keys[idx].lastError = new Date().toISOString();
+    setOpenAIKeys(keys);
+  }
+}
+
+/* ---------- Provider pricing tier ---------- */
+
+/**
+ * Billing tier for the Gemini provider. Gemini's Free Tier cannot generate
+ * photorealistic images and is rate-limited, so the router treats 'free' as
+ * Tier 0 (cheapest) and 'paid' as Tier 1.
+ * @returns {'free'|'paid'}
+ */
+export function getGeminiTier() {
+  return get('agent_gemini_tier') || 'free';
+}
+
+export function setGeminiTier(tier) {
+  set('agent_gemini_tier', tier === 'paid' ? 'paid' : 'free');
+}
+
+/* ---------- Simultaneously enabled providers (cost-aware router) ---------- */
+
+/**
+ * The set of providers the cost-aware router may use at the same time.
+ * When unset, every provider that has a usable configuration is considered
+ * enabled, so existing single-provider setups keep working unchanged.
+ * @returns {string[]|null}  explicit enabled list, or null for "auto"
+ */
+export function getEnabledProviders() {
+  const v = get('agent_enabled_providers');
+  return Array.isArray(v) ? v : null;
+}
+
+export function setEnabledProviders(providers) {
+  if (Array.isArray(providers)) set('agent_enabled_providers', providers);
+  else remove('agent_enabled_providers');
+}
+
 export function getAgentConversation() {
   return get('agent_conversation') || [];
 }

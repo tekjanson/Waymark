@@ -63,6 +63,33 @@ test('clicking settings button opens agent settings modal', async ({ page }) => 
   await expect(page.locator('.agent-settings-modal h3')).toContainText('Agent Settings');
 });
 
+test('agent settings offers all four providers including OpenAI', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  const providerBtns = page.locator('.agent-provider-toggle .agent-provider-btn');
+  await expect(providerBtns).toHaveCount(4);
+  await expect(page.locator('.agent-provider-toggle')).toContainText('OpenAI');
+});
+
+test('agent settings shows the cost-aware routing section with tier badges', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+  await page.waitForSelector('.agent-settings-btn', { timeout: 5000 });
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+
+  await expect(page.locator('.agent-routing-section')).toBeVisible();
+  // One row per provider (ollama, gemini, openai, claude), each with a tier badge.
+  await expect(page.locator('.agent-provider-row')).toHaveCount(4);
+  await expect(page.locator('.agent-tier-badge')).toHaveCount(4);
+  // Gemini billing tier (free/paid) toggle is present.
+  await expect(page.locator('.agent-gemini-tier-select')).toBeVisible();
+});
+
 test('Pick from Drive button does not throw and opens the picker', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

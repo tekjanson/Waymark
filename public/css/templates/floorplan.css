@@ -979,6 +979,7 @@
   margin-bottom: 10px;
 }
 .floorplan-ai-render-svg { width: 100%; display: block; border-radius: var(--radius-sm); }
+.floorplan-ai-photoreal-img { width: 100%; display: block; border-radius: var(--radius-sm); }
 .floorplan-view-svg { width: 100%; display: block; border-radius: var(--radius-sm); background: #0f172a; }
 .floorplan-view-object { cursor: pointer; }
 .floorplan-object-details {

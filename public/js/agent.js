@@ -14,6 +14,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OPENAI_MODEL,
   MAX_AGGRESSIVE_CONTEXT_MESSAGES,
   MAX_ASSISTANT_MESSAGE_CHARS,
   MAX_CONTEXT_CHARS,
@@ -32,6 +33,7 @@ import {
   buildPlannerBrief,
   buildRecentSheetHint,
   buildOllamaRequestBody,
+  buildOpenAiRequestBody,
   buildRequestBody,
   buildToolResultText,
   claudeHeaders,
@@ -43,14 +45,18 @@ import {
   geminiUrl,
   getRecentConversationSheets,
   ollamaChatUrl,
+  openAiChatUrl,
+  openAiHeaders,
   parseToolCall,
   pickBestActiveKey,
   pickBestClaudeKey,
+  pickBestOpenAIKey,
   pickBestKey,
   shouldUsePlannerRound,
   stripToolCalls,
   vault,
 } from './agent/config.js';
+import { resolveAgentProvider } from './ai-router.js';
 import { renderMarkdown } from './agent/markdown.js';
 import { showSettingsModal } from './agent/settings.js';
 import { runSlashCommand } from './agent/slash-commands.js';
@@ -113,6 +119,14 @@ function _ollamaUrl(baseUrl = storage.getOllamaBaseUrl() || DEFAULT_OLLAMA_BASE_
   return ollamaChatUrl(baseUrl);
 }
 
+function _openAiUrl() {
+  return openAiChatUrl();
+}
+
+function _openAiHeaders(apiKey) {
+  return openAiHeaders(apiKey);
+}
+
 function _buildRequestBody(contents) {
   return buildRequestBody(contents, _getSystemPrompt());
 }
@@ -125,9 +139,13 @@ function _buildOllamaProviderBody(contents, model) {
   return buildOllamaRequestBody(contents, _getSystemPrompt(), model || storage.getOllamaModel() || DEFAULT_OLLAMA_MODEL);
 }
 
+function _buildOpenAiProviderBody(contents, model) {
+  return buildOpenAiRequestBody(contents, _getSystemPrompt(), model || storage.getOpenAIModel() || DEFAULT_OPENAI_MODEL);
+}
+
 /**
  * Rebuild a provider request body for a fresh set of contents.
- * @param {string} provider — 'gemini' | 'claude' | 'ollama'
+ * @param {string} provider — 'gemini' | 'claude' | 'ollama' | 'openai'
  * @param {Array} contents — Gemini-format contents array
  * @param {string} [model]
  * @returns {Object}
@@ -135,6 +153,7 @@ function _buildOllamaProviderBody(contents, model) {
 function _rebuildBody(provider, contents, model) {
   if (provider === 'claude') return _buildClaudeProviderBody(contents, model);
   if (provider === 'ollama') return _buildOllamaProviderBody(contents, model);
+  if (provider === 'openai') return _buildOpenAiProviderBody(contents, model);
   return _buildRequestBody(contents);
 }
 
@@ -384,8 +403,10 @@ let _pendingInlineImages = [];
  * @returns {{ key: string, idx: number } | null}
  */
 function _getNextKey() {
-  const provider = storage.getAgentProvider();
+  const provider = resolveAgentProvider();
   if (provider === 'ollama') return { key: '', idx: -1 };
+  if (provider === 'openai') return pickBestOpenAIKey() || { key: '', idx: -1 };
+  if (provider === 'claude') return pickBestClaudeKey() || pickBestActiveKey();
   return pickBestActiveKey();
 }
 
@@ -449,9 +470,11 @@ function _renderUI() {
   const provider = storage.getAgentProvider();
   const hasKeys = provider === 'ollama'
     ? true
-    : (vault.isVaultSetUp() && vault.isVaultUnlocked()
-      ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
-      : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0));
+    : provider === 'openai'
+      ? storage.getOpenAIKeys().length > 0
+      : (vault.isVaultSetUp() && vault.isVaultUnlocked()
+        ? (provider === 'claude' ? vault.getClaudeKeys().length > 0 : vault.getGeminiKeys().length > 0)
+        : (provider === 'claude' ? storage.getClaudeKeys().length > 0 : storage.getAgentKeys().length > 0));
   _container.innerHTML = '';
   const rendered = renderAgentUI({
     container: _container,
@@ -596,7 +619,7 @@ function _persistConversation() {
  * @returns {Promise<{model:string, url:string, contents:Array, body:Object}>}
  */
 async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = null) {
-  const provider = storage.getAgentProvider();
+  const provider = resolveAgentProvider();
   _assertConversationWithinBudget(userMessage);
   const plannedUserText = _buildPlannedUserMessage(userMessage);
 
@@ -636,6 +659,25 @@ async function _prepareModelRequest(apiKey, keyIdx, userMessage, userParts = nul
     const { contents, body } = buildBudgetedRequest(plannedUserText);
     _assertRequestWithinBudget(body, 'This request');
     return { model, url, contents, body, provider: 'ollama' };
+  }
+
+  if (provider === 'openai') {
+    const model = storage.getOpenAIModel() || DEFAULT_OPENAI_MODEL;
+    const url = _openAiUrl();
+
+    const buildBudgetedRequest = (text) => {
+      let contents = _buildContents(text, MAX_CONTEXT_MESSAGES, userParts);
+      let body = _buildOpenAiProviderBody(contents, model);
+      if (estimateRequestTokens(body) > MAX_ESTIMATED_REQUEST_TOKENS) {
+        contents = _buildContents(text, MAX_AGGRESSIVE_CONTEXT_MESSAGES, userParts);
+        body = _buildOpenAiProviderBody(contents, model);
+      }
+      return { contents, body };
+    };
+
+    const { contents, body } = buildBudgetedRequest(plannedUserText);
+    _assertRequestWithinBudget(body, 'This request');
+    return { model, url, contents, body, provider: 'openai' };
   }
 
   // Gemini path
@@ -680,7 +722,11 @@ function _clearConversation() {
   _persistConversation();
   if (_chatBody) {
     _chatBody.innerHTML = '';
-    const hasKeys = storage.getAgentProvider() === 'ollama' || storage.getAgentKeys().length > 0;
+    const provider = storage.getAgentProvider();
+    const hasKeys = provider === 'ollama'
+      || (provider === 'openai' ? storage.getOpenAIKeys().length > 0
+        : provider === 'claude' ? storage.getClaudeKeys().length > 0
+        : storage.getAgentKeys().length > 0);
     _chatBody.appendChild(hasKeys ? _buildEmptyState() : _buildWelcome());
   }
 }
@@ -918,12 +964,18 @@ async function _sendMessage(text) {
  * Stream model response — dispatches to Gemini or Claude based on active provider.
  */
 async function _streamCallModel(apiKey, keyIdx, request, onChunk, signal) {
-  const provider = (typeof request === 'object' && request.provider) || storage.getAgentProvider();
+  const provider = (typeof request === 'object' && request.provider) || resolveAgentProvider();
   if (provider === 'claude') {
     return _streamCallClaude(apiKey, keyIdx, request, onChunk, signal);
   }
   if (provider === 'ollama') {
     return _streamCallOllama(apiKey, keyIdx, request, onChunk, signal);
+  }
+  if (provider === 'openai') {
+    // OpenAI uses the buffered path; emit the full reply as one chunk.
+    const full = await _callOpenAI(apiKey, keyIdx, request);
+    if (full) onChunk(full);
+    return full;
   }
   return _streamCallGemini(apiKey, keyIdx, request, onChunk, signal);
 }
@@ -1185,6 +1237,88 @@ async function _fetchClaude(url, body, keyIdx, apiKey) {
     if (res.status === 403) {
       storage.recordClaudeKeyError(keyIdx);
       throw new Error('Claude API key does not have permission. Check your key at console.anthropic.com.');
+    }
+    throw new Error(errMsg);
+  }
+
+  return res.json();
+}
+
+/* ---------- OpenAI API ---------- */
+
+/**
+ * Call the OpenAI chat-completions API (buffered). Mirrors the Claude path with
+ * key rotation on rate limits.
+ * @param {string} apiKey
+ * @param {number} keyIdx
+ * @param {Object|string} request
+ * @returns {Promise<string>}
+ */
+async function _callOpenAI(apiKey, keyIdx, request) {
+  const preparedRequest = typeof request === 'string'
+    ? await _prepareModelRequest(apiKey, keyIdx, request)
+    : request;
+  const { body } = preparedRequest;
+  const url = _openAiUrl();
+  const data = await _fetchOpenAI(url, body, keyIdx, apiKey);
+  if (keyIdx >= 0) storage.recordOpenAIKeyUsage(keyIdx);
+  return (data.choices?.[0]?.message?.content || '').trim();
+}
+
+/**
+ * Fetch from the OpenAI API with rate-limit handling and key rotation.
+ * @param {string} url
+ * @param {Object} body
+ * @param {number} keyIdx
+ * @param {string} apiKey
+ * @returns {Promise<Object>}
+ */
+async function _fetchOpenAI(url, body, keyIdx, apiKey) {
+  const keys = storage.getOpenAIKeys();
+  const currentKey = apiKey || keys[keyIdx]?.key || '';
+  const fetchOpts = {
+    method: 'POST',
+    headers: _openAiHeaders(currentKey),
+    body: JSON.stringify(body),
+  };
+
+  const res = await fetch(url, fetchOpts);
+
+  if (res.status === 429) {
+    if (keyIdx >= 0) storage.recordOpenAIKeyError(keyIdx);
+    if (keys.length > 1) {
+      const next = pickBestOpenAIKey();
+      if (next && next.idx !== keyIdx) {
+        _showRetryIndicator(0, true);
+        const retryRes = await fetch(url, {
+          method: 'POST',
+          headers: _openAiHeaders(next.key),
+          body: JSON.stringify(body),
+        });
+        _removeRetryIndicator();
+        if (retryRes.ok) {
+          if (next.idx >= 0) storage.recordOpenAIKeyUsage(next.idx);
+          return retryRes.json();
+        }
+        if (next.idx >= 0) storage.recordOpenAIKeyError(next.idx);
+      }
+    }
+
+    _showRetryIndicator(15);
+    await new Promise(r => setTimeout(r, 15 * 1000));
+    _removeRetryIndicator();
+
+    const retry = await fetch(url, fetchOpts);
+    if (retry.ok) return retry.json();
+    throw new Error('OpenAI API rate limit exceeded. Try again in a minute, or add another key.');
+  }
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    const errMsg = errData?.error?.message || `API error ${res.status}`;
+    if (res.status === 401) {
+      if (keyIdx >= 0) storage.recordOpenAIKeyError(keyIdx);
+      throw new Error('Invalid OpenAI API key. Check your key in Settings.');
     }
     throw new Error(errMsg);
   }
