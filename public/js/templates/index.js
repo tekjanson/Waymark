@@ -55,7 +55,6 @@ import './calorie/index.js';
 import './weight.js';
 import './party/index.js';
 import './floorplan/index.js';
-import './organizer/index.js';
 /* ---------- Detection ---------- */
 
 /**

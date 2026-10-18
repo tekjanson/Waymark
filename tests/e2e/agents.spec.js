@@ -155,35 +155,6 @@ test('agents live feed renders a status indicator', async ({ page }) => {
   await expect(page.locator('.agents-card').first().locator('.agents-feed-pulse')).toBeVisible();
 });
 
-test('Dev Fleet sidebar button is visible', async ({ page }) => {
-  await setupApp(page);
-  await expect(page.locator('#menu-fleet-btn')).toBeVisible();
-  await expect(page.locator('#menu-fleet-btn')).toContainText('Dev Fleet');
-});
-
-test('Set as Fleet Registry button appears on agents sheet', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
-  // Open the more-actions overflow menu
-  await page.click('#more-actions-btn');
-  await expect(page.locator('#set-fleet-btn')).toBeVisible();
-  await expect(page.locator('#set-fleet-btn')).toContainText('Set as Fleet Registry');
-});
-
-test('Dev Fleet button navigates to fleet sheet after pin', async ({ page }) => {
-  await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
-  // Open overflow and click Set as Fleet Registry
-  await page.click('#more-actions-btn');
-  await page.click('#set-fleet-btn');
-  // Navigate away then use Fleet button
-  await page.evaluate(() => { window.location.hash = '#/'; });
-  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5000 });
-  await page.click('#menu-fleet-btn');
-  await page.waitForSelector('.agents-grid', { timeout: 10000 });
-  await expect(page.locator('.agents-grid')).toBeVisible();
-});
-
 /* ── Dark mode contrast tests ─────────────────────────────────────────────── */
 
 test('agents dark mode: agent name has readable contrast', async ({ page }) => {

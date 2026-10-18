@@ -8,6 +8,7 @@ import { api } from './api-client.js';
 import { el, showToast, timeAgo } from './ui.js';
 import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
+import { showPinMenu } from './pin-menu.js';
 import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
@@ -27,7 +28,7 @@ let currentDataTitle = null;
 
 /* DOM refs (set in init) */
 let titleEl, itemsEl, lastUpdatedEl, refreshBtn, autoToggle, templateBadge, openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, printBtn;
-let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lockSubmitToggle, setFleetBtn;
+let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lockSubmitToggle;
 let currentTemplateKey = null;
 let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
@@ -56,7 +57,6 @@ export function init() {
   templateAiBtn     = document.getElementById('template-ai-btn');
   encryptBtn        = document.getElementById('encrypt-btn');
   lockSubmitToggle  = document.getElementById('lock-submit-toggle');
-  setFleetBtn       = document.getElementById('set-fleet-btn');
 
   /* Overflow menu: toggle on click, close on outside click */
   if (moreActionsBtn && overflowMenu) {
@@ -82,17 +82,6 @@ export function init() {
       if (currentSheetId && currentHeaders) {
         notifications.showRuleBuilder(currentSheetId, currentDataTitle, currentHeaders);
       }
-    });
-  }
-
-  if (setFleetBtn) {
-    setFleetBtn.addEventListener('click', async () => {
-      if (!currentSheetId) return;
-      await userData.setFleetSheetId(currentSheetId);
-      // Update the Fleet sidebar button active state
-      const fleetBtn = document.getElementById('menu-fleet-btn');
-      if (fleetBtn) fleetBtn.classList.add('fleet-configured');
-      showToast('✅ Fleet Registry set — click "Dev Fleet" in the sidebar to return here.', 'success');
     });
   }
 
@@ -214,24 +203,17 @@ export function init() {
   }
 
   if (sheetPinBtn) {
-    sheetPinBtn.addEventListener('click', () => {
+    sheetPinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (!currentSheetId) return;
-      if (userData.isSheetPinned(currentSheetId)) {
-        userData.removePinnedSheet(currentSheetId);
-        sheetPinBtn.classList.remove('pinned');
-        sheetPinBtn.title = 'Pin sheet';
-        showToast('Sheet unpinned', 'success');
-      } else {
-        const headers = currentValues?.[0] || [];
-        const { key: templateKey } = detectTemplate(headers);
-        userData.addPinnedSheet({ id: currentSheetId, name: currentDataTitle || 'Untitled', templateKey });
-        sheetPinBtn.classList.add('pinned');
-        sheetPinBtn.title = 'Unpin sheet';
-        showToast('Sheet pinned to home', 'success');
-      }
-      sheetPinBtn.classList.add('pin-bounce');
-      sheetPinBtn.addEventListener('animationend', () => sheetPinBtn.classList.remove('pin-bounce'), { once: true });
-      window.dispatchEvent(new CustomEvent('waymark:pins-changed'));
+      const headers = currentValues?.[0] || [];
+      const { key: templateKey } = detectTemplate(headers);
+      showPinMenu({
+        anchorEl: sheetPinBtn,
+        sheetId: currentSheetId,
+        sheetTitle: currentDataTitle || 'Untitled',
+        templateKey,
+      });
     });
   }
 
@@ -597,7 +579,7 @@ export async function showPublic(sheetId) {
   if (banner) banner.classList.remove('hidden');
 
   // Hide edit-related controls
-  const hideEls = [openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, moreActionsBtn, printBtn, encryptBtn, templateAiBtn, notifRulesBtn, setFleetBtn];
+  const hideEls = [openInSheetsBtn, downloadCsvBtn, sheetPinBtn, duplicateSheetBtn, shareBtn, lockBtn, templateHelpBtn, moreActionsBtn, printBtn, encryptBtn, templateAiBtn, notifRulesBtn];
   for (const el of hideEls) {
     if (el) el.classList.add('hidden');
   }
@@ -1248,14 +1230,6 @@ function renderWithTemplate(values) {
   currentTemplateKey = key;
   if (templateHelpBtn) {
     templateHelpBtn.classList.remove('hidden');
-  }
-  // Show "Set as Fleet Registry" only for the agents template
-  if (setFleetBtn) {
-    if (key === 'agents') {
-      setFleetBtn.classList.remove('hidden');
-    } else {
-      setFleetBtn.classList.add('hidden');
-    }
   }
   Tutorial.startTemplateTutorial(key);
 
