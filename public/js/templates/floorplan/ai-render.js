@@ -4,7 +4,7 @@
    Generates a styled "space concept" from current floorplan geometry.
    ============================================================ */
 
-import { el, generateText, showToast } from '../shared.js';
+import { el, generateText, generateImage, showToast } from '../shared.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -583,7 +583,44 @@ export function openFloorplanAiRenderModal({ items }) {
     }
   });
 
-  const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, copyPromptBtn]);
+  // Photorealistic image generation — routes through the cost-aware AI router.
+  // Gemini Free Tier cannot generate images, so the router automatically uses
+  // OpenAI (gpt-image-1 / DALL·E 3) when it is configured.
+  const photorealBtn = el('button', { className: 'floorplan-ai-btn floorplan-ai-photoreal-btn', type: 'button' }, ['Generate Photorealistic']);
+  photorealBtn.addEventListener('click', async () => {
+    photorealBtn.disabled = true;
+    status.textContent = 'Rendering a photorealistic image...';
+    try {
+      let prompt = details.querySelector('.floorplan-ai-render-prompt')?.textContent?.trim();
+      if (!prompt) {
+        const spec = await generateRenderSpec(items || []);
+        prompt = spec.renderPrompt || spec.overallMood || 'A well-designed interior space.';
+      }
+      const fullPrompt =
+        'Photorealistic interior architectural visualization at eye level. ' +
+        prompt +
+        ' Natural lighting, realistic materials and furniture, clean composition, high detail, wide-angle lens.';
+      const mock = typeof window !== 'undefined' ? window.__WAYMARK_FLOORPLAN_IMAGE_MOCK : null;
+      const src = mock
+        ? (typeof mock === 'function' ? await mock(fullPrompt) : mock)
+        : await generateImage(fullPrompt, { size: '1024x1024' });
+      renderHost.innerHTML = '';
+      renderHost.append(el('img', {
+        className: 'floorplan-ai-photoreal-img',
+        src,
+        alt: 'Photorealistic space render',
+      }));
+      status.textContent = 'Photorealistic render ready.';
+      showToast('Photorealistic image generated', 'success');
+    } catch (err) {
+      status.textContent = err.message || 'Could not generate image.';
+      showToast(err.message || 'Could not generate image', 'error');
+    } finally {
+      photorealBtn.disabled = false;
+    }
+  });
+
+  const actions = el('div', { className: 'floorplan-ai-actions' }, [renderViewBtn, generateBtn, photorealBtn, copyPromptBtn]);
   modal.append(header, status, camMapWrap, renderHost, objectDetails, details, actions);
   overlay.append(modal);
   overlay.addEventListener('click', (event) => {

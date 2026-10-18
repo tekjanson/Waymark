@@ -299,6 +299,26 @@ test('ai space render opens concept modal with mock output', async ({ page }) =>
   await expect(page.locator('.floorplan-ai-render-details')).toContainText('Family Concept');
 });
 
+test('ai space render generates a photorealistic image through the router', async ({ page }) => {
+  await page.addInitScript(() => {
+    // 1x1 transparent PNG — stands in for the OpenAI image result.
+    window.__WAYMARK_FLOORPLAN_IMAGE_MOCK =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    window.__WAYMARK_FLOORPLAN_RENDER_MOCK = {
+      spaceTitle: 'Concept', overallMood: 'warm', palette: ['#dbeafe'],
+      lighting: 'ambient', rooms: [], renderPrompt: 'Cozy living room', designActions: ['x'],
+    };
+  });
+
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-075');
+  await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
+
+  await page.click('.floorplan-ai-render-btn');
+  await page.click('.floorplan-ai-photoreal-btn');
+  await expect(page.locator('.floorplan-ai-photoreal-img')).toBeVisible({ timeout: 5_000 });
+});
+
 test('export button triggers print workflow for PDF output', async ({ page }) => {
   await page.addInitScript(() => {
     window.__PRINT_CALLED__ = false;
