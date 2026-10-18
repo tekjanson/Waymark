@@ -823,6 +823,7 @@ const definition = {
 
     let persistTimer = null;
     let cloudSaveQueue = Promise.resolve();
+    let pendingSheetSave = null;
     let pendingCloudWrites = 0;
     let cloudSaveBlocked = requiresDrivePicker;
     let cloudSaveFailed = cloudSaveBlocked;
@@ -882,9 +883,18 @@ const definition = {
         return;
       }
 
-      pendingCloudWrites += 1;
-      cloudSaveFailed = false;
+      // Keep only the newest waiting snapshot while a save is in flight.
+      pendingSheetSave = { payload, rows };
       setFeedback('Saving to sheet');
+      startNextSheetSave();
+    }
+
+    function startNextSheetSave() {
+      if (pendingCloudWrites > 0 || !pendingSheetSave || cloudSaveBlocked) return;
+      const { payload, rows } = pendingSheetSave;
+      pendingSheetSave = null;
+      pendingCloudWrites = 1;
+      cloudSaveFailed = false;
       cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(async () => {
         if (cloudSaveBlocked) {
           setFeedback('Saved locally · Drive access needed');
@@ -894,7 +904,7 @@ const definition = {
         markLocalDraftSynced(payload);
         cloudSaveFailed = false;
         cloudSaveErrorShown = false;
-        if (pendingCloudWrites <= 1) setFeedback('Saved to sheet');
+        if (!pendingSheetSave && !persistTimer) setFeedback('Saved to sheet');
       }).catch(error => {
         cloudSaveFailed = true;
         console.warn('[floorplan] sheet-state-save failed:', error);
@@ -923,7 +933,8 @@ const definition = {
           cloudSaveErrorShown = true;
         }
       }).finally(() => {
-        pendingCloudWrites = Math.max(0, pendingCloudWrites - 1);
+        pendingCloudWrites = 0;
+        startNextSheetSave();
       });
     }
 
