@@ -34,6 +34,7 @@ let moreActionsBtn, overflowMenu, notifRulesBtn, templateAiBtn, encryptBtn, lock
 let currentTemplateKey = null;
 let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
+let currentTemplateCanAutoRefresh = null;
 let currentSheetProtectedRanges = [];  // updated on each sheet load
 
 /* ---------- Public ---------- */
@@ -1079,6 +1080,8 @@ function renderWithTemplate(values) {
   if (document.activeElement && itemsEl.contains(document.activeElement)) {
     document.activeElement.blur();
   }
+  currentTemplateCanAutoRefresh = null;
+  currentTemplateNoAutoRefresh = false;
   itemsEl.innerHTML = '';
 
   if (values.length === 0) {
@@ -1212,11 +1215,15 @@ function renderWithTemplate(values) {
   template._currentSheetId = currentSheetId;
   template._currentNumericSheetId = currentNumericSheetId;
   template._currentSheetTitle = currentSheetTitle;
+  template._currentSpreadsheetTitle = currentDataTitle;
   // Expose all workbook tabs so templates can read cross-tab data.
   // tab[0] is always the primary tab (same source as the top-level values/sheetTitle).
   template._tabs = currentTabs;
   template.render(itemsEl, rows, cols, template);
   currentTemplateNoAutoRefresh = !!template.noAutoRefresh;
+  currentTemplateCanAutoRefresh = typeof template.canAutoRefresh === 'function'
+    ? template.canAutoRefresh
+    : null;
 
   // Notify the app that a sheet was rendered (for notification evaluation)
   document.dispatchEvent(new CustomEvent('waymark:sheet-rendered', {
@@ -1436,6 +1443,7 @@ function resetTimer() {
         // Don't interrupt an active inline edit — silently skip this cycle;
         // the next tick will pick up latest data once the user commits or blurs.
         if (itemsEl && document.activeElement && itemsEl.contains(document.activeElement)) return;
+        if (currentTemplateCanAutoRefresh && !currentTemplateCanAutoRefresh()) return;
         loadSheet(currentSheetId);
       }
     }, interval);

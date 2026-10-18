@@ -4,6 +4,10 @@
 
 const BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+// Keep Google's numeric tab IDs, rather than attempting addSheet on every save.
+const workbookTabs = new Map();
+const pendingTabLookups = new Map();
+
 /* ---------- Error classification ---------- */
 
 /**
@@ -22,6 +26,16 @@ function sheetsError(label, res) {
   else if (res.status === 429) msg = 'Rate limit reached — sign in for uninterrupted access';
   const err = new Error(msg);
   err.status = res.status;
+  return err;
+}
+
+async function sheetWriteError(label, res) {
+  const err = sheetsError(label, res);
+  const body = await res.json().catch(() => null);
+  if (body?.error?.message) {
+    err.apiMessage = body.error.message;
+    if (res.status === 400) err.message = `${label}: ${err.apiMessage}`;
+  }
   return err;
 }
 
@@ -134,7 +148,7 @@ function gridToValues(rawSheet) {
  */
 export async function getSpreadsheet(token, spreadsheetId) {
   const res = await fetchWithRetry(
-    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties.sheetId,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`,
+    `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties(sheetId,title,gridProperties),sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) throw sheetsError('Sheets read', res);
@@ -142,6 +156,7 @@ export async function getSpreadsheet(token, spreadsheetId) {
 
   const title = body.properties?.title || 'Untitled';
   const rawSheets = body.sheets || [];
+  workbookTabs.set(spreadsheetId, rawSheets.map(sheet => sheet.properties));
 
   // Map every tab into { title, numericSheetId, values }
   const tabs = rawSheets.map(s => ({
@@ -561,8 +576,8 @@ export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
 
 /**
  * Create a new tab (sheet) within a spreadsheet.
- * Returns the new tab's numeric sheetId. If a tab with the same title already
- * exists, Google returns 400 — the caller may swallow this (tab already present).
+ * Returns the new tab's numeric sheetId. Callers must check whether the tab
+ * exists before creating it; a 400 can also indicate an invalid request.
  * @param {string} token
  * @param {string} spreadsheetId
  * @param {string} tabTitle
@@ -581,14 +596,70 @@ export async function addSheetTab(token, spreadsheetId, tabTitle) {
       body: JSON.stringify(body),
     }
   );
-  if (!res.ok) throw sheetsError('Sheet tab add', res);
+  if (!res.ok) throw await sheetWriteError('Sheet tab add', res);
   const out = await res.json();
-  return out.replies?.[0]?.addSheet?.properties?.sheetId ?? null;
+  const properties = out.replies?.[0]?.addSheet?.properties;
+  if (!Number.isInteger(properties?.sheetId)) throw new Error('Google did not return the new tab ID');
+  const tabs = workbookTabs.get(spreadsheetId) || [];
+  workbookTabs.set(spreadsheetId, [...tabs.filter(tab => tab.sheetId !== properties.sheetId), properties]);
+  return properties.sheetId;
+}
+
+async function readTabProperties(token, spreadsheetId) {
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties)`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw sheetsError('Sheet tabs read', res);
+  const body = await res.json();
+  const tabs = (body.sheets || []).map(sheet => sheet.properties);
+  workbookTabs.set(spreadsheetId, tabs);
+  return tabs;
+}
+
+function findTab(tabs, tabTitle) {
+  return tabs?.find(tab => tab.title.toLowerCase() === tabTitle.toLowerCase());
+}
+
+async function ensureSheetTab(token, spreadsheetId, tabTitle) {
+  const key = JSON.stringify([spreadsheetId, tabTitle.toLowerCase()]);
+  if (pendingTabLookups.has(key)) return pendingTabLookups.get(key);
+  const lookup = (async () => {
+    const tabs = workbookTabs.get(spreadsheetId) || await readTabProperties(token, spreadsheetId);
+    const existing = findTab(tabs, tabTitle);
+    if (existing) return existing;
+    try {
+      await addSheetTab(token, spreadsheetId, tabTitle);
+    } catch (err) {
+      if (err.status !== 400) throw err;
+      // Another collaborator may have created it since our metadata read.
+      // Only recover if Google now confirms a tab with this title exists.
+      const refreshed = await readTabProperties(token, spreadsheetId);
+      const createdByPeer = findTab(refreshed, tabTitle);
+      if (createdByPeer) return createdByPeer;
+      throw err;
+    }
+    return findTab(workbookTabs.get(spreadsheetId), tabTitle);
+  })();
+  pendingTabLookups.set(key, lookup);
+  try {
+    return await lookup;
+  } finally {
+    pendingTabLookups.delete(key);
+  }
+}
+
+function rawCellData(value) {
+  if (value === null || value === undefined) return {};
+  if (typeof value === 'boolean') return { userEnteredValue: { boolValue: value } };
+  if (typeof value === 'number') return { userEnteredValue: { numberValue: value } };
+  return { userEnteredValue: { stringValue: String(value) } };
 }
 
 /**
  * Write (create-or-replace) a named tab's full contents.
- * Ensures the tab exists (creates it if missing), clears it, then writes rows.
+ * Resolves the tab once, then replaces its values atomically. Missing cells in
+ * the range are cleared by updateCells, including chunks left by a larger plan.
  * This is the durable persistence primitive for template-managed metadata tabs
  * (e.g. the calorie tracker's "Profile" tab).
  * @param {string}     token
@@ -597,11 +668,41 @@ export async function addSheetTab(token, spreadsheetId, tabTitle) {
  * @param {string[][]} rows          2D array including header row
  */
 export async function writeTabData(token, spreadsheetId, tabTitle, rows) {
-  // Ensure the tab exists. Swallow the "already exists" 400 so writes are idempotent.
-  try {
-    await addSheetTab(token, spreadsheetId, tabTitle);
-  } catch (err) {
-    if (err.status !== 400) throw err;   // 400 = tab already exists → fine
+  let tab = await ensureSheetTab(token, spreadsheetId, tabTitle);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const rowCount = Math.max(tab.gridProperties?.rowCount || 1, rows.length);
+    const columnCount = rows.reduce((max, row) => Math.max(max, row.length), tab.gridProperties?.columnCount || 1);
+    const requests = [];
+    if (rowCount > (tab.gridProperties?.rowCount || 0) || columnCount > (tab.gridProperties?.columnCount || 0)) {
+      requests.push({ updateSheetProperties: {
+        properties: { sheetId: tab.sheetId, gridProperties: { rowCount, columnCount } },
+        fields: 'gridProperties.rowCount,gridProperties.columnCount',
+      } });
+    }
+    requests.push({ updateCells: {
+      range: { sheetId: tab.sheetId },
+      rows: rows.map(row => ({ values: row.map(rawCellData) })),
+      fields: 'userEnteredValue',
+    } });
+    const res = await fetchWithRetry(`${BASE}/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+    if (res.ok) {
+      tab.gridProperties = { ...tab.gridProperties, rowCount, columnCount };
+      return res.json();
+    }
+    const err = await sheetWriteError('Sheet tab save', res);
+    if (attempt === 0 && (err.status === 400 || err.status === 404)) {
+      // A tab can be deleted/recreated by another editor while the page is open.
+      const refreshed = await readTabProperties(token, spreadsheetId);
+      const current = findTab(refreshed, tabTitle);
+      if (!current || current.sheetId !== tab.sheetId) {
+        tab = current || await ensureSheetTab(token, spreadsheetId, tabTitle);
+        continue;
+      }
+    }
+    throw err;
   }
-  return replaceSheetData(token, spreadsheetId, tabTitle, rows);
 }
