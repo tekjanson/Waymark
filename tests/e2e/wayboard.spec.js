@@ -54,6 +54,24 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
   await expect(bread).toHaveAttribute('class', breadState);
 });
 
+test('Wayboard can add a spreadsheet directly from Drive without pinning it first', async ({ page }) => {
+  await setupApp(page);
+  await page.click('#wayboard-add-widget');
+  await page.locator('select[name="type"]').selectOption('sheet');
+
+  const source = page.locator('select[name="sheet"]');
+  await expect(source).toBeEnabled();
+  await expect(source).toHaveValue('');
+  await page.getByRole('button', { name: 'Browse Drive' }).click();
+  await expect(source).toHaveValue('sheet-001');
+  await page.locator('.wayboard-widget-form button[type="submit"]').click();
+
+  await expect(page.locator('.wayboard-template-wrap .checklist-row')).toHaveCount(10);
+  await expect(page.locator('.wayboard-template-wrap[aria-readonly="true"]')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.wayboard-template-wrap .checklist-row')).toHaveCount(10);
+});
+
 test('default home layout is mode-1', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('#wayboard-root.mode-1', { timeout: 5_000 });

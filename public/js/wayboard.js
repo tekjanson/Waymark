@@ -355,8 +355,14 @@ function availableSheets() {
   });
 }
 
+function findWidgetSheet(sheetId) {
+  return availableSheets().find(sheet => sheet.id === sheetId)
+    || widgetManager?.driveSheets.get(sheetId)
+    || null;
+}
+
 function widgetTitle(type, sheetId) {
-  if (type === 'sheet') return availableSheets().find(sheet => sheet.id === sheetId)?.name || 'Any Waymark';
+  if (type === 'sheet') return findWidgetSheet(sheetId)?.name || 'Any Waymark';
   return WIDGET_TYPES[type]?.label || 'My widget';
 }
 
@@ -372,9 +378,14 @@ function ensureWidgetManager() {
     className: 'wayboard-widget-control', name: 'title', type: 'text', maxlength: '48',
     placeholder: 'Name this mark', autocomplete: 'off',
   });
-  const sheetSelect = el('select', { className: 'wayboard-widget-control', name: 'sheet' });
-  const sheetLabel = el('label', { className: 'wayboard-widget-field wayboard-widget-sheet-field hidden' }, [
-    el('span', {}, ['Waymark to bring along']), sheetSelect,
+  const sheetSelect = el('select', { className: 'wayboard-widget-control', name: 'sheet', id: 'wayboard-widget-source' });
+  const browseDriveButton = el('button', {
+    className: 'btn-secondary btn-sm wayboard-widget-drive-button', type: 'button',
+    title: 'Browse Google Drive for a Waymark',
+  }, ['Browse Drive']);
+  const sheetLabel = el('div', { className: 'wayboard-widget-field wayboard-widget-sheet-field hidden' }, [
+    el('label', { for: 'wayboard-widget-source' }, ['Waymark to bring along']),
+    el('div', { className: 'wayboard-widget-sheet-picker' }, [sheetSelect, browseDriveButton]),
   ]);
   const sizeSelect = el('select', { className: 'wayboard-widget-control', name: 'size' }, [
     el('option', { value: 'normal' }, ['Single mark']),
@@ -418,24 +429,55 @@ function ensureWidgetManager() {
   closeButton.addEventListener('click', closeWidgetManager);
 
   const refreshSheetOptions = () => {
+    const selectedId = sheetSelect.value;
     sheetSelect.replaceChildren();
-    const sheets = availableSheets();
-    if (!sheets.length) {
-      sheetSelect.append(el('option', { value: '' }, ['No Waymarks on this trail yet']));
-    } else {
-      for (const sheet of sheets) {
-        const template = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
-        sheetSelect.append(el('option', { value: sheet.id }, [`${template?.icon || '📄'} ${sheet.name || 'Untitled Waymark'}`]));
-      }
+    const driveSheets = widgetManager ? [...widgetManager.driveSheets.values()] : [];
+    const sheets = [...availableSheets(), ...driveSheets];
+    const uniqueSheets = [...new Map(sheets.filter(sheet => sheet?.id).map(sheet => [sheet.id, sheet])).values()];
+    sheetSelect.append(el('option', { value: '' }, ['Choose a Waymark…']));
+    for (const sheet of uniqueSheets) {
+      const template = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
+      sheetSelect.append(el('option', { value: sheet.id }, [`${template?.icon || '📄'} ${sheet.name || 'Untitled Waymark'}`]));
     }
-    sheetSelect.disabled = !sheets.length;
+    sheetSelect.disabled = false;
+    if (selectedId && Array.from(sheetSelect.options).some(option => option.value === selectedId)) sheetSelect.value = selectedId;
     sheetLabel.classList.toggle('hidden', typeSelect.value !== 'sheet');
-    submitButton.disabled = typeSelect.value === 'sheet' && !sheets.length;
+    submitButton.disabled = typeSelect.value === 'sheet' && !sheetSelect.value;
   };
 
   typeSelect.addEventListener('change', refreshSheetOptions);
   sheetSelect.addEventListener('change', () => {
+    submitButton.disabled = typeSelect.value === 'sheet' && !sheetSelect.value;
     if (!titleInput.value.trim() && typeSelect.value === 'sheet') titleInput.placeholder = widgetTitle('sheet', sheetSelect.value);
+  });
+
+  browseDriveButton.addEventListener('click', async () => {
+    const previousLabel = browseDriveButton.textContent;
+    browseDriveButton.disabled = true;
+    browseDriveButton.textContent = 'Opening Drive…';
+    try {
+      const files = await api.picker.pickSpreadsheets({
+        includeSharedDrives: true,
+        title: 'Choose a Waymark for your Wayboard',
+      });
+      const file = files?.find(item => item?.id && item.mimeType === 'application/vnd.google-apps.spreadsheet');
+      if (!file) {
+        if (files?.length) showToast('Choose a Google spreadsheet to add as a Waymark widget.', 'info');
+        return;
+      }
+      widgetManager.driveSheets.set(file.id, { id: file.id, name: file.name || 'Untitled Waymark', templateKey: '' });
+      refreshSheetOptions();
+      sheetSelect.value = file.id;
+      submitButton.disabled = false;
+      if (!titleInput.value.trim()) titleInput.placeholder = file.name || 'Any Waymark';
+      sheetSelect.focus();
+      showToast(`${file.name || 'Waymark'} is ready to add to your Wayboard.`, 'success');
+    } catch (error) {
+      showToast(error.message || 'Could not open Google Drive.', 'error');
+    } finally {
+      browseDriveButton.disabled = false;
+      browseDriveButton.textContent = previousLabel;
+    }
   });
 
   form.addEventListener('submit', async event => {
@@ -443,7 +485,7 @@ function ensureWidgetManager() {
     const type = typeSelect.value;
     const sheetId = type === 'sheet' ? sheetSelect.value : '';
     if (type === 'sheet' && !sheetId) {
-      showToast('Open or pin a Waymark before adding it to your Wayboard.', 'info');
+      showToast('Choose a Waymark from Drive before adding it to your Wayboard.', 'info');
       return;
     }
     const current = getConfiguredWidgets();
@@ -452,7 +494,7 @@ function ensureWidgetManager() {
       showToast(`Your Wayboard can hold up to ${MAX_HOME_WIDGETS} widgets.`, 'info');
       return;
     }
-    const selectedSheet = type === 'sheet' ? availableSheets().find(sheet => sheet.id === sheetId) : null;
+    const selectedSheet = type === 'sheet' ? findWidgetSheet(sheetId) : null;
     const previous = editingId ? current.find(widget => widget.id === editingId) : null;
     const item = {
       id: editingId || `home-widget-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -474,7 +516,7 @@ function ensureWidgetManager() {
     showToast(editingId ? 'Wayboard mark updated' : 'Wayboard mark added', 'success');
   });
 
-  widgetManager = { overlay, dialog, form, typeSelect, titleInput, sheetSelect, sheetLabel, sizeSelect, submitButton, list, refreshSheetOptions };
+  widgetManager = { overlay, dialog, form, typeSelect, titleInput, sheetSelect, sheetLabel, sizeSelect, submitButton, list, refreshSheetOptions, driveSheets: new Map() };
   document.body.append(overlay);
   return widgetManager;
 }
@@ -524,7 +566,7 @@ function renderWidgetManagerList() {
       el('span', { className: 'wayboard-widget-manager-copy' }, [
         el('b', {}, [widget.title]),
         el('small', {}, [widget.type === 'sheet'
-          ? (availableSheets().find(sheet => sheet.id === widget.sheetId)?.name || widget.sheetName || 'Any Waymark')
+          ? (findWidgetSheet(widget.sheetId)?.name || widget.sheetName || 'Any Waymark')
           : type.label]),
       ]),
       el('div', { className: 'wayboard-widget-manager-actions' }, [
@@ -549,6 +591,7 @@ function editWidget(widget) {
   manager.refreshSheetOptions();
   if (widget.sheetId && !Array.from(manager.sheetSelect.options).some(option => option.value === widget.sheetId)) {
     manager.sheetSelect.append(el('option', { value: widget.sheetId }, [`📄 ${widget.sheetName || widget.title}`]));
+    manager.driveSheets.set(widget.sheetId, { id: widget.sheetId, name: widget.sheetName || widget.title, templateKey: widget.templateKey || '' });
     manager.sheetSelect.disabled = false;
     manager.submitButton.disabled = false;
   }

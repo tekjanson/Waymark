@@ -624,6 +624,8 @@ html[data-theme="light"] #wayboard-root.mode-37 {
 .wayboard-widget-current-section h4 { font-size: 0.9rem; }
 .wayboard-widget-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .wayboard-widget-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--color-text-secondary); font-size: 0.76rem; font-weight: 600; }
+.wayboard-widget-sheet-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; min-width: 0; }
+.wayboard-widget-drive-button { align-self: stretch; white-space: nowrap; }
 .wayboard-widget-control { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 0.85rem; }
 .wayboard-widget-form-actions { grid-column: 1 / -1; justify-content: flex-end; }
 .wayboard-widget-form-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
