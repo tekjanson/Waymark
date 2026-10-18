@@ -314,6 +314,10 @@ async function loadPanel(index, sheetId, db) {
     content.innerHTML = '';
     const templateContainer = el('div', { className: 'dashboard-template-wrap' });
     content.appendChild(templateContainer);
+    template._currentSheetId = sheetId;
+    template._currentNumericSheetId = data.numericSheetId ?? 0;
+    template._currentSheetTitle = data.sheetTitle || data.tabs?.[0]?.title || 'Sheet1';
+    template._tabs = data.tabs || [];
     template.render(templateContainer, rows, template.columns(
       headers.map(h => (h || '').toLowerCase().trim())
     ), template);

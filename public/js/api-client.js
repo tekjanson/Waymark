@@ -1076,11 +1076,13 @@ export const api = {
           const existing = data.tabs.find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
           if (existing) {
             existing.values = rows;
+            if (data.tabs[0] === existing) data.values = rows;
           } else {
             const nextId = Math.max(0, ...data.tabs.map(t => t.numericSheetId || 0)) + 1;
             data.tabs.push({ title: tabTitle, numericSheetId: nextId, values: rows });
           }
         }
+        persistIfCreatedSheet(spreadsheetId, data);
         const record = {
           type: 'tab-write',
           spreadsheetId, tabTitle, rows,

@@ -6,7 +6,14 @@
    then renders them in a plan view with a simple PDF/print export.
    ============================================================ */
 
-import { cell, el, registerTemplate, showToast } from '../shared.js';
+import {
+  cell,
+  el,
+  readSheetTab,
+  registerTemplate,
+  showToast,
+  writeSheetTab,
+} from '../shared.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
 import {
   UNITS_PER_FOOT,
@@ -16,6 +23,9 @@ import {
   hasSymbolDrawing,
 } from './symbols.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const FLOORPLAN_STATE_TAB = 'Waymark Floor Plan';
+const FLOORPLAN_STATE_HEADER = 'Waymark Floor Plan State v1';
+const FLOORPLAN_STATE_CHUNK_SIZE = 40000;
 
 function svgEl(tag, attrs = {}, children = []) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -377,7 +387,6 @@ const definition = {
   icon: '🏠',
   color: '#0f766e',
   priority: 22,
-  noAutoRefresh: true,
   defaultHeaders: ['Type', 'Label', 'Layer', 'X', 'Y', 'Width', 'Height', 'Length', 'Notes'],
 
   detect(lower) {
@@ -467,21 +476,46 @@ const definition = {
 
     const sheetId = String(template?._currentSheetId || 'unknown-sheet');
     const draftStorageKey = `waymark_floorplan_draft_${sheetId}`;
+    let loadedSheetState = false;
     let draftCustomLayers = null;
+    let savedSheetState = null;
+    const stateTab = readSheetTab(template?._tabs, FLOORPLAN_STATE_TAB);
+    if (stateTab && Array.isArray(stateTab.values)) {
+      try {
+        const serialized = stateTab.values.slice(1).map(row => String(row?.[0] || '')).join('');
+        const saved = JSON.parse(serialized);
+        if (saved?.schema === 'waymark.floorplan-state' && Array.isArray(saved.items)) {
+          savedSheetState = saved;
+        }
+      } catch (error) {
+        console.warn('[floorplan] sheet-state-load failed:', error);
+      }
+    }
+    let localDraft = null;
     try {
       const rawDraft = window.localStorage.getItem(draftStorageKey);
-      if (rawDraft) {
-        const parsed = JSON.parse(rawDraft);
-        if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-          items = parsed.items;
-          debugLog('draft-load', { sheetId, count: items.length });
-        }
-        if (parsed && Array.isArray(parsed.customLayers)) {
-          draftCustomLayers = parsed.customLayers;
-        }
-      }
+      if (rawDraft) localDraft = JSON.parse(rawDraft);
     } catch (error) {
       console.warn('[floorplan] draft-load failed:', error);
+    }
+    if (savedSheetState) {
+      items = savedSheetState.items;
+      draftCustomLayers = Array.isArray(savedSheetState.customLayers) ? savedSheetState.customLayers : null;
+      loadedSheetState = true;
+      // Recover a newer local edit if the browser closed while its sheet write was pending.
+      const localUpdatedAt = Date.parse(localDraft?.updatedAt || '');
+      const sheetUpdatedAt = Date.parse(savedSheetState.updatedAt || '');
+      const localDraftPending = localDraft?.updatedAt && localDraft.syncedAt !== localDraft.updatedAt;
+      if (Array.isArray(localDraft?.items) && localDraftPending && localUpdatedAt && (!sheetUpdatedAt || localUpdatedAt > sheetUpdatedAt)) {
+        items = localDraft.items;
+        draftCustomLayers = Array.isArray(localDraft.customLayers) ? localDraft.customLayers : null;
+        loadedSheetState = false;
+      }
+      debugLog('sheet-state-load', { sheetId, count: items.length });
+    } else if (Array.isArray(localDraft?.items)) {
+      items = localDraft.items;
+      draftCustomLayers = Array.isArray(localDraft.customLayers) ? localDraft.customLayers : null;
+      debugLog('draft-load', { sheetId, count: items.length });
     }
 
     const toolButton = (tool, icon, label) => el('button', {
@@ -781,26 +815,97 @@ const definition = {
     };
 
     let persistTimer = null;
-    function persistDraftState() {
+    let cloudSaveQueue = Promise.resolve();
+    let pendingCloudWrites = 0;
+    let cloudSaveFailed = false;
+    let cloudSaveErrorShown = false;
+
+    function buildStatePayload() {
+      return {
+        schema: 'waymark.floorplan-state',
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        items: state.items,
+        customLayers: state.customLayers,
+      };
+    }
+
+    function persistDraftState(payload) {
       try {
-        const payload = JSON.stringify({
-          updatedAt: new Date().toISOString(),
-          items: state.items,
-          customLayers: state.customLayers,
-        });
-        window.localStorage.setItem(draftStorageKey, payload);
+        window.localStorage.setItem(draftStorageKey, JSON.stringify(payload));
       } catch (error) {
         console.warn('[floorplan] draft-save failed:', error);
       }
     }
 
+    function updateCachedSheetTab(rows) {
+      if (!Array.isArray(template?._tabs)) return;
+      let tab = readSheetTab(template._tabs, FLOORPLAN_STATE_TAB);
+      if (!tab) {
+        tab = { title: FLOORPLAN_STATE_TAB, values: rows };
+        template._tabs.push(tab);
+      } else {
+        tab.values = rows;
+      }
+    }
+
+    function markLocalDraftSynced(payload) {
+      try {
+        const draft = JSON.parse(window.localStorage.getItem(draftStorageKey) || 'null');
+        if (draft?.updatedAt !== payload.updatedAt) return;
+        draft.syncedAt = payload.updatedAt;
+        window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
+      } catch (error) {
+        console.warn('[floorplan] draft-sync-marker failed:', error);
+      }
+    }
+
+    function queueSheetStateWrite(payload) {
+      if (sheetId === 'unknown-sheet') return;
+      const serialized = JSON.stringify(payload);
+      const chunks = serialized.match(new RegExp(`[\\s\\S]{1,${FLOORPLAN_STATE_CHUNK_SIZE}}`, 'g')) || [''];
+      const rows = [[FLOORPLAN_STATE_HEADER], ...chunks.map(chunk => [chunk])];
+      updateCachedSheetTab(rows);
+
+      pendingCloudWrites += 1;
+      cloudSaveFailed = false;
+      setFeedback('Saving to sheet');
+      cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(async () => {
+        await writeSheetTab(sheetId, FLOORPLAN_STATE_TAB, rows);
+        markLocalDraftSynced(payload);
+        cloudSaveFailed = false;
+        cloudSaveErrorShown = false;
+        if (pendingCloudWrites <= 1) setFeedback('Saved to sheet');
+      }).catch(error => {
+        cloudSaveFailed = true;
+        console.warn('[floorplan] sheet-state-save failed:', error);
+        setFeedback('Saved locally · sheet sync failed');
+        if (!cloudSaveErrorShown) {
+          showToast('Floor plan saved locally; sheet sync failed', 'error');
+          cloudSaveErrorShown = true;
+        }
+      }).finally(() => {
+        pendingCloudWrites = Math.max(0, pendingCloudWrites - 1);
+      });
+    }
+
     function queuePersistDraft() {
       if (persistTimer) clearTimeout(persistTimer);
       persistTimer = setTimeout(() => {
-        persistDraftState();
         persistTimer = null;
+        const payload = buildStatePayload();
+        persistDraftState(payload);
+        queueSheetStateWrite(payload);
       }, 350);
     }
+
+    template.canAutoRefresh = () => (
+      !state.gestureActive
+      && !persistTimer
+      && pendingCloudWrites === 0
+      && !cloudSaveFailed
+      && !document.querySelector('.floorplan-ai-overlay')
+    );
 
     function recordObjectMetadata(item, field, value) {
       if (!window.__WAYMARK_RECORDS__) window.__WAYMARK_RECORDS__ = [];
@@ -4552,6 +4657,7 @@ const definition = {
     svg.append(scaleBar);
 
     container.append(board);
+    if (!loadedSheetState && sheetId !== 'unknown-sheet') queuePersistDraft();
   },
 };
 
