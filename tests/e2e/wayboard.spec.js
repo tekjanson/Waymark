@@ -182,6 +182,64 @@ test('home templates retain their defining layouts with user widgets enabled', a
   expect(new Set(layouts.allModes.map(layout => `${layout.gridDisplay}:${layout.quickmarkRowDisplay}:${layout.quickmarkRadius}:${layout.quickmarkBackground}:${layout.quickmarkBottomBorder}`)).size).toBeGreaterThan(10);
 });
 
+test('all 50 layouts keep quick marks and greetings aligned at desktop and phone widths', async ({ page }) => {
+  await setupApp(page);
+  await page.addStyleTag({ content: '#wayboard-root, #wayboard-root * { transition: none !important; }' });
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const alignmentIssues = await page.evaluate(() => {
+      const root = document.getElementById('wayboard-root');
+      const issues = [];
+      for (let mode = 1; mode <= 50; mode++) {
+        root.className = `wayboard-root mode-${mode}`;
+        const workspace = root.querySelector('.workspace').getBoundingClientRect();
+        const quickmarks = root.querySelector('.wayboard-widget-quickmarks');
+        const marksStyle = getComputedStyle(quickmarks);
+        if (marksStyle.display === 'none') {
+          issues.push(`mode ${mode}: quick marks are hidden`);
+          continue;
+        }
+        const marksBox = quickmarks.getBoundingClientRect();
+        if (marksBox.left < workspace.left - 2 || marksBox.right > workspace.right + 2) {
+          issues.push(`mode ${mode}: quick-mark panel escapes the Wayboard`);
+        }
+        for (const action of quickmarks.querySelectorAll('.home-action-card')) {
+          if (action.getBoundingClientRect().width < 80) {
+            issues.push(`mode ${mode}: quick-mark action is narrower than 80px`);
+            break;
+          }
+        }
+        const canvasScrollsHorizontally = ['auto', 'scroll'].includes(getComputedStyle(root.querySelector('main.canvas')).overflowX);
+        if (!canvasScrollsHorizontally) {
+          for (const widget of root.querySelectorAll('.wayboard-grid > .wayboard-widget')) {
+            const widgetBox = widget.getBoundingClientRect();
+            if (widgetBox.left < workspace.left - 2 || widgetBox.right > workspace.right + 2) {
+              issues.push(`mode ${mode}: widget escapes the Wayboard bounds`);
+              break;
+            }
+          }
+        }
+        const greeting = root.querySelector('.greeting-banner');
+        if (getComputedStyle(greeting).display !== 'none') {
+          const greetingBox = greeting.getBoundingClientRect();
+          if (greetingBox.left < workspace.left - 2 || greetingBox.right > workspace.right + 2
+              || greetingBox.top < workspace.top - 2) {
+            issues.push(`mode ${mode}: greeting escapes the Wayboard bounds (${Math.round(greetingBox.left)}, ${Math.round(greetingBox.top)}, ${Math.round(greetingBox.right)}, ${Math.round(greetingBox.bottom)}; workspace ${Math.round(workspace.left)}, ${Math.round(workspace.top)}, ${Math.round(workspace.right)}, ${Math.round(workspace.bottom)})`);
+          }
+        }
+      }
+      return issues;
+    });
+    expect(alignmentIssues, `Wayboard alignment at ${viewport.width} × ${viewport.height}`).toEqual([]);
+  }
+});
+
 test('Profile settings lists all 50 home layout templates', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
