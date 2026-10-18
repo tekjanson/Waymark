@@ -1077,19 +1077,4 @@ export const EXAMPLE_SHEETS = {
       ['',        '',               '',           '',           '',     'Content Calendar - 3 months',    '1',  '1200', ''],
     ],
   },
-
-  /* ---- Drive Organizer examples ---- */
-  'Drive Cleanup': {
-    folder: 'Examples',
-    headers: ['File ID', 'Current Name', 'Current Folder', 'Type', 'Last Modified', 'Flags', 'Proposed Folder', 'Proposed Name', 'Confidence', 'Action'],
-    rows: [
-      ['file-001', 'kitchen floorplan FINAL v2', '/Downloads',      'Sheet', '2026-09-01', '',          '', '', '', ''],
-      ['file-002', 'oct bank statement',          '/Downloads',      'PDF',   '2026-10-02', 'Duplicate', '', '', '', ''],
-      ['file-003', 'login flow diagram',          '/Downloads',      'Sheet', '2026-08-15', '',          '', '', '', ''],
-      ['file-004', 'sprint board q4',             '/Work',           'Sheet', '2026-09-20', '',          '', '', '', ''],
-      ['file-005', 'IMG_2931',                    '/Camera Uploads', 'Image', '2024-01-10', 'Stale',     '', '', '', ''],
-      ['file-006', 'oct bank statement',          '/Archive',        'PDF',   '2026-10-02', 'Duplicate', '', '', '', ''],
-      ['file-007', 'random notes',                '/Downloads',      'Doc',   '2026-07-01', '',          '', '', '', ''],
-    ],
-  },
 };

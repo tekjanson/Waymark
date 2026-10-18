@@ -1639,49 +1639,10 @@
       "fixtureFiles": [
         "floorplan-house"
       ]
-    },
-    {
-      "key": "organizer",
-      "name": "Drive Organizer",
-      "icon": "🗂️",
-      "color": "#0d9488",
-      "priority": 24,
-      "category": "Productivity",
-      "detectSignals": [
-        "file id",
-        "current name",
-        "current folder",
-        "proposed folder",
-        "proposed name",
-        "confidence",
-        "action"
-      ],
-      "columnRoles": [
-        "fileId",
-        "currentName",
-        "currentFolder",
-        "fileType",
-        "modified",
-        "flags",
-        "proposedFolder",
-        "proposedName",
-        "confidence",
-        "action"
-      ],
-      "interactive": true,
-      "interactionType": "dashboard",
-      "interactionStates": [],
-      "exampleCount": 1,
-      "fixtureIds": [
-        "sheet-076"
-      ],
-      "fixtureFiles": [
-        "organizer-messy"
-      ]
     }
   ],
   "nextSheetId": "sheet-077",
-  "totalTemplates": 43,
+  "totalTemplates": 42,
   "categories": [
     "Productivity",
     "Engineering",

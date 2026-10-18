@@ -189,16 +189,6 @@ const ROLE_LABELS = {
   'floorplan.length': 'Length / Span (feet)',
   'floorplan.notes': 'Measurement Notes / Detail',
 
-  'organizer.fileId': 'Drive File ID',
-  'organizer.currentName': 'Current File Name',
-  'organizer.currentFolder': 'Current Folder / Path',
-  'organizer.fileType': 'File Type (Sheet, Doc, Image…)',
-  'organizer.modified': 'Last Modified Date',
-  'organizer.flags': 'Flags (Duplicate / Stale)',
-  'organizer.proposedFolder': 'Proposed Folder',
-  'organizer.proposedName': 'Proposed Name',
-  'organizer.confidence': 'AI Confidence (0–100)',
-  'organizer.action': 'Action (Move / Rename / Archive / Skip)',
   // Social Feed
   'social.text': 'Post / Message content',
   'social.author': 'Author / Posted by',

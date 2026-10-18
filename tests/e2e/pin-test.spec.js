@@ -1,6 +1,17 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToSheet } = require('../helpers/test-utils');
 
+/**
+ * Pin the current sheet to Home via the contextual pin menu.
+ * Clicking 📌 opens a popover; the first item toggles the Home pin.
+ */
+async function togglePinViaMenu(page) {
+  await page.click('#sheet-pin-btn');
+  await page.waitForSelector('.pin-menu', { timeout: 3_000 });
+  await page.locator('.pin-menu .pin-menu-item').first().click();
+  await page.waitForSelector('.pin-menu', { state: 'detached', timeout: 3_000 });
+}
+
 test('pin a sheet → navigate home → verify card → unpin → verify gone', async ({ page }) => {
   await setupApp(page);
   
@@ -14,8 +25,8 @@ test('pin a sheet → navigate home → verify card → unpin → verify gone', 
   const pinBtn = page.locator('#sheet-pin-btn');
   await expect(pinBtn).not.toHaveClass(/pinned/);
   
-  // Pin the sheet
-  await pinBtn.click();
+  // Pin the sheet via the contextual menu
+  await togglePinViaMenu(page);
   
   // Verify pin button has pinned class
   await expect(pinBtn).toHaveClass(/pinned/);
@@ -23,7 +34,7 @@ test('pin a sheet → navigate home → verify card → unpin → verify gone', 
   // Verify toast
   const toast = page.locator('.toast');
   await expect(toast).toBeVisible({ timeout: 3000 });
-  await expect(toast).toContainText('pinned');
+  await expect(toast).toContainText('Pinned to Home');
   
   // Navigate to home
   await page.evaluate(() => { window.location.hash = '#/'; });
@@ -41,10 +52,10 @@ test('pin a sheet → navigate home → verify card → unpin → verify gone', 
   await pinnedCards.first().click();
   await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 5_000 });
   
-  // Unpin the sheet
+  // Unpin the sheet via the menu
   const pinBtn2 = page.locator('#sheet-pin-btn');
   await expect(pinBtn2).toHaveClass(/pinned/);
-  await pinBtn2.click();
+  await togglePinViaMenu(page);
   
   // Verify pinned class removed
   await expect(pinBtn2).not.toHaveClass(/pinned/);
@@ -61,8 +72,8 @@ test('pinned sheet persists after page reload', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#sheet-pin-btn', { timeout: 5_000 });
-  await page.locator('#sheet-pin-btn').click();
-  await expect(page.locator('.toast')).toContainText('pinned');
+  await togglePinViaMenu(page);
+  await expect(page.locator('.toast')).toContainText('Pinned to Home');
   
   // Reload the page
   await page.reload();
@@ -79,18 +90,18 @@ test('pinned sheet persists after page reload', async ({ page }) => {
   await expect(cards).toHaveCount(1, { timeout: 5_000 });
 });
 
-test('rapid pin/unpin/pin results in pinned state', async ({ page }) => {
+test('pin via menu, unpin via menu, pin again results in pinned state', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#sheet-pin-btn', { timeout: 5_000 });
   const pinBtn = page.locator('#sheet-pin-btn');
   
-  // Rapid: pin → unpin → pin
-  await pinBtn.click();
-  await pinBtn.click();
-  await pinBtn.click();
+  // pin → unpin → pin (each via the contextual menu)
+  await togglePinViaMenu(page);
+  await togglePinViaMenu(page);
+  await togglePinViaMenu(page);
   
-  // Should end up pinned (odd number of clicks)
+  // Should end up pinned (odd number of toggles)
   await expect(pinBtn).toHaveClass(/pinned/);
   
   // Navigate home and verify

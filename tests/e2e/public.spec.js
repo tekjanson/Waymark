@@ -153,8 +153,7 @@ test('share modal includes public link section', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items *', { timeout: 5000 });
 
-  // Open overflow menu then click share
-  await openOverflowMenu(page);
+  // Share lives directly in the header toolbar
   await page.click('#share-btn');
   await page.waitForSelector('#share-modal', { timeout: 3000 });
 
@@ -170,8 +169,7 @@ test('share modal public link has copy button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items *', { timeout: 5000 });
 
-  // Open overflow menu then click share
-  await openOverflowMenu(page);
+  // Share lives directly in the header toolbar
   await page.click('#share-btn');
   await page.waitForSelector('#share-modal', { timeout: 3000 });
 

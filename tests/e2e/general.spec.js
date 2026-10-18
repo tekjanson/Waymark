@@ -9,9 +9,9 @@ test('template badge hidden for empty sheets', async ({ page }) => {
   await expect(page.locator('#template-badge')).toBeHidden();
 });
 
-test('generate examples button visible on home screen', async ({ page }) => {
+test('generate examples quick action visible on home screen', async ({ page }) => {
   await setupApp(page);
-  await expect(page.locator('#menu-examples-btn')).toBeVisible();
+  await expect(page.locator('#home-action-examples')).toBeVisible();
 });
 
 test('folder view shows open in drive button', async ({ page }) => {
@@ -57,15 +57,14 @@ test('duplicate sheet button visible and creates copy', async ({ page }) => {
   expect(copyRecord.rows.length).toBeGreaterThan(0);
 });
 
-test('share button visible in overflow menu', async ({ page }) => {
+test('share button visible in header', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   const shareBtn = page.locator('#share-btn');
   await expect(shareBtn).toBeVisible();
-  await expect(shareBtn).toContainText('Share');
+  await expect(shareBtn).toHaveAttribute('aria-label', 'Share sheet');
 });
 
 test('share button opens share modal with links', async ({ page }) => {
@@ -73,7 +72,6 @@ test('share button opens share modal with links', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
@@ -107,7 +105,6 @@ test('share modal has copy buttons', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -121,7 +118,6 @@ test('share modal exposes invite permission controls', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -135,7 +131,6 @@ test('grant access from share modal records a drive permission request', async (
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -158,7 +153,6 @@ test('share modal closes on close button', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
   await expect(page.locator('#share-modal')).toBeVisible();
@@ -172,7 +166,6 @@ test('share modal closes on overlay click', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -186,7 +179,6 @@ test('share modal has manage sharing link', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#checklist-items', { timeout: 5_000 });
 
-  await openOverflowMenu(page);
   await page.locator('#share-btn').click();
   await page.waitForSelector('#share-modal', { timeout: 5_000 });
 
@@ -385,8 +377,10 @@ test('pinning a sheet shows a toast notification', async ({ page }) => {
   await navigateToSheet(page, 'sheet-001');
   await page.waitForSelector('#sheet-pin-btn', { timeout: 5_000 });
   await page.locator('#sheet-pin-btn').click();
+  await page.waitForSelector('.pin-menu', { timeout: 3_000 });
+  await page.locator('.pin-menu .pin-menu-item').first().click();
 
   const toast = page.locator('.toast');
   await expect(toast).toBeVisible({ timeout: 3000 });
-  await expect(toast).toContainText('pinned');
+  await expect(toast).toContainText('Pinned to Home');
 });
