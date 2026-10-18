@@ -30,7 +30,7 @@ function driveError(label, res) {
  */
 async function list(token, params = {}) {
   const qs = new URLSearchParams({
-    fields: 'nextPageToken,files(id,name,mimeType,owners,shared,modifiedTime,parents)',
+    fields: 'nextPageToken,files(id,name,mimeType,owners,shared,createdTime,modifiedTime,parents)',
     pageSize: '100',
     ...params,
   });
@@ -213,16 +213,25 @@ export async function findFile(token, name, parentId) {
 }
 
 /**
- * Search Drive globally for a file by exact name (any location, no parent filter).
- * Returns the first match, or null if not found.
+ * Search Drive globally for all files with an exact name, including shared files.
+ * Results are ordered oldest-first with ID as a stable tie-breaker.
  * @param {string} token
  * @param {string} name
- * @returns {Promise<{id: string, name: string}|null>}
+ * @returns {Promise<Array<{id: string, name: string}>>}
  */
-export async function findFileGlobal(token, name) {
+export async function findFilesGlobal(token, name) {
   const q = `name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
-  const result = await list(token, { q });
-  return result.files?.[0] || null;
+  const result = await listAll(token, { q, orderBy: 'createdTime', pageSize: '100' });
+  const matches = result.files || [];
+  matches.sort((a, b) =>
+    String(a.createdTime || '').localeCompare(String(b.createdTime || '')) ||
+    String(a.id || '').localeCompare(String(b.id || ''))
+  );
+  return matches;
+}
+
+export async function findFileGlobal(token, name) {
+  return (await findFilesGlobal(token, name))[0] || null;
 }
 
 /**

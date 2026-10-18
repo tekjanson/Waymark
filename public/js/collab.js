@@ -1,7 +1,7 @@
 /* ============================================================
    collab.js — Auto-provisioned Share Ledger + social pipeline
    ------------------------------------------------------------
-   Each sharing contact or Waymarker Crew (Group) gets ONE dedicated
+   Each direct-contact pair or Waymarker Crew (Group) gets ONE dedicated
    "WayMark Share Ledger" Google Sheet with four tabs:
      • Shared_Docs       — ledger of every document shared + its permission.
      • Presence          — live online/away/offline presence per user.
@@ -44,10 +44,27 @@ export function currentEmail() {
   }
 }
 
-/** Normalise a contact/group target into a stable ledger key. */
-function ledgerKey({ contactEmail, group }) {
-  if (group) return `group:${String(group).trim().toLowerCase()}`;
-  return `contact:${String(contactEmail || '').trim().toLowerCase()}`;
+/**
+ * Give both ends of a direct contact relationship the same ledger identity.
+ * Older versions used `contact:<other person's email>`, which meant each
+ * account created a different sheet for the same pair.
+ */
+function ledgerIdentity(target = {}) {
+  const group = String(target.group || '').trim();
+  if (group) return { key: `group:${group.toLowerCase()}`, legacyKeys: [] };
+
+  const contactEmail = String(target.contactEmail || '').trim().toLowerCase();
+  const me = currentEmail();
+  if (contactEmail && me && contactEmail !== me) {
+    const emails = [me, contactEmail].sort();
+    return {
+      key: `contact-pair:${emails.join('::')}`,
+      legacyKeys: emails.map(email => `contact:${email}`),
+    };
+  }
+
+  // Preserve the previous identity when the signed-in email is unavailable.
+  return { key: `contact:${contactEmail}`, legacyKeys: [] };
 }
 
 /** Deterministic Drive file name for a ledger key. */
@@ -58,43 +75,151 @@ function ledgerFileName(key) {
 /* ---------- Public API ---------- */
 
 /**
- * Find or create the dedicated Share Ledger for a contact or group, provision
+ * Find or create the shared Share Ledger for a contact pair or group, provision
  * its four tabs, grant the contact access, write the ledger ID back into the
  * Contacts Waymark, and record a local mapping.
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<{ key: string, sheetId: string }>}
  */
 export async function ensureShareLedger(target) {
-  const key = ledgerKey(target);
+  const identity = ledgerIdentity(target);
+  const { key } = identity;
   if (key === 'contact:') throw new Error('A contact email or group is required.');
 
-  const mapped = userData.getShareLedgerFor(key);
-  if (mapped) return { key, sheetId: mapped.sheetId };
-
-  const name = ledgerFileName(key);
-  let sheetId = null;
-  try {
-    const found = await api.drive.findFileGlobal(name);
-    if (found && found.id) sheetId = found.id;
-  } catch {
-    /* fall through to create */
-  }
+  const existing = await findExistingShareLedger(target);
+  let sheetId = existing?.sheetId || null;
+  let createdHere = false;
 
   if (!sheetId) {
-    const created = await api.sheets.createSpreadsheet(name, [SHARED_DOCS_HEADERS], null);
+    const created = await api.sheets.createSpreadsheet(ledgerFileName(key), [SHARED_DOCS_HEADERS], null);
     sheetId = created.spreadsheetId || created.id;
+    createdHere = true;
     await api.sheets.writeTab(sheetId, SHARED_DOCS_TAB, [SHARED_DOCS_HEADERS]);
     await api.sheets.writeTab(sheetId, PRESENCE_TAB, [PRESENCE_HEADERS]);
     await api.sheets.writeTab(sheetId, CHAT_TAB, [CHAT_HEADERS]);
     await api.sheets.writeTab(sheetId, SIGNALING_TAB, [SIGNALING_HEADERS]);
-    if (target.contactEmail) {
-      try { await api.drive.createDrivePermission(sheetId, target.contactEmail.trim().toLowerCase(), 'writer'); } catch { /* best effort */ }
+  }
+
+  // Grant access when this account owns the ledger. The other end can already
+  // read a discovered ledger, but may not have permission to share it onward.
+  let permissionAttempted = existing?.permissionAttempted === true;
+  const shouldGrantAccess = target.contactEmail && (createdHere ||
+    (existing?.ownerEmail === currentEmail() && !permissionAttempted));
+  if (shouldGrantAccess) {
+    try {
+      await api.drive.createDrivePermission(sheetId, target.contactEmail.trim().toLowerCase(), 'writer');
+    } catch (err) {
+      // A fresh ledger must actually be shared or the other account will be
+      // left on its own sheet. Existing sheets may already grant access, or
+      // may be owned by the other contact, so a repeated grant is best-effort.
+      if (createdHere) throw err;
+    }
+    permissionAttempted = true;
+  }
+  if (createdHere || shouldGrantAccess) {
+    await rememberShareLedger(
+      target,
+      identity,
+      sheetId,
+      existing?.ownerEmail || (createdHere ? currentEmail() : ''),
+      permissionAttempted
+    );
+  }
+  await linkLedgerToContacts(target, sheetId, existing?.mergedSheetIds || []);
+  return { key, sheetId };
+}
+
+/**
+ * Look up an already shared ledger without creating one. This lets a contact
+ * discover the sheet the other person provisioned, even before they have a
+ * local mapping of their own.
+ * @param {{ contactEmail?: string, group?: string }} target
+ * @returns {Promise<{key: string, sheetId: string}|null>}
+ */
+export async function findExistingShareLedger(target) {
+  const identity = ledgerIdentity(target);
+  const { key, legacyKeys } = identity;
+  if (!key || key === 'contact:') return null;
+
+  const mapped = userData.getShareLedgerFor(key);
+
+  // Search the canonical pair name first, then both old per-contact names in
+  // a stable email order. Finding every match also lets simultaneous first
+  // use settle on one canonical file and merge older chat/share history.
+  const candidateKeys = [key, ...legacyKeys];
+  const candidates = [];
+  for (const candidateKey of candidateKeys) {
+    try {
+      const files = await api.drive.findFilesGlobal(ledgerFileName(candidateKey));
+      for (const file of files || []) if (file?.id) candidates.push(file);
+    } catch {
+      /* continue to other known names and local mappings */
     }
   }
 
-  await userData.addShareLedger({ key, contactEmail: target.contactEmail, group: target.group, sheetId });
-  await linkLedgerToContacts(target, sheetId);
-  return { key, sheetId };
+  // Include a local legacy mapping that Drive search could not resolve, then
+  // de-duplicate IDs. Candidate insertion order is deterministic: canonical
+  // name, then old names ordered by participant email, then mapped fallbacks.
+  for (const legacyKey of legacyKeys) {
+    const legacy = userData.getShareLedgerFor(legacyKey);
+    if (legacy?.sheetId && !candidates.some(file => file.id === legacy.sheetId)) {
+      candidates.push({
+        id: legacy.sheetId,
+        name: ledgerFileName(legacyKey),
+        owners: legacy.ownerEmail ? [{ emailAddress: legacy.ownerEmail }] : [],
+      });
+    }
+  }
+  const uniqueCandidates = candidates.filter((file, index, all) =>
+    all.findIndex(candidate => candidate.id === file.id) === index
+  );
+  if (uniqueCandidates.length) {
+    const primary = uniqueCandidates[0];
+    const ownerEmail = (primary.owners || []).find(owner => owner.emailAddress)?.emailAddress?.trim().toLowerCase() || '';
+    if (uniqueCandidates.length > 1) {
+      await mergeLedgerHistory(primary.id, uniqueCandidates.slice(1).map(file => file.id));
+    }
+    const hasLegacyMapping = legacyKeys.some(legacyKey => userData.getShareLedgerFor(legacyKey));
+    const permissionAttempted = mapped?.sheetId === primary.id && mapped.permissionAttempted === true;
+    if (mapped?.sheetId !== primary.id || hasLegacyMapping || (ownerEmail && mapped?.ownerEmail !== ownerEmail)) {
+      await rememberShareLedger(
+        target,
+        identity,
+        primary.id,
+        ownerEmail || mapped?.ownerEmail || '',
+        permissionAttempted
+      );
+    }
+    return {
+      key,
+      sheetId: primary.id,
+      ownerEmail: ownerEmail || mapped?.ownerEmail || '',
+      permissionAttempted,
+      mergedSheetIds: uniqueCandidates.slice(1).map(file => file.id),
+    };
+  }
+
+  // If Drive search is temporarily unavailable, keep using the already-known
+  // pair mapping rather than creating another spreadsheet.
+  if (mapped?.sheetId) return {
+    key,
+    sheetId: mapped.sheetId,
+    ownerEmail: mapped.ownerEmail || '',
+    permissionAttempted: mapped.permissionAttempted === true,
+  };
+  return null;
+}
+
+async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', permissionAttempted = false) {
+  await userData.addShareLedger({
+    key: identity.key,
+    contactEmail: target.contactEmail,
+    group: target.group,
+    sheetId,
+    ownerEmail,
+    permissionAttempted,
+    aliases: identity.legacyKeys,
+  });
 }
 
 /**
@@ -160,8 +285,11 @@ export async function pollShareLedgers() {
         // Only notify when a collaborator shared a document WITH me.
         if (!me || sharedWith !== me) continue;
         const who = l.contactEmail || l.group || 'A collaborator';
+        const notificationId = r.Shared_Timestamp
+          ? `share:${r.Document_ID || ''}:${sharedWith}:${r.Shared_Timestamp}:${r.Group || ''}`
+          : `${l.sheetId}:${i}`;
         addNotification({
-          id: `${l.sheetId}:${i}`,
+          id: notificationId,
           type: 'share',
           title: `${who} shared "${r.Document_Title || 'a Waymark'}"`,
           body: `${r.Waymark_Type || ''} • ${r.Permission_Level || 'view'} access`.trim(),
@@ -229,7 +357,7 @@ export async function publishPresence(target, opts = {}) {
  * @returns {Promise<Array<{ email: string, name: string, status: string }>>}
  */
 export async function readPresence(target) {
-  const mapped = userData.getShareLedgerFor(ledgerKey(target));
+  const mapped = await findExistingShareLedger(target);
   if (!mapped) return [];
   const rows = await readTab(mapped.sheetId, PRESENCE_TAB);
   const latest = new Map();
@@ -276,10 +404,16 @@ export async function sendChat(target, text, attachedLink = '') {
  * @returns {Promise<Array<{ sender: string, text: string, ts: string }>>}
  */
 export async function readChat(target) {
-  const mapped = userData.getShareLedgerFor(ledgerKey(target));
+  const mapped = await findExistingShareLedger(target);
   if (!mapped) return [];
   const rows = await readTab(mapped.sheetId, CHAT_TAB);
-  return rows.map(r => ({ sender: r.Sender_Email || '', text: r.Message_Text || '', ts: r.Timestamp_UTC || '' }));
+  const seen = new Set();
+  return rows.filter(row => {
+    const key = row.Message_ID || `${row.Sender_Email || ''}:${row.Timestamp_UTC || ''}:${row.Message_Text || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(r => ({ sender: r.Sender_Email || '', text: r.Message_Text || '', ts: r.Timestamp_UTC || '' }));
 }
 
 /* ---------- Internal ---------- */
@@ -305,6 +439,47 @@ async function readTab(sheetId, tabTitle) {
     });
 }
 
+/** Merge retained chat and sharing history when old account-specific ledgers
+ * are folded into the deterministic shared ledger. Append only unseen rows. */
+async function mergeLedgerHistory(primaryId, otherIds) {
+  for (const tabTitle of [SHARED_DOCS_TAB, CHAT_TAB]) {
+    try {
+      const primary = await readTabValues(primaryId, tabTitle);
+      if (!primary.length) continue;
+      const seen = new Set(primary.slice(1).map(row => rowKey(tabTitle, row)));
+      const additions = [];
+      for (const otherId of otherIds) {
+        if (otherId === primaryId) continue;
+        try {
+          const source = await readTabValues(otherId, tabTitle);
+          for (const row of source.slice(1)) {
+            const rowId = rowKey(tabTitle, row);
+            if (seen.has(rowId)) continue;
+            seen.add(rowId);
+            additions.push(row);
+          }
+        } catch {
+          /* The contact may not have access to every historical ledger. */
+        }
+      }
+      if (additions.length) await api.sheets.appendRows(primaryId, tabTitle, additions);
+    } catch {
+      /* Keep social usable if a legacy sheet cannot be migrated. */
+    }
+  }
+}
+
+function rowKey(tabTitle, row) {
+  if (tabTitle === CHAT_TAB && row[0]) return `id:${row[0]}`;
+  return JSON.stringify(row);
+}
+
+async function readTabValues(sheetId, tabTitle) {
+  const data = await api.sheets.getSpreadsheet(sheetId);
+  const tab = (data.tabs || []).find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
+  return Array.isArray(tab?.values) ? tab.values : [];
+}
+
 /**
  * Write the ledger sheet id back into the user's Contacts Waymark
  * (Share_Data_Sheet + Social_Data_Location) for the matching contact rows.
@@ -312,7 +487,7 @@ async function readTab(sheetId, tabTitle) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @param {string} sheetId
  */
-async function linkLedgerToContacts(target, sheetId) {
+async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
   try {
     const { TEMPLATES } = await import('./templates/index.js');
     const pool = [...userData.getPinnedSheets(), ...userData.getRecentSheets()];
@@ -320,6 +495,7 @@ async function linkLedgerToContacts(target, sheetId) {
     const books = pool.filter(s => s && s.templateKey === 'contacts' && !seen.has(s.id) && seen.add(s.id));
     const email = (target.contactEmail || '').trim().toLowerCase();
     const group = (target.group || '').trim().toLowerCase();
+    const previousIds = new Set(previousLedgerIds);
 
     for (const book of books) {
       const data = await api.sheets.getSpreadsheet(book.id);
@@ -338,11 +514,13 @@ async function linkLedgerToContacts(target, sheetId) {
         const rowGroup = (cols.group >= 0 ? row[cols.group] : '').trim().toLowerCase();
         const match = (email && rowEmail === email) || (group && rowGroup === group);
         if (!match) continue;
-        if (cols.shareSheet >= 0 && !(row[cols.shareSheet] || '').trim()) {
+        const shareValue = (cols.shareSheet >= 0 ? row[cols.shareSheet] : '') || '';
+        const socialValue = (cols.socialLocation >= 0 ? row[cols.socialLocation] : '') || '';
+        if (cols.shareSheet >= 0 && (!shareValue.trim() || previousIds.has(shareValue.trim()))) {
           await api.sheets.updateCell(book.id, tabTitle, i, cols.shareSheet, sheetId);
           wroteBack = true;
         }
-        if (cols.socialLocation >= 0 && !(row[cols.socialLocation] || '').trim()) {
+        if (cols.socialLocation >= 0 && (!socialValue.trim() || previousIds.has(socialValue.trim()))) {
           await api.sheets.updateCell(book.id, tabTitle, i, cols.socialLocation, sheetId);
           wroteBack = true;
         }

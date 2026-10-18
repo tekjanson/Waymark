@@ -93,7 +93,7 @@ function defaultUserData() {
     publicSignalingSheetId: null,    // spreadsheetId of the public .waymark-public-signaling sheet (encrypted P2P)
 
     /* ── Bilateral sharing sheets ── */
-    shareLedgers: [],                // { key, contactEmail?, group?, sheetId, createdAt }[] — one per contact/crew
+    shareLedgers: [],                // { key, contactEmail?, group?, sheetId, ownerEmail?, permissionAttempted?, createdAt }[] — one per contact pair/crew
 
     /* ── Lock-on-Submit ── */
     lockOnSubmitSheets: {},     // { [spreadsheetId]: boolean } — sheets with row-lock enabled
@@ -1048,16 +1048,19 @@ export function getShareLedgerFor(key) {
 
 /**
  * Record a Share Ledger mapping (idempotent by ledger key).
- * @param {{key: string, contactEmail?: string, group?: string, sheetId: string}} entry
+ * @param {{key: string, contactEmail?: string, group?: string, sheetId: string, ownerEmail?: string, permissionAttempted?: boolean, aliases?: string[]}} entry
  */
-export async function addShareLedger({ key, contactEmail, group, sheetId }) {
+export async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, permissionAttempted = false, aliases = [] }) {
   if (!key || !sheetId) return;
-  const existing = getShareLedgers().filter(l => l.key !== key);
+  const replacedKeys = new Set([key, ...aliases]);
+  const existing = getShareLedgers().filter(l => !replacedKeys.has(l.key));
   existing.push({
     key,
     contactEmail: (contactEmail || '').trim().toLowerCase() || undefined,
     group: group || undefined,
     sheetId,
+    ownerEmail: (ownerEmail || '').trim().toLowerCase() || undefined,
+    permissionAttempted: Boolean(permissionAttempted),
     createdAt: new Date().toISOString(),
   });
   await save({ shareLedgers: existing });
