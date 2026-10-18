@@ -1367,7 +1367,7 @@ export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio
  */
 export async function generateImage(prompt, opts = {}) {
   return routeAI(CAP.IMAGE_GENERATION_PHOTOREAL, {
-    prompt, size: opts.size, n: opts.n,
+    prompt, size: opts.size, n: opts.n, seed: opts.seed,
   }, {});
 }
 

@@ -802,9 +802,25 @@ export function pickBestClaudeKey() {
 
 /**
  * Return the best available OpenAI key using the same LRU strategy.
+ * Prefers vault-stored OpenAI keys when the keys sheet is unlocked.
  * @returns {{ key: string, idx: number } | null}
  */
 export function pickBestOpenAIKey() {
+  // Vault keys first (Drive-synced passwords sheet) — idx -1 skips localStorage tracking.
+  if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
+    const vaultKeys = vault.getOpenAIKeys?.() || [];
+    if (vaultKeys.length) {
+      const now = Date.now();
+      const usable = vaultKeys
+        .map(k => ({ ...k, hasRecentError: !!(k.lastError && (now - new Date(k.lastError).getTime()) < 60000) }))
+        .filter(k => !k.hasRecentError);
+      const pool = (usable.length > 0 ? usable : vaultKeys)
+        .slice()
+        .sort((a, b) => (a.requestsToday || 0) - (b.requestsToday || 0));
+      if (pool[0]?.key) return { key: pool[0].key, idx: -1 };
+    }
+  }
+
   const keys = getOpenAIKeys();
   if (!keys.length) return null;
 
