@@ -1655,6 +1655,26 @@ ul { list-style: none; }
   gap: 8px;
   align-items: center;
 }
+.share-invite-contacts {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.share-contact-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.share-invite-contact-select {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  width: 100%;
+}
 .share-invite-email,
 .share-invite-role {
   border: 1px solid var(--color-border);
