@@ -678,6 +678,20 @@ export function setBilateralCursor(sheetId, count) {
   set('bilateral_cursors', all);
 }
 
+export function getChatCursors() {
+  return get('chat_cursors') || {};
+}
+
+export function getChatCursor(sheetId) {
+  return getChatCursors()[sheetId] || 0;
+}
+
+export function setChatCursor(sheetId, count) {
+  const all = getChatCursors();
+  all[sheetId] = count;
+  set('chat_cursors', all);
+}
+
 /* ---------- Cross-Feature Links ---------- */
 
 /**

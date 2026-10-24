@@ -257,3 +257,161 @@ test('social pipeline: chat send/read round-trips through the ledger', async ({ 
   expect(chat[0].text).toBe('On my way to the trailhead!');
   expect(chat[0].sender).toBe('testuser@gmail.com');
 });
+
+test('sharing with a Waymarker Crew grants Drive permissions to all crew members and logs per-member rows', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    await api.sheets.getSpreadsheet('sheet-077');
+
+    const ledgerId = await collab.shareDocumentWithContact({
+      group: 'Family Crew',
+      docId: 'sheet-001',
+      docTitle: 'Groceries',
+      waymarkType: 'checklist',
+      permission: 'writer',
+    });
+
+    const data = await api.sheets.getSpreadsheet(ledgerId);
+    const sharedDocsTab = data.tabs.find(t => t.title === 'Shared_Docs');
+    return {
+      ledgerId,
+      sharedRows: (sharedDocsTab?.values || []).slice(1),
+    };
+  });
+
+  const records = await getCreatedRecords(page);
+  const perms = records.filter(r => r.type === 'drive-permission');
+  const permEmails = perms.map(p => p.email);
+
+  // Family Crew in sheet-077 has kailey@example.com, mike@example.com, and stewart@example.com
+  expect(permEmails).toContain('kailey@example.com');
+  expect(permEmails).toContain('mike@example.com');
+  expect(permEmails).toContain('stewart@example.com');
+  expect(result.sharedRows.map(r => r[3])).toContain('kailey@example.com');
+  expect(result.sharedRows.map(r => r[3])).toContain('mike@example.com');
+  expect(result.sharedRows.map(r => r[3])).toContain('stewart@example.com');
+});
+
+test('presence heartbeats upsert the user row in-place instead of appending duplicate rows', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const target = { contactEmail: 'heartbeat@example.com' };
+
+    await collab.publishPresence(target, { status: 'online', activeWaymarkId: 'home' });
+    await collab.publishPresence(target, { status: 'away', activeWaymarkId: 'sheet-001' });
+    await collab.publishPresenceEverywhere({ status: 'online', activeWaymarkId: 'sheet-002' });
+
+    const { sheetId } = await collab.ensureShareLedger(target);
+    const data = await api.sheets.getSpreadsheet(sheetId);
+    const presenceTab = data.tabs.find(t => t.title === 'Presence');
+    const presenceList = await collab.readPresence(target);
+    return {
+      rowCount: (presenceTab?.values || []).length - 1,
+      presenceList,
+      activeCell: presenceTab?.values?.[1]?.[5] || '',
+    };
+  });
+
+  expect(result.rowCount).toBe(1);
+  expect(result.presenceList).toHaveLength(1);
+  expect(result.presenceList[0].status).toBe('online');
+  expect(result.activeCell).toBe('sheet-002');
+});
+
+test('collaborator chat messages push a notification to the bell on pollShareLedgers', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const storage = await import('/js/storage.js');
+
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'trailmate@example.com' });
+    await api.sheets.appendRows(sheetId, 'Chat', [[
+      'msg-remote-1',
+      new Date().toISOString(),
+      'trailmate@example.com',
+      'testuser@gmail.com',
+      'Meet at the summit at noon!',
+      '',
+    ]]);
+
+    const pushed = await collab.pollShareLedgers();
+    const notifs = storage.getNotifications();
+    return { pushed, notif: notifs[0] || null };
+  });
+
+  expect(result.pushed).toBe(1);
+  expect(result.notif).toBeTruthy();
+  expect(result.notif.type).toBe('chat');
+  expect(result.notif.body).toContain('Meet at the summit at noon!');
+  await expect(page.locator('.notif-bell-badge')).toBeVisible({ timeout: 3_000 });
+});
+
+test('deep-link invite with ledger parameter registers the shared ledger and triggers notifications', async ({ page }) => {
+  await setMockUser(page, { id: 'alice', name: 'Alice', email: 'alice@example.com' });
+  await setupApp(page);
+
+  const inviteData = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const ledgerId = await collab.shareDocumentWithContact({
+      contactEmail: 'bob@example.com',
+      docId: 'sheet-001',
+      docTitle: 'Groceries',
+      waymarkType: 'checklist',
+      permission: 'writer',
+    });
+    return { ledgerId };
+  });
+
+  const bobPage = await page.context().newPage();
+  await setMockUser(bobPage, { id: 'bob', name: 'Bob', email: 'bob@example.com' });
+  await setupApp(bobPage);
+  await bobPage.goto(`/?fileId=sheet-001&fileName=Groceries&ledger=${encodeURIComponent(inviteData.ledgerId)}&from=alice%40example.com#/`);
+  await bobPage.waitForSelector('#checklist-items', { timeout: 10_000 });
+
+  const bobState = await bobPage.evaluate(async () => {
+    const userData = await import('/js/user-data.js');
+    const storage = await import('/js/storage.js');
+    return {
+      ledgers: userData.getShareLedgers(),
+      notifs: storage.getNotifications(),
+      hash: window.location.hash,
+    };
+  });
+
+  expect(bobState.hash).toBe('#/sheet/sheet-001');
+  expect(bobState.ledgers.some(l => l.sheetId === inviteData.ledgerId)).toBe(true);
+  expect(bobState.notifs.some(n => n.sheetId === 'sheet-001' && n.title.includes('Groceries'))).toBe(true);
+  await bobPage.close();
+});
+
+test('WebRTC signaling adapter reads and writes cells on the WebRTC_Signaling tab', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 5_000 });
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const target = await collab.getSignalingTarget({ contactEmail: 'peer@example.com' });
+    await target.signal.writeCell(1, 19, JSON.stringify({ peerId: 'peer-1', name: 'Test', ts: Date.now() }));
+    const matrix = await target.signal.readAll();
+    return {
+      tab: target.tab,
+      cellValue: matrix?.[1]?.[19] || '',
+    };
+  });
+
+  expect(result.tab).toBe('WebRTC_Signaling');
+  expect(result.cellValue).toContain('peer-1');
+});

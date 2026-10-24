@@ -425,10 +425,19 @@ export async function setPublicWritable(token, fileId) {
  * @param {string} fileId
  * @param {string} email
  * @param {'reader'|'writer'} role
+ * @param {{ sendNotificationEmail?: boolean, emailMessage?: string }} [opts]
  * @returns {Promise<void>}
  */
-export async function createDrivePermission(token, fileId, email, role) {
-  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}/permissions`, {
+export async function createDrivePermission(token, fileId, email, role, opts = {}) {
+  const qs = new URLSearchParams();
+  if (typeof opts.sendNotificationEmail === 'boolean') {
+    qs.set('sendNotificationEmail', String(opts.sendNotificationEmail));
+  }
+  if (opts.emailMessage) {
+    qs.set('emailMessage', String(opts.emailMessage));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}/permissions${suffix}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

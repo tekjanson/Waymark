@@ -9,6 +9,7 @@ import * as userData from './user-data.js';
 import * as collab from './collab.js';
 import { detectTemplate, TEMPLATES } from './templates/index.js';
 import { isEditLocked, setEditLocked } from './templates/shared.js';
+import { WaymarkConnect } from './webrtc.js';
 
 /* ---------- 50 architecture names (for the Profile selector) ---------- */
 
@@ -782,6 +783,19 @@ async function removeWidget(id) {
 /* ---------- The Wayside (social) ---------- */
 
 let _activeTarget = null; // { group? , contactEmail? , label }
+let _waysideConnect = null;
+let _waysidePollTimer = null;
+
+function ensureWaysidePolling() {
+  if (_waysidePollTimer) return;
+  _waysidePollTimer = setInterval(() => {
+    const homeView = document.getElementById('home-view');
+    const host = document.getElementById('home-wayside');
+    if (!homeView || homeView.classList.contains('hidden') || !host || document.hidden) return;
+    refreshWaysideChat().catch(() => {});
+    refreshPresenceRings(host).catch(() => {});
+  }, 15_000);
+}
 
 /**
  * Discover Waymarker Crews (contact groups) and contacts from the user's
@@ -878,6 +892,7 @@ async function renderWayside() {
       el('div', { className: 'chat-box-actions' }, [
         el('button', { className: 'btn', id: 'wayside-call-btn', title: 'Start a WebRTC call' }, ['📹 Call']),
         el('button', { className: 'btn btn-muted', id: 'wayside-sheet-btn', title: 'Open the shared Waymark' }, ['🔗 Waymark']),
+        el('button', { className: 'btn btn-muted', id: 'wayside-connect-btn', title: 'Connect a shared ledger from Drive' }, ['📥 Connect']),
       ]),
     ]),
     el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Pick a crew or Waymarker to trade Waymarks']),
@@ -894,6 +909,10 @@ async function renderWayside() {
   callBtn.addEventListener('click', () => startCall());
   const sheetBtn = chatBox.querySelector('#wayside-sheet-btn');
   sheetBtn.addEventListener('click', () => openSocialSheet());
+  const connectBtn = chatBox.querySelector('#wayside-connect-btn');
+  connectBtn.addEventListener('click', () => connectSharedLedgerFromWayside(host));
+
+  ensureWaysidePolling();
 
   // Auto-select the first crew / Waymarker.
   if (crews.length) selectTarget({ group: crews[0].name, label: crews[0].name }, host);
@@ -901,6 +920,12 @@ async function renderWayside() {
 }
 
 async function selectTarget(target, host) {
+  const targetChanged = !_activeTarget
+    || _activeTarget.group !== target.group
+    || _activeTarget.contactEmail !== target.contactEmail;
+  if (targetChanged && _waysideConnect) {
+    endWaysideCall({ silent: true });
+  }
   _activeTarget = target;
   const title = host.querySelector('#wayside-crew-title');
   if (title) title.textContent = `💬 ${target.label}`;
@@ -961,19 +986,89 @@ async function sendWaysideChat() {
   input.value = '';
   try {
     await collab.sendChat(_activeTarget, text);
+    const sheetLine = document.getElementById('wayside-sheet-line');
+    if (sheetLine && sheetLine.textContent === 'Linked on first share') {
+      const ledger = await collab.findExistingShareLedger(_activeTarget);
+      if (ledger) sheetLine.textContent = `Linked: ${ledger.sheetId}`;
+    }
     await refreshWaysideChat();
   } catch (err) {
     showToast(`Could not send: ${err.message}`, 'error');
   }
 }
 
+export function endWaysideCall(opts = {}) {
+  if (_waysideConnect) {
+    try { _waysideConnect.endCall(); } catch { /* ignore */ }
+    try { _waysideConnect.destroy(); } catch { /* ignore */ }
+    _waysideConnect = null;
+  }
+  const callBtn = document.getElementById('wayside-call-btn');
+  if (callBtn) {
+    callBtn.textContent = '📹 Call';
+    callBtn.classList.remove('call-active');
+    callBtn.title = 'Start a WebRTC call';
+  }
+  if (!opts.silent) {
+    showToast('Call ended', 'info');
+  }
+}
+
 async function startCall() {
+  if (_waysideConnect) {
+    endWaysideCall();
+    return;
+  }
   if (!_activeTarget) { showToast('Pick a crew or Waymarker first', 'info'); return; }
   try {
     const target = await collab.getSignalingTarget(_activeTarget);
+    const user = api.auth.getUser?.() || {};
+    const displayName = user.name || (user.email ? user.email.split('@')[0] : 'Waymarker');
+
+    const wc = new WaymarkConnect(target.sheetId, {
+      displayName,
+      signal: target.signal,
+      onPeersChanged: (peers) => {
+        const sheetLine = document.getElementById('wayside-sheet-line');
+        if (sheetLine && _waysideConnect === wc) {
+          sheetLine.textContent = `📹 In call (${peers.length + 1} connected) · Linked: ${target.sheetId}`;
+        }
+      },
+    });
+    _waysideConnect = wc;
+    wc.start();
+    try {
+      await wc.startCall({ audio: true, video: false });
+    } catch {
+      /* listen-only / signaling-only fallback when media devices are unavailable */
+    }
+
+    const callBtn = document.getElementById('wayside-call-btn');
+    if (callBtn) {
+      callBtn.textContent = '📴 End Call';
+      callBtn.classList.add('call-active');
+      callBtn.title = 'End the active WebRTC call';
+    }
+    const sheetLine = document.getElementById('wayside-sheet-line');
+    if (sheetLine) {
+      sheetLine.textContent = `📹 In call · Linked: ${target.sheetId}`;
+    }
     showToast(`📹 Call ready — signaling on ${target.tab} of the shared ledger`, 'success');
   } catch (err) {
     showToast(`Could not start call: ${err.message}`, 'error');
+  }
+}
+
+async function connectSharedLedgerFromWayside(host) {
+  try {
+    const connected = await collab.connectSharedLedgerViaPicker(_activeTarget || {});
+    if (!connected.length) return;
+    showToast(`Connected ${connected.length} shared ledger${connected.length === 1 ? '' : 's'}`, 'success');
+    if (_activeTarget && host) {
+      await selectTarget(_activeTarget, host);
+    }
+  } catch (err) {
+    showToast(`Could not connect ledger: ${err.message}`, 'error');
   }
 }
 

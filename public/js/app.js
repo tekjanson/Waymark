@@ -228,9 +228,12 @@ async function boot() {
     },
   });
   // Sync collaborator shares from Share Ledgers into the bell —
-  // once on boot, then on a 60s polling cycle.
+  // once on boot, then on a 60s polling cycle (alongside presence heartbeat).
   collab.pollBilateralSheets().catch(() => {});
-  setInterval(() => { collab.pollBilateralSheets().catch(() => {}); }, 60_000);
+  setInterval(() => {
+    collab.pollBilateralSheets().catch(() => {});
+    collab.publishPresenceEverywhere({ status: 'online' }).catch(() => {});
+  }, 60_000);
   await initializeModelSwap();
   initializeModelSwapUI();
 
@@ -712,12 +715,16 @@ function renderHome() {
 
 function getDeepLinkInviteParams() {
   const params = new URLSearchParams(window.location.search);
-  const fileId = params.get('fileId')?.trim();
-  if (!fileId) return null;
+  const fileId = (params.get('fileId') || '').trim();
+  const ledger = (params.get('ledger') || '').trim();
+  if (!fileId && !ledger) return null;
   return {
     fileId,
     fileName: (params.get('fileName') || '').trim(),
     parentFolderId: (params.get('parent') || '').trim(),
+    ledger,
+    from: (params.get('from') || '').trim(),
+    group: (params.get('group') || '').trim(),
   };
 }
 
@@ -726,6 +733,9 @@ function clearDeepLinkInviteParams() {
   url.searchParams.delete('fileId');
   url.searchParams.delete('fileName');
   url.searchParams.delete('parent');
+  url.searchParams.delete('ledger');
+  url.searchParams.delete('from');
+  url.searchParams.delete('group');
   window.history.replaceState({}, '', url.toString());
 }
 
@@ -736,15 +746,40 @@ async function maybeHandleDeepLinkInvite() {
   _deepLinkInviteHandled = true;
 
   try {
-    const picked = await api.picker.pickSpreadsheetForInvite({
-      fileId: invite.fileId,
-      fileName: invite.fileName,
-      parentFolderId: invite.parentFolderId || undefined,
-    });
+    if (invite.ledger) {
+      if (!invite.fileId) {
+        try {
+          await api.picker.pickSpreadsheetForInvite({
+            fileId: invite.ledger,
+            fileName: '.waymark-ledger-',
+          });
+        } catch {
+          /* ledger registration continues even if picker is skipped */
+        }
+      }
+      await collab.registerSharedLedger({
+        sheetId: invite.ledger,
+        contactEmail: invite.from || undefined,
+        group: invite.group || undefined,
+      });
+    }
+
+    if (invite.fileId) {
+      const picked = await api.picker.pickSpreadsheetForInvite({
+        fileId: invite.fileId,
+        fileName: invite.fileName,
+        parentFolderId: invite.parentFolderId || undefined,
+      });
+      clearDeepLinkInviteParams();
+      if (!picked?.id) return;
+      showToast(`Authorized "${picked.name || invite.fileName || 'shared sheet'}"`, 'success');
+      window.location.hash = `#/sheet/${picked.id}`;
+      return;
+    }
+
     clearDeepLinkInviteParams();
-    if (!picked?.id) return;
-    showToast(`Authorized "${picked.name || invite.fileName || 'shared sheet'}"`, 'success');
-    window.location.hash = `#/sheet/${picked.id}`;
+    showToast('Connected shared Waymark ledger', 'success');
+    renderHome();
   } catch (err) {
     showToast(`Could not open invite: ${err.message}`, 'error');
   }

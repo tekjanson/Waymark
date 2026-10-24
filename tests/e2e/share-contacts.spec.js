@@ -58,3 +58,20 @@ test('manual email entry still works alongside the contacts picker', async ({ pa
   await page.fill('.share-invite-email', 'brand-new@example.com');
   await expect(page.locator('.share-invite-email')).toHaveValue('brand-new@example.com');
 });
+
+test('share modal contacts picker includes Waymarker Crews and updates invite link with ledger ID after grant', async ({ page }) => {
+  const CREWS_BOOK = { id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() };
+  await setupApp(page, { pinnedSheets: [CREWS_BOOK] });
+  await openShareModal(page);
+
+  await page.waitForSelector('.share-invite-contact-select option[value="group:Family Crew"]', { state: 'attached', timeout: 5_000 });
+  await page.selectOption('.share-invite-contact-select', 'group:Family Crew');
+  await expect(page.locator('.share-invite-email')).toHaveValue('group:Family Crew');
+
+  await page.click('.share-invite-grant-btn');
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+
+  const inviteLink = await page.locator('.share-invite-link').inputValue();
+  expect(inviteLink).toContain('ledger=');
+  expect(inviteLink).toContain('group=Family+Crew');
+});

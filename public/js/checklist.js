@@ -1535,7 +1535,7 @@ async function openShareModal(sheetId, sheetName) {
           el('div', { className: 'share-invite-permission-row' }, [
             el('input', {
               className: 'share-invite-email',
-              type: 'email',
+              type: 'text',
               placeholder: 'collaborator@email.com',
             }),
             el('select', {
@@ -1620,10 +1620,15 @@ async function openShareModal(sheetId, sheetName) {
   const grantBtn = modal.querySelector('.share-invite-grant-btn');
   const emailInput = modal.querySelector('.share-invite-email');
   const roleInput = modal.querySelector('.share-invite-role');
+  const inviteLinkInput = modal.querySelector('.share-invite-link');
+  const inviteCopyBtn = inviteLinkInput?.parentElement?.querySelector('.share-copy-btn');
   if (grantBtn && emailInput && roleInput) {
     grantBtn.addEventListener('click', async () => {
-      const email = (emailInput.value || '').trim();
-      if (!email) {
+      const rawValue = (emailInput.value || '').trim();
+      const selectedGroup = emailInput.dataset.selectedGroup
+        || (rawValue.toLowerCase().startsWith('group:') ? rawValue.slice('group:'.length).trim() : '');
+      const email = selectedGroup ? '' : rawValue;
+      if (!email && !selectedGroup) {
         showToast('Enter a collaborator email first', 'error');
         return;
       }
@@ -1631,20 +1636,47 @@ async function openShareModal(sheetId, sheetName) {
       grantBtn.disabled = true;
       grantBtn.textContent = 'Granting…';
       try {
-        await api.drive.createDrivePermission(sheetId, email, role);
-        // Provision the per-contact Share Ledger (auto-created + linked back into
-        // Contacts) and log this document so the collaborator sees it in their bell.
-        try {
-          await collab.shareDocumentWithContact({
-            contactEmail: email,
+        let ledgerSheetId = '';
+        if (selectedGroup) {
+          ledgerSheetId = await collab.shareDocumentWithContact({
+            group: selectedGroup,
             docId: sheetId,
             docTitle: sheetName,
             waymarkType: currentTemplateKey || '',
             permission: role,
           });
-        } catch { /* sharing ledger is best-effort */ }
-        showToast(`Access granted to ${email}`, 'success');
+          showToast(`Access granted to ${selectedGroup}`, 'success');
+        } else {
+          await api.drive.createDrivePermission(sheetId, email, role);
+          // Provision the per-contact Share Ledger (auto-created + linked back into
+          // Contacts) and log this document so the collaborator sees it in their bell.
+          try {
+            ledgerSheetId = await collab.shareDocumentWithContact({
+              contactEmail: email,
+              docId: sheetId,
+              docTitle: sheetName,
+              waymarkType: currentTemplateKey || '',
+              permission: role,
+            });
+          } catch { /* sharing ledger is best-effort */ }
+          showToast(`Access granted to ${email}`, 'success');
+        }
+        if (ledgerSheetId && inviteLinkInput) {
+          const updatedInviteLink = api.drive.generateShareLink(
+            sheetId,
+            sheetName,
+            parentFolderId || undefined,
+            {
+              ledger: ledgerSheetId,
+              from: collab.currentEmail() || undefined,
+              group: selectedGroup || undefined,
+            }
+          );
+          inviteLinkInput.value = updatedInviteLink;
+          if (inviteCopyBtn) inviteCopyBtn.dataset.link = updatedInviteLink;
+        }
         emailInput.value = '';
+        delete emailInput.dataset.selectedGroup;
       } catch (err) {
         showToast(`Could not grant access: ${err.message}`, 'error');
       } finally {

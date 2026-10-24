@@ -292,3 +292,17 @@ test('Wayside shows Waymarker Crews from a Contacts Waymark', async ({ page }) =
   await expect(page.locator('#home-wayside .chat-input')).toBeVisible();
   await expect(page.locator('#wayside-call-btn')).toContainText('Call');
 });
+
+test('Wayside call button starts WebRTC signaling on the shared ledger and toggles to End Call', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-sheet-line')).toContainText('In call');
+
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+});
