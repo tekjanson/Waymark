@@ -4027,6 +4027,7 @@ test('agent settings modal allows disabling and re-enabling biometric vault unlo
   });
 
   await page.waitForSelector('.agent-vault-unlock-btn', { timeout: 5000 });
+  await page.waitForSelector('.agent-vault-bio-enroll-checkbox', { timeout: 3000 });
   await page.click('.agent-vault-unlock-btn');
   await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
 
@@ -4045,4 +4046,95 @@ test('agent settings modal allows disabling and re-enabling biometric vault unlo
   await page.waitForSelector('.agent-vault-bio-disable-btn', { timeout: 3000 });
   await expect(page.locator('.agent-vault-status-unlocked')).toContainText('Biometrics Ready');
 });
+
+test('encrypted AI keys vault on mobile preserves password across boot and unlocks both AI vault and encrypted sheet via passkey', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+
+  // Encrypt the Password column of sheet-070 with a real password ("mobile-pass-123")
+  // and install a realistic WebAuthn credentials.create / credentials.get mock
+  await page.evaluate(async () => {
+    window.__WAYMARK_BIOMETRIC_MOBILE = true;
+    delete window.__WAYMARK_MOCK_BIOMETRICS;
+
+    const credId = new Uint8Array(24);
+    for (let i = 0; i < credId.length; i++) credId[i] = (i * 11 + 5) & 0xff;
+
+    window.PublicKeyCredential = function PublicKeyCredential() {};
+    window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: {
+        create: async (opts) => {
+          if (!opts?.publicKey?.challenge) throw new Error('Missing challenge');
+          return { id: 'mock-passkey-id', rawId: credId.buffer, type: 'public-key' };
+        },
+        get: async (opts) => {
+          if (!opts?.publicKey?.challenge) throw new Error('Missing challenge');
+          // Reject if strictly restricted to 'internal' transport (simulating iOS/Android synced passkey)
+          const allow = opts.publicKey.allowCredentials?.[0];
+          if (allow?.transports && allow.transports.length === 1 && allow.transports[0] === 'internal') {
+            throw new Error('Synced passkey requires hybrid/unrestricted transport');
+          }
+          return { id: 'mock-passkey-id', rawId: credId.buffer, type: 'public-key' };
+        },
+      },
+    });
+
+    const { api } = await import('/js/api-client.js');
+    const enc = await import('/js/encryption.js');
+    const sheet = await api.sheets.getSpreadsheet('sheet-070');
+    await enc.unlock('mobile-pass-123', 'sheet-070');
+    enc.setEncryptedColumns('sheet-070', new Set([2]));
+    for (let r = 1; r < sheet.values.length; r++) {
+      const plain = sheet.values[r][2];
+      if (plain && !enc.isEncrypted(plain)) {
+        const cipher = await enc.encrypt('sheet-070', plain);
+        await api.sheets.updateCell('sheet-070', sheet.sheetTitle || 'Sheet1', r, 2, cipher);
+      }
+    }
+    enc.lock('sheet-070');
+
+    const vault = await import('/js/agent/vault.js');
+    vault.linkSheet('sheet-070', 'AI API Keys');
+    // Simulate app.js boot call: unlockVault('') must fail on encrypted vault and never overwrite password
+    await vault.unlockVault('').catch(() => {});
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-vault-lock', { timeout: 5000 });
+  await page.waitForSelector('.agent-vault-bio-enroll-checkbox', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-bio-enroll-checkbox')).toBeChecked();
+
+  // Unlock with real password — enrolls WebAuthn passkey BEFORE network fetch
+  await page.fill('.agent-vault-input', 'mobile-pass-123');
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  // Lock both vault and sheet encryption, then re-open #/agent and unlock via Passkey
+  await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.lockVault();
+    window.location.hash = '#/';
+  });
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5000 });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+
+  await page.waitForSelector('.agent-vault-bio-btn', { timeout: 5000 });
+  await page.click('.agent-vault-bio-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  const unlockedKeys = await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    return {
+      unlocked: vault.isVaultUnlocked(),
+      geminiCount: vault.getGeminiKeys().length,
+      firstKey: vault.getGeminiKeys()[0]?.key || '',
+    };
+  });
+  expect(unlockedKeys.unlocked).toBe(true);
+  expect(unlockedKeys.geminiCount).toBeGreaterThan(0);
+  expect(unlockedKeys.firstKey).not.toContain('ENC:');
+});
+
 

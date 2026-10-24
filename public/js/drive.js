@@ -429,25 +429,33 @@ export async function setPublicWritable(token, fileId) {
  * @returns {Promise<void>}
  */
 export async function createDrivePermission(token, fileId, email, role, opts = {}) {
-  const qs = new URLSearchParams();
-  if (typeof opts.sendNotificationEmail === 'boolean') {
-    qs.set('sendNotificationEmail', String(opts.sendNotificationEmail));
+  const makeReq = async (sendNotif) => {
+    const qs = new URLSearchParams();
+    if (typeof sendNotif === 'boolean') {
+      qs.set('sendNotificationEmail', String(sendNotif));
+    }
+    if (opts.emailMessage) {
+      qs.set('emailMessage', String(opts.emailMessage));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return fetch(`${BASE}/files/${encodeURIComponent(fileId)}/permissions${suffix}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'user',
+        role,
+        emailAddress: email,
+      }),
+    });
+  };
+
+  let res = await makeReq(opts.sendNotificationEmail);
+  if (!res.ok && res.status === 400 && typeof opts.sendNotificationEmail !== 'boolean') {
+    // Retry with sendNotificationEmail=false in case Drive rejected notification delivery
+    res = await makeReq(false);
   }
-  if (opts.emailMessage) {
-    qs.set('emailMessage', String(opts.emailMessage));
-  }
-  const suffix = qs.toString() ? `?${qs.toString()}` : '';
-  const res = await fetch(`${BASE}/files/${encodeURIComponent(fileId)}/permissions${suffix}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      type: 'user',
-      role,
-      emailAddress: email,
-    }),
-  });
   if (!res.ok) throw driveError('Drive createDrivePermission', res);
 }

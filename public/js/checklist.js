@@ -17,6 +17,7 @@ import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
 import { getCrossLinks, setCrossLinks, setSheetDigest } from './storage.js';
 import * as encryption from './encryption.js';
+import * as vault from './agent/vault.js';
 import { getAndroidBridge } from './platform.js';
 
 let currentSheetId = null;
@@ -372,6 +373,73 @@ function openEncryptModal() {
   cancelBtn.onclick = close;
   modal.onclick = (e) => { if (e.target === modal) close(); };
 
+  // Biometric unlock / enrollment slot inside #encrypt-modal
+  const pwGroup = passwordInput.parentElement?.parentElement;
+  let bioContainer = modal.querySelector('.encrypt-modal-bio-container');
+  if (!bioContainer && pwGroup && pwGroup.parentElement) {
+    bioContainer = el('div', { className: 'encrypt-modal-bio-container' });
+    pwGroup.parentElement.insertBefore(bioContainer, pwGroup);
+  }
+  let modalBioEnrollCb = null;
+  if (bioContainer) {
+    bioContainer.innerHTML = '';
+    if (!isUnlocked && hasEncryption) {
+      const hasBio = vault.hasBiometricVault(sheetId) || vault.hasBiometricVault();
+      if (hasBio) {
+        const bioBtn = el('button', {
+          className: 'agent-vault-bio-btn encrypt-modal-bio-btn',
+          type: 'button',
+          on: {
+            click: async () => {
+              bioBtn.disabled = true;
+              bioBtn.textContent = '🫆 Verifying…';
+              statusEl.textContent = 'Verifying biometrics…';
+              let sample = null;
+              if (currentValues) {
+                for (let r = 1; r < currentValues.length && !sample; r++) {
+                  for (const c of encCols) {
+                    if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+                      sample = currentValues[r][c]; break;
+                    }
+                  }
+                }
+              }
+              const pw = await vault.unlockPasswordWithBiometrics(sheetId) || await vault.unlockPasswordWithBiometrics();
+              const ok = pw ? await encryption.unlock(pw, sheetId, sample) : false;
+              bioBtn.disabled = false;
+              bioBtn.textContent = '🫆 Unlock with Biometrics';
+              if (ok) {
+                if (vault.getLinkedSheetId() === sheetId) {
+                  vault.unlockVault(pw).catch(() => {});
+                }
+                close();
+                showToast('Unlocked with biometrics', 'success');
+                await loadSheet(sheetId);
+              } else {
+                statusEl.textContent = 'Biometric unlock failed or cancelled — enter password below';
+              }
+            },
+          },
+        }, ['🫆 Unlock with Biometrics']);
+        bioContainer.appendChild(bioBtn);
+      } else {
+        vault.isBiometricSupported().then((supported) => {
+          if (!supported || isUnlocked) return;
+          modalBioEnrollCb = el('input', {
+            type: 'checkbox',
+            className: 'agent-vault-bio-enroll-checkbox encrypt-modal-bio-checkbox',
+          });
+          if (vault.isMobileWeb()) modalBioEnrollCb.checked = true;
+          bioContainer.innerHTML = '';
+          bioContainer.appendChild(el('label', { className: 'agent-vault-bio-enroll-label' }, [
+            modalBioEnrollCb,
+            el('span', {}, [vault.isMobileWeb() ? '📱 Enable biometric unlock on mobile' : '🫆 Enable biometric unlock on this device']),
+          ]));
+        }).catch(() => {});
+      }
+    }
+  }
+
   // Password visibility toggle
   toggleVisBtn.onclick = () => {
     const isHidden = passwordInput.type === 'password';
@@ -386,6 +454,12 @@ function openEncryptModal() {
     if (!pw) { statusEl.textContent = 'Please enter a password'; return; }
     unlockBtn.disabled = true;
     statusEl.textContent = 'Deriving key…';
+
+    const shouldEnrollBio = Boolean(modalBioEnrollCb && modalBioEnrollCb.checked);
+    let enrolled = false;
+    if (shouldEnrollBio && pw) {
+      enrolled = await vault.enrollBiometricVault(pw, sheetId);
+    }
 
     // Find a sample encrypted value to verify the password
     let sample = null;
@@ -402,10 +476,19 @@ function openEncryptModal() {
     const ok = await encryption.unlock(pw, sheetId, sample);
     unlockBtn.disabled = false;
     if (ok) {
+      if (shouldEnrollBio && !enrolled && pw) {
+        enrolled = await vault.enrollBiometricVault(pw, sheetId);
+      }
+      if (vault.getLinkedSheetId() === sheetId) {
+        vault.unlockVault(pw).catch(() => {});
+      }
       close();
-      showToast('Columns decrypted', 'success');
+      showToast(enrolled ? 'Columns decrypted & biometrics enabled' : 'Columns decrypted', 'success');
       await loadSheet(sheetId);
     } else {
+      if (enrolled) {
+        vault.clearBiometricVault();
+      }
       statusEl.textContent = 'Wrong password — could not decrypt';
     }
   };
@@ -1719,8 +1802,13 @@ async function openShareModal(sheetId, sheetName) {
       try {
         let ledgerSheetId = '';
         if (selectedGroup) {
+          const memberEmails = (emailInput.dataset.memberEmails || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
           ledgerSheetId = await collab.shareDocumentWithContact({
             group: selectedGroup,
+            memberEmails: memberEmails.length ? memberEmails : undefined,
             docId: sheetId,
             docTitle: sheetName,
             waymarkType: currentTemplateKey || '',
@@ -1758,6 +1846,9 @@ async function openShareModal(sheetId, sheetName) {
         }
         emailInput.value = '';
         delete emailInput.dataset.selectedGroup;
+        delete emailInput.dataset.memberEmails;
+        const contactSelect = modal.querySelector('.share-invite-contact-select');
+        if (contactSelect) contactSelect.value = '';
       } catch (err) {
         showToast(`Could not grant access: ${err.message}`, 'error');
       } finally {

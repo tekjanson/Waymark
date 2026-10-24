@@ -75,3 +75,36 @@ test('share modal contacts picker includes Waymarker Crews and updates invite li
   expect(inviteLink).toContain('ledger=');
   expect(inviteLink).toContain('group=Family+Crew');
 });
+
+test('contacts picker discovers Contacts sheets even when templateKey is missing on pinned sheet', async ({ page }) => {
+  const UNTAGGED_CONTACTS = { id: 'sheet-013', name: 'Emergency Contacts', pinnedAt: new Date().toISOString() };
+  await setupApp(page, { pinnedSheets: [UNTAGGED_CONTACTS] });
+  await openShareModal(page);
+
+  const select = page.locator('.share-invite-contact-select');
+  await expect(select).toBeVisible({ timeout: 5_000 });
+  await page.waitForSelector('.share-invite-contact-select option[value="sjohnson@medical.com"]', { state: 'attached', timeout: 5_000 });
+});
+
+test('sharing with a contact from a Contacts sheet without Share_Data_Sheet column auto-adds the column and writes back ledger ID', async ({ page }) => {
+  await setupApp(page, { pinnedSheets: [CONTACTS_BOOK] });
+  await openShareModal(page);
+
+  await page.waitForSelector('.share-invite-contact-select option[value="sjohnson@medical.com"]', { state: 'attached', timeout: 5_000 });
+  await page.selectOption('.share-invite-contact-select', 'sjohnson@medical.com');
+  await page.selectOption('.share-invite-role', 'writer');
+  await page.click('.share-invite-grant-btn');
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+
+  const inviteLink = await page.locator('.share-invite-link').inputValue();
+  expect(inviteLink).toContain('ledger=');
+
+  // Navigate to sheet-013 (Emergency Contacts) and verify Dr. Sarah Johnson now has a Share Sheet chip!
+  await page.click('#share-modal .modal-close');
+  await navigateToSheet(page, 'sheet-013');
+  await page.waitForSelector('.template-contact-card', { timeout: 5_000 });
+  const shareChip = page.locator('.contacts-share-chip').first();
+  await expect(shareChip).toBeVisible();
+  await expect(shareChip).toContainText('Share Sheet');
+});
+

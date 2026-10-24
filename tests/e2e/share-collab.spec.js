@@ -636,3 +636,180 @@ test('incoming WebRTC call on a shared ledger pushes a call notification with Jo
   await expect(callBtn).toContainText('Join Call');
 });
 
+test('notification popup renders fully inside mobile viewport with vertical item layout', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'mobilefriend@example.com' });
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Groceries', 'checklist', 'testuser@gmail.com', '', 'writer', new Date().toISOString(), 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+
+  const layout = await page.evaluate(() => {
+    const panel = document.querySelector('.notif-panel');
+    const item = document.querySelector('.notif-item');
+    const title = document.querySelector('.notif-item-title');
+    const actions = document.querySelector('.notif-item-actions');
+    const acceptBtn = document.querySelector('.notif-accept-btn');
+    const pRect = panel.getBoundingClientRect();
+    const tRect = title.getBoundingClientRect();
+    const aRect = actions.getBoundingClientRect();
+    const bRect = acceptBtn.getBoundingClientRect();
+    return {
+      vw: window.innerWidth,
+      panelLeft: pRect.left,
+      panelRight: pRect.right,
+      panelWidth: pRect.width,
+      flexDir: getComputedStyle(item).flexDirection,
+      titleTop: tRect.top,
+      actionsTop: aRect.top,
+      acceptVisible: bRect.left >= 0 && bRect.right <= window.innerWidth && bRect.width > 0 && bRect.height > 0,
+    };
+  });
+
+  expect(layout.panelLeft).toBeGreaterThanOrEqual(0);
+  expect(layout.panelRight).toBeLessThanOrEqual(layout.vw);
+  expect(layout.panelWidth).toBeGreaterThan(280);
+  expect(layout.flexDir).toBe('column');
+  expect(layout.actionsTop).toBeGreaterThan(layout.titleTop);
+  expect(layout.acceptVisible).toBe(true);
+});
+
+test('full end-to-end two-user sharing, mobile notification triage, collaborative editing, and Wayside connection', async ({ page }) => {
+  // 1. User A (Alice) signs in with a Contacts sheet containing Bob (bob@example.com)
+  await setMockUser(page, { id: 'alice', name: 'Alice', email: 'alice@example.com' });
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+
+  // Add Bob to Alice's Contacts sheet (sheet-077)
+  await page.evaluate(async () => {
+    const { api } = await import('/js/api-client.js');
+    await api.sheets.getSpreadsheet('sheet-077');
+    await api.sheets.appendRows('sheet-077', 'Sheet1', [[
+      'Bob Trailmate', 'Partner', 'bob@example.com', '555-0199', 'Trail Crew', '', '',
+    ]]);
+  });
+
+  // 2. Alice opens Groceries (sheet-001), opens Share Modal, selects Bob from Contacts picker, and grants Writer access
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('#checklist-items', { timeout: 5_000 });
+  await page.click('#share-btn');
+  await page.waitForSelector('#share-modal', { timeout: 5_000 });
+
+  await page.waitForSelector('.share-invite-contact-select option[value="bob@example.com"]', { state: 'attached', timeout: 5_000 });
+  await page.selectOption('.share-invite-contact-select', 'bob@example.com');
+  await expect(page.locator('.share-invite-email')).toHaveValue('bob@example.com');
+  await page.selectOption('.share-invite-role', 'writer');
+  await page.click('.share-invite-grant-btn');
+  await page.waitForSelector('.toast', { timeout: 5_000 });
+
+  const inviteLink = await page.locator('.share-invite-link').inputValue();
+  expect(inviteLink).toContain('ledger=');
+  await page.click('#share-modal .modal-close');
+
+  // Verify ledger ID was written back into Alice's Contacts sheet for Bob
+  const aliceLedgerId = await page.evaluate(async () => {
+    const { api } = await import('/js/api-client.js');
+    const data = await api.sheets.getSpreadsheet('sheet-077');
+    const rows = data.tabs?.[0]?.values || data.values || [];
+    const bobRow = rows.find(r => (r[2] || '').toLowerCase() === 'bob@example.com');
+    return bobRow ? bobRow[5] : '';
+  });
+  expect(aliceLedgerId).toBeTruthy();
+
+  // 3. Open a second browser page for User B (Bob) on a mobile viewport (375x812)
+  const bobPage = await page.context().newPage();
+  await bobPage.setViewportSize({ width: 375, height: 812 });
+  await setMockUser(bobPage, { id: 'bob', name: 'Bob', email: 'bob@example.com' });
+  await setupApp(bobPage);
+  await bobPage.evaluate(async (ledgerId) => {
+    const collab = await import('/js/collab.js');
+    const storage = await import('/js/storage.js');
+    storage.setNotifications([]);
+    await collab.registerSharedLedger({
+      sheetId: ledgerId,
+      contactEmail: 'alice@example.com',
+      ownerEmail: 'alice@example.com',
+    });
+  }, aliceLedgerId);
+
+  // 4. Bob sees the unread notification badge on mobile, opens the bell popup, verifies it is on-screen, and clicks Accept
+  await expect(bobPage.locator('.notif-bell-badge')).toBeVisible({ timeout: 5_000 });
+  await bobPage.click('.notif-bell');
+  await bobPage.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+
+  const bobPanelBox = await bobPage.locator('.notif-panel').boundingBox();
+  expect(bobPanelBox.x).toBeGreaterThanOrEqual(0);
+  expect(bobPanelBox.x + bobPanelBox.width).toBeLessThanOrEqual(375);
+
+  const acceptBtn = bobPage.locator('.notif-accept-btn').first();
+  await expect(acceptBtn).toBeVisible();
+  await acceptBtn.click();
+  await expect(bobPage.locator('.notif-decision-badge').first()).toContainText('Accepted');
+
+  // 5. Bob opens the shared Groceries Waymark and logs a collaborative change
+  await navigateToSheet(bobPage, 'sheet-001');
+  await bobPage.waitForSelector('#checklist-items', { timeout: 5_000 });
+  await bobPage.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    await collab.notifySheetMutation({
+      docId: 'sheet-001',
+      docTitle: 'Grocery List',
+      waymarkType: 'checklist',
+      action: 'add',
+      rowLabel: 'Trail Mix',
+    });
+    await collab.sendChat({ contactEmail: 'alice@example.com' }, 'Accepted the list and added Trail Mix!');
+  });
+
+  // 6. Back on Alice's page, reload to pick up shared mock sheet updates from Bob's session and poll ledgers
+  await page.reload();
+  await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
+  const aliceSync = await page.evaluate(async (ledgerId) => {
+    const collab = await import('/js/collab.js');
+    const storage = await import('/js/storage.js');
+    const userData = await import('/js/user-data.js');
+    await userData.addShareLedger({
+      key: 'contact-pair:alice@example.com::bob@example.com',
+      contactEmail: 'bob@example.com',
+      sheetId: ledgerId,
+      ownerEmail: 'alice@example.com',
+    });
+    const pushed = await collab.pollShareLedgers();
+    const notifs = storage.getNotifications();
+    const chat = await collab.readChat({ contactEmail: 'bob@example.com' });
+    return {
+      pushed,
+      hasUpdateNotif: notifs.some(n => n.type === 'update' && n.sheetId === 'sheet-001' && n.body.includes('Trail Mix')),
+      hasChatNotif: notifs.some(n => n.type === 'chat' && n.body.includes('Accepted the list')),
+      chatTexts: chat.map(m => m.text),
+    };
+  }, aliceLedgerId);
+
+  expect(aliceSync.pushed).toBeGreaterThanOrEqual(2);
+  expect(aliceSync.hasUpdateNotif).toBe(true);
+  expect(aliceSync.hasChatNotif).toBe(true);
+  expect(aliceSync.chatTexts).toContain('Accepted the list and added Trail Mix!');
+
+  // 7. Alice clicks the Call button in the notification popup to start a Wayside call with Bob
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+  await page.locator('.notif-call-btn').first().click();
+
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+  await page.click('#wayside-call-btn');
+  await bobPage.close();
+});
+
+

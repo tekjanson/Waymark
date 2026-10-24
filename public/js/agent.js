@@ -507,17 +507,28 @@ async function _onVaultUnlock(opts = {}) {
   const enrollCb = _container.querySelector('.agent-vault-bio-enroll-checkbox');
   const shouldEnrollBio = Boolean(enrollCb && enrollCb.checked);
   const pw = input?.value?.trim() ?? '';
+
+  // Enroll biometrics BEFORE the network fetch in unlockVault() so mobile
+  // browsers (iOS Safari / Android Chrome) do not lose transient user activation.
+  let enrolled = false;
+  if (shouldEnrollBio && pw) {
+    enrolled = await vault.enrollBiometricVault(pw);
+  }
+
   // Empty password is valid (unencrypted sheet) — try with empty string first
   const ok = await vault.unlockVault(pw);
   if (ok) {
-    if (shouldEnrollBio) {
-      const enrolled = await vault.enrollBiometricVault(pw);
-      if (enrolled) {
-        showToast('Biometric unlock enabled on this device', 'success');
-      }
+    if (shouldEnrollBio && !enrolled) {
+      enrolled = await vault.enrollBiometricVault(pw);
+    }
+    if (enrolled) {
+      showToast('Biometric unlock enabled on this device', 'success');
     }
     _renderUI(); // re-render with vault unlocked
   } else {
+    if (enrolled) {
+      vault.clearBiometricVault();
+    }
     showToast('Incorrect password or could not read sheet', 'error');
     if (input) { input.value = ''; input.focus(); }
   }

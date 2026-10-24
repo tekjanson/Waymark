@@ -19,6 +19,9 @@ const PBKDF2_ITERATIONS = 100000;
 /** @type {Map<string, CryptoKey>} sheetId → derived AES-GCM key */
 const _keyCache = new Map();
 
+/** @type {Map<string, string>} sheetId → verified non-empty plaintext password (in-memory only) */
+const _passwordCache = new Map();
+
 /* ---------- Per-sheet encrypted columns tracking ---------- */
 
 /**
@@ -150,7 +153,19 @@ export async function unlock(password, sheetId, sampleEncrypted) {
     if (test === null) return false; // wrong password
   }
   _keyCache.set(sheetId, key);
+  if (typeof password === 'string' && password.length > 0) {
+    _passwordCache.set(sheetId, password);
+  }
   return true;
+}
+
+/**
+ * Get the verified password cached in memory for an unlocked sheet, if available.
+ * @param {string} sheetId
+ * @returns {string|null}
+ */
+export function getUnlockedPassword(sheetId) {
+  return _passwordCache.get(sheetId) || null;
 }
 
 /**
@@ -159,6 +174,7 @@ export async function unlock(password, sheetId, sampleEncrypted) {
  */
 export function lock(sheetId) {
   _keyCache.delete(sheetId);
+  _passwordCache.delete(sheetId);
 }
 
 /**

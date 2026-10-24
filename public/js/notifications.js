@@ -1112,8 +1112,22 @@ function _openPanel(bellEl) {
   _renderPanelContent();
 
   const rect = bellEl.getBoundingClientRect();
-  _panel.style.top   = `${rect.bottom + 8}px`;
-  _panel.style.right = `${window.innerWidth - rect.right}px`;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 375;
+  _panel.style.top = `${Math.max(8, rect.bottom + 8)}px`;
+  if (vw <= 640) {
+    _panel.style.left = '8px';
+    _panel.style.right = '8px';
+    _panel.style.width = 'auto';
+    _panel.style.maxWidth = 'calc(100vw - 16px)';
+  } else {
+    _panel.style.left = '';
+    _panel.style.width = '';
+    _panel.style.maxWidth = '';
+    const panelWidth = 340;
+    const desiredRight = Math.max(8, vw - rect.right);
+    const maxRight = Math.max(8, vw - panelWidth - 8);
+    _panel.style.right = `${Math.min(desiredRight, maxRight)}px`;
+  }
   _panel.classList.remove('hidden');
 
   // Opening the panel marks all notifications as read and hides the unread badge.

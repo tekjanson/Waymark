@@ -219,14 +219,21 @@ function _buildNoKeysState() {
         click: async () => {
           const pw = pwInput.value.trim();
           const shouldEnroll = Boolean(enrollCb && enrollCb.checked);
+          let enrolled = false;
+          if (shouldEnroll && pw) {
+            enrolled = await vault.enrollBiometricVault(pw);
+          }
           const ok = await vault.unlockVault(pw);
           if (ok) {
-            if (shouldEnroll) {
-              await vault.enrollBiometricVault(pw);
+            if (shouldEnroll && !enrolled) {
+              enrolled = await vault.enrollBiometricVault(pw);
             }
             showToast('AI keys unlocked', 'success');
             _render();
           } else {
+            if (enrolled) {
+              vault.clearBiometricVault();
+            }
             showToast('Incorrect password or unreadable sheet', 'error');
             pwInput.value = '';
           }

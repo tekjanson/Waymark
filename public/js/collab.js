@@ -16,7 +16,7 @@ import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as storage from './storage.js';
 import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet } from './notifications.js';
-import { discoverDirectory } from './contacts-picker.js';
+import { discoverDirectory, isCandidateContactsBook, extractLedgerSheetId, normalizeContactEmail } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
 
@@ -139,6 +139,14 @@ export async function ensureShareLedger(target) {
     await api.sheets.writeTab(sheetId, SIGNALING_TAB, [SIGNALING_HEADERS]);
   }
 
+  // Always persist the ledger mapping and link back to Contacts immediately
+  // so a subsequent permission error never strands an unmapped ledger sheet.
+  const ownerEmail = existing?.ownerEmail || (createdHere ? currentEmail() : '');
+  if (createdHere) {
+    await rememberShareLedger(target, identity, sheetId, ownerEmail, false);
+  }
+  await linkLedgerToContacts(target, sheetId, existing?.mergedSheetIds || []);
+
   // Grant access when this account owns the ledger. The other end can already
   // read a discovered ledger, but may not have permission to share it onward.
   let permissionAttempted = existing?.permissionAttempted === true;
@@ -146,28 +154,18 @@ export async function ensureShareLedger(target) {
   const shouldGrantAccess = recipientEmails.length > 0 && (createdHere ||
     (existing?.ownerEmail === currentEmail() && !permissionAttempted));
   if (shouldGrantAccess) {
+    let firstErr = null;
     for (const email of recipientEmails) {
       try {
         await api.drive.createDrivePermission(sheetId, email, 'writer');
       } catch (err) {
-        // A fresh 1:1 ledger must actually be shared or the other account will be
-        // left on its own sheet. Existing sheets may already grant access, or
-        // may be owned by the other contact, so a repeated grant is best-effort.
-        if (createdHere && target.contactEmail) throw err;
+        if (!firstErr) firstErr = err;
       }
     }
-    permissionAttempted = true;
+    permissionAttempted = !firstErr;
+    await rememberShareLedger(target, identity, sheetId, ownerEmail, permissionAttempted);
+    if (firstErr && createdHere && target.contactEmail) throw firstErr;
   }
-  if (createdHere || shouldGrantAccess) {
-    await rememberShareLedger(
-      target,
-      identity,
-      sheetId,
-      existing?.ownerEmail || (createdHere ? currentEmail() : ''),
-      permissionAttempted
-    );
-  }
-  await linkLedgerToContacts(target, sheetId, existing?.mergedSheetIds || []);
   return { key, sheetId };
 }
 
@@ -249,6 +247,40 @@ export async function findExistingShareLedger(target) {
     ownerEmail: mapped.ownerEmail || '',
     permissionAttempted: mapped.permissionAttempted === true,
   };
+
+  // Fallback: check if the user's Contacts Waymark already has a Share_Data_Sheet
+  // or Social_Data_Location ID recorded for this contact or group.
+  try {
+    const dir = await discoverDirectory();
+    const targetEmail = String(target.contactEmail || '').trim().toLowerCase();
+    const targetGroup = String(target.group || '').trim().toLowerCase();
+    let fromContactsId = '';
+    if (targetGroup) {
+      const crewMatch = (dir.crews || []).find(c => (c.name || '').trim().toLowerCase() === targetGroup && c.ledgerSheetId);
+      if (crewMatch?.ledgerSheetId) fromContactsId = crewMatch.ledgerSheetId;
+    } else if (targetEmail) {
+      const contactMatch = (dir.contacts || []).find(c => (c.email || '').trim().toLowerCase() === targetEmail && c.ledgerSheetId);
+      if (contactMatch?.ledgerSheetId) fromContactsId = contactMatch.ledgerSheetId;
+    }
+    if (fromContactsId) {
+      const checkData = await api.sheets.getSpreadsheet(fromContactsId);
+      const hasSharedDocsTab = Array.isArray(checkData?.tabs) && checkData.tabs.some(
+        t => (t.title || '').toLowerCase() === SHARED_DOCS_TAB.toLowerCase()
+      );
+      if (hasSharedDocsTab) {
+        await rememberShareLedger(target, identity, fromContactsId, '', false);
+        return {
+          key,
+          sheetId: fromContactsId,
+          ownerEmail: '',
+          permissionAttempted: false,
+        };
+      }
+    }
+  } catch {
+    /* directory fallback is best-effort */
+  }
+
   return null;
 }
 
@@ -1432,7 +1464,7 @@ async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
     const { TEMPLATES } = await import('./templates/index.js');
     const pool = [...userData.getPinnedSheets(), ...userData.getRecentSheets()];
     const seen = new Set();
-    const books = pool.filter(s => s && s.templateKey === 'contacts' && !seen.has(s.id) && seen.add(s.id));
+    const books = pool.filter(s => isCandidateContactsBook(s) && !seen.has(s.id) && seen.add(s.id));
     const email = (target.contactEmail || '').trim().toLowerCase();
     const group = (target.group || '').trim().toLowerCase();
     const previousIds = new Set(previousLedgerIds);
@@ -1444,24 +1476,43 @@ async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
       const values = (tab && tab.values) || data.values || [];
       if (values.length < 2) continue;
       const lower = (values[0] || []).map(h => (h || '').toLowerCase().trim());
+      if (book.templateKey !== 'contacts' && !TEMPLATES.contacts.detect(lower)) continue;
+      book.templateKey = 'contacts';
       const cols = TEMPLATES.contacts.columns(lower);
-      if (cols.shareSheet < 0 && cols.socialLocation < 0) continue;
 
-      let wroteBack = false;
+      // Find matching contact/group rows first
+      const matchingRows = [];
       for (let i = 1; i < values.length; i++) {
         const row = values[i] || [];
-        const rowEmail = (cols.email >= 0 ? row[cols.email] : '').trim().toLowerCase();
+        const rowEmail = normalizeContactEmail(cols.email >= 0 ? row[cols.email] : '').toLowerCase();
         const rowGroup = (cols.group >= 0 ? row[cols.group] : '').trim().toLowerCase();
-        const match = (email && rowEmail === email) || (group && rowGroup === group);
-        if (!match) continue;
-        const shareValue = (cols.shareSheet >= 0 ? row[cols.shareSheet] : '') || '';
-        const socialValue = (cols.socialLocation >= 0 ? row[cols.socialLocation] : '') || '';
-        if (cols.shareSheet >= 0 && (!shareValue.trim() || previousIds.has(shareValue.trim()))) {
-          await api.sheets.updateCell(book.id, tabTitle, i, cols.shareSheet, sheetId);
+        if ((email && rowEmail === email) || (group && rowGroup === group)) {
+          matchingRows.push(i);
+        }
+      }
+      if (!matchingRows.length) continue;
+
+      let shareCol = cols.shareSheet;
+      let socialCol = cols.socialLocation;
+      if (shareCol < 0 && socialCol < 0) {
+        // Auto-upgrade Contacts sheets that lack Share_Data_Sheet / Social_Data_Location headers
+        shareCol = (values[0] || []).length;
+        socialCol = shareCol + 1;
+        await api.sheets.updateCell(book.id, tabTitle, 0, shareCol, 'Share_Data_Sheet');
+        await api.sheets.updateCell(book.id, tabTitle, 0, socialCol, 'Social_Data_Location');
+      }
+
+      let wroteBack = false;
+      for (const i of matchingRows) {
+        const row = values[i] || [];
+        const shareValue = extractLedgerSheetId(shareCol >= 0 ? row[shareCol] : '');
+        const socialValue = extractLedgerSheetId(socialCol >= 0 ? row[socialCol] : '');
+        if (shareCol >= 0 && (!shareValue || previousIds.has(shareValue))) {
+          await api.sheets.updateCell(book.id, tabTitle, i, shareCol, sheetId);
           wroteBack = true;
         }
-        if (cols.socialLocation >= 0 && (!socialValue.trim() || previousIds.has(socialValue.trim()))) {
-          await api.sheets.updateCell(book.id, tabTitle, i, cols.socialLocation, sheetId);
+        if (socialCol >= 0 && (!socialValue || previousIds.has(socialValue))) {
+          await api.sheets.updateCell(book.id, tabTitle, i, socialCol, sheetId);
           wroteBack = true;
         }
       }

@@ -339,6 +339,47 @@ async function deleteEntries(indices) {
 }
 
 /**
+ * Show a confirmation modal before deleting one or more logged entries.
+ * @param {{ title: string, message: string, confirmLabel?: string, onConfirm: () => void | Promise<void> }} opts
+ */
+function confirmCalorieDelete({ title, message, confirmLabel = 'Delete', onConfirm }) {
+  const existing = document.querySelector('.calorie-confirm-overlay');
+  if (existing) existing.remove();
+
+  const overlay = el('div', { className: 'calorie-confirm-overlay', role: 'dialog', 'aria-modal': 'true' });
+  const close = () => overlay.remove();
+
+  const cancelBtn = el('button', {
+    className: 'calorie-confirm-cancel',
+    type: 'button',
+  }, ['Cancel']);
+  cancelBtn.addEventListener('click', close);
+
+  const yesBtn = el('button', {
+    className: 'calorie-confirm-yes',
+    type: 'button',
+  }, [confirmLabel]);
+  yesBtn.addEventListener('click', async () => {
+    yesBtn.disabled = true;
+    close();
+    await onConfirm();
+  });
+
+  const modal = el('div', { className: 'calorie-confirm-modal' }, [
+    el('div', { className: 'calorie-confirm-title' }, [title]),
+    el('div', { className: 'calorie-confirm-message' }, [message]),
+    el('div', { className: 'calorie-confirm-actions' }, [cancelBtn, yesBtn]),
+  ]);
+
+  overlay.append(modal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  document.body.appendChild(overlay);
+  yesBtn.focus();
+}
+
+/**
  * Open an edit/delete sheet for a single logged entry.
  * @param {{row:string[], index:number}} entry
  * @param {boolean} isExercise
@@ -431,7 +472,17 @@ function openEntryEditor(entry, isExercise) {
   });
 
   const delBtn = el('button', { className: 'calorie-entry-delete', type: 'button' }, ['\uD83D\uDDD1 Delete']);
-  delBtn.addEventListener('click', async () => { close(); await deleteEntry(entry.index); });
+  delBtn.addEventListener('click', () => {
+    confirmCalorieDelete({
+      title: `Delete "${name}"?`,
+      message: `Remove "${name}" from your calorie log?`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        close();
+        await deleteEntry(entry.index);
+      },
+    });
+  });
 
   body.append(el('div', { className: 'calorie-entry-actions' }, [delBtn]), saveBtn);
   modal.append(header, body);
@@ -625,7 +676,12 @@ function buildMealSection(mealType, dayRows, totals) {
       }, ['\u2715']);
       quickDelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        deleteEntry(entry.index);
+        confirmCalorieDelete({
+          title: `Delete "${name}"?`,
+          message: `Remove "${name}" from your calorie log?`,
+          confirmLabel: 'Delete',
+          onConfirm: () => deleteEntry(entry.index),
+        });
       });
 
       const rowEl = el('div', {
@@ -688,7 +744,12 @@ function buildExerciseSection(dayRows, totals) {
       }, ['\u2715']);
       quickDelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        deleteEntry(entry.index);
+        confirmCalorieDelete({
+          title: `Delete "${name}"?`,
+          message: `Remove "${name}" from your calorie log?`,
+          confirmLabel: 'Delete',
+          onConfirm: () => deleteEntry(entry.index),
+        });
       });
 
       const rowEl = el('div', {
@@ -866,7 +927,15 @@ function renderDayView(container, dateMap) {
     }, [`\uD83D\uDDD1 Delete Selected (${_selectedIndices.size})`]);
     delSelectedBtn.disabled = _selectedIndices.size === 0;
     delSelectedBtn.addEventListener('click', () => {
-      deleteEntries([..._selectedIndices]);
+      const count = _selectedIndices.size;
+      if (count === 0) return;
+      const toDelete = [..._selectedIndices];
+      confirmCalorieDelete({
+        title: `Delete ${count} item${count === 1 ? '' : 's'}?`,
+        message: `Remove ${count} selected item${count === 1 ? '' : 's'} from your calorie log?`,
+        confirmLabel: `Delete (${count})`,
+        onConfirm: () => deleteEntries(toDelete),
+      });
     });
 
     const cancelSelectBtn = el('button', {

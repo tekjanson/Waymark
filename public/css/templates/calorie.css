@@ -574,6 +574,65 @@
 }
 .calorie-entry-delete:hover { background: rgba(220, 38, 38, 0.08); }
 
+/* Delete confirmation dialog */
+.calorie-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.calorie-confirm-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  width: 100%;
+  max-width: 340px;
+  box-shadow: var(--shadow);
+}
+.calorie-confirm-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+.calorie-confirm-message {
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+.calorie-confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+.calorie-confirm-cancel,
+.calorie-confirm-yes {
+  flex: 1;
+  min-height: 42px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+}
+.calorie-confirm-cancel {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.calorie-confirm-yes {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: #fff;
+}
+.calorie-confirm-yes:hover {
+  opacity: 0.92;
+}
+
 /* ---------- Desktop / tablet layout (container-query driven) ---------- */
 
 /* Cap the reading width on very wide content areas and keep it centered. */

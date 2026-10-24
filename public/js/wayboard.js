@@ -7,6 +7,7 @@ import { el, showToast } from './ui.js';
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as collab from './collab.js';
+import { discoverDirectory } from './contacts-picker.js';
 import { detectTemplate, TEMPLATES } from './templates/index.js';
 import { isEditLocked, setEditLocked } from './templates/shared.js';
 import { WaymarkConnect } from './webrtc.js';
@@ -103,8 +104,9 @@ export function initWayboard(deps = {}) {
 
       const homeView = document.getElementById('home-view');
       if (!homeView || homeView.classList.contains('hidden')) {
+        window.location.hash = '#/';
         if (_navigate) _navigate('home');
-        else window.location.hash = '#/';
+        await new Promise((r) => setTimeout(r, 0));
       }
       await renderWayside().catch(() => {});
       const host = document.getElementById('home-wayside');
@@ -831,33 +833,24 @@ function ensureWaysidePolling() {
  * @returns {Promise<{ crews: Array<{name:string}>, people: Array<{name:string, email:string, group:string}> }>}
  */
 async function discoverCrews() {
-  const pool = [...userData.getPinnedSheets(), ...userData.getRecentSheets()];
-  const seen = new Set();
-  const books = pool.filter(s => s && s.templateKey === 'contacts' && !seen.has(s.id) && seen.add(s.id));
   const crews = new Map();
   const people = [];
   const emailSeen = new Set();
-  for (const book of books) {
-    try {
-      const data = await api.sheets.getSpreadsheet(book.id);
-      const tab = (data.tabs && data.tabs[0]) || null;
-      const values = (tab && tab.values) || data.values || [];
-      if (values.length < 2) continue;
-      const lower = (values[0] || []).map(h => (h || '').toLowerCase().trim());
-      const cols = TEMPLATES.contacts.columns(lower);
-      for (let i = 1; i < values.length; i++) {
-        const row = values[i] || [];
-        const name = (cols.name >= 0 ? row[cols.name] : '') || '';
-        const email = ((cols.email >= 0 ? row[cols.email] : '') || '').trim();
-        const group = ((cols.group >= 0 ? row[cols.group] : '') || '').trim();
-        if (group) crews.set(group, true);
-        if (email && !emailSeen.has(email.toLowerCase())) {
-          emailSeen.add(email.toLowerCase());
-          people.push({ name: name.trim() || email, email, group });
-        }
+
+  try {
+    const dir = await discoverDirectory();
+    for (const c of dir.crews || []) {
+      if (c?.name) crews.set(c.name, true);
+    }
+    for (const p of dir.contacts || []) {
+      const eLower = (p?.email || '').trim().toLowerCase();
+      if (p?.group && !crews.has(p.group)) crews.set(p.group, true);
+      if (eLower && !emailSeen.has(eLower)) {
+        emailSeen.add(eLower);
+        people.push({ name: p.name || p.email, email: p.email, group: p.group || '' });
       }
-    } catch { /* skip */ }
-  }
+    }
+  } catch { /* skip */ }
 
   // Merge past collaborators and crews from Share Ledgers so users can call/chat
   // anyone they have shared with in the past, even without a Contacts Waymark.

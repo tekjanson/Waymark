@@ -750,10 +750,14 @@ function buildKeysSheetSection(onRefresh) {
             click: async () => {
               const pw = pwInput.value.trim();
               const shouldEnroll = Boolean(enrollCb && enrollCb.checked);
+              let enrolled = false;
+              if (shouldEnroll && pw) {
+                enrolled = await vault.enrollBiometricVault(pw);
+              }
               const ok = await vault.unlockVault(pw);
               if (ok) {
-                if (shouldEnroll) {
-                  await vault.enrollBiometricVault(pw);
+                if (shouldEnroll && !enrolled) {
+                  enrolled = await vault.enrollBiometricVault(pw);
                 }
                 const g = vault.getGeminiKeys().length;
                 const c = vault.getClaudeKeys().length;
@@ -761,6 +765,9 @@ function buildKeysSheetSection(onRefresh) {
                 if (typeof onRefresh === 'function') onRefresh();
                 reopen();
               } else {
+                if (enrolled) {
+                  vault.clearBiometricVault();
+                }
                 showToast('Incorrect password or could not read sheet', 'error');
                 pwInput.value = '';
               }
@@ -803,13 +810,34 @@ function buildKeysSheetSection(onRefresh) {
     vault.isBiometricSupported().then((supported) => {
       if (!supported) return;
       bioManageSlot.innerHTML = '';
+      const needsPwInput = !vault.hasKnownVaultPassword(sheetId);
+      const bioPwInput = needsPwInput ? el('input', {
+        type: 'password',
+        className: 'agent-settings-input agent-vault-bio-pw-input',
+        placeholder: 'Sheet password for biometrics…',
+      }) : null;
+      if (bioPwInput) bioManageSlot.appendChild(bioPwInput);
       bioManageSlot.appendChild(el('button', {
         className: 'agent-vault-bio-enable-btn agent-vault-setup-btn',
         type: 'button',
         on: {
           click: async () => {
-            const ok = await vault.enrollBiometricVault();
+            const explicitPw = bioPwInput ? bioPwInput.value.trim() : undefined;
+            if (needsPwInput && !explicitPw) {
+              showToast('Enter your sheet password to enable biometric unlock', 'error');
+              bioPwInput?.focus();
+              return;
+            }
+            const ok = await vault.enrollBiometricVault(explicitPw);
             if (ok) {
+              if (explicitPw) {
+                const verified = await vault.unlockVault(explicitPw);
+                if (!verified) {
+                  vault.clearBiometricVault();
+                  showToast('Incorrect sheet password — biometrics not enabled', 'error');
+                  return;
+                }
+              }
               showToast('Biometric unlock enabled on this device', 'success');
               reopen();
             } else {

@@ -108,7 +108,7 @@ const definition = {
       const phone = cell(row, cols.phone);
       const role  = cell(row, cols.role);
       const group = cell(row, cols.group);
-      const shareRef = cell(row, cols.shareSheet);
+      const shareRef = cell(row, cols.shareSheet) || cell(row, cols.socialLocation);
       const ch = (name[0] || '?').toUpperCase();
       const letter = /[A-Z]/.test(ch) ? ch : '#';
 

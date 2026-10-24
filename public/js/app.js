@@ -200,6 +200,8 @@ function navigate(type, id, name) {
     window.location.hash = `#/sheet/${id}`;
   } else if (type === 'folder') {
     window.location.hash = `#/folder/${id}/${encodeURIComponent(name || '')}`;
+  } else if (type === 'home') {
+    window.location.hash = '#/';
   }
 }
 
