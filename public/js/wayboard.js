@@ -227,41 +227,65 @@ function renderOverviewWidget() {
   ));
 }
 
+function renderPagedWidgetList(items, makeRow) {
+  const pageSize = 5;
+  let visibleCount = Math.min(pageSize, items.length);
+  const list = el('div', { className: 'wayboard-data-list' }, items.slice(0, visibleCount).map(makeRow));
+  const remainingCount = () => Math.min(pageSize, items.length - visibleCount);
+  const showMore = el('button', {
+    className: 'btn-secondary btn-sm wayboard-show-more',
+    type: 'button',
+    on: { click: () => {
+      const previousCount = visibleCount;
+      visibleCount = Math.min(visibleCount + pageSize, items.length);
+      list.append(...items.slice(previousCount, visibleCount).map(makeRow));
+      list.scrollTop = list.scrollHeight;
+      showMore.hidden = visibleCount >= items.length;
+      showMore.textContent = `Show ${remainingCount()} more`;
+    } },
+  }, [`Show ${remainingCount()} more`]);
+  showMore.hidden = visibleCount >= items.length;
+  return el('div', { className: 'wayboard-paged-list' }, [list, showMore]);
+}
+
+function renderFolderRow(folder) {
+  return el('button', {
+    className: 'wayboard-data-row', type: 'button', title: folder.name || 'Untitled folder',
+    on: { click: () => _navigate && _navigate('folder', folder.id, folder.name) },
+  }, [
+    el('span', { className: 'wayboard-data-icon', 'aria-hidden': 'true' }, ['📁']),
+    el('span', { className: 'wayboard-data-copy' }, [
+      el('span', { className: 'wayboard-data-name' }, [folder.name || 'Untitled folder']),
+      folder.owner ? el('span', { className: 'wayboard-data-detail' }, [
+        `${folder.owner.includes('@') ? folder.owner.split('@')[0] : folder.owner}${folder.shared ? ' · Shared' : ''}`,
+      ]) : (folder.shared ? el('span', { className: 'wayboard-data-detail' }, ['Shared']) : null),
+    ]),
+    el('span', { className: 'wayboard-data-arrow', 'aria-hidden': 'true' }, ['↗']),
+  ]);
+}
+
 function renderSheetListWidget(type) {
-  let items = [];
-  if (type === 'recent') items = userData.getRecentSheets().slice(0, 5);
-  if (type === 'pinned') items = userData.getPinnedSheets().slice(0, 5);
   if (type === 'folders') {
-    const folders = userData.getPinnedFolders().slice(0, 5);
+    const folders = userData.getPinnedFolders();
     if (!folders.length) return emptyWidgetMessage('No folder waypoints pinned yet. Pin one in Browse to mark the trail.');
-    return el('div', { className: 'wayboard-data-list' }, folders.map(folder =>
-      el('button', {
-        className: 'wayboard-data-row', type: 'button', title: folder.name || 'Untitled folder',
-        on: { click: () => _navigate && _navigate('folder', folder.id, folder.name) },
-      }, [
-        el('span', { className: 'wayboard-data-icon', 'aria-hidden': 'true' }, ['📁']),
-        el('span', { className: 'wayboard-data-copy' }, [
-          el('span', { className: 'wayboard-data-name' }, [folder.name || 'Untitled folder']),
-          folder.owner ? el('span', { className: 'wayboard-data-detail' }, [
-            `${folder.owner.includes('@') ? folder.owner.split('@')[0] : folder.owner}${folder.shared ? ' · Shared' : ''}`,
-          ]) : (folder.shared ? el('span', { className: 'wayboard-data-detail' }, ['Shared']) : null),
-        ]),
-        el('span', { className: 'wayboard-data-arrow', 'aria-hidden': 'true' }, ['↗']),
-      ])
-    ));
+    return renderPagedWidgetList(folders, renderFolderRow);
   }
+
+  let items = [];
+  if (type === 'recent') items = userData.getRecentSheets();
+  if (type === 'pinned') items = userData.getPinnedSheets();
   if (!items.length) {
     const noun = type === 'recent' ? 'recent Waymarks' : 'pinned Waymarks';
     return emptyWidgetMessage(`No ${noun} yet. Open or pin a Waymark to leave a mark here.`);
   }
-  return el('div', { className: 'wayboard-data-list' }, items.map(sheet => {
+  return renderPagedWidgetList(items, sheet => {
     const template = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
     const timestamp = sheet.openedAt ? Date.parse(sheet.openedAt) : NaN;
     const ago = Number.isFinite(timestamp)
       ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(timestamp)
       : '';
     return makeWidgetRow(sheet, template?.icon || '📄', ago);
-  }));
+  });
 }
 
 function sheetDataPromise(sheetId) {
