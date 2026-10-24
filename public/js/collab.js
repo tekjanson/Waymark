@@ -15,7 +15,7 @@
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as storage from './storage.js';
-import { addNotification, refreshBell } from './notifications.js';
+import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet } from './notifications.js';
 import { discoverDirectory } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
@@ -492,6 +492,8 @@ export async function pollShareLedgers() {
     }
   }
 
+  await flushNotificationSheetWrites();
+  await pollNotificationSheet().catch(() => 0);
   if (pushed) refreshBell();
   return pushed;
 }

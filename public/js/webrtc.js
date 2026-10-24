@@ -1040,7 +1040,10 @@ export class WaymarkConnect {
             break;
           case 'waymark-notification':
           case 'orchestrator-alert':
-            // Forward orchestrator alerts to the Android native layer
+            // Forward orchestrator/peer alerts to the web notification bell and Android native layer
+            if (typeof document !== 'undefined') {
+              document.dispatchEvent(new CustomEvent('waymark:peer-notification', { detail: m }));
+            }
             {
               const bridge = getAndroidBridge(['onPeerMessage']);
               if (bridge) bridge.onPeerMessage(e.data);

@@ -130,6 +130,22 @@ const definition = {
         badge.textContent = n.status;
         badge.className = `notification-type-badge notification-badge-${n.status.toLowerCase()}`;
         emitEdit(n.rowIndex, cols.status, n.status);
+        if (isConnected) {
+          try {
+            const stored = JSON.parse(localStorage.getItem('waymark_notifications') || '[]');
+            let changed = false;
+            for (const item of stored) {
+              if (item.title === n.title) {
+                item.read = n.status !== 'Active';
+                changed = true;
+              }
+            }
+            if (changed) {
+              localStorage.setItem('waymark_notifications', JSON.stringify(stored));
+              document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
+            }
+          } catch { /* ignore */ }
+        }
         // Update card class
         card.className = `notification-card notification-status-${n.status.toLowerCase()}`;
         // Update summary count
