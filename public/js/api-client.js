@@ -85,12 +85,15 @@ function persistMockSheetRecord(sheetId, data) {
 }
 
 function persistIfCreatedSheet(sheetId, data) {
-  if (!/^created-sheet-/.test(String(sheetId || ''))) return;
+  if (!sheetId || !data) return;
   persistMockSheetRecord(sheetId, data);
 }
 
 async function loadFixtures() {
-  if (mockFixtures) return mockFixtures;
+  if (mockFixtures) {
+    Object.assign(mockFixtures.sheets, loadPersistedMockSheets());
+    return mockFixtures;
+  }
   const [folders, users] = await Promise.all([
     fetch(BASE + '/__fixtures/folders.json').then(r => r.json()),
     fetch(BASE + '/__fixtures/users.json').then(r => r.json()),
@@ -101,6 +104,11 @@ async function loadFixtures() {
 
 async function loadMockSheet(sheetId) {
   const fix = await loadFixtures();
+  const persisted = loadPersistedMockSheets();
+  if (persisted[sheetId]) {
+    fix.sheets[sheetId] = persisted[sheetId];
+    return fix.sheets[sheetId];
+  }
   if (fix.sheets[sheetId]) return fix.sheets[sheetId];
 
   // Try to load a fixture file for this sheet
@@ -1012,8 +1020,7 @@ export const api = {
     async appendRows(spreadsheetId, sheetTitle, rows) {
       if (isLocal) {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
-        const fix = await loadFixtures();
-        const data = fix.sheets[spreadsheetId];
+        const data = await loadMockSheet(spreadsheetId);
         if (data) {
           // Route the append to the named tab when the sheet has multiple tabs
           // (e.g. bilateral sharing sheets). Falls back to the primary values
@@ -1057,8 +1064,7 @@ export const api = {
     async updateCell(spreadsheetId, sheetTitle, row, col, value) {
       if (isLocal) {
         // In mock mode, update the cached fixture data (including named tabs on multi-tab sheets)
-        const fix = await loadFixtures();
-        const data = fix.sheets[spreadsheetId];
+        const data = await loadMockSheet(spreadsheetId);
         if (data) {
           let targetValues = data.values;
           let tab = null;

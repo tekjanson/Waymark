@@ -163,19 +163,73 @@ function _buildNoKeysState() {
   // If a keys sheet is linked but still locked, guide the user to unlock it
   // right here rather than sending them to add a new key.
   if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    const hasBio = vault.hasBiometricVault();
+    const isMobile = vault.isMobileWeb();
     const pwInput = el('input', {
       type: 'password',
       className: 'template-ai-unlock-input',
       placeholder: 'Keys sheet password (blank if unencrypted)',
     });
+    const bioSlot = el('div', { className: 'template-ai-bio-slot' });
+    if (hasBio) {
+      const bioBtn = el('button', {
+        className: 'template-ai-bio-btn agent-vault-bio-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            bioBtn.disabled = true;
+            bioBtn.textContent = '🫆 Verifying…';
+            const ok = await vault.unlockVaultWithBiometrics();
+            if (ok) {
+              showToast('AI keys unlocked with biometrics', 'success');
+              _render();
+            } else {
+              bioBtn.disabled = false;
+              bioBtn.textContent = '🫆 Unlock with Biometrics';
+              showToast('Biometric unlock failed or cancelled', 'error');
+            }
+          },
+        },
+      }, ['🫆 Unlock with Biometrics']);
+      bioSlot.appendChild(bioBtn);
+    }
+
+    const enrollSlot = el('div', { className: 'template-ai-bio-enroll-slot' });
+    let enrollCb = null;
+    if (!hasBio) {
+      vault.isBiometricSupported().then((supported) => {
+        if (!supported) return;
+        enrollCb = el('input', {
+          type: 'checkbox',
+          className: 'template-ai-bio-enroll-checkbox agent-vault-bio-enroll-checkbox',
+        });
+        if (isMobile) enrollCb.checked = true;
+        enrollSlot.innerHTML = '';
+        enrollSlot.appendChild(el('label', { className: 'agent-vault-bio-enroll-label' }, [
+          enrollCb,
+          el('span', {}, [isMobile ? '📱 Enable biometric unlock on mobile' : '🫆 Enable biometric unlock']),
+        ]));
+      }).catch(() => {});
+    }
+
     const unlockBtn = el('button', {
       className: 'template-ai-unlock-btn',
       type: 'button',
       on: {
         click: async () => {
-          const ok = await vault.unlockVault(pwInput.value.trim());
-          if (ok) { showToast('AI keys unlocked', 'success'); _render(); }
-          else { showToast('Incorrect password or unreadable sheet', 'error'); pwInput.value = ''; }
+          const pw = pwInput.value.trim();
+          const shouldEnroll = Boolean(enrollCb && enrollCb.checked);
+          const ok = await vault.unlockVault(pw);
+          if (ok) {
+            if (shouldEnroll) {
+              await vault.enrollBiometricVault(pw);
+            }
+            showToast('AI keys unlocked', 'success');
+            _render();
+          } else {
+            showToast('Incorrect password or unreadable sheet', 'error');
+            pwInput.value = '';
+          }
         },
       },
     }, ['🔓 Unlock AI keys']);
@@ -184,7 +238,9 @@ function _buildNoKeysState() {
       el('div', { className: 'template-ai-no-keys-icon' }, ['🔐']),
       el('p', { className: 'template-ai-no-keys-text' }, ['Your AI keys sheet is locked.']),
       el('p', { className: 'template-ai-no-keys-hint' }, ['Unlock it to use the AI on this device.']),
+      bioSlot,
       pwInput,
+      enrollSlot,
       unlockBtn,
     ]);
   }

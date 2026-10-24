@@ -20,13 +20,247 @@ import * as userData from '../user-data.js';
 
 /* ---------- localStorage keys ---------- */
 
-const LS_SHEET_ID   = 'waymark_agent_keys_sheet_id';
-const LS_SHEET_NAME = 'waymark_agent_keys_sheet_name';
+const LS_SHEET_ID        = 'waymark_agent_keys_sheet_id';
+const LS_SHEET_NAME      = 'waymark_agent_keys_sheet_name';
+const LS_BIOMETRIC_VAULT = 'waymark_agent_biometric_vault';
 
 /* ---------- In-memory session ---------- */
 
 /** @type {{ geminiKeys: Array, claudeKeys: Array, openaiKeys: Array } | null} */
 let _session = null;
+/** @type {string | null} */
+let _lastUnlockedPassword = null;
+
+/* ---------- Base64 helpers ---------- */
+
+function _toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function _fromBase64(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/* ---------- Mobile & Biometric Unlock (WebAuthn) ---------- */
+
+/**
+ * Detect whether the user is on a mobile web device (or mobile viewport / touch device).
+ * @returns {boolean}
+ */
+export function isMobileWeb() {
+  if (typeof window === 'undefined') return false;
+  if (window.__WAYMARK_BIOMETRIC_MOBILE === true) return true;
+  if (window.__WAYMARK_BIOMETRIC_MOBILE === false) return false;
+  if (navigator.userAgentData?.mobile === true) return true;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod|Mobile|Touch/i.test(ua)) return true;
+  const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  if (coarse && (navigator.maxTouchPoints || 0) > 0) return true;
+  if (window.innerWidth <= 768 && (navigator.maxTouchPoints || 0) > 0) return true;
+  return false;
+}
+
+/**
+ * Check if WebAuthn platform biometrics (Face ID / Touch ID / Fingerprint) are available.
+ * Supports `window.__WAYMARK_MOCK_BIOMETRICS` for deterministic testing.
+ * @returns {Promise<boolean>}
+ */
+export async function isBiometricSupported() {
+  if (typeof window === 'undefined') return false;
+  if (window.__WAYMARK_MOCK_BIOMETRICS) {
+    return window.__WAYMARK_MOCK_BIOMETRICS.supported !== false;
+  }
+  try {
+    if (
+      window.PublicKeyCredential &&
+      navigator.credentials &&
+      typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
+    ) {
+      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Check if a biometric unlock credential is enrolled for the current linked keys sheet.
+ * @param {string|null} [sheetId]
+ * @returns {boolean}
+ */
+export function hasBiometricVault(sheetId = getLinkedSheetId()) {
+  if (!sheetId) return false;
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_BIOMETRIC_VAULT) || 'null');
+    return Boolean(raw && raw.sheetId === sheetId && raw.credentialId && raw.ciphertext && raw.iv && raw.wrapMask);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear stored biometric vault credentials on this device.
+ */
+export function clearBiometricVault() {
+  try { localStorage.removeItem(LS_BIOMETRIC_VAULT); } catch { /* noop */ }
+}
+
+/**
+ * Enroll biometric unlock for the linked keys sheet using WebAuthn platform authenticator
+ * and AES-GCM encryption of the vault password.
+ * @param {string} [password] — defaults to the password used to unlock the current session
+ * @returns {Promise<boolean>}
+ */
+export async function enrollBiometricVault(password = _lastUnlockedPassword) {
+  const sheetId = getLinkedSheetId();
+  if (!sheetId || password === null || password === undefined) return false;
+
+  try {
+    let rawIdBytes;
+    if (window.__WAYMARK_MOCK_BIOMETRICS) {
+      if (window.__WAYMARK_MOCK_BIOMETRICS.failEnroll) return false;
+      if (typeof window.__WAYMARK_MOCK_BIOMETRICS.onEnroll === 'function') {
+        window.__WAYMARK_MOCK_BIOMETRICS.onEnroll(sheetId);
+      }
+      rawIdBytes = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) rawIdBytes[i] = (i * 7 + 13) & 0xff;
+    } else {
+      if (!window.PublicKeyCredential || !navigator.credentials?.create) return false;
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = crypto.getRandomValues(new Uint8Array(16));
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: {
+            name: 'Waymark AI',
+            id: window.location.hostname || 'localhost',
+          },
+          user: {
+            id: userId,
+            name: 'waymark-ai-vault',
+            displayName: 'Waymark AI Vault',
+          },
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 },   // ES256
+            { type: 'public-key', alg: -257 }, // RS256
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'preferred',
+          },
+          timeout: 60000,
+        },
+      });
+      if (!cred || !cred.rawId) return false;
+      rawIdBytes = new Uint8Array(cred.rawId);
+    }
+
+    if (!rawIdBytes || rawIdBytes.length === 0) return false;
+
+    const rawKey = crypto.getRandomValues(new Uint8Array(32));
+    const wrapMask = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      wrapMask[i] = rawKey[i] ^ rawIdBytes[i % rawIdBytes.length];
+    }
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt']
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encodedPw = new TextEncoder().encode(String(password));
+    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, encodedPw);
+
+    localStorage.setItem(LS_BIOMETRIC_VAULT, JSON.stringify({
+      sheetId,
+      credentialId: _toBase64(rawIdBytes),
+      iv: _toBase64(iv),
+      ciphertext: _toBase64(new Uint8Array(cipherBuf)),
+      wrapMask: _toBase64(wrapMask),
+      createdAt: new Date().toISOString(),
+    }));
+    return true;
+  } catch (err) {
+    console.warn('[keys-sheet] biometric enrollment failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Unlock the linked keys sheet using the enrolled platform biometric credential.
+ * Prompts the user for Face ID / Touch ID / Fingerprint via WebAuthn.
+ * @returns {Promise<boolean>}
+ */
+export async function unlockVaultWithBiometrics() {
+  const sheetId = getLinkedSheetId();
+  if (!sheetId || !hasBiometricVault(sheetId)) return false;
+
+  try {
+    const record = JSON.parse(localStorage.getItem(LS_BIOMETRIC_VAULT) || 'null');
+    if (!record || record.sheetId !== sheetId) return false;
+
+    const credIdBytes = _fromBase64(record.credentialId);
+    let assertionRawId;
+
+    if (window.__WAYMARK_MOCK_BIOMETRICS) {
+      if (window.__WAYMARK_MOCK_BIOMETRICS.failUnlock) return false;
+      if (typeof window.__WAYMARK_MOCK_BIOMETRICS.onUnlock === 'function') {
+        window.__WAYMARK_MOCK_BIOMETRICS.onUnlock(sheetId);
+      }
+      assertionRawId = credIdBytes;
+    } else {
+      if (!window.PublicKeyCredential || !navigator.credentials?.get) return false;
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{
+            type: 'public-key',
+            id: credIdBytes,
+            transports: ['internal'],
+          }],
+          userVerification: 'required',
+          timeout: 60000,
+        },
+      });
+      if (!assertion || !assertion.rawId) return false;
+      assertionRawId = new Uint8Array(assertion.rawId);
+    }
+
+    const wrapMask = _fromBase64(record.wrapMask);
+    const rawKey = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      rawKey[i] = wrapMask[i] ^ assertionRawId[i % assertionRawId.length];
+    }
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    const iv = _fromBase64(record.iv);
+    const ciphertext = _fromBase64(record.ciphertext);
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+    const password = new TextDecoder().decode(plainBuf);
+
+    return await unlockVault(password);
+  } catch (err) {
+    console.warn('[keys-sheet] biometric unlock failed:', err);
+    return false;
+  }
+}
 
 /* ---------- Link / Unlink ---------- */
 
@@ -57,9 +291,11 @@ export function linkSheet(id, name) {
 export function unlinkSheet() {
   const id = getLinkedSheetId();
   if (id) encryption.lock(id);
+  clearBiometricVault();
   localStorage.removeItem(LS_SHEET_ID);
   localStorage.removeItem(LS_SHEET_NAME);
   _session = null;
+  _lastUnlockedPassword = null;
   userData.saveAgentKeysSheet?.(null).catch(() => {});
 }
 
@@ -141,6 +377,7 @@ export function lockVault() {
   const id = getLinkedSheetId();
   if (id) encryption.lock(id);
   _session = null;
+  _lastUnlockedPassword = null;
 }
 
 /* ---------- Unlock ---------- */
@@ -219,6 +456,7 @@ export async function unlockVault(password) {
     }
 
     _session = { geminiKeys, claudeKeys, openaiKeys };
+    _lastUnlockedPassword = String(password ?? '');
     return true;
   } catch (err) {
     console.error('[keys-sheet] unlock failed:', err);

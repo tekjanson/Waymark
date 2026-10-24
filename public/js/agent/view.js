@@ -3,10 +3,11 @@
    DOM construction for the chat shell, messages, and input row.
    ============================================================ */
 
-import { el } from '../ui.js';
+import { el, showToast } from '../ui.js';
 import { renderMarkdown } from './markdown.js';
 import { SLASH_COMMANDS } from './slash-commands.js';
 import * as storage from '../storage.js';
+import * as vault from './vault.js';
 
 let _imageLightbox = null;
 
@@ -87,7 +88,7 @@ export function renderAgentUI(args) {
 
 /**
  * Build the overlay shown when the linked passwords sheet is locked.
- * @param {Function} onUnlock — called when user submits password
+ * @param {Function} onUnlock — called when user submits password or unlocks via biometrics
  * @returns {HTMLElement}
  */
 export function buildVaultLock(onUnlock) {
@@ -100,17 +101,70 @@ export function buildVaultLock(onUnlock) {
     },
   });
 
+  const hasBio = vault.hasBiometricVault();
+  const isMobile = vault.isMobileWeb();
+
+  const bioBtnSlot = el('div', { className: 'agent-vault-bio-slot' });
+  if (hasBio) {
+    const bioBtn = el('button', {
+      className: 'agent-vault-bio-btn',
+      type: 'button',
+      on: {
+        click: async () => {
+          bioBtn.disabled = true;
+          bioBtn.textContent = '🫆 Verifying…';
+          const ok = await vault.unlockVaultWithBiometrics();
+          if (ok) {
+            showToast('Unlocked with biometrics', 'success');
+            onUnlock({ unlockedViaBiometrics: true });
+          } else {
+            bioBtn.disabled = false;
+            bioBtn.textContent = isMobile ? '🫆 Unlock with Biometrics (Mobile)' : '🫆 Unlock with Biometrics';
+            showToast('Biometric unlock failed or cancelled — use password below', 'error');
+          }
+        },
+      },
+    }, [isMobile ? '🫆 Unlock with Biometrics (Mobile)' : '🫆 Unlock with Biometrics']);
+    bioBtnSlot.appendChild(bioBtn);
+  }
+
+  const enrollSlot = el('div', { className: 'agent-vault-bio-enroll-slot' });
+  if (!hasBio) {
+    vault.isBiometricSupported().then((supported) => {
+      if (!supported) return;
+      const cb = el('input', {
+        type: 'checkbox',
+        className: 'agent-vault-bio-enroll-checkbox',
+      });
+      if (isMobile) cb.checked = true;
+      const label = el('label', { className: 'agent-vault-bio-enroll-label' }, [
+        cb,
+        el('span', {}, [
+          isMobile
+            ? '📱 Enable biometric unlock on mobile web'
+            : '🫆 Enable biometric unlock on this device',
+        ]),
+      ]);
+      enrollSlot.innerHTML = '';
+      enrollSlot.appendChild(label);
+    }).catch(() => {});
+  }
+
   return el('div', { className: 'agent-vault-lock' }, [
     el('div', { className: 'agent-vault-lock-icon' }, ['🔑']),
     el('h3', { className: 'agent-vault-lock-title' }, ['AI Keys Locked']),
     el('p', { className: 'agent-vault-lock-desc' }, [
-      'Your API keys are stored in a Waymark Passwords sheet. Enter your sheet password to decrypt them.',
+      hasBio
+        ? 'Unlock your Waymark AI keys quickly with biometrics, or enter your sheet password below.'
+        : 'Your API keys are stored in a Waymark Passwords sheet. Enter your sheet password to decrypt them.',
     ]),
+    bioBtnSlot,
     input,
+    enrollSlot,
     el('button', {
       className: 'agent-vault-unlock-btn',
       type: 'button',
-      on: { click: onUnlock },
+      on: { click: () => onUnlock() },
     }, ['🔓 Unlock']),
   ]);
 }

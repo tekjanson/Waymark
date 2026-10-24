@@ -16,6 +16,10 @@ const TYPE_META = {
   alert:   { bg: '#fef2f2', color: '#dc2626' },
   warning: { bg: '#fffbeb', color: '#d97706' },
   info:    { bg: '#eff6ff', color: '#2563eb' },
+  update:  { bg: '#f0fdf4', color: '#16a34a' },
+  share:   { bg: '#f5f3ff', color: '#7c3aed' },
+  chat:    { bg: '#ecfeff', color: '#0891b2' },
+  call:    { bg: '#fefce8', color: '#ca8a04' },
 };
 
 const PRIORITY_META = {
@@ -201,9 +205,80 @@ const definition = {
         ? el('div', { className: 'notification-card-meta' }, metaChildren)
         : null;
 
+      /* Collaboration action buttons for share / collaborator notifications */
+      const actionChildren = [];
+      if (n.type === 'share' && n.sheet) {
+        const acceptBtn = el('button', {
+          className: 'btn btn-sm notification-accept-btn',
+          type: 'button',
+          title: 'Accept shared Waymark',
+        }, ['✓ Accept']);
+        const rejectBtn = el('button', {
+          className: 'btn btn-sm notification-reject-btn',
+          type: 'button',
+          title: 'Reject shared Waymark',
+        }, ['✕ Reject']);
+
+        acceptBtn.addEventListener('click', async () => {
+          const collab = await import('../collab.js');
+          await collab.acceptSharedWaymark({
+            docId: n.sheet,
+            docTitle: n.title,
+            from: n.source || '',
+          });
+          n.status = 'Read';
+          badge.textContent = 'Read';
+          badge.className = 'notification-type-badge notification-badge-read';
+          card.className = 'notification-card notification-status-read';
+          if (cols.status >= 0) emitEdit(n.rowIndex, cols.status, 'Read');
+          updateSummary();
+          if (currentFilter !== 'All') applyFilter(currentFilter);
+        });
+
+        rejectBtn.addEventListener('click', async () => {
+          const collab = await import('../collab.js');
+          await collab.rejectSharedWaymark({
+            docId: n.sheet,
+            docTitle: n.title,
+          });
+          n.status = 'Dismissed';
+          badge.textContent = 'Dismissed';
+          badge.className = 'notification-type-badge notification-badge-dismissed';
+          card.className = 'notification-card notification-status-dismissed';
+          if (cols.status >= 0) emitEdit(n.rowIndex, cols.status, 'Dismissed');
+          updateSummary();
+          if (currentFilter !== 'All') applyFilter(currentFilter);
+        });
+
+        actionChildren.push(acceptBtn, rejectBtn);
+      }
+
+      if (['share', 'update', 'chat', 'call'].includes(n.type) && n.source && n.source !== 'Waymark' && n.source !== 'Notification Sheet') {
+        const callBtn = el('button', {
+          className: 'btn btn-sm notification-call-btn',
+          type: 'button',
+          title: `Call ${n.source} in The Wayside`,
+        }, [n.type === 'call' ? '📞 Join Call' : '📹 Call']);
+        callBtn.addEventListener('click', () => {
+          const isEmail = n.source.includes('@');
+          window.dispatchEvent(new CustomEvent('waymark:start-wayside-call', {
+            detail: {
+              contactEmail: isEmail ? n.source : '',
+              group: !isEmail ? n.source : '',
+              label: isEmail ? n.source.split('@')[0] : n.source,
+            },
+          }));
+        });
+        actionChildren.push(callBtn);
+      }
+
+      const actionsRow = actionChildren.length
+        ? el('div', { className: 'notification-card-actions' }, actionChildren)
+        : null;
+
       const card = el('div', {
         className: `notification-card notification-status-${n.status.toLowerCase()}`,
-      }, [header, body, meta].filter(Boolean));
+      }, [header, body, meta, actionsRow].filter(Boolean));
 
       n._card = card;
       return card;

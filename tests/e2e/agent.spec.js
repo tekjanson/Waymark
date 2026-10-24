@@ -3963,3 +3963,86 @@ test('unlinked keys sheet removes the link and lock state', async ({ page }) => 
   const sheetId = await page.evaluate(() => localStorage.getItem('waymark_agent_keys_sheet_id'));
   expect(sheetId).toBeNull();
 });
+
+test('mobile web biometric unlock enrolls and unlocks AI keys vault without re-typing password', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => {
+    window.__WAYMARK_BIOMETRIC_MOBILE = true;
+    window.__WAYMARK_MOCK_BIOMETRICS = { supported: true };
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-vault-lock', { timeout: 5000 });
+  await page.waitForSelector('.agent-vault-bio-enroll-checkbox', { timeout: 3000 });
+
+  // On mobile web, the biometric enrollment checkbox is checked by default
+  await expect(page.locator('.agent-vault-bio-enroll-checkbox')).toBeChecked();
+
+  // First-time unlock enrolls biometrics
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  const hasBio = await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    return vault.hasBiometricVault();
+  });
+  expect(hasBio).toBe(true);
+
+  // Lock the vault and return to #/agent
+  await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    vault.lockVault();
+    window.location.hash = '#/';
+  });
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5000 });
+  await page.evaluate(() => { window.location.hash = '#/agent'; });
+
+  // Now the lock screen shows the biometric unlock button
+  await page.waitForSelector('.agent-vault-bio-btn', { timeout: 5000 });
+  await expect(page.locator('.agent-vault-bio-btn')).toContainText(/Unlock with Biometrics/i);
+
+  // One tap on Unlock with Biometrics unlocks the vault without typing a password
+  await page.click('.agent-vault-bio-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  const isUnlocked = await page.evaluate(async () => {
+    const vault = await import('/js/agent/vault.js');
+    return vault.isVaultUnlocked();
+  });
+  expect(isUnlocked).toBe(true);
+});
+
+test('agent settings modal allows disabling and re-enabling biometric vault unlock', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await setupApp(page);
+  await page.evaluate(() => {
+    window.__WAYMARK_BIOMETRIC_MOBILE = true;
+    window.__WAYMARK_MOCK_BIOMETRICS = { supported: true };
+    localStorage.setItem('waymark_agent_keys_sheet_id', JSON.stringify('sheet-070'));
+    localStorage.setItem('waymark_agent_keys_sheet_name', JSON.stringify('AI API Keys'));
+    window.location.hash = '#/agent';
+  });
+
+  await page.waitForSelector('.agent-vault-unlock-btn', { timeout: 5000 });
+  await page.click('.agent-vault-unlock-btn');
+  await page.waitForSelector('.agent-chat-body', { timeout: 8000 });
+
+  await page.click('.agent-settings-btn');
+  await page.waitForSelector('#agent-settings-modal', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-status-unlocked')).toContainText('Biometrics Ready');
+  await expect(page.locator('.agent-vault-bio-disable-btn')).toBeVisible();
+
+  // Disable biometrics
+  await page.click('.agent-vault-bio-disable-btn');
+  await page.waitForSelector('.agent-vault-bio-enable-btn', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-bio-enable-btn')).toBeVisible();
+
+  // Re-enable biometrics directly from Settings
+  await page.click('.agent-vault-bio-enable-btn');
+  await page.waitForSelector('.agent-vault-bio-disable-btn', { timeout: 3000 });
+  await expect(page.locator('.agent-vault-status-unlocked')).toContainText('Biometrics Ready');
+});
+

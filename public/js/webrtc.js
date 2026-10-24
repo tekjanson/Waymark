@@ -620,6 +620,11 @@ export class WaymarkConnect {
       case 'call-end':
         this.onCallEnded(d.peerId);
         break;
+      case 'waymark-sheet-update':
+        if (typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', { detail: d }));
+        }
+        break;
       case 'leave':
         this._peers.delete(d.peerId);
         this._emitPeers();
@@ -718,7 +723,7 @@ export class WaymarkConnect {
   async _heartbeat() {
     if (this._destroyed || this._block < 0) return;
     try {
-      const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now(), nonce: this._sessionNonce };
+      const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now(), nonce: this._sessionNonce, inCall: Boolean(this._inCall) };
       if (this._password) presence.protected = true;
       await this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL,
         JSON.stringify(presence));
@@ -1037,6 +1042,11 @@ export class WaymarkConnect {
             break;
           case 'waymark-pong':
             // pong received — connection is alive
+            break;
+          case 'waymark-sheet-update':
+            if (typeof document !== 'undefined') {
+              document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', { detail: m }));
+            }
             break;
           case 'waymark-notification':
           case 'orchestrator-alert':

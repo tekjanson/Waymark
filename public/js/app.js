@@ -232,6 +232,7 @@ async function boot() {
   collab.pollBilateralSheets().catch(() => {});
   setInterval(() => {
     collab.pollBilateralSheets().catch(() => {});
+    collab.checkSharedSheetDiffs().catch(() => {});
     collab.publishPresenceEverywhere({ status: 'online' }).catch(() => {});
   }, 60_000);
   await initializeModelSwap();

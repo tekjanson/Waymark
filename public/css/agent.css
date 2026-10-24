@@ -1420,6 +1420,50 @@
   background: var(--color-primary-dark);
 }
 
+.agent-vault-bio-slot:empty,
+.agent-vault-bio-enroll-slot:empty,
+.template-ai-bio-slot:empty,
+.template-ai-bio-enroll-slot:empty,
+.agent-vault-bio-manage:empty {
+  display: none;
+}
+
+.agent-vault-bio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 22px;
+  background: var(--color-success);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.agent-vault-bio-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.agent-vault-bio-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.agent-vault-bio-enroll-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* ---------- Vault settings section ---------- */
 
 .agent-settings-divider {

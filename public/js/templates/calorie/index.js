@@ -51,6 +51,51 @@ let _allRows = [];
 let _profile = null;
 let _tabs = [];             // all workbook tabs (for the Profile tab, etc.)
 let _heroPage = 0;          // remembered hero carousel page across reloads
+let _selectMode = false;    // multi-select batch delete mode
+let _selectedIndices = new Set();
+
+/* ---------- Scroll Preservation ---------- */
+
+function captureScrollState(container) {
+  const ancestors = [];
+  let node = container ? container.parentElement : null;
+  while (node && node !== document.body && node !== document.documentElement) {
+    if (node.scrollTop > 0 || node.scrollHeight > node.clientHeight) {
+      ancestors.push({ el: node, top: node.scrollTop, left: node.scrollLeft });
+    }
+    node = node.parentElement;
+  }
+  return {
+    winY: window.scrollY || window.pageYOffset || 0,
+    winX: window.scrollX || window.pageXOffset || 0,
+    scrollingTop: document.scrollingElement ? document.scrollingElement.scrollTop : 0,
+    docTop: document.documentElement ? document.documentElement.scrollTop : 0,
+    bodyTop: document.body ? document.body.scrollTop : 0,
+    ancestors,
+  };
+}
+
+function restoreScrollState(state) {
+  if (!state) return;
+  for (const a of state.ancestors) {
+    if (a.el) {
+      a.el.scrollTop = a.top;
+      a.el.scrollLeft = a.left;
+    }
+  }
+  if (document.scrollingElement && state.scrollingTop > 0) {
+    document.scrollingElement.scrollTop = state.scrollingTop;
+  }
+  if (document.documentElement && state.docTop > 0) {
+    document.documentElement.scrollTop = state.docTop;
+  }
+  if (document.body && state.bodyTop > 0) {
+    document.body.scrollTop = state.bodyTop;
+  }
+  if (state.winY > 0 || state.winX > 0) {
+    window.scrollTo(state.winX, state.winY);
+  }
+}
 
 const PROFILE_TAB = 'Profile';
 const PROFILE_KEYS = ['sex', 'age', 'heightCm', 'weightKg', 'activityLevel', 'goalType', 'rateKgPerWeek', 'units', 'bestStreak'];
@@ -242,18 +287,54 @@ async function updateEntryCell(dataIndex, col, value) {
 }
 
 /**
- * Delete a logged row entirely, then reload.
+ * Delete a logged row entirely, then reload while preserving scroll position.
  * @param {number} dataIndex  0-based index within data rows (header excluded)
  */
 async function deleteEntry(dataIndex) {
   const sheetId = currentSheetId();
   if (!sheetId) return;
   try {
+    if (Array.isArray(_allRows) && dataIndex >= 0 && dataIndex < _allRows.length && _container) {
+      const nextRows = _allRows.filter((_, idx) => idx !== dataIndex);
+      _selectedIndices.delete(dataIndex);
+      renderDashboard(_container, nextRows, _cols);
+    }
     await deleteSheetRow(sheetId, _numericSheetId, dataIndex + 1); // +1 for header
     showToast('Deleted', 'success');
     await reload();
   } catch (err) {
     showToast(err.message || 'Could not delete', 'error');
+  }
+}
+
+/**
+ * Delete multiple logged rows in descending index order so row shifts never
+ * corrupt remaining indices, while preserving scroll position.
+ * @param {number[]} indices  0-based indices within data rows
+ */
+async function deleteEntries(indices) {
+  const sheetId = currentSheetId();
+  if (!sheetId || !Array.isArray(indices) || indices.length === 0) return;
+  const sorted = [...new Set(indices)]
+    .filter(i => Number.isInteger(i) && i >= 0)
+    .sort((a, b) => b - a);
+  if (sorted.length === 0) return;
+
+  try {
+    const dropSet = new Set(sorted);
+    if (Array.isArray(_allRows) && _container) {
+      const nextRows = _allRows.filter((_, idx) => !dropSet.has(idx));
+      _selectedIndices.clear();
+      _selectMode = false;
+      renderDashboard(_container, nextRows, _cols);
+    }
+    for (const idx of sorted) {
+      await deleteSheetRow(sheetId, _numericSheetId, idx + 1); // +1 for header
+    }
+    showToast(`Deleted ${sorted.length} item${sorted.length === 1 ? '' : 's'}`, 'success');
+    await reload();
+  } catch (err) {
+    showToast(err.message || 'Could not delete selected items', 'error');
   }
 }
 
@@ -423,6 +504,20 @@ function buildHeaderBar(dateMap) {
     }));
 
   const tools = el('div', { className: 'calorie-tools' }, [
+    (() => {
+      const b = el('button', {
+        className: `calorie-tool-btn calorie-select-toggle ${_selectMode ? 'active' : ''}`,
+        type: 'button',
+        'aria-label': 'Select items to delete',
+        title: 'Select multiple items to delete',
+      }, [_selectMode ? '\u2713' : '\u2611\uFE0F']);
+      b.addEventListener('click', () => {
+        _selectMode = !_selectMode;
+        if (!_selectMode) _selectedIndices.clear();
+        if (_container) renderDashboard(_container, _allRows, _cols);
+      });
+      return b;
+    })(),
     (() => { const b = el('button', { className: 'calorie-tool-btn', type: 'button', 'aria-label': 'Voice log' }, ['\uD83C\uDF99\uFE0F']);
       b.addEventListener('click', () => openVoiceModal({ onConfirm: logItem })); return b; })(),
     (() => { const b = el('button', { className: 'calorie-tool-btn', type: 'button', 'aria-label': 'Profile & goal' }, ['\u2699\uFE0F']);
@@ -495,7 +590,8 @@ function buildMealSection(mealType, dayRows, totals) {
   ]);
   header.addEventListener('click', () => {
     if (_collapsed.has(mealType)) _collapsed.delete(mealType); else _collapsed.add(mealType);
-    reload();
+    if (_container) renderDashboard(_container, _allRows, _cols);
+    else reload();
   });
 
   const section = el('div', { className: `calorie-meal ${collapsed ? 'calorie-collapsed' : ''}` }, [header]);
@@ -513,13 +609,47 @@ function buildMealSection(mealType, dayRows, totals) {
       const row = entry.row;
       const name = row[_cols.item] || '\u2014';
       const serving = [_cols.qty >= 0 ? row[_cols.qty] : '', _cols.unit >= 0 ? row[_cols.unit] : ''].filter(Boolean).join(' ');
-      const rowEl = el('div', { className: 'calorie-food-row calorie-food-row-tap', role: 'button', tabindex: '0', title: 'Edit or delete' }, [
+      const isSelected = _selectedIndices.has(entry.index);
+      const selectCb = _selectMode ? el('input', {
+        type: 'checkbox',
+        className: 'calorie-food-select-cb',
+        'aria-label': `Select ${name}`,
+      }) : null;
+      if (selectCb) selectCb.checked = isSelected;
+
+      const quickDelBtn = el('button', {
+        className: 'calorie-food-delete',
+        type: 'button',
+        'aria-label': `Delete ${name}`,
+        title: `Delete ${name}`,
+      }, ['\u2715']);
+      quickDelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteEntry(entry.index);
+      });
+
+      const rowEl = el('div', {
+        className: `calorie-food-row calorie-food-row-tap ${isSelected ? 'calorie-food-row-selected' : ''}`,
+        role: 'button',
+        tabindex: '0',
+        title: _selectMode ? 'Tap to select' : 'Edit or delete',
+      }, [
+        selectCb,
         el('span', { className: 'calorie-food-name' }, [name]),
         serving ? el('span', { className: 'calorie-food-serving' }, [serving]) : null,
         el('span', { className: 'calorie-food-cal' }, [`${parseNum(row[_cols.calories])}`]),
+        quickDelBtn,
         el('span', { className: 'calorie-food-edit', 'aria-hidden': 'true' }, ['\u203A']),
       ]);
-      rowEl.addEventListener('click', () => openEntryEditor(entry, false));
+      rowEl.addEventListener('click', () => {
+        if (_selectMode) {
+          if (_selectedIndices.has(entry.index)) _selectedIndices.delete(entry.index);
+          else _selectedIndices.add(entry.index);
+          if (_container) renderDashboard(_container, _allRows, _cols);
+          return;
+        }
+        openEntryEditor(entry, false);
+      });
       body.append(rowEl);
     }
   }
@@ -542,12 +672,46 @@ function buildExerciseSection(dayRows, totals) {
       const row = entry.row;
       const name = row[_cols.item] || 'Activity';
       const dur = _cols.qty >= 0 && row[_cols.qty] ? ` \u00B7 ${row[_cols.qty]} min` : '';
-      const rowEl = el('div', { className: 'calorie-food-row calorie-food-row-tap', role: 'button', tabindex: '0', title: 'Edit or delete' }, [
+      const isSelected = _selectedIndices.has(entry.index);
+      const selectCb = _selectMode ? el('input', {
+        type: 'checkbox',
+        className: 'calorie-food-select-cb',
+        'aria-label': `Select ${name}`,
+      }) : null;
+      if (selectCb) selectCb.checked = isSelected;
+
+      const quickDelBtn = el('button', {
+        className: 'calorie-food-delete',
+        type: 'button',
+        'aria-label': `Delete ${name}`,
+        title: `Delete ${name}`,
+      }, ['\u2715']);
+      quickDelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteEntry(entry.index);
+      });
+
+      const rowEl = el('div', {
+        className: `calorie-food-row calorie-food-row-tap ${isSelected ? 'calorie-food-row-selected' : ''}`,
+        role: 'button',
+        tabindex: '0',
+        title: _selectMode ? 'Tap to select' : 'Edit or delete',
+      }, [
+        selectCb,
         el('span', { className: 'calorie-food-name' }, [name + dur]),
         el('span', { className: 'calorie-food-cal calorie-burned' }, [`+${parseNum(row[_cols.burned])}`]),
+        quickDelBtn,
         el('span', { className: 'calorie-food-edit', 'aria-hidden': 'true' }, ['\u203A']),
       ]);
-      rowEl.addEventListener('click', () => openEntryEditor(entry, true));
+      rowEl.addEventListener('click', () => {
+        if (_selectMode) {
+          if (_selectedIndices.has(entry.index)) _selectedIndices.delete(entry.index);
+          else _selectedIndices.add(entry.index);
+          if (_container) renderDashboard(_container, _allRows, _cols);
+          return;
+        }
+        openEntryEditor(entry, true);
+      });
       body.append(rowEl);
     }
   }
@@ -678,6 +842,52 @@ function renderDayView(container, dateMap) {
     quickBtn('\uD83C\uDFC3', 'Exercise', () => openExerciseModal({ onConfirm: (e) => appendEntry({ ...e, type: 'exercise' }) })),
   ]);
   container.append(quick);
+
+  /* Batch selection bar when in multi-select mode */
+  if (_selectMode) {
+    const dayIndices = dayEntries.map(e => e.index);
+    const allDaySelected = dayIndices.length > 0 && dayIndices.every(idx => _selectedIndices.has(idx));
+    const selectAllBtn = el('button', {
+      className: 'calorie-batch-btn calorie-batch-select-all',
+      type: 'button',
+    }, [allDaySelected ? 'Deselect all' : `Select all (${dayIndices.length})`]);
+    selectAllBtn.addEventListener('click', () => {
+      if (allDaySelected) {
+        for (const idx of dayIndices) _selectedIndices.delete(idx);
+      } else {
+        for (const idx of dayIndices) _selectedIndices.add(idx);
+      }
+      if (_container) renderDashboard(_container, _allRows, _cols);
+    });
+
+    const delSelectedBtn = el('button', {
+      className: 'calorie-batch-btn calorie-batch-delete-btn',
+      type: 'button',
+    }, [`\uD83D\uDDD1 Delete Selected (${_selectedIndices.size})`]);
+    delSelectedBtn.disabled = _selectedIndices.size === 0;
+    delSelectedBtn.addEventListener('click', () => {
+      deleteEntries([..._selectedIndices]);
+    });
+
+    const cancelSelectBtn = el('button', {
+      className: 'calorie-batch-btn calorie-batch-cancel-btn',
+      type: 'button',
+    }, ['Done']);
+    cancelSelectBtn.addEventListener('click', () => {
+      _selectMode = false;
+      _selectedIndices.clear();
+      if (_container) renderDashboard(_container, _allRows, _cols);
+    });
+
+    container.append(el('div', { className: 'calorie-batch-bar' }, [
+      el('span', { className: 'calorie-batch-count' }, [`${_selectedIndices.size} selected`]),
+      el('div', { className: 'calorie-batch-actions' }, [
+        selectAllBtn,
+        delSelectedBtn,
+        cancelSelectBtn,
+      ]),
+    ]));
+  }
 
   /* Meals — two columns on wide screens via .calorie-meals-grid */
   const mealsGrid = el('div', { className: 'calorie-meals-grid' });
@@ -869,6 +1079,12 @@ function attachSwipe(container) {
 /* ---------- Core render ---------- */
 
 function renderDashboard(container, rows, cols) {
+  const scrollState = captureScrollState(container);
+  const prevHeight = container ? container.offsetHeight : 0;
+  if (container && prevHeight > 0) {
+    container.style.minHeight = `${prevHeight}px`;
+  }
+
   _container = container;
   _cols = cols;
   _allRows = rows;
@@ -892,6 +1108,12 @@ function renderDashboard(container, rows, cols) {
     profile: _profile,
     onChange: reload,
     onProfileWeight: syncProfileWeight,
+  });
+
+  restoreScrollState(scrollState);
+  requestAnimationFrame(() => {
+    if (container) container.style.minHeight = '';
+    restoreScrollState(scrollState);
   });
 }
 
@@ -948,6 +1170,8 @@ const definition = {
     _collapsed = new Set();
     _numericSheetId = 0;
     _heroPage = 0;
+    _selectMode = false;
+    _selectedIndices = new Set();
     // Workbook tabs are injected by checklist.js (renderWithTemplate → _tabs).
     _tabs = Array.isArray(definition._tabs) ? definition._tabs : [];
     // Profile persists in the sheet's "Profile" tab (durable, cross-device).

@@ -25,6 +25,13 @@ const DEFAULT_RULES = {
   checklistOverdue: true,
 };
 
+/** Default collaboration notification preferences — all enabled */
+const DEFAULT_COLLAB_PREFS = {
+  collabUpdates: true,
+  collabShares: true,
+  collabChat: true,
+};
+
 /** Human-readable labels for built-in notification rules */
 const RULE_LABELS = {
   kanbanOverdue: { icon: '⏰', label: 'Kanban overdue tasks', desc: 'Alert when kanban tasks pass their due date' },
@@ -33,10 +40,17 @@ const RULE_LABELS = {
   checklistOverdue: { icon: '⏰', label: 'Checklist overdue items', desc: 'Alert when checklist items pass their due date' },
 };
 
+const COLLAB_LABELS = {
+  collabUpdates: { icon: '✏️', label: 'Shared Waymark updates', desc: 'Alert when collaborators edit or add items to shared Waymarks' },
+  collabShares: { icon: '📤', label: 'New shared Waymarks', desc: 'Alert when a collaborator shares a Waymark with you' },
+  collabChat: { icon: '💬', label: 'Wayside chat & calls', desc: 'Alert on new Wayside messages and incoming WebRTC calls' },
+};
+
 /* ---------- State ---------- */
 
 let _panel = null;
 let _bellInitialized = false;
+let _collabBC = null;
 let _lastEvaluatedSheet = null;
 const _pendingSheetWrites = [];
 
@@ -46,6 +60,8 @@ function _defaultIcon(type) {
   if (type === 'success') return '✅';
   if (type === 'chat') return '💬';
   if (type === 'share') return '📤';
+  if (type === 'update') return '✏️';
+  if (type === 'call') return '📞';
   return '🔔';
 }
 
@@ -70,6 +86,12 @@ export function addNotification(notif) {
 
   const ts = notif.ts || notif.timestamp || new Date().toISOString();
   const type = (notif.type || 'info').toLowerCase();
+  const sheetIdVal = notif.sheetId || '';
+  const defaultDecision = type === 'share'
+    ? (sheetIdVal && storage.isShareAccepted(sheetIdVal)
+        ? 'accepted'
+        : (sheetIdVal && storage.isShareRejected(sheetIdVal) ? 'rejected' : 'pending'))
+    : '';
   const entry = {
     id,
     key,
@@ -78,8 +100,13 @@ export function addNotification(notif) {
     title,
     body,
     message,
-    priority: notif.priority || (type === 'alert' ? 'High' : 'Medium'),
-    sheetId: notif.sheetId || '',
+    priority: notif.priority || (type === 'alert' || type === 'call' ? 'High' : 'Medium'),
+    sheetId: sheetIdVal,
+    ledgerSheetId: notif.ledgerSheetId || '',
+    docTitle: notif.docTitle || '',
+    waymarkType: notif.waymarkType || '',
+    group: notif.group || '',
+    shareDecision: notif.shareDecision || defaultDecision,
     from: notif.from || notif.source || '',
     source: notif.source || notif.from || 'Waymark',
     ts,
@@ -743,8 +770,9 @@ function _openSettingsModal() {
   if (_panel) _panel.classList.add('hidden');
 
   /* -- Built-in rule toggles -- */
-  const saved = { ...DEFAULT_RULES, ...storage.getNotificationSettings() };
+  const saved = { ...DEFAULT_RULES, ...DEFAULT_COLLAB_PREFS, ...storage.getNotificationSettings() };
   const toggles = {};
+  const collabToggles = {};
   const ruleList = el('div', { className: 'notif-settings-rules' });
 
   for (const [key, meta] of Object.entries(RULE_LABELS)) {
@@ -762,6 +790,28 @@ function _openSettingsModal() {
       ]),
     ]));
   }
+
+  /* -- Collaboration & Social notification toggles -- */
+  const collabList = el('div', { className: 'notif-collab-rules' });
+  for (const [key, meta] of Object.entries(COLLAB_LABELS)) {
+    const toggleAttrs = { type: 'checkbox', className: 'notif-collab-toggle', dataset: { collabKey: key } };
+    if (saved[key] !== false) toggleAttrs.checked = 'checked';
+    const toggle = el('input', toggleAttrs);
+    collabToggles[key] = toggle;
+
+    collabList.appendChild(el('label', { className: 'notif-collab-rule' }, [
+      toggle,
+      el('span', { className: 'notif-settings-rule-icon' }, [meta.icon]),
+      el('div', { className: 'notif-settings-rule-text' }, [
+        el('div', { className: 'notif-settings-rule-label' }, [meta.label]),
+        el('div', { className: 'notif-settings-rule-desc' }, [meta.desc]),
+      ]),
+    ]));
+  }
+  const collabSection = el('div', { className: 'notif-collab-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Collaboration & Wayside']),
+    collabList,
+  ]);
 
   /* -- Email notifications section -- */
   const emailSection = el('div', { className: 'notif-settings-email' }, [
@@ -835,6 +885,9 @@ function _openSettingsModal() {
         for (const [key, toggle] of Object.entries(toggles)) {
           settings[key] = toggle.checked;
         }
+        for (const [key, toggle] of Object.entries(collabToggles)) {
+          settings[key] = toggle.checked;
+        }
         storage.setNotificationSettings(settings);
         overlay.remove();
       },
@@ -854,6 +907,7 @@ function _openSettingsModal() {
         'Choose which alerts appear when you open a sheet.',
       ]),
       ruleList,
+      collabSection,
       emailSection,
       sheetSection,
       rulesSection,
@@ -923,11 +977,98 @@ function _renderPanelContent() {
       notifs.slice(0, 20).map(n => {
         const titleText = n.title || n.message || '';
         const bodyText = n.body && n.body !== titleText ? n.body : '';
+        const actionNodes = [];
+
+        if (n.type === 'share' && n.sheetId) {
+          const decision = n.shareDecision
+            || (storage.isShareAccepted(n.sheetId) ? 'accepted' : (storage.isShareRejected(n.sheetId) ? 'rejected' : 'pending'));
+          if (decision === 'accepted') {
+            actionNodes.push(el('span', { className: 'notif-decision-badge notif-decision-accepted' }, ['✓ Accepted']));
+          } else if (decision === 'rejected') {
+            actionNodes.push(el('span', { className: 'notif-decision-badge notif-decision-rejected' }, ['✕ Rejected']));
+          } else {
+            actionNodes.push(
+              el('button', {
+                className: 'btn btn-sm notif-accept-btn',
+                type: 'button',
+                title: 'Accept shared Waymark',
+                on: {
+                  click: async (e) => {
+                    e.stopPropagation();
+                    const collab = await import('./collab.js');
+                    await collab.acceptSharedWaymark({
+                      docId: n.sheetId,
+                      docTitle: n.docTitle || '',
+                      waymarkType: n.waymarkType || '',
+                      ledgerSheetId: n.ledgerSheetId || '',
+                      from: n.from || '',
+                    });
+                    const ui = await import('./ui.js');
+                    ui.showToast('Shared Waymark accepted', 'success');
+                    _renderPanelContent();
+                  },
+                },
+              }, ['✓ Accept']),
+              el('button', {
+                className: 'btn btn-sm notif-reject-btn',
+                type: 'button',
+                title: 'Reject and mute this shared Waymark',
+                on: {
+                  click: async (e) => {
+                    e.stopPropagation();
+                    const collab = await import('./collab.js');
+                    await collab.rejectSharedWaymark({
+                      docId: n.sheetId,
+                      docTitle: n.docTitle || '',
+                      ledgerSheetId: n.ledgerSheetId || '',
+                    });
+                    const ui = await import('./ui.js');
+                    ui.showToast('Shared Waymark rejected and muted', 'info');
+                    _renderPanelContent();
+                  },
+                },
+              }, ['✕ Reject'])
+            );
+          }
+        }
+
+        const isCollabNotif = ['share', 'update', 'chat', 'call'].includes(n.type);
+        const peerRef = (n.from || n.group || '').trim();
+        if (isCollabNotif && peerRef && peerRef !== 'Waymark' && peerRef !== 'Notification Sheet') {
+          const callLabel = n.type === 'call' ? '📞 Join Call' : '📹 Call';
+          actionNodes.push(
+            el('button', {
+              className: 'btn btn-sm notif-call-btn',
+              type: 'button',
+              title: `Call ${peerRef} in The Wayside`,
+              on: {
+                click: (e) => {
+                  e.stopPropagation();
+                  if (_panel) _panel.classList.add('hidden');
+                  const isEmail = peerRef.includes('@');
+                  window.dispatchEvent(new CustomEvent('waymark:start-wayside-call', {
+                    detail: {
+                      contactEmail: isEmail ? peerRef : '',
+                      group: n.group || (!isEmail ? peerRef : ''),
+                      label: n.group || (isEmail ? peerRef.split('@')[0] : peerRef),
+                    },
+                  }));
+                },
+              },
+            }, [callLabel])
+          );
+        }
+
+        const actionsBar = actionNodes.length
+          ? el('div', { className: 'notif-item-actions' }, actionNodes)
+          : null;
+
         const card = el('div', {
           className: `notif-item notif-${n.type || 'info'}` + (n.read ? '' : ' notif-item-unread'),
         }, [
           el('div', { className: 'notif-item-title' }, [titleText]),
           bodyText ? el('div', { className: 'notif-item-body' }, [bodyText]) : null,
+          actionsBar,
         ].filter(Boolean));
         if (n.sheetId) {
           card.classList.add('notif-item-link');
@@ -1018,6 +1159,53 @@ export function initBell() {
         sheetId: m.sheetId || '',
       });
     });
+
+    const handlePeerSheetUpdate = (m) => {
+      if (!m || !m.sheetId) return;
+      const prefs = storage.getNotificationSettings();
+      if (prefs.collabUpdates === false) return;
+      if (storage.isShareRejected(m.sheetId)) return;
+      const me = (api.auth.getUser?.()?.email || '').trim().toLowerCase();
+      const actor = String(m.from || m.name || '').trim().toLowerCase();
+      if (me && actor && actor === me) return;
+
+      const who = m.from || m.name || 'A collaborator';
+      const docTitle = m.docTitle || 'Shared Waymark';
+      const summary = m.summary || 'Updated this Waymark';
+      addNotification({
+        id: m.id || `peer-update:${m.sheetId}:${m.ts || Date.now()}`,
+        type: 'update',
+        icon: '✏️',
+        title: `${who} updated "${docTitle}"`,
+        body: summary,
+        sheetId: m.sheetId,
+        docTitle,
+        waymarkType: m.waymarkType || '',
+        from: who,
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('waymark:remote-sheet-updated', {
+          detail: { sheetId: m.sheetId, title: docTitle, summary, from: who },
+        }));
+      }
+    };
+
+    document.addEventListener('waymark:peer-sheet-update', (e) => {
+      handlePeerSheetUpdate(e.detail || {});
+    });
+
+    if (typeof BroadcastChannel !== 'undefined' && !_collabBC) {
+      try {
+        _collabBC = new BroadcastChannel('waymark-collab-updates');
+        _collabBC.onmessage = (e) => {
+          if (e.data?.type === 'waymark-sheet-update') {
+            handlePeerSheetUpdate(e.data);
+          }
+        };
+      } catch {
+        /* ignore BroadcastChannel errors */
+      }
+    }
 
     document.addEventListener('waymark:notifications-changed', () => {
       _refreshBellBadge();

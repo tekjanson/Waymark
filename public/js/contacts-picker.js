@@ -71,6 +71,34 @@ export async function discoverDirectory() {
     }
   }
 
+  // Also include past collaborators and crews from known Share Ledgers
+  try {
+    const me = (api.auth.getUser?.()?.email || '').trim().toLowerCase();
+    for (const l of userData.getShareLedgers()) {
+      if (!l?.sheetId) continue;
+      const group = String(l.group || '').trim();
+      if (group) {
+        const gKey = group.toLowerCase();
+        if (!crewsByKey.has(gKey)) {
+          crewsByKey.set(gKey, { name: group, members: [], _seen: new Set() });
+        }
+      }
+      let email = String(l.contactEmail || '').trim().toLowerCase();
+      if ((!email || email === me) && String(l.key || '').startsWith('contact-pair:')) {
+        const parts = String(l.key).slice('contact-pair:'.length).split('::').map(s => s.trim().toLowerCase());
+        email = parts.find(p => p && p !== me) || '';
+      }
+      if (email && email !== me && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) && !seenEmail.has(email)) {
+        seenEmail.add(email);
+        const prefix = email.split('@')[0];
+        const name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        contacts.push({ name, email, group: group || undefined, book: 'Past Collaborators' });
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
   contacts.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
   const crews = [...crewsByKey.values()]
     .map(({ name, members }) => ({ name, members }))

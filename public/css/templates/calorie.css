@@ -491,6 +491,79 @@
 
 .calorie-food-row-tap { cursor: pointer; border-radius: var(--radius-sm); transition: background var(--transition); }
 .calorie-food-row-tap:hover { background: var(--color-bg); }
+.calorie-food-row-selected { background: var(--color-primary-light); }
+.calorie-food-select-cb { width: 18px; height: 18px; cursor: pointer; accent-color: var(--color-primary); flex-shrink: 0; }
+.calorie-food-delete {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  margin-left: 2px;
+}
+.calorie-food-delete:hover {
+  color: var(--color-error);
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+.calorie-select-toggle.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+.calorie-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.calorie-batch-count {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.calorie-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.calorie-batch-btn {
+  padding: 6px 12px;
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.calorie-batch-delete-btn {
+  border-color: var(--color-error);
+  background: var(--color-error);
+  color: #fff;
+}
+.calorie-batch-delete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .calorie-food-edit { color: var(--color-text-muted); font-size: 1.2rem; line-height: 1; margin-left: 4px; }
 .calorie-entry-actions { display: flex; margin-top: 8px; }
 .calorie-entry-delete {

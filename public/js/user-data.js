@@ -661,6 +661,8 @@ export function isHidden(itemId) {
   return getHiddenItems().some(i => i.id === itemId);
 }
 
+export const isItemHidden = isHidden;
+
 /**
  * Hide a Drive item from the explorer.
  * @param {{ id: string, name: string }} item

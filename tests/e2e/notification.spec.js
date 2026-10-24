@@ -796,3 +796,79 @@ test('pollNotificationSheet syncs Active rows from the connected Notification Sh
   await expect(page.locator('.notif-badge')).toHaveText('2');
 });
 
+test('Push Notification Sheet renders Accept, Reject, and Call actions on shared Waymark rows', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+
+  await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const storage = await import('/js/storage.js');
+
+    storage.setNotifSheetId('sheet-046');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'sender@example.com' });
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Shared Checklist', 'checklist', 'testuser@gmail.com', '', 'writer', new Date().toISOString(), 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+  });
+
+  await navigateToSheet(page, 'sheet-046');
+  await page.waitForSelector('.notification-card', { timeout: 5000 });
+
+  const shareCard = page.locator('.notification-card', { hasText: 'Shared Checklist' });
+  await expect(shareCard).toBeVisible();
+  await expect(shareCard.locator('.notification-accept-btn')).toBeVisible();
+  await expect(shareCard.locator('.notification-reject-btn')).toBeVisible();
+  await expect(shareCard.locator('.notification-call-btn')).toBeVisible();
+
+  await shareCard.locator('.notification-accept-btn').click();
+  await expect(shareCard).toHaveClass(/notification-status-read/);
+
+  const accepted = await page.evaluate(async () => {
+    const storage = await import('/js/storage.js');
+    return storage.isShareAccepted('sheet-001');
+  });
+  expect(accepted).toBe(true);
+});
+
+test('collaboration notification toggles in settings modal persist and control update alerts', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
+
+  // Built-in rule count remains 4 while 3 collaboration toggles are present
+  await expect(page.locator('.notif-settings-rule')).toHaveCount(4);
+  await expect(page.locator('.notif-collab-rule')).toHaveCount(3);
+
+  // Uncheck collabUpdates and save
+  const updatesToggle = page.locator('.notif-collab-toggle[data-collab-key="collabUpdates"]');
+  await updatesToggle.uncheck();
+  await page.click('.notif-settings-save');
+  await expect(page.locator('#notif-settings-modal')).toBeHidden();
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const storage = await import('/js/storage.js');
+
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'editor@example.com' });
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Groceries', 'checklist', 'testuser@gmail.com', '', 'writer', new Date().toISOString(), 'Updated|editor@example.com|Edited item',
+    ]]);
+    const pushed = await collab.pollShareLedgers();
+    return {
+      savedSettings: storage.getNotificationSettings(),
+      pushed,
+    };
+  });
+
+  expect(result.savedSettings.collabUpdates).toBe(false);
+  expect(result.pushed).toBe(0);
+});
+
+

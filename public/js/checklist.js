@@ -15,7 +15,7 @@ import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
-import { getCrossLinks, setCrossLinks } from './storage.js';
+import { getCrossLinks, setCrossLinks, setSheetDigest } from './storage.js';
 import * as encryption from './encryption.js';
 import { getAndroidBridge } from './platform.js';
 
@@ -236,9 +236,41 @@ export function init() {
         valueToWrite = await encryption.encrypt(currentSheetId, newValue);
       }
       await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, valueToWrite);
+      if (currentValues && currentValues[rowIndex]) {
+        currentValues[rowIndex][colIndex] = valueToWrite;
+        setSheetDigest(currentSheetId, collab.computeSheetDigest(currentValues));
+      }
+      const rowData = (currentValues && currentValues[rowIndex]) || [];
+      const rowLabel = rowData.find(cell => String(cell || '').trim() && String(cell) !== String(valueToWrite)) || rowData[0] || '';
+      const columnHeader = (currentHeaders && currentHeaders[colIndex]) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: currentTemplateKey || '',
+        action: 'edit',
+        rowLabel: String(rowLabel || '').trim(),
+        columnHeader: String(columnHeader || '').trim(),
+        newValue: String(newValue ?? ''),
+      }).catch(() => {});
     } catch (err) {
       showToast(`Failed to save: ${err.message}`, 'error');
     }
+  });
+
+  // Live refresh when a remote collaborator updates the currently open sheet
+  window.addEventListener('waymark:remote-sheet-updated', (e) => {
+    const updatedId = e.detail?.sheetId;
+    if (!currentSheetId || updatedId !== currentSheetId) return;
+    if (isAddRowOpen()) return;
+    const active = document.activeElement;
+    if (itemsEl && active && itemsEl.contains(active) && (
+      active.tagName === 'INPUT' ||
+      active.tagName === 'TEXTAREA' ||
+      active.isContentEditable
+    )) {
+      return;
+    }
+    loadSheet(currentSheetId);
   });
 
   // Pause auto-refresh when tab is hidden
@@ -597,6 +629,9 @@ export async function showPublic(sheetId) {
     currentValues = data.values || [];
     currentTabs = data.tabs || [];
     renderWithTemplate(currentValues);
+    if (currentValues && currentValues.length) {
+      setSheetDigest(sheetId, collab.computeSheetDigest(currentValues));
+    }
     lastFetchTime = new Date();
     updateTimestamp();
   } catch (err) {
@@ -885,6 +920,9 @@ function openDuplicateModal() {
     }
 
     renderWithTemplate(currentValues);
+    if (currentValues && currentValues.length) {
+      setSheetDigest(sheetId, collab.computeSheetDigest(currentValues));
+    }
     lastFetchTime = new Date();
     updateTimestamp();
 
@@ -1080,6 +1118,13 @@ function renderWithTemplate(values) {
   if (document.activeElement && itemsEl.contains(document.activeElement)) {
     document.activeElement.blur();
   }
+  const savedWinY = window.scrollY || window.pageYOffset || 0;
+  const savedWinX = window.scrollX || window.pageXOffset || 0;
+  const savedScrollingTop = document.scrollingElement ? document.scrollingElement.scrollTop : 0;
+  const prevHeight = itemsEl ? itemsEl.offsetHeight : 0;
+  if (itemsEl && prevHeight > 0) {
+    itemsEl.style.minHeight = `${prevHeight}px`;
+  }
   currentTemplateCanAutoRefresh = null;
   currentTemplateNoAutoRefresh = false;
   itemsEl.innerHTML = '';
@@ -1119,6 +1164,15 @@ function renderWithTemplate(values) {
 
       await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
       showToast(`${template.itemNoun || 'Item'} added`, 'success');
+      const firstRow = Array.isArray(newRows?.[0]) ? newRows[0] : [];
+      const addedLabel = firstRow.find(c => String(c || '').trim()) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: key || currentTemplateKey || '',
+        action: 'add',
+        rowLabel: String(addedLabel || '').trim(),
+      }).catch(() => {});
 
       // Apply row-lock if sheet has the waymark:lock-on-submit marker (owner-configured)
       const ownerConfiguredLock = currentSheetProtectedRanges.some(
@@ -1196,6 +1250,15 @@ function renderWithTemplate(values) {
       values.splice(insertAt, 0, ...newRows);
       await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, values);
       showToast('Added', 'success');
+      const firstInserted = Array.isArray(newRows?.[0]) ? newRows[0] : [];
+      const insertedLabel = firstInserted.find(c => String(c || '').trim()) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: key || currentTemplateKey || '',
+        action: 'add',
+        rowLabel: String(insertedLabel || '').trim(),
+      }).catch(() => {});
       // Use the data we already fetched — avoid an extra round-trip to Sheets.
       // Skip re-render if the user has an inline edit active; the next
       // auto-refresh cycle will pick up the updated state.
@@ -1288,6 +1351,24 @@ function renderWithTemplate(values) {
   if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe' && key !== 'checklist') {
     const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
     itemsEl.append(addForm);
+  }
+
+  if (prevHeight > 0) {
+    if (document.scrollingElement && savedScrollingTop > 0) {
+      document.scrollingElement.scrollTop = savedScrollingTop;
+    }
+    if (savedWinY > 0 || savedWinX > 0) {
+      window.scrollTo(savedWinX, savedWinY);
+    }
+    requestAnimationFrame(() => {
+      if (itemsEl) itemsEl.style.minHeight = '';
+      if (document.scrollingElement && savedScrollingTop > 0) {
+        document.scrollingElement.scrollTop = savedScrollingTop;
+      }
+      if (savedWinY > 0 || savedWinX > 0) {
+        window.scrollTo(savedWinX, savedWinY);
+      }
+    });
   }
 }
 

@@ -473,3 +473,76 @@ test('a persisted Profile tab is loaded back on next open', async ({ page }) => 
   expect(tab).not.toBeNull();
   expect(JSON.stringify(tab.values)).toContain('175');
 });
+
+/* ---------- Easy Inline Delete, Multi-Delete & Scroll Preservation ---------- */
+
+test('inline quick-delete button deletes logged items directly without opening modal', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  const bf = meal(page, 'Breakfast');
+  const before = await bf.locator('.calorie-food-row-tap').count();
+  expect(before).toBeGreaterThanOrEqual(2);
+
+  // Click inline delete (✕) on the first item — no modal should open
+  await bf.locator('.calorie-food-delete').first().click();
+  await expect(page.locator('.calorie-modal-overlay')).toHaveCount(0);
+
+  await expect.poll(async () => bf.locator('.calorie-food-row-tap').count(), { timeout: 5_000 })
+    .toBe(before - 1);
+
+  // Rapidly delete a second item inline
+  await bf.locator('.calorie-food-delete').first().click();
+  await expect.poll(async () => bf.locator('.calorie-food-row-tap').count(), { timeout: 5_000 })
+    .toBe(before - 2);
+});
+
+test('multi-select batch delete mode deletes multiple selected items at once', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  const totalBefore = await page.locator('.calorie-food-row-tap').count();
+  expect(totalBefore).toBeGreaterThanOrEqual(3);
+
+  // Toggle select mode
+  await page.click('.calorie-select-toggle');
+  await page.waitForSelector('.calorie-batch-bar', { timeout: 5_000 });
+
+  // Tap two rows to select them
+  await page.locator('.calorie-food-row-tap').nth(0).click();
+  await page.locator('.calorie-food-row-tap').nth(1).click();
+  await expect(page.locator('.calorie-batch-count')).toContainText('2 selected');
+
+  // Delete selected
+  await page.click('.calorie-batch-delete-btn');
+  await expect(page.locator('.calorie-batch-bar')).toHaveCount(0);
+
+  await expect.poll(async () => page.locator('.calorie-food-row-tap').count(), { timeout: 5_000 })
+    .toBe(totalBefore - 2);
+});
+
+test('deleting or updating items preserves scroll position instead of snapping to top', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 500 });
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-hero', { timeout: 5_000 });
+
+  // Scroll down to the meals section
+  await page.evaluate(() => window.scrollTo(0, 320));
+  const beforeScroll = await page.evaluate(() => window.scrollY);
+  expect(beforeScroll).toBeGreaterThan(150);
+
+  // Delete an item inline while scrolled down
+  await page.locator('.calorie-food-delete').first().click();
+
+  await expect.poll(async () => {
+    const records = await getCreatedRecords(page);
+    return records.some(r => r.type === 'row-delete');
+  }, { timeout: 5_000 }).toBe(true);
+
+  const afterScroll = await page.evaluate(() => window.scrollY);
+  expect(afterScroll).toBeGreaterThan(150);
+});
+

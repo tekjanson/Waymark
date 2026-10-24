@@ -82,6 +82,7 @@ export function applyHomeMode(mode) {
 
 let _navigate = null;
 let _quickMarkActions = {};
+let _callListenerWired = false;
 
 /**
  * One-time wiring of Wayboard navigation callbacks.
@@ -90,6 +91,33 @@ let _quickMarkActions = {};
 export function initWayboard(deps = {}) {
   _navigate = deps.navigate || null;
   _quickMarkActions = deps.quickMarkActions || {};
+
+  if (!_callListenerWired && typeof window !== 'undefined') {
+    _callListenerWired = true;
+    window.addEventListener('waymark:start-wayside-call', async (e) => {
+      const detail = e.detail || {};
+      const contactEmail = String(detail.contactEmail || detail.from || '').trim().toLowerCase();
+      const group = String(detail.group || '').trim();
+      const label = String(detail.label || group || (contactEmail ? contactEmail.split('@')[0] : 'Collaborator')).trim();
+      if (!contactEmail && !group) return;
+
+      const homeView = document.getElementById('home-view');
+      if (!homeView || homeView.classList.contains('hidden')) {
+        if (_navigate) _navigate('home');
+        else window.location.hash = '#/';
+      }
+      await renderWayside().catch(() => {});
+      const host = document.getElementById('home-wayside');
+      if (host) {
+        const target = group ? { group, label } : { contactEmail, label };
+        await selectTarget(target, host);
+        if (_waysideConnect) {
+          endWaysideCall({ silent: true });
+        }
+        await startCall();
+      }
+    });
+  }
 }
 
 /**
@@ -830,6 +858,23 @@ async function discoverCrews() {
       }
     } catch { /* skip */ }
   }
+
+  // Merge past collaborators and crews from Share Ledgers so users can call/chat
+  // anyone they have shared with in the past, even without a Contacts Waymark.
+  try {
+    const known = collab.getKnownCollaborators();
+    for (const c of known.crews || []) {
+      if (c?.name && !crews.has(c.name)) crews.set(c.name, true);
+    }
+    for (const p of known.contacts || []) {
+      const eLower = (p?.email || '').trim().toLowerCase();
+      if (eLower && !emailSeen.has(eLower)) {
+        emailSeen.add(eLower);
+        people.push({ name: p.name || p.email, email: p.email, group: p.group || '' });
+      }
+    }
+  } catch { /* ignore */ }
+
   return { crews: [...crews.keys()].map(name => ({ name })), people };
 }
 

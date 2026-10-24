@@ -415,3 +415,224 @@ test('WebRTC signaling adapter reads and writes cells on the WebRTC_Signaling ta
   expect(result.tab).toBe('WebRTC_Signaling');
   expect(result.cellValue).toContain('peer-1');
 });
+
+test('multi-user collaboration: Alice edits a shared Waymark and Bob receives an update notification and live sheet refresh', async ({ page }) => {
+  await setMockUser(page, { id: 'alice', name: 'Alice', email: 'alice@example.com' });
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await page.waitForSelector('.checklist-row', { timeout: 5_000 });
+
+  // Alice shares sheet-001 with Bob
+  const ledgerId = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    return collab.shareDocumentWithContact({
+      contactEmail: 'bob@example.com',
+      docId: 'sheet-001',
+      docTitle: 'Groceries',
+      waymarkType: 'checklist',
+      permission: 'writer',
+    });
+  });
+  expect(ledgerId).toBeTruthy();
+
+  // Bob opens his session in a second page and views the shared sheet-001
+  const bobPage = await page.context().newPage();
+  await setMockUser(bobPage, { id: 'bob', name: 'Bob', email: 'bob@example.com' });
+  await setupApp(bobPage);
+  await bobPage.evaluate(async (id) => {
+    const collab = await import('/js/collab.js');
+    await collab.registerSharedLedger({ sheetId: id, contactEmail: 'alice@example.com' });
+  }, ledgerId);
+  await navigateToSheet(bobPage, 'sheet-001');
+  await bobPage.waitForSelector('.checklist-row', { timeout: 5_000 });
+
+  // Find the first uncompleted item on sheet-001 and check it off on Alice's page
+  const targetText = await page.locator('.checklist-row:not(.completed) .checklist-item-text').first().textContent();
+  await page.locator('.checklist-row:not(.completed) .checklist-checkbox').first().click();
+
+  // Wait for Alice's mutation to be recorded in Shared_Docs and polled by Bob
+  const bobUpdate = await bobPage.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const storage = await import('/js/storage.js');
+    // Wait briefly if Alice's async notifySheetMutation is still in flight
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await collab.pollShareLedgers();
+      const notifs = storage.getNotifications();
+      const upd = notifs.find(n => n.type === 'update' && n.sheetId === 'sheet-001');
+      if (upd) return upd;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return null;
+  });
+
+  expect(bobUpdate).toBeTruthy();
+  expect(bobUpdate.title).toContain('alice@example.com');
+  expect(bobUpdate.title).toContain('Grocery List');
+  expect(bobUpdate.body).toContain('Updated');
+
+  // Verify Bob's open sheet-001 auto-refreshed to reflect Alice's edit
+  await expect(bobPage.locator('.checklist-row', { hasText: targetText || '' })).toHaveClass(/completed/, { timeout: 5_000 });
+  await bobPage.close();
+});
+
+test('accepting a shared Waymark from the notification bell updates ledger status to Accepted and adds to Recent Waymarks', async ({ page }) => {
+  await setMockUser(page, { id: 'bob', name: 'Bob', email: 'bob@example.com' });
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const ledgerId = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'alice@example.com' });
+    const now = new Date().toISOString();
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Groceries', 'checklist', 'bob@example.com', '', 'writer', now, 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+    return sheetId;
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+  await expect(page.locator('.notif-accept-btn')).toBeVisible();
+  await expect(page.locator('.notif-reject-btn')).toBeVisible();
+  await expect(page.locator('.notif-call-btn')).toBeVisible();
+
+  await page.click('.notif-accept-btn');
+  await expect(page.locator('.notif-decision-accepted')).toBeVisible();
+
+  const postAccept = await page.evaluate(async (lId) => {
+    const { api } = await import('/js/api-client.js');
+    const userData = await import('/js/user-data.js');
+    const storage = await import('/js/storage.js');
+    const data = await api.sheets.getSpreadsheet(lId);
+    const sharedTab = data.tabs.find(t => t.title === 'Shared_Docs');
+    return {
+      accepted: storage.isShareAccepted('sheet-001'),
+      recentIds: userData.getRecentSheets().map(s => s.id),
+      rowStatus: sharedTab?.values?.[1]?.[7] || '',
+    };
+  }, ledgerId);
+
+  expect(postAccept.accepted).toBe(true);
+  expect(postAccept.recentIds).toContain('sheet-001');
+  expect(postAccept.rowStatus).toBe('Accepted');
+});
+
+test('rejecting a shared Waymark from the notification bell marks ledger Rejected, hides the file, and mutes future updates', async ({ page }) => {
+  await setMockUser(page, { id: 'bob', name: 'Bob', email: 'bob@example.com' });
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const ledgerId = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'spammer@example.com' });
+    const now = new Date().toISOString();
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-002', 'Unwanted File', 'checklist', 'bob@example.com', '', 'reader', now, 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+    return sheetId;
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+  await page.click('.notif-reject-btn');
+  await expect(page.locator('.notif-decision-rejected')).toBeVisible();
+
+  // Now simulate the sender making subsequent edits to the rejected sheet-002
+  const postReject = await page.evaluate(async (lId) => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const userData = await import('/js/user-data.js');
+    const storage = await import('/js/storage.js');
+
+    const data = await api.sheets.getSpreadsheet(lId);
+    const sharedTab = data.tabs.find(t => t.title === 'Shared_Docs');
+    const initialRejectedStatus = sharedTab?.values?.[1]?.[7] || '';
+
+    // Append an update row from spammer@example.com for the rejected sheet-002
+    await api.sheets.appendRows(lId, 'Shared_Docs', [[
+      'sheet-002', 'Unwanted File', 'checklist', 'bob@example.com', '', 'writer', new Date().toISOString(), 'Updated|spammer@example.com|Added more rows',
+    ]]);
+    const pushedAfterReject = await collab.pollShareLedgers();
+    const updateNotifs = storage.getNotifications().filter(n => n.type === 'update' && n.sheetId === 'sheet-002');
+
+    return {
+      isRejected: storage.isShareRejected('sheet-002'),
+      isHidden: userData.isItemHidden('sheet-002'),
+      initialRejectedStatus,
+      pushedAfterReject,
+      updateNotifCount: updateNotifs.length,
+    };
+  }, ledgerId);
+
+  expect(postReject.isRejected).toBe(true);
+  expect(postReject.isHidden).toBe(true);
+  expect(postReject.initialRejectedStatus).toBe('Rejected');
+  expect(postReject.pushedAfterReject).toBe(0);
+  expect(postReject.updateNotifCount).toBe(0);
+});
+
+test('passive digest diff detection pushes an update notification when an accepted shared sheet changes externally', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const diffResult = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const storage = await import('/js/storage.js');
+
+    // Accept sheet-001 (stores initial digest)
+    await collab.acceptSharedWaymark({
+      docId: 'sheet-001',
+      docTitle: 'Groceries',
+      waymarkType: 'checklist',
+      from: 'alice@example.com',
+    });
+
+    // Simulate an external Google Sheets edit directly on sheet-001
+    await api.sheets.appendRows('sheet-001', 'Sheet1', [['Organic Honey', 'false', 'Pantry', '2026-05-01']]);
+
+    const pushed = await collab.checkSharedSheetDiffs();
+    const notifs = storage.getNotifications();
+    const diffNotif = notifs.find(n => n.type === 'update' && n.sheetId === 'sheet-001');
+    return { pushed, diffNotif };
+  });
+
+  expect(diffResult.pushed).toBe(1);
+  expect(diffResult.diffNotif).toBeTruthy();
+  expect(diffResult.diffNotif.title).toContain('Grocery List');
+  expect(diffResult.diffNotif.body).toContain('new row');
+});
+
+test('incoming WebRTC call on a shared ledger pushes a call notification with Join Call button', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const callResult = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const storage = await import('/js/storage.js');
+
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'caller@example.com' });
+    await api.sheets.appendRows(sheetId, 'WebRTC_Signaling', [[
+      'session-101', 'caller@example.com', 'testuser@gmail.com', '{"type":"offer"}', '[]', 'ringing',
+    ]]);
+
+    const pushed = await collab.pollShareLedgers();
+    const callNotif = storage.getNotifications().find(n => n.type === 'call');
+    return { pushed, callNotif };
+  });
+
+  expect(callResult.pushed).toBe(1);
+  expect(callResult.callNotif).toBeTruthy();
+  expect(callResult.callNotif.title).toContain('caller@example.com');
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+  const callBtn = page.locator('.notif-call-btn').first();
+  await expect(callBtn).toContainText('Join Call');
+});
+
