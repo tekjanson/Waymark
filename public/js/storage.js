@@ -678,6 +678,117 @@ export function setBilateralCursor(sheetId, count) {
   set('bilateral_cursors', all);
 }
 
+export function getChatCursors() {
+  return get('chat_cursors') || {};
+}
+
+export function getChatCursor(sheetId) {
+  return getChatCursors()[sheetId] || 0;
+}
+
+export function setChatCursor(sheetId, count) {
+  const all = getChatCursors();
+  all[sheetId] = count;
+  set('chat_cursors', all);
+}
+
+/* --- Accepted & Rejected Shared Waymarks --- */
+
+export function getAcceptedShares() {
+  return get('accepted_shares') || [];
+}
+
+export function setAcceptedShares(ids) {
+  set('accepted_shares', Array.isArray(ids) ? ids : []);
+}
+
+export function addAcceptedShare(docId) {
+  if (!docId) return;
+  const current = new Set(getAcceptedShares());
+  current.add(docId);
+  setAcceptedShares([...current]);
+  removeRejectedShare(docId);
+}
+
+export function isShareAccepted(docId) {
+  return Boolean(docId && getAcceptedShares().includes(docId));
+}
+
+export function getRejectedShares() {
+  return get('rejected_shares') || [];
+}
+
+export function setRejectedShares(ids) {
+  set('rejected_shares', Array.isArray(ids) ? ids : []);
+}
+
+export function addRejectedShare(docId) {
+  if (!docId) return;
+  const current = new Set(getRejectedShares());
+  current.add(docId);
+  setRejectedShares([...current]);
+  setAcceptedShares(getAcceptedShares().filter(id => id !== docId));
+}
+
+export function removeRejectedShare(docId) {
+  if (!docId) return;
+  setRejectedShares(getRejectedShares().filter(id => id !== docId));
+}
+
+export function isShareRejected(docId) {
+  return Boolean(docId && getRejectedShares().includes(docId));
+}
+
+/* --- Shared Document ↔ Share Ledger Registry --- */
+
+export function getAllSharedDocLedgers() {
+  return get('shared_doc_ledgers') || {};
+}
+
+export function getSharedDocLedgers(docId) {
+  if (!docId) return [];
+  const all = getAllSharedDocLedgers();
+  return Array.isArray(all[docId]) ? all[docId] : [];
+}
+
+export function recordSharedDocLedger(docId, entry = {}) {
+  if (!docId || !entry.ledgerSheetId) return;
+  const all = getAllSharedDocLedgers();
+  const list = Array.isArray(all[docId]) ? all[docId] : [];
+  const idx = list.findIndex(item => item.ledgerSheetId === entry.ledgerSheetId);
+  const nextEntry = {
+    ledgerSheetId: entry.ledgerSheetId,
+    contactEmail: entry.contactEmail || (idx >= 0 ? list[idx].contactEmail : '') || '',
+    group: entry.group || (idx >= 0 ? list[idx].group : '') || '',
+    docTitle: entry.docTitle || (idx >= 0 ? list[idx].docTitle : '') || '',
+    waymarkType: entry.waymarkType || (idx >= 0 ? list[idx].waymarkType : '') || '',
+    updatedAt: new Date().toISOString(),
+  };
+  if (idx >= 0) list[idx] = nextEntry;
+  else list.push(nextEntry);
+  all[docId] = list;
+  set('shared_doc_ledgers', all);
+}
+
+/* --- Sheet Content Digests (for collaborative change detection) --- */
+
+export function getSheetDigests() {
+  return get('sheet_digests') || {};
+}
+
+export function getSheetDigest(sheetId) {
+  if (!sheetId) return null;
+  return getSheetDigests()[sheetId] || null;
+}
+
+export function setSheetDigest(sheetId, digest) {
+  if (!sheetId) return;
+  const all = getSheetDigests();
+  if (digest) all[sheetId] = digest;
+  else delete all[sheetId];
+  set('sheet_digests', all);
+}
+
 /* ---------- Cross-Feature Links ---------- */
 
 /**

@@ -85,12 +85,15 @@ function persistMockSheetRecord(sheetId, data) {
 }
 
 function persistIfCreatedSheet(sheetId, data) {
-  if (!/^created-sheet-/.test(String(sheetId || ''))) return;
+  if (!sheetId || !data) return;
   persistMockSheetRecord(sheetId, data);
 }
 
 async function loadFixtures() {
-  if (mockFixtures) return mockFixtures;
+  if (mockFixtures) {
+    Object.assign(mockFixtures.sheets, loadPersistedMockSheets());
+    return mockFixtures;
+  }
   const [folders, users] = await Promise.all([
     fetch(BASE + '/__fixtures/folders.json').then(r => r.json()),
     fetch(BASE + '/__fixtures/users.json').then(r => r.json()),
@@ -101,6 +104,11 @@ async function loadFixtures() {
 
 async function loadMockSheet(sheetId) {
   const fix = await loadFixtures();
+  const persisted = loadPersistedMockSheets();
+  if (persisted[sheetId]) {
+    fix.sheets[sheetId] = persisted[sheetId];
+    return fix.sheets[sheetId];
+  }
   if (fix.sheets[sheetId]) return fix.sheets[sheetId];
 
   // Try to load a fixture file for this sheet
@@ -724,9 +732,10 @@ export const api = {
      * @param {string} fileId
      * @param {string} email
      * @param {'reader'|'writer'} role
+     * @param {{ sendNotificationEmail?: boolean, emailMessage?: string }} [opts]
      * @returns {Promise<void>}
      */
-    async createDrivePermission(fileId, email, role = 'reader') {
+    async createDrivePermission(fileId, email, role = 'reader', opts = {}) {
       if (!fileId) throw new Error('fileId is required');
       if (!email) throw new Error('email is required');
       const normalizedRole = role === 'writer' ? 'writer' : 'reader';
@@ -736,13 +745,15 @@ export const api = {
           fileId,
           email,
           role: normalizedRole,
+          ...(typeof opts.sendNotificationEmail === 'boolean' ? { sendNotificationEmail: opts.sendNotificationEmail } : {}),
+          ...(opts.emailMessage ? { emailMessage: opts.emailMessage } : {}),
           createdAt: new Date().toISOString(),
         });
         return;
       }
       return withAuthRetry(async () => {
         const token = await requireToken();
-        await driveApi.createDrivePermission(token, fileId, email, normalizedRole);
+        await driveApi.createDrivePermission(token, fileId, email, normalizedRole, opts);
       });
     },
 
@@ -751,16 +762,28 @@ export const api = {
      * @param {string} fileId
      * @param {string} fileName
      * @param {string} [parentFolderId]
+     * @param {{ ledger?: string, from?: string, group?: string }} [extraParams]
      * @returns {string}
      */
-    generateShareLink(fileId, fileName, parentFolderId) {
-      if (!fileId) throw new Error('fileId is required');
+    generateShareLink(fileId, fileName, parentFolderId, extraParams = {}) {
+      if (!fileId && !extraParams?.ledger) throw new Error('fileId is required');
       const base = window.__WAYMARK_BASE || '';
       const url = new URL(`${window.location.origin}${base}/`);
-      url.searchParams.set('fileId', fileId);
-      url.searchParams.set('fileName', fileName || '');
+      if (fileId) {
+        url.searchParams.set('fileId', fileId);
+        url.searchParams.set('fileName', fileName || '');
+      }
       if (parentFolderId) {
         url.searchParams.set('parent', parentFolderId);
+      }
+      if (extraParams?.ledger) {
+        url.searchParams.set('ledger', extraParams.ledger);
+      }
+      if (extraParams?.from) {
+        url.searchParams.set('from', extraParams.from);
+      }
+      if (extraParams?.group) {
+        url.searchParams.set('group', extraParams.group);
       }
       url.hash = '#/';
       return url.toString();
@@ -870,6 +893,32 @@ export const api = {
       const token = await requireToken();
       return pickerApi.pickSpreadsheetForInvite(token, opts);
     },
+
+    /**
+     * Open a Google Picker focused on spreadsheets shared with the user.
+     * @param {{ query?: string, title?: string, multiSelect?: boolean }} [opts]
+     * @returns {Promise<Array<{id:string,name:string,mimeType:string}>|null>}
+     */
+    async pickSharedFiles(opts = {}) {
+      if (isLocal) {
+        if (Array.isArray(window.__WAYMARK_MOCK_PICKED_SHARED_FILES)) {
+          return window.__WAYMARK_MOCK_PICKED_SHARED_FILES;
+        }
+        const fix = await loadFixtures();
+        const q = (opts.query || '').toLowerCase();
+        const matches = Object.entries(fix.sheets || {})
+          .filter(([, s]) => s && (!q || (s.title || '').toLowerCase().includes(q)))
+          .map(([id, s]) => ({
+            id,
+            name: s.title || id,
+            mimeType: 'application/vnd.google-apps.spreadsheet',
+          }));
+        if (!matches.length) return null;
+        return opts.multiSelect === false ? [matches[0]] : matches;
+      }
+      const token = await requireToken();
+      return pickerApi.pickSharedFiles(token, opts);
+    },
   },
 
   /* ---- Sheets ---- */
@@ -971,8 +1020,7 @@ export const api = {
     async appendRows(spreadsheetId, sheetTitle, rows) {
       if (isLocal) {
         if (window.__WAYMARK_MOCK_ERROR === 'sheets') throw new Error('Mock Sheets error');
-        const fix = await loadFixtures();
-        const data = fix.sheets[spreadsheetId];
+        const data = await loadMockSheet(spreadsheetId);
         if (data) {
           // Route the append to the named tab when the sheet has multiple tabs
           // (e.g. bilateral sharing sheets). Falls back to the primary values
@@ -1015,11 +1063,30 @@ export const api = {
      */
     async updateCell(spreadsheetId, sheetTitle, row, col, value) {
       if (isLocal) {
-        // In mock mode, update the cached fixture data
-        const fix = await loadFixtures();
-        const data = fix.sheets[spreadsheetId];
-        if (data && data.values && data.values[row]) {
-          data.values[row][col] = value;
+        // In mock mode, update the cached fixture data (including named tabs on multi-tab sheets)
+        const data = await loadMockSheet(spreadsheetId);
+        if (data) {
+          let targetValues = data.values;
+          let tab = null;
+          if (Array.isArray(data.tabs) && sheetTitle) {
+            tab = data.tabs.find(t => (t.title || '').toLowerCase() === sheetTitle.toLowerCase());
+            if (tab) {
+              if (!Array.isArray(tab.values)) tab.values = [];
+              targetValues = tab.values;
+            }
+          }
+          if (Array.isArray(targetValues) && row >= 0 && col >= 0) {
+            while (targetValues.length <= row) targetValues.push([]);
+            if (!Array.isArray(targetValues[row])) targetValues[row] = [];
+            while (targetValues[row].length <= col) targetValues[row].push('');
+            targetValues[row][col] = value;
+            if (tab && data.tabs[0] === tab && data.values && data.values !== tab.values) {
+              while (data.values.length <= row) data.values.push([]);
+              if (!Array.isArray(data.values[row])) data.values[row] = [];
+              while (data.values[row].length <= col) data.values[row].push('');
+              data.values[row][col] = value;
+            }
+          }
         }
         persistIfCreatedSheet(spreadsheetId, data);
         const record = {

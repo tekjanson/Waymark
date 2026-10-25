@@ -675,12 +675,59 @@ function buildKeysSheetSection(onRefresh) {
 
   /* ---------- Linked but locked ---------- */
   if (!isUnlocked) {
+    const hasBio = vault.hasBiometricVault(sheetId);
+    const isMobile = vault.isMobileWeb();
     const pwInput = el('input', {
       type: 'password',
       className: 'agent-settings-input',
       placeholder: 'Sheet password (leave empty if not encrypted)',
     });
     const statusText = `🔐 ${sheetName}`;
+
+    const bioBtnSlot = el('div', { className: 'agent-vault-bio-slot' });
+    if (hasBio) {
+      const bioBtn = el('button', {
+        className: 'agent-vault-bio-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            bioBtn.disabled = true;
+            bioBtn.textContent = '🫆 Verifying…';
+            const ok = await vault.unlockVaultWithBiometrics();
+            if (ok) {
+              const g = vault.getGeminiKeys().length;
+              const c = vault.getClaudeKeys().length;
+              showToast(`Unlocked with biometrics — ${g} Gemini key${g !== 1 ? 's' : ''}, ${c} Claude key${c !== 1 ? 's' : ''}`, 'success');
+              if (typeof onRefresh === 'function') onRefresh();
+              reopen();
+            } else {
+              bioBtn.disabled = false;
+              bioBtn.textContent = '🫆 Unlock with Biometrics';
+              showToast('Biometric unlock failed or cancelled', 'error');
+            }
+          },
+        },
+      }, ['🫆 Unlock with Biometrics']);
+      bioBtnSlot.appendChild(bioBtn);
+    }
+
+    const enrollSlot = el('div', { className: 'agent-vault-bio-enroll-slot' });
+    let enrollCb = null;
+    if (!hasBio) {
+      vault.isBiometricSupported().then((supported) => {
+        if (!supported) return;
+        enrollCb = el('input', {
+          type: 'checkbox',
+          className: 'agent-vault-bio-enroll-checkbox',
+        });
+        if (isMobile) enrollCb.checked = true;
+        enrollSlot.innerHTML = '';
+        enrollSlot.appendChild(el('label', { className: 'agent-vault-bio-enroll-label' }, [
+          enrollCb,
+          el('span', {}, [isMobile ? '📱 Enable biometric unlock on mobile web' : '🫆 Enable biometric unlock on this device']),
+        ]));
+      }).catch(() => {});
+    }
 
     return el('div', { className: 'agent-vault-section agent-vault-locked' }, [
       el('label', { className: 'agent-settings-label' }, ['🔑 AI Keys Sheet']),
@@ -692,21 +739,35 @@ function buildKeysSheetSection(onRefresh) {
           on: { click: () => closeModal() },
         }, ['Open sheet →']),
       ]),
+      bioBtnSlot,
       pwInput,
+      enrollSlot,
       el('div', { className: 'agent-vault-btns' }, [
         el('button', {
           className: 'agent-vault-unlock-btn',
           type: 'button',
           on: {
             click: async () => {
-              const ok = await vault.unlockVault(pwInput.value.trim());
+              const pw = pwInput.value.trim();
+              const shouldEnroll = Boolean(enrollCb && enrollCb.checked);
+              let enrolled = false;
+              if (shouldEnroll && pw) {
+                enrolled = await vault.enrollBiometricVault(pw);
+              }
+              const ok = await vault.unlockVault(pw);
               if (ok) {
+                if (shouldEnroll && !enrolled) {
+                  enrolled = await vault.enrollBiometricVault(pw);
+                }
                 const g = vault.getGeminiKeys().length;
                 const c = vault.getClaudeKeys().length;
                 showToast(`Unlocked — ${g} Gemini key${g !== 1 ? 's' : ''}, ${c} Claude key${c !== 1 ? 's' : ''}`, 'success');
                 if (typeof onRefresh === 'function') onRefresh();
                 reopen();
               } else {
+                if (enrolled) {
+                  vault.clearBiometricVault();
+                }
                 showToast('Incorrect password or could not read sheet', 'error');
                 pwInput.value = '';
               }
@@ -731,11 +792,67 @@ function buildKeysSheetSection(onRefresh) {
   /* ---------- Linked and unlocked ---------- */
   const gCount = vault.getGeminiKeys().length;
   const cCount = vault.getClaudeKeys().length;
+  const hasBioUnlocked = vault.hasBiometricVault(sheetId);
+  const bioManageSlot = el('div', { className: 'agent-vault-bio-manage' });
+  if (hasBioUnlocked) {
+    bioManageSlot.appendChild(el('button', {
+      className: 'agent-vault-bio-disable-btn agent-vault-clear-btn',
+      type: 'button',
+      on: {
+        click: () => {
+          vault.clearBiometricVault();
+          showToast('Biometric unlock disabled on this device', 'info');
+          reopen();
+        },
+      },
+    }, ['🫆 Disable Biometrics']));
+  } else {
+    vault.isBiometricSupported().then((supported) => {
+      if (!supported) return;
+      bioManageSlot.innerHTML = '';
+      const needsPwInput = !vault.hasKnownVaultPassword(sheetId);
+      const bioPwInput = needsPwInput ? el('input', {
+        type: 'password',
+        className: 'agent-settings-input agent-vault-bio-pw-input',
+        placeholder: 'Sheet password for biometrics…',
+      }) : null;
+      if (bioPwInput) bioManageSlot.appendChild(bioPwInput);
+      bioManageSlot.appendChild(el('button', {
+        className: 'agent-vault-bio-enable-btn agent-vault-setup-btn',
+        type: 'button',
+        on: {
+          click: async () => {
+            const explicitPw = bioPwInput ? bioPwInput.value.trim() : undefined;
+            if (needsPwInput && !explicitPw) {
+              showToast('Enter your sheet password to enable biometric unlock', 'error');
+              bioPwInput?.focus();
+              return;
+            }
+            const ok = await vault.enrollBiometricVault(explicitPw);
+            if (ok) {
+              if (explicitPw) {
+                const verified = await vault.unlockVault(explicitPw);
+                if (!verified) {
+                  vault.clearBiometricVault();
+                  showToast('Incorrect sheet password — biometrics not enabled', 'error');
+                  return;
+                }
+              }
+              showToast('Biometric unlock enabled on this device', 'success');
+              reopen();
+            } else {
+              showToast('Could not enroll biometrics', 'error');
+            }
+          },
+        },
+      }, ['🫆 Enable Biometric Unlock']));
+    }).catch(() => {});
+  }
 
   return el('div', { className: 'agent-vault-section agent-vault-unlocked' }, [
     el('label', { className: 'agent-settings-label' }, ['🔑 AI Keys Sheet']),
     el('p', { className: 'agent-vault-status agent-vault-status-unlocked' }, [
-      `🔓 ${sheetName} — ${gCount} Gemini key${gCount !== 1 ? 's' : ''}, ${cCount} Claude key${cCount !== 1 ? 's' : ''}`,
+      `🔓 ${sheetName} — ${gCount} Gemini key${gCount !== 1 ? 's' : ''}, ${cCount} Claude key${cCount !== 1 ? 's' : ''}${hasBioUnlocked ? ' · 🫆 Biometrics Ready' : ''}`,
     ]),
     el('p', { className: 'agent-settings-hint' }, [
       'Keys are loaded from the sheet for this session. ',
@@ -753,6 +870,7 @@ function buildKeysSheetSection(onRefresh) {
           },
         },
       }, ['🔐 Lock']),
+      bioManageSlot,
       el('button', {
         className: 'agent-vault-clear-btn',
         type: 'button',

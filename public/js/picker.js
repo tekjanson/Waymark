@@ -269,3 +269,52 @@ export async function pickSpreadsheetForInvite(token, opts = {}) {
     builder.build().setVisible(true);
   });
 }
+
+/**
+ * Open a Google Picker focused on spreadsheets shared with the user ("Shared with me").
+ * Selecting files in Picker grants Waymark `drive.file` access to them.
+ * @param {string} token
+ * @param {{ query?: string, title?: string, multiSelect?: boolean }} [opts]
+ * @returns {Promise<Array<{id:string,name:string,mimeType:string}>|null>}
+ */
+export async function pickSharedFiles(token, opts = {}) {
+  await ensurePickerLoaded();
+
+  return new Promise((resolve) => {
+    const sharedView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setOwnedByMe(false)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false);
+
+    if (opts.query) {
+      sharedView.setQuery(opts.query);
+    }
+
+    const allSheetsView = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false);
+    if (opts.query) {
+      allSheetsView.setQuery(opts.query);
+    }
+
+    const builder = new google.picker.PickerBuilder()
+      .addView(sharedView)
+      .addView(allSheetsView)
+      .setOAuthToken(token)
+      .setAppId(getAppId())
+      .setTitle(opts.title || 'Connect Shared Waymark / Ledger')
+      .setCallback((data) => {
+        if (data.action === google.picker.Action.PICKED) {
+          resolve(mapDocs(data.docs || []));
+        } else if (data.action === google.picker.Action.CANCEL) {
+          resolve(null);
+        }
+      });
+
+    if (opts.multiSelect !== false) {
+      builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);
+    }
+
+    builder.build().setVisible(true);
+  });
+}

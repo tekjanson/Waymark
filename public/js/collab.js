@@ -15,7 +15,8 @@
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as storage from './storage.js';
-import { addNotification, refreshBell } from './notifications.js';
+import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet } from './notifications.js';
+import { discoverDirectory, isCandidateContactsBook, extractLedgerSheetId, normalizeContactEmail } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
 
@@ -72,6 +73,44 @@ function ledgerFileName(key) {
   return `.waymark-ledger-${key.replace(/[^a-z0-9@._:-]/g, '-')}`;
 }
 
+/**
+ * Resolve all recipient emails for a 1:1 contact or a Waymarker Crew (group).
+ * Excludes the current signed-in user's own email.
+ * @param {{ contactEmail?: string, group?: string, memberEmails?: string[] }} target
+ * @returns {Promise<string[]>}
+ */
+export async function resolveTargetEmails(target = {}) {
+  const me = currentEmail();
+  const out = new Set();
+
+  if (target.contactEmail) {
+    const e = String(target.contactEmail).trim().toLowerCase();
+    if (e && e !== me) out.add(e);
+  }
+  if (Array.isArray(target.memberEmails)) {
+    for (const raw of target.memberEmails) {
+      const e = String(raw || '').trim().toLowerCase();
+      if (e && e !== me) out.add(e);
+    }
+  }
+  if (target.group) {
+    try {
+      const groupKey = String(target.group).trim().toLowerCase();
+      const { crews } = await discoverDirectory();
+      const match = crews.find(c => c.name.trim().toLowerCase() === groupKey);
+      if (match) {
+        for (const m of match.members || []) {
+          const e = (m.email || '').trim().toLowerCase();
+          if (e && e !== me) out.add(e);
+        }
+      }
+    } catch {
+      /* directory lookup is best-effort */
+    }
+  }
+  return [...out];
+}
+
 /* ---------- Public API ---------- */
 
 /**
@@ -100,32 +139,33 @@ export async function ensureShareLedger(target) {
     await api.sheets.writeTab(sheetId, SIGNALING_TAB, [SIGNALING_HEADERS]);
   }
 
+  // Always persist the ledger mapping and link back to Contacts immediately
+  // so a subsequent permission error never strands an unmapped ledger sheet.
+  const ownerEmail = existing?.ownerEmail || (createdHere ? currentEmail() : '');
+  if (createdHere) {
+    await rememberShareLedger(target, identity, sheetId, ownerEmail, false);
+  }
+  await linkLedgerToContacts(target, sheetId, existing?.mergedSheetIds || []);
+
   // Grant access when this account owns the ledger. The other end can already
   // read a discovered ledger, but may not have permission to share it onward.
   let permissionAttempted = existing?.permissionAttempted === true;
-  const shouldGrantAccess = target.contactEmail && (createdHere ||
+  const recipientEmails = await resolveTargetEmails(target);
+  const shouldGrantAccess = recipientEmails.length > 0 && (createdHere ||
     (existing?.ownerEmail === currentEmail() && !permissionAttempted));
   if (shouldGrantAccess) {
-    try {
-      await api.drive.createDrivePermission(sheetId, target.contactEmail.trim().toLowerCase(), 'writer');
-    } catch (err) {
-      // A fresh ledger must actually be shared or the other account will be
-      // left on its own sheet. Existing sheets may already grant access, or
-      // may be owned by the other contact, so a repeated grant is best-effort.
-      if (createdHere) throw err;
+    let firstErr = null;
+    for (const email of recipientEmails) {
+      try {
+        await api.drive.createDrivePermission(sheetId, email, 'writer');
+      } catch (err) {
+        if (!firstErr) firstErr = err;
+      }
     }
-    permissionAttempted = true;
+    permissionAttempted = !firstErr;
+    await rememberShareLedger(target, identity, sheetId, ownerEmail, permissionAttempted);
+    if (firstErr && createdHere && target.contactEmail) throw firstErr;
   }
-  if (createdHere || shouldGrantAccess) {
-    await rememberShareLedger(
-      target,
-      identity,
-      sheetId,
-      existing?.ownerEmail || (createdHere ? currentEmail() : ''),
-      permissionAttempted
-    );
-  }
-  await linkLedgerToContacts(target, sheetId, existing?.mergedSheetIds || []);
   return { key, sheetId };
 }
 
@@ -207,6 +247,40 @@ export async function findExistingShareLedger(target) {
     ownerEmail: mapped.ownerEmail || '',
     permissionAttempted: mapped.permissionAttempted === true,
   };
+
+  // Fallback: check if the user's Contacts Waymark already has a Share_Data_Sheet
+  // or Social_Data_Location ID recorded for this contact or group.
+  try {
+    const dir = await discoverDirectory();
+    const targetEmail = String(target.contactEmail || '').trim().toLowerCase();
+    const targetGroup = String(target.group || '').trim().toLowerCase();
+    let fromContactsId = '';
+    if (targetGroup) {
+      const crewMatch = (dir.crews || []).find(c => (c.name || '').trim().toLowerCase() === targetGroup && c.ledgerSheetId);
+      if (crewMatch?.ledgerSheetId) fromContactsId = crewMatch.ledgerSheetId;
+    } else if (targetEmail) {
+      const contactMatch = (dir.contacts || []).find(c => (c.email || '').trim().toLowerCase() === targetEmail && c.ledgerSheetId);
+      if (contactMatch?.ledgerSheetId) fromContactsId = contactMatch.ledgerSheetId;
+    }
+    if (fromContactsId) {
+      const checkData = await api.sheets.getSpreadsheet(fromContactsId);
+      const hasSharedDocsTab = Array.isArray(checkData?.tabs) && checkData.tabs.some(
+        t => (t.title || '').toLowerCase() === SHARED_DOCS_TAB.toLowerCase()
+      );
+      if (hasSharedDocsTab) {
+        await rememberShareLedger(target, identity, fromContactsId, '', false);
+        return {
+          key,
+          sheetId: fromContactsId,
+          ownerEmail: '',
+          permissionAttempted: false,
+        };
+      }
+    }
+  } catch {
+    /* directory fallback is best-effort */
+  }
+
   return null;
 }
 
@@ -223,29 +297,153 @@ async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', p
 }
 
 /**
+ * Register a shared ledger discovered via an invite deep-link (`?ledger=...`) or
+ * selected by the recipient in Google Picker (required under `drive.file` scope).
+ * Infers contactEmail or group from the sheet metadata/contents when not supplied.
+ * @param {{ sheetId: string, contactEmail?: string, group?: string, ownerEmail?: string, fileName?: string }} args
+ * @returns {Promise<{ key: string, sheetId: string, target: { contactEmail?: string, group?: string } }>}
+ */
+export async function registerSharedLedger(args = {}) {
+  const sheetId = String(args.sheetId || '').trim();
+  if (!sheetId) throw new Error('A ledger sheetId is required.');
+
+  const me = currentEmail();
+  let contactEmail = String(args.contactEmail || '').trim().toLowerCase();
+  let group = String(args.group || '').trim();
+  let title = String(args.fileName || '').trim();
+
+  if (!contactEmail && !group) {
+    try {
+      const data = await api.sheets.getSpreadsheet(sheetId);
+      title = title || String(data.title || '').trim();
+      const lowerTitle = title.toLowerCase();
+      if (lowerTitle.startsWith('.waymark-ledger-group:')) {
+        group = title.slice('.waymark-ledger-group:'.length).replace(/-/g, ' ').trim();
+      } else if (lowerTitle.startsWith('.waymark-ledger-contact-pair:')) {
+        const pairPart = lowerTitle.slice('.waymark-ledger-contact-pair:'.length);
+        const parts = pairPart.split('::').map(s => s.trim()).filter(Boolean);
+        contactEmail = parts.find(e => e !== me) || parts[0] || '';
+      } else if (lowerTitle.startsWith('.waymark-ledger-contact:')) {
+        const single = lowerTitle.slice('.waymark-ledger-contact:'.length).trim();
+        if (single && single !== me) contactEmail = single;
+      }
+      if (!contactEmail && !group) {
+        const chatRows = await readTab(sheetId, CHAT_TAB);
+        const otherChat = chatRows.find(r => r.Sender_Email && r.Sender_Email.trim().toLowerCase() !== me);
+        if (otherChat) contactEmail = otherChat.Sender_Email.trim().toLowerCase();
+      }
+    } catch {
+      /* best-effort metadata inspection */
+    }
+  }
+
+  const target = group
+    ? { group }
+    : { contactEmail: contactEmail || 'collaborator@waymark.local' };
+  const identity = ledgerIdentity(target);
+  await rememberShareLedger(target, identity, sheetId, args.ownerEmail || contactEmail || '', false);
+  await linkLedgerToContacts(target, sheetId);
+  await pollShareLedgers();
+  return { key: identity.key, sheetId, target };
+}
+
+/**
+ * Open Google Picker so the user can select and authorize a `.waymark-ledger-*`
+ * spreadsheet shared with them by a collaborator (`drive.file` scope flow).
+ * @param {{ contactEmail?: string, group?: string }} [targetHint]
+ * @returns {Promise<Array<{ key: string, sheetId: string }>>}
+ */
+export async function connectSharedLedgerViaPicker(targetHint = {}) {
+  const picked = await api.picker.pickSharedFiles({
+    query: '.waymark-ledger-',
+    title: 'Connect Shared Waymark Ledger',
+    multiSelect: true,
+  });
+  if (!picked || !picked.length) return [];
+  const registered = [];
+  for (const file of picked) {
+    if (!file?.id) continue;
+    const res = await registerSharedLedger({
+      sheetId: file.id,
+      fileName: file.name || '',
+      contactEmail: targetHint.contactEmail,
+      group: targetHint.group,
+    });
+    registered.push(res);
+  }
+  return registered;
+}
+
+/**
  * Share a document with a contact/group: provision the ledger if needed, grant
- * the contact access to the document, append the ledger record, and advance the
- * local cursor. Mirrors the task's shareDocumentWithContact(contact, doc, perms).
- * @param {{ contactEmail?: string, group?: string, docId: string, docTitle?: string, waymarkType?: string, permission?: string }} args
+ * the contact (or all crew members) access to the document, append the ledger
+ * record(s), and advance the local cursor.
+ * @param {{ contactEmail?: string, group?: string, memberEmails?: string[], docId: string, docTitle?: string, waymarkType?: string, permission?: string }} args
  * @returns {Promise<string>} the ledger sheet id
  */
 export async function shareDocumentWithContact(args) {
   const { sheetId } = await ensureShareLedger(args);
   const permission = args.permission === 'writer' ? 'writer' : (args.permission || 'reader');
   const now = new Date().toISOString();
-  const row = [
-    args.docId || '',
-    args.docTitle || '',
-    args.waymarkType || '',
-    (args.contactEmail || '').trim().toLowerCase(),
-    args.group || '',
-    permission,
-    now,
-    'Shared',
-  ];
-  await api.sheets.appendRows(sheetId, SHARED_DOCS_TAB, [row]);
+  const recipientEmails = await resolveTargetEmails(args);
+
+  // When sharing with a Waymarker Crew (group), grant Drive access to every
+  // crew member on the shared document and log a row per member so each member's
+  // bell notification fires when polling the crew ledger.
+  if (args.group && recipientEmails.length > 0 && args.docId) {
+    for (const email of recipientEmails) {
+      try {
+        await api.drive.createDrivePermission(args.docId, email, permission);
+      } catch {
+        /* best-effort per crew member */
+      }
+    }
+    const rowsToAppend = recipientEmails.map(email => [
+      args.docId || '',
+      args.docTitle || '',
+      args.waymarkType || '',
+      email,
+      args.group || '',
+      permission,
+      now,
+      'Shared',
+    ]);
+    await api.sheets.appendRows(sheetId, SHARED_DOCS_TAB, rowsToAppend);
+  } else {
+    const row = [
+      args.docId || '',
+      args.docTitle || '',
+      args.waymarkType || '',
+      (args.contactEmail || '').trim().toLowerCase(),
+      args.group || '',
+      permission,
+      now,
+      'Shared',
+    ];
+    await api.sheets.appendRows(sheetId, SHARED_DOCS_TAB, [row]);
+  }
+
   const rows = await readTab(sheetId, SHARED_DOCS_TAB);
+  const me = currentEmail();
   storage.setBilateralCursor(sheetId, rows.length);
+  if (me) storage.setBilateralCursor(`${me}:${sheetId}`, rows.length);
+
+  if (args.docId) {
+    storage.recordSharedDocLedger(args.docId, {
+      ledgerSheetId: sheetId,
+      contactEmail: (args.contactEmail || '').trim().toLowerCase(),
+      group: args.group || '',
+      docTitle: args.docTitle || '',
+      waymarkType: args.waymarkType || '',
+    });
+    try {
+      const docData = await api.sheets.getSpreadsheet(args.docId);
+      const vals = (docData.tabs && docData.tabs[0] && docData.tabs[0].values) || docData.values || [];
+      if (vals.length) storage.setSheetDigest(args.docId, computeSheetDigest(vals));
+    } catch {
+      /* best-effort initial digest */
+    }
+  }
   return sheetId;
 }
 
@@ -261,49 +459,760 @@ export async function recordSharedWaymark(contactEmail, entry) {
 }
 
 /**
- * Poll the Shared_Docs tab of every known ledger, detect documents shared with
- * the current user by a collaborator since the last seen cursor, and push them
- * to the top-bar notification bell.
- * @returns {Promise<number>} number of new notifications pushed
+ * Infer counterparty email or group for a ledger entry relative to current user.
+ * @param {Object} ledger
+ * @param {Array<Object>} [rows]
+ * @returns {{ contactEmail: string, group: string }}
  */
-export async function pollShareLedgers() {
+function resolveLedgerCounterparty(ledger = {}, rows = []) {
   const me = currentEmail();
-  const ledgers = userData.getShareLedgers();
-  let pushed = 0;
+  const group = String(ledger.group || '').trim();
+  if (group) return { contactEmail: '', group };
 
+  let email = String(ledger.contactEmail || '').trim().toLowerCase();
+  if (email && email !== me) return { contactEmail: email, group: '' };
+
+  const key = String(ledger.key || '').trim().toLowerCase();
+  if (key.startsWith('contact-pair:')) {
+    const parts = key.slice('contact-pair:'.length).split('::').map(s => s.trim()).filter(Boolean);
+    const other = parts.find(p => p !== me) || parts[0] || '';
+    if (other) return { contactEmail: other, group: '' };
+  } else if (key.startsWith('contact:')) {
+    const single = key.slice('contact:'.length).trim();
+    if (single && single !== me) return { contactEmail: single, group: '' };
+  }
+
+  if (ledger.ownerEmail && String(ledger.ownerEmail).trim().toLowerCase() !== me) {
+    return { contactEmail: String(ledger.ownerEmail).trim().toLowerCase(), group: '' };
+  }
+
+  for (const r of rows) {
+    const sharedWith = String(r.Shared_With_Email || '').trim().toLowerCase();
+    if (sharedWith && sharedWith !== me) return { contactEmail: sharedWith, group: '' };
+    const status = String(r.Status || '').trim();
+    if (status.startsWith('Updated|')) {
+      const actor = (status.split('|')[1] || '').trim().toLowerCase();
+      if (actor && actor !== me) return { contactEmail: actor, group: '' };
+    }
+  }
+
+  return { contactEmail: email, group: '' };
+}
+
+/**
+ * Find all Share Ledgers associated with a shared Waymark document ID.
+ * Checks local cache first and falls back to scanning known Share Ledgers.
+ * @param {string} docId
+ * @returns {Promise<Array<{ ledgerSheetId: string, contactEmail?: string, group?: string, docTitle?: string, waymarkType?: string }>>}
+ */
+export async function findLedgersForDocument(docId) {
+  if (!docId) return [];
+  const cached = storage.getSharedDocLedgers(docId);
+  const bySheetId = new Map();
+  for (const c of cached) {
+    if (c?.ledgerSheetId) bySheetId.set(c.ledgerSheetId, { ...c });
+  }
+
+  const ledgers = userData.getShareLedgers();
   for (const l of ledgers) {
+    if (!l?.sheetId) continue;
     try {
       const rows = await readTab(l.sheetId, SHARED_DOCS_TAB);
-      const cursor = storage.getBilateralCursor(l.sheetId);
-      if (rows.length <= cursor) {
-        if (rows.length < cursor) storage.setBilateralCursor(l.sheetId, rows.length);
-        continue;
+      const match = rows.find(r => (r.Document_ID || '').trim() === docId);
+      if (match) {
+        const cp = resolveLedgerCounterparty(l, rows);
+        const entry = {
+          ledgerSheetId: l.sheetId,
+          contactEmail: cp.contactEmail || '',
+          group: cp.group || match.Group || '',
+          docTitle: match.Document_Title || '',
+          waymarkType: match.Waymark_Type || '',
+        };
+        bySheetId.set(l.sheetId, entry);
+        storage.recordSharedDocLedger(docId, entry);
       }
-      for (let i = cursor; i < rows.length; i++) {
-        const r = rows[i];
-        const sharedWith = (r.Shared_With_Email || '').trim().toLowerCase();
-        // Only notify when a collaborator shared a document WITH me.
-        if (!me || sharedWith !== me) continue;
-        const who = l.contactEmail || l.group || 'A collaborator';
-        const notificationId = r.Shared_Timestamp
-          ? `share:${r.Document_ID || ''}:${sharedWith}:${r.Shared_Timestamp}:${r.Group || ''}`
-          : `${l.sheetId}:${i}`;
-        addNotification({
-          id: notificationId,
-          type: 'share',
-          title: `${who} shared "${r.Document_Title || 'a Waymark'}"`,
-          body: `${r.Waymark_Type || ''} • ${r.Permission_Level || 'view'} access`.trim(),
-          sheetId: r.Document_ID || '',
-          from: who,
-        });
-        pushed++;
-      }
-      storage.setBilateralCursor(l.sheetId, rows.length);
     } catch {
       /* skip unreadable ledger */
     }
   }
 
+  return [...bySheetId.values()];
+}
+
+/**
+ * Compute a lightweight content digest for a sheet's 2D values array.
+ * Used to detect external Google Sheets edits on shared Waymarks.
+ * @param {string[][]} values
+ * @returns {{ rowCount: number, hash: string, updatedAt: string }}
+ */
+export function computeSheetDigest(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return { rowCount: 0, hash: '0:0', updatedAt: new Date().toISOString() };
+  }
+  const rows = values.slice(1);
+  let hashNum = 5381;
+  for (let r = 0; r < values.length; r++) {
+    const row = values[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] ?? '');
+      for (let k = 0; k < cell.length; k++) {
+        hashNum = ((hashNum << 5) + hashNum + cell.charCodeAt(k)) | 0;
+      }
+      hashNum = ((hashNum << 5) + hashNum + 31) | 0;
+    }
+  }
+  return {
+    rowCount: rows.length,
+    hash: `${rows.length}:${hashNum >>> 0}`,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Record a Waymark change in all Share Ledgers where the document is shared,
+ * advance the author's own bilateral cursor, and broadcast to live peers.
+ * @param {{ docId: string, docTitle?: string, waymarkType?: string, summary: string, contactEmail?: string, group?: string, actorEmail?: string }} args
+ * @returns {Promise<number>} number of ledgers updated
+ */
+export async function recordWaymarkActivity(args = {}) {
+  const docId = String(args.docId || '').trim();
+  if (!docId) return 0;
+
+  const actor = String(args.actorEmail || currentEmail() || 'collaborator').trim().toLowerCase();
+  const cleanSummary = String(args.summary || 'Updated Waymark').replace(/\|/g, '/').trim();
+  const now = new Date().toISOString();
+
+  let targets = await findLedgersForDocument(docId);
+  if ((args.contactEmail || args.group) && !targets.length) {
+    const { sheetId } = await ensureShareLedger({ contactEmail: args.contactEmail, group: args.group });
+    const entry = {
+      ledgerSheetId: sheetId,
+      contactEmail: (args.contactEmail || '').trim().toLowerCase(),
+      group: args.group || '',
+      docTitle: args.docTitle || '',
+      waymarkType: args.waymarkType || '',
+    };
+    storage.recordSharedDocLedger(docId, entry);
+    targets = [entry];
+  }
+
+  if (!targets.length) return 0;
+
+  let updatedLedgers = 0;
+  for (const t of targets) {
+    if (!t?.ledgerSheetId) continue;
+    try {
+      const ledgerEntry = userData.getShareLedgers().find(l => l.sheetId === t.ledgerSheetId) || {};
+      const cp = resolveLedgerCounterparty(
+        { ...ledgerEntry, contactEmail: t.contactEmail || ledgerEntry.contactEmail, group: t.group || ledgerEntry.group },
+        []
+      );
+      const groupName = cp.group || t.group || '';
+      const recipientEmail = cp.contactEmail || t.contactEmail || '';
+      const row = [
+        docId,
+        args.docTitle || t.docTitle || 'Shared Waymark',
+        args.waymarkType || t.waymarkType || '',
+        recipientEmail,
+        groupName,
+        'writer',
+        now,
+        `Updated|${actor}|${cleanSummary}`,
+      ];
+      await api.sheets.appendRows(t.ledgerSheetId, SHARED_DOCS_TAB, [row]);
+      const rows = await readTab(t.ledgerSheetId, SHARED_DOCS_TAB);
+      if (actor) storage.setBilateralCursor(`${actor}:${t.ledgerSheetId}`, rows.length);
+      updatedLedgers++;
+    } catch {
+      /* best-effort per ledger */
+    }
+  }
+
+  if (updatedLedgers > 0 && typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel('waymark-collab-updates');
+      bc.postMessage({
+        type: 'waymark-sheet-update',
+        id: `update:${docId}:${now}:${actor}`,
+        sheetId: docId,
+        docTitle: args.docTitle || targets[0]?.docTitle || 'Shared Waymark',
+        waymarkType: args.waymarkType || targets[0]?.waymarkType || '',
+        summary: cleanSummary,
+        from: actor,
+        ts: now,
+      });
+      bc.close();
+    } catch {
+      /* ignore BroadcastChannel errors */
+    }
+  }
+
+  return updatedLedgers;
+}
+
+/**
+ * High-level helper invoked by checklist.js when cells are edited or rows are added
+ * on a Waymark sheet. Formats a human-readable summary and pushes to shared ledgers.
+ * @param {{ docId: string, docTitle?: string, waymarkType?: string, action?: 'edit'|'add', rowLabel?: string, columnHeader?: string, newValue?: string, summary?: string }} info
+ * @returns {Promise<number>}
+ */
+export async function notifySheetMutation(info = {}) {
+  const docId = String(info.docId || '').trim();
+  if (!docId) return 0;
+
+  let summary = info.summary || '';
+  if (!summary) {
+    const label = String(info.rowLabel || '').trim();
+    const col = String(info.columnHeader || '').trim();
+    const val = String(info.newValue ?? '').trim();
+    if (info.action === 'add') {
+      summary = label ? `Added "${label}"` : 'Added a new item';
+    } else if (label && col && val) {
+      summary = `Updated "${label}" (${col} → ${val})`;
+    } else if (label && col) {
+      summary = `Updated "${label}" (${col})`;
+    } else if (label && val) {
+      summary = `Updated "${label}" → ${val}`;
+    } else if (label) {
+      summary = `Updated "${label}"`;
+    } else if (col && val) {
+      summary = `Updated ${col} to "${val}"`;
+    } else {
+      summary = 'Updated Waymark';
+    }
+  }
+
+  return recordWaymarkActivity({
+    docId,
+    docTitle: info.docTitle || '',
+    waymarkType: info.waymarkType || '',
+    summary,
+  });
+}
+
+/**
+ * Accept an incoming shared Waymark:
+ * - Marks the document as accepted in local storage (and removes from rejected/hidden).
+ * - Adds the document to Recent Sheets so it appears on the Wayboard & Explorer.
+ * - Updates the Shared_Docs row Status to "Accepted" in the Share Ledger.
+ * - Updates the notification item state and connected Push Notification Sheet.
+ * @param {{ docId: string, docTitle?: string, waymarkType?: string, ledgerSheetId?: string, from?: string }} args
+ * @returns {Promise<boolean>}
+ */
+export async function acceptSharedWaymark(args = {}) {
+  const docId = String(args.docId || '').trim();
+  if (!docId) return false;
+
+  storage.addAcceptedShare(docId);
+  storage.removeRejectedShare(docId);
+  await userData.removeHiddenItem(docId);
+
+  let docTitle = String(args.docTitle || '').trim();
+  let waymarkType = String(args.waymarkType || '').trim();
+
+  try {
+    const docData = await api.sheets.getSpreadsheet(docId);
+    if (!docTitle && docData?.title) docTitle = docData.title;
+    const vals = (docData?.tabs?.[0]?.values) || docData?.values || [];
+    if (vals.length) {
+      storage.setSheetDigest(docId, computeSheetDigest(vals));
+      if (!waymarkType) {
+        const { detectTemplate } = await import('./templates/index.js');
+        waymarkType = detectTemplate(vals[0] || []).key || '';
+      }
+    }
+  } catch {
+    /* best-effort sheet inspection */
+  }
+
+  await userData.addRecentSheet({
+    id: docId,
+    name: docTitle || 'Shared Waymark',
+    templateKey: waymarkType || '',
+  });
+
+  const ledgerIds = new Set();
+  if (args.ledgerSheetId) ledgerIds.add(args.ledgerSheetId);
+  const discovered = await findLedgersForDocument(docId);
+  for (const d of discovered) if (d.ledgerSheetId) ledgerIds.add(d.ledgerSheetId);
+
+  for (const lId of ledgerIds) {
+    try {
+      const vals = await readTabValues(lId, SHARED_DOCS_TAB);
+      for (let r = 1; r < vals.length; r++) {
+        const row = vals[r] || [];
+        const rowDocId = String(row[0] || '').trim();
+        const rowStatus = String(row[7] || '').trim();
+        if (rowDocId === docId && !rowStatus.startsWith('Updated|')) {
+          await api.sheets.updateCell(lId, SHARED_DOCS_TAB, r, 7, 'Accepted');
+        }
+      }
+    } catch {
+      /* best-effort ledger update */
+    }
+  }
+
+  // Update matching notifications in bell store
+  const items = storage.getNotifications();
+  let changed = false;
+  for (const item of items) {
+    if (item.sheetId === docId && item.type === 'share') {
+      item.shareDecision = 'accepted';
+      item.read = true;
+      changed = true;
+    }
+  }
+  if (changed) {
+    storage.setNotifications(items);
+    refreshBell();
+  }
+
+  // Sync status to Push Notification Sheet if connected
+  const notifSheetId = storage.getNotifSheetId();
+  if (notifSheetId) {
+    try {
+      const data = await api.sheets.getSpreadsheet(notifSheetId);
+      const vals = (data?.tabs?.[0]?.values) || data?.values || [];
+      if (vals.length > 1) {
+        const lower = (vals[0] || []).map(h => (h || '').toLowerCase().trim());
+        const statusCol = lower.findIndex(h => /\bstatus\b/.test(h));
+        const sheetCol = lower.findIndex(h => /\bsheet\b/.test(h));
+        const typeCol = lower.findIndex(h => /\btype\b/.test(h));
+        if (statusCol >= 0 && sheetCol >= 0) {
+          for (let r = 1; r < vals.length; r++) {
+            const row = vals[r] || [];
+            const rowSheet = String(row[sheetCol] || '').trim();
+            const rowType = typeCol >= 0 ? String(row[typeCol] || '').trim().toLowerCase() : 'share';
+            if (rowSheet === docId && rowType === 'share') {
+              await api.sheets.updateCell(notifSheetId, data.sheetTitle || 'Sheet1', r, statusCol, 'Read');
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Reject an incoming shared Waymark:
+ * - Marks the document as rejected in local storage and hides it in Explorer.
+ * - Updates the Shared_Docs row Status to "Rejected" in the Share Ledger.
+ * - Mutes future update notifications for that document unless re-accepted.
+ * @param {{ docId: string, docTitle?: string, ledgerSheetId?: string }} args
+ * @returns {Promise<boolean>}
+ */
+export async function rejectSharedWaymark(args = {}) {
+  const docId = String(args.docId || '').trim();
+  if (!docId) return false;
+
+  storage.addRejectedShare(docId);
+  await userData.addHiddenItem({ id: docId, name: args.docTitle || docId });
+
+  const ledgerIds = new Set();
+  if (args.ledgerSheetId) ledgerIds.add(args.ledgerSheetId);
+  const discovered = await findLedgersForDocument(docId);
+  for (const d of discovered) if (d.ledgerSheetId) ledgerIds.add(d.ledgerSheetId);
+
+  for (const lId of ledgerIds) {
+    try {
+      const vals = await readTabValues(lId, SHARED_DOCS_TAB);
+      for (let r = 1; r < vals.length; r++) {
+        const row = vals[r] || [];
+        const rowDocId = String(row[0] || '').trim();
+        const rowStatus = String(row[7] || '').trim();
+        if (rowDocId === docId && !rowStatus.startsWith('Updated|')) {
+          await api.sheets.updateCell(lId, SHARED_DOCS_TAB, r, 7, 'Rejected');
+        }
+      }
+    } catch {
+      /* best-effort ledger update */
+    }
+  }
+
+  // Update matching notifications in bell store
+  const items = storage.getNotifications();
+  let changed = false;
+  for (const item of items) {
+    if (item.sheetId === docId && item.type === 'share') {
+      item.shareDecision = 'rejected';
+      item.read = true;
+      changed = true;
+    }
+  }
+  if (changed) {
+    storage.setNotifications(items);
+    refreshBell();
+  }
+
+  // Sync status to Push Notification Sheet if connected
+  const notifSheetId = storage.getNotifSheetId();
+  if (notifSheetId) {
+    try {
+      const data = await api.sheets.getSpreadsheet(notifSheetId);
+      const vals = (data?.tabs?.[0]?.values) || data?.values || [];
+      if (vals.length > 1) {
+        const lower = (vals[0] || []).map(h => (h || '').toLowerCase().trim());
+        const statusCol = lower.findIndex(h => /\bstatus\b/.test(h));
+        const sheetCol = lower.findIndex(h => /\bsheet\b/.test(h));
+        const typeCol = lower.findIndex(h => /\btype\b/.test(h));
+        if (statusCol >= 0 && sheetCol >= 0) {
+          for (let r = 1; r < vals.length; r++) {
+            const row = vals[r] || [];
+            const rowSheet = String(row[sheetCol] || '').trim();
+            const rowType = typeCol >= 0 ? String(row[typeCol] || '').trim().toLowerCase() : 'share';
+            if (rowSheet === docId && rowType === 'share') {
+              await api.sheets.updateCell(notifSheetId, data.sheetTitle || 'Sheet1', r, statusCol, 'Dismissed');
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Discover all past collaborators (contacts and Waymarker Crews) from known
+ * Share Ledgers, even when the user has not created a Contacts Waymark sheet.
+ * @returns {{ contacts: Array<{ name: string, email: string, group?: string, book: string, ledgerSheetId: string }>, crews: Array<{ name: string, members: Array<{ name: string, email: string }>, ledgerSheetId: string }> }}
+ */
+export function getKnownCollaborators() {
+  const me = currentEmail();
+  const ledgers = userData.getShareLedgers();
+  const contacts = [];
+  const seenEmails = new Set();
+  const crews = [];
+  const seenGroups = new Set();
+
+  for (const l of ledgers) {
+    if (!l?.sheetId) continue;
+    const cp = resolveLedgerCounterparty(l, []);
+    if (cp.group) {
+      const gKey = cp.group.toLowerCase();
+      if (!seenGroups.has(gKey)) {
+        seenGroups.add(gKey);
+        crews.push({ name: cp.group, members: [], ledgerSheetId: l.sheetId });
+      }
+    }
+    if (cp.contactEmail && cp.contactEmail !== me) {
+      const eKey = cp.contactEmail.toLowerCase();
+      if (!seenEmails.has(eKey)) {
+        seenEmails.add(eKey);
+        const displayName = cp.contactEmail.split('@')[0];
+        contacts.push({
+          name: displayName.charAt(0).toUpperCase() + displayName.slice(1),
+          email: cp.contactEmail,
+          group: cp.group || undefined,
+          book: 'Shared Waymarks',
+          ledgerSheetId: l.sheetId,
+        });
+      }
+    }
+  }
+
+  return { contacts, crews };
+}
+
+/**
+ * Passively check accepted/known shared Waymarks for content digest changes
+ * (e.g., edits made directly in Google Sheets outside the Waymark UI).
+ * @returns {Promise<number>} number of diff notifications pushed
+ */
+export async function checkSharedSheetDiffs() {
+  const prefs = storage.getNotificationSettings();
+  if (prefs.collabUpdates === false) return 0;
+
+  const docMeta = new Map();
+  for (const docId of storage.getAcceptedShares()) {
+    if (docId) docMeta.set(docId, { docId, title: '', from: 'Collaborator' });
+  }
+  const mappedLedgers = storage.getAllSharedDocLedgers();
+  for (const [docId, entries] of Object.entries(mappedLedgers)) {
+    if (!docId || !Array.isArray(entries) || !entries.length) continue;
+    const first = entries[0];
+    docMeta.set(docId, {
+      docId,
+      title: first.docTitle || '',
+      from: first.contactEmail || first.group || 'Collaborator',
+    });
+  }
+
+  let pushed = 0;
+  for (const [docId, meta] of docMeta.entries()) {
+    if (storage.isShareRejected(docId)) continue;
+    try {
+      const data = await api.sheets.getSpreadsheet(docId);
+      const vals = (data?.tabs?.[0]?.values) || data?.values || [];
+      if (!vals.length) continue;
+      const newDigest = computeSheetDigest(vals);
+      const prevDigest = storage.getSheetDigest(docId);
+      storage.setSheetDigest(docId, newDigest);
+
+      if (prevDigest && prevDigest.hash && prevDigest.hash !== newDigest.hash) {
+        const title = data.title || meta.title || 'Shared Waymark';
+        const rowDelta = newDigest.rowCount - (prevDigest.rowCount || 0);
+        const body = rowDelta > 0
+          ? `${rowDelta} new row${rowDelta === 1 ? '' : 's'} added (${newDigest.rowCount} total)`
+          : `Sheet cells updated (${newDigest.rowCount} rows)`;
+        const entry = addNotification({
+          id: `diff:${docId}:${newDigest.hash}`,
+          type: 'update',
+          icon: '✏️',
+          title: `✏️ "${title}" was updated`,
+          body,
+          sheetId: docId,
+          docTitle: title,
+          from: meta.from || 'Collaborator',
+        });
+        if (entry) {
+          pushed++;
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('waymark:remote-sheet-updated', {
+              detail: { sheetId: docId, title, summary: body, from: meta.from || 'Collaborator' },
+            }));
+          }
+        }
+      }
+    } catch {
+      /* skip unreadable sheet */
+    }
+  }
+
+  if (pushed) {
+    await flushNotificationSheetWrites();
+    refreshBell();
+  }
+  return pushed;
+}
+
+/**
+ * Poll the Shared_Docs and Chat tabs of every known ledger, detect documents
+ * shared with the current user or new chat messages from collaborators since
+ * the last seen cursor, and push them to the top-bar notification bell.
+ * @returns {Promise<number>} number of new notifications pushed
+ */
+export async function pollShareLedgers() {
+  const me = currentEmail();
+  const ledgers = userData.getShareLedgers();
+  const prefs = storage.getNotificationSettings();
+  let pushed = 0;
+
+  for (const l of ledgers) {
+    const docCursorKey = me ? `${me}:${l.sheetId}` : l.sheetId;
+    try {
+      const rows = await readTab(l.sheetId, SHARED_DOCS_TAB);
+      const cp = resolveLedgerCounterparty(l, rows);
+      const cursor = storage.getBilateralCursor(docCursorKey);
+      if (rows.length > cursor) {
+        for (let i = cursor; i < rows.length; i++) {
+          const r = rows[i];
+          const docId = (r.Document_ID || '').trim();
+          const statusVal = (r.Status || '').trim();
+          const sharedWith = (r.Shared_With_Email || '').trim().toLowerCase();
+          const rowGroup = (r.Group || '').trim().toLowerCase();
+          const ledgerGroup = (l.group || '').trim().toLowerCase();
+
+          if (docId) {
+            storage.recordSharedDocLedger(docId, {
+              ledgerSheetId: l.sheetId,
+              contactEmail: cp.contactEmail || '',
+              group: cp.group || r.Group || '',
+              docTitle: r.Document_Title || '',
+              waymarkType: r.Waymark_Type || '',
+            });
+          }
+
+          if (docId && storage.isShareRejected(docId)) continue;
+
+          if (statusVal.startsWith('Updated|')) {
+            if (prefs.collabUpdates === false) continue;
+            const parts = statusVal.split('|');
+            const actorEmail = (parts[1] || '').trim().toLowerCase();
+            const summary = parts.slice(2).join('|').trim() || 'Updated this Waymark';
+            if (me && actorEmail === me) continue;
+            const isForMeUpdate = me && (
+              sharedWith === me ||
+              !sharedWith ||
+              (rowGroup && ledgerGroup && rowGroup === ledgerGroup) ||
+              actorEmail !== me
+            );
+            if (!isForMeUpdate) continue;
+
+            const who = actorEmail || cp.contactEmail || l.contactEmail || l.group || r.Group || 'A collaborator';
+            const docTitle = r.Document_Title || 'a Waymark';
+            const notificationId = r.Shared_Timestamp
+              ? `update:${docId}:${actorEmail}:${r.Shared_Timestamp}:${i}`
+              : `update:${l.sheetId}:${i}`;
+            const entry = addNotification({
+              id: notificationId,
+              type: 'update',
+              icon: '✏️',
+              title: `${who} updated "${docTitle}"`,
+              body: summary,
+              sheetId: docId,
+              ledgerSheetId: l.sheetId,
+              docTitle,
+              waymarkType: r.Waymark_Type || '',
+              from: who,
+              group: l.group || r.Group || '',
+            });
+            if (entry) {
+              pushed++;
+              if (typeof window !== 'undefined' && docId) {
+                window.dispatchEvent(new CustomEvent('waymark:remote-sheet-updated', {
+                  detail: { sheetId: docId, title: docTitle, summary, from: who },
+                }));
+              }
+            }
+            continue;
+          }
+
+          if (statusVal.toLowerCase() === 'rejected') continue;
+          if (prefs.collabShares === false) continue;
+
+          const isForMe = me && (
+            sharedWith === me ||
+            (!sharedWith && rowGroup && ledgerGroup && rowGroup === ledgerGroup)
+          );
+          if (!isForMe) continue;
+          const who = cp.contactEmail || l.contactEmail || l.group || r.Group || 'A collaborator';
+          const notificationId = r.Shared_Timestamp
+            ? `share:${docId}:${sharedWith || rowGroup}:${r.Shared_Timestamp}:${r.Group || ''}`
+            : `${l.sheetId}:${i}`;
+          const isAccepted = statusVal.toLowerCase() === 'accepted' || (docId && storage.isShareAccepted(docId));
+          const entry = addNotification({
+            id: notificationId,
+            type: 'share',
+            title: `${who} shared "${r.Document_Title || 'a Waymark'}"`,
+            body: `${r.Waymark_Type || ''} • ${r.Permission_Level || 'view'} access`.trim(),
+            sheetId: docId,
+            ledgerSheetId: l.sheetId,
+            docTitle: r.Document_Title || '',
+            waymarkType: r.Waymark_Type || '',
+            from: who,
+            group: l.group || r.Group || '',
+            shareDecision: isAccepted ? 'accepted' : 'pending',
+          });
+          if (entry) pushed++;
+        }
+        storage.setBilateralCursor(docCursorKey, rows.length);
+        storage.setBilateralCursor(l.sheetId, rows.length);
+      } else if (rows.length < cursor) {
+        storage.setBilateralCursor(docCursorKey, rows.length);
+        storage.setBilateralCursor(l.sheetId, rows.length);
+      }
+    } catch {
+      /* skip unreadable ledger */
+    }
+
+    const chatCursorKey = me ? `${me}:${l.sheetId}` : l.sheetId;
+    try {
+      const chatRows = await readTab(l.sheetId, CHAT_TAB);
+      const chatCursor = storage.getChatCursor(chatCursorKey);
+      if (chatRows.length > chatCursor) {
+        for (let i = chatCursor; i < chatRows.length; i++) {
+          if (prefs.collabChat === false) continue;
+          const r = chatRows[i];
+          const sender = (r.Sender_Email || '').trim().toLowerCase();
+          if (!me || !sender || sender === me) continue;
+          const who = l.group ? `${sender.split('@')[0]} (${l.group})` : (l.contactEmail || sender);
+          const notifId = r.Message_ID ? `chat:${l.sheetId}:${r.Message_ID}` : `chat:${l.sheetId}:${i}`;
+          const entry = addNotification({
+            id: notifId,
+            type: 'chat',
+            title: `💬 ${who}`,
+            body: r.Message_Text || 'Sent a message in The Wayside',
+            sheetId: l.sheetId,
+            ledgerSheetId: l.sheetId,
+            from: sender,
+            group: l.group || '',
+          });
+          if (entry) pushed++;
+        }
+        storage.setChatCursor(chatCursorKey, chatRows.length);
+        storage.setChatCursor(l.sheetId, chatRows.length);
+      } else if (chatRows.length < chatCursor) {
+        storage.setChatCursor(chatCursorKey, chatRows.length);
+        storage.setChatCursor(l.sheetId, chatRows.length);
+      }
+    } catch {
+      /* skip unreadable chat tab */
+    }
+
+    // Check WebRTC_Signaling tab for incoming calls from collaborators
+    try {
+      const sigValues = await readTabValues(l.sheetId, SIGNALING_TAB);
+      const cp = resolveLedgerCounterparty(l, []);
+      const myName = (api.auth.getUser?.()?.name || (me ? me.split('@')[0] : '')).trim().toLowerCase();
+      for (let r = 1; r < sigValues.length; r++) {
+        const row = sigValues[r] || [];
+        // 1) Structured SIGNALING_HEADERS row: [Session_ID, Caller_Email, Callee_Email, SDP, ICE, Call_Status]
+        const sessionId = String(row[0] || '').trim();
+        const callerEmail = String(row[1] || '').trim().toLowerCase();
+        const calleeEmail = String(row[2] || '').trim().toLowerCase();
+        const callStatus = String(row[5] || '').trim().toLowerCase();
+        if (callerEmail && callerEmail !== me && (!calleeEmail || calleeEmail === me)) {
+          if (['ringing', 'calling', 'active', 'offer'].includes(callStatus)) {
+            const callerLabel = l.group ? `${callerEmail.split('@')[0]} (${l.group})` : callerEmail;
+            const entry = addNotification({
+              id: `call:${l.sheetId}:${sessionId || r}:${callerEmail}`,
+              type: 'call',
+              icon: '📞',
+              priority: 'High',
+              title: `📞 Incoming call from ${callerLabel}`,
+              body: 'Click Call to join in The Wayside',
+              sheetId: l.sheetId,
+              ledgerSheetId: l.sheetId,
+              from: callerEmail,
+              group: l.group || '',
+            });
+            if (entry) pushed++;
+          }
+        }
+        // 2) WaymarkConnect row-based block signaling in column 19 (SIG_COL)
+        const sigCell = String(row[19] || '').trim();
+        if (sigCell && sigCell.startsWith('{') && ((r - 1) % 5 === 0)) {
+          try {
+            const p = JSON.parse(sigCell);
+            const peerName = String(p.name || '').trim();
+            const fresh = p.ts && (Date.now() - p.ts < 50_000);
+            const isOtherPeer = peerName && peerName.toLowerCase() !== myName && (!me || peerName.toLowerCase() !== me);
+            const nextRowOffer = String((sigValues[r + 1] && sigValues[r + 1][19]) || '').trim();
+            if (fresh && isOtherPeer && (p.inCall || nextRowOffer)) {
+              const callerFrom = cp.contactEmail || peerName;
+              const entry = addNotification({
+                id: `call:${l.sheetId}:${p.peerId || peerName}:${ p.nonce || Math.floor((p.ts || 0) / 60000) }`,
+                type: 'call',
+                icon: '📞',
+                priority: 'High',
+                title: `📞 ${peerName} started a call`,
+                body: 'Click Call to join in The Wayside',
+                sheetId: l.sheetId,
+                ledgerSheetId: l.sheetId,
+                from: callerFrom,
+                group: l.group || '',
+              });
+              if (entry) pushed++;
+            }
+          } catch {
+            /* ignore malformed signaling cell */
+          }
+        }
+      }
+    } catch {
+      /* skip unreadable signaling tab */
+    }
+  }
+
+  await flushNotificationSheetWrites();
+  await pollNotificationSheet().catch(() => 0);
   if (pushed) refreshBell();
   return pushed;
 }
@@ -322,32 +1231,88 @@ export async function getSocialTarget(target) {
   return { sheetId, presenceTab: PRESENCE_TAB, chatTab: CHAT_TAB, signalingTab: SIGNALING_TAB };
 }
 
+/**
+ * Create a WaymarkConnect-compatible signal adapter backed by the ledger's
+ * WebRTC_Signaling tab.
+ * @param {string} sheetId
+ * @returns {{ readAll: () => Promise<string[][]>, writeCell: (row: number, col: number, val: string) => Promise<void> }}
+ */
+export function createLedgerSignal(sheetId) {
+  return {
+    async readAll() {
+      return readTabValues(sheetId, SIGNALING_TAB);
+    },
+    async writeCell(row, col, val) {
+      await api.sheets.updateCell(sheetId, SIGNALING_TAB, row, col, val);
+    },
+  };
+}
+
 /** WebRTC signaling target (same bilateral ledger sheet). */
 export async function getSignalingTarget(target) {
   const t = typeof target === 'string' ? { contactEmail: target } : target;
   const { sheetId } = await ensureShareLedger(t);
-  return { sheetId, tab: SIGNALING_TAB };
+  return { sheetId, tab: SIGNALING_TAB, signal: createLedgerSignal(sheetId) };
 }
 
 /* ---------- Social: presence + chat ---------- */
 
 /**
- * Publish the current user's presence into a ledger's Presence tab.
+ * Publish (upsert) the current user's presence into a ledger's Presence tab.
+ * Updates the user's existing row in-place if present so heartbeats do not
+ * append unbounded duplicate rows.
  * @param {{ contactEmail?: string, group?: string }} target
  * @param {{ status?: string, activeWaymarkId?: string, displayName?: string }} [opts]
  */
 export async function publishPresence(target, opts = {}) {
   const { sheetId } = await ensureShareLedger(target);
+  await upsertPresenceRow(sheetId, target, opts);
+}
+
+/**
+ * Refresh the current user's presence heartbeat across all known Share Ledgers
+ * without creating any new sheets.
+ * @param {{ status?: string, activeWaymarkId?: string, displayName?: string }} [opts]
+ */
+export async function publishPresenceEverywhere(opts = {}) {
+  const ledgers = userData.getShareLedgers();
+  for (const l of ledgers) {
+    if (!l?.sheetId) continue;
+    try {
+      await upsertPresenceRow(l.sheetId, { contactEmail: l.contactEmail, group: l.group }, opts);
+    } catch {
+      /* best-effort heartbeat */
+    }
+  }
+}
+
+async function upsertPresenceRow(sheetId, target = {}, opts = {}) {
   const me = currentEmail();
-  const row = [
-    me,
-    opts.displayName || (me ? me.split('@')[0] : 'Anonymous'),
-    target.group || '',
-    opts.status || 'online',
-    new Date().toISOString(),
-    opts.activeWaymarkId || '',
-  ];
-  await api.sheets.appendRows(sheetId, PRESENCE_TAB, [row]);
+  const displayName = opts.displayName || (me ? me.split('@')[0] : 'Anonymous');
+  const groupVal = target.group || '';
+  const statusVal = opts.status || 'online';
+  const nowIso = new Date().toISOString();
+  const activeId = opts.activeWaymarkId || '';
+  const row = [me, displayName, groupVal, statusVal, nowIso, activeId];
+
+  const values = await readTabValues(sheetId, PRESENCE_TAB);
+  let existingRowIdx = -1;
+  for (let i = 1; i < values.length; i++) {
+    const rowEmail = String((values[i] && values[i][0]) || '').trim().toLowerCase();
+    if (me && rowEmail === me) {
+      existingRowIdx = i;
+      break;
+    }
+  }
+
+  if (existingRowIdx >= 1) {
+    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 1, displayName);
+    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 3, statusVal);
+    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 4, nowIso);
+    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 5, activeId);
+  } else {
+    await api.sheets.appendRows(sheetId, PRESENCE_TAB, [row]);
+  }
 }
 
 /**
@@ -396,6 +1361,13 @@ export async function sendChat(target, text, attachedLink = '') {
     attachedLink || '',
   ];
   await api.sheets.appendRows(sheetId, CHAT_TAB, [row]);
+  try {
+    const rows = await readTab(sheetId, CHAT_TAB);
+    storage.setChatCursor(sheetId, rows.length);
+    if (me) storage.setChatCursor(`${me}:${sheetId}`, rows.length);
+  } catch {
+    /* cursor update is best-effort */
+  }
 }
 
 /**
@@ -492,7 +1464,7 @@ async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
     const { TEMPLATES } = await import('./templates/index.js');
     const pool = [...userData.getPinnedSheets(), ...userData.getRecentSheets()];
     const seen = new Set();
-    const books = pool.filter(s => s && s.templateKey === 'contacts' && !seen.has(s.id) && seen.add(s.id));
+    const books = pool.filter(s => isCandidateContactsBook(s) && !seen.has(s.id) && seen.add(s.id));
     const email = (target.contactEmail || '').trim().toLowerCase();
     const group = (target.group || '').trim().toLowerCase();
     const previousIds = new Set(previousLedgerIds);
@@ -504,24 +1476,43 @@ async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
       const values = (tab && tab.values) || data.values || [];
       if (values.length < 2) continue;
       const lower = (values[0] || []).map(h => (h || '').toLowerCase().trim());
+      if (book.templateKey !== 'contacts' && !TEMPLATES.contacts.detect(lower)) continue;
+      book.templateKey = 'contacts';
       const cols = TEMPLATES.contacts.columns(lower);
-      if (cols.shareSheet < 0 && cols.socialLocation < 0) continue;
 
-      let wroteBack = false;
+      // Find matching contact/group rows first
+      const matchingRows = [];
       for (let i = 1; i < values.length; i++) {
         const row = values[i] || [];
-        const rowEmail = (cols.email >= 0 ? row[cols.email] : '').trim().toLowerCase();
+        const rowEmail = normalizeContactEmail(cols.email >= 0 ? row[cols.email] : '').toLowerCase();
         const rowGroup = (cols.group >= 0 ? row[cols.group] : '').trim().toLowerCase();
-        const match = (email && rowEmail === email) || (group && rowGroup === group);
-        if (!match) continue;
-        const shareValue = (cols.shareSheet >= 0 ? row[cols.shareSheet] : '') || '';
-        const socialValue = (cols.socialLocation >= 0 ? row[cols.socialLocation] : '') || '';
-        if (cols.shareSheet >= 0 && (!shareValue.trim() || previousIds.has(shareValue.trim()))) {
-          await api.sheets.updateCell(book.id, tabTitle, i, cols.shareSheet, sheetId);
+        if ((email && rowEmail === email) || (group && rowGroup === group)) {
+          matchingRows.push(i);
+        }
+      }
+      if (!matchingRows.length) continue;
+
+      let shareCol = cols.shareSheet;
+      let socialCol = cols.socialLocation;
+      if (shareCol < 0 && socialCol < 0) {
+        // Auto-upgrade Contacts sheets that lack Share_Data_Sheet / Social_Data_Location headers
+        shareCol = (values[0] || []).length;
+        socialCol = shareCol + 1;
+        await api.sheets.updateCell(book.id, tabTitle, 0, shareCol, 'Share_Data_Sheet');
+        await api.sheets.updateCell(book.id, tabTitle, 0, socialCol, 'Social_Data_Location');
+      }
+
+      let wroteBack = false;
+      for (const i of matchingRows) {
+        const row = values[i] || [];
+        const shareValue = extractLedgerSheetId(shareCol >= 0 ? row[shareCol] : '');
+        const socialValue = extractLedgerSheetId(socialCol >= 0 ? row[socialCol] : '');
+        if (shareCol >= 0 && (!shareValue || previousIds.has(shareValue))) {
+          await api.sheets.updateCell(book.id, tabTitle, i, shareCol, sheetId);
           wroteBack = true;
         }
-        if (cols.socialLocation >= 0 && (!socialValue.trim() || previousIds.has(socialValue.trim()))) {
-          await api.sheets.updateCell(book.id, tabTitle, i, cols.socialLocation, sheetId);
+        if (socialCol >= 0 && (!socialValue || previousIds.has(socialValue))) {
+          await api.sheets.updateCell(book.id, tabTitle, i, socialCol, sheetId);
           wroteBack = true;
         }
       }

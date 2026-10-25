@@ -292,3 +292,77 @@ test('Wayside shows Waymarker Crews from a Contacts Waymark', async ({ page }) =
   await expect(page.locator('#home-wayside .chat-input')).toBeVisible();
   await expect(page.locator('#wayside-call-btn')).toContainText('Call');
 });
+
+test('Wayside call button starts WebRTC signaling on the shared ledger and toggles to End Call', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-sheet-line')).toContainText('In call');
+
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+});
+
+test('past share collaborators appear in The Wayside and can be called even without a Contacts Waymark', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+  // Share a document with pastfriend@example.com without any Contacts Waymark sheet
+  await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const wayboard = await import('/js/wayboard.js');
+    await collab.shareDocumentWithContact({
+      contactEmail: 'pastfriend@example.com',
+      docId: 'sheet-001',
+      docTitle: 'Groceries',
+      waymarkType: 'checklist',
+      permission: 'writer',
+    });
+    wayboard.renderWayboard();
+  });
+
+  // The past collaborator should appear as an avatar in ONLINE WAYMARKERS
+  const avatar = page.locator('#home-wayside .avatar[title*="pastfriend@example.com"]');
+  await expect(avatar).toBeVisible({ timeout: 5_000 });
+
+  await avatar.click();
+  await expect(page.locator('#wayside-crew-title')).toContainText('Pastfriend');
+
+  // Start a WebRTC call with the past collaborator
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-sheet-line')).toContainText('In call');
+
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+});
+
+test('clicking Call on a collaborator notification in the bell starts a Wayside WebRTC call with that collaborator', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'callbuddy@example.com' });
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Groceries', 'checklist', 'testuser@gmail.com', '', 'writer', new Date().toISOString(), 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3_000 });
+  await page.locator('.notif-call-btn').first().click();
+
+  await expect(page.locator('#wayside-crew-title')).toContainText('callbuddy', { ignoreCase: true });
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-sheet-line')).toContainText('In call');
+
+  await page.click('#wayside-call-btn');
+});
+

@@ -15,8 +15,9 @@ import { detectTemplate, onEdit } from './templates/index.js';
 import { buildAddRowForm, isAddRowOpen, setUserName, setEditLocked, setProtectedRows, getMissingMigrations, getCrossFeature } from './templates/shared.js';
 import { Tutorial } from './tutorial.js';
 import * as notifications from './notifications.js';
-import { getCrossLinks, setCrossLinks } from './storage.js';
+import { getCrossLinks, setCrossLinks, setSheetDigest } from './storage.js';
 import * as encryption from './encryption.js';
+import * as vault from './agent/vault.js';
 import { getAndroidBridge } from './platform.js';
 
 let currentSheetId = null;
@@ -236,9 +237,41 @@ export function init() {
         valueToWrite = await encryption.encrypt(currentSheetId, newValue);
       }
       await api.sheets.updateCell(currentSheetId, currentSheetTitle, rowIndex, colIndex, valueToWrite);
+      if (currentValues && currentValues[rowIndex]) {
+        currentValues[rowIndex][colIndex] = valueToWrite;
+        setSheetDigest(currentSheetId, collab.computeSheetDigest(currentValues));
+      }
+      const rowData = (currentValues && currentValues[rowIndex]) || [];
+      const rowLabel = rowData.find(cell => String(cell || '').trim() && String(cell) !== String(valueToWrite)) || rowData[0] || '';
+      const columnHeader = (currentHeaders && currentHeaders[colIndex]) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: currentTemplateKey || '',
+        action: 'edit',
+        rowLabel: String(rowLabel || '').trim(),
+        columnHeader: String(columnHeader || '').trim(),
+        newValue: String(newValue ?? ''),
+      }).catch(() => {});
     } catch (err) {
       showToast(`Failed to save: ${err.message}`, 'error');
     }
+  });
+
+  // Live refresh when a remote collaborator updates the currently open sheet
+  window.addEventListener('waymark:remote-sheet-updated', (e) => {
+    const updatedId = e.detail?.sheetId;
+    if (!currentSheetId || updatedId !== currentSheetId) return;
+    if (isAddRowOpen()) return;
+    const active = document.activeElement;
+    if (itemsEl && active && itemsEl.contains(active) && (
+      active.tagName === 'INPUT' ||
+      active.tagName === 'TEXTAREA' ||
+      active.isContentEditable
+    )) {
+      return;
+    }
+    loadSheet(currentSheetId);
   });
 
   // Pause auto-refresh when tab is hidden
@@ -340,6 +373,73 @@ function openEncryptModal() {
   cancelBtn.onclick = close;
   modal.onclick = (e) => { if (e.target === modal) close(); };
 
+  // Biometric unlock / enrollment slot inside #encrypt-modal
+  const pwGroup = passwordInput.parentElement?.parentElement;
+  let bioContainer = modal.querySelector('.encrypt-modal-bio-container');
+  if (!bioContainer && pwGroup && pwGroup.parentElement) {
+    bioContainer = el('div', { className: 'encrypt-modal-bio-container' });
+    pwGroup.parentElement.insertBefore(bioContainer, pwGroup);
+  }
+  let modalBioEnrollCb = null;
+  if (bioContainer) {
+    bioContainer.innerHTML = '';
+    if (!isUnlocked && hasEncryption) {
+      const hasBio = vault.hasBiometricVault(sheetId) || vault.hasBiometricVault();
+      if (hasBio) {
+        const bioBtn = el('button', {
+          className: 'agent-vault-bio-btn encrypt-modal-bio-btn',
+          type: 'button',
+          on: {
+            click: async () => {
+              bioBtn.disabled = true;
+              bioBtn.textContent = '🫆 Verifying…';
+              statusEl.textContent = 'Verifying biometrics…';
+              let sample = null;
+              if (currentValues) {
+                for (let r = 1; r < currentValues.length && !sample; r++) {
+                  for (const c of encCols) {
+                    if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+                      sample = currentValues[r][c]; break;
+                    }
+                  }
+                }
+              }
+              const pw = await vault.unlockPasswordWithBiometrics(sheetId) || await vault.unlockPasswordWithBiometrics();
+              const ok = pw ? await encryption.unlock(pw, sheetId, sample) : false;
+              bioBtn.disabled = false;
+              bioBtn.textContent = '🫆 Unlock with Biometrics';
+              if (ok) {
+                if (vault.getLinkedSheetId() === sheetId) {
+                  vault.unlockVault(pw).catch(() => {});
+                }
+                close();
+                showToast('Unlocked with biometrics', 'success');
+                await loadSheet(sheetId);
+              } else {
+                statusEl.textContent = 'Biometric unlock failed or cancelled — enter password below';
+              }
+            },
+          },
+        }, ['🫆 Unlock with Biometrics']);
+        bioContainer.appendChild(bioBtn);
+      } else {
+        vault.isBiometricSupported().then((supported) => {
+          if (!supported || isUnlocked) return;
+          modalBioEnrollCb = el('input', {
+            type: 'checkbox',
+            className: 'agent-vault-bio-enroll-checkbox encrypt-modal-bio-checkbox',
+          });
+          if (vault.isMobileWeb()) modalBioEnrollCb.checked = true;
+          bioContainer.innerHTML = '';
+          bioContainer.appendChild(el('label', { className: 'agent-vault-bio-enroll-label' }, [
+            modalBioEnrollCb,
+            el('span', {}, [vault.isMobileWeb() ? '📱 Enable biometric unlock on mobile' : '🫆 Enable biometric unlock on this device']),
+          ]));
+        }).catch(() => {});
+      }
+    }
+  }
+
   // Password visibility toggle
   toggleVisBtn.onclick = () => {
     const isHidden = passwordInput.type === 'password';
@@ -354,6 +454,12 @@ function openEncryptModal() {
     if (!pw) { statusEl.textContent = 'Please enter a password'; return; }
     unlockBtn.disabled = true;
     statusEl.textContent = 'Deriving key…';
+
+    const shouldEnrollBio = Boolean(modalBioEnrollCb && modalBioEnrollCb.checked);
+    let enrolled = false;
+    if (shouldEnrollBio && pw) {
+      enrolled = await vault.enrollBiometricVault(pw, sheetId);
+    }
 
     // Find a sample encrypted value to verify the password
     let sample = null;
@@ -370,10 +476,19 @@ function openEncryptModal() {
     const ok = await encryption.unlock(pw, sheetId, sample);
     unlockBtn.disabled = false;
     if (ok) {
+      if (shouldEnrollBio && !enrolled && pw) {
+        enrolled = await vault.enrollBiometricVault(pw, sheetId);
+      }
+      if (vault.getLinkedSheetId() === sheetId) {
+        vault.unlockVault(pw).catch(() => {});
+      }
       close();
-      showToast('Columns decrypted', 'success');
+      showToast(enrolled ? 'Columns decrypted & biometrics enabled' : 'Columns decrypted', 'success');
       await loadSheet(sheetId);
     } else {
+      if (enrolled) {
+        vault.clearBiometricVault();
+      }
       statusEl.textContent = 'Wrong password — could not decrypt';
     }
   };
@@ -597,6 +712,9 @@ export async function showPublic(sheetId) {
     currentValues = data.values || [];
     currentTabs = data.tabs || [];
     renderWithTemplate(currentValues);
+    if (currentValues && currentValues.length) {
+      setSheetDigest(sheetId, collab.computeSheetDigest(currentValues));
+    }
     lastFetchTime = new Date();
     updateTimestamp();
   } catch (err) {
@@ -885,6 +1003,9 @@ function openDuplicateModal() {
     }
 
     renderWithTemplate(currentValues);
+    if (currentValues && currentValues.length) {
+      setSheetDigest(sheetId, collab.computeSheetDigest(currentValues));
+    }
     lastFetchTime = new Date();
     updateTimestamp();
 
@@ -1080,6 +1201,13 @@ function renderWithTemplate(values) {
   if (document.activeElement && itemsEl.contains(document.activeElement)) {
     document.activeElement.blur();
   }
+  const savedWinY = window.scrollY || window.pageYOffset || 0;
+  const savedWinX = window.scrollX || window.pageXOffset || 0;
+  const savedScrollingTop = document.scrollingElement ? document.scrollingElement.scrollTop : 0;
+  const prevHeight = itemsEl ? itemsEl.offsetHeight : 0;
+  if (itemsEl && prevHeight > 0) {
+    itemsEl.style.minHeight = `${prevHeight}px`;
+  }
   currentTemplateCanAutoRefresh = null;
   currentTemplateNoAutoRefresh = false;
   itemsEl.innerHTML = '';
@@ -1119,6 +1247,15 @@ function renderWithTemplate(values) {
 
       await api.sheets.appendRows(currentSheetId, currentSheetTitle, newRows);
       showToast(`${template.itemNoun || 'Item'} added`, 'success');
+      const firstRow = Array.isArray(newRows?.[0]) ? newRows[0] : [];
+      const addedLabel = firstRow.find(c => String(c || '').trim()) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: key || currentTemplateKey || '',
+        action: 'add',
+        rowLabel: String(addedLabel || '').trim(),
+      }).catch(() => {});
 
       // Apply row-lock if sheet has the waymark:lock-on-submit marker (owner-configured)
       const ownerConfiguredLock = currentSheetProtectedRanges.some(
@@ -1196,6 +1333,15 @@ function renderWithTemplate(values) {
       values.splice(insertAt, 0, ...newRows);
       await api.sheets.replaceSheetData(currentSheetId, currentSheetTitle, values);
       showToast('Added', 'success');
+      const firstInserted = Array.isArray(newRows?.[0]) ? newRows[0] : [];
+      const insertedLabel = firstInserted.find(c => String(c || '').trim()) || '';
+      collab.notifySheetMutation({
+        docId: currentSheetId,
+        docTitle: currentDataTitle || '',
+        waymarkType: key || currentTemplateKey || '',
+        action: 'add',
+        rowLabel: String(insertedLabel || '').trim(),
+      }).catch(() => {});
       // Use the data we already fetched — avoid an extra round-trip to Sheets.
       // Skip re-render if the user has an inline edit active; the next
       // auto-refresh cycle will pick up the updated state.
@@ -1288,6 +1434,24 @@ function renderWithTemplate(values) {
   if (typeof template.addRowFields === 'function' && key !== 'kanban' && key !== 'recipe' && key !== 'checklist') {
     const addForm = buildAddRowForm(template, cols, totalCols, addRowCallback);
     itemsEl.append(addForm);
+  }
+
+  if (prevHeight > 0) {
+    if (document.scrollingElement && savedScrollingTop > 0) {
+      document.scrollingElement.scrollTop = savedScrollingTop;
+    }
+    if (savedWinY > 0 || savedWinX > 0) {
+      window.scrollTo(savedWinX, savedWinY);
+    }
+    requestAnimationFrame(() => {
+      if (itemsEl) itemsEl.style.minHeight = '';
+      if (document.scrollingElement && savedScrollingTop > 0) {
+        document.scrollingElement.scrollTop = savedScrollingTop;
+      }
+      if (savedWinY > 0 || savedWinX > 0) {
+        window.scrollTo(savedWinX, savedWinY);
+      }
+    });
   }
 }
 
@@ -1535,7 +1699,7 @@ async function openShareModal(sheetId, sheetName) {
           el('div', { className: 'share-invite-permission-row' }, [
             el('input', {
               className: 'share-invite-email',
-              type: 'email',
+              type: 'text',
               placeholder: 'collaborator@email.com',
             }),
             el('select', {
@@ -1620,10 +1784,15 @@ async function openShareModal(sheetId, sheetName) {
   const grantBtn = modal.querySelector('.share-invite-grant-btn');
   const emailInput = modal.querySelector('.share-invite-email');
   const roleInput = modal.querySelector('.share-invite-role');
+  const inviteLinkInput = modal.querySelector('.share-invite-link');
+  const inviteCopyBtn = inviteLinkInput?.parentElement?.querySelector('.share-copy-btn');
   if (grantBtn && emailInput && roleInput) {
     grantBtn.addEventListener('click', async () => {
-      const email = (emailInput.value || '').trim();
-      if (!email) {
+      const rawValue = (emailInput.value || '').trim();
+      const selectedGroup = emailInput.dataset.selectedGroup
+        || (rawValue.toLowerCase().startsWith('group:') ? rawValue.slice('group:'.length).trim() : '');
+      const email = selectedGroup ? '' : rawValue;
+      if (!email && !selectedGroup) {
         showToast('Enter a collaborator email first', 'error');
         return;
       }
@@ -1631,20 +1800,55 @@ async function openShareModal(sheetId, sheetName) {
       grantBtn.disabled = true;
       grantBtn.textContent = 'Granting…';
       try {
-        await api.drive.createDrivePermission(sheetId, email, role);
-        // Provision the per-contact Share Ledger (auto-created + linked back into
-        // Contacts) and log this document so the collaborator sees it in their bell.
-        try {
-          await collab.shareDocumentWithContact({
-            contactEmail: email,
+        let ledgerSheetId = '';
+        if (selectedGroup) {
+          const memberEmails = (emailInput.dataset.memberEmails || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+          ledgerSheetId = await collab.shareDocumentWithContact({
+            group: selectedGroup,
+            memberEmails: memberEmails.length ? memberEmails : undefined,
             docId: sheetId,
             docTitle: sheetName,
             waymarkType: currentTemplateKey || '',
             permission: role,
           });
-        } catch { /* sharing ledger is best-effort */ }
-        showToast(`Access granted to ${email}`, 'success');
+          showToast(`Access granted to ${selectedGroup}`, 'success');
+        } else {
+          await api.drive.createDrivePermission(sheetId, email, role);
+          // Provision the per-contact Share Ledger (auto-created + linked back into
+          // Contacts) and log this document so the collaborator sees it in their bell.
+          try {
+            ledgerSheetId = await collab.shareDocumentWithContact({
+              contactEmail: email,
+              docId: sheetId,
+              docTitle: sheetName,
+              waymarkType: currentTemplateKey || '',
+              permission: role,
+            });
+          } catch { /* sharing ledger is best-effort */ }
+          showToast(`Access granted to ${email}`, 'success');
+        }
+        if (ledgerSheetId && inviteLinkInput) {
+          const updatedInviteLink = api.drive.generateShareLink(
+            sheetId,
+            sheetName,
+            parentFolderId || undefined,
+            {
+              ledger: ledgerSheetId,
+              from: collab.currentEmail() || undefined,
+              group: selectedGroup || undefined,
+            }
+          );
+          inviteLinkInput.value = updatedInviteLink;
+          if (inviteCopyBtn) inviteCopyBtn.dataset.link = updatedInviteLink;
+        }
         emailInput.value = '';
+        delete emailInput.dataset.selectedGroup;
+        delete emailInput.dataset.memberEmails;
+        const contactSelect = modal.querySelector('.share-invite-contact-select');
+        if (contactSelect) contactSelect.value = '';
       } catch (err) {
         showToast(`Could not grant access: ${err.message}`, 'error');
       } finally {
