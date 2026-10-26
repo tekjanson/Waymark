@@ -957,15 +957,20 @@ function openDuplicateModal() {
 
 /* ---------- Data loading ---------- */
 
-  async function loadSheet(sheetId) {
+  async function loadSheet(sheetId, { background = false } = {}) {
   try {
+    const previousDigest = currentSheetId === sheetId && Array.isArray(currentValues) && currentValues.length
+      ? collab.computeSheetDigest(currentValues).hash
+      : null;
     // Fire sheet data and protected-range metadata in parallel when authenticated.
     // Protected ranges are used to render lock icons and drive the background scan.
     const [data, rawProtectedRanges] = await Promise.all([
       api.sheets.getSpreadsheet(sheetId),
-      api.auth.isLoggedIn()
-        ? api.sheets.getProtectedRanges(sheetId).catch(() => [])
-        : Promise.resolve([]),
+      background
+        ? Promise.resolve(currentSheetProtectedRanges)
+        : api.auth.isLoggedIn()
+          ? api.sheets.getProtectedRanges(sheetId).catch(() => [])
+          : Promise.resolve([]),
     ]);
 
     // Capture numeric sheet ID for templates (needed for row deletion, etc.)
@@ -1002,9 +1007,10 @@ function openDuplicateModal() {
       await encryption.decryptSheet(sheetId, currentValues, encCols);
     }
 
-    renderWithTemplate(currentValues);
+    const nextDigest = currentValues?.length ? collab.computeSheetDigest(currentValues) : null;
+    if (previousDigest !== nextDigest?.hash) renderWithTemplate(currentValues);
     if (currentValues && currentValues.length) {
-      setSheetDigest(sheetId, collab.computeSheetDigest(currentValues));
+      setSheetDigest(sheetId, nextDigest);
     }
     lastFetchTime = new Date();
     updateTimestamp();
@@ -1608,7 +1614,7 @@ function resetTimer() {
         // the next tick will pick up latest data once the user commits or blurs.
         if (itemsEl && document.activeElement && itemsEl.contains(document.activeElement)) return;
         if (currentTemplateCanAutoRefresh && !currentTemplateCanAutoRefresh()) return;
-        loadSheet(currentSheetId);
+        loadSheet(currentSheetId, { background: true });
       }
     }, interval);
   }

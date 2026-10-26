@@ -44,6 +44,68 @@ const folderBackBtn = document.getElementById('folder-back-btn');
 const generateProg  = document.getElementById('generate-progress');
 const tutorialBtn   = document.getElementById('tutorial-btn');
 
+let _collabSyncTimer = null;
+let _collabSyncRunning = false;
+let _collabSyncWired = false;
+let _collabLastEditorActivity = 0;
+
+function startCollaboratorSyncPolling() {
+  if (!_collabSyncWired) {
+    _collabSyncWired = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearTimeout(_collabSyncTimer);
+        _collabSyncTimer = null;
+      } else {
+        runCollaboratorSync();
+        scheduleCollaboratorSync();
+      }
+    });
+    const markEditorActivity = (event) => {
+      if (event.target?.matches?.('input, textarea, select, [contenteditable="true"]')) {
+        _collabLastEditorActivity = Date.now();
+      }
+    };
+    document.addEventListener('input', markEditorActivity, true);
+    document.addEventListener('keydown', markEditorActivity, true);
+  }
+  runCollaboratorSync();
+  scheduleCollaboratorSync();
+}
+
+function scheduleCollaboratorSync(delay = 60_000) {
+  clearTimeout(_collabSyncTimer);
+  _collabSyncTimer = null;
+  if (document.hidden) return;
+  _collabSyncTimer = setTimeout(async () => {
+    _collabSyncTimer = null;
+    const active = document.activeElement;
+    const isEditor = active?.matches?.('input, textarea, select, [contenteditable="true"]');
+    const editingRecently = isEditor && Date.now() - _collabLastEditorActivity < 3000;
+    if (editingRecently) {
+      scheduleCollaboratorSync(10_000);
+      return;
+    }
+    await runCollaboratorSync();
+    scheduleCollaboratorSync();
+  }, delay);
+}
+
+async function runCollaboratorSync() {
+  if (_collabSyncRunning || document.hidden) return;
+  _collabSyncRunning = true;
+  try {
+    try { await collab.pollBilateralSheets(); } catch { /* continue with the remaining sync work */ }
+    if (document.hidden) return;
+    try { await collab.checkSharedSheetDiffs(); } catch { /* retry on the next cycle */ }
+    if (document.hidden) return;
+    try { await collab.publishPresenceEverywhere({ status: 'online' }); } catch { /* retry on the next cycle */ }
+    if (!document.hidden) document.dispatchEvent(new CustomEvent('waymark:collab-sync'));
+  } finally {
+    _collabSyncRunning = false;
+  }
+}
+
 /* ---------- Sidebar menu refs ---------- */
 const menuHomeBtn      = document.getElementById('menu-home-btn');
 const menuExplorerBtn  = document.getElementById('menu-explorer-btn');
@@ -229,14 +291,9 @@ async function boot() {
       examples: openExamplesModal,
     },
   });
-  // Sync collaborator shares from Share Ledgers into the bell —
-  // once on boot, then on a 60s polling cycle (alongside presence heartbeat).
-  collab.pollBilateralSheets().catch(() => {});
-  setInterval(() => {
-    collab.pollBilateralSheets().catch(() => {});
-    collab.checkSharedSheetDiffs().catch(() => {});
-    collab.publishPresenceEverywhere({ status: 'online' }).catch(() => {});
-  }, 60_000);
+  // Keep collaborator ledger work on one visible-page tick. The same ordered
+  // cycle handles notifications, shared-sheet diffs, and presence heartbeats.
+  startCollaboratorSyncPolling();
   await initializeModelSwap();
   initializeModelSwapUI();
 
@@ -2938,6 +2995,7 @@ async function collectKnownSheets() {
 let _bootHash = '';
 let _updateToast = null;
 let _lastCheckTime = 0;
+let _updateCheckTimer = null;
 const UPDATE_CHECK_INTERVAL = 120_000; // 2 minutes
 const UPDATE_CHECK_MIN_GAP  = 30_000;  // min 30 s between checks
 
@@ -2946,15 +3004,31 @@ function initUpdateChecker() {
   _bootHash = window.__WAYMARK_HASH || '';
   if (!_bootHash || window.__WAYMARK_LOCAL) return;
 
-  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) checkForUpdate();
+    clearTimeout(_updateCheckTimer);
+    _updateCheckTimer = null;
+    if (!document.hidden) {
+      checkForUpdate();
+      scheduleUpdateCheck();
+    }
   });
+  scheduleUpdateCheck();
+}
+
+function scheduleUpdateCheck() {
+  clearTimeout(_updateCheckTimer);
+  _updateCheckTimer = null;
+  if (document.hidden) return;
+  _updateCheckTimer = setTimeout(async () => {
+    _updateCheckTimer = null;
+    await checkForUpdate();
+    scheduleUpdateCheck();
+  }, UPDATE_CHECK_INTERVAL);
 }
 
 /** Check if the server has a newer build hash. */
 async function checkForUpdate() {
-  if (_updateToast) return;
+  if (_updateToast || document.hidden) return;
   const now = Date.now();
   if (now - _lastCheckTime < UPDATE_CHECK_MIN_GAP) return;
   _lastCheckTime = now;

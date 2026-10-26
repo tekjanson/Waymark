@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary & Status Matrix
 
-Out of 8 reported issues on the **wayboard bugs** sheet, 4 have been verified and marked **Done** by user QA. Four items remain in **Backlog** requiring focused architectural resolution:
+Of 8 reported issues on the **wayboard bugs** sheet, 4 were previously verified and marked **Done** by user QA. The remaining 4 backlog items have now been addressed on this branch and are ready for user QA:
 
 | Issue | Status | Root Cause Summary | Target Files |
 | :--- | :---: | :--- | :--- |
@@ -16,14 +16,14 @@ Out of 8 reported issues on the **wayboard bugs** sheet, 4 have been verified an
 | **2. Links in wayside chat aren't clickable** | **Done** | Fixed in `e189c7b`: `appendLinkified()` regex parser with safe DOM node creation. | `wayboard.js` |
 | **3. Wayside chat is small and hard to use** | **Done** | Fixed in `e189c7b`: widened panel to 320px, font 12px, `clamp(240px, 42vh, 560px)` height. | `home-modes.css` |
 | **4. Accepting share does not open google picker** | **Done** | Fixed in `e189c7b`: integrated `api.picker.pickSpreadsheetForInvite()` in `acceptSharedWaymark()`. | `collab.js` |
-| **5. The wayside chat seems to be through sheets not webRTC** | **BACKLOG** | `WaymarkConnect` was only initialized upon clicking "Call", not upon selecting a target. Messages fell back to `collab.sendChat()` (Sheets API) + 15s poll. | `public/js/wayboard.js`, `public/js/collab.js`, `public/js/webrtc.js` |
-| **6. Wayboard social issues (Chat, Calls & Shared Files View)** | **BACKLOG** | Wayside lacks an always-on data channel mesh for active targets and needs a dedicated, accessible "Shared Files" view displaying all sheets between collaborators. | `public/js/wayboard.js`, `public/js/collab.js` |
-| **7. When ending a wayside call mic and camera stay open** | **BACKLOG** | Hanging up synchronously destroys `WaymarkConnect` before `call-end` packet flushes; callee never receives `onCallEnded`; peer departure in `_poll()` does not trigger call termination. | `public/js/webrtc.js`, `public/js/wayboard.js`, `public/js/templates/social/chat.js` |
-| **8. Waymark updates seem to be slow / stuttering** | **BACKLOG** | Compounding uncoordinated `setInterval` loops (`app.js`, `checklist.js`, `wayboard.js`, `webrtc.js`) issuing dozens of unthrottled Sheets API calls; full-DOM re-renders on every poll tick. | `public/js/app.js`, `public/js/checklist.js`, `public/js/collab.js`, `public/js/wayboard.js` |
+| **5. The wayside chat seems to be through sheets not webRTC** | **Done** | Target selection starts a WebRTC data mesh; chat appears over P2P immediately and is saved to the ledger with a shared message ID. | `public/js/wayboard.js`, `public/js/collab.js`, `public/js/webrtc.js` |
+| **6. Wayboard social issues (Chat, Calls & Shared Files View)** | **Done** | Wayside now lists all shared ledger files, provides an empty state and share picker, and keeps chat rows stable across refreshes. | `public/js/wayboard.js`, `public/js/collab.js` |
+| **7. When ending a wayside call mic and camera stay open** | **Done** | Hangup ends local media while keeping the chat mesh; call state is heartbeated and remote hangup or peer departure invokes call teardown. Wayside wires remote audio output. | `public/js/webrtc.js`, `public/js/wayboard.js`, `public/js/templates/social/chat.js` |
+| **8. Waymark updates seem to be slow / stuttering** | **Done** | Background polling pauses in hidden tabs and during active typing; collaborator sync is serialized, unchanged sheets skip full reads and renders, and presence updates are batched. | `public/js/app.js`, `public/js/checklist.js`, `public/js/collab.js`, `public/js/storage.js`, `public/js/wayboard.js`, `public/js/webrtc.js`, `public/js/sheets.js` |
 
 ---
 
-## 2. In-Depth Technical Breakdown of Backlog Items
+## 2. Technical Breakdown of the Remaining Issues
 
 ### Item 1 & 2: Wayside Real-Time WebRTC Chat & Shared Files (`_rowIndex: 3, 6`)
 
@@ -138,7 +138,7 @@ Multiple independent background loops poll Google Sheets API concurrently:
 
 ---
 
-## 3. Recommended Test Plan for Codex
+## 3. Recommended QA Plan
 
 1. **Wayside P2P Chat Verification:**
    - Test two instances in separate browser contexts communicating on a shared ledger.

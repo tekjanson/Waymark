@@ -540,6 +540,45 @@ export async function updateCell(token, spreadsheetId, sheetTitle, row, col, val
 }
 
 /**
+ * Update multiple cells on the same row with one Sheets API request.
+ * @param {string} token
+ * @param {string} spreadsheetId
+ * @param {string} sheetTitle
+ * @param {number} row 0-based row index including the header
+ * @param {Array<[number,string]>} updates 0-based column/value pairs
+ */
+export async function updateCells(token, spreadsheetId, sheetTitle, row, updates) {
+  const columnName = (index) => {
+    let n = index + 1;
+    let label = '';
+    while (n > 0) {
+      const remainder = (n - 1) % 26;
+      label = String.fromCharCode(65 + remainder) + label;
+      n = Math.floor((n - 1) / 26);
+    }
+    return label;
+  };
+  const quotedTitle = `'${String(sheetTitle).replace(/'/g, "''")}'`;
+  const data = updates.map(([col, value]) => ({
+    range: `${quotedTitle}!${columnName(col)}${row + 1}`,
+    values: [[value]],
+  }));
+  const res = await fetchWithRetry(
+    `${BASE}/${spreadsheetId}/values:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ valueInputOption: 'RAW', data }),
+    }
+  );
+  if (!res.ok) throw sheetsError('Sheets batch update', res);
+  return res.json();
+}
+
+/**
  * Replace all sheet data: clears the sheet then writes new rows.
  * Used by re-sync to overwrite a sheet with fresh content.
  * @param {string}     token

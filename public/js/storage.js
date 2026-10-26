@@ -797,7 +797,12 @@ export function getSheetDigest(sheetId) {
 export function setSheetDigest(sheetId, digest) {
   if (!sheetId) return;
   const all = getSheetDigests();
-  if (digest) all[sheetId] = digest;
+  if (digest) {
+    const previousModifiedTime = all[sheetId]?.modifiedTime;
+    all[sheetId] = digest.modifiedTime || !previousModifiedTime
+      ? digest
+      : { ...digest, modifiedTime: previousModifiedTime };
+  }
   else delete all[sheetId];
   set('sheet_digests', all);
 }
