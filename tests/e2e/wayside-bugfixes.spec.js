@@ -1,0 +1,138 @@
+// @ts-check
+/**
+ * wayside-bugfixes.spec.js — regressions for the "wayboard bugs" sheet:
+ * clickable chat links, optimistic/live chat, mic+camera release on call end,
+ * accept-share Picker authorisation, and no re-prompt for decided shares.
+ */
+const { test, expect } = require('@playwright/test');
+const { setupApp } = require('../helpers/test-utils');
+
+test('links in Wayside chat render as real anchors and never inject markup', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+  const result = await page.evaluate(async () => {
+    const { appendLinkified } = await import('/js/wayboard.js');
+    const div = document.createElement('div');
+    appendLinkified(div, 'see https://example.com/a?b=1, and <img src=x onerror=alert(1)> ok.');
+    return {
+      hrefs: [...div.querySelectorAll('a')].map(a => a.getAttribute('href')),
+      targets: [...div.querySelectorAll('a')].map(a => a.getAttribute('target')),
+      imgs: div.querySelectorAll('img').length,
+      text: div.textContent,
+    };
+  });
+  expect(result.hrefs).toEqual(['https://example.com/a?b=1']); // trailing comma trimmed
+  expect(result.targets).toEqual(['_blank']);
+  expect(result.imgs).toBe(0);
+  expect(result.text).toContain('<img src=x');
+});
+
+test('Wayside chat message appears instantly without waiting for the sheet', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  await page.fill('#wayside-chat-input', 'hello https://example.com/x');
+  await page.press('#wayside-chat-input', 'Enter');
+  const line = page.locator('#wayside-chat-log .chat-self').last();
+  await expect(line).toContainText('hello');
+  await expect(line.locator('a')).toHaveAttribute('href', 'https://example.com/x');
+});
+
+test('ending a call releases the microphone even if the permission prompt was still pending', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+  const stopped = await page.evaluate(async () => {
+    const { WaymarkConnect } = await import('/js/webrtc.js');
+    let resolveGum;
+    const track = { stopped: false, stop() { this.stopped = true; }, kind: 'audio' };
+    const stream = { getTracks: () => [track], getAudioTracks: () => [track], getVideoTracks: () => [] };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: () => new Promise(r => { resolveGum = () => r(stream); }) },
+    });
+    const wc = new WaymarkConnect('race-test', { displayName: 'x' });
+    const pending = wc.startCall({ audio: true, video: false }).catch(e => e.name);
+    wc.endCall();          // user hangs up while the browser is still prompting
+    resolveGum();          // permission granted afterwards
+    const outcome = await pending;
+    return { outcome, trackStopped: track.stopped, inCall: wc.inCall };
+  });
+  expect(stopped.outcome).toBe('AbortError');
+  expect(stopped.trackStopped).toBe(true);
+  expect(stopped.inCall).toBe(false);
+});
+
+test('accepting a share the app cannot read opens the Google Picker first; cancelling keeps it pending', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+  const res = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const storage = await import('/js/storage.js');
+    const { api } = await import('/js/api-client.js');
+    const origGet = api.sheets.getSpreadsheet;
+    const origPick = api.picker.pickSpreadsheetForInvite;
+    let pickerCalls = 0;
+    let authorized = false;
+    api.sheets.getSpreadsheet = async (id) => {
+      if (id === 'unreadable-doc' && !authorized) throw new Error('403 not authorised');
+      return origGet.call(api.sheets, id === 'unreadable-doc' ? 'sheet-001' : id);
+    };
+    api.picker.pickSpreadsheetForInvite = async () => { pickerCalls++; return null; };
+    const cancelled = await collab.acceptSharedWaymark({ docId: 'unreadable-doc', docTitle: 'Shared thing' });
+    const acceptedAfterCancel = storage.isShareAccepted('unreadable-doc');
+
+    api.picker.pickSpreadsheetForInvite = async () => { pickerCalls++; authorized = true; return { id: 'unreadable-doc', name: 'Shared thing' }; };
+    const ok = await collab.acceptSharedWaymark({ docId: 'unreadable-doc', docTitle: 'Shared thing' });
+    const acceptedAfterPick = storage.isShareAccepted('unreadable-doc');
+
+    api.sheets.getSpreadsheet = origGet;
+    api.picker.pickSpreadsheetForInvite = origPick;
+    return { cancelled, acceptedAfterCancel, ok, acceptedAfterPick, pickerCalls };
+  });
+  expect(res.cancelled).toBe(false);
+  expect(res.acceptedAfterCancel).toBe(false);
+  expect(res.ok).toBe(true);
+  expect(res.acceptedAfterPick).toBe(true);
+  expect(res.pickerCalls).toBe(2);
+});
+
+test('an accepted share is not re-announced when the ledger is re-polled, and Clear all survives a re-sync', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const res = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const storage = await import('/js/storage.js');
+    const notif = await import('/js/notifications.js');
+    const { api } = await import('/js/api-client.js');
+    const { sheetId } = await collab.ensureShareLedger({ contactEmail: 'spam@example.com' });
+    await api.sheets.appendRows(sheetId, 'Shared_Docs', [[
+      'sheet-001', 'Groceries', 'checklist', 'testuser@gmail.com', '', 'writer', new Date().toISOString(), 'Shared',
+    ]]);
+    await collab.pollShareLedgers();
+    await collab.acceptSharedWaymark({ docId: 'sheet-001', ledgerSheetId: sheetId });
+
+    // Simulate a reload that lost the cursor: the ledger is read from row 0 again.
+    storage.setBilateralCursor(sheetId, 0);
+    storage.setBilateralCursor(`testuser@gmail.com:${sheetId}`, 0);
+    storage.setNotifications([]);
+    await collab.pollShareLedgers();
+    const shareNotifs = storage.getNotifications().filter(n => n.type === 'share').length;
+
+    // addNotification keeps one share prompt per document.
+    notif.addNotification({ id: 'a', type: 'share', title: 'A shared X', sheetId: 'doc-1' });
+    notif.addNotification({ id: 'b', type: 'share', title: 'B shared X', sheetId: 'doc-1' });
+    const perDoc = storage.getNotifications().filter(n => n.sheetId === 'doc-1').length;
+
+    notif.clearAll();
+    return { shareNotifs, perDoc, cleared: storage.getClearedNotifKeys().length > 0 };
+  });
+  expect(res.shareNotifs).toBe(0);
+  expect(res.perDoc).toBe(1);
+  expect(res.cleared).toBe(true);
+});

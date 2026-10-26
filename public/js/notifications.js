@@ -83,6 +83,10 @@ export function addNotification(notif) {
   const key = notif.key || id;
 
   if (items.some(n => (n.id && n.id === id) || (n.key && n.key === key))) return null;
+  // A document only ever needs one share prompt — re-polled ledger rows or a
+  // re-imported Push Notification Sheet row must not stack duplicates.
+  if (String(notif.type || '').toLowerCase() === 'share' && notif.sheetId
+      && items.some(n => n.type === 'share' && n.sheetId === notif.sheetId)) return null;
 
   const ts = notif.ts || notif.timestamp || new Date().toISOString();
   const type = (notif.type || 'info').toLowerCase();
@@ -137,6 +141,11 @@ export async function flushNotificationSheetWrites() {
   await Promise.allSettled(batch);
 }
 
+/** Stable content signature used to recognise a notification across id schemes. */
+function _notifSignature(title, body) {
+  return `sig:${(title || '').trim()}|${(body || '').trim()}`;
+}
+
 /** @returns {number} count of unread notifications */
 export function getUnreadCount() {
   return storage.getNotifications().filter(n => !n.read).length;
@@ -151,6 +160,13 @@ export function markAllRead() {
 
 /** Clear all notifications and refresh the badge and open panel. */
 export function clearAll() {
+  // Remember what was cleared so the Push Notification Sheet sync doesn't
+  // re-import the same Active rows on the next poll / page reload.
+  const keys = [];
+  for (const n of storage.getNotifications()) {
+    keys.push(n.id, n.key, _notifSignature(n.title, n.body));
+  }
+  storage.addClearedNotifKeys(keys);
   storage.setNotifications([]);
   _refreshBellBadge();
   if (_panel && !_panel.classList.contains('hidden')) {
@@ -291,6 +307,7 @@ export async function pollNotificationSheet() {
     let added = 0;
     let statusUpdated = false;
     const currentItems = storage.getNotifications();
+    const cleared = new Set(storage.getClearedNotifKeys());
 
     for (let i = 1; i < values.length; i++) {
       const r = values[i] || [];
@@ -313,8 +330,12 @@ export async function pollNotificationSheet() {
         (n.title === title && (n.body === body || n.message === body || !body))
       );
 
+      const decidedShare = type === 'share' && targetSheet
+        && (storage.isShareAccepted(targetSheet) || storage.isShareRejected(targetSheet));
+
       if (status.toLowerCase() === 'active') {
-        if (!existing) {
+        const wasCleared = cleared.has(rowKey) || cleared.has(_notifSignature(title, body));
+        if (!existing && !decidedShare && !wasCleared) {
           const entry = addNotification({
             id: rowKey,
             key: rowKey,
@@ -925,6 +946,49 @@ function _openSettingsModal() {
 }
 
 /**
+ * Accept or reject a share from the bell panel. Disables both buttons while the
+ * request runs, always reports the outcome, and never leaves an unhandled
+ * rejection (previously a failure made the buttons look dead).
+ * @param {MouseEvent} e
+ * @param {Object} n notification entry
+ * @param {'accept'|'reject'} action
+ */
+async function _handleShareDecision(e, n, action) {
+  e.stopPropagation();
+  const bar = e.currentTarget?.parentElement;
+  const buttons = bar ? [...bar.querySelectorAll('button')] : [];
+  if (buttons.some(b => b.disabled)) return;
+  buttons.forEach(b => { b.disabled = true; });
+  const ui = await import('./ui.js');
+  try {
+    const collab = await import('./collab.js');
+    if (action === 'accept') {
+      const ok = await collab.acceptSharedWaymark({
+        docId: n.sheetId,
+        docTitle: n.docTitle || '',
+        waymarkType: n.waymarkType || '',
+        ledgerSheetId: n.ledgerSheetId || '',
+        from: n.from || '',
+      });
+      if (ok) ui.showToast('Shared Waymark accepted', 'success');
+      else ui.showToast('Accept cancelled — authorize the sheet in Google Picker to continue', 'info');
+    } else {
+      await collab.rejectSharedWaymark({
+        docId: n.sheetId,
+        docTitle: n.docTitle || '',
+        ledgerSheetId: n.ledgerSheetId || '',
+      });
+      ui.showToast('Shared Waymark rejected and muted', 'info');
+    }
+  } catch (err) {
+    ui.showToast(`Could not ${action} share: ${err?.message || err}`, 'error');
+  } finally {
+    if (_panel && !_panel.classList.contains('hidden')) _renderPanelContent();
+    else buttons.forEach(b => { b.disabled = false; });
+  }
+}
+
+/**
  * Render the content of `_panel` in-place.
  */
 function _renderPanelContent() {
@@ -993,20 +1057,7 @@ function _renderPanelContent() {
                 type: 'button',
                 title: 'Accept shared Waymark',
                 on: {
-                  click: async (e) => {
-                    e.stopPropagation();
-                    const collab = await import('./collab.js');
-                    await collab.acceptSharedWaymark({
-                      docId: n.sheetId,
-                      docTitle: n.docTitle || '',
-                      waymarkType: n.waymarkType || '',
-                      ledgerSheetId: n.ledgerSheetId || '',
-                      from: n.from || '',
-                    });
-                    const ui = await import('./ui.js');
-                    ui.showToast('Shared Waymark accepted', 'success');
-                    _renderPanelContent();
-                  },
+                  click: (e) => _handleShareDecision(e, n, 'accept'),
                 },
               }, ['✓ Accept']),
               el('button', {
@@ -1014,18 +1065,7 @@ function _renderPanelContent() {
                 type: 'button',
                 title: 'Reject and mute this shared Waymark',
                 on: {
-                  click: async (e) => {
-                    e.stopPropagation();
-                    const collab = await import('./collab.js');
-                    await collab.rejectSharedWaymark({
-                      docId: n.sheetId,
-                      docTitle: n.docTitle || '',
-                      ledgerSheetId: n.ledgerSheetId || '',
-                    });
-                    const ui = await import('./ui.js');
-                    ui.showToast('Shared Waymark rejected and muted', 'info');
-                    _renderPanelContent();
-                  },
+                  click: (e) => _handleShareDecision(e, n, 'reject'),
                 },
               }, ['✕ Reject'])
             );

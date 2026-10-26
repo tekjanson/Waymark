@@ -812,9 +812,51 @@ async function removeWidget(id) {
 
 /* ---------- The Wayside (social) ---------- */
 
+export const WAYSIDE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
+
+/**
+ * Append text to parent DOM node, turning http(s) URLs into real <a> links
+ * safely without innerHTML.
+ * @param {HTMLElement} parent
+ * @param {string} text
+ */
+export function appendLinkified(parent, text) {
+  const str = String(text ?? '');
+  let last = 0;
+  for (const match of str.matchAll(WAYSIDE_URL_RE)) {
+    let url = match[0];
+    const trail = url.match(/[.,;:!?)\]}'"]+$/);
+    if (trail) url = url.slice(0, -trail[0].length);
+    if (!url) continue;
+
+    if (match.index > last) {
+      parent.append(document.createTextNode(str.slice(last, match.index)));
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    a.className = 'chat-link';
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(url).origin === window.location.origin;
+    } catch { /* keep external */ }
+    if (!sameOrigin) {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    }
+    parent.append(a);
+    last = match.index + url.length;
+  }
+  if (last < str.length) {
+    parent.append(document.createTextNode(str.slice(last)));
+  }
+}
+
 let _activeTarget = null; // { group? , contactEmail? , label }
+let _activeLedgerId = null;
 let _waysideConnect = null;
 let _waysidePollTimer = null;
+let _optimisticMessages = []; // { sender, text, ts, self, failed? }
 
 function ensureWaysidePolling() {
   if (_waysidePollTimer) return;
@@ -822,8 +864,7 @@ function ensureWaysidePolling() {
     const homeView = document.getElementById('home-view');
     const host = document.getElementById('home-wayside');
     if (!homeView || homeView.classList.contains('hidden') || !host || document.hidden) return;
-    refreshWaysideChat().catch(() => {});
-    refreshPresenceRings(host).catch(() => {});
+    refreshWaysideSocial(host).catch(() => {});
   }, 15_000);
 }
 
@@ -923,6 +964,10 @@ async function renderWayside() {
   onlineBlock.append(avatarRow);
   host.append(onlineBlock);
 
+  // Shared Files between users
+  const filesBlock = el('div', { className: 'wayside-files', id: 'wayside-files' });
+  host.append(filesBlock);
+
   // Chat box
   const chatBox = el('div', { className: 'chat-box' }, [
     el('div', { className: 'chat-box-head' }, [
@@ -965,55 +1010,120 @@ async function selectTarget(target, host) {
     endWaysideCall({ silent: true });
   }
   _activeTarget = target;
+  _optimisticMessages = [];
   const title = host.querySelector('#wayside-crew-title');
   if (title) title.textContent = `💬 ${target.label}`;
   host.querySelectorAll('.crew-row').forEach(r => r.classList.toggle('active', r.dataset.group === target.group));
 
-  // Load existing chat/presence WITHOUT provisioning a ledger (viewing is read-only).
-  // Presence is only published once a ledger already exists for this target
-  // (i.e. after the first share), so merely opening Home never creates sheets.
   try {
     const ledger = await collab.findExistingShareLedger(target);
+    _activeLedgerId = ledger ? ledger.sheetId : null;
     const sheetLine = host.querySelector('#wayside-sheet-line');
     if (sheetLine) sheetLine.textContent = ledger ? `Linked: ${ledger.sheetId}` : 'Linked on first share';
     if (ledger) {
       await collab.publishPresence(target, { status: 'online', activeWaymarkId: 'home' });
     }
-    await refreshWaysideChat();
-    await refreshPresenceRings(host);
+    await refreshWaysideSocial(host);
   } catch { /* social is best-effort */ }
+}
+
+function renderChatLines(messages) {
+  const log = document.getElementById('wayside-chat-log');
+  if (!log) return;
+  const me = collab.currentEmail();
+  log.innerHTML = '';
+  for (const m of messages.slice(-50)) {
+    const isSelf = m.self || (m.sender || '').toLowerCase() === me;
+    const who = isSelf ? 'You' : (m.sender || '').split('@')[0];
+    const line = el('div', { className: isSelf ? 'chat-self' : 'chat-peer' }, [
+      el('b', {}, [`${who}: `]),
+    ]);
+    if (m.failed) line.classList.add('chat-failed');
+    appendLinkified(line, m.text);
+    log.append(line);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderSharedFiles(files) {
+  const container = document.getElementById('wayside-files');
+  if (!container) return;
+  container.innerHTML = '';
+  const byDoc = new Map();
+  for (const f of files || []) {
+    const id = (f.docId || f.Document_ID || '').trim();
+    if (id && !byDoc.has(id)) byDoc.set(id, f);
+  }
+  const list = [...byDoc.values()];
+  if (!list.length) return;
+
+  const details = el('details', { className: 'wayside-files-box' }, [
+    el('summary', { className: 'wayside-label' }, [`SHARED FILES (${list.length})`]),
+  ]);
+  for (const f of list.slice(0, 15)) {
+    const docId = f.docId || f.Document_ID;
+    const title = f.title || f.Document_Title || docId;
+    details.append(el('a', {
+      className: 'wayside-file',
+      href: `#/sheet/${docId}`,
+      title: `${title} (${f.type || f.Waymark_Type || 'Waymark'})`,
+    }, [`📄 ${title}`]));
+  }
+  container.append(details);
+}
+
+async function refreshWaysideSocial(host) {
+  if (!_activeTarget) return;
+  try {
+    if (_activeLedgerId) {
+      const snap = await collab.readSocialSnapshot(_activeLedgerId);
+      const sheetMsgs = (snap.chat || []).map(m => ({
+        sender: m.sender,
+        text: m.text,
+        ts: m.ts,
+        self: false,
+      }));
+      // Merge with unconfirmed optimistic messages
+      const confirmedTexts = new Set(sheetMsgs.map(m => m.text));
+      _optimisticMessages = _optimisticMessages.filter(m => !confirmedTexts.has(m.text));
+      renderChatLines([...sheetMsgs, ..._optimisticMessages]);
+      renderSharedFiles(snap.files || []);
+      applyPresenceRings(host, snap.presence || []);
+    } else {
+      await refreshWaysideChat();
+      await refreshPresenceRings(host);
+    }
+  } catch { /* ignore */ }
 }
 
 async function refreshWaysideChat() {
   const log = document.getElementById('wayside-chat-log');
   if (!log || !_activeTarget) return;
   try {
-    const me = collab.currentEmail();
     const messages = await collab.readChat(_activeTarget);
-    log.innerHTML = '';
-    for (const m of messages.slice(-30)) {
-      const who = (m.sender || '').toLowerCase() === me ? 'You' : (m.sender || '').split('@')[0];
-      log.append(el('div', { className: (who === 'You' ? 'chat-self' : 'chat-peer') }, [
-        el('b', {}, [`${who}: `]), m.text,
-      ]));
-    }
-    log.scrollTop = log.scrollHeight;
+    const confirmedTexts = new Set(messages.map(m => m.text));
+    _optimisticMessages = _optimisticMessages.filter(m => !confirmedTexts.has(m.text));
+    renderChatLines([...messages, ..._optimisticMessages]);
   } catch { /* ignore */ }
+}
+
+function applyPresenceRings(host, presence) {
+  const byEmail = new Map(presence.map(p => [p.email, p.status]));
+  host.querySelectorAll('.avatar').forEach(av => {
+    const title = (av.getAttribute('title') || '').toLowerCase();
+    const m = title.match(/\(([^)]+)\)/);
+    const email = m ? m[1] : '';
+    const status = byEmail.get(email);
+    av.classList.remove('avatar-online', 'avatar-away', 'avatar-offline');
+    if (status) av.classList.add(`avatar-${status}`);
+  });
 }
 
 async function refreshPresenceRings(host) {
   if (!_activeTarget) return;
   try {
     const presence = await collab.readPresence(_activeTarget);
-    const byEmail = new Map(presence.map(p => [p.email, p.status]));
-    host.querySelectorAll('.avatar').forEach(av => {
-      const title = (av.getAttribute('title') || '').toLowerCase();
-      const m = title.match(/\(([^)]+)\)/);
-      const email = m ? m[1] : '';
-      const status = byEmail.get(email);
-      av.classList.remove('avatar-online', 'avatar-away', 'avatar-offline');
-      if (status) av.classList.add(`avatar-${status}`);
-    });
+    applyPresenceRings(host, presence);
   } catch { /* ignore */ }
 }
 
@@ -1022,15 +1132,41 @@ async function sendWaysideChat() {
   if (!input || !input.value.trim() || !_activeTarget) return;
   const text = input.value.trim();
   input.value = '';
+
+  // 1. Optimistic rendering: appear instantly!
+  const optMsg = {
+    sender: collab.currentEmail(),
+    text,
+    ts: new Date().toISOString(),
+    self: true,
+  };
+  _optimisticMessages.push(optMsg);
+  const log = document.getElementById('wayside-chat-log');
+  if (log) {
+    const line = el('div', { className: 'chat-self' }, [el('b', {}, ['You: '])]);
+    appendLinkified(line, text);
+    log.append(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // 2. Push via WebRTC connect if active
+  if (_waysideConnect) {
+    try { _waysideConnect.send(text); } catch { /* ignore */ }
+  }
+
+  // 3. Durable write to Google Sheets
   try {
     await collab.sendChat(_activeTarget, text);
     const sheetLine = document.getElementById('wayside-sheet-line');
     if (sheetLine && sheetLine.textContent === 'Linked on first share') {
       const ledger = await collab.findExistingShareLedger(_activeTarget);
-      if (ledger) sheetLine.textContent = `Linked: ${ledger.sheetId}`;
+      if (ledger) {
+        _activeLedgerId = ledger.sheetId;
+        sheetLine.textContent = `Linked: ${ledger.sheetId}`;
+      }
     }
-    await refreshWaysideChat();
   } catch (err) {
+    optMsg.failed = true;
     showToast(`Could not send: ${err.message}`, 'error');
   }
 }
@@ -1070,6 +1206,23 @@ async function startCall() {
         const sheetLine = document.getElementById('wayside-sheet-line');
         if (sheetLine && _waysideConnect === wc) {
           sheetLine.textContent = `📹 In call (${peers.length + 1} connected) · Linked: ${target.sheetId}`;
+        }
+      },
+      onCallEnded: () => {
+        if (_waysideConnect === wc) {
+          endWaysideCall();
+        }
+      },
+      onMessage: (m) => {
+        if (!m || m.type === 'typing' || !m.text) return;
+        const chatLog = document.getElementById('wayside-chat-log');
+        if (chatLog) {
+          const line = el('div', { className: 'chat-peer' }, [
+            el('b', {}, [`${m.name || 'Waymarker'}: `]),
+          ]);
+          appendLinkified(line, m.text);
+          chatLog.append(line);
+          chatLog.scrollTop = chatLog.scrollHeight;
         }
       },
     });

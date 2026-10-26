@@ -692,6 +692,19 @@ export function setChatCursor(sheetId, count) {
   set('chat_cursors', all);
 }
 
+/* --- Cleared notifications (so "Clear all" survives Push Notification Sheet re-sync) --- */
+
+const MAX_CLEARED_NOTIF_KEYS = 500;
+
+export function getClearedNotifKeys() {
+  return get('cleared_notif_keys') || [];
+}
+
+export function addClearedNotifKeys(keys) {
+  const merged = [...new Set([...getClearedNotifKeys(), ...(keys || []).filter(Boolean)])];
+  set('cleared_notif_keys', merged.slice(-MAX_CLEARED_NOTIF_KEYS));
+}
+
 /* --- Accepted & Rejected Shared Waymarks --- */
 
 export function getAcceptedShares() {

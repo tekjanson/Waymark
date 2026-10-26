@@ -974,6 +974,7 @@ function openChat(sheetId, displayName, signal) {
         enterCallUI(constraints.video);
       }
     } catch (err) {
+      if (err.name === 'AbortError') return; // call ended while devices were opening
       let msg = `Could not start call: ${err.message}`;
       if (err.name === 'InsecureContextError') {
         msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
@@ -1003,6 +1004,7 @@ function openChat(sheetId, displayName, signal) {
       }
       enterCallUI(withVideo && !stream?._listenOnly);
     } catch (err) {
+      if (err.name === 'AbortError') return; // call ended while devices were opening
       let msg = `Could not join call: ${err.message}`;
       if (err.name === 'NotAllowedError') {
         msg = '🔒 Microphone blocked. Click the lock 🔒 icon → Site settings → Microphone → Allow, then reload.';

@@ -119,6 +119,10 @@ export class WaymarkConnect {
 
     this._localStream = null;
     this._inCall = false;
+    // Bumped by every startCall()/endCall(). A startCall() whose generation is
+    // stale when getUserMedia resolves was cancelled mid-flight and must release
+    // the freshly-acquired mic/camera instead of leaving them open.
+    this._callGen = 0;
     this._remoteStreams = new Map(); // peerId → MediaStream (for pipeline rebuild)
 
     // Optional ICE gathering timeout override (ms). Node.js via werift needs more time.
@@ -180,6 +184,8 @@ export class WaymarkConnect {
       );
     }
 
+    const callGen = ++this._callGen;
+
     // If we already have a local stream (reconnection), stop old tracks first
     if (this._localStream) {
       for (const t of this._localStream.getTracks()) t.stop();
@@ -229,6 +235,16 @@ export class WaymarkConnect {
         listenOnly = true;
         deviceError = e;
       }
+    }
+
+    // The call was ended (or the connection destroyed) while the browser was
+    // still prompting/opening devices — release whatever we just acquired.
+    if (this._callGen !== callGen || this._destroyed) {
+      if (this._rawStream) {
+        for (const t of this._rawStream.getTracks()) t.stop();
+        this._rawStream = null;
+      }
+      throw Object.assign(new Error('Call ended before media was ready'), { name: 'AbortError' });
     }
 
     // Process audio through Web Audio API pipeline, pass video through
@@ -281,6 +297,7 @@ export class WaymarkConnect {
 
   /** End an active call, stopping all local media tracks. */
   endCall() {
+    this._callGen++; // cancels any startCall() still waiting on getUserMedia
     if (this._rawStream) {
       for (const t of this._rawStream.getTracks()) t.stop();
       this._rawStream = null;

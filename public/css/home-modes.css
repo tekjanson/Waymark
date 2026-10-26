@@ -50,14 +50,14 @@
 #wayboard-root .widget:hover { border-color: var(--accent); }
 #wayboard-root .viewport-box { flex: 1; min-height: 105px; margin: 8px 0; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px dashed var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; text-align: center; font-size: 11px; color: var(--muted); }
 #wayboard-root .btn { background: var(--accent); color: #fff; border: none; padding: 5px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; }
-#wayboard-root aside.wayside { width: 270px; background: var(--panel); border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root aside.wayside { width: 320px; background: var(--panel); border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--card); border-radius: 6px; margin-top: 4px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
 #wayboard-root .crew-row.active,
 #wayboard-root .crew-row:hover { border-color: var(--accent); }
 #wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
 #wayboard-root .avatar-row { display: flex; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
-#wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px; display: flex; flex-direction: column; gap: 5px; font-size: 10px; height: 165px; }
+#wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; flex: 1 1 auto; height: clamp(240px, 42vh, 560px); min-height: 220px; max-height: 80vh; resize: vertical; overflow: auto; }
 #wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 
 /* ---------- 50 layout architectures (wide screens only) ---------- */
@@ -418,7 +418,16 @@
 #wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
 #wayboard-root .btn-muted { background: #334155; }
 #wayboard-root .chat-sheet-line { font-size: 9px; color: var(--accent); }
-#wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 5px; border-radius: 4px; font-size: 10px; }
+#wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 12px; }
+#wayboard-root .chat-log { overflow-wrap: anywhere; min-height: 80px; }
+#wayboard-root .chat-log a.chat-link { color: var(--accent); text-decoration: underline; cursor: pointer; }
+#wayboard-root .chat-failed { opacity: 0.55; text-decoration: line-through; }
+#wayboard-root .chat-box-actions .btn { font-size: 10px; }
+#wayboard-root .wayside-files-box { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 11px; }
+#wayboard-root .wayside-files-box summary { cursor: pointer; margin: 0; }
+#wayboard-root .wayside-file { display: block; padding: 3px 0; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#wayboard-root .wayside-file:hover { color: var(--accent); }
+#wayboard-root .wayside-file small { color: var(--muted); }
 #wayboard-root .chat-self { color: var(--text); }
 #wayboard-root .chat-peer { color: var(--muted); }
 #wayboard-root .avatar-online { border-color: var(--green); }
