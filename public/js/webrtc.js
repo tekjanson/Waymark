@@ -119,7 +119,22 @@ export class WaymarkConnect {
 
     this._localStream = null;
     this._inCall = false;
+    // Bumped by every startCall()/endCall(). A startCall() whose generation is
+    // stale when getUserMedia resolves was cancelled mid-flight and must release
+    // the freshly-acquired mic/camera instead of leaving them open.
+    this._callGen = 0;
     this._remoteStreams = new Map(); // peerId → MediaStream (for pipeline rebuild)
+
+    this._onVisibilityChange = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      } else if (!this._destroyed && !this._paused && this.signal && this._block >= 0) {
+        if (!this._pollTimer) this._pollTimer = setInterval(() => this._poll(), POLL_MS);
+        this._poll().catch(() => {});
+      }
+    };
 
     // Optional ICE gathering timeout override (ms). Node.js via werift needs more time.
     this._iceWait = opts.iceWait ?? null;
@@ -131,6 +146,9 @@ export class WaymarkConnect {
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', this._onUnload);
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this._onVisibilityChange);
     }
   }
 
@@ -147,8 +165,8 @@ export class WaymarkConnect {
   }
 
   /** Send a chat message (or typing signal) to all connected peers (BC + all DataChannels). */
-  send(text, msgType = 'message') {
-    const msg = { type: msgType, peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
+  send(text, msgType = 'message', meta = {}) {
+    const msg = { ...meta, type: msgType, peerId: this.peerId, name: this.displayName, text, ts: Date.now() };
     if (this._bc) this._bc.postMessage(msg);
     this._dcBroadcast(msg);
     return msg;
@@ -179,6 +197,8 @@ export class WaymarkConnect {
         { name: 'InsecureContextError' },
       );
     }
+
+    const callGen = ++this._callGen;
 
     // If we already have a local stream (reconnection), stop old tracks first
     if (this._localStream) {
@@ -231,6 +251,16 @@ export class WaymarkConnect {
       }
     }
 
+    // The call was ended (or the connection destroyed) while the browser was
+    // still prompting/opening devices — release whatever we just acquired.
+    if (this._callGen !== callGen || this._destroyed) {
+      if (this._rawStream) {
+        for (const t of this._rawStream.getTracks()) t.stop();
+        this._rawStream = null;
+      }
+      throw Object.assign(new Error('Call ended before media was ready'), { name: 'AbortError' });
+    }
+
     // Process audio through Web Audio API pipeline, pass video through
     if (this._rawStream) {
       // NOW tear down old audio pipeline (after getUserMedia resolved)
@@ -257,6 +287,7 @@ export class WaymarkConnect {
     const n = { type: 'call-start', peerId: this.peerId, name: this.displayName };
     this._dcBroadcast(n);
     if (this._bc) this._bc.postMessage(n);
+    this._heartbeat().catch(() => {});
 
     // If remote streams arrived BEFORE mic processing was ready (answerer
     // scenario), re-emit onRemoteStream so the echo suppression pipeline
@@ -280,7 +311,15 @@ export class WaymarkConnect {
   }
 
   /** End an active call, stopping all local media tracks. */
-  endCall() {
+  async endCall() {
+    this._callGen++; // cancels any startCall() still waiting on getUserMedia
+    const wasInCall = this._inCall;
+    this._inCall = false;
+    if (wasInCall) {
+      const n = { type: 'call-end', peerId: this.peerId };
+      this._dcBroadcast(n);
+      if (this._bc) this._bc.postMessage(n);
+    }
     if (this._rawStream) {
       for (const t of this._rawStream.getTracks()) t.stop();
       this._rawStream = null;
@@ -293,10 +332,7 @@ export class WaymarkConnect {
     for (const [, r] of this._rtc) {
       for (const s of r.pc.getSenders()) { if (s.track) r.pc.removeTrack(s); }
     }
-    this._inCall = false;
-    const n = { type: 'call-end', peerId: this.peerId };
-    this._dcBroadcast(n);
-    if (this._bc) this._bc.postMessage(n);
+    if (wasInCall) await this._heartbeat();
   }
 
   get inCall() { return this._inCall; }
@@ -478,7 +514,10 @@ export class WaymarkConnect {
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', this._onUnload);
     }
-    if (this._inCall) this.endCall();
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._onVisibilityChange);
+    }
+    if (this._inCall) this.endCall().catch(() => {});
     if (this._bc) {
       this._bc.postMessage({ type: 'leave', peerId: this.peerId });
       this._bc.close();
@@ -528,9 +567,12 @@ export class WaymarkConnect {
       return;
     }
     this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
-    this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
+    const pageVisible = typeof document === 'undefined' || !document.hidden;
+    if (pageVisible) {
+      this._pollTimer = setInterval(() => this._poll(), POLL_MS);
+    }
     this._heartbeat().catch(() => {});
-    this._poll().catch(() => {});
+    if (pageVisible) this._poll().catch(() => {});
   }
 
   /* ---------- Internal helpers ---------- */
@@ -609,15 +651,19 @@ export class WaymarkConnect {
         this._emitPeers();
         break;
       case 'message':
-        this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, channel: 'local' });
+        this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, messageId: d.messageId, channel: 'local' });
         break;
       case 'typing':
         this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
         break;
       case 'call-start':
+        this._peers.set(d.peerId, { ...this._peers.get(d.peerId), name: d.name || 'Peer', channel: 'local', inCall: true });
         this.onCallActive(d.peerId, d.name);
         break;
       case 'call-end':
+        if (this._peers.has(d.peerId)) {
+          this._peers.set(d.peerId, { ...this._peers.get(d.peerId), inCall: false });
+        }
         this.onCallEnded(d.peerId);
         break;
       case 'waymark-sheet-update':
@@ -626,6 +672,7 @@ export class WaymarkConnect {
         }
         break;
       case 'leave':
+        if (this._peers.get(d.peerId)?.inCall) this.onCallEnded(d.peerId);
         this._peers.delete(d.peerId);
         this._emitPeers();
         break;
@@ -695,7 +742,9 @@ export class WaymarkConnect {
         console.log(`[WC] _join — slot ${this._block} confirmed for peerId=${this.peerId}`);
       }
 
-      this._pollTimer  = setInterval(() => this._poll(), POLL_MS);
+      if (typeof document === 'undefined' || !document.hidden) {
+        this._pollTimer = setInterval(() => this._poll(), POLL_MS);
+      }
       this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
     } catch (err) {
       console.error('[WC] _join failed:', err);
@@ -745,14 +794,24 @@ export class WaymarkConnect {
       let peerChanged = false;
       for (const p of alive) {
         const cur = this._peers.get(p.peerId);
-        if (!cur || cur.channel === 'sig') {
-          const ch = this._rtc.get(p.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'sig';
-          this._peers.set(p.peerId, { name: p.name, channel: ch, protected: p.protected || false });
+        const ch = this._rtc.get(p.peerId)?.dc?.readyState === 'open' ? 'rtc' : (cur?.channel === 'local' ? 'local' : 'sig');
+        const next = {
+          ...cur,
+          name: p.name || cur?.name || 'Peer',
+          channel: ch,
+          protected: p.protected || false,
+          inCall: Boolean(p.inCall),
+        };
+        if ((!cur || !cur.inCall) && next.inCall) this.onCallActive(p.peerId, next.name);
+        if (cur?.inCall && !next.inCall) this.onCallEnded(p.peerId);
+        if (!cur || cur.name !== next.name || cur.channel !== next.channel || cur.protected !== next.protected || cur.inCall !== next.inCall) {
+          this._peers.set(p.peerId, next);
           peerChanged = true;
         }
       }
       for (const [id, p] of this._peers) {
         if ((p.channel === 'sig' || p.channel === 'rtc') && !aliveIds.has(id)) {
+          if (p.inCall) this.onCallEnded(id);
           this._peers.delete(id);
           this._closeOne(id);
           this._remoteNonces.delete(id);
@@ -1019,13 +1078,17 @@ export class WaymarkConnect {
             this._emitPeers();
             break;
           case 'message':
-            this.onMessage({ peerId: m.peerId, name: m.name, text: m.text, ts: m.ts, channel: 'rtc' });
+            this.onMessage({ peerId: m.peerId, name: m.name, text: m.text, ts: m.ts, messageId: m.messageId, channel: 'rtc' });
             break;
           case 'call-start':
           case 'call-active':
+            this._peers.set(m.peerId, { ...this._peers.get(m.peerId), name: m.name || 'Peer', channel: 'rtc', inCall: true });
             this.onCallActive(m.peerId, m.name);
             break;
           case 'call-end':
+            if (this._peers.has(m.peerId)) {
+              this._peers.set(m.peerId, { ...this._peers.get(m.peerId), inCall: false });
+            }
             this.onCallEnded(m.peerId);
             break;
           case 'typing':

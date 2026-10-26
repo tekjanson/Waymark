@@ -1101,6 +1101,45 @@ export const api = {
       return sheetsApi.updateCell(token, spreadsheetId, sheetTitle, row, col, value);
     },
 
+    /** Update several cells in one row using one Sheets API batch request. */
+    async updateCells(spreadsheetId, sheetTitle, row, updates) {
+      if (isLocal) {
+        const data = await loadMockSheet(spreadsheetId);
+        let targetValues = data?.values;
+        let tab = null;
+        if (Array.isArray(data?.tabs) && sheetTitle) {
+          tab = data.tabs.find(t => (t.title || '').toLowerCase() === sheetTitle.toLowerCase());
+          if (tab) {
+            if (!Array.isArray(tab.values)) tab.values = [];
+            targetValues = tab.values;
+          }
+        }
+        for (const [col, value] of updates || []) {
+          if (!Array.isArray(targetValues) || row < 0 || col < 0) continue;
+          while (targetValues.length <= row) targetValues.push([]);
+          if (!Array.isArray(targetValues[row])) targetValues[row] = [];
+          while (targetValues[row].length <= col) targetValues[row].push('');
+          targetValues[row][col] = value;
+          if (tab && data.tabs[0] === tab && data.values && data.values !== tab.values) {
+            while (data.values.length <= row) data.values.push([]);
+            if (!Array.isArray(data.values[row])) data.values[row] = [];
+            while (data.values[row].length <= col) data.values[row].push('');
+            data.values[row][col] = value;
+          }
+        }
+        persistIfCreatedSheet(spreadsheetId, data);
+        const record = {
+          type: 'cells-update',
+          spreadsheetId, sheetTitle, row, updates,
+          createdAt: new Date().toISOString(),
+        };
+        window.__WAYMARK_RECORDS.push(record);
+        return record;
+      }
+      const token = await requireToken();
+      return sheetsApi.updateCells(token, spreadsheetId, sheetTitle, row, updates);
+    },
+
     /**
      * Replace all data in a sheet (clear + write).
      * Used for recipe re-sync from source URL.

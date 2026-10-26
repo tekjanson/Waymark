@@ -703,15 +703,39 @@ export async function acceptSharedWaymark(args = {}) {
   const docId = String(args.docId || '').trim();
   if (!docId) return false;
 
+  let docTitle = String(args.docTitle || '').trim();
+  let waymarkType = String(args.waymarkType || '').trim();
+
+  // Under the `drive.file` scope the recipient can only read a shared sheet once
+  // they have authorised it through Google Picker. Try a plain read first; if it
+  // fails, open the Picker pre-filtered to this file. Cancelling the Picker keeps
+  // the share pending (nothing is marked accepted).
+  let docData = null;
+  try {
+    docData = await api.sheets.getSpreadsheet(docId);
+  } catch {
+    if (args.authorizeViaPicker === false) {
+      docData = null;
+    } else {
+      const picked = await api.picker.pickSpreadsheetForInvite({
+        fileId: docId,
+        fileName: docTitle,
+      });
+      if (!picked?.id) return false;
+      if (!docTitle && picked.name) docTitle = picked.name;
+      try {
+        docData = await api.sheets.getSpreadsheet(docId);
+      } catch {
+        docData = null; // accepted, but contents still unreadable — digest skipped
+      }
+    }
+  }
+
   storage.addAcceptedShare(docId);
   storage.removeRejectedShare(docId);
   await userData.removeHiddenItem(docId);
 
-  let docTitle = String(args.docTitle || '').trim();
-  let waymarkType = String(args.waymarkType || '').trim();
-
   try {
-    const docData = await api.sheets.getSpreadsheet(docId);
     if (!docTitle && docData?.title) docTitle = docData.title;
     const vals = (docData?.tabs?.[0]?.values) || docData?.values || [];
     if (vals.length) {
@@ -948,16 +972,27 @@ export async function checkSharedSheetDiffs() {
   for (const [docId, meta] of docMeta.entries()) {
     if (storage.isShareRejected(docId)) continue;
     try {
+      const previousDigest = storage.getSheetDigest(docId);
+      let fileMeta = null;
+      try {
+        fileMeta = await api.drive.getFile(docId);
+      } catch {
+        /* Fall back to a sheet read when Drive metadata is unavailable. */
+      }
+      if (fileMeta?.modifiedTime && previousDigest?.modifiedTime === fileMeta.modifiedTime) continue;
+
       const data = await api.sheets.getSpreadsheet(docId);
       const vals = (data?.tabs?.[0]?.values) || data?.values || [];
       if (!vals.length) continue;
       const newDigest = computeSheetDigest(vals);
-      const prevDigest = storage.getSheetDigest(docId);
-      storage.setSheetDigest(docId, newDigest);
+      storage.setSheetDigest(docId, {
+        ...newDigest,
+        modifiedTime: fileMeta?.modifiedTime || previousDigest?.modifiedTime || '',
+      });
 
-      if (prevDigest && prevDigest.hash && prevDigest.hash !== newDigest.hash) {
+      if (previousDigest && previousDigest.hash && previousDigest.hash !== newDigest.hash) {
         const title = data.title || meta.title || 'Shared Waymark';
-        const rowDelta = newDigest.rowCount - (prevDigest.rowCount || 0);
+        const rowDelta = newDigest.rowCount - (previousDigest.rowCount || 0);
         const body = rowDelta > 0
           ? `${rowDelta} new row${rowDelta === 1 ? '' : 's'} added (${newDigest.rowCount} total)`
           : `Sheet cells updated (${newDigest.rowCount} rows)`;
@@ -1030,6 +1065,12 @@ export async function pollShareLedgers() {
           }
 
           if (docId && storage.isShareRejected(docId)) continue;
+
+          if (!statusVal.startsWith('Updated|') && docId && storage.isShareAccepted(docId)) {
+            // Already accepted on this device — never re-raise the share prompt
+            // (this is what made accepted shares reappear on every page reload).
+            continue;
+          }
 
           if (statusVal.startsWith('Updated|')) {
             if (prefs.collabUpdates === false) continue;
@@ -1306,13 +1347,88 @@ async function upsertPresenceRow(sheetId, target = {}, opts = {}) {
   }
 
   if (existingRowIdx >= 1) {
-    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 1, displayName);
-    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 3, statusVal);
-    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 4, nowIso);
-    await api.sheets.updateCell(sheetId, PRESENCE_TAB, existingRowIdx, 5, activeId);
+    await api.sheets.updateCells(sheetId, PRESENCE_TAB, existingRowIdx, [
+      [1, displayName], [3, statusVal], [4, nowIso], [5, activeId],
+    ]);
   } else {
     await api.sheets.appendRows(sheetId, PRESENCE_TAB, [row]);
   }
+}
+
+/** Parse tab rows (objects keyed by header) out of an already-fetched spreadsheet. */
+function tabRowsFromData(data, tabTitle) {
+  const tab = ((data && data.tabs) || []).find(t => (t.title || '').toLowerCase() === tabTitle.toLowerCase());
+  const values = (tab && tab.values) || [];
+  if (values.length < 2) return [];
+  const headers = values[0].map(h => (h || '').trim());
+  return values.slice(1)
+    .filter(row => row.some(c => (c || '').trim()))
+    .map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = row[i] || ''; });
+      return obj;
+    });
+}
+
+function chatFromRows(rows) {
+  const seen = new Set();
+  return rows.filter(row => {
+    const key = row.Message_ID || `${row.Sender_Email || ''}:${row.Timestamp_UTC || ''}:${row.Message_Text || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(r => ({
+    id: r.Message_ID || '',
+    sender: r.Sender_Email || '',
+    text: r.Message_Text || '',
+    ts: r.Timestamp_UTC || '',
+  }));
+}
+
+function presenceFromRows(rows) {
+  const latest = new Map();
+  for (const r of rows) {
+    const email = (r.User_Email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = latest.get(email);
+    if (!prev || (r.Last_Heartbeat_UTC || '') > (prev.Last_Heartbeat_UTC || '')) latest.set(email, r);
+  }
+  const now = Date.now();
+  return [...latest.values()].map(r => {
+    const ts = Date.parse(r.Last_Heartbeat_UTC || '') || 0;
+    const fresh = now - ts < 90_000;
+    const declared = (r.Online_Status || '').toLowerCase();
+    const status = declared === 'offline' ? 'offline' : (fresh ? (declared || 'online') : 'away');
+    return { email: (r.User_Email || '').trim().toLowerCase(), name: r.Display_Name || '', status };
+  });
+}
+
+/**
+ * Read chat, presence and shared-document rows for a known ledger with a SINGLE
+ * spreadsheet fetch (the Wayside used to issue a Drive search plus a full fetch
+ * for chat and again for presence on every poll).
+ * @param {string} ledgerSheetId
+ * @returns {Promise<{ chat: Array<{id:string,sender:string,text:string,ts:string}>, presence: Array<{email:string,name:string,status:string}>, files: Array<{docId:string,title:string,type:string,sharedWith:string,group:string,permission:string,ts:string,status:string}> }>}
+ */
+export async function readSocialSnapshot(ledgerSheetId) {
+  const data = await api.sheets.getSpreadsheet(ledgerSheetId);
+  const files = tabRowsFromData(data, SHARED_DOCS_TAB)
+    .filter(r => (r.Document_ID || '').trim() && !String(r.Status || '').startsWith('Updated|'))
+    .map(r => ({
+      docId: r.Document_ID.trim(),
+      title: r.Document_Title || '',
+      type: r.Waymark_Type || '',
+      sharedWith: r.Shared_With_Email || '',
+      group: r.Group || '',
+      permission: r.Permission_Level || '',
+      ts: r.Shared_Timestamp || '',
+      status: r.Status || '',
+    }));
+  return {
+    chat: chatFromRows(tabRowsFromData(data, CHAT_TAB)),
+    presence: presenceFromRows(tabRowsFromData(data, PRESENCE_TAB)),
+    files,
+  };
 }
 
 /**
@@ -1347,13 +1463,16 @@ export async function readPresence(target) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @param {string} text
  * @param {string} [attachedLink]
+ * @param {string} [messageId] stable ID shared with the live WebRTC message
+ * @returns {Promise<{id:string,sheetId:string}|null>}
  */
-export async function sendChat(target, text, attachedLink = '') {
-  if (!text || !text.trim()) return;
+export async function sendChat(target, text, attachedLink = '', messageId = '') {
+  if (!text || !text.trim()) return null;
   const { sheetId } = await ensureShareLedger(target);
   const me = currentEmail();
+  const id = messageId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const row = [
-    `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id,
     new Date().toISOString(),
     me,
     target.group || target.contactEmail || '',
@@ -1368,6 +1487,7 @@ export async function sendChat(target, text, attachedLink = '') {
   } catch {
     /* cursor update is best-effort */
   }
+  return { id, sheetId };
 }
 
 /**
@@ -1385,7 +1505,7 @@ export async function readChat(target) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).map(r => ({ sender: r.Sender_Email || '', text: r.Message_Text || '', ts: r.Timestamp_UTC || '' }));
+  }).map(r => ({ id: r.Message_ID || '', sender: r.Sender_Email || '', text: r.Message_Text || '', ts: r.Timestamp_UTC || '' }));
 }
 
 /* ---------- Internal ---------- */
