@@ -4,7 +4,7 @@
    Generates a styled "space concept" from current floorplan geometry.
    ============================================================ */
 
-import { el, generateText, generateVision, generateImage, showToast } from '../shared.js';
+import { el, generateText, analyzeImageWithAI, generateImage, showToast } from '../shared.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -404,14 +404,13 @@ async function enrichFloorplanPrompt(items, camera, referenceImage) {
     name: item.label || item.type || item.symbolKey || 'Object',
     finish: item.aiPrompt,
   }));
-  const text = await generateVision(
+  const text = await analyzeImageWithAI(
     'Describe realistic surface finishes and lighting for the supplied 3D model view in two or three sentences. ' +
     'Keep every modeled imperfection. Do not add, remove, complete, move, or resize objects, walls, openings, or furniture. ' +
     'Do not invent windows or change the camera. Use the scene notes to identify objects, and only describe objects actually visible in the image. ' +
     'Return plain text describing materials, textures, and shadows; no headings or redesign suggestions.',
     referenceImage.slice(referenceImage.indexOf(',') + 1),
-    'image/png',
-    { provider: 'gemini', maxTokens: 700, userMessage: JSON.stringify({ camera, room, notes, constraints: basePrompt }) }
+    { mimeType: 'image/png', provider: 'gemini', maxTokens: 700, userMessage: JSON.stringify({ camera, room, notes, constraints: basePrompt }) }
   );
   const finishDetails = String(text).replace(/^```(?:text)?/i, '').replace(/```$/i, '').trim();
   if (!finishDetails) throw new Error('Gemini returned no finish details.');

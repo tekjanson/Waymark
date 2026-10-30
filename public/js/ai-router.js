@@ -52,6 +52,7 @@ import {
   DEFAULT_OPENAI_MODEL,
   DEFAULT_OPENAI_IMAGE_MODEL,
 } from './agent/config.js';
+import * as vault from './agent/vault.js';
 
 /* ---------- Capabilities ---------- */
 
@@ -238,6 +239,16 @@ export async function testProviderConnection(provider) {
  * @returns {Promise<string>} text, or an image data URL / URL for image generation
  */
 export async function routeAI(capability, payload = {}, opts = {}) {
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    const hasBiometrics = vault.hasBiometricVault();
+    const unlocked = await vault.ensureVaultUnlocked();
+    if (!unlocked) {
+      throw new Error(hasBiometrics
+        ? 'Biometric unlock was cancelled or failed. Unlock your AI keys and try again.'
+        : 'Your AI keys are locked. Unlock them in AI settings and enable biometric unlock for next time.');
+    }
+  }
+
   const capableProviders = providersForCapability(capability);
   const providers = opts.provider ? capableProviders.filter(provider => provider === opts.provider) : capableProviders;
   if (!providers.length) {

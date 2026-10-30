@@ -6,6 +6,8 @@
    ============================================================ */
 
 import { el, showToast } from '../ui.js';
+import * as agentVault from '../agent/vault.js';
+import { captureStillFromCamera } from '../camera-capture.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
 
@@ -676,7 +678,7 @@ export { el, showToast };
 
 /* Re-export the camera still-capture helper so template sub-modules can access
    it without importing outside their folder (§1.5). */
-export { captureStillFromCamera } from '../camera-capture.js';
+export { captureStillFromCamera };
 
 
 /* ---------- Generic Helpers ---------- */
@@ -1304,6 +1306,29 @@ export {
 import { routeAI, CAP } from '../ai-router.js';
 
 /**
+ * Prepare a template AI action by unlocking the linked keys vault with this
+ * device's biometric credential when available.
+ * @returns {Promise<boolean>}
+ */
+export async function ensureAIKeyVaultUnlocked() {
+  if (!agentVault.isVaultSetUp() || agentVault.isVaultUnlocked()) return true;
+  return agentVault.ensureVaultUnlocked();
+}
+
+/** Explain how to proceed when the linked AI keys vault could not unlock. */
+export function getAIKeyVaultUnlockMessage() {
+  return agentVault.hasBiometricVault()
+    ? 'Biometric unlock was cancelled or failed. Unlock your AI keys and try again.'
+    : 'Your AI keys are locked. Unlock them in AI settings and enable biometric unlock for next time.';
+}
+
+/** Capture a still image after automatically unlocking the AI keys vault. */
+export async function captureImageForAI(opts = {}) {
+  if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
+  return captureStillFromCamera(opts);
+}
+
+/**
  * Generate text via the cost-aware AI router. Routes to the cheapest capable
  * provider (local Ollama / Gemini Free Tier first), falling back automatically.
  * Templates use this for AI-powered features (§1.5-compliant).
@@ -1339,6 +1364,207 @@ export async function generateVision(systemPrompt, base64Image, mimeType = 'imag
     maxTokens: opts.maxTokens ?? 1024,
     provider: opts.provider,
   });
+}
+
+/**
+ * Read a File or Blob as raw base64 (without its data URL prefix).
+ * @param {Blob} media
+ * @returns {Promise<string>}
+ */
+export function blobToBase64(media) {
+  return new Promise((resolve, reject) => {
+    if (!media || typeof media.size !== 'number') {
+      reject(new Error('Expected an image or audio file.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read media file.'));
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.readAsDataURL(media);
+  });
+}
+
+async function inlineMedia(media, mimeType, fallbackMimeType) {
+  if (typeof media === 'string') {
+    const dataUrl = media.match(/^data:([^;,]+)?;base64,([\s\S]*)$/i);
+    return {
+      base64: dataUrl ? dataUrl[2] : media,
+      mimeType: mimeType || (dataUrl && dataUrl[1]) || fallbackMimeType,
+    };
+  }
+  return {
+    base64: await blobToBase64(media),
+    mimeType: mimeType || media.type || fallbackMimeType,
+  };
+}
+
+/**
+ * Analyze an image File, Blob, data URL, or raw base64 string with a vision model.
+ * @param {string} systemPrompt
+ * @param {Blob|string} image
+ * @param {{ mimeType?: string, temperature?: number, maxTokens?: number, userMessage?: string, provider?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function analyzeImageWithAI(systemPrompt, image, opts = {}) {
+  if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
+  const media = await inlineMedia(image, opts.mimeType, 'image/jpeg');
+  return generateVision(systemPrompt, media.base64, media.mimeType, opts);
+}
+
+/**
+ * Analyze or transcribe an audio File, Blob, data URL, or raw base64 string.
+ * @param {string} systemPrompt
+ * @param {Blob|string} audio
+ * @param {{ mimeType?: string, temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function analyzeAudioWithAI(systemPrompt, audio, opts = {}) {
+  if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
+  const media = await inlineMedia(audio, opts.mimeType, 'audio/webm');
+  return generateAudio(systemPrompt, media.base64, media.mimeType, opts);
+}
+
+/** Parse a JSON object or array from plain or fenced model output. */
+export function parseAIJson(text) {
+  const source = String(text || '').trim();
+  try { return JSON.parse(source); } catch { /* find a JSON value in surrounding prose */ }
+
+  for (let start = 0; start < source.length; start++) {
+    if (source[start] !== '{' && source[start] !== '[') continue;
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    for (let end = start; end < source.length; end++) {
+      const char = source[end];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') { inString = true; continue; }
+      if (char === '{' || char === '[') stack.push(char);
+      else if (char === '}' || char === ']') {
+        const open = stack.pop();
+        if ((char === '}' && open !== '{') || (char === ']' && open !== '[')) break;
+        if (!stack.length) {
+          try { return JSON.parse(source.slice(start, end + 1)); } catch { break; }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Whether the browser can capture audio with MediaRecorder. */
+export function isAudioRecordingSupported() {
+  return typeof navigator !== 'undefined'
+    && !!navigator.mediaDevices?.getUserMedia
+    && typeof MediaRecorder !== 'undefined';
+}
+
+/**
+ * Start a microphone recording. Call stop() to receive its Blob, or cancel()
+ * to discard the recording and release the microphone.
+ * @param {{ audio?: boolean|MediaTrackConstraints }} [opts]
+ * @returns {Promise<{mimeType:string, stop:()=>Promise<Blob|null>, cancel:()=>void}>}
+ */
+export async function startAudioRecording(opts = {}) {
+  if (!isAudioRecordingSupported()) {
+    throw new Error('Audio recording is not supported in this browser.');
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: opts.audio ?? true });
+  } catch (err) {
+    if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+      throw new Error('Microphone permission denied.');
+    }
+    throw new Error(`Could not access microphone${err?.message ? `: ${err.message}` : '.'}`);
+  }
+
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+  const mimeType = typeof MediaRecorder.isTypeSupported === 'function'
+    ? candidates.find(type => MediaRecorder.isTypeSupported(type)) || ''
+    : '';
+  let recorder;
+  try {
+    recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  } catch (err) {
+    stream.getTracks().forEach(track => track.stop());
+    throw new Error(`Could not start audio recording${err?.message ? `: ${err.message}` : '.'}`);
+  }
+
+  const chunks = [];
+  let settled = false;
+  let cancelled = false;
+  let resolveClip;
+  let rejectClip;
+  const clipPromise = new Promise((resolve, reject) => {
+    resolveClip = resolve;
+    rejectClip = reject;
+  });
+  // The caller may cancel before asking for the stop result.
+  clipPromise.catch(() => {});
+  const releaseMicrophone = () => stream.getTracks().forEach(track => track.stop());
+
+  recorder.addEventListener('dataavailable', event => {
+    if (event.data?.size) chunks.push(event.data);
+  });
+  recorder.addEventListener('error', event => {
+    if (settled) return;
+    settled = true;
+    releaseMicrophone();
+    rejectClip(event.error || new Error('Audio recording failed.'));
+  });
+  recorder.addEventListener('stop', () => {
+    if (settled) return;
+    settled = true;
+    releaseMicrophone();
+    resolveClip(cancelled ? null : new Blob(chunks, {
+      type: recorder.mimeType || mimeType || 'audio/webm',
+    }));
+  });
+
+  try {
+    recorder.start();
+  } catch (err) {
+    releaseMicrophone();
+    throw new Error(`Could not start audio recording${err?.message ? `: ${err.message}` : '.'}`);
+  }
+
+  return {
+    mimeType: recorder.mimeType || mimeType || 'audio/webm',
+    stop() {
+      if (recorder.state !== 'inactive') {
+        try { recorder.stop(); } catch (err) {
+          if (!settled) {
+            settled = true;
+            releaseMicrophone();
+            rejectClip(err);
+          }
+        }
+      }
+      return clipPromise;
+    },
+    cancel() {
+      if (settled) return;
+      cancelled = true;
+      if (recorder.state !== 'inactive') {
+        try { recorder.stop(); } catch { /* release tracks below */ }
+      }
+      settled = true;
+      releaseMicrophone();
+      resolveClip(null);
+    },
+  };
+}
+
+/** Start an audio recording after automatically unlocking the AI keys vault. */
+export async function startAIRecording(opts = {}) {
+  if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
+  return startAudioRecording(opts);
 }
 
 /**

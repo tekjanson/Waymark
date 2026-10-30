@@ -6,7 +6,9 @@
    canvas renderer.
    ============================================================ */
 
-import { captureStillFromCamera, el, generateVision, showToast } from '../shared.js';
+import {
+  captureStillFromCamera, el, analyzeImageWithAI, parseAIJson, showToast,
+} from '../shared.js';
 
 const SYSTEM_PROMPT =
   'You are a residential floor-plan extraction assistant. ' +
@@ -86,19 +88,6 @@ async function prepareInlineImage(file) {
   };
 }
 
-function parseJsonPayload(text) {
-  if (!text) return null;
-  let raw = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function num(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -169,12 +158,13 @@ async function inferPlanFromImages(images) {
     const msg = i === 0
       ? 'Create an initial floor-plan draft from this first photo.'
       : `Refine this existing draft with another photo. Existing draft JSON: ${JSON.stringify(draft)}`;
-    const text = await generateVision(SYSTEM_PROMPT, image.base64, image.mimeType, {
+    const text = await analyzeImageWithAI(SYSTEM_PROMPT, image.base64, {
+      mimeType: image.mimeType,
       userMessage: `Photo ${i + 1} of ${images.length}. ${msg}`,
       temperature: 0.2,
       maxTokens: 1800,
     });
-    const parsed = parseJsonPayload(text);
+    const parsed = parseAIJson(text);
     if (!parsed) throw new Error('AI returned an invalid response. Try again with clearer photos.');
     draft = normalizePlan(parsed);
   }

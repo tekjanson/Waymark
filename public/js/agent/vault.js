@@ -30,6 +30,8 @@ const LS_BIOMETRIC_VAULT = 'waymark_agent_biometric_vault';
 let _session = null;
 /** @type {string | null} */
 let _lastUnlockedPassword = null;
+/** @type {Promise<boolean> | null} */
+let _biometricUnlockPromise = null;
 
 /* ---------- Base64 helpers ---------- */
 
@@ -337,7 +339,15 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
  * Prompts the user for Face ID / Touch ID / Fingerprint via WebAuthn.
  * @returns {Promise<boolean>}
  */
-export async function unlockVaultWithBiometrics() {
+export function unlockVaultWithBiometrics() {
+  if (_biometricUnlockPromise) return _biometricUnlockPromise;
+  _biometricUnlockPromise = _unlockVaultWithBiometrics().finally(() => {
+    _biometricUnlockPromise = null;
+  });
+  return _biometricUnlockPromise;
+}
+
+async function _unlockVaultWithBiometrics() {
   const sheetId = getLinkedSheetId();
   if (!sheetId || !hasBiometricVault(sheetId)) return false;
 
@@ -350,6 +360,19 @@ export async function unlockVaultWithBiometrics() {
     return false;
   }
   return true;
+}
+
+/**
+ * Ensure the linked AI keys sheet is ready for an operation. When it is locked,
+ * use this device's enrolled biometric credential automatically if available.
+ * @returns {Promise<boolean>} true when AI keys can be read, false otherwise
+ */
+export async function ensureVaultUnlocked() {
+  if (!isVaultSetUp() || isVaultUnlocked()) return true;
+  if (hasBiometricVault() && await unlockVaultWithBiometrics()) return true;
+  // A locked but unencrypted keys sheet can still be opened automatically.
+  // unlockVault() detects encrypted columns and rejects the empty password.
+  return unlockVault('');
 }
 
 /* ---------- Link / Unlink ---------- */

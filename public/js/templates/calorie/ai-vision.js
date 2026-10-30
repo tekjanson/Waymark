@@ -2,7 +2,7 @@
    calorie/ai-vision.js — Gemini meal-photo macro estimation
 
    Captures a food photo (camera or file), sends it to the Waymark
-   Gemini pipeline (generateVision), and renders an interactive
+   shared AI vision helper, and renders an interactive
    breakdown modal where the user adjusts servings or deletes
    misidentified items before confirming the log.
 
@@ -12,7 +12,10 @@
      skipped and the mock breakdown is used directly.
    ============================================================ */
 
-import { el, showToast, generateVision, captureStillFromCamera } from '../shared.js';
+import {
+  el, showToast, analyzeImageWithAI, parseAIJson,
+  captureImageForAI, ensureAIKeyVaultUnlocked, getAIKeyVaultUnlockMessage,
+} from '../shared.js';
 import { parseNum, round1, MEAL_TYPES } from './helpers.js';
 
 const SYSTEM_PROMPT =
@@ -23,32 +26,12 @@ const SYSTEM_PROMPT =
 
 /* ---------- Helpers ---------- */
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read image'));
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      resolve(result.split(',')[1] || '');
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 /** Pull the first JSON object out of a possibly fenced model response. */
 function parseItems(text) {
   if (!text) return [];
-  let raw = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
-  try {
-    const data = JSON.parse(raw);
-    const items = Array.isArray(data) ? data : (data.items || []);
-    return items.map(normalizeItem).filter(Boolean);
-  } catch {
-    return [];
-  }
+  const data = parseAIJson(text);
+  const items = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+  return items.map(normalizeItem).filter(Boolean);
 }
 
 function normalizeItem(it) {
@@ -76,8 +59,8 @@ export async function analyzeMealPhoto(file) {
     const items = Array.isArray(val) ? val : (val.items || []);
     return items.map(normalizeItem).filter(Boolean);
   }
-  const base64 = await fileToBase64(file);
-  const text = await generateVision(SYSTEM_PROMPT, base64, file.type || 'image/jpeg', {
+  const text = await analyzeImageWithAI(SYSTEM_PROMPT, file, {
+    mimeType: file.type || 'image/jpeg',
     userMessage: 'Identify every food item and estimate macros.',
     temperature: 0.3,
   });
@@ -181,7 +164,12 @@ function buildBreakdownModal(items, mealType, onConfirm) {
  * Open the AI meal-scan flow: pick a photo → analyze → review breakdown.
  * @param {{ mealType:string, onConfirm:Function }} opts
  */
-export function openAiScanModal({ mealType, onConfirm }) {
+export async function openAiScanModal({ mealType, onConfirm }) {
+  if (!await ensureAIKeyVaultUnlocked()) {
+    showToast(getAIKeyVaultUnlockMessage(), 'error');
+    return;
+  }
+
   const overlay = el('div', { className: 'calorie-modal-overlay' });
   const modal = el('div', { className: 'calorie-modal' });
   const close = () => overlay.remove();
@@ -212,7 +200,7 @@ export function openAiScanModal({ mealType, onConfirm }) {
   const cameraBtn = el('button', { className: 'calorie-modal-submit', type: 'button' }, ['\uD83D\uDCF8 Take photo']);
   cameraBtn.addEventListener('click', async () => {
     try {
-      const file = await captureStillFromCamera({ title: 'Snap your meal' });
+      const file = await captureImageForAI({ title: 'Snap your meal' });
       if (file) await process(file);
     } catch (err) {
       showToast(err.message || 'Camera unavailable', 'error');
