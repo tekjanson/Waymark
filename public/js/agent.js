@@ -419,6 +419,9 @@ function _getNextKey() {
 export function show(container) {
   _container = container;
   _container.innerHTML = '';
+  const biometricUnlock = vault.isVaultSetUp() && !vault.isVaultUnlocked() && vault.hasBiometricVault()
+    ? vault.ensureVaultUnlocked()
+    : null;
   // Sync API keys from Drive if available and not already in localStorage
   const driveSettings = userData.getAgentSettings();
   if (driveSettings) {
@@ -448,6 +451,13 @@ export function show(container) {
     _messages = saved;
   }
   _renderUI();
+  if (biometricUnlock) {
+    biometricUnlock.then((ok) => {
+      if (_container !== container) return;
+      if (ok) _renderUI();
+      else showToast('Biometric unlock was cancelled. Enter your AI keys password to continue.', 'error');
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -756,6 +766,19 @@ function _clearConversation() {
 
 async function _sendMessage(text) {
   if (!text || !text.trim() || _isStreaming) return;
+
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    const hasBiometrics = vault.hasBiometricVault();
+    const unlocked = await vault.ensureVaultUnlocked();
+    if (!unlocked) {
+      showToast(hasBiometrics
+        ? 'Biometric unlock was cancelled or failed. Unlock your AI keys and try again.'
+        : 'Your AI keys are locked. Unlock them in AI settings first.', 'error');
+      _renderUI();
+      return;
+    }
+    _renderUI();
+  }
 
   const keyEntry = _getNextKey();
   if (!keyEntry) {

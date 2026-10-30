@@ -80,12 +80,22 @@ export function show(ctx) {
   _context = ctx;
   // Close existing panel if open
   if (_panel) _close();
+  const biometricUnlock = vault.isVaultSetUp() && !vault.isVaultUnlocked() && vault.hasBiometricVault()
+    ? vault.ensureVaultUnlocked()
+    : null;
   try {
     _render();
   } catch (err) {
     showToast('Could not open AI panel', 'error');
     _panel = null;
     _backdrop = null;
+  }
+  if (biometricUnlock) {
+    biometricUnlock.then((ok) => {
+      if (_context !== ctx || !_panel) return;
+      if (ok) _render();
+      else showToast('Biometric unlock was cancelled. Unlock your AI keys to continue.', 'error');
+    }).catch(() => {});
   }
 }
 
@@ -413,6 +423,18 @@ function _buildSystemPrompt() {
 
 async function _sendMessage(text) {
   if (!text.trim() || _isStreaming) return;
+
+  if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
+    const hasBiometrics = vault.hasBiometricVault();
+    const unlocked = await vault.ensureVaultUnlocked();
+    if (!unlocked) {
+      showToast(hasBiometrics
+        ? 'Biometric unlock was cancelled or failed. Unlock your AI keys and try again.'
+        : 'Your AI keys are locked. Unlock them in AI agent settings first.', 'error');
+      _render();
+      return;
+    }
+  }
 
   const keyEntry = _getNextKey();
   if (!keyEntry) {

@@ -12,7 +12,10 @@
      a function returning one). When present the mic + network are skipped.
    ============================================================ */
 
-import { el, showToast, generateAudio } from '../shared.js';
+import {
+  el, showToast, analyzeAudioWithAI, parseAIJson,
+  isAudioRecordingSupported, startAIRecording,
+} from '../shared.js';
 import { parseNum, round1, MEAL_TYPES } from './helpers.js';
 
 const SYSTEM_PROMPT =
@@ -34,38 +37,13 @@ const SYSTEM_PROMPT =
   'calories/macros from typical nutrition data; if a meal is not stated, infer ' +
   'it from the food. Return only the JSON object.';
 
-/* ---------- Audio helpers ---------- */
-
-function pickMimeType() {
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
-  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
-  return candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
-}
-
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read audio'));
-    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
-    reader.readAsDataURL(blob);
-  });
-}
-
 /* ---------- Parsing ---------- */
 
 function parseItems(text) {
   if (!text) return [];
-  let raw = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
-  try {
-    const data = JSON.parse(raw);
-    const items = Array.isArray(data) ? data : (data.items || []);
-    return items.map(normalizeItem).filter(Boolean);
-  } catch {
-    return [];
-  }
+  const data = parseAIJson(text);
+  const items = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+  return items.map(normalizeItem).filter(Boolean);
 }
 
 function normalizeItem(it) {
@@ -107,8 +85,8 @@ export async function analyzeVoice(blob, mimeType) {
     const items = Array.isArray(val) ? val : (val.items || []);
     return items.map(normalizeItem).filter(Boolean);
   }
-  const base64 = await blobToBase64(blob);
-  const text = await generateAudio(SYSTEM_PROMPT, base64, mimeType || 'audio/webm', {
+  const text = await analyzeAudioWithAI(SYSTEM_PROMPT, blob, {
+    mimeType: mimeType || blob.type || 'audio/webm',
     userMessage: 'Log what I said.',
     temperature: 0.2,
   });
@@ -222,14 +200,22 @@ export async function openVoiceModal({ onConfirm }) {
     return;
   }
 
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+  if (!isAudioRecordingSupported()) {
     showToast('Voice logging is not supported in this browser', 'error');
     return;
   }
 
+  let audioRecording = null;
+  let recording = false;
+  let startingRecording = false;
+  let closed = false;
+  const cleanup = () => {
+    if (audioRecording) audioRecording.cancel();
+    audioRecording = null;
+  };
   const overlay = el('div', { className: 'calorie-modal-overlay' });
   const modal = el('div', { className: 'calorie-modal' });
-  const close = () => { cleanup(); overlay.remove(); };
+  const close = () => { closed = true; cleanup(); overlay.remove(); };
   const header = el('div', { className: 'calorie-modal-header' }, [
     el('span', { className: 'calorie-modal-title' }, ['\uD83C\uDF99\uFE0F Speak your meal']),
     el('button', { className: 'calorie-modal-close', type: 'button', 'aria-label': 'Close' }, ['\u00D7']),
@@ -245,46 +231,54 @@ export async function openVoiceModal({ onConfirm }) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.body.appendChild(overlay);
 
-  let stream = null, recorder = null, chunks = [], recording = false;
-  const cleanup = () => {
-    try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch { /* noop */ }
-    if (stream) stream.getTracks().forEach(t => t.stop());
-  };
-
   async function startRecording() {
+    if (startingRecording || recording || closed) return;
+    startingRecording = true;
+    micBtn.disabled = true;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      showToast('Microphone permission denied', 'error');
-      return;
+      const nextRecording = await startAIRecording();
+      if (!nextRecording) return;
+      if (closed) { nextRecording.cancel(); return; }
+      audioRecording = nextRecording;
+      recording = true;
+      micBtn.classList.add('calorie-voice-recording');
+      status.textContent = 'Listening… tap again to stop.';
+    } catch (err) {
+      if (!closed) showToast(err.message || 'Could not start recording', 'error');
+    } finally {
+      startingRecording = false;
+      if (!closed) micBtn.disabled = false;
     }
-    const mimeType = pickMimeType();
-    chunks = [];
-    recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-    recorder.addEventListener('dataavailable', (e) => { if (e.data.size) chunks.push(e.data); });
-    recorder.addEventListener('stop', async () => {
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
-      status.textContent = 'Analyzing…';
-      micBtn.classList.remove('calorie-voice-recording');
-      try {
-        const items = await analyzeVoice(blob, blob.type);
-        overlay.remove();
-        if (!items.length) { showToast('Nothing recognised — try again', 'error'); return; }
-        buildConfirmModal(items, onConfirm);
-      } catch (err) {
-        status.textContent = 'Tap the mic to try again.';
-        showToast(err.message || 'Voice analysis failed', 'error');
-      }
-    });
-    recorder.start();
-    recording = true;
-    micBtn.classList.add('calorie-voice-recording');
-    status.textContent = 'Listening… tap again to stop.';
+  }
+
+  async function stopRecording() {
+    const activeRecording = audioRecording;
+    if (!recording || !activeRecording) return;
+    recording = false;
+    micBtn.disabled = true;
+    micBtn.classList.remove('calorie-voice-recording');
+    status.textContent = 'Analyzing…';
+    try {
+      const blob = await activeRecording.stop();
+      if (audioRecording === activeRecording) audioRecording = null;
+      if (!blob || closed) return;
+      const items = await analyzeVoice(blob, blob.type);
+      if (closed) return;
+      closed = true;
+      overlay.remove();
+      if (!items.length) { showToast('Nothing recognised — try again', 'error'); return; }
+      buildConfirmModal(items, onConfirm);
+    } catch (err) {
+      if (closed) return;
+      status.textContent = 'Tap the mic to try again.';
+      showToast(err.message || 'Voice analysis failed', 'error');
+    } finally {
+      if (!closed) micBtn.disabled = false;
+    }
   }
 
   micBtn.addEventListener('click', () => {
-    if (!recording) startRecording();
-    else { recording = false; try { recorder.stop(); } catch { /* noop */ } }
+    if (recording) void stopRecording();
+    else void startRecording();
   });
 }
