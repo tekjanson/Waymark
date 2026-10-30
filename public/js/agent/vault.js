@@ -154,6 +154,7 @@ export async function enrollBiometricVault(password, targetSheetId = getLinkedSh
 
   try {
     let rawIdBytes;
+    let transports = [];
     if (window.__WAYMARK_MOCK_BIOMETRICS) {
       if (window.__WAYMARK_MOCK_BIOMETRICS.failEnroll) return false;
       if (typeof window.__WAYMARK_MOCK_BIOMETRICS.onEnroll === 'function') {
@@ -192,6 +193,9 @@ export async function enrollBiometricVault(password, targetSheetId = getLinkedSh
       });
       if (!cred || !cred.rawId) return false;
       rawIdBytes = new Uint8Array(cred.rawId);
+      if (typeof cred.response?.getTransports === 'function') {
+        try { transports = cred.response.getTransports(); } catch { /* optional browser hint */ }
+      }
     }
 
     if (!rawIdBytes || rawIdBytes.length === 0) return false;
@@ -221,6 +225,7 @@ export async function enrollBiometricVault(password, targetSheetId = getLinkedSh
       ciphertext: _toBase64(new Uint8Array(cipherBuf)),
       wrapMask: _toBase64(wrapMask),
       keyB64: _toBase64(rawKey),
+      transports,
       createdAt: new Date().toISOString(),
     }));
     return true;
@@ -256,34 +261,25 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
       if (!window.PublicKeyCredential || !navigator.credentials?.get) return null;
       const challenge = crypto.getRandomValues(new Uint8Array(32));
       const rpId = window.location.hostname || 'localhost';
-      let assertion = null;
-      try {
-        // Do not restrict transports to ['internal'] — iOS Keychain Passkeys and
-        // Android Google Password Manager report ['internal', 'hybrid'] for
-        // synced passkeys and fail to match when restricted strictly to 'internal'.
-        assertion = await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            rpId,
-            allowCredentials: [{
-              type: 'public-key',
-              id: credIdBytes,
-            }],
-            userVerification: 'preferred',
-            timeout: 60000,
-          },
-        });
-      } catch {
-        // Fallback to discoverable platform passkey on the same RP ID
-        assertion = await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            rpId,
-            userVerification: 'preferred',
-            timeout: 60000,
-          },
-        });
+      const allowCredential = {
+        type: 'public-key',
+        id: credIdBytes,
+      };
+      if (Array.isArray(record.transports) && record.transports.length > 0) {
+        allowCredential.transports = record.transports;
       }
+      // Keep this request scoped to the credential enrolled by Waymark. A broad
+      // discoverable-credential retry can open a second browser/provider chooser
+      // after cancellation or when this device does not have the enrolled key.
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          rpId,
+          allowCredentials: [allowCredential],
+          userVerification: 'required',
+          timeout: 60000,
+        },
+      });
       if (!assertion || !assertion.rawId) return null;
       assertionRawId = new Uint8Array(assertion.rawId);
     }
@@ -309,7 +305,7 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
       }
     }
 
-    // 2. Fallback to keyB64 if discoverable passkey returned a different credential ID on this device
+    // 2. Fallback to the locally stored key for older biometric records.
     if (password === null && record.keyB64) {
       try {
         const rawKey = _fromBase64(record.keyB64);

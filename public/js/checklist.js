@@ -37,6 +37,7 @@ let currentHeaders = null;
 let currentTemplateNoAutoRefresh = false;
 let currentTemplateCanAutoRefresh = null;
 let currentSheetProtectedRanges = [];  // updated on each sheet load
+let biometricUnlockInProgress = false;
 
 /* ---------- Public ---------- */
 
@@ -157,7 +158,7 @@ export function init() {
   if (encryptBtn) {
     encryptBtn.addEventListener('click', () => {
       if (!currentSheetId) return;
-      openEncryptModal();
+      openEncryptModal({ autoUnlockBiometrics: true });
     });
   }
 
@@ -302,7 +303,7 @@ function applyLockState(locked) {
 
 /* ---------- Encryption Modal ---------- */
 
-function openEncryptModal() {
+function openEncryptModal({ autoUnlockBiometrics = false } = {}) {
   const modal = document.getElementById('encrypt-modal');
   const modalTitle = document.getElementById('encrypt-modal-title');
   const passwordInput = document.getElementById('encrypt-password');
@@ -323,6 +324,13 @@ function openEncryptModal() {
   const encCols = encryption.getEncryptedColumns(sheetId);
   const isUnlocked = encryption.isUnlocked(sheetId);
   const hasEncryption = encCols.size > 0;
+  const biometricSheetId = vault.hasBiometricVault(sheetId)
+    ? sheetId
+    : (vault.hasBiometricVault() ? vault.getLinkedSheetId() : null);
+  const hasBiometricCredential = Boolean(biometricSheetId || vault.hasBiometricVault());
+  const shouldAutoUnlockBiometrically = Boolean(
+    autoUnlockBiometrics && !isUnlocked && hasEncryption && hasBiometricCredential
+  );
 
   // Reset state
   passwordInput.value = '';
@@ -363,9 +371,6 @@ function openEncryptModal() {
 
   // Show modal
   modal.classList.remove('hidden');
-  if (!passwordInput.parentElement.parentElement.classList.contains('hidden')) {
-    passwordInput.focus();
-  }
 
   // Close handlers
   const close = () => modal.classList.add('hidden');
@@ -386,42 +391,63 @@ function openEncryptModal() {
     if (!isUnlocked && hasEncryption) {
       const hasBio = vault.hasBiometricVault(sheetId) || vault.hasBiometricVault();
       if (hasBio) {
-        const bioBtn = el('button', {
-          className: 'agent-vault-bio-btn encrypt-modal-bio-btn',
-          type: 'button',
-          on: {
-            click: async () => {
-              bioBtn.disabled = true;
-              bioBtn.textContent = '🫆 Verifying…';
-              statusEl.textContent = 'Verifying biometrics…';
-              let sample = null;
-              if (currentValues) {
-                for (let r = 1; r < currentValues.length && !sample; r++) {
-                  for (const c of encCols) {
-                    if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
-                      sample = currentValues[r][c]; break;
-                    }
+        const unlockWithBiometrics = async (bioBtn) => {
+          if (bioBtn.disabled || biometricUnlockInProgress) return;
+          biometricUnlockInProgress = true;
+          bioBtn.disabled = true;
+          bioBtn.textContent = '🫆 Verifying…';
+          statusEl.textContent = 'Verifying biometrics…';
+          let pw = null;
+          let ok = false;
+          try {
+            let sample = null;
+            if (currentValues) {
+              for (let r = 1; r < currentValues.length && !sample; r++) {
+                for (const c of encCols) {
+                  if (c < currentValues[r].length && encryption.isEncrypted(currentValues[r][c])) {
+                    sample = currentValues[r][c]; break;
                   }
                 }
               }
-              const pw = await vault.unlockPasswordWithBiometrics(sheetId) || await vault.unlockPasswordWithBiometrics();
-              const ok = pw ? await encryption.unlock(pw, sheetId, sample) : false;
-              bioBtn.disabled = false;
-              bioBtn.textContent = '🫆 Unlock with Biometrics';
-              if (ok) {
-                if (vault.getLinkedSheetId() === sheetId) {
-                  vault.unlockVault(pw).catch(() => {});
-                }
-                close();
-                showToast('Unlocked with biometrics', 'success');
-                await loadSheet(sheetId);
-              } else {
-                statusEl.textContent = 'Biometric unlock failed or cancelled — enter password below';
-              }
-            },
-          },
+            }
+
+            // Try the matching sheet credential first, or the linked keys-sheet
+            // credential once when it is the only saved biometric on this device.
+            pw = biometricSheetId
+              ? await vault.unlockPasswordWithBiometrics(biometricSheetId)
+              : await vault.unlockPasswordWithBiometrics();
+            ok = pw ? await encryption.unlock(pw, sheetId, sample) : false;
+          } catch {
+            ok = false;
+          } finally {
+            biometricUnlockInProgress = false;
+            bioBtn.disabled = false;
+            bioBtn.textContent = '🫆 Unlock with Biometrics';
+          }
+          if (modal.classList.contains('hidden') || currentSheetId !== sheetId) return;
+          if (ok) {
+            if (vault.getLinkedSheetId() === sheetId) {
+              vault.unlockVault(pw).catch(() => {});
+            }
+            close();
+            showToast('Unlocked with biometrics', 'success');
+            await loadSheet(sheetId);
+          } else {
+            statusEl.textContent = 'Biometric unlock unavailable or cancelled — enter password below';
+            passwordInput.focus();
+          }
+        };
+        const bioBtn = el('button', {
+          className: 'agent-vault-bio-btn encrypt-modal-bio-btn',
+          type: 'button',
         }, ['🫆 Unlock with Biometrics']);
+        bioBtn.addEventListener('click', () => unlockWithBiometrics(bioBtn));
         bioContainer.appendChild(bioBtn);
+        if (shouldAutoUnlockBiometrically) {
+          // openEncryptModal is called directly from the user's menu click, so
+          // start WebAuthn before that activation expires.
+          void unlockWithBiometrics(bioBtn);
+        }
       } else {
         vault.isBiometricSupported().then((supported) => {
           if (!supported || isUnlocked) return;
@@ -438,6 +464,10 @@ function openEncryptModal() {
         }).catch(() => {});
       }
     }
+  }
+
+  if (!passwordInput.parentElement.parentElement.classList.contains('hidden') && !shouldAutoUnlockBiometrically) {
+    passwordInput.focus();
   }
 
   // Password visibility toggle
@@ -747,6 +777,8 @@ export function hide() {
   // Remove public banner if visible
   const banner = document.getElementById('public-banner');
   if (banner) banner.classList.add('hidden');
+  const encryptModal = document.getElementById('encrypt-modal');
+  if (encryptModal) encryptModal.classList.add('hidden');
 
   currentSheetId = null;
   currentValues = null;
@@ -1015,9 +1047,11 @@ function openDuplicateModal() {
     lastFetchTime = new Date();
     updateTimestamp();
 
-    // Auto-prompt for password if sheet has encrypted data but is locked
-    if (encCols.size > 0 && !encryption.isUnlocked(sheetId)) {
-      openEncryptModal();
+    // Auto-prompt on foreground loads of a locked sheet. If biometrics are
+    // enrolled, the modal starts that flow; background refreshes never prompt.
+    const encryptModal = document.getElementById('encrypt-modal');
+    if (encCols.size > 0 && !encryption.isUnlocked(sheetId) && !background && encryptModal?.classList.contains('hidden')) {
+      openEncryptModal({ autoUnlockBiometrics: true });
     }
 
     // Expose current user name so templates can auto-fill author fields
