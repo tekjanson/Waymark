@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "inline-styles",
+      "type": "inline-styles",
+      "enabled": true,
+      "severity": "error",
+      "description": "Forbid inline style attributes; styling lives in stylesheets.",
+      "what": "Flags style= attributes in HTML markup.",
+      "why": "One styling channel keeps design tokens consistent and themeable.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "dbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "single-h1",
+      "type": "single-h1",
+      "enabled": true,
+      "severity": "error",
+      "description": "Every HTML document declares exactly one primary heading.",
+      "what": "Flags HTML files with zero or more than one <h1>.",
+      "why": "A single H1 fixes one canonical document outline for a11y and SEO.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "dbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "max-exports",
+      "type": "max-exports",
+      "enabled": true,
+      "severity": "error",
+      "max_exports": 150,
+      "description": "A module exposes a bounded surface so responsibilities stay small.",
+      "what": "Flags modules whose export count exceeds the configured maximum.",
+      "why": "A small public surface keeps modules single-purpose and composable.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "dbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    }
+  ]
+}

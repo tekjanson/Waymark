@@ -407,16 +407,16 @@
           <span class="settings-label">MQTT debug bridge</span>
           <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle">
         </label>
-        <p class="settings-hint" style="margin:-0.5rem 0 0.5rem;font-size:0.8rem;color:var(--text-muted);">Connects to an AI dev agent for live debugging via MQTT.</p>
+        <p class="settings-hint settings-hint-compact">Connects to an AI dev agent for live debugging via MQTT.</p>
 
         <div class="settings-row">
           <span class="settings-label">MQTT broker endpoint</span>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex:1;">
-            <input type="text" id="settings-mqtt-url" class="settings-ref-input" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false" style="flex:1;">
+          <div class="flex-row-fill">
+            <input type="text" id="settings-mqtt-url" class="settings-ref-input flex-1" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false">
             <button id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
           </div>
         </div>
-        <p class="settings-hint" style="margin:-0.5rem 0 0.5rem;font-size:0.8rem;color:var(--text-muted);">Leave empty to auto-detect from current host. Requires reconnect.</p>
+        <p class="settings-hint settings-hint-compact">Leave empty to auto-detect from current host. Requires reconnect.</p>
       </div>
 
       <!-- Version Pinning (only visible when GitHub source is active) -->
@@ -639,8 +639,8 @@
 
         <!-- Recipe URL Import -->
         <div class="recipe-import-url-section">
-          <h4 style="margin:0 0 8px; font-size:0.85rem; color: #ea580c;">📖 Import Recipe from URL</h4>
-          <p class="text-muted" style="margin:0 0 8px; font-size:0.82rem;">Paste a link to a recipe page and WayMark will extract the ingredients and instructions.</p>
+          <h4 class="recipe-import-heading">📖 Import Recipe from URL</h4>
+          <p class="text-muted recipe-import-desc">Paste a link to a recipe page and WayMark will extract the ingredients and instructions.</p>
           <div class="recipe-import-url-bar">
             <input type="url" id="recipe-url-input" placeholder="https://example.com/recipe/..." aria-label="Recipe URL">
             <button id="recipe-url-import-btn" class="btn btn-primary btn-sm">Import Recipe</button>
@@ -648,8 +648,8 @@
           <div id="recipe-url-status" class="recipe-import-status hidden"></div>
         </div>
 
-        <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--color-border);">
-        <p class="text-muted" style="margin: 0 0 8px; font-size: 0.82rem;">Or pick an existing file from your Drive:</p>
+        <hr class="picker-divider">
+        <p class="text-muted recipe-import-desc">Or pick an existing file from your Drive:</p>
 
         <div class="import-search-bar">
           <input type="text" id="import-search-input" placeholder="Search your files…" class="import-search-field">

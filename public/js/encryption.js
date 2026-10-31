@@ -1,6 +1,6 @@
 /* ============================================================
    encryption.js — Client-side column-level encryption
-   
+
    Uses Web Crypto API (AES-GCM + PBKDF2) to encrypt/decrypt
    individual cell values. The password never leaves the browser.
    Each sheet derives a unique key from (password + sheetId).

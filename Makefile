@@ -256,6 +256,11 @@ seed-data: ## Rebuild the calorie tracker food + exercise reference datasets
 	node scripts/seed-nutrition-database.mjs
 	node scripts/seed-exercise-database.mjs
 
+
+
+gates: ## Run SpamApply1 hygiene & architecture gates (cbg, dbg, drift, sbg)
+	@SPAMAPPLY_DIR="$${SPAMAPPLY_DIR:-/home/tekjanson/Documents/Code/SpamApply1}"; 	echo "--> Running chaos-be-gone (cbg)..." && 	PYTHONPATH="$$SPAMAPPLY_DIR/chaos-be-gone" python3 -m cbg.cli check . && 	echo "--> Running design-be-gone (dbg)..." && 	PYTHONPATH="$$SPAMAPPLY_DIR/design-be-gone" python3 -m dbg.cli check . --manifest dbg_manifest.json && 	echo "--> Running drift-be-gone (drift)..." && 	PYTHONPATH="$$SPAMAPPLY_DIR/drift-be-gone" python3 -m drift.cli check . && 	echo "--> Running slop-be-gone (sbg)..." && 	PYTHONPATH="$$SPAMAPPLY_DIR/slop-be-gone/src" python3 -m sbg.cli check . && 	echo "✅ All SpamApply1 gates passed!"
+
 test: ## Run Playwright E2E suite (headless)
 	@# Kill any user-facing server so Playwright can start WAYMARK_LOCAL=true server
 	@if [ -f $(SERVER_PID) ] && kill -0 $$(cat $(SERVER_PID)) 2>/dev/null; then \

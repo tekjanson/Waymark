@@ -1,7 +1,7 @@
 /* ============================================================
    records.js — Create new records (completion snapshots)
    in the user's Drive.
-   
+
    WayMark is CR-only (Create + Read). This module handles
    the "Create" side: writing immutable log entries to a
    _waymark_logs/ folder.

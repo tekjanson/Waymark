@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "synthetic_workflows": {
+    "require_synthetic": false,
+    "detect_duplicate_patterns": true,
+    "verify_alignment": false,
+    "exempt": ["tests/**", "public/js/vendor/**", "node_modules/**"]
+  },
+  "rules": [
+    {
+      "id": "no-cycles",
+      "type": "no-cycles",
+      "enabled": true,
+      "severity": "error",
+      "description": "Modules must not form circular dependencies.",
+      "what": "Detects import cycles across the module dependency graph.",
+      "why": "Cycles couple modules, block refactoring, and hide design flaws.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    }
+  ]
+}

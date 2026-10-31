@@ -1,6 +1,6 @@
 /* ============================================================
    example-data.js — Sample spreadsheet definitions
-   
+
    Pure data, no side effects.  Each entry describes a sheet
    title, folder, column headers, and row data used by
    generateExamples() to populate the user's Google Drive.

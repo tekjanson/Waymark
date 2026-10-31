@@ -15,7 +15,7 @@
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as storage from './storage.js';
-import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet } from './notifications.js';
+import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet, setShareActionDelegate } from './notifications.js';
 import { discoverDirectory, isCandidateContactsBook, extractLedgerSheetId, normalizeContactEmail } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
@@ -1641,4 +1641,9 @@ async function linkLedgerToContacts(target, sheetId, previousLedgerIds = []) {
   } catch {
     /* non-fatal — contact write-back is a convenience */
   }
+}
+
+setShareActionDelegate({ acceptSharedWaymark, rejectSharedWaymark });
+if (typeof window !== 'undefined') {
+  window.__WAYMARK_COLLAB = { acceptSharedWaymark, rejectSharedWaymark };
 }

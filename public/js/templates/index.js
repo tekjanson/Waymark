@@ -1,9 +1,9 @@
 /* ============================================================
    templates/index.js — Template registry & detection engine
-   
+
    Imports all template modules (which self-register via
    registerTemplate), then exports the public API:
-   
+
    - TEMPLATES  — registry of all template definitions
    - detectTemplate(headers) — pick the best template for headers
    - onEdit(fn) — register a cell-edit callback

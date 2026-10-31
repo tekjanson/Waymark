@@ -1,0 +1,550 @@
+{
+  "rules": [
+    {
+      "id": "placeholder-comments",
+      "type": "placeholder-comments",
+      "enabled": false,
+      "patterns": [
+        "placeholder",
+        "put your code here",
+        "replace me",
+        "change me",
+        "sample content"
+      ],
+      "description": "Freeze placeholder comments and scaffold leftovers.",
+      "what": "Catch placeholder comments, boilerplate words, and scaffold leftovers before they become repository debt.",
+      "why": "These patterns usually indicate unfinished work or copied scaffolding, which makes reviews and future edits harder to trust.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "placeholder-comments"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "marker-spam",
+      "type": "marker-spam",
+      "enabled": false,
+      "patterns": [
+        "TODO",
+        "FIXME",
+        "XXX"
+      ],
+      "threshold": 3,
+      "description": "Freeze marker-heavy comments that accumulate as slop debt.",
+      "what": "Catch repeated TODO/FIXME/XXX markers that turn into noise instead of actionable work.",
+      "why": "Marker spam makes the codebase harder to review because unresolved notes compete with real implementation detail.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "marker-spam"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "empty-files",
+      "type": "empty-files",
+      "enabled": true,
+      "description": "Freeze empty or whitespace-only files.",
+      "what": "Reject files that contain no implementation or meaningful content.",
+      "why": "Empty files are often failed edits or placeholders that should either be filled or deleted.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "empty-files"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "long-lines",
+      "type": "long-lines",
+      "enabled": true,
+      "max_length": 5000,
+      "description": "Freeze overly long lines that hurt readability.",
+      "what": "Keep implementation readable by rejecting lines that have become too dense to review comfortably.",
+      "why": "Long lines hide multiple concerns in one statement and make diff review much noisier.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "long-lines"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "button-actions",
+      "type": "button-actions",
+      "enabled": false,
+      "description": "Freeze UI buttons that do not declare an explicit action hook.",
+      "what": "Require every button to expose a clear action so its effect is discoverable and reviewable.",
+      "why": "Buttons without explicit actions create dead-end UI that looks interactive but cannot be traced reliably.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "button-actions"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "button-types",
+      "type": "button-types",
+      "enabled": false,
+      "description": "Freeze button types so UI intent is explicit.",
+      "what": "Require button elements to declare an explicit type so forms and interactions remain predictable.",
+      "why": "Implicit button types create subtle form submission and reset behavior that is easy to miss in generated UI.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "button-types"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "form-labels",
+      "type": "form-labels",
+      "enabled": false,
+      "description": "Freeze form labels so the interface remains accessible.",
+      "what": "Require form controls to expose a clear label or accessible name.",
+      "why": "Labels make forms usable for assistive technology and reduce the chance that generated UI silently becomes confusing.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "form-labels"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "asset-links",
+      "type": "asset-links",
+      "enabled": true,
+      "description": "Freeze the bridge between UI markup and client-side handlers.",
+      "what": "Require declared UI actions to be wired into the client-side handler graph so the interface is understandable.",
+      "why": "Action declarations without corresponding handlers create synthetic dead-ends that look complete but collapse under review.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "asset-links"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "file-size",
+      "type": "file-size",
+      "enabled": true,
+      "max_bytes": 1048576,
+      "description": "Freeze oversized files that are hard to review and maintain.",
+      "what": "Reject files that exceed the configured size threshold so the codebase stays reviewable.",
+      "why": "Oversized files often hide monolithic logic or generated content that should be split into smaller, focused units.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "file-size"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "fully-defined-rules",
+      "type": "fully-defined-rules",
+      "enabled": true,
+      "description": "Freeze rule definitions that do not carry the metadata needed to review and trace them.",
+      "what": "Require every rule to expose a human-readable description, a clear what/why explanation, and at least one source reference.",
+      "why": "A policy that cannot be explained, navigated, or traced is not really enforceable; it becomes invisible slop that is hard to debug and easy to bypass.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "fully-defined-rules"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "source-loadable",
+      "type": "source-loadable",
+      "enabled": true,
+      "description": "Freeze source references that cannot be read by the dashboard or other tooling.",
+      "what": "Require every source reference attached to a rule to resolve to a real file that can be opened as UTF-8 text.",
+      "why": "If the policy points at a file the UI cannot inspect, the rule becomes opaque and the repository loses its traceability moat.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "source-loadable"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-config",
+      "type": "dynamic-config",
+      "enabled": false,
+      "description": "Freeze hard-coded environment-specific paths and loopback endpoints that make the framework brittle.",
+      "what": "Require configuration and code to use runtime-derived values instead of absolute machine-specific paths or local-only hosts.",
+      "why": "Hard-coded paths and loopback endpoints break portability and make the framework behave like a one-machine patchwork instead of a reusable system.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "dynamic-config"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "merge-conflict-markers",
+      "type": "merge-conflict-markers",
+      "enabled": true,
+      "description": "Freeze unresolved git merge conflict markers so half-merged files never reach a commit.",
+      "what": "Reject files that still contain git conflict markers left behind by an incomplete merge or rebase.",
+      "why": "Conflict markers mean the file is in a broken, half-merged state that will not run and pollutes history if committed.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "merge-conflict-markers"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "secret-scan",
+      "type": "secret-scan",
+      "enabled": true,
+      "description": "Freeze high-confidence credentials so secrets are never committed into source.",
+      "what": "Reject files that contain recognizable API keys, tokens, or private key blocks from common providers.",
+      "why": "Committed secrets are a serious security incident: they leak into history, mirrors, and backups and must be rotated once exposed.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "secret-scan"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "debug-artifacts",
+      "type": "debug-artifacts",
+      "enabled": false,
+      "description": "Freeze leftover debugging statements so temporary instrumentation never ships.",
+      "what": "Reject debugger/console/breakpoint statements that were added for local debugging and never removed.",
+      "why": "Debug artifacts leak noise into production, can pause execution, and signal that a change was not cleaned up before committing.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "debug-artifacts"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "trailing-whitespace",
+      "type": "trailing-whitespace",
+      "enabled": true,
+      "description": "Freeze trailing whitespace so diffs stay clean and noise-free.",
+      "what": "Reject lines that end with stray spaces or tabs.",
+      "why": "Trailing whitespace creates noisy diffs, inconsistent formatting, and accidental churn that distracts from real review.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "trailing-whitespace"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "final-newline",
+      "type": "final-newline",
+      "enabled": true,
+      "description": "Freeze files that do not end with a newline so tooling and diffs behave predictably.",
+      "what": "Reject non-empty files whose final line is not terminated with a newline.",
+      "why": "A missing final newline produces noisy 'no newline at end of file' diffs and breaks some POSIX tools that expect newline-terminated text.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "final-newline"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-syntax",
+      "type": "python-syntax",
+      "enabled": true,
+      "description": "Freeze Python files that fail to parse.",
+      "what": "Reject any .py file that raises a SyntaxError when parsed.",
+      "why": "A file that does not parse is broken and cannot run; catching it at commit time prevents shipping dead code.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-syntax"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-bare-except",
+      "type": "python-bare-except",
+      "enabled": true,
+      "description": "Freeze bare 'except:' clauses in Python.",
+      "what": "Reject except handlers that do not name an exception type.",
+      "why": "Bare excepts swallow every error including KeyboardInterrupt and SystemExit, hiding real failures.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-bare-except"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-broad-except",
+      "type": "python-broad-except",
+      "enabled": true,
+      "description": "Freeze overly broad exception handlers in Python.",
+      "what": "Flag 'except Exception' and 'except BaseException' handlers.",
+      "why": "Catching the broadest exceptions masks bugs and makes failures hard to diagnose; catch specific errors instead.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-broad-except"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-mutable-default",
+      "type": "python-mutable-default",
+      "enabled": true,
+      "description": "Freeze mutable default arguments in Python functions.",
+      "what": "Flag function defaults that are a list, dict, or set literal or constructor.",
+      "why": "Mutable defaults are created once and shared across calls, a classic source of state-leak bugs.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-mutable-default"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-eval-exec",
+      "type": "python-eval-exec",
+      "enabled": true,
+      "description": "Freeze use of eval and exec in Python.",
+      "what": "Flag calls to eval() or exec().",
+      "why": "Dynamic execution of strings is a code-injection risk and almost always avoidable.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-eval-exec"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-function-args",
+      "type": "python-function-args",
+      "enabled": true,
+      "severity": "warning",
+      "max_args": 6,
+      "description": "Surface Python functions that take too many parameters.",
+      "what": "Warn when a function or method exceeds the configured parameter count (self/cls excluded).",
+      "why": "Long parameter lists signal a function doing too much and are hard to call correctly.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-function-args"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-function-length",
+      "type": "python-function-length",
+      "enabled": true,
+      "severity": "warning",
+      "max_lines": 60,
+      "description": "Surface overly long Python functions.",
+      "what": "Warn when a function body exceeds the configured line count.",
+      "why": "Long functions are harder to test and review; they usually hide several responsibilities.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-function-length"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "python-nesting-depth",
+      "type": "python-nesting-depth",
+      "enabled": true,
+      "severity": "warning",
+      "max_depth": 4,
+      "description": "Surface deeply nested Python control flow.",
+      "what": "Warn when control-flow blocks nest deeper than the configured depth inside a function.",
+      "why": "Deep nesting increases cyclomatic complexity and makes logic hard to follow; prefer early returns and helpers.",
+      "source_refs": [
+        {
+          "label": "Rule guide",
+          "path": "docs/hygiene-rules.md",
+          "kind": "doc",
+          "anchor": "python-nesting-depth"
+        },
+        {
+          "label": "Rule source",
+          "path": "sbg_manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    }
+  ]
+}

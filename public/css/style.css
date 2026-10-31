@@ -69,3 +69,11 @@
 
 /* Party Planning Dashboard template */
 @import url('./templates/party.css');
+
+/* SpamApply1 dbg gate helper classes */
+.settings-hint-compact { margin: -0.5rem 0 0.5rem; font-size: 0.8rem; color: var(--text-muted); }
+.flex-row-fill { display: flex; gap: 0.5rem; align-items: center; flex: 1; }
+.flex-1 { flex: 1; }
+.recipe-import-heading { margin: 0 0 8px; font-size: 0.85rem; color: #ea580c; }
+.recipe-import-desc { margin: 0 0 8px; font-size: 0.82rem; }
+.picker-divider { margin: 16px 0; border: none; border-top: 1px solid var(--color-border); }

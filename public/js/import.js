@@ -1,11 +1,11 @@
 /* ============================================================
    import.js — Import existing Google Sheets into WayMark
-   
+
    Uses code-based template detection from column headers,
    with manual column mapping for user control. Detects
    the best template match and lets users override both
    the template choice and individual column assignments.
-   
+
    Imports are stored under Waymark/Imports/<template-type>/.
    ============================================================ */
 

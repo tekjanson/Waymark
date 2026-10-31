@@ -25,11 +25,11 @@ let _currentModel = 'claude';
  */
 export async function initializeModelSwap(options = {}) {
   const { enabled = true } = options;
-  
+
   if (_vaultInitialized) return _vaultCache;
-  
+
   _vaultCache = {};
-  
+
   // Load saved model preference
   try {
     _currentModel = getAgentProvider();
@@ -37,18 +37,18 @@ export async function initializeModelSwap(options = {}) {
     console.warn('Failed to load model preference:', e.message);
     _currentModel = 'claude';
   }
-  
+
   // Load credentials from environment variables (only in Node.js environment)
   if (typeof process !== 'undefined' && process.env) {
     _vaultCache.claude = process.env.ANTHROPIC_API_KEY || null;
     _vaultCache.gemini = process.env.GOOGLE_GEMINI_API_KEY || null;
     _vaultCache.openai = process.env.OPENAI_API_KEY || null;
   }
-  
+
   // Also check window globals (injected at runtime in browser)
   _vaultCache.claude = _vaultCache.claude || (typeof window !== 'undefined' && window.__WAYMARK_CLAUDE_KEY) || null;
   _vaultCache.gemini = _vaultCache.gemini || (typeof window !== 'undefined' && window.__WAYMARK_GEMINI_KEY) || null;
-  
+
   _vaultInitialized = true;
   return _vaultCache;
 }
@@ -90,12 +90,12 @@ export function getModelKey(service) {
   if (!_vaultInitialized) {
     console.warn('Model swap not initialized. Call initializeModelSwap() first.');
     const key = service.toLowerCase();
-    const envKey = (typeof process !== 'undefined' && process.env) 
+    const envKey = (typeof process !== 'undefined' && process.env)
       ? process.env[`${key.toUpperCase()}_API_KEY`]
       : null;
     return envKey || (typeof window !== 'undefined' && window[`__WAYMARK_${key.toUpperCase()}_KEY`]) || null;
   }
-  
+
   const key = service.toLowerCase();
   return _vaultCache[key] || null;
 }

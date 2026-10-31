@@ -1,3 +1,8 @@
+
+let _shareActionDelegate = null;
+export function setShareActionDelegate(delegate) {
+  _shareActionDelegate = delegate;
+}
 /* ============================================================
    notifications.js — In-app notification bell, template & custom
    rule evaluation, and two-way Push Notification Sheet sync.
@@ -961,7 +966,7 @@ async function _handleShareDecision(e, n, action) {
   buttons.forEach(b => { b.disabled = true; });
   const ui = await import('./ui.js');
   try {
-    const collab = await import('./collab.js');
+    const collab = _shareActionDelegate || (typeof window !== 'undefined' && window.__WAYMARK_COLLAB); if (!collab) throw new Error('Collaboration subsystem not initialized');
     if (action === 'accept') {
       const ok = await collab.acceptSharedWaymark({
         docId: n.sheetId,

@@ -1,6 +1,6 @@
 /* ============================================================
    templates/shared.js — Shared utilities for template renderers
-   
+
    Provides cell access, edit callbacks, and the template
    registry that individual template modules register into.
    ============================================================ */

@@ -373,7 +373,7 @@ const definition = {
               // Prefer definition property; fall back to hash URL
               const spreadsheetId = definition._currentSheetId
                 || (window.location.hash.match(/#\/sheet\/([^/]+)/)?.[1] ?? null);
-              
+
               if (!spreadsheetId) {
                 showToast('Could not delete: spreadsheet ID not available', 'error');
                 deleteModal.classList.add('hidden');
@@ -384,7 +384,7 @@ const definition = {
               await api.sheets.deleteRows(spreadsheetId, sheetId, rowIdx, rowIdx + 1);
               showToast(`Agent "${name}" deleted`, 'success');
               deleteModal.classList.add('hidden');
-              
+
               // Reload the sheet to reflect changes
               setTimeout(() => window.location.hash = window.location.hash, 100);
             } catch (err) {

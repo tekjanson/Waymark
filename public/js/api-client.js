@@ -1,9 +1,9 @@
 /* ============================================================
    api-client.js — THE critical abstraction layer
-   
+
    In production mode → delegates to drive.js, sheets.js,
    auth.js (which call real Google APIs).
-   
+
    In local/mock mode → fetches fixture data from the
    server's /__fixtures/ endpoint and uses canned responses.
    Created records are stored in window.__WAYMARK_RECORDS

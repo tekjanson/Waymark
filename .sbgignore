@@ -1,0 +1,17 @@
+node_modules/
+public/js/vendor/
+public/data/
+playwright-report/
+test-results/
+tests/
+android/
+dev-worker/
+generated/
+docs/
+.github/
+agent-templates/
+scripts/
+p2p-server/
+mosquitto/
+nginx/
+terraform/

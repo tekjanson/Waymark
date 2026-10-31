@@ -1,6 +1,6 @@
 /* ============================================================
    tutorial.js — Guided onboarding tutorial for WayMark
-   
+
    Walks new users through the app's purpose and key features
    with spotlight highlights and tooltip explanations.
    Also provides per-template contextual tutorials.
