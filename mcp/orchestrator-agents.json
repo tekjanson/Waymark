@@ -99,6 +99,13 @@
     { "keywords": ["community linker", "resource links", "curated links"], "agent": "waymark-linker" },
     { "keywords": ["test cases", "qa cases", "test plan", "acceptance criteria"], "agent": "waymark-testcases" },
     { "keywords": ["worker jobs", "tasks queue", "job management"], "agent": "waymark-worker" },
+    { "keywords": ["notification", "alerts", "reminders", "announcements"], "agent": "waymark-notification" },
+    { "keywords": ["general ledger", "accounting ledger", "profit and loss", "p&l", "double entry"], "agent": "waymark-ledger" },
+    { "keywords": ["invoice", "invoicing", "billing", "client bill", "line items"], "agent": "waymark-invoice" },
+    { "keywords": ["ai agents", "agent fleet", "agent status", "autonomous agents"], "agent": "waymark-agents" },
+    { "keywords": ["calorie tracker", "food log", "macro tracker", "daily calories", "nutrition log"], "agent": "waymark-calorie" },
+    { "keywords": ["party planner", "event planner", "guest list", "rsvp", "party menu"], "agent": "waymark-party" },
+    { "keywords": ["floor plan", "room layout", "blueprint", "polygons", "seating layout"], "agent": "waymark-floorplan" },
     { "keywords": ["checklist", "todo list", "to-do"], "agent": "waymark-checklist" }
   ]
 }

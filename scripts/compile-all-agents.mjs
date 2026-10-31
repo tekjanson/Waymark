@@ -69,10 +69,16 @@ const DEFAULT_HEADERS = {
   passwords:    ["Site", "Username", "Password", "URL", "Category", "Notes"],
   linker:       ["Name", "Description", "Link", "Type", "Tags", "Icon"],
   marketing:    ["Post", "Platform", "Status", "Topic", "Posted Date", "Likes", "Shares", "Comments", "Views", "Link", "Takeaway"],
-  arcade:       ["Game", "Player 1", "Player 2", "Score", "Status"],
-  worker:       ["Job", "Handler", "Config", "Status", "Schedule"],
+  arcade:       ["Game", "Player 1", "Player 2", "Result", "Mode", "Date"],
+  worker:       ["Job", "Handler", "Status", "Schedule", "Input", "Output", "LastRun", "Logs"],
   photos:       ["Photo", "Title", "Date", "Album", "Description"],
-  blog:         ["Title", "Doc", "Date", "Author", "Category"],
+  blog:         ["Title", "Doc", "Date", "Author", "Category", "Status"],
+  agents:       ["Name", "Model", "Provider", "Status", "Tuning", "Task", "Project", "Heartbeat", "Workboard", "Command"],
+  ledger:       ["Entry", "Type", "Category", "Date", "Amount", "Counterparty", "Reference", "Status", "TaxCategory", "Notes"],
+  invoice:      ["Invoice #", "Client", "Client Email", "Client Address", "Issue Date", "Due Date", "Status", "Item", "Category", "Qty", "Unit Price", "Tax %", "Discount", "Notes"],
+  calorie:      ["Food", "Meal", "Calories", "Protein", "Carbs", "Fat", "Date", "Servings", "Notes"],
+  party:        ["Party Details", "Value", "Notes"],
+  floorplan:    ["Room Name", "Type", "Points", "Doors", "Windows", "Color", "Notes"],
 };
 
 function buildStatesBlock(tmpl) {
@@ -215,32 +221,61 @@ if (generic.length > 0) {
   generic.forEach(r => console.log(`  ${r.key}`));
 }
 
-// ── Master AGY Orchestrator Skill ─────────────────────────────────────
+// ── Master AGY Orchestrator & Files Skills ────────────────────────────
 
 const orchSkillDir = path.join(SKILLS_DIR, "waymark-orchestrator");
 mkdirSync(orchSkillDir, { recursive: true });
 const orchSkillContent = `---
 name: waymark-orchestrator
 description: >-
-  Use this skill to orchestrate, route, and execute tasks across all 35 Waymark template types using Gemini Flash and Waymark MCP tools.
+  Use this skill to orchestrate, route, and execute tasks across all 41 Waymark template types using Gemini Flash and Waymark MCP tools.
 ---
 
 # Waymark Orchestrator Skill
 
-You are the Waymark Orchestrator. You help users create, view, organize, and update sheets across all 35 Waymark template types.
+You are the Waymark Orchestrator. You help users create, view, search, organize, and update sheets and documents across all 41 Waymark template types.
 
-## Available Capabilities
-1. Create new sheets using \`waymark_create_sheet(title, templateKey, initialEntries)\`.
-2. Inspect sheets using \`waymark_get_sheet(spreadsheetId, sheetTitle)\`.
-3. Add rows using \`waymark_add_entry(spreadsheetId, entry, sheetTitle)\`.
-4. Update rows using \`waymark_update_entry(spreadsheetId, rowIndex, updates, sheetTitle)\`.
-5. Share sheets using \`waymark_share_sheet(spreadsheetId, email, role)\`.
+## Available Waymark MCP Tools
+1. \`waymark_list_templates({})\` — List all Waymark templates and their column roles.
+2. \`waymark_detect_template({ headers })\` — Detect the best Waymark template for a row of headers.
+3. \`waymark_list_files({ query?, type?, maxResults? })\` — Discover existing spreadsheets and Google Docs in Drive.
+4. \`waymark_create_sheet({ templateKey, title, seedRows?, shareWith?, parentFolderId? })\` — Create a new Waymark spreadsheet with proper headers and optional initial rows.
+5. \`waymark_get_sheet({ spreadsheetId, sheetTitle?, maxRows? })\` — Read a spreadsheet with automatic template detection and column role mapping.
+6. \`waymark_search_entries({ spreadsheetId, query, role?, sheetTitle? })\` — Search rows in a sheet by keyword or column role without loading the entire sheet.
+7. \`waymark_add_entry({ spreadsheetId, entry, sheetTitle? })\` — Append a new row mapped by column role names.
+8. \`waymark_update_entry({ spreadsheetId, rowIndex, updates, sheetTitle? })\` — Update specific column roles on a 0-based data row index.
+9. \`waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })\` — Share a spreadsheet with collaborators.
+10. \`waymark_create_doc({ title, body?, parentFolderId?, shareWith? })\` — Create a Google Doc.
+11. \`waymark_get_doc({ documentId })\` — Read a Google Doc's title and plain text body.
+12. \`waymark_append_doc({ documentId, text })\` — Append text to the end of a Google Doc.
 
 ## Routing & Progressive Disclosure
-Always identify the relevant template skill (e.g. \`waymark-budget\`, \`waymark-kanban\`, \`waymark-travel\`) and follow its domain rules, column roles, and state cycles.
+Always identify the relevant template skill (e.g. \`waymark-budget\`, \`waymark-kanban\`, \`waymark-travel\`, \`waymark-party\`) and follow its domain rules, column roles, and state cycles.
 `;
 writeFileSync(path.join(orchSkillDir, "SKILL.md"), orchSkillContent, "utf8");
 console.log(`  ✓ compiled .agents/skills/waymark-orchestrator/SKILL.md`);
+
+const filesSkillDir = path.join(SKILLS_DIR, "waymark-files");
+mkdirSync(filesSkillDir, { recursive: true });
+const filesSkillContent = `---
+name: waymark-files
+description: >-
+  Use this skill to discover, search, read, create, and manage Google Drive spreadsheets and Google Docs in Waymark.
+---
+
+# Waymark Files & Documents Skill
+
+You are the Waymark File & Document specialist. Use this skill when the user wants to find existing spreadsheets or documents, search across entries, or read/write Google Docs.
+
+## Available File & Document MCP Tools
+- **\`waymark_list_files({ query, type, maxResults })\`**: List or search spreadsheets and docs in Google Drive. \`type\` can be \`"all"\`, \`"sheets"\`, or \`"docs"\`.
+- **\`waymark_search_entries({ spreadsheetId, query, role, sheetTitle })\`**: Search rows in a spreadsheet by keyword (optionally restricted to a specific column \`role\`).
+- **\`waymark_get_doc({ documentId })\`**: Read the full plain-text content of a Google Doc.
+- **\`waymark_create_doc({ title, body, parentFolderId, shareWith })\`**: Create a new Google Doc and optionally link it in a \`blog\` or \`knowledge\` sheet.
+- **\`waymark_append_doc({ documentId, text })\`**: Append new paragraphs or notes to an existing Google Doc.
+`;
+writeFileSync(path.join(filesSkillDir, "SKILL.md"), filesSkillContent, "utf8");
+console.log(`  ✓ compiled .agents/skills/waymark-files/SKILL.md`);
 
 // ── Worker skills: builder + qa ───────────────────────────────────────
 
@@ -291,14 +326,12 @@ try {
   }
 } catch { /* use defaults */ }
 
-const catalog = {
-  version: "1.0.0",
-  generatedAt: new Date().toISOString(),
-  fallbackAgent: agentsConfig.fallbackAgent || "waymark-builder",
-  keywordRoutes: agentsConfig.keywordRoutes || [],
-  codeKeywords: agentsConfig.codeKeywords || [],
-  builderLabels: agentsConfig.builderLabels || [],
-  templates: registry.templates.map(t => ({
+const uniqueTemplates = [];
+const seenKeys = new Set();
+for (const t of registry.templates) {
+  if (seenKeys.has(t.key)) continue;
+  seenKeys.add(t.key);
+  uniqueTemplates.push({
     key: t.key,
     name: t.name,
     category: t.category || "General",
@@ -307,7 +340,17 @@ const catalog = {
     columnRoles: t.columnRoles || [],
     defaultHeaders: DEFAULT_HEADERS[t.key] || t.columnRoles || [],
     detectSignals: t.detectSignals || [],
-  })),
+  });
+}
+
+const catalog = {
+  version: "1.0.0",
+  generatedAt: new Date().toISOString(),
+  fallbackAgent: agentsConfig.fallbackAgent || "waymark-builder",
+  keywordRoutes: agentsConfig.keywordRoutes || [],
+  codeKeywords: agentsConfig.codeKeywords || [],
+  builderLabels: agentsConfig.builderLabels || [],
+  templates: uniqueTemplates,
 };
 
 mkdirSync(GENERATED_DIR, { recursive: true });

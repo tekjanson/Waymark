@@ -39,7 +39,7 @@ This is the authoritative column mapping for Floor Plan sheets. When reading or 
 
 **Default headers when creating a new Floor Plan sheet:**
 ```
-type, label, layer, x, y, width, height, length, notes
+Room Name, Type, Points, Doors, Windows, Color, Notes
 ```
 
 **Detection signals** — headers that indicate a sheet is a Floor Plan:
@@ -57,40 +57,28 @@ This template has no state machine. The interaction type is `dashboard` — cell
 
 ## 3. DOMAIN KNOWLEDGE — Floor Plan
 
-# Floor Plan — Generic Domain Knowledge
+# Floor Plan — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/floorplan.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/floorplan.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A parametric 2D/3D architectural floor plan and room layout designer (`waymark-floorplan`). Each row defines a spatial element (room, wall, door, window, furniture, fixture, electrical, or plumbing element) with coordinates and dimensions in feet.
 
-## General Operations
+## Column Role Semantics
+- `type` — Element type (`Room`, `Wall`, `Door`, `Window`, `Fixture`, `Furniture`, `Electrical`, `Plumbing`, `Zone`, `Stair`).
+- `label` — Human-readable name (e.g., `Living Room`, `Kitchen Island`, `Primary Bedroom`, `Front Door`).
+- `layer` — Architectural layer (`Structure`, `Rooms`, `Openings`, `Fixtures`, `Furniture`, `Electrical`, `Plumbing`, `Annotations`).
+- `x` — Horizontal X position in feet from origin (`0` = left edge).
+- `y` — Vertical Y position in feet from origin (`0` = top edge).
+- `width` — Width (X span) in feet.
+- `height` — Ceiling/wall height (Z span) in feet (typically `8` or `9` for rooms/walls, `3` for counters).
+- `length` — Depth/length (Y span) in feet.
+- `notes` — Material, finish, color, circuit, or specification notes.
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
+## Smart Operations
 
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
-
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+### Designing a Cohesive Layout
+- Avoid unintentionally overlapping rooms on the `Rooms` / `Structure` layer: place adjacent rooms so their `(x, y)` coordinates and `(width, length)` spans abut cleanly (e.g., Room A at `x=0, y=0, width=16, length=14` and adjacent Room B at `x=16, y=0, width=12, length=14`).
+- Place `Furniture` and `Fixture` elements inside the bounding box `[x, x + width] × [y, y + length]` of their parent room.
+- Place `Door` and `Window` elements along room boundary walls.
 
 ---
 

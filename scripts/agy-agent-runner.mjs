@@ -53,14 +53,37 @@ export function extractDocId(text) {
 }
 
 /**
- * Extract all created/modified file references from text.
+ * Extract all created/modified file references and optional titles from text.
  * @param {string} text
- * @returns {{ sheetId: string|null, docId: string|null }}
+ * @returns {{ sheetId: string|null, docId: string|null, sheetTitle: string|null, docTitle: string|null }}
  */
 export function extractFileReferences(text) {
+  const sheetId = extractSpreadsheetId(text);
+  const docId = extractDocId(text);
+  let sheetTitle = null;
+  let docTitle = null;
+
+  if (text) {
+    const mdSheet = text.match(/\[([^\]]+)\]\((?:#\/(?:sheet|public)\/|https?:\/\/[^\s)]*\/spreadsheets\/d\/)[a-zA-Z0-9_-]{25,}/);
+    if (mdSheet && mdSheet[1]) sheetTitle = mdSheet[1].trim();
+
+    const mdDoc = text.match(/\[([^\]]+)\]\(https?:\/\/[^\s)]*\/document\/d\/[a-zA-Z0-9_-]{25,}/);
+    if (mdDoc && mdDoc[1]) docTitle = mdDoc[1].trim();
+
+    if (!sheetTitle && !docTitle) {
+      const jsonTitle = text.match(/"title":\s*"([^"]+)"/);
+      if (jsonTitle && jsonTitle[1]) {
+        if (sheetId) sheetTitle = jsonTitle[1].trim();
+        if (docId) docTitle = jsonTitle[1].trim();
+      }
+    }
+  }
+
   return {
-    sheetId: extractSpreadsheetId(text),
-    docId: extractDocId(text),
+    sheetId,
+    docId,
+    sheetTitle,
+    docTitle,
   };
 }
 
@@ -146,15 +169,18 @@ export async function runAgyTask({
     });
 
     const output = (stdout || '').trim();
-    const detectedSheetId = sheetId || extractSpreadsheetId(output);
-    const detectedDocId = extractDocId(output);
+    const refs = extractFileReferences(output);
+    const detectedSheetId = sheetId || refs.sheetId;
+    const detectedDocId = refs.docId;
     const durationMs = Date.now() - start;
 
     return {
       ok: true,
       output,
       sheetId: detectedSheetId,
+      sheetTitle: refs.sheetTitle,
       docId: detectedDocId,
+      docTitle: refs.docTitle,
       templateKey,
       durationMs,
     };
@@ -181,10 +207,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   let sheetId = null;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--task' && args[i + 1]) { task = args[++i]; }
-    else if (args[i] === '--template' && args[i + 1]) { templateKey = args[++i]; }
-    else if (args[i] === '--sheet' && args[i + 1]) { sheetId = args[++i]; }
-    else if (!task && !args[i].startsWith('--')) { task = args[i]; }
+    if ((args[i] === '--task' || args[i] === '-m' || args[i] === '--message' || args[i] === '-p' || args[i] === '--prompt') && args[i + 1]) {
+      task = args[++i];
+    } else if (args[i] === '--template' && args[i + 1]) {
+      templateKey = args[++i];
+    } else if (args[i] === '--sheet' && args[i + 1]) {
+      sheetId = args[++i];
+    } else if (!task && !args[i].startsWith('-')) {
+      task = args[i];
+    }
   }
 
   if (!task) {

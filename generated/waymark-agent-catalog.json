@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-10-31T13:33:20.760Z",
+  "generatedAt": "2026-10-31T21:40:37.427Z",
   "fallbackAgent": "waymark-builder",
   "keywordRoutes": [
     {
@@ -313,6 +313,74 @@
         "job management"
       ],
       "agent": "waymark-worker"
+    },
+    {
+      "keywords": [
+        "notification",
+        "alerts",
+        "reminders",
+        "announcements"
+      ],
+      "agent": "waymark-notification"
+    },
+    {
+      "keywords": [
+        "general ledger",
+        "accounting ledger",
+        "profit and loss",
+        "p&l",
+        "double entry"
+      ],
+      "agent": "waymark-ledger"
+    },
+    {
+      "keywords": [
+        "invoice",
+        "invoicing",
+        "billing",
+        "client bill",
+        "line items"
+      ],
+      "agent": "waymark-invoice"
+    },
+    {
+      "keywords": [
+        "ai agents",
+        "agent fleet",
+        "agent status",
+        "autonomous agents"
+      ],
+      "agent": "waymark-agents"
+    },
+    {
+      "keywords": [
+        "calorie tracker",
+        "food log",
+        "macro tracker",
+        "daily calories",
+        "nutrition log"
+      ],
+      "agent": "waymark-calorie"
+    },
+    {
+      "keywords": [
+        "party planner",
+        "event planner",
+        "guest list",
+        "rsvp",
+        "party menu"
+      ],
+      "agent": "waymark-party"
+    },
+    {
+      "keywords": [
+        "floor plan",
+        "room layout",
+        "blueprint",
+        "polygons",
+        "seating layout"
+      ],
+      "agent": "waymark-floorplan"
     },
     {
       "keywords": [
@@ -1496,8 +1564,9 @@
         "Game",
         "Player 1",
         "Player 2",
-        "Score",
-        "Status"
+        "Result",
+        "Mode",
+        "Date"
       ],
       "detectSignals": [
         "arcade",
@@ -1524,9 +1593,12 @@
       "defaultHeaders": [
         "Job",
         "Handler",
-        "Config",
         "Status",
-        "Schedule"
+        "Schedule",
+        "Input",
+        "Output",
+        "LastRun",
+        "Logs"
       ],
       "detectSignals": [
         "job",
@@ -1583,7 +1655,8 @@
         "Doc",
         "Date",
         "Author",
-        "Category"
+        "Category",
+        "Status"
       ],
       "detectSignals": [
         "blog",
@@ -1610,13 +1683,16 @@
         "balance"
       ],
       "defaultHeaders": [
-        "date",
-        "type",
-        "category",
-        "text",
-        "amount",
-        "reference",
-        "balance"
+        "Entry",
+        "Type",
+        "Category",
+        "Date",
+        "Amount",
+        "Counterparty",
+        "Reference",
+        "Status",
+        "TaxCategory",
+        "Notes"
       ],
       "detectSignals": [
         "reference",
@@ -1654,15 +1730,20 @@
         "notes"
       ],
       "defaultHeaders": [
-        "invoice",
-        "client",
-        "date",
-        "due",
-        "status",
-        "item",
-        "qty",
-        "unitPrice",
-        "notes"
+        "Invoice #",
+        "Client",
+        "Client Email",
+        "Client Address",
+        "Issue Date",
+        "Due Date",
+        "Status",
+        "Item",
+        "Category",
+        "Qty",
+        "Unit Price",
+        "Tax %",
+        "Discount",
+        "Notes"
       ],
       "detectSignals": [
         "invoice",
@@ -1673,39 +1754,6 @@
         "due date",
         "unit price",
         "qty"
-      ]
-    },
-    {
-      "key": "passwords",
-      "name": "Password Manager",
-      "category": "Security",
-      "interactionType": "inline-edit",
-      "interactionStates": [],
-      "columnRoles": [
-        "site",
-        "username",
-        "password",
-        "url",
-        "category",
-        "notes"
-      ],
-      "defaultHeaders": [
-        "Site",
-        "Username",
-        "Password",
-        "URL",
-        "Category",
-        "Notes"
-      ],
-      "detectSignals": [
-        "password",
-        "passwd",
-        "secret",
-        "credential",
-        "site",
-        "service",
-        "username",
-        "login"
       ]
     },
     {
@@ -1727,16 +1775,16 @@
         "command"
       ],
       "defaultHeaders": [
-        "name",
-        "model",
-        "provider",
-        "status",
-        "tuning",
-        "task",
-        "project",
-        "heartbeat",
-        "workboard",
-        "command"
+        "Name",
+        "Model",
+        "Provider",
+        "Status",
+        "Tuning",
+        "Task",
+        "Project",
+        "Heartbeat",
+        "Workboard",
+        "Command"
       ],
       "detectSignals": [
         "tuning",
@@ -1766,17 +1814,15 @@
         "target"
       ],
       "defaultHeaders": [
-        "date",
-        "meal",
-        "item",
-        "qty",
-        "unit",
-        "calories",
-        "protein",
-        "carbs",
-        "fat",
-        "burned",
-        "target"
+        "Food",
+        "Meal",
+        "Calories",
+        "Protein",
+        "Carbs",
+        "Fat",
+        "Date",
+        "Servings",
+        "Notes"
       ],
       "detectSignals": [
         "date",
@@ -1806,12 +1852,9 @@
         "host"
       ],
       "defaultHeaders": [
-        "party",
-        "guestOfHonor",
-        "date",
-        "theme",
-        "venue",
-        "host"
+        "Party Details",
+        "Value",
+        "Notes"
       ],
       "detectSignals": [
         "party",
@@ -1840,15 +1883,13 @@
         "notes"
       ],
       "defaultHeaders": [
-        "type",
-        "label",
-        "layer",
-        "x",
-        "y",
-        "width",
-        "height",
-        "length",
-        "notes"
+        "Room Name",
+        "Type",
+        "Points",
+        "Doors",
+        "Windows",
+        "Color",
+        "Notes"
       ],
       "detectSignals": [
         "type",

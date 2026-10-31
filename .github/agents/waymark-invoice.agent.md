@@ -41,7 +41,7 @@ This is the authoritative column mapping for Invoice sheets. When reading or wri
 
 **Default headers when creating a new Invoice sheet:**
 ```
-invoice, client, date, due, status, item, qty, unitPrice, notes
+Invoice #, Client, Client Email, Client Address, Issue Date, Due Date, Status, Item, Category, Qty, Unit Price, Tax %, Discount, Notes
 ```
 
 **Detection signals** — headers that indicate a sheet is a Invoice:
@@ -71,40 +71,31 @@ After the last state, cycling wraps back to the first. Only write values from th
 
 ## 3. DOMAIN KNOWLEDGE — Invoice
 
-# Invoice — Generic Domain Knowledge
+# Invoice — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/invoice.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/invoice.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A billing and invoicing tracker where rows represent invoice line items or standalone client invoices. Multiple rows sharing the same `invoice` number (`Invoice #`) are grouped into a single printable invoice document in Waymark.
 
-## General Operations
+## Column Role Semantics
+- `invoice` — Invoice identifier (e.g., `INV-2026-001`). Rows with the same `invoice` value belong to the same invoice.
+- `client` — Client or customer name/company.
+- `date` — Issue date (`YYYY-MM-DD`).
+- `due` — Payment due date (`YYYY-MM-DD`, typically Net 15 or Net 30 from issue date).
+- `status` — Lifecycle state (`Draft` → `Sent` → `Viewed` → `Paid` → `Overdue` → `Cancelled`).
+- `item` — Line item description / deliverable.
+- `qty` — Quantity or hours billed.
+- `unitPrice` — Price per unit or hourly rate (line total is `qty * unitPrice`).
+- `notes` — Payment terms, PO number, or line-item notes.
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
+## Smart Operations
 
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
+### Creating or Appending an Invoice
+- When creating a multi-line invoice, use the same `invoice`, `client`, `date`, `due`, and `status` across all line-item rows for that invoice.
+- Only write valid states (`Draft`, `Sent`, `Viewed`, `Paid`, `Overdue`, `Cancelled`) to `status`.
 
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+### Receivables Summary
+- Group rows by `invoice`, summing `qty * unitPrice` per invoice.
+- Report total billed, total `Paid`, total outstanding (`Sent` + `Viewed`), and total `Overdue`.
 
 ---
 
@@ -154,7 +145,7 @@ When the orchestrator asks you to set up a new Invoice sheet:
 waymark_create_sheet(templateKey: "invoice", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `invoice`: `invoice, client, date, due, status, item, qty, unitPrice, notes`.
+The server uses the default headers for `invoice`: `Invoice #, Client, Client Email, Client Address, Issue Date, Due Date, Status, Item, Category, Qty, Unit Price, Tax %, Discount, Notes`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "invoice"`.
 
 ---

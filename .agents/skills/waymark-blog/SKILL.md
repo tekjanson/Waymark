@@ -36,7 +36,7 @@ This is the authoritative column mapping for Blog sheets. When reading or writin
 
 **Default headers when creating a new Blog sheet:**
 ```
-Title, Doc, Date, Author, Category
+Title, Doc, Date, Author, Category, Status
 ```
 
 **Detection signals** — headers that indicate a sheet is a Blog:

@@ -41,7 +41,7 @@ This is the authoritative column mapping for Calorie & Fitness Tracker sheets. W
 
 **Default headers when creating a new Calorie & Fitness Tracker sheet:**
 ```
-date, meal, item, qty, unit, calories, protein, carbs, fat, burned, target
+Food, Meal, Calories, Protein, Carbs, Fat, Date, Servings, Notes
 ```
 
 **Detection signals** — headers that indicate a sheet is a Calorie & Fitness Tracker:
@@ -59,40 +59,30 @@ This template has no state machine. The interaction type is `dashboard` — cell
 
 ## 3. DOMAIN KNOWLEDGE — Calorie & Fitness Tracker
 
-# Calorie & Fitness Tracker — Generic Domain Knowledge
+# Calorie & Fitness Tracker — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/calorie.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/calorie.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A daily nutrition, macronutrient, and exercise calorie expenditure tracker (`waymark-calorie`). Renders an interactive health dashboard with daily calorie balance (intake minus burned vs. target) and macro breakdowns (protein, carbs, fat).
 
-## General Operations
+## Column Role Semantics
+- `date` — Entry date (`YYYY-MM-DD`).
+- `meal` — Meal slot or activity category (`Breakfast`, `Lunch`, `Dinner`, `Snack`, `Exercise`).
+- `item` — Food item or workout activity name (e.g., `Greek Yogurt & Berries`, `5k Morning Run`).
+- `qty` — Serving quantity or exercise duration.
+- `unit` — Serving unit (`g`, `oz`, `cup`, `serving`, `min`).
+- `calories` — Calorie intake (`kcal`) for food items (`0` for pure exercise rows).
+- `protein` — Protein in grams (`g`).
+- `carbs` — Carbohydrates in grams (`g`).
+- `fat` — Fat in grams (`g`).
+- `burned` — Calories burned through exercise (`kcal`, `0` or empty for food rows).
+- `target` — Daily net calorie target (e.g., `2000` or `2200`).
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
+## Smart Operations
 
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
-
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+### Logging Meals & Workouts
+- For food entries: populate `date`, `meal` (`Breakfast`/`Lunch`/`Dinner`/`Snack`), `item`, `qty`, `unit`, `calories`, `protein`, `carbs`, `fat`, and `target`.
+- For workouts: set `meal` to `Exercise`, populate `item`, `qty`, `unit` (e.g., `min`), `burned`, and set `calories` to `0`.
+- Sanity-check macros: `calories` should approximately equal `(protein * 4) + (carbs * 4) + (fat * 9)`.
 
 ---
 

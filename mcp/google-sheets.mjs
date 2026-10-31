@@ -78,18 +78,13 @@ async function getUserOAuthToken() {
 }
 
 async function getToken() {
-  if (auth) {
-    try {
-      const client = await auth.getClient();
-      const { token } = await client.getAccessToken();
-      return token;
-    } catch {
-      const userToken = await getUserOAuthToken();
-      if (userToken) return userToken;
-    }
-  }
   const userToken = await getUserOAuthToken();
   if (userToken) return userToken;
+  if (auth) {
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    return token;
+  }
   throw new Error("No Google authentication configured for google-sheets MCP. Set GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 

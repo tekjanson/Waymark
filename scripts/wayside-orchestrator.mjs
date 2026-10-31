@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { SheetWebRtcPeer } from '../mcp/sheet-webrtc-peer.mjs';
-import { runAgyTask } from './agy-agent-runner.mjs';
+import { runAgyTask, extractSpreadsheetId } from './agy-agent-runner.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -29,7 +29,10 @@ export const AGENT_NAME = process.env.WAYSIDE_AGENT_NAME || 'Waymark AI';
 export const AGENT_EMAIL = process.env.WAYSIDE_AGENT_EMAIL || 'assistant@waymark.internal';
 export const CHAT_TAB = 'Chat';
 export const SHARED_DOCS_TAB = 'Shared_Docs';
+export const PRESENCE_TAB = 'Presence';
+export const SIGNALING_TAB = 'WebRTC_Signaling';
 const POLL_INTERVAL_MS = parseInt(process.env.WAYSIDE_POLL_INTERVAL_MS || '4000', 10);
+const PRESENCE_INTERVAL_MS = parseInt(process.env.WAYSIDE_PRESENCE_INTERVAL_MS || '30000', 10);
 
 const CATALOG_PATH = path.join(ROOT, 'generated', 'waymark-agent-catalog.json');
 let CATALOG = { templates: [], keywordRoutes: [], fallbackAgent: 'waymark-builder' };
@@ -161,7 +164,18 @@ export async function readTabRows(sheetId, tabName) {
 }
 
 /**
- * Ensure Chat and Shared_Docs tabs exist with headers.
+ * Update a range in a spreadsheet tab.
+ */
+export async function updateTabRange(sheetId, range, rows) {
+  return sheetsApi(`/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
+    method: 'PUT',
+    body: { range, majorDimension: 'ROWS', values: rows },
+  });
+}
+
+/**
+ * Ensure Shared_Docs, Presence, Chat, and WebRTC_Signaling tabs exist with headers
+ * matching the 4-tab Share Ledger schema in public/js/collab.js.
  */
 export async function ensureLedgerStructure(sheetId) {
   try {
@@ -169,11 +183,10 @@ export async function ensureLedgerStructure(sheetId) {
     const existingTitles = new Set((meta.sheets || []).map(s => s.properties?.title));
 
     const requests = [];
-    if (!existingTitles.has(CHAT_TAB)) {
-      requests.push({ addSheet: { properties: { title: CHAT_TAB } } });
-    }
-    if (!existingTitles.has(SHARED_DOCS_TAB)) {
-      requests.push({ addSheet: { properties: { title: SHARED_DOCS_TAB } } });
+    for (const tab of [SHARED_DOCS_TAB, PRESENCE_TAB, CHAT_TAB, SIGNALING_TAB]) {
+      if (!existingTitles.has(tab)) {
+        requests.push({ addSheet: { properties: { title: tab } } });
+      }
     }
 
     if (requests.length > 0) {
@@ -184,22 +197,75 @@ export async function ensureLedgerStructure(sheetId) {
     }
 
     // Initialize headers if empty
-    const chatRows = await readTabRows(sheetId, CHAT_TAB);
-    if (chatRows.length === 0) {
-      await appendTabRows(sheetId, CHAT_TAB, [[
-        'Message_ID', 'Timestamp_UTC', 'Sender_Email', 'Target', 'Message_Text', 'Attached_Link'
-      ]]);
-    }
-
     const docRows = await readTabRows(sheetId, SHARED_DOCS_TAB);
     if (docRows.length === 0) {
       await appendTabRows(sheetId, SHARED_DOCS_TAB, [[
-        'Document_ID', 'Document_Title', 'Waymark_Type', 'Permission_Level', 'Shared_Date'
+        'Document_ID', 'Document_Title', 'Waymark_Type', 'Shared_With_Email', 'Group', 'Permission_Level', 'Shared_Timestamp', 'Status'
+      ]]);
+    }
+
+    const presenceRows = await readTabRows(sheetId, PRESENCE_TAB);
+    if (presenceRows.length === 0) {
+      await appendTabRows(sheetId, PRESENCE_TAB, [[
+        'User_Email', 'Display_Name', 'Group', 'Online_Status', 'Last_Heartbeat_UTC', 'Active_Waymark_ID'
+      ]]);
+    }
+
+    const chatRows = await readTabRows(sheetId, CHAT_TAB);
+    if (chatRows.length === 0) {
+      await appendTabRows(sheetId, CHAT_TAB, [[
+        'Message_ID', 'Timestamp_UTC', 'Sender_Email', 'Target_Group_Or_Contact', 'Message_Text', 'Attached_Waymark_Link'
+      ]]);
+    }
+
+    const sigRows = await readTabRows(sheetId, SIGNALING_TAB);
+    if (sigRows.length === 0) {
+      await appendTabRows(sheetId, SIGNALING_TAB, [[
+        'Session_ID', 'Caller_Email', 'Callee_Email', 'SDP_Offer_Answer_JSON', 'ICE_Candidates_JSON', 'Call_Status'
       ]]);
     }
   } catch (err) {
     console.warn(`[WaysideOrchestrator] Warning: Could not ensure ledger structure: ${err.message}`);
   }
+}
+
+/**
+ * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one.
+ * @returns {Promise<string>} spreadsheetId
+ */
+export async function discoverOrCreateWaysideLedger() {
+  const token = await getAuthToken();
+  const driveBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+  const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+  const url = `${driveBase}?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=20`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.ok) {
+    const data = await res.json();
+    const files = data.files || [];
+    const aiLedger = files.find(f => (f.name || '').includes(AGENT_EMAIL));
+    if (aiLedger?.id) return aiLedger.id;
+    if (files[0]?.id) return files[0].id;
+  }
+
+  // Create a dedicated Wayside Share Ledger
+  const title = `.waymark-ledger-contact-${AGENT_EMAIL}`;
+  const created = await sheetsApi('', {
+    method: 'POST',
+    body: {
+      properties: { title },
+      sheets: [
+        { properties: { title: SHARED_DOCS_TAB } },
+        { properties: { title: PRESENCE_TAB } },
+        { properties: { title: CHAT_TAB } },
+        { properties: { title: SIGNALING_TAB } },
+      ],
+    },
+  });
+  await ensureLedgerStructure(created.spreadsheetId);
+  return created.spreadsheetId;
 }
 
 /* ---------- Intent & Template Routing ---------- */
@@ -313,10 +379,13 @@ export class WaysideOrchestrator {
     this.agentName = opts.agentName || AGENT_NAME;
     this.agentEmail = opts.agentEmail || AGENT_EMAIL;
     this.pollIntervalMs = opts.pollIntervalMs || POLL_INTERVAL_MS;
+    this.presenceIntervalMs = opts.presenceIntervalMs || PRESENCE_INTERVAL_MS;
 
     this.peer = null;
     this.processedMessageIds = new Set();
+    this.conversations = new Map();
     this.pollTimer = null;
+    this.presenceTimer = null;
     this.running = false;
     this._processingQueue = Promise.resolve();
   }
@@ -328,7 +397,7 @@ export class WaysideOrchestrator {
     this.running = true;
     console.log(`[WaysideOrchestrator] Starting as '${this.agentName}' (${this.peerId}) on ledger ${this.sheetId}...`);
 
-    // Ensure ledger has Chat and Shared_Docs tabs
+    // Ensure ledger has all 4 Share Ledger tabs
     await ensureLedgerStructure(this.sheetId);
 
     // Seed existing message IDs from Chat tab to prevent processing historical messages on restart
@@ -338,18 +407,28 @@ export class WaysideOrchestrator {
     }
     console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} existing chat messages into cache.`);
 
-    // Initialize WebRTC P2P Mesh
+    // Publish online presence on Presence tab
+    await this.publishPresence('online').catch(() => {});
+    this.presenceTimer = setInterval(() => this.publishPresence('online').catch(() => {}), this.presenceIntervalMs);
+
+    // Initialize WebRTC P2P Mesh on WebRTC_Signaling tab (matching WaymarkConnect blockStart=2 & peerId election)
     this.peer = new SheetWebRtcPeer({
       sheetId: this.sheetId,
       peerId: this.peerId,
       displayName: this.agentName,
       getToken: getAuthToken,
+      tabName: SIGNALING_TAB,
+      blockStart: 2,
+      initiatorRule: 'peerId',
       onConnect: (remotePeerId) => {
         console.log(`[WaysideOrchestrator] WebRTC Peer connected: ${remotePeerId}`);
       },
       onMessage: (remotePeerId, data) => {
         this.handleWebRtcMessage(remotePeerId, data);
       },
+    });
+    await this.peer.start().catch(err => {
+      console.warn(`[WaysideOrchestrator] WebRTC signaling start warning: ${err.message}`);
     });
 
     // Start background poll loop for async catch-up
@@ -360,11 +439,32 @@ export class WaysideOrchestrator {
   async stop() {
     this.running = false;
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    await this.publishPresence('offline').catch(() => {});
     if (this.peer) {
       try { this.peer.destroy(); } catch {}
       this.peer = null;
     }
     console.log(`[WaysideOrchestrator] Stopped.`);
+  }
+
+  async publishPresence(status = 'online') {
+    const row = [
+      this.agentEmail,
+      this.agentName,
+      '',
+      status,
+      new Date().toISOString(),
+      'home',
+    ];
+    const rows = await readTabRows(this.sheetId, PRESENCE_TAB);
+    const existingIdx = rows.findIndex((r, i) => i > 0 && (r[0] || '').toLowerCase() === this.agentEmail.toLowerCase());
+    if (existingIdx >= 1) {
+      const sheetRow = existingIdx + 1;
+      await updateTabRange(this.sheetId, `${PRESENCE_TAB}!A${sheetRow}:F${sheetRow}`, [row]);
+    } else {
+      await appendTabRows(this.sheetId, PRESENCE_TAB, [row]);
+    }
   }
 
   handleWebRtcMessage(remotePeerId, data) {
@@ -433,8 +533,22 @@ export class WaysideOrchestrator {
     // 1. Send immediate typing indicator
     this.broadcastTyping();
 
+    const senderKey = (sender || 'unknown').toLowerCase();
+    const conv = this.conversations.get(senderKey) || {
+      history: [],
+      lastSheetId: null,
+      lastDocId: null,
+      lastTemplateKey: null,
+    };
+
     // 2. Classify intent
     const classification = classifyMessage(text);
+    const explicitSheetId = extractSpreadsheetId(text);
+    const isFollowUp = /\b(add|append|update|change|edit|remove|delete|mark|complete|move|set|search|find|show|list|what'?s\s+on|in\s+it|to\s+it|that\s+sheet)\b/i.test(text)
+      && !/\b(create|build|make|start|new)\b/i.test(text);
+    const targetSheetId = explicitSheetId || (isFollowUp ? conv.lastSheetId : null);
+    const effectiveTemplateKey = classification.templateKey || (targetSheetId ? conv.lastTemplateKey : null);
+
     let replyText = '';
     let createdSheetId = null;
     let createdSheetTitle = null;
@@ -443,35 +557,50 @@ export class WaysideOrchestrator {
 
     if (classification.isConversation || classification.isHelp) {
       replyText = `Hello ${sender.split('@')[0]}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
-        + `I can create, inspect, search, and update sheets across all 35 Waymark templates — including Kanban, Budget, Travel, Meal, CRM, Recipes, and Checklists.\n\n`
+        + `I can create, inspect, search, and update sheets across all ${CATALOG.templates?.length || 41} Waymark templates — including Kanban, Budget, Travel, Meal, CRM, Recipes, Party, and Checklists.\n\n`
         + `Try asking me something like:\n`
         + `• *"Create a 4-day travel itinerary for Paris in spring"*\n`
         + `• *"Make a weekly meal plan for 2200 kcal high protein"*\n`
         + `• *"Build a sprint backlog for a new mobile app"*`;
     } else {
-      // Acknowledge with quick status
-      const templateLabel = classification.templateName || 'Waymark';
       if (fromWebRtc) {
         this.broadcastTyping();
       }
 
-      console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${classification.templateKey || 'auto'})...`);
+      const contextLines = [`User '${sender}' requested this in Wayside social chat.`];
+      if (conv.lastSheetId) contextLines.push(`Most recent Waymark spreadsheet in conversation: ${conv.lastSheetId}`);
+      if (conv.lastDocId) contextLines.push(`Most recent Google Doc in conversation: ${conv.lastDocId}`);
+      if (conv.history.length > 0) {
+        contextLines.push(`Recent conversation history:\n${conv.history.slice(-4).map(h => `- ${h.role}: ${h.text}`).join('\n')}`);
+      }
+
+      console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
       const agyResult = await runAgyTask({
         task: text,
-        templateKey: classification.templateKey,
-        context: `User '${sender}' requested this in Wayside social chat.`,
+        templateKey: effectiveTemplateKey,
+        sheetId: targetSheetId,
+        context: contextLines.join('\n'),
       });
 
       if (agyResult.ok) {
         replyText = agyResult.output;
         createdSheetId = agyResult.sheetId;
         createdDocId = agyResult.docId;
-        createdSheetTitle = classification.templateName ? `${classification.templateName} Plan` : 'New Waymark';
-        createdDocTitle = 'Waymark Document';
+        createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'New Waymark');
+        createdDocTitle = agyResult.docTitle || 'Waymark Document';
       } else {
         replyText = `I encountered an issue executing your request: ${agyResult.error}\n\nPlease try again or clarify your prompt.`;
       }
     }
+
+    // Update per-sender conversation memory
+    conv.history.push({ role: sender, text: text.slice(0, 300) });
+    conv.history.push({ role: this.agentName, text: replyText.slice(0, 300) });
+    if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+    if (createdSheetId) conv.lastSheetId = createdSheetId;
+    if (createdDocId) conv.lastDocId = createdDocId;
+    if (effectiveTemplateKey) conv.lastTemplateKey = effectiveTemplateKey;
+    this.conversations.set(senderKey, conv);
 
     // 3. Deliver reply
     await this.deliverReply({
@@ -481,7 +610,7 @@ export class WaysideOrchestrator {
       createdSheetTitle,
       createdDocId,
       createdDocTitle,
-      templateKey: classification.templateKey,
+      templateKey: effectiveTemplateKey,
     });
   }
 
@@ -537,15 +666,18 @@ export class WaysideOrchestrator {
       console.error('[WaysideOrchestrator] Error appending reply to Chat tab:', err.message);
     }
 
-    // C. If a sheet was created, link it into Shared_Docs
+    // C. If a sheet was created, link it into Shared_Docs (8-column Share Ledger schema)
     if (createdSheetId) {
       try {
         await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
           createdSheetId,
           createdSheetTitle || 'Shared Waymark',
           templateKey || 'Waymark',
-          'editor',
+          targetUser || '',
+          '',
+          'writer',
           new Date().toISOString(),
+          'Shared',
         ]]);
         console.log(`[WaysideOrchestrator] 📄 Added sheet ${createdSheetId} to Shared_Docs in ledger!`);
       } catch (err) {
@@ -553,15 +685,18 @@ export class WaysideOrchestrator {
       }
     }
 
-    // D. If a doc was created, link it into Shared_Docs
+    // D. If a doc was created, link it into Shared_Docs (8-column Share Ledger schema)
     if (createdDocId) {
       try {
         await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
           createdDocId,
           createdDocTitle || 'Shared Document',
           'doc',
-          'editor',
+          targetUser || '',
+          '',
+          'writer',
           new Date().toISOString(),
+          'Shared',
         ]]);
         console.log(`[WaysideOrchestrator] 📝 Added doc ${createdDocId} to Shared_Docs in ledger!`);
       } catch (err) {
@@ -577,33 +712,34 @@ export class WaysideOrchestrator {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2);
-  let sheetId = process.env.WAYSIDE_LEDGER_ID || null;
+  let sheetId = process.env.WAYSIDE_LEDGER_ID || process.env.WAYMARK_SHEET_ID || null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--sheet' && args[i + 1]) { sheetId = args[++i]; }
     else if (!sheetId && !args[i].startsWith('--')) { sheetId = args[i]; }
   }
 
-  if (!sheetId) {
-    console.error('Error: Please specify the Wayside Share Ledger Sheet ID:');
-    console.error('  node scripts/wayside-orchestrator.mjs --sheet <spreadsheetId>');
-    console.error('or set WAYSIDE_LEDGER_ID=<spreadsheetId>');
-    process.exit(1);
-  }
+  (async () => {
+    if (!sheetId) {
+      console.log('[WaysideOrchestrator] No --sheet specified; discovering or provisioning Wayside Share Ledger in Drive...');
+      sheetId = await discoverOrCreateWaysideLedger();
+      console.log(`[WaysideOrchestrator] Using Wayside Share Ledger: ${sheetId}`);
+    }
 
-  const orchestrator = new WaysideOrchestrator({ sheetId });
-  orchestrator.start().catch(err => {
+    const orchestrator = new WaysideOrchestrator({ sheetId });
+    await orchestrator.start();
+
+    process.on('SIGINT', async () => {
+      console.log('\nShutting down Wayside Orchestrator...');
+      await orchestrator.stop();
+      process.exit(0);
+    });
+    process.on('SIGTERM', async () => {
+      await orchestrator.stop();
+      process.exit(0);
+    });
+  })().catch(err => {
     console.error('[WaysideOrchestrator] Fatal error starting orchestrator:', err);
     process.exit(1);
-  });
-
-  process.on('SIGINT', async () => {
-    console.log('\nShutting down Wayside Orchestrator...');
-    await orchestrator.stop();
-    process.exit(0);
-  });
-  process.on('SIGTERM', async () => {
-    await orchestrator.stop();
-    process.exit(0);
   });
 }

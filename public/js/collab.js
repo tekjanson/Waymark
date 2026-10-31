@@ -108,7 +108,7 @@ export async function resolveTargetEmails(target = {}) {
       /* directory lookup is best-effort */
     }
   }
-  return [...out];
+  return [...out].filter(e => !e.endsWith('.internal') && !e.endsWith('.local'));
 }
 
 /* ---------- Public API ---------- */

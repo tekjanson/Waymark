@@ -37,7 +37,7 @@ This is the authoritative column mapping for Ledger sheets. When reading or writ
 
 **Default headers when creating a new Ledger sheet:**
 ```
-date, type, category, text, amount, reference, balance
+Entry, Type, Category, Date, Amount, Counterparty, Reference, Status, TaxCategory, Notes
 ```
 
 **Detection signals** — headers that indicate a sheet is a Ledger:
@@ -55,40 +55,30 @@ This template has no state machine. The interaction type is `inline-edit` — ce
 
 ## 3. DOMAIN KNOWLEDGE — Ledger
 
-# Ledger — Generic Domain Knowledge
+# Ledger — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/ledger.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/ledger.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A double-entry or running-balance accounting ledger where each row records a financial journal entry with date, entry type (`Credit` / `Debit` or `Income` / `Expense`), account category, description, amount, reference/folio code, and optional running balance.
 
-## General Operations
+## Column Role Semantics
+- `date` — Transaction date (`YYYY-MM-DD`).
+- `type` — Entry direction (`Credit`, `Debit`, `Income`, `Expense`, `Transfer`).
+- `category` — Chart-of-accounts category (e.g., `Revenue`, `Payroll`, `Operations`, `Software`, `Tax`).
+- `text` — Transaction description or memo.
+- `amount` — Monetary value (numeric string without currency symbol preferred, e.g. `1250.00`).
+- `reference` — Invoice number, receipt ID, check number, or GL folio reference (e.g. `INV-1042`, `JE-009`).
+- `balance` — Optional running balance after the transaction.
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
+## Smart Operations
 
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
+### Running Balance & Reconciliation
+- Compute credits minus debits across chronological rows.
+- Verify that any explicit `balance` column matches the cumulative sum; flag discrepancies.
+- Group totals by `category` and `type` for trial-balance style reporting.
 
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+### Adding a Journal Entry
+- Required fields: `date` (default to today in `YYYY-MM-DD`), `type`, `category`, `text`, `amount`, and `reference`.
+- Preserve existing reference numbering conventions (e.g. `REF-001`, `JE-104`) when generating new entries.
 
 ---
 

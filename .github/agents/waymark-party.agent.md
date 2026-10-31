@@ -38,7 +38,7 @@ This is the authoritative column mapping for Party Planning Dashboard sheets. Wh
 
 **Default headers when creating a new Party Planning Dashboard sheet:**
 ```
-party, guestOfHonor, date, theme, venue, host
+Party Details, Value, Notes
 ```
 
 **Detection signals** — headers that indicate a sheet is a Party Planning Dashboard:
@@ -56,40 +56,36 @@ This template has no state machine. The interaction type is `dashboard` — cell
 
 ## 3. DOMAIN KNOWLEDGE — Party Planning Dashboard
 
-# Party Planning Dashboard — Generic Domain Knowledge
+# Party Planning Dashboard — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/party.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/party.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A multi-tab event and party planning dashboard (`waymark-party`). A complete Party Planning spreadsheet organizes event overview details alongside dedicated tabs for Guests/RSVPs, Menu, Budget, Thank You Notes, Decorations, Links, and Layout.
 
-## General Operations
+## Multi-Tab Structure & Column Roles
+1. **`Details` tab** (primary overview):
+   - Headers: `Party`, `Guest of Honor`, `Date`, `Theme`, `Venue`, `Host`
+   - Roles: `party`, `guestOfHonor`, `date`, `theme`, `venue`, `host`
+2. **`Guests` tab**:
+   - Headers: `Guest`, `RSVP`, `Party Size`, `Notes`
+   - Valid `RSVP` values: `Attending`, `Tentative`, `Declined`, `Invited`, `Pending`
+3. **`Menu` tab**:
+   - Headers: `Dish`, `Course`, `Assigned To`, `Status`, `Notes`
+   - Courses: `Appetizer`, `Main`, `Side`, `Dessert`, `Drink`
+   - Statuses: `Idea`, `Planned`, `Confirmed`, `Prepared`
+4. **`Budget` tab**:
+   - Headers: `Item`, `Category`, `Estimated`, `Actual`, `Paid` (`Yes` / `No`)
+5. **`Thank You Notes` tab**:
+   - Headers: `Guest Name`, `Gift Description`, `Date Received`, `Note Status` (`Pending` / `Sent`), `Sent Date`
+6. **`Decorations` tab**:
+   - Headers: `Decoration`, `Location`, `Bought` (`Yes` / `No`), `Hung` (`Yes` / `No`), `Notes`
+7. **`Links` tab**:
+   - Headers: `Label`, `URL`, `Type` (`Registry`, `Pinterest`, `Playlist`, `Venue`, `Other`)
+8. **`Layout` tab**:
+   - Headers: `Setting`, `Value` (e.g. `order` → `guests,menu,budget,thankyou,decorations,links`)
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
-
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
-
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+## Smart Operations
+- When creating a new `party` sheet via `waymark_create_sheet({ templateKey: "party", title, seedRows })`, `Details` is populated with `seedRows` and all companion tabs (`Guests`, `Menu`, `Budget`, `Thank You Notes`, `Decorations`, `Links`, `Layout`) are automatically created.
+- To read or add rows to a specific tab (such as `Guests` or `Menu`), pass `sheetTitle: "Guests"` or `sheetTitle: "Menu"` to `waymark_get_sheet` or use `sheets_values_append` on that tab.
 
 ---
 
@@ -139,7 +135,7 @@ When the orchestrator asks you to set up a new Party Planning Dashboard sheet:
 waymark_create_sheet(templateKey: "party", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `party`: `party, guestOfHonor, date, theme, venue, host`.
+The server uses the default headers for `party`: `Party Details, Value, Notes`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "party"`.
 
 ---

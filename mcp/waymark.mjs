@@ -62,6 +62,28 @@ const DEFAULT_HEADERS = {
   marketing:  ["Post", "Platform", "Status", "Topic", "Posted Date", "Likes", "Shares", "Comments", "Views", "Link", "Takeaway"],
   linker:     ["Name", "Description", "Link", "Type", "Tags", "Icon"],
   agents:     ["Name", "Model", "Provider", "Status", "Tuning", "Task", "Project", "Heartbeat", "Workboard", "Command"],
+  arcade:     ["Game", "Player 1", "Player 2", "Result", "Mode", "Date"],
+  worker:     ["Job", "Handler", "Status", "Schedule", "Input", "Output", "LastRun", "Logs"],
+  photos:     ["Photo", "Title", "Date", "Album", "Description"],
+  blog:       ["Title", "Doc", "Date", "Author", "Category", "Status"],
+  ledger:     ["Entry", "Type", "Category", "Date", "Amount", "Counterparty", "Reference", "Status", "TaxCategory", "Notes"],
+  invoice:    ["Invoice #", "Client", "Client Email", "Client Address", "Issue Date", "Due Date", "Status", "Item", "Category", "Qty", "Unit Price", "Tax %", "Discount", "Notes"],
+  calorie:    ["Food", "Meal", "Calories", "Protein", "Carbs", "Fat", "Date", "Servings", "Notes"],
+  party:      ["Party Details", "Value", "Notes"],
+  floorplan:  ["Room Name", "Type", "Points", "Doors", "Windows", "Color", "Notes"],
+};
+
+const MULTI_TAB_HEADERS = {
+  party: [
+    { title: "Details", headers: ["Party Details", "Value", "Notes"] },
+    { title: "Guests", headers: ["Guest Name", "Email / Phone", "RSVP Status", "Plus Ones", "Dietary Restrictions", "Notes"] },
+    { title: "Menu", headers: ["Dish / Beverage", "Category", "Servings", "Assigned To", "Prep Status", "Recipe / Link", "Notes"] },
+    { title: "Budget", headers: ["Expense Item", "Category", "Estimated", "Actual", "Paid", "Vendor / Store", "Notes"] },
+    { title: "Thank You Notes", headers: ["Guest Name", "Gift Received", "Thank You Sent", "Date Sent", "Address / Email", "Notes"] },
+    { title: "Decorations", headers: ["Decoration Item", "Area / Zone", "Quantity", "Status", "Source / Link", "Notes"] },
+    { title: "Links", headers: ["Resource Title", "URL", "Category", "Notes"] },
+    { title: "Layout", headers: ["Room Name", "Type", "Points", "Doors", "Windows", "Color", "Notes"] },
+  ],
 };
 
 /* ---------- Auth ---------- */
@@ -97,19 +119,13 @@ if (credPath && existsSync(credPath)) {
 }
 
 async function getToken() {
-  if (auth) {
-    try {
-      const client = await auth.getClient();
-      const { token } = await client.getAccessToken();
-      return token;
-    } catch (err) {
-      const userToken = await getUserOAuthToken();
-      if (userToken) return userToken;
-      throw err;
-    }
-  }
   const userToken = await getUserOAuthToken();
   if (userToken) return userToken;
+  if (auth) {
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    return token;
+  }
   throw new Error("No Google authentication configured. Provide GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
@@ -712,19 +728,36 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, sh
     rows.push(row);
   }
 
-  // Create the spreadsheet
+  // Create the spreadsheet (with multi-tab support for templates like 'party')
+  const multiTabs = MULTI_TAB_HEADERS[templateKey];
+  const sheetDefs = multiTabs
+    ? multiTabs.map((tab, idx) => {
+        const tabRows = idx === 0 ? rows : [tab.headers];
+        return {
+          properties: { title: tab.title },
+          data: [{
+            startRow: 0,
+            startColumn: 0,
+            rowData: tabRows.map(row => ({
+              values: row.map(cell => ({ userEnteredValue: { stringValue: cell } })),
+            })),
+          }],
+        };
+      })
+    : [{
+        properties: { title: "Sheet1" },
+        data: [{
+          startRow: 0,
+          startColumn: 0,
+          rowData: rows.map(row => ({
+            values: row.map(cell => ({ userEnteredValue: { stringValue: cell } })),
+          })),
+        }],
+      }];
+
   const body = {
     properties: { title },
-    sheets: [{
-      properties: { title: "Sheet1" },
-      data: [{
-        startRow: 0,
-        startColumn: 0,
-        rowData: rows.map(row => ({
-          values: row.map(cell => ({ userEnteredValue: { stringValue: cell } })),
-        })),
-      }],
-    }],
+    sheets: sheetDefs,
   };
 
   // Use whichever token we resolved (user OAuth preferred, SA fallback)

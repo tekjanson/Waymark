@@ -134,4 +134,70 @@ test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
     }
   });
 
+  test('all 41 unique templates have dedicated domain-knowledge files and DEFAULT_HEADERS in mcp/waymark.mjs', () => {
+    const registry = JSON.parse(fs.readFileSync(path.join(ROOT, 'template-registry.json'), 'utf8'));
+    const uniqueKeys = [...new Set(registry.templates.map(t => t.key))];
+    expect(uniqueKeys.length).toBe(41);
+
+    const mcpSrc = fs.readFileSync(path.join(ROOT, 'mcp', 'waymark.mjs'), 'utf8');
+    const headersBlock = mcpSrc.match(/const DEFAULT_HEADERS = \{([\s\S]*?)\n\};/)?.[1] || '';
+
+    for (const key of uniqueKeys) {
+      const dkPath = path.join(ROOT, 'agent-templates', 'domain-knowledge', `${key}.md`);
+      expect(fs.existsSync(dkPath), `domain-knowledge/${key}.md should exist`).toBe(true);
+      expect(headersBlock, `mcp/waymark.mjs DEFAULT_HEADERS should include ${key}`).toMatch(new RegExp(`\\b${key}\\s*:`));
+    }
+  });
+
+  test('extractFileReferences extracts both IDs and titles from markdown links and JSON', async () => {
+    const { extractFileReferences } = await import('../../scripts/agy-agent-runner.mjs');
+    const sheetId = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+    const docId = '1Doc_fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+
+    const res = extractFileReferences(
+      `Created your sheet: [Paris Spring Itinerary](#/sheet/${sheetId}) and notes [Trip Notes](https://docs.google.com/document/d/${docId}/edit)`
+    );
+    expect(res.sheetId).toBe(sheetId);
+    expect(res.sheetTitle).toBe('Paris Spring Itinerary');
+    expect(res.docId).toBe(docId);
+    expect(res.docTitle).toBe('Trip Notes');
+  });
+
+  test('SheetWebRtcPeer supports WebRTC_Signaling tab, blockStart=2, peerId election, and custom broadcast types', async () => {
+    const { SheetWebRtcPeer } = await import('../../mcp/sheet-webrtc-peer.mjs');
+    const peer = new SheetWebRtcPeer({
+      sheetId: 'test-ledger',
+      peerId: 'ai-111111',
+      displayName: 'Waymark AI',
+      tabName: 'WebRTC_Signaling',
+      blockStart: 2,
+      initiatorRule: 'peerId',
+    });
+
+    expect(peer.tabName).toBe('WebRTC_Signaling');
+    expect(peer.blockStart).toBe(2);
+    expect(peer._shouldInitiateHandshake('zz-999999', 7)).toBe(true);
+    expect(peer._shouldInitiateHandshake('aa-000000', 2)).toBe(false);
+
+    const sent = [];
+    peer._pcs.set('remote-1', {
+      connected: true,
+      dc: {
+        readyState: 'open',
+        send: (msg) => sent.push(JSON.parse(msg)),
+      },
+      pc: { close: () => {} },
+    });
+
+    peer.broadcast({ type: 'typing', name: 'Waymark AI' });
+    peer.broadcast({ type: 'message', id: 'm1', text: 'Hello Wayside!' });
+    expect(sent[0].type).toBe('typing');
+    expect(sent[0].name).toBe('Waymark AI');
+    expect(sent[1].type).toBe('message');
+    expect(sent[1].text).toBe('Hello Wayside!');
+
+    peer.destroy();
+    expect(peer.destroyed).toBe(true);
+  });
+
 });

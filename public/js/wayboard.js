@@ -810,20 +810,35 @@ async function removeWidget(id) {
 /* ---------- The Wayside (social) ---------- */
 
 export const WAYSIDE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
+const WAYSIDE_TOKEN_RE = /\[([^\]]+)\]\((#\/(?:sheet|public)\/[a-zA-Z0-9_-]+|https?:\/\/[^\s<>")]+)\)|(#\/(?:sheet|public)\/[a-zA-Z0-9_-]+)|(https?:\/\/[^\s<>"']+)/gi;
 
 /**
- * Append text to parent DOM node, turning http(s) URLs into real <a> links
- * safely without innerHTML.
+ * Append text to parent DOM node, turning markdown links, internal #/sheet/ links,
+ * and http(s) URLs into real <a> links safely without innerHTML.
  * @param {HTMLElement} parent
  * @param {string} text
  */
 export function appendLinkified(parent, text) {
   const str = String(text ?? '');
   let last = 0;
-  for (const match of str.matchAll(WAYSIDE_URL_RE)) {
-    let url = match[0];
-    const trail = url.match(/[.,;:!?)\]}'"]+$/);
-    if (trail) url = url.slice(0, -trail[0].length);
+  for (const match of str.matchAll(WAYSIDE_TOKEN_RE)) {
+    const mdLabel = match[1];
+    const mdUrl = match[2];
+    const hashUrl = match[3];
+    const rawUrl = match[4];
+
+    let url = mdUrl || hashUrl || rawUrl || '';
+    let label = mdLabel || url;
+    let consumedLen = match[0].length;
+
+    if (rawUrl) {
+      const trail = url.match(/[.,;:!?)\]}'"]+$/);
+      if (trail) {
+        url = url.slice(0, -trail[0].length);
+        label = url;
+        consumedLen -= trail[0].length;
+      }
+    }
     if (!url) continue;
 
     if (match.index > last) {
@@ -831,18 +846,20 @@ export function appendLinkified(parent, text) {
     }
     const a = document.createElement('a');
     a.href = url;
-    a.textContent = url;
+    a.textContent = label;
     a.className = 'chat-link';
-    let sameOrigin = false;
-    try {
-      sameOrigin = new URL(url).origin === window.location.origin;
-    } catch { /* keep external */ }
+    let sameOrigin = url.startsWith('#/');
+    if (!sameOrigin) {
+      try {
+        sameOrigin = new URL(url).origin === window.location.origin;
+      } catch { /* keep external */ }
+    }
     if (!sameOrigin) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
     }
     parent.append(a);
-    last = match.index + url.length;
+    last = match.index + consumedLen;
   }
   if (last < str.length) {
     parent.append(document.createTextNode(str.slice(last)));
@@ -1151,12 +1168,18 @@ function renderSharedFiles(files) {
     const title = f.title || f.Document_Title || docId;
     const type = f.type || f.Waymark_Type || 'Waymark';
     const permission = f.permission || f.Permission_Level || '';
-    listEl.append(el('a', {
+    const isGoogleDoc = type.toLowerCase() === 'doc';
+    const linkAttrs = {
       className: 'wayside-file',
-      href: `#/sheet/${docId}`,
+      href: isGoogleDoc ? `https://docs.google.com/document/d/${docId}/edit` : `#/sheet/${docId}`,
       title: `${title} (${type}${permission ? ` · ${permission}` : ''})`,
-    }, [
-      el('span', {}, [`📄 ${title}`]),
+    };
+    if (isGoogleDoc) {
+      linkAttrs.target = '_blank';
+      linkAttrs.rel = 'noopener noreferrer';
+    }
+    listEl.append(el('a', linkAttrs, [
+      el('span', {}, [`${isGoogleDoc ? '📝' : '📄'} ${title}`]),
       el('small', {}, [`${type}${permission ? ` · ${permission}` : ''}`]),
     ]));
   }
@@ -1408,7 +1431,16 @@ async function startCall() {
       callBtn.classList.add('call-active');
       callBtn.title = 'Cancel the call setup';
     }
-    await wc.startCall({ audio: true, video: false });
+    try {
+      await wc.startCall({ audio: true, video: false });
+    } catch (mediaErr) {
+      if (mediaErr?.name === 'AbortError' || generation !== _waysideTargetGeneration) {
+        throw mediaErr;
+      }
+      /* listen-only / signaling-only fallback when media devices are unavailable */
+      wc._inCall = true;
+      wc._heartbeat?.().catch(() => {});
+    }
     _waysideCallStarting = false;
 
     if (callBtn) {

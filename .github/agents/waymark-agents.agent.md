@@ -42,7 +42,7 @@ This is the authoritative column mapping for Agent Registry sheets. When reading
 
 **Default headers when creating a new Agent Registry sheet:**
 ```
-name, model, provider, status, tuning, task, project, heartbeat, workboard, command
+Name, Model, Provider, Status, Tuning, Task, Project, Heartbeat, Workboard, Command
 ```
 
 **Detection signals** — headers that indicate a sheet is a Agent Registry:
@@ -60,40 +60,29 @@ This template has no state machine. The interaction type is `inline-edit` — ce
 
 ## 3. DOMAIN KNOWLEDGE — Agent Registry
 
-# Agent Registry — Generic Domain Knowledge
+# Agent Registry — Domain Knowledge
 
 ## What This Template Is
-This domain knowledge block was auto-generated because no hand-authored
-`domain-knowledge/agents.md` file exists yet. The agent can still operate
-using the column roles and state machine defined in the agent file. For richer
-domain-specific operations, create `agent-templates/domain-knowledge/agents.md`
-and run `agent_invalidate` + `agent_compile` to rebuild.
+A fleet registry and control plane for AI agents (`waymark-agents`). Each row defines an autonomous or scheduled agent worker, its LLM model/provider, operational status, system tuning/persona, assigned project/workboard, and launch command.
 
-## General Operations
+## Column Role Semantics
+- `name` — Unique agent display name or handle (e.g., `Wayside Orchestrator`, `Dev Worker Alpha`).
+- `model` — Model identifier (e.g., `gemini-3.8-flash-high`, `claude-sonnet-5-5-high`).
+- `provider` — AI platform/runtime (`AGY`, `Google`, `Anthropic`, `Local`).
+- `status` — Current operational state (`online`, `idle`, `busy`, `paused`, `offline`, `error`).
+- `tuning` — Persona, skill specialization, or system instructions summary.
+- `task` — Currently active task or assignment description.
+- `project` — Target project or repository name.
+- `heartbeat` — ISO-8601 UTC timestamp of last agent check-in.
+- `workboard` — Linked Kanban or Share Ledger spreadsheet ID.
+- `command` — CLI invocation command (e.g., `./run-wayside.sh <sheetId>`).
 
-### Read and Summarize
-Read all rows. Count non-empty rows. Group by any column that looks categorical
-(limited distinct values, not a free-text field). Report row count and groupings found.
+## Smart Operations
 
-### Add a Row
-Append a new row using the default headers as column order.
-Required columns are those defined in the `columnRoles` list for this template.
-Leave unknown columns empty.
-
-### Update a Cell
-Find the row by matching the primary text column.
-Write the new value. Verify by re-reading the row.
-
-### State Transitions (if interaction type is status-cycle or toggle)
-Only write values that appear in the valid states list.
-Advance state by cycling to the next value in the list.
-Never write an arbitrary string to a state column.
-
-## Interpretation Rules
-- Empty rows are spacers or separators — skip in all counts
-- The first column is generally the primary identifier for a row
-- Date columns should be read as-is and written in the same format found in the sheet
-- Do not invent categorical values — use only values already present in the sheet
+### Fleet Health & Status Inspection
+- Identify stale agents whose `heartbeat` is older than expected while `status` is `online` or `busy`.
+- Summarize active vs. idle agents by `provider` and `model`.
+- When registering a new agent, populate `name`, `model`, `provider`, `status`, `tuning`, and `command`.
 
 ---
 
@@ -143,7 +132,7 @@ When the orchestrator asks you to set up a new Agent Registry sheet:
 waymark_create_sheet(templateKey: "agents", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `agents`: `name, model, provider, status, tuning, task, project, heartbeat, workboard, command`.
+The server uses the default headers for `agents`: `Name, Model, Provider, Status, Tuning, Task, Project, Heartbeat, Workboard, Command`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "agents"`.
 
 ---

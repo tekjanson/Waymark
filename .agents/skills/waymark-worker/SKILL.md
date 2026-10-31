@@ -37,7 +37,7 @@ This is the authoritative column mapping for Worker Jobs sheets. When reading or
 
 **Default headers when creating a new Worker Jobs sheet:**
 ```
-Job, Handler, Config, Status, Schedule
+Job, Handler, Status, Schedule, Input, Output, LastRun, Logs
 ```
 
 **Detection signals** — headers that indicate a sheet is a Worker Jobs:

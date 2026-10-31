@@ -51,7 +51,7 @@ const STUN_SERVERS = [
 ];
 
 export class SheetWebRtcPeer {
-    constructor({ sheetId, getToken, peerId, displayName, bufferFile, onMessage, onConnect }) {
+    constructor({ sheetId, getToken, peerId, displayName, bufferFile, onMessage, onConnect, tabName, blockStart, initiatorRule }) {
         this.sheetId = sheetId;
         this._getTokenFn = getToken || null;
         this.peerId = peerId || randomBytes(4).toString('hex').slice(0, 8);
@@ -59,6 +59,9 @@ export class SheetWebRtcPeer {
         this.bufferFile = bufferFile || null;
         this._onMessage = onMessage || null;
         this._onConnect = onConnect || null;
+        this.tabName = tabName || 'Sheet1';
+        this.blockStart = Number.isFinite(blockStart) && blockStart >= 1 ? blockStart : BLOCK_START;
+        this._initiatorRule = initiatorRule || 'block';
 
         this.block = -1;
         this.destroyed = false;
@@ -278,7 +281,7 @@ export class SheetWebRtcPeer {
     // Append an entry (JSON) into a per-slot log column (keeps an array of entries)
     async _appendRowLog(col, row, entry) {
         try {
-            const range = `Sheet1!${col}${row}`;
+            const range = `${this.tabName}!${col}${row}`;
             const res = await this._readRange(range).catch(() => ({}));
             const existing = (res.values && res.values[0] && res.values[0][0]) || '';
             let arr = [];
@@ -294,16 +297,16 @@ export class SheetWebRtcPeer {
 
     async start() {
         if (!this.sheetId) throw new Error('sheetId required');
-        const range = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
-        this._diagEvent('peer-start', { sheetId: this.sheetId });
+        const range = `${this.tabName}!T1:T${this.blockStart + TOTAL_ROWS}`;
+        this._diagEvent('peer-start', { sheetId: this.sheetId, tabName: this.tabName });
 
         // ── Claim a free presence slot (empty cell or stale peer > ALIVE_TTL) ──
         const initData = await this._readRange(range);
         const initRows = initData.values || [];
         let chosen = -1;
         for (let i = 0; i < MAX_SLOTS; i++) {
-            const slotRow = BLOCK_START + i * BLOCK_SIZE; // 1-based: 1, 6, 11 …
-            const rowIdx  = slotRow - 1;                  // 0-based: 0, 5, 10 …
+            const slotRow = this.blockStart + i * BLOCK_SIZE; // 1-based row
+            const rowIdx  = slotRow - 1;                      // 0-based index
             const cell = initRows[rowIdx]?.[0];
             if (!cell) { chosen = slotRow; break; }
             try {
@@ -316,7 +319,7 @@ export class SheetWebRtcPeer {
         if (chosen === -1) throw new Error('no free signaling slot');
         this.block = chosen;
         await this._writePresence();
-        console.log(`[SheetWebRtcPeer] joined mesh at T${this.block} peer=${this.peerId}`);
+        console.log(`[SheetWebRtcPeer] joined mesh at ${this.tabName}!T${this.block} peer=${this.peerId}`);
         this._diagEvent('mesh-joined', { block: this.block, peerId: this.peerId });
 
         // ── Heartbeat: refresh presence timestamp every HEARTBEAT_MS ──
@@ -359,7 +362,7 @@ export class SheetWebRtcPeer {
             nonce:  this._sessionNonce,
         });
         try {
-            await this._writeCell(`Sheet1!T${this.block}`, p);
+            await this._writeCell(`${this.tabName}!T${this.block}`, p);
             this._diag.last.lastHeartbeatMs = Date.now();
         } catch (e) {
             this._diag.counters.heartbeatFailures += 1;
@@ -422,7 +425,7 @@ export class SheetWebRtcPeer {
         // Build alive peer maps from presence rows first so we can prune stale state.
         const aliveById = new Map(); // peerId -> { block, nonce, ts }
         for (let i = 0; i < MAX_SLOTS; i++) {
-            const remoteBlock = BLOCK_START + i * BLOCK_SIZE;
+            const remoteBlock = this.blockStart + i * BLOCK_SIZE;
             if (remoteBlock === this.block) continue;
             const raw = rows[remoteBlock - 1]?.[0];
             if (!raw) continue;
@@ -648,11 +651,11 @@ export class SheetWebRtcPeer {
         // Flush dirty signaling cells
         if (offDirty) {
             const v = Object.keys(myOffers).length  ? JSON.stringify(myOffers)  : '';
-            await this._writeCell(`Sheet1!T${this.block + 1}`, v).catch(() => {});
+            await this._writeCell(`${this.tabName}!T${this.block + 1}`, v).catch(() => {});
         }
         if (ansDirty) {
             const v = Object.keys(myAnswers).length ? JSON.stringify(myAnswers) : '';
-            await this._writeCell(`Sheet1!T${this.block + 2}`, v).catch(() => {});
+            await this._writeCell(`${this.tabName}!T${this.block + 2}`, v).catch(() => {});
         }
 
         this._diagEvent('poll-snapshot', {
@@ -804,6 +807,9 @@ export class SheetWebRtcPeer {
             this._remotePeerId = remotePeerId;
             this._dc  = dc;
             this._connected = true;
+            try {
+                dc.send(JSON.stringify({ type: 'announce', peerId: this.peerId, name: this.displayName }));
+            } catch {}
             console.log(`[SheetWebRtcPeer] DataChannel OPEN with ${remotePeerId}`);
             if (this._onConnect) this._onConnect(remotePeerId);
         };
@@ -903,17 +909,28 @@ export class SheetWebRtcPeer {
     }
 
     /**
-     * Broadcast a notification to all connected remote peers.
-     * @param {object} opts  { title, body } — field names match Android handleMessage()
+     * Broadcast a notification or message to all connected remote peers.
+     * Supports both Android alerts ({ title, body }) and Wayside messages ({ type: 'message' | 'typing', ... }).
+     * @param {object|string} opts
      */
-    broadcast({ title, body } = {}) {
+    broadcast(opts = {}) {
         this._diag.counters.broadcastCalls += 1;
-        const json = JSON.stringify({
-            type:  'orchestrator-alert',
-            title: title || 'Waymark',
-            body:  body  || '',
-            ts:    Date.now(),
-        });
+        let json;
+        if (typeof opts === 'string') {
+            json = opts;
+        } else if (opts && opts.type && opts.type !== 'orchestrator-alert') {
+            json = JSON.stringify({
+                ...opts,
+                ts: opts.ts ?? Date.now(),
+            });
+        } else {
+            json = JSON.stringify({
+                type:  'orchestrator-alert',
+                title: opts?.title || 'Waymark',
+                body:  opts?.body  || '',
+                ts:    Date.now(),
+            });
+        }
         let sent = 0;
         for (const [, entry] of this._pcs) {
             try {
@@ -928,7 +945,7 @@ export class SheetWebRtcPeer {
         if (sent > 0) return sent;
         // Fallback: persist into notification slot (block+3)
         if (this.block > 0) {
-            this._writeCell(`Sheet1!T${this.block + 3}`, json).catch(() => {});
+            this._writeCell(`${this.tabName}!T${this.block + 3}`, json).catch(() => {});
         }
         return 0;
     }
@@ -943,7 +960,7 @@ export class SheetWebRtcPeer {
             }
         } catch {}
         if (this.block > 0) {
-            await this._writeCell(`Sheet1!T${this.block + 3}`, payload).catch(() => {});
+            await this._writeCell(`${this.tabName}!T${this.block + 3}`, payload).catch(() => {});
             return true;
         }
         return false;
@@ -964,7 +981,14 @@ export class SheetWebRtcPeer {
         this._slaveThrashScore.clear();
     }
 
+    destroy() {
+        this.stop();
+    }
+
     _shouldInitiateHandshake(remotePeerId, remoteBlock) {
+        if (this._initiatorRule === 'peerId') {
+            return this.peerId < remotePeerId;
+        }
         if (this.block > remoteBlock) return true;
         if (this.block < remoteBlock) return false;
         return this.peerId < remotePeerId;
@@ -1018,14 +1042,14 @@ export class SheetWebRtcPeer {
      */
     async initiateOffer(remotePeerId) {
         if (!remotePeerId) throw new Error('remotePeerId required');
-        const range = `Sheet1!T1:T${TOTAL_ROWS + 1}`;
+        const range = `${this.tabName}!T1:T${this.blockStart + TOTAL_ROWS}`;
         const data  = await this._readRange(range);
         const rows  = data.values || [];
 
         // Verify the target is alive
         let targetFound = false;
         for (let i = 0; i < MAX_SLOTS; i++) {
-            const slotRow = BLOCK_START + i * BLOCK_SIZE;
+            const slotRow = this.blockStart + i * BLOCK_SIZE;
             const cell    = rows[slotRow - 1]?.[0];
             if (!cell) continue;
             try {
@@ -1043,7 +1067,7 @@ export class SheetWebRtcPeer {
         let myOffers = {};
         try { myOffers = JSON.parse(rows[this.block]?.[0] || '{}'); } catch {}
         myOffers[remotePeerId] = { sdp, ts: Date.now() };
-        await this._writeCell(`Sheet1!T${this.block + 1}`, JSON.stringify(myOffers));
+        await this._writeCell(`${this.tabName}!T${this.block + 1}`, JSON.stringify(myOffers));
 
         return { ok: true };
     }

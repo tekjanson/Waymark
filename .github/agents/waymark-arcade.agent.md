@@ -38,7 +38,7 @@ This is the authoritative column mapping for Arcade sheets. When reading or writ
 
 **Default headers when creating a new Arcade sheet:**
 ```
-Game, Player 1, Player 2, Score, Status
+Game, Player 1, Player 2, Result, Mode, Date
 ```
 
 **Detection signals** — headers that indicate a sheet is a Arcade:
@@ -167,7 +167,7 @@ When the orchestrator asks you to set up a new Arcade sheet:
 waymark_create_sheet(templateKey: "arcade", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `arcade`: `Game, Player 1, Player 2, Score, Status`.
+The server uses the default headers for `arcade`: `Game, Player 1, Player 2, Result, Mode, Date`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "arcade"`.
 
 ---

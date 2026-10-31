@@ -36,7 +36,7 @@ This is the authoritative column mapping for Arcade sheets. When reading or writ
 
 **Default headers when creating a new Arcade sheet:**
 ```
-Game, Player 1, Player 2, Score, Status
+Game, Player 1, Player 2, Result, Mode, Date
 ```
 
 **Detection signals** — headers that indicate a sheet is a Arcade:
