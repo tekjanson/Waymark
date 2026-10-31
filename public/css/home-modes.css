@@ -445,6 +445,50 @@
 #wayboard-root .social-chat-embedded .social-chat-messages { padding: 8px 10px; flex: 1; }
 #wayboard-root .social-chat-embedded .social-chat-input-bar { padding: 8px 10px; }
 #wayboard-root .social-chat-embedded .social-call-bar { padding: 6px 10px; }
+#wayboard-root .social-chat-panel.social-chat-embedded .chat-box-head {
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-peer-count { display: none; }
+#wayboard-root .social-chat-panel.social-chat-embedded .social-header-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: 4px;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-close {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255,255,255,0.8);
+  background: #b91c1c;
+  color: #fff;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-close:hover { background: #991b1b; }
+#wayboard-root .social-chat-panel.social-chat-embedded .chat-sheet-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-subtitle-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-subtitle-actions {
+  flex: 0 0 auto;
+  gap: 3px;
+}
 #wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
 /* ---------- Shared light / dark theme for every Wayboard layout ---------- */

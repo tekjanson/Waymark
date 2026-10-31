@@ -280,6 +280,39 @@ export class SocialSession {
     return wc;
   }
 
+  /** Attach or replace the ledger signaling adapter and start its mesh. */
+  setSignaling(sheetId, signal) {
+    if (!sheetId || !signal) return null;
+    const nextSheetId = String(sheetId);
+    const previous = this.connect;
+    const mustRestart = previous && (
+      previous.sheetId !== nextSheetId || !previous.signal
+    );
+
+    if (mustRestart) {
+      this._teardownMedia();
+      previous.destroy();
+      this.connect = null;
+    }
+
+    this.sheetId = nextSheetId;
+    this.signal = signal;
+    if (this.connect && !this.connect._destroyed) {
+      // A new adapter object for the same sheet can replace the old one
+      // without rebuilding the existing mesh or its BroadcastChannel.
+      this.connect.signal = signal;
+      return this.connect;
+    }
+    return this.start();
+  }
+
+  async waitForSignalingReady() {
+    if (!this.signal) return false;
+    const connect = this.connect && !this.connect._destroyed ? this.connect : this.start();
+    if (!connect || typeof connect.waitForSignalingReady !== 'function') return false;
+    return connect.waitForSignalingReady();
+  }
+
   _wireVolumeDucking(audioEl) {
     if (!this.connect?._duckState || !audioEl) return;
     if (this._duckVolumeRAF) cancelAnimationFrame(this._duckVolumeRAF);
@@ -368,7 +401,10 @@ export class SocialSession {
     this.onCallStateChanged('calling', { video });
 
     try {
-      if (!this.connect) this.start();
+      if (!this.connect || this.connect._destroyed) this.start();
+      if (this.signal && !await this.waitForSignalingReady()) {
+        throw new Error('Could not claim a Google Sheets signaling slot. Try again in a moment.');
+      }
       const constraints = {
         audio: audio ? buildAudioConstraints() : false,
         video,

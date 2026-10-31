@@ -105,6 +105,7 @@ export class WaymarkConnect {
     this._remoteNonces = new Map(); // peerId → last observed presence nonce
 
     this._block = -1;
+    this._joinPromise = null;
     this._pollTimer = null;
     this._heartTimer = null;
     this._polling = false;
@@ -160,8 +161,29 @@ export class WaymarkConnect {
       this._bc.onmessage = (e) => this._onBC(e.data);
       this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName });
     }
-    if (this.signal) this._join();
+    if (this.signal) this._ensureSignalingJoined();
     this.onStatusChanged('listening');
+  }
+
+  /** Resolve once this peer owns a verified Google Sheets signaling slot. */
+  async waitForSignalingReady() {
+    if (!this.signal || this._destroyed) return false;
+    if (this._block >= 0) return true;
+    const ready = await this._ensureSignalingJoined();
+    return Boolean(ready && this._block >= 0 && !this._destroyed);
+  }
+
+  _ensureSignalingJoined() {
+    if (!this.signal || this._destroyed) return Promise.resolve(false);
+    if (this._block >= 0) return Promise.resolve(true);
+    if (this._joinPromise) return this._joinPromise;
+
+    const promise = this._join().then(ready => {
+      if (!ready && this._joinPromise === promise) this._joinPromise = null;
+      return ready;
+    });
+    this._joinPromise = promise;
+    return promise;
   }
 
   /** Send a chat message (or typing signal) to all connected peers (BC + all DataChannels). */
@@ -562,8 +584,8 @@ export class WaymarkConnect {
     if (!this._paused && (this._pollTimer || this._heartTimer)) return; // already running
     this._paused = false;
     if (this._block < 0) {
-      // Block expired while paused — re-join; _join() starts timers internally.
-      await this._join();
+      // Block expired while paused — re-join; the join starts timers internally.
+      await this._ensureSignalingJoined();
       return;
     }
     this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
@@ -708,14 +730,17 @@ export class WaymarkConnect {
       this._block = reclaimedBlock >= 0 ? reclaimedBlock : this._findSlot(vals);
       if (this._block < 0) {
         console.warn('[WC] _join — no free signal slot (all', MAX_SLOTS, 'occupied)');
-        return;
+        return false;
       }
       if (reclaimedBlock >= 0) {
         console.log(`[WC] _join — reclaimed slot row ${this._block} (crash/nav recovery), peerId=${this.peerId}`);
       } else {
         console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
       }
-      await this._heartbeat();
+      if (!await this._heartbeat()) {
+        this._block = -1;
+        return false;
+      }
 
       // Race-condition guard: two peers joining at the same time can both read
       // the same free slot and both write to it. After writing, wait a short
@@ -724,7 +749,7 @@ export class WaymarkConnect {
       // next free slot to avoid signaling collisions.
       const jitter = this._peerIdJitter();
       await new Promise(r => setTimeout(r, 300 + jitter));
-      if (this._destroyed) return;
+      if (this._destroyed) return false;
 
       const verify = await this.signal.readAll();
       const claimed = _json(verify[this._block]?.[SIG_COL]);
@@ -734,9 +759,19 @@ export class WaymarkConnect {
         this._block = this._findSlot(verify);
         if (this._block < 0) {
           console.warn('[WC] _join — no free slot after collision, giving up');
-          return;
+          return false;
         }
-        await this._heartbeat();
+        if (!await this._heartbeat()) {
+          this._block = -1;
+          return false;
+        }
+        await new Promise(r => setTimeout(r, 300 + jitter));
+        const retryVerify = await this.signal.readAll();
+        const retryClaim = _json(retryVerify[this._block]?.[SIG_COL]);
+        if (!retryClaim || retryClaim.peerId !== this.peerId) {
+          this._block = -1;
+          return false;
+        }
         console.log(`[WC] _join — re-claimed slot row ${this._block}, peerId=${this.peerId}`);
       } else {
         console.log(`[WC] _join — slot ${this._block} confirmed for peerId=${this.peerId}`);
@@ -746,8 +781,11 @@ export class WaymarkConnect {
         this._pollTimer = setInterval(() => this._poll(), POLL_MS);
       }
       this._heartTimer = setInterval(() => this._heartbeat(), HEART_MS);
+      return true;
     } catch (err) {
       console.error('[WC] _join failed:', err);
+      this._block = -1;
+      return false;
     }
   }
 
@@ -770,14 +808,16 @@ export class WaymarkConnect {
   }
 
   async _heartbeat() {
-    if (this._destroyed || this._block < 0) return;
+    if (this._destroyed || this._block < 0) return false;
     try {
       const presence = { peerId: this.peerId, name: this.displayName, ts: Date.now(), nonce: this._sessionNonce, inCall: Boolean(this._inCall) };
       if (this._password) presence.protected = true;
       await this.signal.writeCell(this._block + OFF_PRESENCE, SIG_COL,
         JSON.stringify(presence));
+      return true;
     } catch (err) {
       console.warn('[WC] heartbeat write failed:', err.message || err);
+      return false;
     }
   }
 

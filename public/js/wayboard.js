@@ -1044,6 +1044,7 @@ async function selectTarget(target, host) {
   const widget = new SocialChatWidget({
     mode: 'embedded',
     sheetId: _activeLedgerId || '',
+    signal: _activeLedgerId ? collab.createLedgerSignal(_activeLedgerId) : null,
     displayName,
     userEmail,
     title: `💬 ${target.label}`,
@@ -1057,26 +1058,20 @@ async function selectTarget(target, host) {
     onOpenSheet: () => openSocialSheet(),
     onConnectDrive: () => connectSharedLedgerFromWayside(host),
     onBeforeStartCall: async () => {
-      if (!_activeLedgerId && _activeTarget) {
-        const signaling = await collab.getSignalingTarget(_activeTarget);
-        _activeLedgerId = signaling.sheetId;
-        widget.sheetId = signaling.sheetId;
-        widget.session.sheetId = signaling.sheetId;
-        widget.session.signal = signaling.signal;
-        widget.setSubtitle(`Linked: ${signaling.sheetId}`);
-        widget.session.start();
-      }
+      if (!_activeTarget) return;
+      const signaling = _activeLedgerId
+        ? { sheetId: _activeLedgerId, signal: collab.createLedgerSignal(_activeLedgerId) }
+        : await collab.getSignalingTarget(_activeTarget);
+      _activeLedgerId = signaling.sheetId;
+      widget.setSignaling(signaling.sheetId, signaling.signal);
+      widget.setSubtitle(`Linked: ${signaling.sheetId}`);
     },
     persistChat: async (msg) => {
       const result = await collab.sendChat(target, msg.text, '', msg.id);
       _activeLedgerId = result?.sheetId || _activeLedgerId;
       if (widget && _activeLedgerId) {
         widget.setSubtitle(`Linked: ${_activeLedgerId}`);
-        if (!widget.session.sheetId) {
-          widget.sheetId = _activeLedgerId;
-          widget.session.sheetId = _activeLedgerId;
-          widget.session.start();
-        }
+        widget.setSignaling(_activeLedgerId, collab.createLedgerSignal(_activeLedgerId));
       }
       return result;
     },
@@ -1256,9 +1251,7 @@ async function shareWaymarkWithTarget() {
     const ledger = await collab.findExistingShareLedger(target);
     _activeLedgerId = ledger?.sheetId || _activeLedgerId;
     if (_activeLedgerId && _waysideWidget && !_waysideWidget.session.sheetId) {
-      _waysideWidget.sheetId = _activeLedgerId;
-      _waysideWidget.session.sheetId = _activeLedgerId;
-      _waysideWidget.session.start();
+      _waysideWidget.setSignaling(_activeLedgerId, collab.createLedgerSignal(_activeLedgerId));
     }
     if (host) await refreshWaysideSocial(host);
   } catch (err) {

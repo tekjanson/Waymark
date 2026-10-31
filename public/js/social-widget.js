@@ -115,7 +115,7 @@ export class SocialChatWidget {
           this.peerCount.textContent = `${count} peer${count !== 1 ? 's' : ''}`;
         }
         if (this.mode === 'embedded' && this.subtitle && !this.session.inCall) {
-          this.subtitle.textContent = `P2P · ${count} connected · Linked: ${this.sheetId}`;
+          this.setSubtitle(`P2P · ${count} connected · Linked: ${this.sheetId}`);
         }
       },
       onStatusChanged: (status) => {
@@ -181,7 +181,17 @@ export class SocialChatWidget {
 
   setSubtitle(subtitle) {
     this.subtitleText = subtitle;
-    if (this.subtitle) this.subtitle.textContent = subtitle;
+    if (this.subtitleTextEl) this.subtitleTextEl.textContent = subtitle;
+  }
+
+  setSignaling(sheetId, signal) {
+    if (!sheetId || !signal) return null;
+    this.sheetId = String(sheetId);
+    const connect = this.session.setSignaling(this.sheetId, signal);
+    if (this.mode === 'embedded' && !this.session.inCall) {
+      this.setSubtitle(`Linked: ${this.sheetId}`);
+    }
+    return connect;
   }
 
   _buildDOM() {
@@ -217,6 +227,8 @@ export class SocialChatWidget {
     }, ['0']);
 
     const headerActions = el('div', { className: 'chat-box-actions social-header-actions' });
+    const subtitleActions = el('div', { className: 'chat-box-actions social-subtitle-actions' });
+    const linkActions = isFloating ? headerActions : subtitleActions;
 
     if (this.showSheetLink) {
       this.sheetBtn = el('button', {
@@ -225,7 +237,7 @@ export class SocialChatWidget {
         title: 'Open the shared Waymark',
         on: { click: () => this.onOpenSheet() },
       }, ['🔗 Waymark']);
-      headerActions.append(this.sheetBtn);
+      linkActions.append(this.sheetBtn);
     }
 
     if (this.showConnectDrive) {
@@ -235,7 +247,7 @@ export class SocialChatWidget {
         title: 'Connect a shared ledger from Drive',
         on: { click: () => this.onConnectDrive() },
       }, ['📥 Connect']);
-      headerActions.append(this.connectBtn);
+      linkActions.append(this.connectBtn);
     }
 
     this.settingsBtn = el('button', {
@@ -280,10 +292,13 @@ export class SocialChatWidget {
     );
 
     /* ---------- Sheet Line (Wayside subtitle) ---------- */
+    this.subtitleTextEl = el('span', {
+      className: 'social-chat-subtitle-text',
+    }, [this.subtitleText]);
     this.subtitle = el('div', {
       className: 'chat-sheet-line',
       id: 'wayside-sheet-line',
-    }, [this.subtitleText]);
+    }, [this.subtitleTextEl, subtitleActions]);
 
     /* ---------- Settings Panel ---------- */
     this.settingsPanel = el('div', { className: 'social-chat-settings-panel hidden' });
@@ -671,7 +686,7 @@ export class SocialChatWidget {
       this.callBtn.classList.add('call-active');
     }
     if (this.subtitle) {
-      this.subtitle.textContent = `Incoming call from ${name || 'a Waymarker'} · Linked: ${this.sheetId}`;
+      this.setSubtitle(`Incoming call from ${name || 'a Waymarker'} · Linked: ${this.sheetId}`);
     }
   }
 
@@ -696,7 +711,7 @@ export class SocialChatWidget {
     this.debugBtn.classList.remove('hidden');
     this.root.classList.add('social-chat-in-call');
     if (this.subtitle) {
-      this.subtitle.textContent = `📹 In call · Linked: ${this.sheetId}`;
+      this.setSubtitle(`📹 In call · Linked: ${this.sheetId}`);
     }
     if (this.session?.connect && !this._debugCleanup) {
       this._startDebug(this.session.connect);
@@ -719,7 +734,7 @@ export class SocialChatWidget {
     this.muteBtn.textContent = '🔇 Mute';
     this.camToggleBtn.textContent = '📷 Cam Off';
     if (this.subtitle) {
-      this.subtitle.textContent = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
+      this.setSubtitle(this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share');
     }
   }
 
