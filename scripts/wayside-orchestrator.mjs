@@ -438,6 +438,8 @@ export class WaysideOrchestrator {
     let replyText = '';
     let createdSheetId = null;
     let createdSheetTitle = null;
+    let createdDocId = null;
+    let createdDocTitle = null;
 
     if (classification.isConversation || classification.isHelp) {
       replyText = `Hello ${sender.split('@')[0]}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
@@ -463,7 +465,9 @@ export class WaysideOrchestrator {
       if (agyResult.ok) {
         replyText = agyResult.output;
         createdSheetId = agyResult.sheetId;
+        createdDocId = agyResult.docId;
         createdSheetTitle = classification.templateName ? `${classification.templateName} Plan` : 'New Waymark';
+        createdDocTitle = 'Waymark Document';
       } else {
         replyText = `I encountered an issue executing your request: ${agyResult.error}\n\nPlease try again or clarify your prompt.`;
       }
@@ -475,6 +479,8 @@ export class WaysideOrchestrator {
       targetUser: sender,
       createdSheetId,
       createdSheetTitle,
+      createdDocId,
+      createdDocTitle,
       templateKey: classification.templateKey,
     });
   }
@@ -487,13 +493,15 @@ export class WaysideOrchestrator {
     }
   }
 
-  async deliverReply({ replyText, targetUser, createdSheetId, createdSheetTitle, templateKey }) {
+  async deliverReply({ replyText, targetUser, createdSheetId, createdSheetTitle, createdDocId, createdDocTitle, templateKey }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
 
     let attachedLink = '';
     if (createdSheetId) {
       attachedLink = `#/sheet/${createdSheetId}`;
+    } else if (createdDocId) {
+      attachedLink = `https://docs.google.com/document/d/${createdDocId}/edit`;
     }
 
     // A. Broadcast over WebRTC DataChannel (instant display)
@@ -539,9 +547,25 @@ export class WaysideOrchestrator {
           'editor',
           new Date().toISOString(),
         ]]);
-        console.log(`[WaysideOrchestrator] 📄 Added ${createdSheetId} to Shared_Docs in ledger!`);
+        console.log(`[WaysideOrchestrator] 📄 Added sheet ${createdSheetId} to Shared_Docs in ledger!`);
       } catch (err) {
-        console.error('[WaysideOrchestrator] Error appending to Shared_Docs:', err.message);
+        console.error('[WaysideOrchestrator] Error appending sheet to Shared_Docs:', err.message);
+      }
+    }
+
+    // D. If a doc was created, link it into Shared_Docs
+    if (createdDocId) {
+      try {
+        await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
+          createdDocId,
+          createdDocTitle || 'Shared Document',
+          'doc',
+          'editor',
+          new Date().toISOString(),
+        ]]);
+        console.log(`[WaysideOrchestrator] 📝 Added doc ${createdDocId} to Shared_Docs in ledger!`);
+      } catch (err) {
+        console.error('[WaysideOrchestrator] Error appending doc to Shared_Docs:', err.message);
       }
     }
 

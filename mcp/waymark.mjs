@@ -16,7 +16,7 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleAuth } from "google-auth-library";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -71,33 +71,46 @@ const DRIVE_BASE  = "https://www.googleapis.com/drive/v3";
 const DOCS_BASE   = "https://docs.googleapis.com/v1/documents";
 const TOKEN_URL   = "https://oauth2.googleapis.com/token";
 
-const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-if (!credPath) {
-  process.stderr.write(
-    "ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to the path of your service-account key JSON.\n"
-  );
-  process.exit(1);
+const defaultSaPath = path.join(
+  process.env.HOME || "/root",
+  ".config/gcloud/waymark-service-account-key.json"
+);
+const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || (existsSync(defaultSaPath) ? defaultSaPath : null);
+
+let auth = null;
+let SA_EMAIL = null;
+
+if (credPath && existsSync(credPath)) {
+  try {
+    auth = new GoogleAuth({
+      keyFile: credPath,
+      scopes: [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents",
+      ],
+    });
+    SA_EMAIL = JSON.parse(readFileSync(credPath, "utf8")).client_email || null;
+  } catch (err) {
+    process.stderr.write(`Warning: Failed initializing service account auth: ${err.message}\n`);
+  }
 }
 
-const auth = new GoogleAuth({
-  keyFile: credPath,
-  scopes: [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/documents",
-  ],
-});
-
-// Read SA email from key file so we can auto-share new sheets with it
-let SA_EMAIL = null;
-try {
-  SA_EMAIL = JSON.parse(readFileSync(credPath, "utf8")).client_email || null;
-} catch { /* non-fatal — auto-share will be skipped */ }
-
 async function getToken() {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  return token;
+  if (auth) {
+    try {
+      const client = await auth.getClient();
+      const { token } = await client.getAccessToken();
+      return token;
+    } catch (err) {
+      const userToken = await getUserOAuthToken();
+      if (userToken) return userToken;
+      throw err;
+    }
+  }
+  const userToken = await getUserOAuthToken();
+  if (userToken) return userToken;
+  throw new Error("No Google authentication configured. Provide GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
 /**
@@ -471,6 +484,64 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "waymark_list_files",
+    description: "List or search files in Google Drive (Waymarks, Google Sheets, Google Docs, or folders). Filter by keyword matching file title, file type, or parent folder.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search keyword matching file title (e.g. 'Kanban', 'Recipe', 'Budget').",
+        },
+        type: {
+          type: "string",
+          enum: ["all", "spreadsheet", "document", "folder"],
+          description: "Filter by file type: 'all', 'spreadsheet', 'document', or 'folder'. Default: 'all'.",
+        },
+        parentFolderId: {
+          type: "string",
+          description: "Google Drive folder ID to search within. Defaults to the configured Waymark parent folder.",
+        },
+        pageSize: {
+          type: "number",
+          description: "Maximum number of files to return (default: 25, max: 100).",
+        },
+      },
+    },
+  },
+  {
+    name: "waymark_get_doc",
+    description: "Read the plain text content, title, and structure of a Google Doc by documentId.",
+    inputSchema: {
+      type: "object",
+      required: ["documentId"],
+      properties: {
+        documentId: {
+          type: "string",
+          description: "The Google Docs document ID (from URL or waymark_list_files).",
+        },
+      },
+    },
+  },
+  {
+    name: "waymark_append_doc",
+    description: "Append text content to an existing Google Doc by documentId.",
+    inputSchema: {
+      type: "object",
+      required: ["documentId", "text"],
+      properties: {
+        documentId: {
+          type: "string",
+          description: "The Google Docs document ID.",
+        },
+        text: {
+          type: "string",
+          description: "Text content to append to the document.",
+        },
+      },
+    },
+  },
 ];
 
 /* ---------- Tool implementations ---------- */
@@ -810,10 +881,13 @@ async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWit
   if (!spreadsheetId) throw new Error("spreadsheetId is required.");
   if (!shareWith.length && !shareWithAnyone) throw new Error("Provide at least one of shareWith or shareWithAnyone:true.");
 
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+
   const sharedWith = [];
   for (const email of shareWith) {
     try {
-      await drive(`/files/${spreadsheetId}/permissions`, {
+      await driveAs(token, `/files/${spreadsheetId}/permissions`, {
         method: "POST",
         body: { type: "user", role, emailAddress: email },
       });
@@ -826,7 +900,7 @@ async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWit
   let sharedPublicly = false;
   if (shareWithAnyone) {
     try {
-      await drive(`/files/${spreadsheetId}/permissions`, {
+      await driveAs(token, `/files/${spreadsheetId}/permissions`, {
         method: "POST",
         body: { type: "anyone", role: "writer" },
       });
@@ -843,6 +917,148 @@ async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWit
     waymarkUrl: `https://swiftirons.com/waymark/#/sheet/${spreadsheetId}`,
     sharedWith,
     sharedPublicly,
+  };
+}
+
+async function handleWaymarkListFiles({ query, type = "all", parentFolderId, pageSize = 25 } = {}) {
+  const effectiveFolderId = parentFolderId !== undefined
+    ? parentFolderId
+    : (process.env.WAYMARK_PARENT_FOLDER_ID || null);
+
+  const clauses = ["trashed = false"];
+
+  if (type === "spreadsheet") {
+    clauses.push("mimeType = 'application/vnd.google-apps.spreadsheet'");
+  } else if (type === "document") {
+    clauses.push("mimeType = 'application/vnd.google-apps.document'");
+  } else if (type === "folder") {
+    clauses.push("mimeType = 'application/vnd.google-apps.folder'");
+  }
+
+  if (effectiveFolderId) {
+    clauses.push(`'${effectiveFolderId}' in parents`);
+  }
+
+  if (query) {
+    const safeQuery = query.replace(/'/g, "\\'");
+    clauses.push(`name contains '${safeQuery}'`);
+  }
+
+  const q = encodeURIComponent(clauses.join(" and "));
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+  const fields = encodeURIComponent("files(id, name, mimeType, modifiedTime, createdTime, size, webViewLink, parents)");
+  const limit = Math.min(Math.max(pageSize || 25, 1), 100);
+
+  const res = await apiRequestWithToken(
+    token,
+    DRIVE_BASE,
+    `/files?q=${q}&pageSize=${limit}&fields=${fields}&orderBy=modifiedTime desc`
+  );
+
+  const files = (res.files || []).map(f => ({
+    id: f.id,
+    name: f.name,
+    mimeType: f.mimeType,
+    type: f.mimeType === "application/vnd.google-apps.spreadsheet"
+      ? "spreadsheet"
+      : f.mimeType === "application/vnd.google-apps.document"
+      ? "document"
+      : f.mimeType === "application/vnd.google-apps.folder"
+      ? "folder"
+      : "file",
+    modifiedTime: f.modifiedTime,
+    createdTime: f.createdTime,
+    webViewLink: f.webViewLink,
+    waymarkUrl: f.mimeType === "application/vnd.google-apps.spreadsheet"
+      ? `https://swiftirons.com/waymark/#/sheet/${f.id}`
+      : null,
+    parents: f.parents || [],
+  }));
+
+  return { files, count: files.length, total: files.length };
+}
+
+async function handleWaymarkGetDoc({ documentId }) {
+  if (!documentId) throw new Error("documentId is required.");
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+  const doc = await apiRequestWithToken(token, DOCS_BASE, `/${documentId}`);
+
+  let plainText = "";
+  if (doc.body && Array.isArray(doc.body.content)) {
+    for (const element of doc.body.content) {
+      if (element.paragraph && Array.isArray(element.paragraph.elements)) {
+        for (const el of element.paragraph.elements) {
+          if (el.textRun && el.textRun.content) {
+            plainText += el.textRun.content;
+          }
+        }
+      } else if (element.table && Array.isArray(element.table.tableRows)) {
+        for (const row of element.table.tableRows) {
+          for (const cell of (row.tableCells || [])) {
+            for (const cellEl of (cell.content || [])) {
+              if (cellEl.paragraph && Array.isArray(cellEl.paragraph.elements)) {
+                for (const el of cellEl.paragraph.elements) {
+                  if (el.textRun && el.textRun.content) {
+                    plainText += el.textRun.content;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const words = plainText.trim().split(/\s+/).filter(Boolean).length;
+  return {
+    documentId,
+    title: doc.title,
+    revisionId: doc.revisionId,
+    wordCount: words,
+    characterCount: plainText.length,
+    text: plainText,
+    docsUrl: `https://docs.google.com/document/d/${documentId}/edit`,
+  };
+}
+
+async function handleWaymarkAppendDoc({ documentId, text }) {
+  if (!documentId) throw new Error("documentId is required.");
+  if (text === undefined || text === null) throw new Error("text is required.");
+
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+  const doc = await apiRequestWithToken(token, DOCS_BASE, `/${documentId}`);
+
+  let endIndex = 1;
+  if (doc.body && Array.isArray(doc.body.content) && doc.body.content.length > 0) {
+    const lastElement = doc.body.content[doc.body.content.length - 1];
+    endIndex = Math.max(1, (lastElement.endIndex || 1) - 1);
+  }
+
+  const textToInsert = (endIndex > 1 ? "\n" : "") + String(text);
+
+  await apiRequestWithToken(token, DOCS_BASE, `/${documentId}:batchUpdate`, {
+    method: "POST",
+    body: {
+      requests: [
+        {
+          insertText: {
+            location: { index: endIndex },
+            text: textToInsert,
+          },
+        },
+      ],
+    },
+  });
+
+  return {
+    success: true,
+    documentId,
+    appendedLength: textToInsert.length,
+    docsUrl: `https://docs.google.com/document/d/${documentId}/edit`,
   };
 }
 
@@ -929,7 +1145,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_add_entry":         result = await handleWaymarkAddEntry(args); break;
       case "waymark_update_entry":      result = await handleWaymarkUpdateEntry(args); break;
       case "waymark_create_sheet":      result = await handleWaymarkCreateSheet(args); break;
-      case "waymark_create_doc":         result = await handleWaymarkCreateDoc(args); break;
+      case "waymark_create_doc":        result = await handleWaymarkCreateDoc(args); break;
+      case "waymark_get_doc":           result = await handleWaymarkGetDoc(args); break;
+      case "waymark_append_doc":        result = await handleWaymarkAppendDoc(args); break;
+      case "waymark_list_files":        result = await handleWaymarkListFiles(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
       case "waymark_share_sheet":       result = await handleWaymarkShareSheet(args); break;
       default:
@@ -949,6 +1168,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-process.stderr.write("Waymark MCP server ready (9 tools)\n");
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isDirectRun) {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("Waymark MCP server ready (12 tools)\n");
+}
+
+export {
+  handleWaymarkListTemplates,
+  handleWaymarkDetectTemplate,
+  handleWaymarkGetSheet,
+  handleWaymarkAddEntry,
+  handleWaymarkUpdateEntry,
+  handleWaymarkCreateSheet,
+  handleWaymarkCreateDoc,
+  handleWaymarkGetDoc,
+  handleWaymarkAppendDoc,
+  handleWaymarkListFiles,
+  handleWaymarkShareSheet,
+  handleWaymarkSearchEntries,
+  detectTemplate,
+  mapColumnRoles,
+  getUserOAuthToken,
+  getToken,
+  TOOLS,
+};

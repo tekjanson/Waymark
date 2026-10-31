@@ -150,10 +150,17 @@ Call `waymark_add_entry(spreadsheetId, entry, sheetTitle?)`
 - `entry` is `{ roleName: value }`.
 
 ### 4.4 Creating a New Sheet
-Call `waymark_create_sheet(title, "guide", initialEntries?)`
-- Creates a sheet with the default Instruction Guide headers and initial data.
-- Returns `{ spreadsheetId, spreadsheetUrl, title, sheetTitle }`.
+Call `waymark_create_sheet({ templateKey: "guide", title, seedRows? })`
+- Creates a new Google Sheet pre-formatted with default Instruction Guide headers and initial rows.
+- Created under user account via OAuth, automatically shared with service account and editors.
+- Returns `{ spreadsheetId, waymarkUrl, sheetsUrl, title, templateKey }`.
 
-### 4.5 Searching Entries
-Call `waymark_search_entries(query, "guide", spreadsheetId?)`
-- Searches entries across sheets matching the query.
+### 4.5 Searching Entries & Files
+- Search rows in a sheet: Call `waymark_search_entries({ spreadsheetId, query, column? })`.
+- Search files in Google Drive: Call `waymark_list_files({ query?, type?: 'all'|'spreadsheet'|'document'|'folder', parentFolderId? })`.
+- Share a sheet: Call `waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })`.
+
+### 4.6 Document Operations
+- Create Google Doc: Call `waymark_create_doc({ title, body?, parentFolderId?, shareWith? })`.
+- Read Google Doc: Call `waymark_get_doc({ documentId })`.
+- Append to Google Doc: Call `waymark_append_doc({ documentId, text })`.

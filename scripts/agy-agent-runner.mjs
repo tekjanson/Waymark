@@ -39,6 +39,32 @@ export function extractSpreadsheetId(text) {
 }
 
 /**
+ * Extract Google Doc IDs from text.
+ * @param {string} text
+ * @returns {string|null}
+ */
+export function extractDocId(text) {
+  if (!text) return null;
+  const docMatch = text.match(/\/document\/d\/([a-zA-Z0-9_-]{25,})/);
+  if (docMatch) return docMatch[1];
+  const jsonMatch = text.match(/"documentId":\s*"([a-zA-Z0-9_-]{25,})"/);
+  if (jsonMatch) return jsonMatch[1];
+  return null;
+}
+
+/**
+ * Extract all created/modified file references from text.
+ * @param {string} text
+ * @returns {{ sheetId: string|null, docId: string|null }}
+ */
+export function extractFileReferences(text) {
+  return {
+    sheetId: extractSpreadsheetId(text),
+    docId: extractDocId(text),
+  };
+}
+
+/**
  * Build the prompt delivered to agy.
  */
 export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
@@ -61,10 +87,17 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
 
   parts.push(`\nUser Request: ${task}`);
   parts.push(`\nInstructions:
-1. Use the Waymark MCP tools (e.g. waymark_create_sheet, waymark_add_entry, waymark_update_entry, waymark_get_sheet, waymark_search_entries) to execute this task.
-2. If creating a new sheet, call waymark_create_sheet with the appropriate templateKey and initial entries.
-3. If editing or querying an existing sheet, use role names for columns.
-4. Provide a friendly, concise summary of what you did. Always output any created or modified Spreadsheet ID and the link format: [Sheet Title](#/sheet/<spreadsheetId>).`);
+1. Use the Waymark MCP tools:
+   - Discovering files: call waymark_list_files({ query?, type? }) to find existing sheets or docs.
+   - Creating new sheets: call waymark_create_sheet({ templateKey, title, seedRows? })
+   - Reading sheets: call waymark_get_sheet({ spreadsheetId, sheetTitle? })
+   - Modifying rows: call waymark_update_entry({ spreadsheetId, rowIndex, updates })
+   - Appending rows: call waymark_add_entry({ spreadsheetId, entry })
+   - Searching rows: call waymark_search_entries({ spreadsheetId, query })
+   - Document operations: call waymark_create_doc, waymark_get_doc, waymark_append_doc
+2. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
+3. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
+4. Provide a friendly, concise summary of what you did.`);
 
   return parts.join('\n\n');
 }
@@ -114,12 +147,14 @@ export async function runAgyTask({
 
     const output = (stdout || '').trim();
     const detectedSheetId = sheetId || extractSpreadsheetId(output);
+    const detectedDocId = extractDocId(output);
     const durationMs = Date.now() - start;
 
     return {
       ok: true,
       output,
       sheetId: detectedSheetId,
+      docId: detectedDocId,
       templateKey,
       durationMs,
     };
