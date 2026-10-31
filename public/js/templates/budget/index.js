@@ -3,15 +3,12 @@
    subtotals, chart, and statement upload
    ============================================================ */
 
-import { el, cell, editableCell, showToast, delegateEvent, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn } from '../shared.js';
+import { el, cell, editableCell, showToast, delegateEvent, registerTemplate, drawBarChart, drawPieChart, buildDirSyncBtn, parseAmt } from '../shared.js';
 import { parseStatement, reParsePDFTransactions, parseQuickAddBudgetEntry } from './parser.js';
 
 /* ---------- Helpers ---------- */
 
-/** Parse a currency / numeric string to a plain number */
-function parseAmt(raw) {
-  return parseFloat((raw || '0').replace(/[^-\d.]/g, '')) || 0;
-}
+// parseAmt imported from shared.js
 
 /** Stable color palette for category chart segments */
 const CAT_COLORS = ['#059669','#2563eb','#d97706','#7c3aed','#dc2626','#0891b2','#be185d','#65a30d'];

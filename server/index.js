@@ -91,7 +91,7 @@ let githubSource;
 if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
   // Stub — serve from local public/ directory (mock mode or local dev override)
   if (config.GITHUB_SOURCE_LOCAL && !config.WAYMARK_LOCAL) {
-    console.log('🔧  GITHUB_SOURCE_LOCAL=true — serving frontend from local public/ (auth still live)');
+    console.info('🔧  GITHUB_SOURCE_LOCAL=true — serving frontend from local public/ (auth still live)');
   }
   githubSource = {
     middleware: (_req, _res, next) => next(),
@@ -111,7 +111,7 @@ if (config.WAYMARK_LOCAL || config.GITHUB_SOURCE_LOCAL) {
     token: config.GITHUB_TOKEN || undefined,
     resolveRef: getRefForRequest,
   });
-  console.log(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
+  console.info(`📦  GitHub source: ${config.GITHUB_OWNER}/${config.GITHUB_REPO}@${config.GITHUB_REF} (local files as fallback)`);
 }
 
 /* ---------- Injection safety ---------- */
@@ -271,12 +271,13 @@ function buildSettingsRefInjector(currentRef) {
         '<span class="settings-label">Branch / Ref</span>' +
         '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
           '<input id="wm-ref" type="text" value="' + CURRENT_REF + '" ' +
+            'aria-label="Git reference" ' +
             'placeholder="main" autocomplete="off" spellcheck="false" ' +
             'style="padding:6px 10px;border-radius:6px;border:1px solid var(--color-border,#e2e8f0);' +
             'background:var(--color-surface,#fff);color:var(--color-text,#1e293b);font-size:13px;' +
             'font-family:ui-monospace,monospace;width:130px;outline:none;">' +
-          '<button id="wm-switch" class="btn btn-secondary btn-sm" title="Preview this version (reverts on login/logout)">Switch</button>' +
-          '<button id="wm-pin" class="btn btn-primary btn-sm" title="Pin this version as your default">\\u{1F4CC} Pin</button>' +
+          '<button type="button" data-action="wm-switch" id="wm-switch" class="btn btn-secondary btn-sm" title="Preview this version (reverts on login/logout)">Switch</button>' +
+          '<button type="button" data-action="wm-pin" id="wm-pin" class="btn btn-primary btn-sm" title="Pin this version as your default">\\u{1F4CC} Pin</button>' +
         '</div>' +
       '</div>' +
       '<div id="wm-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>' +
@@ -288,7 +289,7 @@ function buildSettingsRefInjector(currentRef) {
       '<div class="settings-row" style="margin-top:2px;">' +
         '<span class="settings-label">Pinned</span>' +
         '<code id="wm-pinned" style="font-size:0.85rem;color:var(--color-success,#16a34a);">loading\\u2026</code>' +
-        '<button id="wm-unpin" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px;margin-left:6px;display:none;" title="Unpin (revert to main)">Unpin</button>' +
+        '<button type="button" data-action="wm-unpin" id="wm-unpin" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px;margin-left:6px;display:none;" title="Unpin (revert to main)">Unpin</button>' +
       '</div>' +
       '<p style="font-size:0.75rem;color:var(--color-text-muted,#94a3b8);margin:8px 0 0;">' +
         '<b>Switch</b> = temporary preview (reverts on sign-out). ' +
@@ -431,7 +432,7 @@ function buildSettingsRefInjector(currentRef) {
 /* ---------- Local-only mode ---------- */
 
 if (config.WAYMARK_LOCAL) {
-  console.log('🔧  WAYMARK_LOCAL=true — running in local-only mock mode');
+  console.info('🔧  WAYMARK_LOCAL=true — running in local-only mock mode');
 
   // Serve test fixtures at /__fixtures
   const fixturesDir = path.join(__dirname, '..', 'tests', 'fixtures');
@@ -688,7 +689,7 @@ if (basePath) {
 /* ---------- Start ---------- */
 
 app.listen(config.PORT, async () => {
-  console.log(`✅  WayMark server listening on http://localhost:${config.PORT}${basePath || '/'}`);
+  console.info(`✅  WayMark server listening on http://localhost:${config.PORT}${basePath || '/'}`);
 
   // Pre-warm the GitHub file tree in the background
   await githubSource.preWarm();

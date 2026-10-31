@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "checkout-git-ref",
+      "user_intent": "Checkout and serve public assets from git ref",
+      "trigger": "network.http:switch_ref",
+      "steps": [
+        "validate:git_ref",
+        "external:fetch_git_tree",
+        "emit:assets_ready"
+      ],
+      "outcome": "Assets served from target git ref"
+    }
+  ]
+}

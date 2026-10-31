@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 test('model-swap-integration: vault integration works with model adapter', async ({ page }) => {
   // Setup local mode directly
   await page.goto('http://localhost:3000/', { waitUntil: 'networkidle' });
-  
+
   // Inject waymark local flag
   await page.evaluate(() => {
     window.__WAYMARK_LOCAL = true;

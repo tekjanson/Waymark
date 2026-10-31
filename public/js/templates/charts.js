@@ -1,10 +1,10 @@
 /* ============================================================
    templates/charts.js — Pure vanilla SVG chart rendering engine
-   
+
    Provides: drawLineChart, drawBarChart, drawPieChart
    Pure helpers: normalizeValues, polarToCartesian,
                  computePieAngles, formatAxisLabel
-   
+
    No external dependencies. Templates access these functions
    via re-exports in shared.js.
    ============================================================ */

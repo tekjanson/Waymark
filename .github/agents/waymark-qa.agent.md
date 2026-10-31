@@ -72,7 +72,7 @@ Check for:
 
 Classify each finding:
 - `🔴 Blocking` — must fix before merge
-- `🟡 Minor` — should fix, not blocking  
+- `🟡 Minor` — should fix, not blocking
 - `✅ OK` — no issues
 
 ---

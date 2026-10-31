@@ -14,11 +14,10 @@ import { URL_REGEX, appendLinkified } from './social-session.js';
 import { SocialChatWidget } from './social-widget.js';
 
 export { appendLinkified };
-export const WAYSIDE_URL_RE = URL_REGEX;
+const WAYSIDE_URL_RE = URL_REGEX;
 
 /* ---------- 50 architecture names (for the Profile selector) ---------- */
-
-export const MODE_NAMES = {
+const MODE_NAMES = {
   1: 'Markup Command Center (Classic 3-Col)', 2: 'Bento Grid + Story Pill Markers', 3: 'Top Multiplayer Social Pill', 4: 'Guild Left-Dock (Discord Style)',
   5: 'Spatial Glass + Floating Bottom Dock', 6: 'Warm Editorial Daylight', 7: 'Dual-Column Split', 8: 'Linear Timeline',
   9: 'Infinite Dot-Grid Tactile Pinboard', 10: 'AR Field Engineer HUD', 11: 'Bottom Comms Utility Tray', 12: 'Visual Gallery Grid',
@@ -37,7 +36,7 @@ export const MODE_NAMES = {
 };
 
 /** Grouping used by the Profile selector. */
-export const MODE_GROUPS = [
+const MODE_GROUPS = [
   { label: '1–20 Core & Unchained', range: [1, 20] },
   { label: '21–35 Spatial Architectures', range: [21, 35] },
   { label: '36–50 Experimental Mechanics', range: [36, 50] },
@@ -74,7 +73,7 @@ const sheetPreviewCache = new Map();
  * Apply a home layout architecture to the Wayboard root.
  * @param {number} mode 1–50
  */
-export function applyHomeMode(mode) {
+function applyHomeMode(mode) {
   const root = document.getElementById('wayboard-root');
   if (!root) return;
   const n = (mode >= 1 && mode <= 50) ? mode : 1;
@@ -93,7 +92,7 @@ let _callListenerWired = false;
  * One-time wiring of Wayboard navigation callbacks.
  * @param {{ navigate: Function }} deps
  */
-export function initWayboard(deps = {}) {
+function initWayboard(deps = {}) {
   _navigate = deps.navigate || null;
   _quickMarkActions = deps.quickMarkActions || {};
 
@@ -128,7 +127,7 @@ export function initWayboard(deps = {}) {
  * Pinned/recent markers are rendered by app.js into the existing containers.
  * @param {{ userName?: string }} [opts]
  */
-export function renderWayboard(opts = {}) {
+function renderWayboard(opts = {}) {
   applyHomeMode(userData.getHomeTemplateMode());
   renderStatusBadges();
   renderWidgets();
@@ -1224,20 +1223,17 @@ function applyPresenceRings(host, presence) {
     if (status) av.classList.add(`avatar-${status}`);
   });
 }
-
-export async function sendWaysideChat() {
+async function sendWaysideChat() {
   if (_waysideWidget) {
     _waysideWidget.sendMessage();
   }
 }
-
-export async function endWaysideCall(opts = {}) {
+async function endWaysideCall(opts = {}) {
   if (_waysideWidget) {
     await _waysideWidget.session.endCall(opts);
   }
 }
-
-export async function startCall() {
+async function startCall() {
   if (!_activeTarget) { showToast('Pick a crew or Waymarker first', 'info'); return; }
   const host = document.getElementById('home-wayside');
   if (!_waysideWidget && host) {
@@ -1310,3 +1306,15 @@ async function openSocialSheet() {
     showToast(`Could not open sheet: ${err.message}`, 'error');
   }
 }
+
+export {
+  MODE_GROUPS,
+  MODE_NAMES,
+  WAYSIDE_URL_RE,
+  applyHomeMode,
+  endWaysideCall,
+  initWayboard,
+  renderWayboard,
+  sendWaysideChat,
+  startCall,
+};

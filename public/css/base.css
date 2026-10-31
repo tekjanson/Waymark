@@ -375,7 +375,7 @@ ul { list-style: none; }
   padding: 4px 8px; font-size: 0.9rem; color: var(--color-text);
   min-width: 0;
 }
-#search-input::placeholder { color: var(--color-text-muted); }
+input#search-input::placeholder { color: var(--color-text-muted); }
 
 .avatar {
   width: 32px; height: 32px; border-radius: 50%;

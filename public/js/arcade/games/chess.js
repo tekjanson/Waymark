@@ -1,3 +1,4 @@
+import { pieceColor } from './common.js';
 /* ============================================================
    arcade/games/chess.js — Chess: rules, rendering, networking
    ============================================================ */
@@ -27,7 +28,7 @@ const PIECE_CHARS = {
 
 function isWhite(p) { return p > 0 && p < 0x80; }
 function isBlack(p) { return p >= 0x80; }
-function pieceColor(p) { return p === EMPTY ? -1 : (isWhite(p) ? 0 : 1); }
+// pieceColor imported from common.js
 function pieceType(p) { return p & 0x0F; }
 
 /* ---------- Board Layout ---------- */

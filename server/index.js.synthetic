@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "handle-websocket-signaling",
+      "user_intent": "Relay WebRTC signaling messages between clients",
+      "trigger": "network.websocket:message_received",
+      "steps": [
+        "validate:signal_envelope",
+        "external:route_peer_signal",
+        "emit:broadcast_to_room"
+      ],
+      "outcome": "Signaling packet forwarded to destination peer"
+    }
+  ]
+}

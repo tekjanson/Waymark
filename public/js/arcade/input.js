@@ -16,7 +16,7 @@ let _pageToVirtual = null;   // coordinate converter function
 /**
  * Start capturing keyboard input.
  */
-export function startInput() {
+function startInput() {
   if (_inputActive) return;
   _inputActive = true;
   document.addEventListener('keydown', _onKeyDown);
@@ -26,7 +26,7 @@ export function startInput() {
 /**
  * Stop capturing keyboard input.
  */
-export function stopInput() {
+function stopInput() {
   _inputActive = false;
   _keys.clear();
   document.removeEventListener('keydown', _onKeyDown);
@@ -52,7 +52,7 @@ function _onKeyUp(e) {
  * @param {string} code — KeyboardEvent.code value
  * @returns {boolean}
  */
-export function isKeyDown(code) {
+function isKeyDown(code) {
   return _keys.has(code);
 }
 
@@ -71,7 +71,7 @@ export function isKeyDown(code) {
  */
 
 /** Default key bindings for player 1 (arrow keys + ZX). */
-export const P1_KEYS = {
+const P1_KEYS = {
   left: 'ArrowLeft',
   right: 'ArrowRight',
   up: 'ArrowUp',
@@ -83,7 +83,7 @@ export const P1_KEYS = {
 };
 
 /** WASD key bindings for local player 2. */
-export const P2_KEYS = {
+const P2_KEYS = {
   left: 'KeyA',
   right: 'KeyD',
   up: 'KeyW',
@@ -107,7 +107,7 @@ export const P2_KEYS = {
  * Bit 6: action3
  * Bit 7: action4
  */
-export const INPUT = {
+const INPUT = {
   LEFT:    0x01,
   RIGHT:   0x02,
   UP:      0x04,
@@ -123,7 +123,7 @@ export const INPUT = {
  * @param {KeyMap} [keyMap] — key mapping (defaults to P1_KEYS)
  * @returns {number} — packed input bits
  */
-export function sampleInput(keyMap = P1_KEYS) {
+function sampleInput(keyMap = P1_KEYS) {
   let bits = 0;
   if (_keys.has(keyMap.left))    bits |= INPUT.LEFT;
   if (_keys.has(keyMap.right))   bits |= INPUT.RIGHT;
@@ -142,7 +142,7 @@ export function sampleInput(keyMap = P1_KEYS) {
  * Sample the first connected gamepad as packed input bits.
  * @returns {number}
  */
-export function sampleGamepad() {
+function sampleGamepad() {
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
   const gp = gamepads[0];
   if (!gp) return 0;
@@ -165,7 +165,7 @@ export function sampleGamepad() {
  * @param {HTMLCanvasElement} canvas
  * @param {function} pageToVirtualFn — (pageX, pageY) => { x, y }
  */
-export function startMouseInput(canvas, pageToVirtualFn) {
+function startMouseInput(canvas, pageToVirtualFn) {
   _pageToVirtual = pageToVirtualFn;
   canvas.addEventListener('mousemove', _onMouseMove);
   canvas.addEventListener('mousedown', _onMouseDown);
@@ -180,7 +180,7 @@ export function startMouseInput(canvas, pageToVirtualFn) {
  * Remove mouse listeners from a canvas.
  * @param {HTMLCanvasElement} canvas
  */
-export function stopMouseInput(canvas) {
+function stopMouseInput(canvas) {
   canvas.removeEventListener('mousemove', _onMouseMove);
   canvas.removeEventListener('mousedown', _onMouseDown);
   canvas.removeEventListener('mouseup', _onMouseUp);
@@ -231,7 +231,7 @@ function _onTouchEnd() {
  * Get the current mouse position in virtual coords.
  * @returns {{ x: number, y: number }}
  */
-export function getMousePos() {
+function getMousePos() {
   return { ..._mousePos };
 }
 
@@ -239,7 +239,7 @@ export function getMousePos() {
  * Check if mouse button is currently held.
  * @returns {boolean}
  */
-export function isMouseDown() {
+function isMouseDown() {
   return _mouseDown;
 }
 
@@ -247,7 +247,7 @@ export function isMouseDown() {
  * Check and consume a mouse click (returns true only once per click).
  * @returns {boolean}
  */
-export function consumeClick() {
+function consumeClick() {
   if (_mouseClicked) {
     _mouseClicked = false;
     return true;
@@ -262,7 +262,7 @@ export function consumeClick() {
  * @param {KeyMap} [keyMap]
  * @returns {number}
  */
-export function sampleAll(keyMap = P1_KEYS) {
+function sampleAll(keyMap = P1_KEYS) {
   return sampleInput(keyMap) | sampleGamepad() | _touchBits;
 }
 
@@ -292,7 +292,7 @@ function isTouchDevice() {
  * @param {Object} [opts]
  * @param {boolean} [opts.showKick] — show the kick (Z) button
  */
-export function createTouchControls(parent, opts = {}) {
+function createTouchControls(parent, opts = {}) {
   if (_touchActive) destroyTouchControls();
   if (!isTouchDevice()) return;
 
@@ -335,7 +335,7 @@ export function createTouchControls(parent, opts = {}) {
 /**
  * Remove the virtual touch controls.
  */
-export function destroyTouchControls() {
+function destroyTouchControls() {
   _touchBits = 0;
   _touchActive = false;
   if (_touchOverlay) {
@@ -395,3 +395,22 @@ function _touchBtn(className, label, bit) {
 
   return btn;
 }
+
+export {
+  INPUT,
+  P1_KEYS,
+  P2_KEYS,
+  consumeClick,
+  createTouchControls,
+  destroyTouchControls,
+  getMousePos,
+  isKeyDown,
+  isMouseDown,
+  sampleAll,
+  sampleGamepad,
+  sampleInput,
+  startInput,
+  startMouseInput,
+  stopInput,
+  stopMouseInput,
+};

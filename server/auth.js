@@ -255,7 +255,7 @@ module.exports = function setupAuth(app) {
           const githubSource = req.app.get('githubSource');
           if (githubSource && githubSource.setRef) {
             await githubSource.setRef(pinnedRef);
-            console.log(`[auth] Pre-warmed pinned ref on login: ${pinnedRef}`);
+            console.info(`[auth] Pre-warmed pinned ref on login: ${pinnedRef}`);
           }
         } catch (err) {
           console.warn(`[auth] Failed to pre-warm pinned ref "${pinnedRef}":`, err.message);
@@ -355,7 +355,7 @@ module.exports = function setupAuth(app) {
       const githubSource = req.app.get('githubSource');
       if (githubSource && githubSource.setRef) {
         await githubSource.setRef(pinnedRef);
-        console.log(`[auth] Pre-warmed pinned ref on logout: ${pinnedRef}`);
+        console.info(`[auth] Pre-warmed pinned ref on logout: ${pinnedRef}`);
       }
     } catch (err) {
       console.warn(`[auth] Failed to pre-warm pinned ref on logout:`, err.message);

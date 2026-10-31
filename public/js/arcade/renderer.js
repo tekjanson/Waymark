@@ -3,9 +3,8 @@
    ============================================================ */
 
 /* ---------- Constants ---------- */
-
-export const VIRTUAL_W = 640;
-export const VIRTUAL_H = 360;
+const VIRTUAL_W = 640;
+const VIRTUAL_H = 360;
 
 /* ---------- State ---------- */
 
@@ -19,7 +18,7 @@ let _scale = 1;
  * Initialise the renderer with a canvas element.
  * @param {HTMLCanvasElement} canvasEl
  */
-export function initRenderer(canvasEl) {
+function initRenderer(canvasEl) {
   _canvas = canvasEl;
   _ctx = canvasEl.getContext('2d');
   _ctx.imageSmoothingEnabled = false;
@@ -30,7 +29,7 @@ export function initRenderer(canvasEl) {
 /**
  * Recalculate canvas size to fit parent while preserving virtual resolution.
  */
-export function resize() {
+function resize() {
   if (!_canvas) return;
   const parent = _canvas.parentElement;
   if (!parent) return;
@@ -51,7 +50,7 @@ export function resize() {
 /**
  * Clean up the renderer (remove resize listener).
  */
-export function destroyRenderer() {
+function destroyRenderer() {
   window.removeEventListener('resize', resize);
   _canvas = null;
   _ctx = null;
@@ -65,7 +64,7 @@ export function destroyRenderer() {
  * @param {number} pageY
  * @returns {{ x: number, y: number }}
  */
-export function pageToVirtual(pageX, pageY) {
+function pageToVirtual(pageX, pageY) {
   if (!_canvas) return { x: 0, y: 0 };
   const rect = _canvas.getBoundingClientRect();
   return {
@@ -80,7 +79,7 @@ export function pageToVirtual(pageX, pageY) {
  * Clear the canvas with a solid colour.
  * @param {string} [color='#000']
  */
-export function clear(color = '#000') {
+function clear(color = '#000') {
   if (!_ctx) return;
   _ctx.fillStyle = color;
   _ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
@@ -93,7 +92,7 @@ export function clear(color = '#000') {
  * @param {number} r — radius (virtual coords)
  * @param {string} color
  */
-export function drawCircle(x, y, r, color) {
+function drawCircle(x, y, r, color) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -109,7 +108,7 @@ export function drawCircle(x, y, r, color) {
  * @param {string} color
  * @param {number} [lineWidth=1]
  */
-export function strokeCircle(x, y, r, color, lineWidth = 1) {
+function strokeCircle(x, y, r, color, lineWidth = 1) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -126,7 +125,7 @@ export function strokeCircle(x, y, r, color, lineWidth = 1) {
  * @param {number} h
  * @param {string} color
  */
-export function drawRect(x, y, w, h, color) {
+function drawRect(x, y, w, h, color) {
   if (!_ctx) return;
   _ctx.fillStyle = color;
   _ctx.fillRect(x, y, w, h);
@@ -141,7 +140,7 @@ export function drawRect(x, y, w, h, color) {
  * @param {string} color
  * @param {number} [lineWidth=1]
  */
-export function strokeRect(x, y, w, h, color, lineWidth = 1) {
+function strokeRect(x, y, w, h, color, lineWidth = 1) {
   if (!_ctx) return;
   _ctx.strokeStyle = color;
   _ctx.lineWidth = lineWidth;
@@ -157,7 +156,7 @@ export function strokeRect(x, y, w, h, color, lineWidth = 1) {
  * @param {string} color
  * @param {number} [lineWidth=1]
  */
-export function drawLine(x1, y1, x2, y2, color, lineWidth = 1) {
+function drawLine(x1, y1, x2, y2, color, lineWidth = 1) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.moveTo(x1, y1);
@@ -180,7 +179,7 @@ export function drawLine(x1, y1, x2, y2, color, lineWidth = 1) {
  * @param {string} [opts.font='monospace']
  * @param {boolean} [opts.bold=false]
  */
-export function drawText(text, x, y, opts = {}) {
+function drawText(text, x, y, opts = {}) {
   if (!_ctx) return;
   const {
     color = '#fff',
@@ -204,7 +203,7 @@ export function drawText(text, x, y, opts = {}) {
  * @param {string} [font='monospace']
  * @returns {number}
  */
-export function measureText(text, size = 16, font = 'monospace') {
+function measureText(text, size = 16, font = 'monospace') {
   if (!_ctx) return 0;
   _ctx.font = `${size}px ${font}`;
   return _ctx.measureText(text).width;
@@ -222,7 +221,7 @@ export function measureText(text, size = 16, font = 'monospace') {
  * @param {number} dw — dest width (virtual)
  * @param {number} dh — dest height (virtual)
  */
-export function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh) {
+function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh) {
   if (!_ctx || !img) return;
   _ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
 }
@@ -234,7 +233,7 @@ export function drawSprite(img, sx, sy, sw, sh, dx, dy, dw, dh) {
  * @param {number} r — radius
  * @param {string} color
  */
-export function drawHalfCircle(x, y, r, color) {
+function drawHalfCircle(x, y, r, color) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.arc(x, y, r, Math.PI, 0);
@@ -251,7 +250,7 @@ export function drawHalfCircle(x, y, r, color) {
  * @param {number} r — corner radius
  * @param {string} color
  */
-export function drawRoundRect(x, y, w, h, r, color) {
+function drawRoundRect(x, y, w, h, r, color) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.roundRect(x, y, w, h, r);
@@ -264,14 +263,14 @@ export function drawRoundRect(x, y, w, h, r, color) {
 /**
  * Save canvas state (for clipping, transforms, etc.).
  */
-export function save() {
+function save() {
   if (_ctx) _ctx.save();
 }
 
 /**
  * Restore canvas state.
  */
-export function restore() {
+function restore() {
   if (_ctx) _ctx.restore();
 }
 
@@ -282,7 +281,7 @@ export function restore() {
  * @param {number} w
  * @param {number} h
  */
-export function clip(x, y, w, h) {
+function clip(x, y, w, h) {
   if (!_ctx) return;
   _ctx.beginPath();
   _ctx.rect(x, y, w, h);
@@ -293,7 +292,7 @@ export function clip(x, y, w, h) {
  * Set global alpha.
  * @param {number} a — 0..1
  */
-export function setAlpha(a) {
+function setAlpha(a) {
   if (_ctx) _ctx.globalAlpha = a;
 }
 
@@ -301,7 +300,7 @@ export function setAlpha(a) {
  * Get current drawing context (escape hatch for advanced rendering).
  * @returns {CanvasRenderingContext2D|null}
  */
-export function getCtx() {
+function getCtx() {
   return _ctx;
 }
 
@@ -309,6 +308,32 @@ export function getCtx() {
  * Get current scale factor.
  * @returns {number}
  */
-export function getScale() {
+function getScale() {
   return _scale;
 }
+
+export {
+  VIRTUAL_H,
+  VIRTUAL_W,
+  clear,
+  clip,
+  destroyRenderer,
+  drawCircle,
+  drawHalfCircle,
+  drawLine,
+  drawRect,
+  drawRoundRect,
+  drawSprite,
+  drawText,
+  getCtx,
+  getScale,
+  initRenderer,
+  measureText,
+  pageToVirtual,
+  resize,
+  restore,
+  save,
+  setAlpha,
+  strokeCircle,
+  strokeRect,
+};

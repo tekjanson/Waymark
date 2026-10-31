@@ -15,7 +15,7 @@ import { KNOWN_HEADERS } from './config.js';
  * @param {Object} args
  * @returns {Promise<Object>}
  */
-export async function executeTool(name, args) {
+async function executeTool(name, args) {
   if (name === 'create_sheet') {
     return toolCreateSheet(args);
   }
@@ -36,7 +36,7 @@ export async function executeTool(name, args) {
  * @param {{ template: string, title: string, data: string[][] }} args
  * @returns {Promise<Object>}
  */
-export async function toolCreateSheet({ template, title, data }) {
+async function toolCreateSheet({ template, title, data }) {
   if (!title || !data || !data.length) {
     throw new Error('Missing title or data');
   }
@@ -70,7 +70,7 @@ export async function toolCreateSheet({ template, title, data }) {
  * @param {{ spreadsheet_id: string }} args
  * @returns {Promise<Object>}
  */
-export async function toolReadSheet({ spreadsheet_id }) {
+async function toolReadSheet({ spreadsheet_id }) {
   if (!spreadsheet_id) {
     throw new Error('Missing spreadsheet_id');
   }
@@ -98,7 +98,7 @@ export async function toolReadSheet({ spreadsheet_id }) {
  * @param {{ query: string }} args
  * @returns {Promise<Object>}
  */
-export async function toolSearchSheets({ query }) {
+async function toolSearchSheets({ query }) {
   if (!query) {
     throw new Error('Missing search query');
   }
@@ -130,7 +130,7 @@ export async function toolSearchSheets({ query }) {
  * @param {{ spreadsheet_id: string, operation: string, rows?: string[][], updates?: Array }} args
  * @returns {Promise<Object>}
  */
-export async function toolUpdateSheet({ spreadsheet_id, operation, rows, updates }) {
+async function toolUpdateSheet({ spreadsheet_id, operation, rows, updates }) {
   if (!spreadsheet_id) {
     throw new Error('Missing spreadsheet_id');
   }
@@ -212,7 +212,7 @@ export async function toolUpdateSheet({ spreadsheet_id, operation, rows, updates
  * @param {string} toolName
  * @param {Object} args
  */
-export function showToolIndicator(chatBody, toolName, args) {
+function showToolIndicator(chatBody, toolName, args) {
   if (!chatBody) return;
   let label;
   if (toolName === 'create_sheet') {
@@ -238,7 +238,7 @@ export function showToolIndicator(chatBody, toolName, args) {
  * Remove the active tool indicator.
  * @param {HTMLElement | null} chatBody
  */
-export function removeToolIndicator(chatBody) {
+function removeToolIndicator(chatBody) {
   if (!chatBody) return;
   const indicator = chatBody.querySelector('.agent-tool-indicator');
   if (indicator) indicator.remove();
@@ -250,7 +250,7 @@ export function removeToolIndicator(chatBody) {
  * @param {number} seconds
  * @param {boolean} rotating
  */
-export function showRetryIndicator(chatBody, seconds, rotating) {
+function showRetryIndicator(chatBody, seconds, rotating) {
   if (!chatBody) return;
   const msg = rotating
     ? 'Rate limited — switching to next key…'
@@ -264,6 +264,18 @@ export function showRetryIndicator(chatBody, seconds, rotating) {
 }
 
 /** Remove the retry indicator. */
-export function removeRetryIndicator() {
+function removeRetryIndicator() {
   document.getElementById('agent-retry-indicator')?.remove();
 }
+
+export {
+  executeTool,
+  removeRetryIndicator,
+  removeToolIndicator,
+  showRetryIndicator,
+  showToolIndicator,
+  toolCreateSheet,
+  toolReadSheet,
+  toolSearchSheets,
+  toolUpdateSheet,
+};

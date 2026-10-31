@@ -1,3 +1,4 @@
+import * as storage from '../storage.js';
 /* ============================================================
    vault.js — Agent Keys Sheet integration
    Reads AI API keys from a Waymark Passwords sheet.
@@ -54,7 +55,7 @@ function _fromBase64(b64) {
  * Detect whether the user is on a mobile web device (or mobile viewport / touch device).
  * @returns {boolean}
  */
-export function isMobileWeb() {
+function isMobileWeb() {
   if (typeof window === 'undefined') return false;
   if (window.__WAYMARK_BIOMETRIC_MOBILE === true) return true;
   if (window.__WAYMARK_BIOMETRIC_MOBILE === false) return false;
@@ -72,7 +73,7 @@ export function isMobileWeb() {
  * Supports `window.__WAYMARK_MOCK_BIOMETRICS` for deterministic testing.
  * @returns {Promise<boolean>}
  */
-export async function isBiometricSupported() {
+async function isBiometricSupported() {
   if (typeof window === 'undefined') return false;
   if (window.__WAYMARK_MOCK_BIOMETRICS) {
     return window.__WAYMARK_MOCK_BIOMETRICS.supported !== false;
@@ -96,7 +97,7 @@ export async function isBiometricSupported() {
  * @param {string|null} [sheetId]
  * @returns {boolean}
  */
-export function hasKnownVaultPassword(sheetId = getLinkedSheetId()) {
+function hasKnownVaultPassword(sheetId = getLinkedSheetId()) {
   if (_lastUnlockedPassword && _lastUnlockedPassword.length > 0) return true;
   if (sheetId) {
     const cached = encryption.getUnlockedPassword(sheetId);
@@ -113,9 +114,9 @@ export function hasKnownVaultPassword(sheetId = getLinkedSheetId()) {
  * @param {string|null} [sheetId]
  * @returns {boolean}
  */
-export function hasBiometricVault(sheetId = getLinkedSheetId()) {
+function hasBiometricVault(sheetId = getLinkedSheetId()) {
   try {
-    const raw = JSON.parse(localStorage.getItem(LS_BIOMETRIC_VAULT) || 'null');
+    const raw = JSON.parse(storage.getRaw(LS_BIOMETRIC_VAULT) || 'null');
     if (!raw || !raw.credentialId || !raw.ciphertext || !raw.iv || (!raw.wrapMask && !raw.keyB64)) {
       return false;
     }
@@ -129,8 +130,8 @@ export function hasBiometricVault(sheetId = getLinkedSheetId()) {
 /**
  * Clear stored biometric vault credentials on this device.
  */
-export function clearBiometricVault() {
-  try { localStorage.removeItem(LS_BIOMETRIC_VAULT); } catch { /* noop */ }
+function clearBiometricVault() {
+  try { storage.removeRaw(LS_BIOMETRIC_VAULT); } catch { /* noop */ }
 }
 
 /**
@@ -142,7 +143,7 @@ export function clearBiometricVault() {
  * @param {string|null} [targetSheetId]
  * @returns {Promise<boolean>}
  */
-export async function enrollBiometricVault(password, targetSheetId = getLinkedSheetId()) {
+async function enrollBiometricVault(password, targetSheetId = getLinkedSheetId()) {
   const sheetId = targetSheetId || getLinkedSheetId();
   const resolvedPw = (typeof password === 'string' && password.length > 0)
     ? password
@@ -208,19 +209,12 @@ export async function enrollBiometricVault(password, targetSheetId = getLinkedSh
       wrapMask[i] = rawKey[i] ^ rawIdBytes[i % rawIdBytes.length];
     }
 
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      rawKey,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt']
-    );
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encodedPw = new TextEncoder().encode(String(resolvedPw));
-    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, encodedPw);
+    const cipherBuf = await encryption.encryptAesGcmWithRawKey(rawKey, iv, encodedPw);
 
     _lastUnlockedPassword = String(resolvedPw);
-    localStorage.setItem(LS_BIOMETRIC_VAULT, JSON.stringify({
+    storage.setRaw(LS_BIOMETRIC_VAULT, JSON.stringify({
       sheetId,
       credentialId: _toBase64(rawIdBytes),
       iv: _toBase64(iv),
@@ -242,12 +236,12 @@ export async function enrollBiometricVault(password, targetSheetId = getLinkedSh
  * @param {string|null} [targetSheetId]
  * @returns {Promise<string|null>}
  */
-export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedSheetId()) {
+async function unlockPasswordWithBiometrics(targetSheetId = getLinkedSheetId()) {
   const sheetId = targetSheetId || getLinkedSheetId();
   if (!hasBiometricVault(sheetId)) return null;
 
   try {
-    const record = JSON.parse(localStorage.getItem(LS_BIOMETRIC_VAULT) || 'null');
+    const record = JSON.parse(storage.getRaw(LS_BIOMETRIC_VAULT) || 'null');
     if (!record || (sheetId && record.sheetId && record.sheetId !== sheetId)) return null;
 
     const credIdBytes = _fromBase64(record.credentialId);
@@ -299,8 +293,7 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
         for (let i = 0; i < 32; i++) {
           rawKey[i] = wrapMask[i] ^ assertionRawId[i % assertionRawId.length];
         }
-        const cryptoKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
-        const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+        const plainBuf = await encryption.decryptAesGcmWithRawKey(rawKey, iv, ciphertext);
         password = new TextDecoder().decode(plainBuf);
       } catch {
         password = null;
@@ -311,8 +304,7 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
     if (password === null && record.keyB64) {
       try {
         const rawKey = _fromBase64(record.keyB64);
-        const cryptoKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
-        const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext);
+        const plainBuf = await encryption.decryptAesGcmWithRawKey(rawKey, iv, ciphertext);
         password = new TextDecoder().decode(plainBuf);
       } catch {
         password = null;
@@ -339,7 +331,7 @@ export async function unlockPasswordWithBiometrics(targetSheetId = getLinkedShee
  * Prompts the user for Face ID / Touch ID / Fingerprint via WebAuthn.
  * @returns {Promise<boolean>}
  */
-export function unlockVaultWithBiometrics() {
+function unlockVaultWithBiometrics() {
   if (_biometricUnlockPromise) return _biometricUnlockPromise;
   _biometricUnlockPromise = _unlockVaultWithBiometrics().finally(() => {
     _biometricUnlockPromise = null;
@@ -367,7 +359,7 @@ async function _unlockVaultWithBiometrics() {
  * use this device's enrolled biometric credential automatically if available.
  * @returns {Promise<boolean>} true when AI keys can be read, false otherwise
  */
-export async function ensureVaultUnlocked() {
+async function ensureVaultUnlocked() {
   if (!isVaultSetUp() || isVaultUnlocked()) return true;
   if (hasBiometricVault() && await unlockVaultWithBiometrics()) return true;
   // A locked but unencrypted keys sheet can still be opened automatically.
@@ -378,13 +370,13 @@ export async function ensureVaultUnlocked() {
 /* ---------- Link / Unlink ---------- */
 
 /** @returns {string|null} */
-export function getLinkedSheetId() {
-  try { return JSON.parse(localStorage.getItem(LS_SHEET_ID) || 'null'); } catch { return null; }
+function getLinkedSheetId() {
+  try { return JSON.parse(storage.getRaw(LS_SHEET_ID) || 'null'); } catch { return null; }
 }
 
 /** @returns {string} friendly sheet name */
-export function getLinkedSheetName() {
-  try { return JSON.parse(localStorage.getItem(LS_SHEET_NAME) || 'null') || 'Passwords sheet'; } catch { return 'Passwords sheet'; }
+function getLinkedSheetName() {
+  try { return JSON.parse(storage.getRaw(LS_SHEET_NAME) || 'null') || 'Passwords sheet'; } catch { return 'Passwords sheet'; }
 }
 
 /**
@@ -392,21 +384,21 @@ export function getLinkedSheetName() {
  * @param {string} id   — spreadsheet ID
  * @param {string} name — friendly title
  */
-export function linkSheet(id, name) {
-  localStorage.setItem(LS_SHEET_ID, JSON.stringify(id));
-  localStorage.setItem(LS_SHEET_NAME, JSON.stringify(name || id));
+function linkSheet(id, name) {
+  storage.setRaw(LS_SHEET_ID, JSON.stringify(id));
+  storage.setRaw(LS_SHEET_NAME, JSON.stringify(name || id));
   _session = null; // force re-unlock after linking
   // Mirror the link to Drive so it follows the user across devices.
   userData.saveAgentKeysSheet?.({ id, name: name || id }).catch(() => {});
 }
 
 /** Remove the link and lock. */
-export function unlinkSheet() {
+function unlinkSheet() {
   const id = getLinkedSheetId();
   if (id) encryption.lock(id);
   clearBiometricVault();
-  localStorage.removeItem(LS_SHEET_ID);
-  localStorage.removeItem(LS_SHEET_NAME);
+  storage.removeRaw(LS_SHEET_ID);
+  storage.removeRaw(LS_SHEET_NAME);
   _session = null;
   _lastUnlockedPassword = null;
   userData.saveAgentKeysSheet?.(null).catch(() => {});
@@ -417,13 +409,13 @@ export function unlinkSheet() {
  * local link yet (e.g. first login on a new phone). Pull-only, synchronous.
  * @returns {boolean} true if a link was restored into localStorage
  */
-export function hydrateFromDrive() {
+function hydrateFromDrive() {
   try {
     if (getLinkedSheetId()) return false; // already linked on this device
     const link = userData.getAgentKeysSheet?.();
     if (!link || !link.id) return false;
-    localStorage.setItem(LS_SHEET_ID, JSON.stringify(link.id));
-    localStorage.setItem(LS_SHEET_NAME, JSON.stringify(link.name || link.id));
+    storage.setRaw(LS_SHEET_ID, JSON.stringify(link.id));
+    storage.setRaw(LS_SHEET_NAME, JSON.stringify(link.name || link.id));
     return true;
   } catch {
     return false;
@@ -444,15 +436,15 @@ export function hydrateFromDrive() {
  * Safe to call once after userData.init().
  * @returns {Promise<{action:'pushed'|'pulled'|'noop', id:(string|null)}>}
  */
-export async function syncVaultLink() {
+async function syncVaultLink() {
   let localId = null, localName = null;
   try { localId = getLinkedSheetId(); localName = getLinkedSheetName(); } catch { /* noop */ }
   const driveLink = (() => { try { return userData.getAgentKeysSheet?.() || null; } catch { return null; } })();
 
   // Fresh device: pull the account link down.
   if (!localId && driveLink && driveLink.id) {
-    localStorage.setItem(LS_SHEET_ID, JSON.stringify(driveLink.id));
-    localStorage.setItem(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
+    storage.setRaw(LS_SHEET_ID, JSON.stringify(driveLink.id));
+    storage.setRaw(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
     return { action: 'pulled', id: driveLink.id };
   }
 
@@ -464,8 +456,8 @@ export async function syncVaultLink() {
 
   // Account has a different link than this device: adopt the account value.
   if (localId && driveLink && driveLink.id && driveLink.id !== localId) {
-    localStorage.setItem(LS_SHEET_ID, JSON.stringify(driveLink.id));
-    localStorage.setItem(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
+    storage.setRaw(LS_SHEET_ID, JSON.stringify(driveLink.id));
+    storage.setRaw(LS_SHEET_NAME, JSON.stringify(driveLink.name || driveLink.id));
     _session = null; // link changed → force re-unlock
     return { action: 'pulled', id: driveLink.id };
   }
@@ -476,17 +468,17 @@ export async function syncVaultLink() {
 /* ---------- Lock / Unlock status ---------- */
 
 /** @returns {boolean} a sheet has been linked */
-export function isVaultSetUp() {
+function isVaultSetUp() {
   return !!getLinkedSheetId();
 }
 
 /** @returns {boolean} keys are decrypted and in memory */
-export function isVaultUnlocked() {
+function isVaultUnlocked() {
   return _session !== null;
 }
 
 /** Lock — evict in-memory keys and encryption key. */
-export function lockVault() {
+function lockVault() {
   const id = getLinkedSheetId();
   if (id) encryption.lock(id);
   _session = null;
@@ -502,7 +494,7 @@ export function lockVault() {
  * @param {string} password — sheet unlock password (empty string if unencrypted)
  * @returns {Promise<boolean>}
  */
-export async function unlockVault(password) {
+async function unlockVault(password) {
   const sheetId = getLinkedSheetId();
   if (!sheetId) return false;
 
@@ -599,13 +591,13 @@ export async function unlockVault(password) {
 /* ---------- Key accessors ---------- */
 
 /** @returns {Array} Gemini key entries (empty when locked) */
-export function getGeminiKeys() { return _session?.geminiKeys || []; }
+function getGeminiKeys() { return _session?.geminiKeys || []; }
 
 /** @returns {Array} Claude key entries (empty when locked) */
-export function getClaudeKeys() { return _session?.claudeKeys || []; }
+function getClaudeKeys() { return _session?.claudeKeys || []; }
 
 /** @returns {Array} OpenAI key entries (empty when locked) */
-export function getOpenAIKeys() { return _session?.openaiKeys || []; }
+function getOpenAIKeys() { return _session?.openaiKeys || []; }
 
 /* ---------- Write a new key into the linked sheet ---------- */
 
@@ -617,7 +609,7 @@ export function getOpenAIKeys() { return _session?.openaiKeys || []; }
  * @param {{ key: string, nickname: string, provider: 'gemini'|'claude', isBilled?: boolean }} keyEntry
  * @returns {Promise<boolean>} — true on success
  */
-export async function addKeyToSheet(keyEntry) {
+async function addKeyToSheet(keyEntry) {
   const sheetId = getLinkedSheetId();
   if (!sheetId || !_session) return false; // must be linked and unlocked
 
@@ -697,3 +689,29 @@ export async function addKeyToSheet(keyEntry) {
   }
 }
 
+
+export {
+  isMobileWeb,
+  isBiometricSupported,
+  hasKnownVaultPassword,
+  hasBiometricVault,
+  clearBiometricVault,
+  enrollBiometricVault,
+  unlockPasswordWithBiometrics,
+  unlockVaultWithBiometrics,
+  ensureVaultUnlocked,
+  getLinkedSheetId,
+  getLinkedSheetName,
+  linkSheet,
+  unlinkSheet,
+  hydrateFromDrive,
+  syncVaultLink,
+  isVaultSetUp,
+  isVaultUnlocked,
+  lockVault,
+  unlockVault,
+  getGeminiKeys,
+  getClaudeKeys,
+  getOpenAIKeys,
+  addKeyToSheet,
+};

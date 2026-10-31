@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "oauth-pkce-flow",
+      "user_intent": "Exchange authorization code for OAuth tokens using PKCE",
+      "trigger": "network.http:oauth_callback",
+      "steps": [
+        "validate:pkce_verifier",
+        "external:exchange_token_endpoint",
+        "emit:auth_session_cookie"
+      ],
+      "outcome": "Authenticated user session established"
+    }
+  ]
+}

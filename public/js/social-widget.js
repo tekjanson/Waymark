@@ -600,7 +600,7 @@ export class SocialChatWidget {
     this.debugPanel.innerHTML = `
       <div class="social-debug-header">
         <span>🔊 Audio Debug</span>
-        <button class="social-debug-close" title="Close">✕</button>
+        <button type="button" class="social-debug-close" data-action="social-debug-close" title="Close">✕</button>
       </div>
       <div class="social-debug-section">
         <div class="social-debug-label">Mic Level</div>
@@ -643,11 +643,11 @@ export class SocialChatWidget {
         </div>
       </div>
       <div class="social-debug-section social-debug-log-section">
-        <div class="social-debug-label">Event Log <button class="social-debug-clear-log" title="Clear">clear</button></div>
+        <div class="social-debug-label">Event Log <button type="button" class="social-debug-clear-log" data-action="social-debug-clear-log" title="Clear">clear</button></div>
         <div class="social-debug-log sd-event-log"></div>
       </div>
       <div class="social-debug-section">
-        <button class="social-debug-download">📥 Download Debug Snapshot</button>
+        <button type="button" class="social-debug-download" data-action="social-debug-download">📥 Download Debug Snapshot</button>
       </div>`;
 
     this.debugPanel.querySelector('.social-debug-close').addEventListener('click', () => {

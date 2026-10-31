@@ -1,14 +1,14 @@
 /* ============================================================
    examples.js — Generate example sheets in the user's Drive
-   
+
    Creates example sheets under the organized Waymark directory:
      Waymark/Examples/<template-type>/
-   
+
    Uses the existing API layer (works in both local + live mode).
-   
+
    REUSES existing folders — clicking generate multiple times
    will NOT create duplicate directories.
-   
+
    Data lives in example-data.js; this file is just the generator.
    ============================================================ */
 

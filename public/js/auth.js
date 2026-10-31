@@ -67,7 +67,7 @@ async function _doRefresh() {
     const data = await res.json();
     accessToken  = data.access_token;
     tokenExpiry  = Date.now() + (data.expires_in || 3600) * 1000 - 60_000; // refresh 1 min early
-    console.log('[auth] refresh OK — handing token to Android bridge');
+    console.info('[auth] refresh OK — handing token to Android bridge');
     // Hand fresh token to Android native WebRTC service (no-op in browser)
     const bridge = getAndroidBridge(['onAuthToken']);
     if (bridge) {

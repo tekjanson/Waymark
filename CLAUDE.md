@@ -114,7 +114,7 @@ beautiful, interactive views (kanban boards, budgets, checklists, recipe books, 
 - Google Sheets is the database
 - Google Drive is the file system
 
-**Key rule:** Never put logic in the server. See `.github/instructions/AI_laws.instructions.md`
+**Key rule:** Never put logic in the server. See `.github/instructions/ai-laws.instructions.md`
 for the complete non-negotiable rule set (AI_LAWS). Every change must comply.
 
 **Templates:** Each sheet type (kanban, budget, checklist, recipe, etc.) has:
@@ -246,7 +246,7 @@ Each container claims tasks independently. The `--agent $AGENT_NAME` flag on
 ## Source of Truth for Rules
 
 For ALL code changes to the Waymark app:
-**`.github/instructions/AI_laws.instructions.md`** is the law. Non-negotiable.
+**`.github/instructions/ai-laws.instructions.md`** is the law. Non-negotiable.
 Read it before making any change. Violations are rejected without exception.
 
 ---
@@ -416,7 +416,7 @@ You are an AI software engineer working for Tek Janson. Read these files at boot
 1. `/workspace/dev-worker/context/operator.md` — who you're working for, their style
 2. `/workspace/dev-worker/context/system.md` — the full system architecture
 3. `/workspace/dev-worker/context/working-style.md` — how we work together
-4. `/workspace/.github/instructions/AI_laws.instructions.md` — the non-negotiable rules
+4. `/workspace/.github/instructions/ai-laws.instructions.md` — the non-negotiable rules
 
 These are your operating manual. Internalize them. Do not re-read them every cycle.
 
@@ -434,7 +434,7 @@ cd /workspace
 git status --short | head -5
 
 # 3. Read AI laws
-cat .github/instructions/AI_laws.instructions.md | head -30
+cat .github/instructions/ai-laws.instructions.md | head -30
 
 # 4. Query the workboard for first task
 GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/waymark-service-account-key.json \
@@ -689,7 +689,7 @@ beautiful, interactive views (kanban boards, budgets, checklists, recipe books, 
 - Google Sheets is the database
 - Google Drive is the file system
 
-**Key rule:** Never put logic in the server. See `.github/instructions/AI_laws.instructions.md`
+**Key rule:** Never put logic in the server. See `.github/instructions/ai-laws.instructions.md`
 for the complete non-negotiable rule set (AI_LAWS). Every change must comply.
 
 **Templates:** Each sheet type (kanban, budget, checklist, recipe, etc.) has:
@@ -821,7 +821,7 @@ Each container claims tasks independently. The `--agent $AGENT_NAME` flag on
 ## Source of Truth for Rules
 
 For ALL code changes to the Waymark app:
-**`.github/instructions/AI_laws.instructions.md`** is the law. Non-negotiable.
+**`.github/instructions/ai-laws.instructions.md`** is the law. Non-negotiable.
 Read it before making any change. Violations are rejected without exception.
 
 ---
@@ -991,7 +991,7 @@ You are an AI software engineer working for Tek Janson. Read these files at boot
 1. `/workspace/dev-worker/context/operator.md` — who you're working for, their style
 2. `/workspace/dev-worker/context/system.md` — the full system architecture
 3. `/workspace/dev-worker/context/working-style.md` — how we work together
-4. `/workspace/.github/instructions/AI_laws.instructions.md` — the non-negotiable rules
+4. `/workspace/.github/instructions/ai-laws.instructions.md` — the non-negotiable rules
 
 These are your operating manual. Internalize them. Do not re-read them every cycle.
 
@@ -1009,7 +1009,7 @@ cd /workspace
 git status --short | head -5
 
 # 3. Read AI laws
-cat .github/instructions/AI_laws.instructions.md | head -30
+cat .github/instructions/ai-laws.instructions.md | head -30
 
 # 4. Query the workboard for first task
 GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/waymark-service-account-key.json \
@@ -1208,7 +1208,7 @@ cp .env.example .env   # fill in your Google OAuth credentials
 
 ## Project Rules
 
-<!-- from: AI_laws.instructions.md -->
+<!-- from: ai-laws.instructions.md -->
 # AI Laws — WayMark Codebase Rules
 
 > **Purpose:** Strict pattern enforcement for AI agents working on this codebase.
@@ -2181,7 +2181,7 @@ These instructions apply to every session, every task, every agent invocation.
 
 ---
 
-## Codebase Laws (summary — full rules in .github/instructions/AI_laws.instructions.md)
+## Codebase Laws (summary — full rules in .github/instructions/ai-laws.instructions.md)
 
 1. **No backend business logic** — server/ only: static files, OAuth, runtime flags.
 2. **Vanilla stack** — No React, no Tailwind, no bundlers, no TypeScript. ES Modules + raw CSS.

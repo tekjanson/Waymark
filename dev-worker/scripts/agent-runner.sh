@@ -553,14 +553,14 @@ while true; do
     if [[ -n "${CLAIMED_ROW:-}" ]] && check_for_task_notes; then
         log "━━━ Operator interrupt: incoming notes on row ${CLAIMED_ROW} ━━━"
         log "$NEW_NOTES_TEXT"
-        
+
         # Build a "continue" prompt that surfaces the notes as incoming messages
         AGENT_COMMAND="Continue working on row ${CLAIMED_ROW} (${CLAIMED_TASK}). You received these messages from the operator:\n\n${NEW_NOTES_TEXT}\n\nRespond to the feedback, make requested changes, and update the workboard with a note when done. If this completes the task, mark it QA."
-        
+
         SESSION=$(( SESSION + 1 ))
         log "━━━ Session ${SESSION} starting (notes response) — row ${CLAIMED_ROW}: ${CLAIMED_TASK} ━━━"
         sheet_write --status Busy --task "${CLAIMED_TASK} (responding to notes)" --heartbeat
-        
+
         # Re-run agent with notes context. For the Gemini engine, fold the
         # operator notes into the task description so dream-rsi.js sees them.
         _orig_desc="${CLAIMED_DESC:-}"

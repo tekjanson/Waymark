@@ -18,7 +18,7 @@ let _imageLightbox = null;
  * @param {Object} args
  * @returns {{ chatBody: HTMLElement }}
  */
-export function renderAgentUI(args) {
+function renderAgentUI(args) {
   const {
     container,
     messages,
@@ -91,7 +91,7 @@ export function renderAgentUI(args) {
  * @param {Function} onUnlock — called when user submits password or unlocks via biometrics
  * @returns {HTMLElement}
  */
-export function buildVaultLock(onUnlock) {
+function buildVaultLock(onUnlock) {
   const input = el('input', {
     type: 'password',
     className: 'agent-vault-input',
@@ -174,7 +174,7 @@ export function buildVaultLock(onUnlock) {
  * @param {Function} onShowSettings
  * @returns {HTMLElement}
  */
-export function buildWelcome(onShowSettings) {
+function buildWelcome(onShowSettings) {
   return el('div', { className: 'agent-welcome' }, [
     el('div', { className: 'agent-welcome-icon' }, ['🤖']),
     el('h3', {}, ['Welcome to Waymark AI']),
@@ -198,7 +198,7 @@ export function buildWelcome(onShowSettings) {
  * @param {Function} onSendMessage
  * @returns {HTMLElement}
  */
-export function buildEmptyState(onSendMessage) {
+function buildEmptyState(onSendMessage) {
   return el('div', { className: 'agent-empty' }, [
     el('p', { className: 'agent-empty-text' }, ['I can help you create and organise Google Sheets that Waymark renders as rich views. What would you like to build?']),
     el('div', { className: 'agent-suggestions' }, [
@@ -215,7 +215,7 @@ export function buildEmptyState(onSendMessage) {
  * @param {{ role: string, content: string }} msg
  * @returns {HTMLElement}
  */
-export function buildMessage(msg) {
+function buildMessage(msg) {
   const isUser = msg.role === 'user';
   const wrapper = el('div', {
     className: 'agent-message ' + (isUser ? 'agent-message-user' : 'agent-message-assistant'),
@@ -303,7 +303,7 @@ function openImageLightbox(image) {
  * @param {HTMLElement} chatBody
  * @param {string} text
  */
-export function appendSystemMessage(chatBody, text) {
+function appendSystemMessage(chatBody, text) {
   const wrapper = el('div', { className: 'agent-message agent-message-system' });
   const content = el('div', { className: 'agent-message-content' });
   renderMarkdown(content, text);
@@ -317,7 +317,7 @@ export function appendSystemMessage(chatBody, text) {
  * @param {HTMLElement} chatBody
  * @param {{ spreadsheetId: string, title: string, template: string, rowCount: number }} result
  */
-export function appendSheetPreviewCard(chatBody, result) {
+function appendSheetPreviewCard(chatBody, result) {
   const { spreadsheetId, title, template, rowCount } = result;
 
   const badge = el('span', { className: 'agent-card-badge' }, [template || 'sheet']);
@@ -571,7 +571,7 @@ function buildContextBar(args) {
  * Refresh the context bar (call after adding/removing files).
  * @param {HTMLElement} contextBar
  */
-export function refreshContextBar(contextBar) {
+function refreshContextBar(contextBar) {
   if (contextBar?._refresh) contextBar._refresh();
 }
 
@@ -581,7 +581,7 @@ export function refreshContextBar(contextBar) {
  * @param {Function} onSelect — called with {id, name}
  * @returns {HTMLElement}
  */
-export function buildFilePicker(sheets, onSelect) {
+function buildFilePicker(sheets, onSelect) {
   let filterText = '';
 
   const listContainer = el('div', { className: 'agent-picker-list' });
@@ -665,3 +665,15 @@ export function buildFilePicker(sheets, onSelect) {
   requestAnimationFrame(() => searchInput.focus());
   return overlay;
 }
+
+export {
+  appendSheetPreviewCard,
+  appendSystemMessage,
+  buildEmptyState,
+  buildFilePicker,
+  buildMessage,
+  buildVaultLock,
+  buildWelcome,
+  refreshContextBar,
+  renderAgentUI,
+};

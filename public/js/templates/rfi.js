@@ -473,7 +473,7 @@ const definition = {
     const laneEls = {}, laneBodyEls = {};
     function buildLaneSkeleton(statusKey) {
       const lane = el('div', { className: `rfi-column rfi-column-${statusKey.toLowerCase()}`, dataset: { status: statusKey, statusCol: cols.status } });
-      
+
       lane.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; lane.classList.add('rfi-lane-dragover'); });
       lane.addEventListener('dragleave', () => lane.classList.remove('rfi-lane-dragover'));
       lane.addEventListener('drop', (e) => {

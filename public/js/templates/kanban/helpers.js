@@ -1,3 +1,4 @@
+import { nowTimestamp } from '../shared.js';
 /* ============================================================
    kanban/helpers.js — Constants & pure helper functions
 
@@ -7,19 +8,17 @@
    ============================================================ */
 
 /* ---------- Constants ---------- */
-
-export const PROJECT_PALETTE = [
+const PROJECT_PALETTE = [
   '#2563eb', '#7c3aed', '#db2777', '#dc2626', '#ea580c',
   '#d97706', '#0d9488', '#0891b2', '#4f46e5', '#16a34a',
 ];
-
-export const LANE_LABELS = {
+const LANE_LABELS = {
   backlog: 'Backlog', todo: 'To Do', inprogress: 'In Progress',
   qa: 'QA', done: 'Done', rejected: 'Rejected', archived: 'Archived',
 };
 
 /** Number of cards rendered per lane before showing "Show more" */
-export const LANE_PAGE_SIZE = 50;
+const LANE_PAGE_SIZE = 50;
 
 /* ---------- Pure Functions ---------- */
 
@@ -28,7 +27,7 @@ export const LANE_PAGE_SIZE = 50;
  * @param {string} value
  * @returns {string}
  */
-export function normalizeVoiceStage(value) {
+function normalizeVoiceStage(value) {
   const v = (value || '').toLowerCase().trim().replace(/[-_]+/g, ' ');
   if (!v) return '';
   if (/^(backlog|back log|idea|ideas)$/.test(v)) return 'Backlog';
@@ -46,7 +45,7 @@ export function normalizeVoiceStage(value) {
  * @param {string} transcript
  * @returns {{title: string, description: string, priority: string, stage: string}}
  */
-export function parseVoiceTask(transcript) {
+function parseVoiceTask(transcript) {
   const original = (transcript || '').trim();
   const result = { title: '', description: '', priority: 'P2', stage: '' };
   if (!original) return result;
@@ -101,7 +100,7 @@ export function parseVoiceTask(transcript) {
  * @param {string} name
  * @returns {string} hex color
  */
-export function projectColor(name) {
+function projectColor(name) {
   if (!name) return '#94a3b8';
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
@@ -113,7 +112,7 @@ export function projectColor(name) {
  * @param {string} val
  * @returns {number}
  */
-export function priRank(val) {
+function priRank(val) {
   const v = (val || '').toLowerCase().trim();
   if (v === 'p0' || v === 'critical') return 0;
   if (v === 'p1' || v === 'high') return 1;
@@ -127,7 +126,7 @@ export function priRank(val) {
  * @param {string} dateStr
  * @returns {string}
  */
-export function dueBadgeClass(dateStr) {
+function dueBadgeClass(dateStr) {
   if (!dateStr) return '';
   const due = new Date(dateStr + 'T00:00:00');
   if (isNaN(due.getTime())) return '';
@@ -145,7 +144,7 @@ export function dueBadgeClass(dateStr) {
  * @param {string} dateStr
  * @returns {string}
  */
-export function formatDue(dateStr) {
+function formatDue(dateStr) {
   if (!dateStr) return '';
   const due = new Date(dateStr + 'T00:00:00');
   if (isNaN(due.getTime())) return dateStr;
@@ -163,14 +162,14 @@ export function formatDue(dateStr) {
 /* ---------- Status-Change Timestamps ---------- */
 
 /** Prefix used to identify auto-generated status-change notes. */
-export const STATUS_PREFIX = '⟳ ';
+const STATUS_PREFIX = '⟳ ';
 
 /**
  * Check whether a note's text is an auto-generated status-change note.
  * @param {string} text
  * @returns {boolean}
  */
-export function isStatusNote(text) {
+function isStatusNote(text) {
   return (text || '').startsWith(STATUS_PREFIX);
 }
 
@@ -181,7 +180,7 @@ export function isStatusNote(text) {
  * @param {string} text
  * @returns {string|null}
  */
-export function parseBranchName(text) {
+function parseBranchName(text) {
   const m = (text || '').match(/\bBranch:\s*([\w./-]+(?:[\w.-])*)/);
   return m ? m[1] : null;
 }
@@ -191,11 +190,7 @@ export function parseBranchName(text) {
  * Uses a space separator instead of T for human readability in the sheet.
  * @returns {string}
  */
-export function nowTimestamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+// nowTimestamp imported from shared.js
 
 /**
  * Format a date/datetime string for display in note headers.
@@ -204,7 +199,7 @@ export function nowTimestamp() {
  * @param {string} dateStr
  * @returns {string}
  */
-export function formatNoteDate(dateStr) {
+function formatNoteDate(dateStr) {
   if (!dateStr) return '';
   // Parse: support "YYYY-MM-DD" and "YYYY-MM-DD HH:MM"
   const hasTime = /\d{2}:\d{2}/.test(dateStr);
@@ -227,7 +222,7 @@ export function formatNoteDate(dateStr) {
  * @param {string} dateStr
  * @returns {string}
  */
-export function formatRelativeDate(dateStr) {
+function formatRelativeDate(dateStr) {
   if (!dateStr) return '';
   const hasTime = /\d{2}:\d{2}/.test(dateStr);
   const d = hasTime ? new Date(dateStr.replace(' ', 'T')) : new Date(dateStr + 'T00:00:00');
@@ -249,3 +244,21 @@ export function formatRelativeDate(dateStr) {
   if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
   return d.toLocaleDateString('en-US', opts);
 }
+
+export {
+  LANE_LABELS,
+  LANE_PAGE_SIZE,
+  PROJECT_PALETTE,
+  STATUS_PREFIX,
+  dueBadgeClass,
+  formatDue,
+  formatNoteDate,
+  formatRelativeDate,
+  isStatusNote,
+  normalizeVoiceStage,
+  nowTimestamp,
+  parseBranchName,
+  parseVoiceTask,
+  priRank,
+  projectColor,
+};

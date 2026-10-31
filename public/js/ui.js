@@ -11,7 +11,7 @@
  * @param {(string|Node)[]} children
  * @returns {HTMLElement}
  */
-export function el(tag, attrs = {}, children = []) {
+function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
 
   for (const [key, val] of Object.entries(attrs)) {
@@ -43,7 +43,7 @@ let toastContainer;
  * @param {'info'|'success'|'error'} type
  * @param {number} duration  ms before auto-dismiss
  */
-export function showToast(message, type = 'info', duration = 4000) {
+function showToast(message, type = 'info', duration = 4000) {
   if (!toastContainer) toastContainer = document.getElementById('toast-container');
   const toast = el('div', { className: `toast toast-${type}` }, [message]);
   toastContainer.append(toast);
@@ -56,13 +56,11 @@ export function showToast(message, type = 'info', duration = 4000) {
 /* ---------- Loading overlay ---------- */
 
 let overlayEl;
-
-export function showLoading() {
+function showLoading() {
   if (!overlayEl) overlayEl = document.getElementById('loading-overlay');
   overlayEl.classList.remove('hidden');
 }
-
-export function hideLoading() {
+function hideLoading() {
   if (!overlayEl) overlayEl = document.getElementById('loading-overlay');
   overlayEl.classList.add('hidden');
 }
@@ -73,7 +71,7 @@ export function hideLoading() {
  * Show exactly one view, hiding all others.
  * @param {string} viewName — matches data-view attribute
  */
-export function showView(viewName) {
+function showView(viewName) {
   document.querySelectorAll('#content .view').forEach(v => {
     v.classList.toggle('hidden', v.dataset.view !== viewName);
   });
@@ -98,7 +96,7 @@ const rtf = typeof Intl !== 'undefined' && Intl.RelativeTimeFormat
  * Return a human-friendly relative time string.
  * @param {Date|string|number} date
  */
-export function timeAgo(date) {
+function timeAgo(date) {
   const seconds = Math.round((Date.now() - new Date(date).getTime()) / 1000);
   if (seconds < 5) return 'just now';
   for (const { max, divisor, unit } of UNITS) {
@@ -111,8 +109,7 @@ export function timeAgo(date) {
 }
 
 /* ---------- Sidebar toggle ---------- */
-
-export function toggleSidebar(forceOpen) {
+function toggleSidebar(forceOpen) {
   const sidebar = document.getElementById('sidebar');
   if (typeof forceOpen === 'boolean') {
     sidebar.classList.toggle('sidebar-open', forceOpen);
@@ -127,7 +124,7 @@ export function toggleSidebar(forceOpen) {
 /**
  * Close the sidebar (convenience for auto-close scenarios).
  */
-export function closeSidebar() {
+function closeSidebar() {
   const sidebar = document.getElementById('sidebar');
   sidebar.classList.remove('sidebar-open');
   _syncOverlay(false);
@@ -137,7 +134,7 @@ export function closeSidebar() {
  * Check whether the sidebar is currently open.
  * @returns {boolean}
  */
-export function isSidebarOpen() {
+function isSidebarOpen() {
   return document.getElementById('sidebar').classList.contains('sidebar-open');
 }
 
@@ -205,6 +202,19 @@ function _syncOverlay(open) {
 /* ---------- Escape HTML ---------- */
 
 const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-export function escapeHtml(str) {
+function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => escapeMap[c]);
 }
+
+export {
+  closeSidebar,
+  el,
+  escapeHtml,
+  hideLoading,
+  isSidebarOpen,
+  showLoading,
+  showToast,
+  showView,
+  timeAgo,
+  toggleSidebar,
+};

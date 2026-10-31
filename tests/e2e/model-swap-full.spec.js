@@ -3,7 +3,7 @@ const { setupApp, navigateToSheet } = require('../helpers/test-utils.js');
 
 test('model-swap-full: can setup and swap between Claude and Gemini using password vault', async ({ page }) => {
   await setupApp(page);
-  
+
   // Navigate to the password manager sheet (which exists in fixtures)
   await navigateToSheet(page, 'sheet-070'); // passwords-api-keys fixture
   await page.waitForLoadState('networkidle');
@@ -16,7 +16,7 @@ test('model-swap-full: can setup and swap between Claude and Gemini using passwo
   // by checking the getAvailableKey function works
   const result = await page.evaluate(async () => {
     const { getAvailableKey, setVaultSheet } = await import('/js/model-swap-ui.js');
-    
+
     // Create mock vault data with Claude key
     const vaultData = {
       rows: [
@@ -25,16 +25,16 @@ test('model-swap-full: can setup and swap between Claude and Gemini using passwo
       ],
       cols: { site: 0, username: 1, password: 2, category: 3, notes: 4 }
     };
-    
+
     // Set the vault
     setVaultSheet(vaultData, 'sheet-019');
-    
+
     // Get Claude key
     const claudeKey = await getAvailableKey('claude');
-    
+
     // Get Gemini key
     const geminiKey = await getAvailableKey('gemini');
-    
+
     return { claudeKey, geminiKey };
   });
 
@@ -47,23 +47,23 @@ test('model-swap-full: model selection persists and retrieves correct model pref
   await setupApp(page);
 
   const result = await page.evaluate(async () => {
-    const { 
-      getCurrentModel, 
-      setCurrentModel, 
+    const {
+      getCurrentModel,
+      setCurrentModel,
       getModelKey,
-      hasModelKey 
+      hasModelKey
     } = await import('/js/model-swap.js');
 
     // Check current model (should be claude by default or previous setting)
     const currentBefore = getCurrentModel();
-    
+
     // Set to gemini
     setCurrentModel('gemini');
     const currentAfter = getCurrentModel();
-    
+
     // Test hasModelKey
     const hasKey = hasModelKey('gemini');
-    
+
     return {
       currentBefore,
       currentAfter,
@@ -82,7 +82,7 @@ test('model-swap-full: UI shows correct status when vault is available', async (
   const settingsBtn = page.locator('button:has-text("Settings")');
   // Look for settings button in top-right area
   const settingsModal = page.locator('#settings-modal');
-  
+
   // Trigger settings modal open (usually via settings button or keyboard shortcut)
   // For now, just verify the UI elements exist
   const modelSelect = page.locator('#settings-ai-model');
@@ -111,7 +111,7 @@ test('model-swap-full: AI setup guide modal displays both Claude and Gemini inst
 
   // The setup guide should be accessible but not necessarily visible by default
   const setupModal = page.locator('#ai-setup-modal');
-  
+
   // Make sure the modal structure exists
   const geminiSection = page.locator('text="Google Gemini"');
   const claudeSection = page.locator('text="Anthropic Claude"');

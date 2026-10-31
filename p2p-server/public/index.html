@@ -14,22 +14,21 @@
     #diag-summary{white-space:pre-wrap}
     #diag-json{white-space:pre-wrap;max-height:320px;overflow:auto;background:#111;color:#ddd;padding:12px;border-radius:6px}
     #log{white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:6px;margin-top:12px}
+    #conn-status{margin:0 0 12px;font-weight:bold;color:#999}
+    #target-peer,#title{width:100%}
   </style>
 </head>
 <body>
   <h1>Waymark P2P Notify</h1>
   <div>
-    <p id="conn-status" style="margin:0 0 12px;font-weight:bold;color:#999">Checking connection…</p>
-    <label>Target peer
-      <select id="target-peer" style="width:100%"></select>
-    </label>
-    <label>Notification title
-      <input id="title" type="text" style="width:100%" placeholder="Waymark" value="Waymark" />
-    </label>
-    <label>Notification body
-      <textarea id="body" placeholder="Type notification body..."></textarea>
-    </label>
-    <button id="send" disabled>Send to Phone</button>
+    <p id="conn-status">Checking connection…</p>
+    <label for="target-peer">Target peer</label>
+    <select id="target-peer" aria-label="Target peer"></select>
+    <label for="title">Notification title</label>
+    <input id="title" type="text" placeholder="Waymark" value="Waymark" aria-label="Notification title" />
+    <label for="body">Notification body</label>
+    <textarea id="body" placeholder="Type notification body..." aria-label="Notification body"></textarea>
+    <button id="send" type="button" data-action="send" disabled>Send to Phone</button>
     <div id="status"></div>
     <div id="log"></div>
 

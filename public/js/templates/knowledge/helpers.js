@@ -1,3 +1,4 @@
+import { nowTimestamp } from '../shared.js';
 /* ============================================================
    knowledge/helpers.js — Pure functions for Knowledge Base
    ============================================================ */
@@ -5,7 +6,7 @@
 /* ---------- Status classification ---------- */
 
 /** @type {Record<string, string>} */
-export const STATUS_COLORS = {
+const STATUS_COLORS = {
   published: '#16a34a',
   draft: '#f59e0b',
   review: '#3b82f6',
@@ -13,7 +14,7 @@ export const STATUS_COLORS = {
 };
 
 /** @type {Record<string, string>} */
-export const STATUS_LABELS = {
+const STATUS_LABELS = {
   published: 'Published',
   draft: 'Draft',
   review: 'In Review',
@@ -25,7 +26,7 @@ export const STATUS_LABELS = {
  * @param {string} val
  * @returns {string}
  */
-export function classifyStatus(val) {
+function classifyStatus(val) {
   const v = (val || '').toLowerCase().trim();
   if (/^(publish|live|active|final|approved)/.test(v)) return 'published';
   if (/^(review|pending|in.?review)/.test(v)) return 'review';
@@ -40,7 +41,7 @@ export function classifyStatus(val) {
  * @param {string} raw
  * @returns {string[]}
  */
-export function parseTags(raw) {
+function parseTags(raw) {
   if (!raw || typeof raw !== 'string') return [];
   return raw
     .split(/[,;]+/)
@@ -54,7 +55,7 @@ export function parseTags(raw) {
  * @param {number} tagIdx — column index for tags
  * @returns {string[]}
  */
-export function collectTags(groups, tagIdx) {
+function collectTags(groups, tagIdx) {
   if (tagIdx < 0) return [];
   const set = new Set();
   for (const g of groups) {
@@ -71,7 +72,7 @@ export function collectTags(groups, tagIdx) {
  * @param {number} catIdx
  * @returns {string[]}
  */
-export function collectCategories(groups, catIdx) {
+function collectCategories(groups, catIdx) {
   if (catIdx < 0) return [];
   const set = new Set();
   for (const g of groups) {
@@ -90,7 +91,7 @@ export function collectCategories(groups, catIdx) {
  * @param {number} [maxLen=120] — max snippet length
  * @returns {string}
  */
-export function buildSnippet(children, contentIdx, maxLen = 120) {
+function buildSnippet(children, contentIdx, maxLen = 120) {
   if (contentIdx < 0 || children.length === 0) return '';
   const text = children
     .map(c => (c.row[contentIdx] || '').trim())
@@ -110,7 +111,7 @@ export function buildSnippet(children, contentIdx, maxLen = 120) {
  * @param {string} raw
  * @returns {string}
  */
-export function formatDate(raw) {
+function formatDate(raw) {
   if (!raw || typeof raw !== 'string') return '';
   const clean = raw.trim();
   if (!clean) return '';
@@ -133,10 +134,18 @@ export function formatDate(raw) {
 }
 
 /** Returns current time as "YYYY-MM-DD HH:mm" */
-export function nowTimestamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+// nowTimestamp imported from shared.js
+const REACTION_EMOJIS = ['👍', '❤️', '💡', '✅'];
 
-export const REACTION_EMOJIS = ['👍', '❤️', '💡', '✅'];
+export {
+  REACTION_EMOJIS,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  buildSnippet,
+  classifyStatus,
+  collectCategories,
+  collectTags,
+  formatDate,
+  nowTimestamp,
+  parseTags,
+};

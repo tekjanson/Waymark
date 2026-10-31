@@ -1764,7 +1764,7 @@ async function main() {
     } else if (runAll) {
         scenariosToRun = FULL_ROUNDTRIP_ORDER;
     } else if (args.length === 0) {
-        // Default: run everything  
+        // Default: run everything
         scenariosToRun = FULL_ROUNDTRIP_ORDER;
     } else {
         // Unknown arg — show usage

@@ -1,3 +1,4 @@
+import * as storage from '../../storage.js';
 /* ============================================================
    iot/index.js — IoT Sensor Log template
 
@@ -90,7 +91,7 @@ function currentSheetId() {
 
 function loadLogBuffer() {
   try {
-    const raw = localStorage.getItem(`waymark_iot_log_${currentSheetId()}`);
+    const raw = storage.getRaw(`waymark_iot_log_${currentSheetId()}`);
     const p = raw ? JSON.parse(raw) : [];
     return Array.isArray(p) ? p : [];
   } catch { return []; }
@@ -98,7 +99,7 @@ function loadLogBuffer() {
 
 function saveLogBuffer(entries) {
   try {
-    localStorage.setItem(`waymark_iot_log_${currentSheetId()}`, JSON.stringify(entries.slice(-LOG_LIMIT)));
+    storage.setRaw(`waymark_iot_log_${currentSheetId()}`, JSON.stringify(entries.slice(-LOG_LIMIT)));
   } catch { /* best-effort */ }
 }
 

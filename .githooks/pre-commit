@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+echo "Running pre-commit checks..."
+if [ -d "../SpamApply1" ] || [ -d "/home/tekjanson/Documents/Code/SpamApply1" ]; then
+  make gates
+fi
+npm test

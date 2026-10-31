@@ -470,7 +470,7 @@ test('rule row operator dropdown has all 10 operators', async ({ page }) => {
   await page.waitForSelector('.notif-rule-row', { timeout: 3000 });
 
   const opOptions = await page.locator('.notif-rule-op option').allTextContents();
-  // 1 placeholder + 10 operators = 11 total
+  // 1 default prompt + 10 operators = 11 total
   expect(opOptions.length).toBe(11);
   expect(opOptions).toContain('equals');
   expect(opOptions).toContain('does not equal');

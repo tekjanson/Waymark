@@ -1034,7 +1034,7 @@ function stat(label, value) {
 function openMacroDrillDown(label, value, goal, dayEntries, macroKey, avg) {
   const overlay = el('div', { className: 'calorie-modal-overlay' });
   const sheet = el('div', { className: 'calorie-modal-sheet' });
-  
+
   const top = el('div', { className: 'calorie-modal-top' }, [
     el('h3', { className: 'calorie-modal-title' }, [`${label} Breakdown`]),
     el('button', { className: 'calorie-modal-close', type: 'button' }, ['✕']),
@@ -1068,7 +1068,7 @@ function openMacroDrillDown(label, value, goal, dayEntries, macroKey, avg) {
   // Collect entries and sort by macro amount descending
   const items = [];
   const entriesToScan = dayEntries && dayEntries.length ? dayEntries : (_allRows ? _allRows.map(row => ({ row, macro: parseNum(row[_cols[macroKey]]) })) : []);
-  
+
   for (const entry of entriesToScan) {
     const row = entry.row || entry;
     const foodName = row[_cols.item] || 'Food item';

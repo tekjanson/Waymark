@@ -1,3 +1,4 @@
+import * as storage from '../../storage.js';
 /* ============================================================
    kanban/brainstorm.js — Brainstorming mode for kanban ideas
 
@@ -22,7 +23,7 @@ const BRAINSTORM_STORAGE_KEY = 'waymark_brainstorm_ideas';
 function saveBrainstormIdeas() {
   const data = JSON.stringify(_brainstormIdeas);
   try {
-    localStorage.setItem(BRAINSTORM_STORAGE_KEY, data);
+    storage.setRaw(BRAINSTORM_STORAGE_KEY, data);
   } catch (e) {
     console.warn('Failed to save brainstorm ideas:', e);
   }
@@ -30,7 +31,7 @@ function saveBrainstormIdeas() {
 
 function loadBrainstormIdeas() {
   try {
-    const data = localStorage.getItem(BRAINSTORM_STORAGE_KEY);
+    const data = storage.getRaw(BRAINSTORM_STORAGE_KEY);
     _brainstormIdeas = data ? JSON.parse(data) : [];
   } catch (e) {
     console.warn('Failed to load brainstorm ideas:', e);
@@ -45,7 +46,7 @@ function loadBrainstormIdeas() {
  * @param {string} title
  * @returns {Object} idea object
  */
-export function createIdea(title) {
+function createIdea(title) {
   const idea = {
     id: `idea-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     title: title || 'New Idea',
@@ -68,7 +69,7 @@ export function createIdea(title) {
  * @param {string} content
  * @param {string} author
  */
-export function addDiscussionEntry(ideaId, content, author = null) {
+function addDiscussionEntry(ideaId, content, author = null) {
   const idea = _brainstormIdeas.find(i => i.id === ideaId);
   if (!idea) return;
   idea.discussion.push({
@@ -86,7 +87,7 @@ export function addDiscussionEntry(ideaId, content, author = null) {
  * @param {string} field
  * @param {string} value
  */
-export function updateIdea(ideaId, field, value) {
+function updateIdea(ideaId, field, value) {
   const idea = _brainstormIdeas.find(i => i.id === ideaId);
   if (!idea) return;
   if (field === 'title' || field === 'description') {
@@ -100,7 +101,7 @@ export function updateIdea(ideaId, field, value) {
  * Mark an idea as refined and ready for task conversion.
  * @param {string} ideaId
  */
-export function refineIdea(ideaId) {
+function refineIdea(ideaId) {
   const idea = _brainstormIdeas.find(i => i.id === ideaId);
   if (!idea) return;
   idea.status = 'refined';
@@ -114,7 +115,7 @@ export function refineIdea(ideaId) {
  * @param {Object} cols - column mapping
  * @returns {Array} new task row
  */
-export function ideaToTaskRow(ideaId, cols) {
+function ideaToTaskRow(ideaId, cols) {
   const idea = _brainstormIdeas.find(i => i.id === ideaId);
   if (!idea) return null;
 
@@ -138,7 +139,7 @@ export function ideaToTaskRow(ideaId, cols) {
  * Delete a brainstorm idea.
  * @param {string} ideaId
  */
-export function deleteIdea(ideaId) {
+function deleteIdea(ideaId) {
   _brainstormIdeas = _brainstormIdeas.filter(i => i.id !== ideaId);
   saveBrainstormIdeas();
 }
@@ -348,7 +349,7 @@ function buildIdeaDiscussionPanel(idea, onAddDiscussionFn, onRefineIdea, onConve
  * @param {Object} cols - kanban column mapping
  * @param {Function} onConvertToTaskFn - callback when idea is converted to task
  */
-export function toggleBrainstormMode(container, cols, onConvertToTaskFn) {
+function toggleBrainstormMode(container, cols, onConvertToTaskFn) {
   loadBrainstormIdeas();
   _brainstormMode = !_brainstormMode;
 
@@ -366,7 +367,7 @@ export function toggleBrainstormMode(container, cols, onConvertToTaskFn) {
  * @param {Object} cols
  * @param {Function} onConvertToTaskFn
  */
-export function renderBrainstormView(container, cols, onConvertToTaskFn) {
+function renderBrainstormView(container, cols, onConvertToTaskFn) {
   loadBrainstormIdeas();
   container.innerHTML = '';
 
@@ -447,7 +448,7 @@ export function renderBrainstormView(container, cols, onConvertToTaskFn) {
  * Check if brainstorm mode is active.
  * @returns {boolean}
  */
-export function isBrainstormMode() {
+function isBrainstormMode() {
   return _brainstormMode;
 }
 
@@ -455,7 +456,20 @@ export function isBrainstormMode() {
  * Get all brainstorm ideas.
  * @returns {Array}
  */
-export function getAllIdeas() {
+function getAllIdeas() {
   loadBrainstormIdeas();
   return _brainstormIdeas;
 }
+
+export {
+  addDiscussionEntry,
+  createIdea,
+  deleteIdea,
+  getAllIdeas,
+  ideaToTaskRow,
+  isBrainstormMode,
+  refineIdea,
+  renderBrainstormView,
+  toggleBrainstormMode,
+  updateIdea,
+};

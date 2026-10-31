@@ -55,7 +55,7 @@ For every task:
 ## Shell Discipline
 
 - Run commands with full paths when uncertain: `/usr/bin/node`, `/usr/bin/git`
-- `cd /workspace` before any file operations  
+- `cd /workspace` before any file operations
 - Check exit codes — if a command fails, investigate before continuing
 - Use `make` targets when a Makefile exists (check first: `test -f /workspace/Makefile`)
 - If `make test` fails after your change, fix it before committing

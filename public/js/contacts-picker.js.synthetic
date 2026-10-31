@@ -1,0 +1,14 @@
+{
+  "workflows": [
+    {
+      "id": "import-vcard-contacts",
+      "user_intent": "Import contact information for sharing ledgers",
+      "trigger": "ui.change:vcard_file_input",
+      "steps": [
+        "validate:vcard_format",
+        "emit:contacts_imported"
+      ],
+      "outcome": "Contacts loaded into picker directory"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { pieceColor } from './common.js';
 /* ============================================================
    arcade/games/checkers.js — Checkers: rules, rendering, networking
    ============================================================ */
@@ -25,7 +26,7 @@ const BOARD_Y = (VIRTUAL_H - SQ * 8) / 2;
 function isWhite(p) { return p === W_MAN || p === W_KING; }
 function isBlack(p) { return p === B_MAN || p === B_KING; }
 function isKing(p) { return p === W_KING || p === B_KING; }
-function pieceColor(p) { return p === EMPTY ? -1 : (isWhite(p) ? 0 : 1); }
+// pieceColor imported from common.js
 
 /* ---------- Board Setup ---------- */
 

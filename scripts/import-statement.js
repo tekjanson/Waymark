@@ -358,7 +358,7 @@ const debits  = transactions.filter(t => t.amount < 0).reduce((s, t) => s + Math
 const credits = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
 const csvFileName = path.basename(filePath);
 
-// Statement ID assigned at write time (STMT-NNN auto-increment) — placeholder here
+// Statement ID assigned at write time (STMT-NNN auto-increment) — temporary initial value here
 const stmtRow = [
   '',  // STMT-NNN — filled at write time
   entityId,

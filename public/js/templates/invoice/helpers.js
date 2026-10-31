@@ -1,12 +1,11 @@
+import { parseAmt } from '../shared.js';
 /* ============================================================
    invoice/helpers.js — Pure helpers for the Invoice template
    ============================================================ */
 
 /* ---------- Constants ---------- */
-
-export const INVOICE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Paid', 'Overdue', 'Cancelled'];
-
-export const STATUS_NEXT = {
+const INVOICE_STATUSES = ['Draft', 'Sent', 'Viewed', 'Paid', 'Overdue', 'Cancelled'];
+const STATUS_NEXT = {
   draft:      'Sent',
   sent:       'Viewed',
   viewed:     'Paid',
@@ -22,16 +21,14 @@ export const STATUS_NEXT = {
  * @param {string} raw
  * @returns {number}
  */
-export function parseAmt(raw) {
-  return parseFloat((raw || '0').replace(/[^-\d.]/g, '')) || 0;
-}
+export { parseAmt };
 
 /**
  * Parse a quantity string to a (positive) number; default 1.
  * @param {string} raw
  * @returns {number}
  */
-export function parseQty(raw) {
+function parseQty(raw) {
   const n = parseFloat((raw || '').trim());
   return (isFinite(n) && n > 0) ? n : 1;
 }
@@ -41,7 +38,7 @@ export function parseQty(raw) {
  * @param {number} n
  * @returns {string}
  */
-export function fmtDollars(n) {
+function fmtDollars(n) {
   return '$' + Math.abs(n).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -55,7 +52,7 @@ export function fmtDollars(n) {
  * @param {function} cellFn
  * @returns {number}
  */
-export function lineTotal(row, cols, cellFn) {
+function lineTotal(row, cols, cellFn) {
   const qty   = parseQty(cellFn(row, cols.qty));
   const price = parseAmt(cellFn(row, cols.unitPrice));
   return qty * price;
@@ -66,7 +63,7 @@ export function lineTotal(row, cols, cellFn) {
  * @param {string} status
  * @returns {string}
  */
-export function statusClass(status) {
+function statusClass(status) {
   return (status || 'draft').toLowerCase().trim().replace(/\s+/g, '-');
 }
 
@@ -75,7 +72,7 @@ export function statusClass(status) {
  * @param {string} current
  * @returns {string}
  */
-export function nextStatus(current) {
+function nextStatus(current) {
   const key = (current || 'draft').toLowerCase().trim();
   return STATUS_NEXT[key] || 'Sent';
 }
@@ -90,7 +87,7 @@ export function nextStatus(current) {
  * @param {function} cellFn
  * @returns {Array<{ invNum:string, client:string, date:string, due:string, status:string, firstRowIdx:number, rows:Array<{row,idx}> }>}
  */
-export function groupInvoices(rows, cols, cellFn) {
+function groupInvoices(rows, cols, cellFn) {
   const invoices = [];
   let current = null;
   for (let i = 0; i < rows.length; i++) {
@@ -122,7 +119,7 @@ export function groupInvoices(rows, cols, cellFn) {
  * @param {function} cellFn
  * @returns {number}
  */
-export function invoiceTotal(invoice, cols, cellFn) {
+function invoiceTotal(invoice, cols, cellFn) {
   let total = 0;
   for (const { row } of invoice.rows) {
     total += lineTotal(row, cols, cellFn);
@@ -137,7 +134,7 @@ export function invoiceTotal(invoice, cols, cellFn) {
  * @param {function} cellFn
  * @returns {{ totalInvoiced:number, totalPaid:number, totalOutstanding:number }}
  */
-export function computeARSummary(invoices, cols, cellFn) {
+function computeARSummary(invoices, cols, cellFn) {
   let totalInvoiced = 0;
   let totalPaid = 0;
   for (const inv of invoices) {
@@ -154,8 +151,22 @@ export function computeARSummary(invoices, cols, cellFn) {
  * @param {string} status
  * @returns {boolean}
  */
-export function isOverdue(dueDate, status) {
+function isOverdue(dueDate, status) {
   if (!dueDate || /^(paid|cancelled)/i.test((status || '').trim())) return false;
   const due = new Date(dueDate);
   return !isNaN(due.getTime()) && due < new Date();
 }
+
+export {
+  INVOICE_STATUSES,
+  STATUS_NEXT,
+  computeARSummary,
+  fmtDollars,
+  groupInvoices,
+  invoiceTotal,
+  isOverdue,
+  lineTotal,
+  nextStatus,
+  parseQty,
+  statusClass,
+};

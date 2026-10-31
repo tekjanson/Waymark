@@ -1,6 +1,7 @@
+import * as storage from './storage.js';
 /* ============================================================
    encryption.js — Client-side column-level encryption
-   
+
    Uses Web Crypto API (AES-GCM + PBKDF2) to encrypt/decrypt
    individual cell values. The password never leaves the browser.
    Each sheet derives a unique key from (password + sheetId).
@@ -36,9 +37,9 @@ function encColsKey(sheetId) { return `waymark_enc_cols_${sheetId}`; }
  * @param {string} sheetId
  * @returns {Set<number>}
  */
-export function getEncryptedColumns(sheetId) {
+function getEncryptedColumns(sheetId) {
   try {
-    const raw = localStorage.getItem(encColsKey(sheetId));
+    const raw = storage.getRaw(encColsKey(sheetId));
     if (!raw) return new Set();
     return new Set(JSON.parse(raw));
   } catch { return new Set(); }
@@ -49,8 +50,8 @@ export function getEncryptedColumns(sheetId) {
  * @param {string} sheetId
  * @param {Set<number>} cols
  */
-export function setEncryptedColumns(sheetId, cols) {
-  localStorage.setItem(encColsKey(sheetId), JSON.stringify([...cols]));
+function setEncryptedColumns(sheetId, cols) {
+  storage.setRaw(encColsKey(sheetId), JSON.stringify([...cols]));
 }
 
 /* ---------- Key Derivation ---------- */
@@ -134,7 +135,7 @@ async function decryptValue(key, encoded) {
  * @param {string} value
  * @returns {boolean}
  */
-export function isEncrypted(value) {
+function isEncrypted(value) {
   return typeof value === 'string' && value.startsWith(ENC_PREFIX);
 }
 
@@ -146,7 +147,7 @@ export function isEncrypted(value) {
  * @param {string} [sampleEncrypted] — an encrypted value to verify password against
  * @returns {Promise<boolean>} — true if key was cached (and sample decrypted ok)
  */
-export async function unlock(password, sheetId, sampleEncrypted) {
+async function unlock(password, sheetId, sampleEncrypted) {
   const key = await deriveKey(password, sheetId);
   if (sampleEncrypted) {
     const test = await decryptValue(key, sampleEncrypted);
@@ -164,7 +165,7 @@ export async function unlock(password, sheetId, sampleEncrypted) {
  * @param {string} sheetId
  * @returns {string|null}
  */
-export function getUnlockedPassword(sheetId) {
+function getUnlockedPassword(sheetId) {
   return _passwordCache.get(sheetId) || null;
 }
 
@@ -172,7 +173,7 @@ export function getUnlockedPassword(sheetId) {
  * Lock a sheet by removing the cached key.
  * @param {string} sheetId
  */
-export function lock(sheetId) {
+function lock(sheetId) {
   _keyCache.delete(sheetId);
   _passwordCache.delete(sheetId);
 }
@@ -182,7 +183,7 @@ export function lock(sheetId) {
  * @param {string} sheetId
  * @returns {boolean}
  */
-export function isUnlocked(sheetId) {
+function isUnlocked(sheetId) {
   return _keyCache.has(sheetId);
 }
 
@@ -192,7 +193,7 @@ export function isUnlocked(sheetId) {
  * @param {string} plaintext
  * @returns {Promise<string>}
  */
-export async function encrypt(sheetId, plaintext) {
+async function encrypt(sheetId, plaintext) {
   const key = _keyCache.get(sheetId);
   if (!key) throw new Error('Sheet is locked — unlock with password first');
   return encryptValue(key, plaintext);
@@ -205,7 +206,7 @@ export async function encrypt(sheetId, plaintext) {
  * @param {string} encoded
  * @returns {Promise<string|null>}
  */
-export async function decrypt(sheetId, encoded) {
+async function decrypt(sheetId, encoded) {
   if (!isEncrypted(encoded)) return encoded;
   const key = _keyCache.get(sheetId);
   if (!key) return null; // locked
@@ -220,7 +221,7 @@ export async function decrypt(sheetId, encoded) {
  * @param {string[][]} values — full sheet data (row 0 = headers)
  * @returns {Set<number>}
  */
-export function detectEncryptedColumns(values) {
+function detectEncryptedColumns(values) {
   const cols = new Set();
   for (let r = 1; r < values.length; r++) {
     for (let c = 0; c < values[r].length; c++) {
@@ -238,7 +239,7 @@ export function detectEncryptedColumns(values) {
  * @param {Set<number>} encCols — set of column indices that are encrypted
  * @returns {Promise<string[][]>}
  */
-export async function decryptSheet(sheetId, values, encCols) {
+async function decryptSheet(sheetId, values, encCols) {
   if (!encCols || encCols.size === 0) return values;
   if (!isUnlocked(sheetId)) return values;
   const key = _keyCache.get(sheetId);
@@ -258,3 +259,98 @@ export async function decryptSheet(sheetId, values, encCols) {
   await Promise.all(tasks);
   return values;
 }
+
+
+/* ---------- Raw AES-GCM and Handshake Signal Helpers ---------- */
+
+async function encryptAesGcmWithRawKey(rawKey, iv, plaintextBytes) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    rawKey,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  return crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plaintextBytes);
+}
+
+async function decryptAesGcmWithRawKey(rawKey, iv, ciphertextBytes) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    rawKey,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertextBytes);
+}
+
+const HANDSHAKE_PBKDF2_ITER = 10000;
+const HANDSHAKE_ENC_PREFIX = '\u{1F510}HND:';
+
+async function deriveHandshakeKey(password, sheetId, iterations = HANDSHAKE_PBKDF2_ITER) {
+  if (!password) return null;
+  const enc = new TextEncoder();
+  const mat = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode('waymark-handshake-' + sheetId),
+      iterations,
+      hash: 'SHA-256',
+    },
+    mat,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptHandshakeSignal(plaintext, password, sheetId, iterations = HANDSHAKE_PBKDF2_ITER) {
+  if (!plaintext || !password) return plaintext;
+  const key = await deriveHandshakeKey(password, sheetId, iterations);
+  if (!key) return plaintext;
+  const enc = new TextEncoder();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+  const combined = new Uint8Array(12 + buf.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(buf), 12);
+  return HANDSHAKE_ENC_PREFIX + btoa(String.fromCharCode(...combined));
+}
+
+async function decryptHandshakeSignal(encoded, password, sheetId, iterations = HANDSHAKE_PBKDF2_ITER) {
+  if (!encoded || !encoded.startsWith(HANDSHAKE_ENC_PREFIX)) return encoded;
+  if (!password) return null;
+  const key = await deriveHandshakeKey(password, sheetId, iterations);
+  if (!key) return null;
+  try {
+    const raw = Uint8Array.from(atob(encoded.slice(HANDSHAKE_ENC_PREFIX.length)), c => c.charCodeAt(0));
+    const iv = raw.slice(0, 12);
+    const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, raw.slice(12));
+    return new TextDecoder().decode(buf);
+  } catch {
+    return null;
+  }
+}
+
+export {
+  getEncryptedColumns,
+  setEncryptedColumns,
+  isEncrypted,
+  unlock,
+  getUnlockedPassword,
+  lock,
+  isUnlocked,
+  encrypt,
+  decrypt,
+  detectEncryptedColumns,
+  decryptSheet,
+  encryptAesGcmWithRawKey,
+  decryptAesGcmWithRawKey,
+  deriveHandshakeKey,
+  encryptHandshakeSignal,
+  decryptHandshakeSignal,
+};

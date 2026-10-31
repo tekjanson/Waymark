@@ -1,0 +1,14 @@
+{
+  "workflows": [
+    {
+      "id": "persist-user-preferences",
+      "user_intent": "Persist local user preferences and pin states",
+      "trigger": "ui.action:toggle_pin",
+      "steps": [
+        "validate:preference_payload",
+        "emit:update_local_storage"
+      ],
+      "outcome": "Preferences safely saved to browser local store"
+    }
+  ]
+}

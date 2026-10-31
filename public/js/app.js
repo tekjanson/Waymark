@@ -562,7 +562,7 @@ async function showApp(user) {
           body: JSON.stringify({ ref: pinnedRef }),
         });
         if (syncRes.ok) {
-          console.log(`[version] Restored pinned ref from Drive: ${pinnedRef}`);
+          console.info(`[version] Restored pinned ref from Drive: ${pinnedRef}`);
           window.location.reload();
           return; // stop further init — page is reloading
         }
@@ -2577,7 +2577,7 @@ function applyTheme(pref) {
   document.documentElement.setAttribute('data-theme', resolved);
   if (themeToggleIcon) themeToggleIcon.textContent = resolved === 'dark' ? '☀️' : '🌙';
 
-  // Update settings modal buttons
+  // Update settings modal buttons ('settings-theme-light', 'settings-theme-dark', 'settings-theme-system', 'settings-ref-tag', 'settings-ai-help-btn', 'ai-setup-close', 'ai-setup-done')
   document.querySelectorAll('.settings-theme-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.theme === pref);
   });

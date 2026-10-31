@@ -148,7 +148,7 @@ function ensureRepo(owner, repo, token) {
     return;
   }
 
-  console.log(`[github-source] Cloning ${owner}/${repo} (bare)...`);
+  console.info(`[github-source] Cloning ${owner}/${repo} (bare)...`);
   fs.mkdirSync(REPO_DIR, { recursive: true });
   execSync(`git clone --bare "${url}" "${REPO_DIR}"`, {
     encoding: 'utf-8',
@@ -160,7 +160,7 @@ function ensureRepo(owner, repo, token) {
   try {
     git('config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"');
   } catch { /* best-effort */ }
-  console.log(`[github-source] Clone complete.`);
+  console.info(`[github-source] Clone complete.`);
 }
 
 /**
@@ -169,7 +169,7 @@ function ensureRepo(owner, repo, token) {
 async function fetchOrigin() {
   try {
     await gitAsync('fetch origin --prune', { timeout: 60000 });
-    console.log('[github-source] Fetched latest from origin.');
+    console.info('[github-source] Fetched latest from origin.');
   } catch (err) {
     console.warn('[github-source] Fetch failed:', err.message);
   }
@@ -259,7 +259,7 @@ function extractPublicDir(ref) {
   // Write SHA marker so we know this extraction is current
   fs.writeFileSync(shaMarker, commitSha);
   fs.writeFileSync(refMarker, ref);
-  console.log(`[github-source] Extracted public/ for ${ref} (${commitSha.slice(0, 8)}) -> ${outDir}`);
+  console.info(`[github-source] Extracted public/ for ${ref} (${commitSha.slice(0, 8)}) -> ${outDir}`);
   return outDir;
 }
 
@@ -414,7 +414,7 @@ function createGitHubSource(opts) {
     // Resolve, extract, and cache — no global state mutation.
     const outDir = extractPublicDir(newRef);
     updateRefState(newRef, outDir);
-    console.log(`[github-source] Pre-warmed ref: ${newRef}`);
+    console.info(`[github-source] Pre-warmed ref: ${newRef}`);
   }
 
   /** Returns the server default ref (from config). Never a per-user value. */
@@ -442,7 +442,7 @@ function createGitHubSource(opts) {
     const refDir = path.join(CHECKOUT_DIR, safeRef);
     fs.rmSync(refDir, { recursive: true, force: true });
     refState.delete(defaultRef); // invalidate HTML cache for this ref
-    console.log(`[github-source] Purged checkout for ${defaultRef}`);
+    console.info(`[github-source] Purged checkout for ${defaultRef}`);
   }
 
   /** List all extracted refs. */
@@ -522,7 +522,7 @@ function createGitHubSource(opts) {
         try {
           const newDir = extractPublicDir(cachedRef);
           updateRefState(cachedRef, newDir);
-          console.log(`[github-source] Auto-updated ref ${cachedRef}`);
+          console.info(`[github-source] Auto-updated ref ${cachedRef}`);
         } catch (err) {
           console.warn(`[github-source] Periodic update failed for ${cachedRef}:`, err.message);
         }
