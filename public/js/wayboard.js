@@ -915,6 +915,17 @@ async function discoverCrews() {
     }
   } catch { /* ignore */ }
 
+  // Always surface Waymark AI companion in Wayside
+  if (!emailSeen.has('assistant@waymark.internal')) {
+    emailSeen.add('assistant@waymark.internal');
+    people.unshift({
+      name: 'Waymark AI',
+      email: 'assistant@waymark.internal',
+      group: '',
+      isAgent: true,
+    });
+  }
+
   return { crews: [...crews.keys()].map(name => ({ name })), people };
 }
 
@@ -961,9 +972,13 @@ async function renderWayside({ autoSelect = true } = {}) {
   ]);
   const avatarRow = el('div', { className: 'avatar-row' });
   for (const p of people.slice(0, 8)) {
-    const initials = (p.name || p.email).split(/[\s@.]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
-    const av = el('div', { className: 'avatar', title: `${p.name} (${p.email})` }, [initials || '?']);
-    av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name }, host));
+    const isAi = p.isAgent || p.email === 'assistant@waymark.internal';
+    const initials = isAi ? '🤖' : (p.name || p.email).split(/[\s@.]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
+    const av = el('div', {
+      className: `avatar${isAi ? ' avatar-ai' : ''}`,
+      title: `${p.name} (${p.email})`
+    }, [initials || '?']);
+    av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name, isAgent: isAi }, host));
     avatarRow.append(av);
   }
   if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers on this trail yet.']));
@@ -1285,7 +1300,27 @@ function startWaysideMesh(sheetId, signal = collab.createLedgerSignal(sheetId)) 
       if (sheetLine && !wc.inCall) sheetLine.textContent = `P2P · ${peers.length} connected · Linked: ${sheetId}`;
     },
     onMessage: (message) => {
-      if (_waysideConnect !== wc || !message?.text || message.type === 'typing') return;
+      if (_waysideConnect !== wc || !message) return;
+      if (message.type === 'typing') {
+        const sheetLine = document.getElementById('wayside-sheet-line');
+        if (sheetLine && !wc.inCall) {
+          const original = sheetLine.textContent;
+          sheetLine.textContent = `✍️ ${message.name || 'Waymark AI'} is typing…`;
+          clearTimeout(sheetLine._typingTimeout);
+          sheetLine._typingTimeout = setTimeout(() => {
+            if (sheetLine.textContent.includes('is typing…')) {
+              sheetLine.textContent = original;
+            }
+          }, 3500);
+        }
+        return;
+      }
+      const sheetLine = document.getElementById('wayside-sheet-line');
+      if (sheetLine && sheetLine.textContent.includes('is typing…')) {
+        clearTimeout(sheetLine._typingTimeout);
+        sheetLine.textContent = `P2P · Linked: ${sheetId}`;
+      }
+      if (!message.text) return;
       const key = message.messageId || `${message.peerId || ''}:${message.ts || ''}:${message.text}`;
       if (_liveMessageIds.has(key)) return;
       _liveMessageIds.add(key);

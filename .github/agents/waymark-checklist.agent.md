@@ -30,8 +30,9 @@ This is the authoritative column mapping for Checklist sheets. When reading or w
 ```
 1. status
 2. text
-3. date
-4. notes
+3. category
+4. date
+5. notes
 ```
 
 **Default headers when creating a new Checklist sheet:**
