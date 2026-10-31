@@ -321,6 +321,31 @@
 
 .social-chat-panel.hidden { display: none; }
 
+/* Embedded Mode (The Wayside on Wayboard) */
+.social-chat-panel.social-chat-embedded {
+  position: static;
+  bottom: auto;
+  right: auto;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: none;
+  box-shadow: none;
+  z-index: auto;
+  flex: 1 1 auto;
+  border-radius: var(--radius, 8px);
+}
+
+.social-chat-panel.social-chat-embedded.social-chat-in-call {
+  width: 100%;
+  max-width: 100%;
+}
+
+.social-chat-panel.social-chat-embedded .social-chat-header {
+  cursor: default;
+  border-radius: 6px 6px 0 0;
+}
+
 /* Header */
 .social-chat-header {
   display: flex;

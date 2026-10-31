@@ -312,7 +312,7 @@ export class SocialSession {
   }
 
   sendMessage(text, extra = {}) {
-    if (!text || !this.connect) return null;
+    if (!text) return null;
     const messageId = globalThis.crypto?.randomUUID?.()
       || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -326,9 +326,11 @@ export class SocialSession {
     };
 
     // 1. Send via WebRTC P2P DataChannel
-    try {
-      this.connect.send(text, 'message', { messageId });
-    } catch {}
+    if (this.connect) {
+      try {
+        this.connect.send(text, 'message', { messageId });
+      } catch {}
+    }
 
     // 2. Deliver optimistically
     this._liveMessageIds.add(messageId);

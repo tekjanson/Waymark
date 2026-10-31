@@ -136,3 +136,96 @@ test('an accepted share is not re-announced when the ledger is re-polled, and Cl
   expect(res.perDoc).toBe(1);
   expect(res.cleared).toBe(true);
 });
+
+test('clicking close (✕) button in Wayside closes chat and restores placeholder even with 1 contact', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Crew is auto-selected, close button is visible
+  const closeBtn = page.locator('#wayside-close-btn');
+  await expect(closeBtn).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-chat-input')).toBeVisible();
+
+  // Click close button
+  await closeBtn.click();
+
+  // Placeholder is restored
+  await expect(page.locator('#wayside-placeholder')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-sheet-line')).toContainText('Pick a crew or Waymarker');
+  await expect(page.locator('.crew-row.active')).toHaveCount(0);
+
+  // Click the crew row again to reopen
+  await page.locator('#home-wayside .crew-row').first().click();
+  await expect(page.locator('#wayside-close-btn')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-chat-input')).toBeVisible();
+});
+
+test('Wayside video call activates media container, local video PiP, and call controls', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Start call
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  // Media container and local video are visible
+  const mediaContainer = page.locator('#wayside-media-container');
+  await expect(mediaContainer).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-local-video')).toBeVisible();
+  await expect(page.locator('#wayside-remote-video')).toBeVisible();
+
+  // Call bar controls are visible
+  const muteBtn = page.locator('#wayside-mute-btn');
+  const camBtn = page.locator('#wayside-cam-btn');
+  await expect(muteBtn).toBeVisible();
+  await expect(camBtn).toBeVisible();
+
+  // Toggle mute and camera
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('Unmute');
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('Mute');
+
+  await camBtn.click();
+  await expect(camBtn).toContainText('Cam On');
+  await camBtn.click();
+  await expect(camBtn).toContainText('Cam Off');
+
+  // End call
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+  await expect(mediaContainer).toBeHidden();
+});
+
+test('Wayside incoming call displays animated incoming card with Accept, Accept Video, and Decline', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Trigger an incoming call on the active widget
+  await page.evaluate(() => {
+    const card = document.querySelector('.wayside-incoming-call');
+    const caller = document.querySelector('.social-incoming-caller');
+    if (card && caller) {
+      caller.textContent = 'Alice Explorer';
+      card.classList.remove('hidden');
+    }
+  });
+
+  const card = page.locator('.wayside-incoming-call');
+  await expect(card).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('.social-incoming-caller')).toContainText('Alice Explorer');
+  await expect(page.locator('.social-incoming-accept')).toBeVisible();
+  await expect(page.locator('.social-incoming-accept-video')).toBeVisible();
+  const declineBtn = page.locator('.social-incoming-decline');
+  await expect(declineBtn).toBeVisible();
+
+  // Decline hides incoming call card
+  await declineBtn.click();
+  await expect(card).toBeHidden();
+});
