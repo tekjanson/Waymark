@@ -125,4 +125,81 @@ test.describe('Headless OAuth & Waymark MCP File Operations Unit Tests', () => {
     expect(content).toContain('waymark_get_doc');
   });
 
+  test('Windows PowerShell installer and cross-platform launchers exist and support auto-discovery', () => {
+    const psInstaller = path.join(ROOT, 'scripts', 'install-headless.ps1');
+    expect(fs.existsSync(psInstaller)).toBe(true);
+    const psContent = fs.readFileSync(psInstaller, 'utf8');
+    expect(psContent).toContain('Register-ScheduledTask');
+    expect(psContent).toContain('WaymarkWaysideOrchestrator');
+    expect(psContent).toContain('compile-all-agents.mjs');
+    expect(psContent).toContain('setup-mcp-config.mjs');
+    expect(psContent).toContain('setup-headless-auth.mjs');
+
+    for (const rel of ['run-wayside.ps1', 'run-wayside.cmd', 'run-waymark.ps1', 'run-waymark.cmd']) {
+      const full = path.join(ROOT, rel);
+      expect(fs.existsSync(full), `${rel} should exist`).toBe(true);
+    }
+
+    for (const shRel of ['run-wayside.sh', 'run-waymark.sh']) {
+      const full = path.join(ROOT, shRel);
+      expect(fs.existsSync(full), `${shRel} should exist`).toBe(true);
+      const stat = fs.statSync(full);
+      expect((stat.mode & 0o111) !== 0, `${shRel} should be executable`).toBe(true);
+    }
+
+    // Ensure install-headless.sh does NOT overwrite run-wayside.sh with an exit-1 requirement on missing ledger ID
+    const shInstaller = fs.readFileSync(path.join(ROOT, 'scripts', 'install-headless.sh'), 'utf8');
+    expect(shInstaller).toContain('exec node scripts/wayside-orchestrator.mjs\n');
+  });
+
+  test('all MCP servers and orchestrator scripts use os.homedir() for cross-platform Windows/Linux support', () => {
+    const files = [
+      path.join(ROOT, 'mcp', 'waymark.mjs'),
+      path.join(ROOT, 'mcp', 'google-sheets.mjs'),
+      path.join(ROOT, 'scripts', 'wayside-orchestrator.mjs'),
+      path.join(ROOT, 'scripts', 'agy-agent-runner.mjs'),
+      path.join(ROOT, 'scripts', 'setup-headless-auth.mjs'),
+      path.join(ROOT, 'scripts', 'setup-mcp-config.mjs'),
+    ];
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      expect(src, `${path.basename(f)} should import node:os`).toContain('node:os');
+      expect(src, `${path.basename(f)} should not hardcode process.env.HOME || '/root'`).not.toMatch(/process\.env\.HOME\s*\|\|\s*['"]\/root['"]/);
+    }
+  });
+
+  test('resolveAgyBinary handles Windows .exe, Windows .cmd, AGY_BIN overrides, and POSIX paths', async () => {
+    const { resolveAgyBinary } = await import('../../scripts/agy-agent-runner.mjs');
+    const tmpDir = fs.mkdtempSync(path.join(ROOT, 'tests', 'fixtures', 'tmp-agy-bin-'));
+
+    try {
+      // 1. Explicit AGY_BIN override (.exe on win32 -> useShell: false, .cmd on win32 -> useShell: true)
+      expect(resolveAgyBinary('win32', { AGY_BIN: 'C:\\Tools\\agy.exe' })).toEqual({
+        bin: 'C:\\Tools\\agy.exe',
+        useShell: false,
+      });
+      expect(resolveAgyBinary('win32', { AGY_BIN: 'C:\\Users\\me\\AppData\\Roaming\\npm\\agy.cmd' })).toEqual({
+        bin: 'C:\\Users\\me\\AppData\\Roaming\\npm\\agy.cmd',
+        useShell: true,
+      });
+
+      // 2. Windows PATH lookup prefers agy.exe over agy.cmd
+      const exePath = path.join(tmpDir, 'agy.exe');
+      const cmdPath = path.join(tmpDir, 'agy.cmd');
+      fs.writeFileSync(cmdPath, '@echo off\r\n');
+      expect(resolveAgyBinary('win32', { PATH: tmpDir, USERPROFILE: tmpDir })).toEqual({
+        bin: cmdPath,
+        useShell: true,
+      });
+
+      fs.writeFileSync(exePath, '');
+      expect(resolveAgyBinary('win32', { PATH: tmpDir, USERPROFILE: tmpDir })).toEqual({
+        bin: exePath,
+        useShell: false,
+      });
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
 });

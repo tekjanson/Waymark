@@ -6,6 +6,13 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
+test.use({
+  permissions: ['microphone', 'camera'],
+  launchOptions: {
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  },
+});
+
 async function openSettings(page) {
   await page.click('#user-name');
   await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });

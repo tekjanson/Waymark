@@ -9,16 +9,69 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 const DEFAULT_MODEL = process.env.AGY_MODEL || 'gemini-3.8-flash-high';
-const DEFAULT_TIMEOUT_MS = parseInt(process.env.AGY_TIMEOUT_MS || '90000', 10);
+const DEFAULT_TIMEOUT_MS = parseInt(process.env.AGY_TIMEOUT_MS || '180000', 10);
+
+/**
+ * Resolve the `agy` CLI binary across Linux, macOS, and Windows.
+ * Prefers native `agy` / `agy.exe` over `.cmd` wrappers so `execFile` runs with `shell: false`.
+ * @param {string} [platform]
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ bin: string, useShell: boolean }}
+ */
+export function resolveAgyBinary(platform = process.platform, env = process.env) {
+  if (env.AGY_BIN) {
+    const isCmd = /\.(cmd|bat)$/i.test(env.AGY_BIN);
+    return { bin: env.AGY_BIN, useShell: platform === 'win32' && isCmd };
+  }
+
+  const isWin = platform === 'win32';
+  const sep = isWin ? ';' : ':';
+  const home = env.USERPROFILE || env.HOME || os.homedir();
+  const pathDirs = (env.PATH || env.Path || '').split(sep).filter(Boolean);
+
+  if (isWin) {
+    const winExtra = [
+      path.win32.join(home, '.local', 'bin'),
+      env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, 'Programs', 'antigravity') : '',
+      env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, 'antigravity', 'bin') : '',
+      env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, 'antigravity') : '',
+      env.APPDATA ? path.win32.join(env.APPDATA, 'npm') : '',
+    ].filter(Boolean);
+    const searchDirs = [...pathDirs, ...winExtra];
+    for (const dir of searchDirs) {
+      const exeCandidate = path.join(dir, 'agy.exe');
+      if (existsSync(exeCandidate)) return { bin: exeCandidate, useShell: false };
+    }
+    for (const dir of searchDirs) {
+      for (const ext of ['agy.cmd', 'agy.bat']) {
+        const cmdCandidate = path.join(dir, ext);
+        if (existsSync(cmdCandidate)) return { bin: cmdCandidate, useShell: true };
+      }
+    }
+    return { bin: 'agy.exe', useShell: false };
+  }
+
+  const posixExtra = [
+    path.join(home, '.local', 'bin'),
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+  ];
+  for (const dir of [...pathDirs, ...posixExtra]) {
+    const candidate = path.join(dir, 'agy');
+    if (existsSync(candidate)) return { bin: candidate, useShell: false };
+  }
+  return { bin: 'agy', useShell: false };
+}
 
 /**
  * Extract Google Spreadsheet IDs from text.
@@ -148,23 +201,33 @@ export async function runAgyTask({
 }) {
   const prompt = buildAgyPrompt({ task, templateKey, sheetId, context });
   const start = Date.now();
+  const { bin: agyBin, useShell } = resolveAgyBinary();
+  const effectivePrompt = useShell ? prompt.replace(/\r?\n+/g, ' ') : prompt;
 
   const agyArgs = [
-    '-p', prompt,
     '--model', model,
     '--dangerously-skip-permissions',
+    '-p', effectivePrompt,
   ];
 
+  const homeDir = os.homedir();
+  const defaultSa = path.join(homeDir, '.config', 'gcloud', 'waymark-service-account-key.json');
+  const defaultOAuth = path.join(homeDir, '.config', 'gcloud', 'waymark-oauth-token.json');
+  const childEnv = { ...process.env };
+  if (!childEnv.GOOGLE_APPLICATION_CREDENTIALS && existsSync(defaultSa)) {
+    childEnv.GOOGLE_APPLICATION_CREDENTIALS = defaultSa;
+  }
+  if (!childEnv.WAYMARK_OAUTH_TOKEN_PATH && existsSync(defaultOAuth)) {
+    childEnv.WAYMARK_OAUTH_TOKEN_PATH = defaultOAuth;
+  }
+
   try {
-    const { stdout, stderr } = await execFileAsync('agy', agyArgs, {
+    const { stdout } = await execFileAsync(agyBin, agyArgs, {
       cwd,
       timeout: timeoutMs,
-      env: {
-        ...process.env,
-        // Ensure credentials are passed to any child processes
-        GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS || `${process.env.HOME}/.config/gcloud/waymark-service-account-key.json`,
-        WAYMARK_OAUTH_TOKEN_PATH: process.env.WAYMARK_OAUTH_TOKEN_PATH || `${process.env.HOME}/.config/gcloud/waymark-oauth-token.json`,
-      },
+      shell: useShell,
+      windowsHide: true,
+      env: childEnv,
       maxBuffer: 10 * 1024 * 1024,
     });
 
@@ -200,7 +263,20 @@ export async function runAgyTask({
 }
 
 // ── CLI Execution ──────────────────────────────────────────────────────
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(fileURLToPath(metaUrl));
+    const b = realpathSync(path.resolve(process.argv[1]));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   let task = '';
   let templateKey = null;

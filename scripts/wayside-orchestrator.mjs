@@ -13,7 +13,8 @@
    - Headless AGY CLI execution targeted at Gemini 3.8 Flash
    ============================================================ */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -55,18 +56,29 @@ function base64url(input) {
     .replace(/=+$/, '');
 }
 
+let _cachedAuth = { token: null, expiry: 0, sourceKey: '' };
+
 /**
  * Get an OAuth access token using Service Account credentials or OAuth token file.
  * @returns {Promise<string>}
  */
 export async function getAuthToken() {
-  // 1. Try OAuth token file if available
   const oauthPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    `${process.env.HOME || '/root'}/.config/gcloud/waymark-oauth-token.json`;
+    path.join(os.homedir(), '.config', 'gcloud', 'waymark-oauth-token.json');
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+    path.join(os.homedir(), '.config', 'gcloud', 'waymark-service-account-key.json');
+  const sourceKey = `${oauthPath}|${credPath}`;
+
+  if (_cachedAuth.token && _cachedAuth.sourceKey === sourceKey && Date.now() < _cachedAuth.expiry - 60000) {
+    return _cachedAuth.token;
+  }
+
+  // 1. Try OAuth token file if available
   if (existsSync(oauthPath)) {
     try {
       const data = JSON.parse(readFileSync(oauthPath, 'utf8'));
-      if (data.access_token && (!data.expiry_date || Date.now() < data.expiry_date - 60000)) {
+      if (data.access_token && data.expiry_date && Date.now() < data.expiry_date - 60000) {
+        _cachedAuth = { token: data.access_token, expiry: data.expiry_date, sourceKey };
         return data.access_token;
       }
       if (data.refresh_token && data.client_id && data.client_secret) {
@@ -81,15 +93,25 @@ export async function getAuthToken() {
           }),
         });
         const ref = await res.json();
-        if (ref.access_token) return ref.access_token;
+        if (ref.access_token) {
+          const expiry = Date.now() + ((ref.expires_in || 3600) * 1000);
+          data.access_token = ref.access_token;
+          data.expiry_date = expiry;
+          try {
+            writeFileSync(oauthPath, JSON.stringify(data, null, 2));
+          } catch { /* read-only mount — ignore */ }
+          _cachedAuth = { token: ref.access_token, expiry, sourceKey };
+          return ref.access_token;
+        }
+      }
+      if (data.access_token && !data.expiry_date) {
+        _cachedAuth = { token: data.access_token, expiry: Date.now() + 300000, sourceKey };
+        return data.access_token;
       }
     } catch { /* fallback to service account */ }
   }
 
   // 2. Service account key file
-  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-    `${process.env.HOME || '/root'}/.config/gcloud/waymark-service-account-key.json`;
-
   if (existsSync(credPath)) {
     const creds = JSON.parse(readFileSync(credPath, 'utf8'));
     const now = Math.floor(Date.now() / 1000);
@@ -117,7 +139,11 @@ export async function getAuthToken() {
       }),
     });
     const tokenData = await response.json();
-    if (tokenData.access_token) return tokenData.access_token;
+    if (tokenData.access_token) {
+      const expiry = Date.now() + ((tokenData.expires_in || 3600) * 1000);
+      _cachedAuth = { token: tokenData.access_token, expiry, sourceKey };
+      return tokenData.access_token;
+    }
   }
 
   throw new Error('Unable to obtain Google Auth token. Check GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.');
@@ -230,14 +256,38 @@ export async function ensureLedgerStructure(sheetId) {
 }
 
 /**
- * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one.
+ * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one
+ * using the canonical `.waymark-ledger-contact-pair:` naming from public/js/collab.js.
  * @returns {Promise<string>} spreadsheetId
  */
 export async function discoverOrCreateWaysideLedger() {
   const token = await getAuthToken();
-  const driveBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+  const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+  const driveRoot = driveFilesBase.replace(/\/files\/?$/, '');
+  const agentEmailLower = AGENT_EMAIL.toLowerCase();
+
+  let userEmail = (process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
+  if (!userEmail) {
+    try {
+      const aboutRes = await fetch(`${driveRoot}/about?fields=user`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (aboutRes.ok) {
+        const about = await aboutRes.json();
+        const detected = (about?.user?.emailAddress || '').trim().toLowerCase();
+        if (detected && !detected.endsWith('.gserviceaccount.com')) {
+          userEmail = detected;
+        }
+      }
+    } catch { /* best-effort user email detection */ }
+  }
+
+  const canonicalTitle = userEmail && userEmail !== agentEmailLower
+    ? `.waymark-ledger-contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
+    : `.waymark-ledger-contact:${agentEmailLower}`;
+
   const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
-  const url = `${driveBase}?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=20`;
+  const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50`;
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -245,17 +295,18 @@ export async function discoverOrCreateWaysideLedger() {
   if (res.ok) {
     const data = await res.json();
     const files = data.files || [];
-    const aiLedger = files.find(f => (f.name || '').includes(AGENT_EMAIL));
+    const exactMatch = files.find(f => (f.name || '').toLowerCase() === canonicalTitle.toLowerCase());
+    if (exactMatch?.id) return exactMatch.id;
+
+    const aiLedger = files.find(f => (f.name || '').toLowerCase().includes(agentEmailLower));
     if (aiLedger?.id) return aiLedger.id;
-    if (files[0]?.id) return files[0].id;
   }
 
-  // Create a dedicated Wayside Share Ledger
-  const title = `.waymark-ledger-contact-${AGENT_EMAIL}`;
+  // Create a dedicated Wayside Share Ledger matching collab.js ledgerFileName
   const created = await sheetsApi('', {
     method: 'POST',
     body: {
-      properties: { title },
+      properties: { title: canonicalTitle },
       sheets: [
         { properties: { title: SHARED_DOCS_TAB } },
         { properties: { title: PRESENCE_TAB } },
@@ -617,7 +668,7 @@ export class WaysideOrchestrator {
   broadcastTyping() {
     if (this.peer) {
       try {
-        this.peer.broadcast({ type: 'typing', name: this.agentName, ts: Date.now() });
+        this.peer.broadcast({ type: 'typing', text: null, name: this.agentName, ts: Date.now() });
       } catch {}
     }
   }
@@ -710,7 +761,20 @@ export class WaysideOrchestrator {
 
 // ── CLI Launch ─────────────────────────────────────────────────────────
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(fileURLToPath(metaUrl));
+    const b = realpathSync(path.resolve(process.argv[1]));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   let sheetId = process.env.WAYSIDE_LEDGER_ID || process.env.WAYMARK_SHEET_ID || null;
 

@@ -9,19 +9,21 @@
    ============================================================ */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const GLOBAL_CONFIG_DIR = path.join(process.env.HOME || '/root', '.gemini', 'config');
+const HOME_DIR = os.homedir();
+const GLOBAL_CONFIG_DIR = path.join(HOME_DIR, '.gemini', 'config');
 const GLOBAL_CONFIG_PATH = path.join(GLOBAL_CONFIG_DIR, 'mcp_config.json');
 const WORKSPACE_AGENTS_CONFIG = path.join(ROOT, '.agents', 'mcp_config.json');
 const WORKSPACE_ROOT_CONFIG = path.join(ROOT, '.mcp.json');
 
-const SA_KEY_DEFAULT = path.join(process.env.HOME || '/root', '.config', 'gcloud', 'waymark-service-account-key.json');
-const OAUTH_TOKEN_DEFAULT = path.join(process.env.HOME || '/root', '.config', 'gcloud', 'waymark-oauth-token.json');
+const SA_KEY_DEFAULT = path.join(HOME_DIR, '.config', 'gcloud', 'waymark-service-account-key.json');
+const OAUTH_TOKEN_DEFAULT = path.join(HOME_DIR, '.config', 'gcloud', 'waymark-oauth-token.json');
 
 export function buildMcpConfig(opts = {}) {
   const rootDir = opts.rootDir || ROOT;
@@ -110,8 +112,20 @@ export function writeConfigs(opts = {}) {
   return config;
 }
 
-const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (isDirectRun) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = fs.realpathSync(fileURLToPath(metaUrl));
+    const b = fs.realpathSync(path.resolve(process.argv[1]));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   console.log('\n===============================================================');
   console.log('  Waymark AGY MCP Server Configuration');
   console.log('===============================================================\n');

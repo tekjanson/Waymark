@@ -16,7 +16,8 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleAuth } from "google-auth-library";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -94,8 +95,10 @@ const DOCS_BASE   = "https://docs.googleapis.com/v1/documents";
 const TOKEN_URL   = "https://oauth2.googleapis.com/token";
 
 const defaultSaPath = path.join(
-  process.env.HOME || "/root",
-  ".config/gcloud/waymark-service-account-key.json"
+  os.homedir(),
+  ".config",
+  "gcloud",
+  "waymark-service-account-key.json"
 );
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || (existsSync(defaultSaPath) ? defaultSaPath : null);
 
@@ -118,14 +121,39 @@ if (credPath && existsSync(credPath)) {
   }
 }
 
+async function getSaToken() {
+  if (!auth) return null;
+  try {
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+let _cachedUserEmail = null;
+async function getAuthenticatedUserEmail(userToken) {
+  if (_cachedUserEmail) return _cachedUserEmail;
+  if (!userToken) return null;
+  try {
+    const res = await fetch(`${DRIVE_BASE}/about?fields=user`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    _cachedUserEmail = data?.user?.emailAddress?.trim() || null;
+    return _cachedUserEmail;
+  } catch {
+    return null;
+  }
+}
+
 async function getToken() {
   const userToken = await getUserOAuthToken();
   if (userToken) return userToken;
-  if (auth) {
-    const client = await auth.getClient();
-    const { token } = await client.getAccessToken();
-    return token;
-  }
+  const saToken = await getSaToken();
+  if (saToken) return saToken;
   throw new Error("No Google authentication configured. Provide GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
@@ -136,7 +164,7 @@ async function getToken() {
  */
 async function getUserOAuthToken() {
   const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
+    path.join(os.homedir(), ".config", "gcloud", "waymark-oauth-token.json");
   let tokenData;
   try {
     const { readFileSync: read } = await import("node:fs");
@@ -835,16 +863,41 @@ async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith =
   const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
 
   const userToken = await getUserOAuthToken();
-  const createToken = userToken || await getToken();
-  const createdWithOAuth = !!userToken;
+  let createToken = userToken || await getToken();
+  let createdWithOAuth = !!userToken;
 
-  // Create the Google Doc
-  const res = await fetch(DOCS_BASE, {
+  // Create the Google Doc (with automatic SA fallback if an older user OAuth token lacks the documents scope)
+  let res = await fetch(DOCS_BASE, {
     method: "POST",
     headers: { Authorization: `Bearer ${createToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ title }),
   });
-  if (!res.ok) throw new Error(`Docs create ${res.status}: ${await res.text()}`);
+  if (!res.ok && res.status === 403 && createdWithOAuth) {
+    const saToken = await getSaToken();
+    if (saToken) {
+      const retryRes = await fetch(DOCS_BASE, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${saToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (retryRes.ok) {
+        res = retryRes;
+        createToken = saToken;
+        createdWithOAuth = false;
+        const userEmail = await getAuthenticatedUserEmail(userToken);
+        if (userEmail && !shareWith.includes(userEmail)) {
+          shareWith = [userEmail, ...shareWith];
+        }
+      }
+    }
+  }
+  if (!res.ok) {
+    const errText = await res.text();
+    const hint = res.status === 403 && errText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+      ? " (Hint: run 'node scripts/setup-headless-auth.mjs' to grant the Google Docs OAuth scope)"
+      : "";
+    throw new Error(`Docs create ${res.status}: ${errText}${hint}`);
+  }
   const created = await res.json();
   const documentId = created.documentId;
 
@@ -1012,11 +1065,25 @@ async function handleWaymarkListFiles({ query, type = "all", parentFolderId, pag
   return { files, count: files.length, total: files.length };
 }
 
+async function docsRequestWithFallback(pathSuffix, opts = {}) {
+  const userToken = await getUserOAuthToken();
+  const primaryToken = userToken || await getToken();
+  try {
+    return await apiRequestWithToken(primaryToken, DOCS_BASE, pathSuffix, opts);
+  } catch (err) {
+    if (userToken && String(err.message || "").includes("API 403")) {
+      const saToken = await getSaToken();
+      if (saToken) {
+        return await apiRequestWithToken(saToken, DOCS_BASE, pathSuffix, opts);
+      }
+    }
+    throw err;
+  }
+}
+
 async function handleWaymarkGetDoc({ documentId }) {
   if (!documentId) throw new Error("documentId is required.");
-  const userToken = await getUserOAuthToken();
-  const token = userToken || await getToken();
-  const doc = await apiRequestWithToken(token, DOCS_BASE, `/${documentId}`);
+  const doc = await docsRequestWithFallback(`/${documentId}`);
 
   let plainText = "";
   if (doc.body && Array.isArray(doc.body.content)) {
@@ -1061,9 +1128,7 @@ async function handleWaymarkAppendDoc({ documentId, text }) {
   if (!documentId) throw new Error("documentId is required.");
   if (text === undefined || text === null) throw new Error("text is required.");
 
-  const userToken = await getUserOAuthToken();
-  const token = userToken || await getToken();
-  const doc = await apiRequestWithToken(token, DOCS_BASE, `/${documentId}`);
+  const doc = await docsRequestWithFallback(`/${documentId}`);
 
   let endIndex = 1;
   if (doc.body && Array.isArray(doc.body.content) && doc.body.content.length > 0) {
@@ -1073,7 +1138,7 @@ async function handleWaymarkAppendDoc({ documentId, text }) {
 
   const textToInsert = (endIndex > 1 ? "\n" : "") + String(text);
 
-  await apiRequestWithToken(token, DOCS_BASE, `/${documentId}:batchUpdate`, {
+  await docsRequestWithFallback(`/${documentId}:batchUpdate`, {
     method: "POST",
     body: {
       requests: [
@@ -1201,8 +1266,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (isDirectRun) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(fileURLToPath(metaUrl));
+    const b = realpathSync(path.resolve(process.argv[1]));
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("Waymark MCP server ready (12 tools)\n");

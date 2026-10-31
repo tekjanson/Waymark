@@ -7,6 +7,13 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
+test.use({
+  permissions: ['microphone', 'camera'],
+  launchOptions: {
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  },
+});
+
 test('links in Wayside chat render as real anchors and never inject markup', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('#home-wayside', { timeout: 5_000 });
@@ -135,4 +142,303 @@ test('an accepted share is not re-announced when the ledger is re-polled, and Cl
   expect(res.shareNotifs).toBe(0);
   expect(res.perDoc).toBe(1);
   expect(res.cleared).toBe(true);
+});
+
+test('clicking close (✕) button in Wayside closes chat and restores placeholder even with 1 contact', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Crew is auto-selected, close button is visible
+  const closeBtn = page.locator('#wayside-close-btn');
+  await expect(closeBtn).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-chat-input')).toBeVisible();
+
+  // Click close button
+  await closeBtn.click();
+
+  // Placeholder is restored
+  await expect(page.locator('#wayside-placeholder')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-sheet-line')).toContainText('Pick a crew or Waymarker');
+  await expect(page.locator('.crew-row.active')).toHaveCount(0);
+
+  // Click the crew row again to reopen
+  await page.locator('#home-wayside .crew-row').first().click();
+  await expect(page.locator('#wayside-close-btn')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-chat-input')).toBeVisible();
+});
+
+test('Wayside video call activates media container, local video PiP, and call controls', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Start video call using the dedicated video call button
+  await page.click('#wayside-video-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  // Media container and local video are visible
+  const mediaContainer = page.locator('#wayside-media-container');
+  await expect(mediaContainer).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('#wayside-local-video')).toBeVisible();
+  await expect(page.locator('#wayside-remote-video')).toBeVisible();
+
+  // Call bar controls are visible
+  const muteBtn = page.locator('#wayside-mute-btn');
+  const camBtn = page.locator('#wayside-cam-btn');
+  await expect(muteBtn).toBeVisible();
+  await expect(camBtn).toBeVisible();
+
+  // Toggle mute and camera
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('Unmute');
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('Mute');
+
+  await camBtn.click();
+  await expect(camBtn).toContainText('Cam On');
+  await camBtn.click();
+  await expect(camBtn).toContainText('Cam Off');
+
+  // End call
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+  await expect(mediaContainer).toBeHidden();
+});
+
+test('Wayside audio call starts voice session without showing video container', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Start audio call using the primary call button
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  // Media container stays hidden for audio-only calls
+  const mediaContainer = page.locator('#wayside-media-container');
+  await expect(mediaContainer).toBeHidden();
+
+  // Call bar controls: mute is visible, cam button is hidden
+  const muteBtn = page.locator('#wayside-mute-btn');
+  const camBtn = page.locator('#wayside-cam-btn');
+  await expect(muteBtn).toBeVisible();
+  await expect(camBtn).toBeHidden();
+
+  // End call
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+});
+
+test('Wayside incoming call displays animated incoming card with Accept, Accept Video, and Decline', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Start + end a call so the signaling mesh (and window.__WAYMARK_CONNECT) exists
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+
+  // Trigger an incoming call through the real signaling hook
+  await page.evaluate(() => {
+    if (window.__WAYMARK_CONNECT?.onCallActive) {
+      window.__WAYMARK_CONNECT.onCallActive('peer-alice', 'Alice Explorer');
+    }
+  });
+
+  const card = page.locator('.wayside-incoming-call');
+  await expect(card).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('.social-incoming-caller')).toContainText('Alice Explorer');
+  await expect(page.locator('.social-incoming-accept')).toBeVisible();
+  await expect(page.locator('.social-incoming-accept-video')).toBeVisible();
+  const declineBtn = page.locator('.social-incoming-decline');
+  await expect(declineBtn).toBeVisible();
+
+  // Decline hides incoming call card and adds system decline message
+  await declineBtn.click();
+  await expect(card).toBeHidden();
+  await expect(page.locator('#wayside-chat-log')).toContainText('You declined the call');
+});
+
+test('re-clicking the active crew does not leak or duplicate chat widgets', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Crew is auto-selected; count the number of inputs and chat logs
+  await expect(page.locator('#wayside-chat-input')).toHaveCount(1);
+  await expect(page.locator('#wayside-chat-log')).toHaveCount(1);
+
+  // Re-click the first crew row twice
+  await page.locator('#home-wayside .crew-row').first().click();
+  await page.locator('#home-wayside .crew-row').first().click();
+
+  // Exactly one widget remains mounted
+  await expect(page.locator('#wayside-chat-input')).toHaveCount(1);
+  await expect(page.locator('#wayside-chat-log')).toHaveCount(1);
+  await expect(page.locator('#wayside-call-btn')).toHaveCount(1);
+});
+
+test('an active Wayside call survives a home re-render (pins changed / navigating back home)', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  await page.click('#wayside-video-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('waymark:pins-changed')));
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Same widget is re-mounted with the live call intact
+  await expect(page.locator('.social-chat-panel')).toHaveCount(1);
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-media-container')).toBeVisible();
+  const state = await page.evaluate(() => ({
+    inCall: window.__WAYMARK_CONNECT?.inCall,
+    tracksLive: window.__WAYMARK_CONNECT?.localStream?.getTracks().every(t => t.readyState === 'live'),
+  }));
+  expect(state.inCall).toBe(true);
+  expect(state.tracksLive).toBe(true);
+});
+
+test('SocialChatWidget never renders literal "null" text in header or root and exchanges bidirectional video + audio between two peers', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // 1. Verify no literal "null" text node appears anywhere in the Wayside widget header or subtitle
+  const textCheck = await page.evaluate(() => {
+    const header = document.querySelector('#home-wayside .social-chat-header');
+    const subtitle = document.querySelector('#home-wayside #wayside-sheet-line');
+    const directNullNodes = [];
+    for (const el of [header, subtitle, document.querySelector('#home-wayside .social-chat-panel')]) {
+      if (!el) continue;
+      for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === 'null') {
+          directNullNodes.push(el.className);
+        }
+      }
+    }
+    return {
+      headerText: header?.textContent || '',
+      subtitleText: subtitle?.textContent || '',
+      directNullNodes,
+    };
+  });
+  expect(textCheck.directNullNodes).toEqual([]);
+  expect(textCheck.headerText).not.toContain('null');
+  expect(textCheck.subtitleText).not.toContain('Linked: null');
+
+  // 2. Mount two SocialChatWidget peers on a shared room and run a full bidirectional video + audio call,
+  //    including simultaneous renegotiation (glare) over DataChannel.
+  const callResult = await page.evaluate(async () => {
+    const { SocialChatWidget } = await import('/js/social-widget.js');
+
+    // Shared in-memory sheet signal store for 2 peers
+    const cells = Array.from({ length: 45 }, () => Array(21).fill(''));
+    const makeSignal = () => ({
+      readAll: async () => cells.map(r => [...r]),
+      writeCell: async (row, col, val) => {
+        if (!cells[row]) cells[row] = Array(21).fill('');
+        cells[row][col] = val;
+      },
+    });
+
+    const hostA = document.createElement('div');
+    const hostB = document.createElement('div');
+    document.body.append(hostA, hostB);
+
+    const widgetA = new SocialChatWidget({
+      mode: 'embedded',
+      sheetId: 'call-room-e2e',
+      displayName: 'Alice',
+      signal: makeSignal(),
+      mountTo: hostA,
+    });
+    const widgetB = new SocialChatWidget({
+      mode: 'floating',
+      sheetId: 'call-room-e2e',
+      displayName: 'Bob',
+      signal: makeSignal(),
+      mountTo: hostB,
+    });
+
+    try {
+      // Wait for DataChannel between Alice and Bob to open
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const dcA = widgetA.session.connect?.connectedPeers()?.length || 0;
+        const dcB = widgetB.session.connect?.connectedPeers()?.length || 0;
+        if (dcA > 0 && dcB > 0) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      // Alice starts a video call and Bob accepts with video simultaneously (triggers glare test)
+      await Promise.all([
+        widgetA.toggleCall({ video: true }),
+        widgetB.toggleCall({ video: true }),
+      ]);
+
+      // Wait for both peers to receive each other's remote video AND audio streams and settle signaling
+      const mediaDeadline = Date.now() + 8000;
+      while (Date.now() < mediaDeadline) {
+        const aRemVideo = widgetA.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
+        const bRemVideo = widgetB.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
+        const aRemAudio = widgetA.remoteAudio?.srcObject?.getAudioTracks()?.length || 0;
+        const bRemAudio = widgetB.remoteAudio?.srcObject?.getAudioTracks()?.length || 0;
+        const sigA = Array.from(widgetA.session.connect._rtc.values())[0]?.pc?.signalingState;
+        const sigB = Array.from(widgetB.session.connect._rtc.values())[0]?.pc?.signalingState;
+        if (aRemVideo > 0 && bRemVideo > 0 && aRemAudio > 0 && bRemAudio > 0 && sigA === 'stable' && sigB === 'stable') break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      const pcA = Array.from(widgetA.session.connect._rtc.values())[0]?.pc;
+      const pcB = Array.from(widgetB.session.connect._rtc.values())[0]?.pc;
+
+      return {
+        statusA: widgetA.statusLabel?.textContent,
+        statusB: widgetB.statusLabel?.textContent,
+        signalingA: pcA?.signalingState,
+        signalingB: pcB?.signalingState,
+        aLocalVideo: widgetA.localVideo?.srcObject?.getVideoTracks()?.length || 0,
+        bLocalVideo: widgetB.localVideo?.srcObject?.getVideoTracks()?.length || 0,
+        aRemoteVideo: widgetA.remoteVideo?.srcObject?.getVideoTracks()?.length || 0,
+        bRemoteVideo: widgetB.remoteVideo?.srcObject?.getVideoTracks()?.length || 0,
+        aRemoteAudio: widgetA.remoteAudio?.srcObject?.getAudioTracks()?.length || 0,
+        bRemoteAudio: widgetB.remoteAudio?.srcObject?.getAudioTracks()?.length || 0,
+        aMediaVisible: !widgetA.mediaContainer.classList.contains('hidden'),
+        bMediaVisible: !widgetB.mediaContainer.classList.contains('hidden'),
+        aAudioCtxState: widgetA.session.connect?._audioCtx?.state,
+        bAudioCtxState: widgetB.session.connect?._audioCtx?.state,
+      };
+    } finally {
+      widgetA.destroy();
+      widgetB.destroy();
+      hostA.remove();
+      hostB.remove();
+    }
+  });
+
+  expect(callResult.statusA).toBe('Connected');
+  expect(callResult.statusB).toBe('Connected');
+  expect(callResult.signalingA).toBe('stable');
+  expect(callResult.signalingB).toBe('stable');
+  expect(callResult.aLocalVideo).toBe(1);
+  expect(callResult.bLocalVideo).toBe(1);
+  expect(callResult.aRemoteVideo).toBe(1);
+  expect(callResult.bRemoteVideo).toBe(1);
+  expect(callResult.aRemoteAudio).toBe(1);
+  expect(callResult.bRemoteAudio).toBe(1);
+  expect(callResult.aMediaVisible).toBe(true);
+  expect(callResult.bMediaVisible).toBe(true);
 });

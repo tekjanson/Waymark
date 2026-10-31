@@ -12,7 +12,8 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleAuth } from "google-auth-library";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -23,8 +24,10 @@ const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 const defaultSaPath = path.join(
-  process.env.HOME || "/root",
-  ".config/gcloud/waymark-service-account-key.json"
+  os.homedir(),
+  ".config",
+  "gcloud",
+  "waymark-service-account-key.json"
 );
 const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || (existsSync(defaultSaPath) ? defaultSaPath : null);
 
@@ -44,7 +47,7 @@ if (credPath && existsSync(credPath)) {
 
 async function getUserOAuthToken() {
   const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    `${process.env.HOME || "/root"}/.config/gcloud/waymark-oauth-token.json`;
+    path.join(os.homedir(), ".config", "gcloud", "waymark-oauth-token.json");
   let tokenData;
   try {
     tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
@@ -503,8 +506,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (isDirectRun) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(fileURLToPath(metaUrl));
+    const b = realpathSync(path.resolve(process.argv[1]));
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("Waymark Google Sheets MCP server ready (11 tools)\n");

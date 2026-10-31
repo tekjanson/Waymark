@@ -200,4 +200,90 @@ test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
     expect(peer.destroyed).toBe(true);
   });
 
+  test('discoverOrCreateWaysideLedger ignores unrelated human ledgers and creates canonical contact-pair ledger', async () => {
+    const http = require('http');
+    const { discoverOrCreateWaysideLedger } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    const tmpToken = path.join(ROOT, 'tests', 'fixtures', 'tmp-orch-oauth.json');
+    fs.writeFileSync(tmpToken, JSON.stringify({
+      access_token: 'mock-access-token',
+      expiry_date: Date.now() + 3600_000,
+    }));
+
+    const requests = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        requests.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : null });
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url.startsWith('/drive/v3/about')) {
+          res.end(JSON.stringify({ user: { emailAddress: 'testuser@gmail.com' } }));
+        } else if (req.url.startsWith('/drive/v3/files')) {
+          // Return an unrelated human contact ledger — orchestrator MUST NOT hijack it!
+          res.end(JSON.stringify({
+            files: [
+              { id: 'human-ledger-999', name: '.waymark-ledger-contact-pair:alice@gmail.com::testuser@gmail.com' },
+            ],
+          }));
+        } else {
+          res.writeHead(404);
+          res.end('{}');
+        }
+      });
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+
+    const origTokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+    const origDriveBase = process.env.DRIVE_BASE;
+    const origFetch = globalThis.fetch;
+
+    try {
+      process.env.WAYMARK_OAUTH_TOKEN_PATH = tmpToken;
+      process.env.DRIVE_BASE = `http://127.0.0.1:${port}/drive/v3/files`;
+
+      let createdTitle = null;
+      globalThis.fetch = async (url, opts = {}) => {
+        const u = String(url);
+        if (u === 'https://sheets.googleapis.com/v4/spreadsheets' && opts.method === 'POST') {
+          const parsed = JSON.parse(opts.body);
+          createdTitle = parsed.properties?.title;
+          return new Response(JSON.stringify({ spreadsheetId: 'ai-pair-ledger-123' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (u.startsWith('https://sheets.googleapis.com/v4/spreadsheets/ai-pair-ledger-123')) {
+          return new Response(JSON.stringify({
+            sheets: [
+              { properties: { title: 'Shared_Docs' } },
+              { properties: { title: 'Presence' } },
+              { properties: { title: 'Chat' } },
+              { properties: { title: 'WebRTC_Signaling' } },
+            ],
+            values: [['Header']],
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return origFetch(url, opts);
+      };
+
+      const ledgerId = await discoverOrCreateWaysideLedger();
+      expect(ledgerId).toBe('ai-pair-ledger-123');
+      expect(createdTitle).toBe('.waymark-ledger-contact-pair:assistant@waymark.internal::testuser@gmail.com');
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origTokenPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+      else process.env.WAYMARK_OAUTH_TOKEN_PATH = origTokenPath;
+      if (origDriveBase === undefined) delete process.env.DRIVE_BASE;
+      else process.env.DRIVE_BASE = origDriveBase;
+      if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
 });

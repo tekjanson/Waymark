@@ -5,9 +5,10 @@
 import {
   el, cell, registerTemplate, buildAddRowForm,
   parseGroups, delegateEvent, editableCell, buildDirSyncBtn,
+  buildHandshakePasswordRow,
 } from '../shared.js';
 import { MOOD_MAP, CATEGORY_COLORS, avatarColor, timeAgo, SIG_COL } from './helpers.js';
-import { openChat, destroyChat } from './chat.js';
+import { openChat, destroyChat, setSocialPassword } from './chat.js';
 
 /* ---------- Template Definition ---------- */
 
@@ -266,6 +267,15 @@ const definition = {
       on: { click() { openChat(template._rtcSheetId, template._rtcUserName, template._rtcSignal); } },
     }, ['📡 Connect']);
 
+    // Session password for encrypted handshakes
+    const { row: pwRow } = buildHandshakePasswordRow({
+      prefix: 'social',
+      initialValue: '',
+      onPasswordChange(newPw) {
+        setSocialPassword(newPw);
+      },
+    });
+
     profileHeader.append(
       el('div', {
         className: 'social-avatar social-avatar-lg',
@@ -280,6 +290,7 @@ const definition = {
       connectBtn,
     );
     container.append(profileHeader);
+    container.append(pwRow);
 
     /* ---- Add row form ---- */
     if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {

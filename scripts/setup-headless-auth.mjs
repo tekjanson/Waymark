@@ -13,23 +13,26 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+const HOME_DIR = os.homedir();
 
 const DEFAULT_CLIENT_ID = '764742927885-fs0atq3ecenhndpdaaqkb0d0go1blt22.apps.googleusercontent.com';
 const TOKEN_PATH = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-  path.join(process.env.HOME || '/root', '.config', 'gcloud', 'waymark-oauth-token.json');
+  path.join(HOME_DIR, '.config', 'gcloud', 'waymark-oauth-token.json');
 const SA_KEY_PATH = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-  path.join(process.env.HOME || '/root', '.config', 'gcloud', 'waymark-service-account-key.json');
+  path.join(HOME_DIR, '.config', 'gcloud', 'waymark-service-account-key.json');
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/documents',
 ];
@@ -116,7 +119,7 @@ export function resolveClientCredentials(opts = {}) {
 
   // 2. Check client_secret_*.json in repo root or ~/.config/gcloud/
   if (!clientId || !clientSecret) {
-    const searchDirs = [ROOT, path.join(process.env.HOME || '/root', '.config', 'gcloud')];
+    const searchDirs = [ROOT, path.join(HOME_DIR, '.config', 'gcloud')];
     for (const dir of searchDirs) {
       if (!fs.existsSync(dir)) continue;
       const files = fs.readdirSync(dir);
@@ -271,7 +274,11 @@ export async function checkStatus(tokenPath = TOKEN_PATH, saKeyPath = SA_KEY_PAT
 export function saveToken(tokenData, targetPath = TOKEN_PATH) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, JSON.stringify(tokenData, null, 2));
-  fs.chmodSync(targetPath, 0o600);
+  if (process.platform !== 'win32') {
+    try {
+      fs.chmodSync(targetPath, 0o600);
+    } catch { /* ignore on filesystems without POSIX permissions */ }
+  }
 }
 
 /* ---------- Interactive / Headless OAuth Flow ---------- */
@@ -320,9 +327,15 @@ async function runInteractiveSetup(opts) {
   console.log('     • If you are running headlessly over SSH, copy the URL from your browser');
   console.log('       address bar after approval (or just the code= parameter) and paste it below.\n');
 
-  // Attempt to open browser automatically if GUI is available
+  // Attempt to open browser automatically if GUI is available (Windows, macOS, Linux)
   try {
-    execSync(`xdg-open "${authUrl}" 2>/dev/null || open "${authUrl}" 2>/dev/null`, { stdio: 'ignore' });
+    if (process.platform === 'win32') {
+      execFile('rundll32', ['url.dll,FileProtocolHandler', authUrl], { windowsHide: true }, () => {});
+    } else if (process.platform === 'darwin') {
+      execFile('open', [authUrl], () => {});
+    } else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
+      execFile('xdg-open', [authUrl], () => {});
+    }
   } catch {}
 
   let codeResolved = false;
@@ -464,8 +477,20 @@ Options:
   await runInteractiveSetup(opts);
 }
 
-const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (isDirectRun) {
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = fs.realpathSync(fileURLToPath(metaUrl));
+    const b = fs.realpathSync(path.resolve(process.argv[1]));
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   main().catch(err => {
     console.error('Fatal error:', err);
     process.exit(1);

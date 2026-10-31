@@ -33,7 +33,7 @@ echo -e "${CYAN}${BOLD}  Waymark + Wayside AGY Orchestrator — Headless Install
 echo -e "${CYAN}${BOLD}===============================================================${NC}\n"
 
 # 1. Environment & Target Directory Detection
-DEFAULT_BRANCH="${WAYMARK_BRANCH:-feature/agy-wayside-orchestrator}"
+DEFAULT_BRANCH="${WAYMARK_BRANCH:-main}"
 TARGET_DIR="${WAYMARK_DIR:-}"
 
 if [ -z "$TARGET_DIR" ]; then
@@ -128,7 +128,7 @@ else
   fi
 fi
 
-# 8. Create convenient run-wayside.sh runner
+# 8. Ensure convenient run-wayside.sh & run-waymark.sh runners are executable
 RUN_SCRIPT="$TARGET_DIR/run-wayside.sh"
 cat << 'RUNNER_EOF' > "$RUN_SCRIPT"
 #!/usr/bin/env bash
@@ -136,16 +136,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 LEDGER_ID="${1:-${WAYSIDE_LEDGER_ID:-$WAYMARK_SHEET_ID}}"
-if [ -z "$LEDGER_ID" ]; then
-  echo "Usage: ./run-wayside.sh <ledgerSpreadsheetId>"
-  echo "   or: WAYSIDE_LEDGER_ID=<id> ./run-wayside.sh"
-  exit 1
-fi
-
 export AGY_MODEL="${AGY_MODEL:-gemini-3.8-flash-high}"
-exec node scripts/wayside-orchestrator.mjs --sheet "$LEDGER_ID"
+
+if [ -n "$LEDGER_ID" ]; then
+  exec node scripts/wayside-orchestrator.mjs --sheet "$LEDGER_ID"
+else
+  exec node scripts/wayside-orchestrator.mjs
+fi
 RUNNER_EOF
 chmod +x "$RUN_SCRIPT"
+if [ -f "$TARGET_DIR/run-waymark.sh" ]; then
+  chmod +x "$TARGET_DIR/run-waymark.sh"
+fi
 
 # 9. Optional Systemd User Service Generation
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
@@ -161,7 +163,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$TARGET_DIR
 Environment=NODE_ENV=production
-Environment=PATH=$PATH
+Environment=PATH=$HOME/.local/bin:$PATH
 Environment=AGY_MODEL=gemini-3.8-flash-high
 Environment=WAYSIDE_LEDGER_ID=${WAYMARK_SHEET_ID:-}
 ExecStart=$(command -v node) $TARGET_DIR/scripts/wayside-orchestrator.mjs
@@ -183,12 +185,15 @@ echo -e "${GREEN}${BOLD}  ✓ Headless Installation & Configuration Complete!${N
 echo -e "${CYAN}${BOLD}===============================================================${NC}\n"
 
 echo -e "${BOLD}Next Steps:${NC}"
-echo -e "  1. Launch Wayside Orchestrator:"
-echo -e "     ${CYAN}./run-wayside.sh <ledgerSpreadsheetId>${NC}"
+echo -e "  1. Launch Waymark Web App + Wayside AI together locally:"
+echo -e "     ${CYAN}./run-waymark.sh --with-wayside${NC}"
 echo -e ""
-echo -e "  2. Or run as a background service via systemd:"
+echo -e "  2. Or launch Wayside Orchestrator standalone (auto-discovers ledger):"
+echo -e "     ${CYAN}./run-wayside.sh [optionalLedgerSpreadsheetId]${NC}"
+echo -e ""
+echo -e "  3. Or run Wayside as a background service via systemd:"
 echo -e "     ${CYAN}systemctl --user enable --now waymark-wayside${NC}"
 echo -e ""
-echo -e "  3. Test AGY directly with Gemini Flash:"
+echo -e "  4. Test AGY directly with Gemini Flash:"
 echo -e "     ${CYAN}node scripts/agy-agent-runner.mjs -m \"List all my waymark files\"${NC}"
 echo -e ""
