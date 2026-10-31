@@ -239,7 +239,13 @@ test('Wayside incoming call displays animated incoming card with Accept, Accept 
   });
   await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
 
-  // Trigger an incoming call through real signaling hook
+  // Start + end a call so the signaling mesh (and window.__WAYMARK_CONNECT) exists
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+
+  // Trigger an incoming call through the real signaling hook
   await page.evaluate(() => {
     if (window.__WAYMARK_CONNECT?.onCallActive) {
       window.__WAYMARK_CONNECT.onCallActive('peer-alice', 'Alice Explorer');
@@ -278,4 +284,28 @@ test('re-clicking the active crew does not leak or duplicate chat widgets', asyn
   await expect(page.locator('#wayside-chat-input')).toHaveCount(1);
   await expect(page.locator('#wayside-chat-log')).toHaveCount(1);
   await expect(page.locator('#wayside-call-btn')).toHaveCount(1);
+});
+
+test('an active Wayside call survives a home re-render (pins changed / navigating back home)', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  await page.click('#wayside-video-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('waymark:pins-changed')));
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Same widget is re-mounted with the live call intact
+  await expect(page.locator('.social-chat-panel')).toHaveCount(1);
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call');
+  await expect(page.locator('#wayside-media-container')).toBeVisible();
+  const state = await page.evaluate(() => ({
+    inCall: window.__WAYMARK_CONNECT?.inCall,
+    tracksLive: window.__WAYMARK_CONNECT?.localStream?.getTracks().every(t => t.readyState === 'live'),
+  }));
+  expect(state.inCall).toBe(true);
+  expect(state.tracksLive).toBe(true);
 });

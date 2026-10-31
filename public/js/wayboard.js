@@ -816,6 +816,7 @@ async function removeWidget(id) {
 let _activeTarget = null; // { group? , contactEmail? , label }
 let _activeLedgerId = null;
 let _waysideTargetGeneration = 0;
+let _waysideRenderToken = 0;
 let _waysidePollingWired = false;
 let _waysideSocialRefreshKey = null;
 
@@ -885,13 +886,19 @@ function teardownWaysideWidget() {
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('hashchange', () => {
-    if (window.location.hash && !['', '#', '#/', '#home'].includes(window.location.hash)) {
-      teardownWaysideWidget();
-    }
-  });
   window.addEventListener('waymark:auth-logout', () => {
     teardownWaysideWidget();
+  });
+}
+
+/** Mark the crew row / avatar matching `target` as active. */
+function highlightWaysideTarget(host, target) {
+  if (!host || !target) return;
+  host.querySelectorAll('.crew-row').forEach(r => r.classList.toggle('active', r.dataset.group === target.group));
+  host.querySelectorAll('.avatar').forEach(av => {
+    const title = (av.getAttribute('title') || '').toLowerCase();
+    const isTarget = target.contactEmail && title.includes(target.contactEmail.toLowerCase());
+    av.classList.toggle('active', !!isTarget);
   });
 }
 
@@ -930,11 +937,18 @@ function deselectTarget(host) {
 async function renderWayside({ autoSelect = true } = {}) {
   const host = document.getElementById('home-wayside');
   if (!host) return;
+  const renderToken = ++_waysideRenderToken;
   host.innerHTML = '';
 
-  teardownWaysideWidget();
-  _activeTarget = null;
-  _activeLedgerId = null;
+  // The active chat/call widget owns live media + WebRTC state. Re-rendering the
+  // Wayside (home navigation, pin changes, ...) must NOT tear down an ongoing
+  // call, so keep the widget and re-mount its root into the fresh DOM below.
+  const keepWidget = Boolean(_waysideWidget && _activeTarget);
+  if (!keepWidget) {
+    teardownWaysideWidget();
+    _activeTarget = null;
+    _activeLedgerId = null;
+  }
 
   host.append(el('div', { className: 'wayside-head' }, [
     el('b', {}, ['🧭 The Wayside']),
@@ -942,6 +956,7 @@ async function renderWayside({ autoSelect = true } = {}) {
   ]));
 
   const { crews, people } = await discoverCrews();
+  if (renderToken !== _waysideRenderToken) return;
   const waysideStatus = host.querySelector('.wayside-status');
   if (waysideStatus) waysideStatus.textContent = `${crews.length} crews · ${people.length} Waymarkers`;
 
@@ -954,6 +969,7 @@ async function renderWayside({ autoSelect = true } = {}) {
   }
   for (const crew of crews) {
     const ledger = await collab.findExistingShareLedger({ group: crew.name });
+    if (renderToken !== _waysideRenderToken) return;
     const row = el('div', { className: 'crew-row', dataset: { group: crew.name } }, [
       el('span', {}, [`🏠 ${crew.name}`]),
       ledger
@@ -990,9 +1006,15 @@ async function renderWayside({ autoSelect = true } = {}) {
   // Chat container
   const chatContainer = el('div', { className: 'wayside-chat-container', id: 'wayside-chat-container' });
   host.append(chatContainer);
-  renderWaysidePlaceholder(chatContainer);
-
   ensureWaysidePolling();
+
+  if (keepWidget && _waysideWidget) {
+    _waysideWidget.mount(chatContainer);
+    highlightWaysideTarget(host, _activeTarget);
+    refreshWaysideSocial(host).catch(() => {});
+    return;
+  }
+  renderWaysidePlaceholder(chatContainer);
 
   if (autoSelect) {
     // Auto-select the first crew / Waymarker.
@@ -1007,22 +1029,20 @@ async function selectTarget(target, host) {
     || _activeTarget.group !== target.group
     || _activeTarget.contactEmail !== target.contactEmail;
 
+  // Re-selecting the already-active target must not rebuild the widget: that
+  // would drop an in-progress call and its media tracks.
+  if (!targetChanged && _waysideWidget) {
+    highlightWaysideTarget(host, target);
+    return;
+  }
+
   if (targetChanged) {
     _activeLedgerId = null;
     renderSharedFiles([]);
   }
   _activeTarget = target;
 
-  // Highlight active crew row and avatar
-  host.querySelectorAll('.crew-row').forEach(r => r.classList.toggle('active', r.dataset.group === target.group));
-  host.querySelectorAll('.avatar').forEach(av => {
-    const title = (av.getAttribute('title') || '').toLowerCase();
-    const isTarget = target.contactEmail && title.includes(target.contactEmail.toLowerCase());
-    av.classList.toggle('active', !!isTarget);
-  });
-
-  const chatContainer = host.querySelector('#wayside-chat-container');
-  if (!chatContainer) return;
+  highlightWaysideTarget(host, target);
 
   // Find existing share ledger
   let ledger = null;
@@ -1030,6 +1050,11 @@ async function selectTarget(target, host) {
     ledger = await collab.findExistingShareLedger(target);
   } catch {}
   if (generation !== _waysideTargetGeneration) return;
+
+  // Re-query after the await: the Wayside may have been re-rendered meanwhile.
+  const chatContainer = host.querySelector('#wayside-chat-container')
+    || document.querySelector('#home-wayside #wayside-chat-container');
+  if (!chatContainer) return;
 
   _activeLedgerId = ledger ? ledger.sheetId : null;
 
