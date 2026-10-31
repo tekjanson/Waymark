@@ -8,6 +8,13 @@
  * engine turns collaborator shares into top-bar bell notifications.
  */
 const { test, expect } = require('@playwright/test');
+
+test.use({
+  permissions: ['microphone', 'camera'],
+  launchOptions: {
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  },
+});
 const { setupApp, navigateToSheet, getCreatedRecords } = require('../helpers/test-utils');
 
 async function setMockUser(page, { id, name, email }) {
