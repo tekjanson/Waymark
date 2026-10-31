@@ -91,10 +91,11 @@ export class SocialChatWidget {
     this._typingTimer = null;
     this._debugCleanup = null;
     this._debugLogLines = 0;
-    this._historySaved = false;
+    this._savedUpTo = 0;
+    this._savingHistory = false;
 
-    // Use passed session or instantiate new one
-    this.session = opts.session || new SocialSession({
+    // Instantiate session
+    this.session = new SocialSession({
       sheetId: this.sheetId,
       displayName: this.displayName,
       password: this.password,
@@ -162,9 +163,6 @@ export class SocialChatWidget {
 
     if (this.sheetId) {
       this.session.start();
-      if (typeof window !== 'undefined') {
-        window.__WAYMARK_CONNECT = this.session.connect;
-      }
       this._restoreSheetHistory();
     }
   }
@@ -196,6 +194,7 @@ export class SocialChatWidget {
 
   _buildDOM() {
     const isFloating = this.mode === 'floating';
+    const idPrefix = isFloating ? 'social-chat' : 'wayside';
     const rootClasses = isFloating
       ? 'social-chat-panel'
       : 'social-chat-panel social-chat-embedded chat-box';
@@ -207,7 +206,7 @@ export class SocialChatWidget {
 
     this.titleEl = el('span', {
       className: 'social-chat-title',
-      id: 'wayside-crew-title',
+      id: `${idPrefix}-crew-title`,
     }, [this.titleText]);
 
     this.statusDot = el('span', {
@@ -233,7 +232,7 @@ export class SocialChatWidget {
     if (this.showSheetLink) {
       this.sheetBtn = el('button', {
         className: 'btn btn-muted',
-        id: 'wayside-sheet-btn',
+        id: `${idPrefix}-sheet-btn`,
         title: 'Open the shared Waymark',
         on: { click: () => this.onOpenSheet() },
       }, ['🔗 Waymark']);
@@ -243,7 +242,7 @@ export class SocialChatWidget {
     if (this.showConnectDrive) {
       this.connectBtn = el('button', {
         className: 'btn btn-muted',
-        id: 'wayside-connect-btn',
+        id: `${idPrefix}-connect-btn`,
         title: 'Connect a shared ledger from Drive',
         on: { click: () => this.onConnectDrive() },
       }, ['📥 Connect']);
@@ -275,7 +274,7 @@ export class SocialChatWidget {
     if (this.showClose) {
       this.closeBtn = el('button', {
         className: 'social-chat-close btn-icon',
-        id: 'wayside-close-btn',
+        id: `${idPrefix}-close-btn`,
         title: isFloating ? 'Disconnect' : 'Close chat',
         on: { click: () => this.onClose() },
       }, ['✕']);
@@ -297,7 +296,7 @@ export class SocialChatWidget {
     }, [this.subtitleText]);
     this.subtitle = el('div', {
       className: 'chat-sheet-line',
-      id: 'wayside-sheet-line',
+      id: `${idPrefix}-sheet-line`,
     }, [this.subtitleTextEl, subtitleActions]);
 
     /* ---------- Settings Panel ---------- */
@@ -335,25 +334,25 @@ export class SocialChatWidget {
     /* ---------- Media Container (Remote & Local Video) ---------- */
     this.mediaContainer = el('div', {
       className: 'social-media-container wayside-media-container hidden',
-      id: 'wayside-media-container',
+      id: `${idPrefix}-media-container`,
     });
     this.localVideo = el('video', {
       className: 'social-local-video wayside-local-video',
-      id: 'wayside-local-video',
+      id: `${idPrefix}-local-video`,
       muted: true,
       autoplay: true,
       playsInline: true,
     });
     this.remoteVideo = el('video', {
       className: 'social-remote-video wayside-remote-video',
-      id: 'wayside-remote-video',
+      id: `${idPrefix}-remote-video`,
       autoplay: true,
       playsInline: true,
     });
     // Remote audio lives outside mediaContainer so it is never muted by display:none
     this.remoteAudio = el('audio', {
       className: 'social-remote-audio',
-      id: 'wayside-remote-audio',
+      id: `${idPrefix}-remote-audio`,
       autoplay: true,
       playsInline: true,
     });
@@ -363,12 +362,13 @@ export class SocialChatWidget {
     this.callBar = el('div', { className: 'social-call-bar chat-box-actions' });
     this.callBtn = el('button', {
       className: 'social-call-btn btn',
-      id: 'wayside-call-btn',
+      id: `${idPrefix}-call-btn`,
       title: 'Start audio call',
     }, ['📹 Call']);
 
     this.videoCallBtn = el('button', {
       className: 'social-call-btn social-call-btn-video btn',
+      id: `${idPrefix}-video-call-btn`,
       title: 'Start video call',
     }, ['📹 Video']);
 
@@ -379,13 +379,13 @@ export class SocialChatWidget {
 
     this.muteBtn = el('button', {
       className: 'social-call-btn social-call-btn-mute btn hidden',
-      id: 'wayside-mute-btn',
+      id: `${idPrefix}-mute-btn`,
       title: 'Toggle mute',
     }, ['🔇 Mute']);
 
     this.camToggleBtn = el('button', {
       className: 'social-call-btn social-call-btn-cam btn hidden',
-      id: 'wayside-cam-btn',
+      id: `${idPrefix}-cam-btn`,
       title: 'Toggle camera',
     }, ['📷 Cam Off']);
 
@@ -394,28 +394,12 @@ export class SocialChatWidget {
       title: 'Audio debug panel',
     }, ['🐛 Debug']);
 
-    this.callBtn.addEventListener('click', async () => {
-      if (this.session.inCall || this.session.callState === 'calling') {
-        await this.session.endCall();
-        this.exitCallUI();
-      } else if (this.session.callState === 'ringing') {
-        await this.session.acceptCall(false).catch(() => {});
-      } else {
-        if (this.onBeforeStartCall) await this.onBeforeStartCall();
-        await this.session.startCall({ audio: true, video: true }).catch(() => {});
-      }
+    this.callBtn.addEventListener('click', () => {
+      this.toggleCall({ video: false });
     });
 
-    this.videoCallBtn.addEventListener('click', async () => {
-      if (this.session.inCall || this.session.callState === 'calling') {
-        await this.session.endCall();
-        this.exitCallUI();
-      } else if (this.session.callState === 'ringing') {
-        await this.session.acceptCall(true).catch(() => {});
-      } else {
-        if (this.onBeforeStartCall) await this.onBeforeStartCall();
-        await this.session.startCall({ audio: true, video: true }).catch(() => {});
-      }
+    this.videoCallBtn.addEventListener('click', () => {
+      this.toggleCall({ video: true });
     });
 
     this.hangupBtn.addEventListener('click', () => {
@@ -457,7 +441,7 @@ export class SocialChatWidget {
     /* ---------- Messages Container ---------- */
     this.messages = el('div', {
       className: 'social-chat-messages chat-log',
-      id: 'wayside-chat-log',
+      id: `${idPrefix}-chat-log`,
     });
 
     /* ---------- Typing Indicator ---------- */
@@ -467,7 +451,7 @@ export class SocialChatWidget {
     const inputBar = el('div', { className: 'social-chat-input-bar' });
     this.input = el('input', {
       className: 'social-chat-input chat-input',
-      id: 'wayside-chat-input',
+      id: `${idPrefix}-chat-input`,
       type: 'text',
       placeholder: isFloating ? 'Type a message…' : 'Send a wave…',
       autocomplete: 'off',
@@ -738,6 +722,24 @@ export class SocialChatWidget {
     }
   }
 
+  async toggleCall({ video = false } = {}) {
+    if (this.session.inCall || this.session.callState === 'calling') {
+      await this.session.endCall();
+      this.exitCallUI();
+      return null;
+    }
+    if (this.session.callState === 'ringing') {
+      return this.session.acceptCall(video).catch(() => null);
+    }
+    try {
+      if (this.onBeforeStartCall) await this.onBeforeStartCall();
+      return await this.session.startCall({ audio: true, video });
+    } catch (err) {
+      showToast(`Could not start call: ${err.message}`, 'error');
+      return null;
+    }
+  }
+
   _handleCallStateChanged(state, details) {
     if (state === 'ringing') {
       this.showIncomingCall(details.peerId, details.name);
@@ -796,7 +798,9 @@ export class SocialChatWidget {
   }
 
   appendMessage({ id, sender, text, ts, self = false, failed = false, history = false }) {
-    const isSelf = self || (sender === this.displayName) || (this.userEmail && (sender || '').toLowerCase() === this.userEmail.toLowerCase());
+    const isSelf = history
+      ? (self || (sender === this.displayName) || (this.userEmail && (sender || '').toLowerCase() === this.userEmail.toLowerCase()))
+      : Boolean(self);
     const key = id || `${sender}:${ts}:${text}`;
 
     let existingNode = this.messages.querySelector(`[data-message-key="${CSS.escape(key)}"]`);
@@ -815,23 +819,30 @@ export class SocialChatWidget {
     const textSpan = el('span', { className: 'social-chat-bubble-text' });
     appendLinkified(textSpan, text);
 
-    const safeIso = (ts && !isNaN(new Date(ts).getTime())) ? new Date(ts).toISOString() : new Date().toISOString();
+    const numTs = typeof ts === 'number' ? ts : (ts ? new Date(ts).getTime() : 0);
+    const timeText = (numTs && !isNaN(numTs) && numTs > 0)
+      ? timeAgo(new Date(numTs).toISOString())
+      : '';
     const who = isSelf ? 'You' : (sender || '').split('@')[0];
+
+    const bodyChildren = [
+      el('span', { className: 'social-chat-bubble-name' }, [who]),
+      textSpan,
+    ];
+    if (timeText) {
+      bodyChildren.push(el('span', { className: 'social-chat-bubble-time' }, [timeText]));
+    }
 
     bubble.append(
       el('div', { className: 'social-avatar social-avatar-sm', style: `background: ${avatarColor(sender || 'Anonymous')}` }, [initial]),
-      el('div', { className: 'social-chat-bubble-body' }, [
-        el('span', { className: 'social-chat-bubble-name' }, [who]),
-        textSpan,
-        el('span', { className: 'social-chat-bubble-time' }, [timeAgo(safeIso)]),
-      ]),
+      el('div', { className: 'social-chat-bubble-body' }, bodyChildren),
     );
 
     this.messages.append(bubble);
     this.messages.scrollTop = this.messages.scrollHeight;
 
     if (!history && sender !== 'System') {
-      this._chatLog.push({ name: sender, text, ts, self: isSelf });
+      this._chatLog.push({ name: sender, text, ts: numTs || Date.now(), self: isSelf });
     }
 
     if (this.root.classList.contains('social-chat-minimized') && !isSelf && sender !== 'System') {
@@ -863,23 +874,29 @@ export class SocialChatWidget {
   }
 
   async saveChatHistory() {
-    if (this._historySaved || !getChatSaveHistory() || this._chatLog.length === 0) return;
-    if (!this.signal?.appendChatHistory) return;
-    this._historySaved = true;
+    if (!getChatSaveHistory() || !this.signal?.appendChatHistory) return;
+    if (this._savingHistory) return;
+    const unsaved = this._chatLog.slice(this._savedUpTo);
+    if (unsaved.length === 0) return;
+
+    this._savingHistory = true;
+    const saveCount = unsaved.length;
     const { cols: c, totalCols: tc } = this.signal;
-    const rows = this._chatLog.map(m => {
+    const rows = unsaved.map(m => {
       const row = new Array(tc || 7).fill('');
       if (c.text >= 0)     row[c.text]     = m.text;
       if (c.author >= 0)   row[c.author]   = m.name;
-      if (c.date >= 0)     row[c.date]     = new Date(m.ts).toISOString();
+      if (c.date >= 0)     row[c.date]     = m.ts ? new Date(m.ts).toISOString() : new Date().toISOString();
       if (c.category >= 0) row[c.category] = 'chat';
       return row;
     });
     try {
       await this.signal.appendChatHistory(rows);
+      this._savedUpTo += saveCount;
     } catch (err) {
       console.warn('[social] chat history save failed:', err);
-      this._historySaved = false;
+    } finally {
+      this._savingHistory = false;
     }
   }
 
@@ -905,6 +922,18 @@ export class SocialChatWidget {
         });
       }
     }).catch(() => {});
+  }
+
+  debugLog(msg) {
+    const log = this.debugPanel?.querySelector('.sd-event-log');
+    if (!log) return;
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const line = document.createElement('div');
+    line.textContent = `[${ts}] ${msg}`;
+    log.append(line);
+    this._debugLogLines++;
+    if (this._debugLogLines > 200) { log.firstChild?.remove(); this._debugLogLines--; }
+    log.scrollTop = log.scrollHeight;
   }
 
   _startDebug(connect) {
@@ -937,6 +966,25 @@ export class SocialChatWidget {
     els.sampleRate.textContent = ctx?.sampleRate ? `${ctx.sampleRate} Hz` : '—';
     els.pipelineType.textContent = connect._duckingRAF ? 'Volume ducking' : 'direct';
 
+    // Log ICE connection state
+    for (const [peerId, r] of connect._rtc || []) {
+      const ice = r?.pc?.iceConnectionState || '?';
+      this.debugLog(`ICE[${peerId.slice(0, 6)}]: ${ice}`);
+    }
+
+    // Read browser constraints from mic track
+    const micTrack = connect._rawStream?.getAudioTracks()?.[0];
+    if (micTrack) {
+      try {
+        const settings = micTrack.getSettings();
+        if (els.aec) els.aec.textContent = settings.echoCancellation ? '✅ on' : '❌ off';
+        if (els.ns) els.ns.textContent = settings.noiseSuppression ? '✅ on' : '❌ off';
+        if (els.agc) els.agc.textContent = settings.autoGainControl ? '✅ on' : '❌ off';
+        this.debugLog(`Mic: ${micTrack.label || 'default'}`);
+        this.debugLog(`AEC=${settings.echoCancellation} NS=${settings.noiseSuppression} AGC=${settings.autoGainControl}`);
+      } catch {}
+    }
+
     let micRAF = null;
     if (connect._micAnalyser) {
       const data = new Float32Array(connect._micAnalyser.fftSize);
@@ -956,6 +1004,12 @@ export class SocialChatWidget {
         if (ds) {
           els.gateState.textContent = ds.volume < 1 ? 'DUCKING' : 'OPEN';
           els.gateGain.textContent = `${(ds.volume * 100).toFixed(0)}%`;
+          if (els.outMeter) {
+            els.outMeter.style.width = `${(ds.volume * 100).toFixed(0)}%`;
+          }
+          if (els.outVal) {
+            els.outVal.textContent = `${(ds.volume * 100).toFixed(0)}%`;
+          }
         }
         micRAF = requestAnimationFrame(updateMeters);
       };
@@ -988,7 +1042,7 @@ export class SocialChatWidget {
     const snap = {
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
-      url: location.href,
+      url: typeof location !== 'undefined' ? (location.origin + location.pathname) : '',
       audioCtx: ctx ? { state: ctx.state, sampleRate: ctx.sampleRate } : null,
       pipeline: { type: connect?._duckingRAF ? 'volume-ducking' : 'direct' },
       signaling: {
@@ -1014,9 +1068,6 @@ export class SocialChatWidget {
     }
     if (this.root) {
       this.root.remove();
-    }
-    if (typeof window !== 'undefined' && window.__WAYMARK_CONNECT === this.session?.connect) {
-      window.__WAYMARK_CONNECT = null;
     }
   }
 }

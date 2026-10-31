@@ -19,22 +19,23 @@ export function setSocialPassword(pw) {
 
 /** Clean up active connection and chat panel. */
 export async function destroyChat() {
-  if (_activeWidget) {
-    await _activeWidget.saveChatHistory().catch(() => {});
-    _activeWidget.destroy({ keepBlock: _activeWidget.session?.connect?._paused });
-    _activeWidget = null;
-  }
+  const w = _activeWidget;
+  _activeWidget = null;
   _activeSheetId = null;
+  if (w) {
+    await w.saveChatHistory().catch(() => {});
+    w.destroy({ keepBlock: w.session?.connect?._paused });
+  }
 }
 
 // When navigating away from a sheet, save history and pause connection
 window.addEventListener('waymark:sheet-hidden', () => {
-  if (_activeWidget) {
-    _activeWidget.saveChatHistory().catch(() => {}).finally(() => {
-      if (_activeWidget) {
-        _activeWidget.destroy({ keepBlock: true });
-        _activeWidget = null;
-      }
+  const w = _activeWidget;
+  _activeWidget = null;
+  _activeSheetId = null;
+  if (w) {
+    w.saveChatHistory().catch(() => {}).finally(() => {
+      w.destroy({ keepBlock: true });
     });
   }
 });

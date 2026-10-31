@@ -10,10 +10,11 @@ import * as collab from './collab.js';
 import { discoverDirectory } from './contacts-picker.js';
 import { detectTemplate, TEMPLATES } from './templates/index.js';
 import { isEditLocked, setEditLocked } from './templates/shared.js';
-import { SocialSession, appendLinkified } from './social-session.js';
+import { URL_REGEX, appendLinkified } from './social-session.js';
 import { SocialChatWidget } from './social-widget.js';
 
 export { appendLinkified };
+export const WAYSIDE_URL_RE = URL_REGEX;
 
 /* ---------- 50 architecture names (for the Profile selector) ---------- */
 
@@ -812,17 +813,11 @@ async function removeWidget(id) {
 
 /* ---------- The Wayside (social) ---------- */
 
-export const WAYSIDE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
-
 let _activeTarget = null; // { group? , contactEmail? , label }
 let _activeLedgerId = null;
-let _waysideSession = null;
-let _waysideSessionLedgerId = null;
 let _waysideTargetGeneration = 0;
 let _waysidePollingWired = false;
 let _waysideSocialRefreshKey = null;
-let _liveMessages = [];
-let _sheetMessages = [];
 
 function ensureWaysidePolling() {
   if (_waysidePollingWired) return;
@@ -882,6 +877,24 @@ async function discoverCrews() {
 
 let _waysideWidget = null;
 
+function teardownWaysideWidget() {
+  if (_waysideWidget) {
+    _waysideWidget.destroy();
+    _waysideWidget = null;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('hashchange', () => {
+    if (window.location.hash && !['', '#', '#/', '#home'].includes(window.location.hash)) {
+      teardownWaysideWidget();
+    }
+  });
+  window.addEventListener('waymark:auth-logout', () => {
+    teardownWaysideWidget();
+  });
+}
+
 function renderWaysidePlaceholder(container) {
   if (!container) return;
   container.replaceChildren();
@@ -901,20 +914,15 @@ function renderWaysidePlaceholder(container) {
 
 function deselectTarget(host) {
   _waysideTargetGeneration++;
-  if (_waysideWidget) {
-    _waysideWidget.destroy();
-    _waysideWidget = null;
-    _waysideSession = null;
-    _waysideSessionLedgerId = null;
-  }
+  teardownWaysideWidget();
   _activeTarget = null;
   _activeLedgerId = null;
 
   if (host) {
     host.querySelectorAll('.crew-row').forEach(r => r.classList.remove('active'));
     host.querySelectorAll('.avatar').forEach(av => av.classList.remove('active'));
-    const chatContainer = host.querySelector('#wayside-chat-container') || host;
-    renderWaysidePlaceholder(chatContainer);
+    const chatContainer = host.querySelector('#wayside-chat-container');
+    if (chatContainer) renderWaysidePlaceholder(chatContainer);
   }
   renderSharedFiles([]);
 }
@@ -924,12 +932,7 @@ async function renderWayside({ autoSelect = true } = {}) {
   if (!host) return;
   host.innerHTML = '';
 
-  if (_waysideWidget) {
-    _waysideWidget.destroy();
-    _waysideWidget = null;
-    _waysideSession = null;
-    _waysideSessionLedgerId = null;
-  }
+  teardownWaysideWidget();
   _activeTarget = null;
   _activeLedgerId = null;
 
@@ -1004,17 +1007,11 @@ async function selectTarget(target, host) {
     || _activeTarget.group !== target.group
     || _activeTarget.contactEmail !== target.contactEmail;
 
-  if (targetChanged && _waysideWidget) {
-    _waysideWidget.destroy();
-    _waysideWidget = null;
-    _waysideSession = null;
-    _waysideSessionLedgerId = null;
-  }
-  _activeTarget = target;
   if (targetChanged) {
     _activeLedgerId = null;
     renderSharedFiles([]);
   }
+  _activeTarget = target;
 
   // Highlight active crew row and avatar
   host.querySelectorAll('.crew-row').forEach(r => r.classList.toggle('active', r.dataset.group === target.group));
@@ -1024,7 +1021,8 @@ async function selectTarget(target, host) {
     av.classList.toggle('active', !!isTarget);
   });
 
-  const chatContainer = host.querySelector('#wayside-chat-container') || host;
+  const chatContainer = host.querySelector('#wayside-chat-container');
+  if (!chatContainer) return;
 
   // Find existing share ledger
   let ledger = null;
@@ -1035,6 +1033,7 @@ async function selectTarget(target, host) {
 
   _activeLedgerId = ledger ? ledger.sheetId : null;
 
+  teardownWaysideWidget();
   chatContainer.replaceChildren();
 
   const user = api.auth.getUser?.() || {};
@@ -1062,14 +1061,17 @@ async function selectTarget(target, host) {
       const signaling = _activeLedgerId
         ? { sheetId: _activeLedgerId, signal: collab.createLedgerSignal(_activeLedgerId) }
         : await collab.getSignalingTarget(_activeTarget);
-      _activeLedgerId = signaling.sheetId;
-      widget.setSignaling(signaling.sheetId, signaling.signal);
-      widget.setSubtitle(`Linked: ${signaling.sheetId}`);
+      if (signaling?.sheetId) {
+        _activeLedgerId = signaling.sheetId;
+        widget.setSignaling(signaling.sheetId, signaling.signal);
+        widget.setSubtitle(`Linked: ${signaling.sheetId}`);
+      }
     },
     persistChat: async (msg) => {
       const result = await collab.sendChat(target, msg.text, '', msg.id);
-      _activeLedgerId = result?.sheetId || _activeLedgerId;
-      if (widget && _activeLedgerId) {
+      const nextLedgerId = result?.sheetId || _activeLedgerId;
+      if (widget && nextLedgerId && nextLedgerId !== _activeLedgerId) {
+        _activeLedgerId = nextLedgerId;
         widget.setSubtitle(`Linked: ${_activeLedgerId}`);
         widget.setSignaling(_activeLedgerId, collab.createLedgerSignal(_activeLedgerId));
       }
@@ -1078,8 +1080,6 @@ async function selectTarget(target, host) {
   });
 
   _waysideWidget = widget;
-  _waysideSession = widget.session;
-  _waysideSessionLedgerId = _activeLedgerId;
 
   if (_activeLedgerId) {
     await collab.publishPresence(target, { status: 'online', activeWaymarkId: 'home' }).catch(() => {});
@@ -1200,24 +1200,9 @@ export async function startCall() {
     await selectTarget(_activeTarget, host);
   }
   if (_waysideWidget) {
-    const session = _waysideWidget.session;
-    if (session.inCall || session.callState === 'calling') {
-      await session.endCall();
-      return;
-    }
-    if (session.callState === 'ringing') {
-      await session.acceptCall(true);
-      return;
-    }
-    if (_waysideWidget.onBeforeStartCall) {
-      await _waysideWidget.onBeforeStartCall();
-    }
-    try {
-      await session.startCall({ audio: true, video: true });
+    const stream = await _waysideWidget.toggleCall({ video: false });
+    if (stream) {
       showToast('📹 Call ready', 'success');
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
-      showToast(`Could not start call: ${err.message}`, 'error');
     }
   }
 }

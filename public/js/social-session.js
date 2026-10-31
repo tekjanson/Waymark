@@ -32,6 +32,7 @@ let _ringCtx = null;
 let _ringOsc = null;
 let _ringGain = null;
 let _ringInterval = null;
+let _ringStopTimeout = null;
 
 export function startRingtone() {
   if (!getChatSoundEnabled()) return;
@@ -44,23 +45,37 @@ export function startRingtone() {
     let on = true;
     const play = () => {
       if (!on || !_ringCtx) return;
-      _ringOsc = _ringCtx.createOscillator();
-      _ringOsc.type = 'sine';
-      _ringOsc.frequency.value = 440;
-      _ringOsc.connect(_ringGain);
-      _ringOsc.start();
-      _ringOsc.frequency.setValueAtTime(440, _ringCtx.currentTime);
-      _ringOsc.frequency.setValueAtTime(480, _ringCtx.currentTime + 0.15);
-      setTimeout(() => { try { _ringOsc?.stop(); } catch {} }, 300);
+      const osc = _ringCtx.createOscillator();
+      _ringOsc = osc;
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      osc.connect(_ringGain);
+      osc.start();
+      osc.frequency.setValueAtTime(440, _ringCtx.currentTime);
+      osc.frequency.setValueAtTime(480, _ringCtx.currentTime + 0.15);
+      setTimeout(() => {
+        try {
+          osc.stop();
+          osc.disconnect();
+        } catch {}
+        if (_ringOsc === osc) _ringOsc = null;
+      }, 300);
     };
     play();
     _ringInterval = setInterval(play, 1200);
-    setTimeout(stopRingtone, 30000);
+    _ringStopTimeout = setTimeout(stopRingtone, 30000);
   } catch {}
 }
 
 export function stopRingtone() {
-  try { _ringOsc?.stop(); } catch {}
+  if (_ringStopTimeout) {
+    clearTimeout(_ringStopTimeout);
+    _ringStopTimeout = null;
+  }
+  try {
+    _ringOsc?.stop();
+    _ringOsc?.disconnect();
+  } catch {}
   _ringOsc = null;
   if (_ringInterval) {
     clearInterval(_ringInterval);
@@ -208,18 +223,19 @@ export class SocialSession {
         this.onStatusChanged(status);
       },
       onCallActive: (peerId, name) => {
-        if (this.inCall) return;
+        if (this.inCall || this.callState === 'calling') return;
+        if (this.callState === 'ringing' && this.callerInfo?.peerId === peerId) return;
         this.callState = 'ringing';
         this.callerInfo = { peerId, name };
         startRingtone();
         this.onCallStateChanged('ringing', { peerId, name });
       },
       onCallEnded: (peerId) => {
+        if (this._callStarting) return;
         stopRingtone();
         const wasInCall = this.inCall;
         this.callState = 'idle';
         this.callerInfo = null;
-        this._callStarting = false;
         if (wasInCall) {
           this._teardownMedia();
           this.onCallStateChanged('idle', { peerId, remoteEnded: true });
@@ -276,6 +292,9 @@ export class SocialSession {
     });
 
     this.connect = wc;
+    if (typeof window !== 'undefined') {
+      window.__WAYMARK_CONNECT = wc;
+    }
     wc.start();
     return wc;
   }
@@ -286,7 +305,7 @@ export class SocialSession {
     const nextSheetId = String(sheetId);
     const previous = this.connect;
     const mustRestart = previous && (
-      previous.sheetId !== nextSheetId || !previous.signal
+      previous.sheetId !== nextSheetId
     );
 
     if (mustRestart) {
@@ -298,9 +317,11 @@ export class SocialSession {
     this.sheetId = nextSheetId;
     this.signal = signal;
     if (this.connect && !this.connect._destroyed) {
-      // A new adapter object for the same sheet can replace the old one
-      // without rebuilding the existing mesh or its BroadcastChannel.
-      this.connect.signal = signal;
+      if (typeof this.connect.attachSignal === 'function') {
+        this.connect.attachSignal(signal);
+      } else {
+        this.connect.signal = signal;
+      }
       return this.connect;
     }
     return this.start();
@@ -353,7 +374,7 @@ export class SocialSession {
       id: messageId,
       sender: this.displayName,
       text,
-      ts: new Date().toISOString(),
+      ts: Date.now(),
       self: true,
       ...extra,
     };
@@ -401,6 +422,9 @@ export class SocialSession {
     this.onCallStateChanged('calling', { video });
 
     try {
+      if (!this.sheetId) {
+        throw new Error('No sheetId provided for call session.');
+      }
       if (!this.connect || this.connect._destroyed) this.start();
       if (this.signal && !await this.waitForSignalingReady()) {
         throw new Error('Could not claim a Google Sheets signaling slot. Try again in a moment.');
@@ -412,6 +436,13 @@ export class SocialSession {
       };
 
       const stream = await this.connect.startCall(constraints);
+      if (!this._callStarting) {
+        if (stream) {
+          for (const t of stream.getTracks()) try { t.stop(); } catch {}
+        }
+        try { await this.connect?.endCall(); } catch {}
+        return null;
+      }
       this._callStarting = false;
       this.callState = 'in-call';
       this.listenOnly = !!stream?._listenOnly;
@@ -433,6 +464,7 @@ export class SocialSession {
     } catch (err) {
       this._callStarting = false;
       this.callState = 'idle';
+      try { await this.connect?.endCall(); } catch {}
       this._teardownMedia();
       this.onCallStateChanged('idle', { error: err });
       return null;
@@ -507,6 +539,9 @@ export class SocialSession {
     stopRingtone();
     this._teardownMedia();
     if (this.connect) {
+      if (typeof window !== 'undefined' && window.__WAYMARK_CONNECT === this.connect) {
+        window.__WAYMARK_CONNECT = null;
+      }
       this.connect.destroy({ keepBlock });
       this.connect = null;
     }

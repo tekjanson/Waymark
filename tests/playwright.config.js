@@ -22,10 +22,6 @@ module.exports = defineConfig({
     /* Each test gets a fresh BrowserContext (Playwright default).
        Explicitly clear storageState so nothing leaks between tests. */
     storageState: undefined,
-    permissions: ['microphone', 'camera'],
-    launchOptions: {
-      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
-    },
   },
 
   webServer: {

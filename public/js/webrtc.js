@@ -173,14 +173,22 @@ export class WaymarkConnect {
     return Boolean(ready && this._block >= 0 && !this._destroyed);
   }
 
+  /** Attach or replace the signaling adapter on an active mesh. */
+  attachSignal(signal) {
+    if (!signal || this._destroyed) return;
+    this.signal = signal;
+    if (!this._paused) {
+      this._ensureSignalingJoined();
+    }
+  }
+
   _ensureSignalingJoined() {
     if (!this.signal || this._destroyed) return Promise.resolve(false);
     if (this._block >= 0) return Promise.resolve(true);
     if (this._joinPromise) return this._joinPromise;
 
-    const promise = this._join().then(ready => {
-      if (!ready && this._joinPromise === promise) this._joinPromise = null;
-      return ready;
+    const promise = this._join().finally(() => {
+      if (this._joinPromise === promise) this._joinPromise = null;
     });
     this._joinPromise = promise;
     return promise;
@@ -533,6 +541,7 @@ export class WaymarkConnect {
   destroy({ keepBlock = false } = {}) {
     this._destroyed = true;
     this._paused = false;
+    this._joinPromise = null;
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', this._onUnload);
     }
@@ -738,7 +747,9 @@ export class WaymarkConnect {
         console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
       }
       if (!await this._heartbeat()) {
+        const failedBlock = this._block;
         this._block = -1;
+        this._clearBlock(failedBlock);
         return false;
       }
 
@@ -749,7 +760,12 @@ export class WaymarkConnect {
       // next free slot to avoid signaling collisions.
       const jitter = this._peerIdJitter();
       await new Promise(r => setTimeout(r, 300 + jitter));
-      if (this._destroyed) return false;
+      if (this._destroyed) {
+        const failedBlock = this._block;
+        this._block = -1;
+        this._clearBlock(failedBlock);
+        return false;
+      }
 
       const verify = await this.signal.readAll();
       const claimed = _json(verify[this._block]?.[SIG_COL]);
@@ -762,14 +778,24 @@ export class WaymarkConnect {
           return false;
         }
         if (!await this._heartbeat()) {
+          const failedBlock = this._block;
           this._block = -1;
+          this._clearBlock(failedBlock);
           return false;
         }
         await new Promise(r => setTimeout(r, 300 + jitter));
+        if (this._destroyed) {
+          const failedBlock = this._block;
+          this._block = -1;
+          this._clearBlock(failedBlock);
+          return false;
+        }
         const retryVerify = await this.signal.readAll();
         const retryClaim = _json(retryVerify[this._block]?.[SIG_COL]);
         if (!retryClaim || retryClaim.peerId !== this.peerId) {
+          const failedBlock = this._block;
           this._block = -1;
+          this._clearBlock(failedBlock);
           return false;
         }
         console.log(`[WC] _join — re-claimed slot row ${this._block}, peerId=${this.peerId}`);
@@ -784,7 +810,13 @@ export class WaymarkConnect {
       return true;
     } catch (err) {
       console.error('[WC] _join failed:', err);
-      this._block = -1;
+      if (this._block >= 0) {
+        const failedBlock = this._block;
+        this._block = -1;
+        this._clearBlock(failedBlock);
+      } else {
+        this._block = -1;
+      }
       return false;
     }
   }
@@ -1228,11 +1260,11 @@ export class WaymarkConnect {
     });
   }
 
-  async _clearBlock() {
-    if (!this.signal || this._block < 0) return;
+  async _clearBlock(block = this._block) {
+    if (!this.signal || block < 0) return;
     try {
       await Promise.all(Array.from({ length: BLOCK_SIZE }, (_, i) =>
-        this.signal.writeCell(this._block + i, SIG_COL, '')));
+        this.signal.writeCell(block + i, SIG_COL, '')));
     } catch {}
   }
 

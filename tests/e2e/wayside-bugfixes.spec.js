@@ -7,6 +7,13 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
+test.use({
+  permissions: ['microphone', 'camera'],
+  launchOptions: {
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+  },
+});
+
 test('links in Wayside chat render as real anchors and never inject markup', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('#home-wayside', { timeout: 5_000 });
@@ -168,8 +175,8 @@ test('Wayside video call activates media container, local video PiP, and call co
   });
   await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
 
-  // Start call
-  await page.click('#wayside-call-btn');
+  // Start video call using the dedicated video call button
+  await page.click('#wayside-video-call-btn');
   await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
 
   // Media container and local video are visible
@@ -201,19 +208,41 @@ test('Wayside video call activates media container, local video PiP, and call co
   await expect(mediaContainer).toBeHidden();
 });
 
+test('Wayside audio call starts voice session without showing video container', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Start audio call using the primary call button
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toContainText('End Call', { timeout: 5_000 });
+
+  // Media container stays hidden for audio-only calls
+  const mediaContainer = page.locator('#wayside-media-container');
+  await expect(mediaContainer).toBeHidden();
+
+  // Call bar controls: mute is visible, cam button is hidden
+  const muteBtn = page.locator('#wayside-mute-btn');
+  const camBtn = page.locator('#wayside-cam-btn');
+  await expect(muteBtn).toBeVisible();
+  await expect(camBtn).toBeHidden();
+
+  // End call
+  await page.click('#wayside-call-btn');
+  await expect(page.locator('#wayside-call-btn')).toHaveText('📹 Call');
+});
+
 test('Wayside incoming call displays animated incoming card with Accept, Accept Video, and Decline', async ({ page }) => {
   await setupApp(page, {
     pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
   });
   await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
 
-  // Trigger an incoming call on the active widget
+  // Trigger an incoming call through real signaling hook
   await page.evaluate(() => {
-    const card = document.querySelector('.wayside-incoming-call');
-    const caller = document.querySelector('.social-incoming-caller');
-    if (card && caller) {
-      caller.textContent = 'Alice Explorer';
-      card.classList.remove('hidden');
+    if (window.__WAYMARK_CONNECT?.onCallActive) {
+      window.__WAYMARK_CONNECT.onCallActive('peer-alice', 'Alice Explorer');
     }
   });
 
@@ -225,7 +254,28 @@ test('Wayside incoming call displays animated incoming card with Accept, Accept 
   const declineBtn = page.locator('.social-incoming-decline');
   await expect(declineBtn).toBeVisible();
 
-  // Decline hides incoming call card
+  // Decline hides incoming call card and adds system decline message
   await declineBtn.click();
   await expect(card).toBeHidden();
+  await expect(page.locator('#wayside-chat-log')).toContainText('You declined the call');
+});
+
+test('re-clicking the active crew does not leak or duplicate chat widgets', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // Crew is auto-selected; count the number of inputs and chat logs
+  await expect(page.locator('#wayside-chat-input')).toHaveCount(1);
+  await expect(page.locator('#wayside-chat-log')).toHaveCount(1);
+
+  // Re-click the first crew row twice
+  await page.locator('#home-wayside .crew-row').first().click();
+  await page.locator('#home-wayside .crew-row').first().click();
+
+  // Exactly one widget remains mounted
+  await expect(page.locator('#wayside-chat-input')).toHaveCount(1);
+  await expect(page.locator('#wayside-chat-log')).toHaveCount(1);
+  await expect(page.locator('#wayside-call-btn')).toHaveCount(1);
 });
