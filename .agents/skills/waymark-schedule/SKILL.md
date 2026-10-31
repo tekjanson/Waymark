@@ -1,0 +1,142 @@
+---
+name: waymark-schedule
+description: >-
+  Use this skill to read, create, update, or manipulate Google Sheets for the Schedule template (Time).
+---
+
+# Waymark Schedule Skill
+
+> Specialized skill for **Schedule** sheets in Waymark. Uses Waymark and Google Sheets MCP tools to perform operations according to Schedule domain rules.
+
+---
+
+## 0. IDENTITY
+
+| Field | Value |
+|---|---|
+| Template Key | `schedule` |
+| Template Name | Schedule |
+| Category | Time |
+| Interaction Type | `none` |
+
+---
+
+## 1. COLUMN ROLES
+
+This is the authoritative column mapping for Schedule sheets. When reading or writing, use these role names to identify the correct column regardless of exact header text.
+
+```
+1. text
+2. time
+3. day
+4. location
+```
+
+**Default headers when creating a new Schedule sheet:**
+```
+Day, Time, Activity, Location
+```
+
+**Detection signals** — headers that indicate a sheet is a Schedule:
+```
+time, start, end, from, to, hour, slot, shift, period, block
+```
+
+---
+
+## 2. STATE MACHINE
+
+This template has no state machine. The interaction type is `none` — cells are edited directly without cycling.
+
+---
+
+## 3. DOMAIN KNOWLEDGE — Schedule
+
+# Schedule — Domain Knowledge
+
+## What This Template Is
+A time-based activity planner where rows are events or slots. The `day` column groups entries by date or weekday. The `time` column holds a start time (and sometimes end time). The `location` column identifies where the activity takes place. No interactive state — it's read and displayed.
+
+## Day/Time Convention Detection
+- If `day` values are weekday names (Mon, Tuesday, etc.) → repeating weekly schedule
+- If `day` values are ISO dates (2026-04-08) → date-specific schedule
+- If `time` values include a range (9:00–10:00, 09:00 to 10:30) → duration is encoded in the time field
+- Preserve whatever format is already used when writing new rows
+
+## Smart Operations
+
+### Day View
+Group all rows by `day` value. For each day:
+```
+{Day/Date}
+  {time} — {activity} [{location}]
+  {time} — {activity} [{location}]
+```
+Sort events within a day by time (earliest first). Handle 12-hour (AM/PM) and 24-hour formats.
+
+### Today's Schedule
+If days are dates: filter rows where `day` = today's ISO date.
+If days are weekdays: filter rows where `day` = today's weekday name.
+Return sorted by time. If nothing scheduled: `Nothing scheduled for today.`
+
+### Conflict Detection
+Within the same day, find overlapping time slots (requires start+end times).
+If only start time is present, assume 1-hour blocks unless duration is inferable.
+Report: `⚠️ Conflict: {activity1} and {activity2} overlap at {day} {time}`
+
+### Adding an Event
+Append a row. Required: `text` (activity name), `day`, `time`.
+Optional: `location`. Preserve the existing day/time format found in the sheet.
+If the time slot is already occupied, warn before writing.
+
+### Weekly Summary
+If the schedule is weekly (weekday names):
+- Count events per day
+- Report busiest day, lightest day
+- Total scheduled events for the week
+
+### Finding Free Slots
+Given a day and duration: scan the day's events, find gaps in the schedule.
+Report available time windows not occupied by any activity.
+
+## Interpretation Rules
+- Empty `location` = no location specified, not an error
+- Rows without `time` are all-day entries — list them first in the day view
+- Do not reorder rows in the sheet — only read and interpret order for display
+- If `day` is blank, the row is a continuation or note for the row above it
+
+---
+
+## 4. MCP TOOL OPERATIONS
+
+### 4.1 Reading a Sheet
+Call `waymark_get_sheet(spreadsheetId, sheetTitle?)`
+- Returns `templateKey`, `columnRoles{}`, and `rows[]` as objects with role-named keys.
+- Always resolve columns by role name, not index.
+
+### 4.2 Updating an Existing Row
+Call `waymark_update_entry(spreadsheetId, rowIndex, updates, sheetTitle?)`
+- `rowIndex` is 1-based data row index (1 = first row under headers).
+- `updates` is `{ roleName: newValue }`.
+- For `status-cycle`, only write values from the valid states list (§2).
+- For `toggle`, only write `done` or ``.
+
+### 4.3 Appending a Row
+Call `waymark_add_entry(spreadsheetId, entry, sheetTitle?)`
+- `entry` is `{ roleName: value }`.
+
+### 4.4 Creating a New Sheet
+Call `waymark_create_sheet({ templateKey: "schedule", title, seedRows? })`
+- Creates a new Google Sheet pre-formatted with default Schedule headers and initial rows.
+- Created under user account via OAuth, automatically shared with service account and editors.
+- Returns `{ spreadsheetId, waymarkUrl, sheetsUrl, title, templateKey }`.
+
+### 4.5 Searching Entries & Files
+- Search rows in a sheet: Call `waymark_search_entries({ spreadsheetId, query, column? })`.
+- Search files in Google Drive: Call `waymark_list_files({ query?, type?: 'all'|'spreadsheet'|'document'|'folder', parentFolderId? })`.
+- Share a sheet: Call `waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })`.
+
+### 4.6 Document Operations
+- Create Google Doc: Call `waymark_create_doc({ title, body?, parentFolderId?, shareWith? })`.
+- Read Google Doc: Call `waymark_get_doc({ documentId })`.
+- Append to Google Doc: Call `waymark_append_doc({ documentId, text })`.

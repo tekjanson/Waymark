@@ -12,7 +12,7 @@ module.exports = defineConfig({
   workers: process.env.CI ? 4 : undefined,    // auto-detect locally, cap in CI
 
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${process.env.PORT || 3000}`,
     channel: 'chrome',
     headless: true,
     viewport: { width: 1280, height: 720 },
@@ -26,9 +26,9 @@ module.exports = defineConfig({
 
   webServer: {
     command: 'WAYMARK_LOCAL=true node server/index.js',
-    port: 3000,
+    port: parseInt(process.env.PORT || '3000', 10),
     cwd: require('path').resolve(__dirname, '..'),
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !process.env.PORT,
     timeout: 10_000,
   },
 

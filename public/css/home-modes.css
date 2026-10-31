@@ -57,6 +57,7 @@
 #wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
 #wayboard-root .avatar-row { display: flex; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
+#wayboard-root .avatar-ai { border-color: var(--accent); background: rgba(59,130,246,0.12); font-size: 14px; }
 #wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; flex: 1 1 auto; height: clamp(240px, 42vh, 560px); min-height: 220px; max-height: 80vh; resize: vertical; overflow: auto; }
 #wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 

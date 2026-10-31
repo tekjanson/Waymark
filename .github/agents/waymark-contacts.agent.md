@@ -32,6 +32,9 @@ This is the authoritative column mapping for Contacts sheets. When reading or wr
 2. email
 3. phone
 4. role
+5. group
+6. shareSheet
+7. socialLocation
 ```
 
 **Default headers when creating a new Contacts sheet:**

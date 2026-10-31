@@ -1,0 +1,1869 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-10-31T13:33:20.760Z",
+  "fallbackAgent": "waymark-builder",
+  "keywordRoutes": [
+    {
+      "keywords": [
+        "trip",
+        "vacation",
+        "travel",
+        "itinerary",
+        "route",
+        "hotel",
+        "flight",
+        "destination",
+        "road trip"
+      ],
+      "agent": "waymark-travel"
+    },
+    {
+      "keywords": [
+        "budget",
+        "expenses",
+        "spending",
+        "income",
+        "costs",
+        "money",
+        "finance",
+        "invoice"
+      ],
+      "agent": "waymark-budget"
+    },
+    {
+      "keywords": [
+        "recipe",
+        "cooking",
+        "ingredients",
+        "servings",
+        "cuisine"
+      ],
+      "agent": "waymark-recipe"
+    },
+    {
+      "keywords": [
+        "meal plan",
+        "meal prep",
+        "weekly meals",
+        "eating schedule"
+      ],
+      "agent": "waymark-meal"
+    },
+    {
+      "keywords": [
+        "kanban",
+        "board",
+        "sprint",
+        "backlog",
+        "cards",
+        "swim lanes"
+      ],
+      "agent": "waymark-kanban"
+    },
+    {
+      "keywords": [
+        "crm",
+        "leads",
+        "pipeline",
+        "deals",
+        "customers",
+        "sales contacts"
+      ],
+      "agent": "waymark-crm"
+    },
+    {
+      "keywords": [
+        "contacts",
+        "address book",
+        "people",
+        "phone book"
+      ],
+      "agent": "waymark-contacts"
+    },
+    {
+      "keywords": [
+        "inventory",
+        "stock",
+        "assets",
+        "warehouse"
+      ],
+      "agent": "waymark-inventory"
+    },
+    {
+      "keywords": [
+        "tracker",
+        "milestones",
+        "progress bar",
+        "goals progress"
+      ],
+      "agent": "waymark-tracker"
+    },
+    {
+      "keywords": [
+        "schedule",
+        "calendar",
+        "appointments",
+        "shifts",
+        "time slots"
+      ],
+      "agent": "waymark-schedule"
+    },
+    {
+      "keywords": [
+        "timesheet",
+        "time tracking",
+        "hours worked",
+        "billing hours"
+      ],
+      "agent": "waymark-timesheet"
+    },
+    {
+      "keywords": [
+        "activity log",
+        "event log",
+        "journal",
+        "diary"
+      ],
+      "agent": "waymark-log"
+    },
+    {
+      "keywords": [
+        "habits",
+        "habit tracker",
+        "daily routine",
+        "streaks"
+      ],
+      "agent": "waymark-habit"
+    },
+    {
+      "keywords": [
+        "poll",
+        "survey",
+        "vote",
+        "questionnaire",
+        "responses"
+      ],
+      "agent": "waymark-poll"
+    },
+    {
+      "keywords": [
+        "changelog",
+        "release notes",
+        "version history"
+      ],
+      "agent": "waymark-changelog"
+    },
+    {
+      "keywords": [
+        "gantt",
+        "timeline",
+        "project phases",
+        "dependencies"
+      ],
+      "agent": "waymark-gantt"
+    },
+    {
+      "keywords": [
+        "okr",
+        "objectives",
+        "key results",
+        "goals",
+        "targets"
+      ],
+      "agent": "waymark-okr"
+    },
+    {
+      "keywords": [
+        "roster",
+        "team members",
+        "staff list",
+        "employees",
+        "crew"
+      ],
+      "agent": "waymark-roster"
+    },
+    {
+      "keywords": [
+        "knowledge base",
+        "faq",
+        "documentation",
+        "wiki",
+        "articles"
+      ],
+      "agent": "waymark-knowledge"
+    },
+    {
+      "keywords": [
+        "guide",
+        "tutorial",
+        "how-to",
+        "step-by-step"
+      ],
+      "agent": "waymark-guide"
+    },
+    {
+      "keywords": [
+        "flow diagram",
+        "flowchart",
+        "process map",
+        "decision tree"
+      ],
+      "agent": "waymark-flow"
+    },
+    {
+      "keywords": [
+        "automation",
+        "triggers",
+        "workflows"
+      ],
+      "agent": "waymark-automation"
+    },
+    {
+      "keywords": [
+        "blog",
+        "posts",
+        "content calendar"
+      ],
+      "agent": "waymark-blog"
+    },
+    {
+      "keywords": [
+        "social feed",
+        "community",
+        "shares"
+      ],
+      "agent": "waymark-social"
+    },
+    {
+      "keywords": [
+        "marketing",
+        "campaigns",
+        "promotions"
+      ],
+      "agent": "waymark-marketing"
+    },
+    {
+      "keywords": [
+        "arcade",
+        "games",
+        "social game",
+        "score"
+      ],
+      "agent": "waymark-arcade"
+    },
+    {
+      "keywords": [
+        "iot",
+        "sensors",
+        "readings",
+        "telemetry",
+        "device data"
+      ],
+      "agent": "waymark-iot"
+    },
+    {
+      "keywords": [
+        "grading",
+        "gradebook",
+        "scores",
+        "assignments",
+        "students"
+      ],
+      "agent": "waymark-grading"
+    },
+    {
+      "keywords": [
+        "passwords",
+        "credentials",
+        "logins",
+        "vault"
+      ],
+      "agent": "waymark-passwords"
+    },
+    {
+      "keywords": [
+        "photos",
+        "gallery",
+        "images",
+        "album"
+      ],
+      "agent": "waymark-photos"
+    },
+    {
+      "keywords": [
+        "community linker",
+        "resource links",
+        "curated links"
+      ],
+      "agent": "waymark-linker"
+    },
+    {
+      "keywords": [
+        "test cases",
+        "qa cases",
+        "test plan",
+        "acceptance criteria"
+      ],
+      "agent": "waymark-testcases"
+    },
+    {
+      "keywords": [
+        "worker jobs",
+        "tasks queue",
+        "job management"
+      ],
+      "agent": "waymark-worker"
+    },
+    {
+      "keywords": [
+        "checklist",
+        "todo list",
+        "to-do"
+      ],
+      "agent": "waymark-checklist"
+    }
+  ],
+  "codeKeywords": [
+    "fix",
+    "bug",
+    "implement",
+    "refactor",
+    "pr",
+    "branch",
+    "deploy",
+    "test",
+    "css",
+    "javascript",
+    "html",
+    "api",
+    "endpoint",
+    "component",
+    "function",
+    "module",
+    "script",
+    "database",
+    "e2e",
+    "playwright",
+    "server",
+    "frontend",
+    "backend",
+    "node",
+    "express",
+    "docker",
+    "ci",
+    "lint",
+    "typescript"
+  ],
+  "builderLabels": [
+    "feature",
+    "bug",
+    "fix",
+    "refactor",
+    "chore",
+    "infra",
+    "test",
+    "docs",
+    "enhancement",
+    "improvement",
+    "architecture"
+  ],
+  "templates": [
+    {
+      "key": "testcases",
+      "name": "Test Cases",
+      "category": "Engineering",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Untested",
+        "Pass",
+        "Fail",
+        "Blocked",
+        "Skip"
+      ],
+      "columnRoles": [
+        "text",
+        "result",
+        "expected",
+        "actual",
+        "priority",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Test Case",
+        "Result",
+        "Expected",
+        "Actual",
+        "Priority",
+        "Notes"
+      ],
+      "detectSignals": [
+        "result",
+        "pass",
+        "fail",
+        "test.status",
+        "outcome",
+        "verdict",
+        "test",
+        "case",
+        "scenario",
+        "expected",
+        "actual"
+      ]
+    },
+    {
+      "key": "checklist",
+      "name": "Checklist",
+      "category": "Productivity",
+      "interactionType": "toggle",
+      "interactionStates": [
+        "done",
+        ""
+      ],
+      "columnRoles": [
+        "status",
+        "text",
+        "category",
+        "date",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Item",
+        "Status",
+        "Category",
+        "Due",
+        "Notes"
+      ],
+      "detectSignals": [
+        "status",
+        "done",
+        "complete",
+        "check"
+      ]
+    },
+    {
+      "key": "tracker",
+      "name": "Progress Tracker",
+      "category": "Goals",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "progress",
+        "target",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Goal",
+        "Progress",
+        "Target",
+        "Started",
+        "Notes"
+      ],
+      "detectSignals": [
+        "progress",
+        "percent",
+        "%",
+        "score",
+        "rating",
+        "level",
+        "grade",
+        "completion"
+      ]
+    },
+    {
+      "key": "schedule",
+      "name": "Schedule",
+      "category": "Time",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "time",
+        "day",
+        "location"
+      ],
+      "defaultHeaders": [
+        "Day",
+        "Time",
+        "Activity",
+        "Location"
+      ],
+      "detectSignals": [
+        "time",
+        "start",
+        "end",
+        "from",
+        "to",
+        "hour",
+        "slot",
+        "shift",
+        "period",
+        "block"
+      ]
+    },
+    {
+      "key": "inventory",
+      "name": "Inventory",
+      "category": "Assets",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "quantity",
+        "category",
+        "extra"
+      ],
+      "defaultHeaders": [
+        "Item",
+        "Quantity",
+        "Category",
+        "Notes"
+      ],
+      "detectSignals": [
+        "quantity",
+        "qty",
+        "count",
+        "stock",
+        "amount",
+        "price",
+        "cost",
+        "sku"
+      ]
+    },
+    {
+      "key": "contacts",
+      "name": "Contacts",
+      "category": "People",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "name",
+        "email",
+        "phone",
+        "role",
+        "group",
+        "shareSheet",
+        "socialLocation"
+      ],
+      "defaultHeaders": [
+        "Name",
+        "Phone",
+        "Email",
+        "Role"
+      ],
+      "detectSignals": [
+        "email",
+        "phone",
+        "mobile",
+        "cell",
+        "name",
+        "contact",
+        "person"
+      ]
+    },
+    {
+      "key": "log",
+      "name": "Activity Log",
+      "category": "Tracking",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "timestamp",
+        "type",
+        "duration"
+      ],
+      "defaultHeaders": [
+        "Timestamp",
+        "Activity",
+        "Duration",
+        "Type"
+      ],
+      "detectSignals": [
+        "timestamp",
+        "logged",
+        "entry.date",
+        "log.date",
+        "recorded",
+        "created.at"
+      ]
+    },
+    {
+      "key": "budget",
+      "name": "Budget",
+      "category": "Finance",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "amount",
+        "category",
+        "date",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Description",
+        "Amount",
+        "Category",
+        "Date",
+        "Budget"
+      ],
+      "detectSignals": [
+        "income",
+        "expense",
+        "budget",
+        "spent",
+        "balance",
+        "category",
+        "amount"
+      ]
+    },
+    {
+      "key": "kanban",
+      "name": "Kanban Board",
+      "category": "Project Management",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Backlog",
+        "To Do",
+        "In Progress",
+        "Done",
+        "Rejected",
+        "Archived"
+      ],
+      "columnRoles": [
+        "text",
+        "description",
+        "stage",
+        "project",
+        "assignee",
+        "priority",
+        "due",
+        "label",
+        "note",
+        "reporter"
+      ],
+      "defaultHeaders": [
+        "Task",
+        "Description",
+        "Stage",
+        "Project",
+        "Assignee",
+        "Priority",
+        "Due",
+        "Label",
+        "Note",
+        "Reported By"
+      ],
+      "detectSignals": [
+        "backlog",
+        "in.progress",
+        "todo",
+        "doing",
+        "done",
+        "column",
+        "board",
+        "stage",
+        "lane"
+      ]
+    },
+    {
+      "key": "habit",
+      "name": "Habit Tracker",
+      "category": "Personal",
+      "interactionType": "toggle-grid",
+      "interactionStates": [
+        "✓",
+        ""
+      ],
+      "columnRoles": [
+        "text",
+        "weekOf",
+        "days",
+        "streak",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Habit",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun",
+        "Streak"
+      ],
+      "detectSignals": [
+        "habit",
+        "streak",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "mon",
+        "tue",
+        "wed"
+      ]
+    },
+    {
+      "key": "grading",
+      "name": "Gradebook",
+      "category": "Education",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "student",
+        "assignments",
+        "average",
+        "grade"
+      ],
+      "defaultHeaders": [
+        "Student",
+        "Assignment 1",
+        "Assignment 2",
+        "Grade"
+      ],
+      "detectSignals": [
+        "student",
+        "grade",
+        "assignment",
+        "exam",
+        "quiz",
+        "homework",
+        "final",
+        "midterm"
+      ]
+    },
+    {
+      "key": "timesheet",
+      "name": "Timesheet",
+      "category": "Work",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "hours",
+        "date",
+        "client",
+        "billable"
+      ],
+      "defaultHeaders": [
+        "Project",
+        "Client",
+        "Hours",
+        "Rate",
+        "Billable",
+        "Date"
+      ],
+      "detectSignals": [
+        "hours",
+        "billable",
+        "rate",
+        "client",
+        "project",
+        "timesheet"
+      ]
+    },
+    {
+      "key": "poll",
+      "name": "Poll / Survey",
+      "category": "Feedback",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "votes",
+        "percent",
+        "winner"
+      ],
+      "defaultHeaders": [
+        "Option",
+        "Votes",
+        "Percent",
+        "Notes"
+      ],
+      "detectSignals": [
+        "vote",
+        "votes",
+        "response",
+        "responses",
+        "agree",
+        "disagree",
+        "option",
+        "choice",
+        "poll"
+      ]
+    },
+    {
+      "key": "changelog",
+      "name": "Changelog",
+      "category": "Engineering",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "version",
+        "date",
+        "type",
+        "description"
+      ],
+      "defaultHeaders": [
+        "Version",
+        "Date",
+        "Type",
+        "What Changed"
+      ],
+      "detectSignals": [
+        "version",
+        "release",
+        "changelog",
+        "what.changed",
+        "breaking",
+        "added",
+        "fixed"
+      ]
+    },
+    {
+      "key": "crm",
+      "name": "CRM",
+      "category": "Sales",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Lead",
+        "Contacted",
+        "Qualified",
+        "Proposal",
+        "Won",
+        "Lost"
+      ],
+      "columnRoles": [
+        "company",
+        "contact",
+        "stage",
+        "value",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Company",
+        "Contact",
+        "Deal Stage",
+        "Value",
+        "Notes"
+      ],
+      "detectSignals": [
+        "lead",
+        "deal",
+        "pipeline",
+        "company",
+        "value",
+        "stage",
+        "prospect",
+        "opportunity"
+      ]
+    },
+    {
+      "key": "meal",
+      "name": "Meal Planner",
+      "category": "Health",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "meal",
+        "day",
+        "calories",
+        "protein",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Day",
+        "Meal",
+        "Recipe",
+        "Calories",
+        "Protein"
+      ],
+      "detectSignals": [
+        "meal",
+        "recipe",
+        "calories",
+        "protein",
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snack"
+      ]
+    },
+    {
+      "key": "travel",
+      "name": "Travel Itinerary",
+      "category": "Travel",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "activity",
+        "date",
+        "location",
+        "booking",
+        "bookingLink",
+        "bookingDetails",
+        "cost"
+      ],
+      "defaultHeaders": [
+        "Activity",
+        "Date",
+        "Location",
+        "Booking",
+        "Cost"
+      ],
+      "detectSignals": [
+        "flight",
+        "hotel",
+        "booking",
+        "booking link",
+        "booking details",
+        "itinerary",
+        "departure",
+        "arrival",
+        "accommodation"
+      ]
+    },
+    {
+      "key": "roster",
+      "name": "Roster",
+      "category": "Operations",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Morning",
+        "Afternoon",
+        "Night",
+        "Off"
+      ],
+      "columnRoles": [
+        "employee",
+        "shift",
+        "day",
+        "role",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Employee",
+        "Role",
+        "Shift",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "detectSignals": [
+        "shift",
+        "roster",
+        "employee",
+        "availability",
+        "on.call",
+        "schedule",
+        "rotation"
+      ]
+    },
+    {
+      "key": "recipe",
+      "name": "Recipe",
+      "category": "Personal",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "servings",
+        "prepTime",
+        "cookTime",
+        "category",
+        "difficulty",
+        "qty",
+        "unit",
+        "quantity",
+        "ingredient",
+        "step",
+        "notes",
+        "source"
+      ],
+      "defaultHeaders": [
+        "Recipe",
+        "Servings",
+        "Prep Time",
+        "Cook Time",
+        "Category",
+        "Difficulty",
+        "Qty",
+        "Unit",
+        "Ingredient",
+        "Step",
+        "Notes",
+        "Source"
+      ],
+      "detectSignals": [
+        "recipe",
+        "ingredient",
+        "ingredients",
+        "qty",
+        "unit",
+        "quantity",
+        "step",
+        "instructions",
+        "servings",
+        "prep",
+        "cook",
+        "cuisine",
+        "difficulty",
+        "directions",
+        "source",
+        "notes"
+      ]
+    },
+    {
+      "key": "flow",
+      "name": "Flow Diagram",
+      "category": "Engineering",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "flow",
+        "step",
+        "type",
+        "next",
+        "condition",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Flow",
+        "Step",
+        "Type",
+        "Next",
+        "Condition",
+        "Notes"
+      ],
+      "detectSignals": [
+        "flow",
+        "diagram",
+        "process",
+        "workflow",
+        "pipeline",
+        "step",
+        "node",
+        "type",
+        "next",
+        "condition"
+      ]
+    },
+    {
+      "key": "social",
+      "name": "Social Feed",
+      "category": "Social",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "author",
+        "date",
+        "category",
+        "mood",
+        "link",
+        "comment",
+        "likes",
+        "image"
+      ],
+      "defaultHeaders": [
+        "Post",
+        "Author",
+        "Date",
+        "Category",
+        "Mood",
+        "Link",
+        "Comment",
+        "Likes",
+        "Image"
+      ],
+      "detectSignals": [
+        "post",
+        "message",
+        "status",
+        "update",
+        "author",
+        "posted.by"
+      ]
+    },
+    {
+      "key": "automation",
+      "name": "Automation",
+      "category": "Engineering",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "pending",
+        "running",
+        "done",
+        "failed",
+        "skipped"
+      ],
+      "columnRoles": [
+        "workflow",
+        "step",
+        "action",
+        "target",
+        "value",
+        "status"
+      ],
+      "defaultHeaders": [
+        "Workflow",
+        "Step",
+        "Action",
+        "Target",
+        "Value",
+        "Status"
+      ],
+      "detectSignals": [
+        "action",
+        "target",
+        "selector",
+        "workflow",
+        "automation",
+        "command"
+      ]
+    },
+    {
+      "key": "guide",
+      "name": "Instruction Guide",
+      "category": "Documentation",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Draft",
+        "In Progress",
+        "Ready",
+        "Done"
+      ],
+      "columnRoles": [
+        "guide",
+        "slide",
+        "objective",
+        "instruction",
+        "visual",
+        "duration",
+        "status"
+      ],
+      "defaultHeaders": [
+        "Guide",
+        "Slide",
+        "Objective",
+        "Instruction",
+        "Visual",
+        "Duration",
+        "Status"
+      ],
+      "detectSignals": [
+        "guide",
+        "slide",
+        "objective",
+        "instruction",
+        "visual",
+        "duration"
+      ]
+    },
+    {
+      "key": "knowledge",
+      "name": "Knowledge Base",
+      "category": "Documentation",
+      "interactionType": "inline-edit",
+      "interactionStates": [
+        "Draft",
+        "In Review",
+        "Published",
+        "Archived"
+      ],
+      "columnRoles": [
+        "title",
+        "category",
+        "content",
+        "tags",
+        "author",
+        "updated",
+        "status",
+        "source"
+      ],
+      "defaultHeaders": [
+        "Title",
+        "Category",
+        "Content",
+        "Tags",
+        "Author",
+        "Updated",
+        "Status",
+        "Source"
+      ],
+      "detectSignals": [
+        "knowledge",
+        "wiki",
+        "article",
+        "documentation",
+        "doc",
+        "faq",
+        "guide",
+        "kb",
+        "content",
+        "category",
+        "topic"
+      ]
+    },
+    {
+      "key": "notification",
+      "name": "Push Notification Rules",
+      "category": "Productivity",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Active",
+        "Read",
+        "Dismissed"
+      ],
+      "columnRoles": [
+        "event",
+        "condition",
+        "title",
+        "body",
+        "priority",
+        "enabled"
+      ],
+      "defaultHeaders": [
+        "Title",
+        "Body",
+        "Type",
+        "URL",
+        "Published"
+      ],
+      "detectSignals": [
+        "event",
+        "condition",
+        "enabled"
+      ]
+    },
+    {
+      "key": "iot",
+      "name": "IoT Sensor Log",
+      "category": "Monitoring",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Normal",
+        "Watch",
+        "Alert",
+        "Offline"
+      ],
+      "columnRoles": [
+        "sensor",
+        "timestamp",
+        "reading",
+        "unit",
+        "min",
+        "max",
+        "alert"
+      ],
+      "defaultHeaders": [
+        "Sensor",
+        "Timestamp",
+        "Reading",
+        "Unit",
+        "Min",
+        "Max",
+        "Alert"
+      ],
+      "detectSignals": [
+        "sensor",
+        "device",
+        "probe",
+        "reading",
+        "measurement",
+        "min",
+        "max",
+        "threshold",
+        "alert"
+      ]
+    },
+    {
+      "key": "okr",
+      "name": "OKR / Goals",
+      "category": "Goals",
+      "interactionType": "progress-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "objective",
+        "keyResult",
+        "progress",
+        "target",
+        "owner",
+        "quarter"
+      ],
+      "defaultHeaders": [
+        "Objective",
+        "Key Result",
+        "Progress",
+        "Target",
+        "Owner",
+        "Quarter"
+      ],
+      "detectSignals": [
+        "objective",
+        "key result",
+        "okr",
+        "goal",
+        "progress",
+        "target",
+        "owner",
+        "quarter"
+      ]
+    },
+    {
+      "key": "gantt",
+      "name": "Gantt Timeline",
+      "category": "Project Management",
+      "interactionType": "drag-to-reschedule",
+      "interactionStates": [],
+      "columnRoles": [
+        "text",
+        "start",
+        "end",
+        "progress",
+        "dependencies",
+        "assignee"
+      ],
+      "defaultHeaders": [
+        "Task",
+        "Start Date",
+        "End Date",
+        "Progress",
+        "Dependencies",
+        "Assignee"
+      ],
+      "detectSignals": [
+        "task",
+        "start",
+        "start date",
+        "end",
+        "end date",
+        "finish",
+        "deadline",
+        "progress",
+        "milestone",
+        "dependencies",
+        "assignee"
+      ]
+    },
+    {
+      "key": "passwords",
+      "name": "Password Manager",
+      "category": "Security",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "site",
+        "username",
+        "password",
+        "url",
+        "category",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Site",
+        "Username",
+        "Password",
+        "URL",
+        "Category",
+        "Notes"
+      ],
+      "detectSignals": [
+        "password",
+        "passwd",
+        "secret",
+        "credential",
+        "site",
+        "service",
+        "username",
+        "login"
+      ]
+    },
+    {
+      "key": "linker",
+      "name": "Community Linker",
+      "category": "Social",
+      "interactionType": "navigation",
+      "interactionStates": [],
+      "columnRoles": [
+        "name",
+        "description",
+        "link",
+        "type",
+        "tags",
+        "icon"
+      ],
+      "defaultHeaders": [
+        "Name",
+        "Description",
+        "Link",
+        "Type",
+        "Tags",
+        "Icon"
+      ],
+      "detectSignals": [
+        "link",
+        "url",
+        "sheet",
+        "waymark link",
+        "sheet id",
+        "public link",
+        "type",
+        "kind",
+        "entry type",
+        "name",
+        "title",
+        "community"
+      ]
+    },
+    {
+      "key": "marketing",
+      "name": "Content Workbench",
+      "category": "Marketing",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Idea",
+        "Drafting",
+        "Ready",
+        "Posted",
+        "Analyzing"
+      ],
+      "columnRoles": [
+        "post",
+        "platform",
+        "status",
+        "topic",
+        "date",
+        "likes",
+        "shares",
+        "comments",
+        "views",
+        "link",
+        "takeaway"
+      ],
+      "defaultHeaders": [
+        "Post",
+        "Platform",
+        "Status",
+        "Topic",
+        "Posted Date",
+        "Likes",
+        "Shares",
+        "Comments",
+        "Views",
+        "Link",
+        "Takeaway"
+      ],
+      "detectSignals": [
+        "post",
+        "content",
+        "draft",
+        "caption",
+        "tweet",
+        "platform",
+        "channel",
+        "likes",
+        "shares",
+        "comments",
+        "views",
+        "impressions",
+        "engagement",
+        "takeaway",
+        "lesson"
+      ]
+    },
+    {
+      "key": "arcade",
+      "name": "Arcade",
+      "category": "Social",
+      "interactionType": "game-modal",
+      "interactionStates": [],
+      "columnRoles": [
+        "game",
+        "player1",
+        "player2",
+        "score",
+        "status",
+        "date"
+      ],
+      "defaultHeaders": [
+        "Game",
+        "Player 1",
+        "Player 2",
+        "Score",
+        "Status"
+      ],
+      "detectSignals": [
+        "arcade",
+        "game lobby",
+        "game room",
+        "multiplayer"
+      ]
+    },
+    {
+      "key": "worker",
+      "name": "Worker Jobs",
+      "category": "Operations",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "job",
+        "handler",
+        "config",
+        "status",
+        "schedule",
+        "lastRun",
+        "result"
+      ],
+      "defaultHeaders": [
+        "Job",
+        "Handler",
+        "Config",
+        "Status",
+        "Schedule"
+      ],
+      "detectSignals": [
+        "job",
+        "worker",
+        "handler",
+        "backend worker",
+        "job runner"
+      ]
+    },
+    {
+      "key": "photos",
+      "name": "Photo Gallery",
+      "category": "Personal",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "photo",
+        "title",
+        "date",
+        "album",
+        "description"
+      ],
+      "defaultHeaders": [
+        "Photo",
+        "Title",
+        "Date",
+        "Album",
+        "Description"
+      ],
+      "detectSignals": [
+        "photo",
+        "image",
+        "picture",
+        "album",
+        "gallery"
+      ]
+    },
+    {
+      "key": "blog",
+      "name": "Blog",
+      "category": "Content",
+      "interactionType": "none",
+      "interactionStates": [],
+      "columnRoles": [
+        "title",
+        "doc",
+        "date",
+        "author",
+        "category",
+        "status"
+      ],
+      "defaultHeaders": [
+        "Title",
+        "Doc",
+        "Date",
+        "Author",
+        "Category"
+      ],
+      "detectSignals": [
+        "blog",
+        "title",
+        "doc",
+        "google doc",
+        "article",
+        "author"
+      ]
+    },
+    {
+      "key": "ledger",
+      "name": "Ledger",
+      "category": "Finance",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "date",
+        "type",
+        "category",
+        "text",
+        "amount",
+        "reference",
+        "balance"
+      ],
+      "defaultHeaders": [
+        "date",
+        "type",
+        "category",
+        "text",
+        "amount",
+        "reference",
+        "balance"
+      ],
+      "detectSignals": [
+        "reference",
+        "journal",
+        "balance",
+        "running balance",
+        "type",
+        "entry type",
+        "gl code",
+        "folio"
+      ]
+    },
+    {
+      "key": "invoice",
+      "name": "Invoice",
+      "category": "Finance",
+      "interactionType": "status-cycle",
+      "interactionStates": [
+        "Draft",
+        "Sent",
+        "Viewed",
+        "Paid",
+        "Overdue",
+        "Cancelled"
+      ],
+      "columnRoles": [
+        "invoice",
+        "client",
+        "date",
+        "due",
+        "status",
+        "item",
+        "qty",
+        "unitPrice",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "invoice",
+        "client",
+        "date",
+        "due",
+        "status",
+        "item",
+        "qty",
+        "unitPrice",
+        "notes"
+      ],
+      "detectSignals": [
+        "invoice",
+        "invoice #",
+        "quote #",
+        "invoice no",
+        "client",
+        "due date",
+        "unit price",
+        "qty"
+      ]
+    },
+    {
+      "key": "passwords",
+      "name": "Password Manager",
+      "category": "Security",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "site",
+        "username",
+        "password",
+        "url",
+        "category",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "Site",
+        "Username",
+        "Password",
+        "URL",
+        "Category",
+        "Notes"
+      ],
+      "detectSignals": [
+        "password",
+        "passwd",
+        "secret",
+        "credential",
+        "site",
+        "service",
+        "username",
+        "login"
+      ]
+    },
+    {
+      "key": "agents",
+      "name": "Agent Registry",
+      "category": "Engineering",
+      "interactionType": "inline-edit",
+      "interactionStates": [],
+      "columnRoles": [
+        "name",
+        "model",
+        "provider",
+        "status",
+        "tuning",
+        "task",
+        "project",
+        "heartbeat",
+        "workboard",
+        "command"
+      ],
+      "defaultHeaders": [
+        "name",
+        "model",
+        "provider",
+        "status",
+        "tuning",
+        "task",
+        "project",
+        "heartbeat",
+        "workboard",
+        "command"
+      ],
+      "detectSignals": [
+        "tuning",
+        "personality",
+        "agent",
+        "heartbeat",
+        "provider"
+      ]
+    },
+    {
+      "key": "calorie",
+      "name": "Calorie & Fitness Tracker",
+      "category": "Health & Lifestyle",
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "columnRoles": [
+        "date",
+        "meal",
+        "item",
+        "qty",
+        "unit",
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "burned",
+        "target"
+      ],
+      "defaultHeaders": [
+        "date",
+        "meal",
+        "item",
+        "qty",
+        "unit",
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "burned",
+        "target"
+      ],
+      "detectSignals": [
+        "date",
+        "meal",
+        "item",
+        "calories",
+        "protein",
+        "carbs",
+        "fat",
+        "burned",
+        "exercise",
+        "target"
+      ]
+    },
+    {
+      "key": "party",
+      "name": "Party Planning Dashboard",
+      "category": "Personal",
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "columnRoles": [
+        "party",
+        "guestOfHonor",
+        "date",
+        "theme",
+        "venue",
+        "host"
+      ],
+      "defaultHeaders": [
+        "party",
+        "guestOfHonor",
+        "date",
+        "theme",
+        "venue",
+        "host"
+      ],
+      "detectSignals": [
+        "party",
+        "guest of honor",
+        "theme",
+        "venue",
+        "host",
+        "date"
+      ]
+    },
+    {
+      "key": "floorplan",
+      "name": "Floor Plan",
+      "category": "Home Design",
+      "interactionType": "dashboard",
+      "interactionStates": [],
+      "columnRoles": [
+        "type",
+        "label",
+        "layer",
+        "x",
+        "y",
+        "width",
+        "height",
+        "length",
+        "notes"
+      ],
+      "defaultHeaders": [
+        "type",
+        "label",
+        "layer",
+        "x",
+        "y",
+        "width",
+        "height",
+        "length",
+        "notes"
+      ],
+      "detectSignals": [
+        "type",
+        "room",
+        "wall",
+        "fixture",
+        "electrical",
+        "plumbing",
+        "x",
+        "y",
+        "width",
+        "height",
+        "length",
+        "layer"
+      ]
+    }
+  ]
+}

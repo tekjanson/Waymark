@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-/* compile-all-agents.mjs — Compile all 35 Waymark template agents
+/* compile-all-agents.mjs — Compile all 35 Waymark template agents and AGY skills
    Run from the Waymark repo root:
      node scripts/compile-all-agents.mjs [--force]
 
-   --force   Recompile even if inputs are unchanged (clears hash sidecars first)
+   Outputs:
+     1. .github/agents/waymark-{key}.agent.md (Copilot agents)
+     2. .agents/skills/waymark-{key}/SKILL.md (Antigravity workspace skills)
+     3. .agents/skills/waymark-orchestrator/SKILL.md
+     4. generated/waymark-agent-catalog.json (deterministic routing & schema catalog)
 */
 
 import {
@@ -17,11 +21,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT       = path.resolve(__dirname, "..");
 const FORCE      = process.argv.includes("--force");
 
-const REGISTRY_PATH  = path.join(ROOT, "template-registry.json");
-const BASE_TMPL_PATH = path.join(ROOT, "agent-templates", "base.md.tmpl");
-const DOMAIN_KN_DIR  = path.join(ROOT, "agent-templates", "domain-knowledge");
-const OUTPUT_DIR     = path.join(ROOT, ".github", "agents");
-const EVAL_DIR       = path.join(OUTPUT_DIR, "evals");
+const REGISTRY_PATH    = path.join(ROOT, "template-registry.json");
+const BASE_TMPL_PATH   = path.join(ROOT, "agent-templates", "base.md.tmpl");
+const AGY_TMPL_PATH    = path.join(ROOT, "agent-templates", "agy-skill.md.tmpl");
+const DOMAIN_KN_DIR    = path.join(ROOT, "agent-templates", "domain-knowledge");
+const OUTPUT_DIR       = path.join(ROOT, ".github", "agents");
+const SKILLS_DIR       = path.join(ROOT, ".agents", "skills");
+const GENERATED_DIR    = path.join(ROOT, "generated");
+const CATALOG_PATH     = path.join(GENERATED_DIR, "waymark-agent-catalog.json");
+const EVAL_DIR         = path.join(OUTPUT_DIR, "evals");
+const AGENTS_CFG_PATH  = path.join(ROOT, "mcp", "orchestrator-agents.json");
 
 /** Extra tools injected into the tools list for specific templates (after waymark_create_sheet). */
 const EXTRA_TOOLS = {
@@ -95,15 +104,13 @@ function computeHash(tmpl) {
 function compileOne(tmpl) {
   const key = tmpl.key;
   const outputFile = path.join(OUTPUT_DIR, `waymark-${key}.agent.md`);
+  const skillDir   = path.join(SKILLS_DIR, `waymark-${key}`);
+  const skillFile  = path.join(skillDir, "SKILL.md");
   const hashFile   = path.join(EVAL_DIR, `${key}.sha`);
   const currentHash = computeHash(tmpl);
 
-  if (!FORCE && existsSync(outputFile)) {
-    const storedHash = existsSync(hashFile) ? readFileSync(hashFile, "utf8").trim() : null;
-    if (storedHash === currentHash) return { key, status: "up-to-date" };
-  }
-
   const base = readFileSync(BASE_TMPL_PATH, "utf8");
+  const agyBase = existsSync(AGY_TMPL_PATH) ? readFileSync(AGY_TMPL_PATH, "utf8") : base;
   const domainPath    = path.join(DOMAIN_KN_DIR, `${key}.md`);
   const genericPath   = path.join(DOMAIN_KN_DIR, `_generic.md`);
   let usedGeneric = false;
@@ -127,8 +134,9 @@ function compileOne(tmpl) {
   const toggleOn  = interactionStates[0] ?? "done";
   const toggleOff = interactionStates[1] ?? "";
   const extraToolsList = (EXTRA_TOOLS[key] || []).map(t => `, ${t}`).join("");
+  const statesBlock = buildStatesBlock(tmpl);
 
-  const compiled = base
+  const compiledCopilot = base
     .replace(/\{\{TEMPLATE_KEY\}\}/g,           key)
     .replace(/\{\{TEMPLATE_NAME\}\}/g,           tmpl.name)
     .replace(/\{\{TEMPLATE_CATEGORY\}\}/g,       tmpl.category || "General")
@@ -136,7 +144,21 @@ function compileOne(tmpl) {
     .replace(/\{\{COLUMN_ROLES_LIST\}\}/g,        columnRolesList)
     .replace(/\{\{DEFAULT_HEADERS\}\}/g,          defaultHeaders.join(", "))
     .replace(/\{\{DETECT_SIGNALS\}\}/g,           detectSignals.join(", "))
-    .replace(/\{\{INTERACTION_STATES_BLOCK\}\}/g, buildStatesBlock(tmpl))
+    .replace(/\{\{INTERACTION_STATES_BLOCK\}\}/g, statesBlock)
+    .replace(/\{\{TOGGLE_ON\}\}/g,                toggleOn)
+    .replace(/\{\{TOGGLE_OFF\}\}/g,               toggleOff)
+    .replace(/\{\{EXTRA_TOOLS\}\}/g,              extraToolsList)
+    .replace(/\{\{DOMAIN_KNOWLEDGE\}\}/g,         domain.trim());
+
+  const compiledSkill = agyBase
+    .replace(/\{\{TEMPLATE_KEY\}\}/g,           key)
+    .replace(/\{\{TEMPLATE_NAME\}\}/g,           tmpl.name)
+    .replace(/\{\{TEMPLATE_CATEGORY\}\}/g,       tmpl.category || "General")
+    .replace(/\{\{INTERACTION_TYPE\}\}/g,         tmpl.interactionType || "none")
+    .replace(/\{\{COLUMN_ROLES_LIST\}\}/g,        columnRolesList)
+    .replace(/\{\{DEFAULT_HEADERS\}\}/g,          defaultHeaders.join(", "))
+    .replace(/\{\{DETECT_SIGNALS\}\}/g,           detectSignals.join(", "))
+    .replace(/\{\{INTERACTION_STATES_BLOCK\}\}/g, statesBlock)
     .replace(/\{\{TOGGLE_ON\}\}/g,                toggleOn)
     .replace(/\{\{TOGGLE_OFF\}\}/g,               toggleOff)
     .replace(/\{\{EXTRA_TOOLS\}\}/g,              extraToolsList)
@@ -144,7 +166,10 @@ function compileOne(tmpl) {
 
   mkdirSync(OUTPUT_DIR, { recursive: true });
   mkdirSync(EVAL_DIR, { recursive: true });
-  writeFileSync(outputFile, compiled, "utf8");
+  mkdirSync(skillDir, { recursive: true });
+
+  writeFileSync(outputFile, compiledCopilot, "utf8");
+  writeFileSync(skillFile, compiledSkill, "utf8");
   writeFileSync(hashFile, currentHash, "utf8");
 
   return { key, status: existsSync(outputFile) && !FORCE ? "recompiled" : "compiled", usedGeneric };
@@ -155,7 +180,7 @@ function compileOne(tmpl) {
 const registry = JSON.parse(readFileSync(REGISTRY_PATH, "utf8"));
 const keys = registry.templates.map(t => t.key);
 
-console.log(`\nCompiling ${keys.length} agents…  (--force: ${FORCE})\n`);
+console.log(`\nCompiling ${keys.length} agents and skills…  (--force: ${FORCE})\n`);
 
 let compiled = 0, upToDate = 0, errors = 0;
 const results = [];
@@ -190,35 +215,101 @@ if (generic.length > 0) {
   generic.forEach(r => console.log(`  ${r.key}`));
 }
 
-console.log(`\nOutput: .github/agents/waymark-*.agent.md (${compiled + upToDate} total)\n`);
+// ── Master AGY Orchestrator Skill ─────────────────────────────────────
 
-// ── Worker agents: builder + qa (no template registry — compiled 1:1 from templates) ──────────
+const orchSkillDir = path.join(SKILLS_DIR, "waymark-orchestrator");
+mkdirSync(orchSkillDir, { recursive: true });
+const orchSkillContent = `---
+name: waymark-orchestrator
+description: >-
+  Use this skill to orchestrate, route, and execute tasks across all 35 Waymark template types using Gemini Flash and Waymark MCP tools.
+---
+
+# Waymark Orchestrator Skill
+
+You are the Waymark Orchestrator. You help users create, view, organize, and update sheets across all 35 Waymark template types.
+
+## Available Capabilities
+1. Create new sheets using \`waymark_create_sheet(title, templateKey, initialEntries)\`.
+2. Inspect sheets using \`waymark_get_sheet(spreadsheetId, sheetTitle)\`.
+3. Add rows using \`waymark_add_entry(spreadsheetId, entry, sheetTitle)\`.
+4. Update rows using \`waymark_update_entry(spreadsheetId, rowIndex, updates, sheetTitle)\`.
+5. Share sheets using \`waymark_share_sheet(spreadsheetId, email, role)\`.
+
+## Routing & Progressive Disclosure
+Always identify the relevant template skill (e.g. \`waymark-budget\`, \`waymark-kanban\`, \`waymark-travel\`) and follow its domain rules, column roles, and state cycles.
+`;
+writeFileSync(path.join(orchSkillDir, "SKILL.md"), orchSkillContent, "utf8");
+console.log(`  ✓ compiled .agents/skills/waymark-orchestrator/SKILL.md`);
+
+// ── Worker skills: builder + qa ───────────────────────────────────────
 
 const WORKER_TEMPLATES = [
   {
     tmpl: path.join(ROOT, "agent-templates", "builder.md.tmpl"),
-    out:  path.join(OUTPUT_DIR, "waymark-builder.agent.md"),
+    copilotOut: path.join(OUTPUT_DIR, "waymark-builder.agent.md"),
+    skillDir: path.join(SKILLS_DIR, "waymark-builder"),
     name: "builder",
   },
-  // waymark-manual-qa excluded until MQTT bridge is available
+  {
+    tmpl: path.join(ROOT, "agent-templates", "qa.md.tmpl"),
+    copilotOut: path.join(OUTPUT_DIR, "waymark-qa.agent.md"),
+    skillDir: path.join(SKILLS_DIR, "waymark-qa"),
+    name: "qa",
+  },
 ];
 
-console.log("Compiling worker agents…\n");
-let workerCompiled = 0, workerErrors = 0;
-for (const { tmpl, out, name } of WORKER_TEMPLATES) {
-  if (!existsSync(tmpl)) {
-    console.log(`  SKIP ${name}: template not found at ${tmpl}`);
-    continue;
-  }
+for (const { tmpl, copilotOut, skillDir, name } of WORKER_TEMPLATES) {
+  if (!existsSync(tmpl)) continue;
   try {
     const src = readFileSync(tmpl, "utf8");
-    mkdirSync(path.dirname(out), { recursive: true });
-    writeFileSync(out, src, "utf8");
-    workerCompiled++;
-    console.log(`  ✓ compiled ${path.basename(out)}`);
+    mkdirSync(path.dirname(copilotOut), { recursive: true });
+    writeFileSync(copilotOut, src, "utf8");
+
+    mkdirSync(skillDir, { recursive: true });
+    const skillContent = `---
+name: waymark-${name}
+description: >-
+  Waymark ${name} skill for codebase modifications, debugging, and verification.
+---
+
+${src.replace(/^---[\s\S]*?---\n/, '')}
+`;
+    writeFileSync(path.join(skillDir, "SKILL.md"), skillContent, "utf8");
+    console.log(`  ✓ compiled .agents/skills/waymark-${name}/SKILL.md`);
   } catch (err) {
-    workerErrors++;
-    console.log(`  ✗ error compiling ${name}: ${err.message}`);
+    console.log(`  ✗ error compiling worker ${name}: ${err.message}`);
   }
 }
-console.log(`\nWorker agents compiled: ${workerCompiled}, errors: ${workerErrors}\n`);
+
+// ── Build Waymark Agent Catalog JSON ──────────────────────────────────
+
+let agentsConfig = {};
+try {
+  if (existsSync(AGENTS_CFG_PATH)) {
+    agentsConfig = JSON.parse(readFileSync(AGENTS_CFG_PATH, "utf8"));
+  }
+} catch { /* use defaults */ }
+
+const catalog = {
+  version: "1.0.0",
+  generatedAt: new Date().toISOString(),
+  fallbackAgent: agentsConfig.fallbackAgent || "waymark-builder",
+  keywordRoutes: agentsConfig.keywordRoutes || [],
+  codeKeywords: agentsConfig.codeKeywords || [],
+  builderLabels: agentsConfig.builderLabels || [],
+  templates: registry.templates.map(t => ({
+    key: t.key,
+    name: t.name,
+    category: t.category || "General",
+    interactionType: t.interactionType || "none",
+    interactionStates: t.interactionStates || [],
+    columnRoles: t.columnRoles || [],
+    defaultHeaders: DEFAULT_HEADERS[t.key] || t.columnRoles || [],
+    detectSignals: t.detectSignals || [],
+  })),
+};
+
+mkdirSync(GENERATED_DIR, { recursive: true });
+writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2), "utf8");
+console.log(`  ✓ generated ${path.relative(ROOT, CATALOG_PATH)}\n`);
