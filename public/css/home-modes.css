@@ -490,7 +490,7 @@
   flex: 0 0 auto;
   gap: 3px;
 }
-#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
+div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
 /* ---------- Shared light / dark theme for every Wayboard layout ---------- */
 html[data-theme="light"] #wayboard-root {

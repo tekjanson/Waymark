@@ -231,4 +231,15 @@ function createSheetsClient({ keyFile, spreadsheetId }) {
   };
 }
 
-module.exports = { createSheetsClient, fetchAccessToken, base64url };
+let _sharedAuth = null;
+async function getGoogleAuthToken() {
+  if (!_sharedAuth) {
+    const { GoogleAuth } = require('google-auth-library');
+    _sharedAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  }
+  const client = await _sharedAuth.getClient();
+  const tok = await client.getAccessToken();
+  return tok.token;
+}
+
+module.exports = { createSheetsClient, fetchAccessToken, base64url, getGoogleAuthToken };

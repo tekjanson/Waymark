@@ -123,7 +123,7 @@ Use `{{variableName}}` in the Body column:
 Use `waymark_add_entry` with all 6 columns. Example:
 ```
 Event: DISPATCH
-Condition: 
+Condition:
 Title: 🚀 Task Dispatched
 Body: {{agentName}} is working on "{{taskTitle}}"
 Priority: normal

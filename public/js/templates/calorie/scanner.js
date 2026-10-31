@@ -1,3 +1,4 @@
+import { hasUserMedia, getUserMediaStream } from '../../camera-capture.js';
 /* ============================================================
    calorie/scanner.js — Hybrid barcode scanning
 
@@ -42,7 +43,7 @@ async function resolveAndLog(code, mealType, onConfirm) {
 export async function openBarcodeScanner({ mealType, onConfirm }) {
   const supported = typeof window !== 'undefined'
     && 'BarcodeDetector' in window
-    && !!navigator.mediaDevices?.getUserMedia;
+    && hasUserMedia();
 
   const overlay = el('div', { className: 'calorie-scan-overlay' });
   const panel = el('div', { className: 'calorie-scan-panel' });
@@ -98,7 +99,7 @@ export async function openBarcodeScanner({ mealType, onConfirm }) {
   );
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    stream = await getUserMediaStream({
       video: { facingMode: { ideal: 'environment' } }, audio: false,
     });
     video.srcObject = stream;

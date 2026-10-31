@@ -1,9 +1,9 @@
 /* ============================================================
    run-writer-evals.js — LLM eval for the Content Workbench AI writer
-   
+
    Generates posts via the writer panel, then scores each output
    with a judge LLM for voice match, platform fit, and quality.
-   
+
    Usage:
      npm run test:writer:eval
      WAYMARK_AGENT_EVAL_CASES=twitter npm run test:writer:eval

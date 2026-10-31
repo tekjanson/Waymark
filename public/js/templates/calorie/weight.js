@@ -1,3 +1,4 @@
+import { renderSparkline } from '../shared.js';
 /* ============================================================
    calorie/weight.js — Weight-over-time tracking for the Calorie tracker.
 
@@ -260,27 +261,4 @@ function _stat(value, label) {
 }
 
 /** Dependency-free inline SVG sparkline of the weigh-in series (or null). */
-function _sparkline(values) {
-  const nums = (values || []).filter((v) => typeof v === 'number' && v > 0);
-  if (nums.length < 2) return null;
-  const w = 600, h = 70, pad = 6;
-  const min = Math.min(...nums), max = Math.max(...nums);
-  const span = max - min || 1;
-  const step = (w - pad * 2) / (nums.length - 1);
-  const points = nums
-    .map((v, i) => `${(pad + i * step).toFixed(1)},${(h - pad - ((v - min) / span) * (h - pad * 2)).toFixed(1)}`)
-    .join(' ');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('class', 'calorie-weight-spark');
-  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  poly.setAttribute('points', points);
-  poly.setAttribute('fill', 'none');
-  poly.setAttribute('stroke', '#ef4444');
-  poly.setAttribute('stroke-width', '2');
-  poly.setAttribute('stroke-linejoin', 'round');
-  poly.setAttribute('stroke-linecap', 'round');
-  svg.appendChild(poly);
-  return svg;
-}
+const _sparkline = renderSparkline;

@@ -1,3 +1,4 @@
+import { formatISO as formatWeekISO } from '../shared.js';
 /* ============================================================
    templates/habit/helpers.js — Constants, state classifiers,
    streak computation, date utilities, and completion helpers
@@ -11,20 +12,20 @@ import { cell } from '../shared.js';
    ================================================================ */
 
 /** Display characters for each habit state */
-export const STATE_CHAR  = { done: '\u2713', partial: '~', missed: '\u2717', empty: '' };
+const STATE_CHAR  = { done: '\u2713', partial: '~', missed: '\u2717', empty: '' };
 
 /** Cycle order when clicking a day cell */
-export const STATE_CYCLE = ['empty', 'done', 'partial', 'missed'];
+const STATE_CYCLE = ['empty', 'done', 'partial', 'missed'];
 
 /** Value written back to the sheet for each state */
-export const STATE_VALUE = { done: '\u2713', partial: '~', missed: '\u2717', empty: '' };
+const STATE_VALUE = { done: '\u2713', partial: '~', missed: '\u2717', empty: '' };
 
 /**
  * Classify a cell value into a habit state.
  * @param {string} val
  * @returns {'done'|'partial'|'missed'|'empty'}
  */
-export function habitState(val) {
+function habitState(val) {
   const v = (val || '').trim();
   if (!v) return 'empty';
   if (/^(\u2713|\u2714|x|yes|1|true|done)$/i.test(v)) return 'done';
@@ -43,7 +44,7 @@ export function habitState(val) {
  * @param {number[]} dayCols
  * @returns {number}
  */
-export function computeStreak(row, dayCols) {
+function computeStreak(row, dayCols) {
   let streak = 0;
   for (let d = dayCols.length - 1; d >= 0; d--) {
     if (habitState(cell(row, dayCols[d])) === 'done') streak++;
@@ -62,7 +63,7 @@ export function computeStreak(row, dayCols) {
  * @param {number} upToWeekIdx — index of the current week (inclusive)
  * @returns {number}
  */
-export function computeMultiWeekStreak(habitName, weeks, textCol, dayCols, upToWeekIdx) {
+function computeMultiWeekStreak(habitName, weeks, textCol, dayCols, upToWeekIdx) {
   let streak = 0;
   for (let w = upToWeekIdx; w >= 0; w--) {
     const row = weeks[w].rows.find(r => cell(r, textCol) === habitName);
@@ -84,7 +85,7 @@ export function computeMultiWeekStreak(habitName, weeks, textCol, dayCols, upToW
  * @param {string} raw
  * @returns {number} target completions per week (0 if unparseable)
  */
-export function parseGoal(raw) {
+function parseGoal(raw) {
   const v = (raw || '').toLowerCase().trim();
   if (!v) return 0;
   if (/^daily$/.test(v)) return 7;
@@ -99,7 +100,7 @@ export function parseGoal(raw) {
    ================================================================ */
 
 /** Pattern for detecting Week Of header columns */
-export const WEEK_COL_PATTERN = /^(week\s*of|week|date|period|week\s*start|starting)/;
+const WEEK_COL_PATTERN = /^(week\s*of|week|date|period|week\s*start|starting)/;
 
 /**
  * Parse a raw date string into a Date object.
@@ -107,7 +108,7 @@ export const WEEK_COL_PATTERN = /^(week\s*of|week|date|period|week\s*start|start
  * @param {string} raw
  * @returns {Date|null}
  */
-export function parseWeekDate(raw) {
+function parseWeekDate(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const v = raw.trim();
   if (!v) return null;
@@ -124,7 +125,7 @@ export function parseWeekDate(raw) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatWeekLabel(date) {
+function formatWeekLabel(date) {
   return 'Week of ' + date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -133,12 +134,7 @@ export function formatWeekLabel(date) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatWeekISO(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+// formatWeekISO imported from shared.js
 
 /**
  * Group rows by their Week Of value. Attaches _sourceIndex to each row.
@@ -148,7 +144,7 @@ export function formatWeekISO(date) {
  * @param {number} weekOfCol — column index of Week Of
  * @returns {Array<{date: Date, iso: string, label: string, rows: string[][]}>}
  */
-export function getUniqueWeeks(rows, weekOfCol) {
+function getUniqueWeeks(rows, weekOfCol) {
   const map = new Map();
   rows.forEach((row, idx) => {
     const raw = cell(row, weekOfCol);
@@ -168,19 +164,19 @@ export function getUniqueWeeks(rows, weekOfCol) {
    ================================================================ */
 
 /** Short day names matching Mon–Sun column order */
-export const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /** Full day names */
-export const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 /** Month names */
-export const MONTH_NAMES = [
+const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
 /** Short month names */
-export const MONTH_ABBR = [
+const MONTH_ABBR = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
@@ -190,7 +186,7 @@ export const MONTH_ABBR = [
  * @param {Date} [date] — defaults to today
  * @returns {Date}
  */
-export function getWeekStart(date) {
+function getWeekStart(date) {
   const d = new Date(date || new Date());
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
@@ -200,14 +196,14 @@ export function getWeekStart(date) {
 }
 
 /** Alias for getWeekStart(new Date()) */
-export const getCurrentMonday = () => getWeekStart(new Date());
+const getCurrentMonday = () => getWeekStart(new Date());
 
 /**
  * Get the Monday 7 days after the given date.
  * @param {Date} date
  * @returns {Date}
  */
-export function getNextWeekStart(date) {
+function getNextWeekStart(date) {
   const d = new Date(date);
   d.setDate(d.getDate() + 7);
   return d;
@@ -218,7 +214,7 @@ export function getNextWeekStart(date) {
  * @param {Date} date
  * @returns {number} 0=Mon, 6=Sun
  */
-export function dateToDayIndex(date) {
+function dateToDayIndex(date) {
   const day = date.getDay();
   return day === 0 ? 6 : day - 1;
 }
@@ -228,7 +224,7 @@ export function dateToDayIndex(date) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatDayLabel(date) {
+function formatDayLabel(date) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
@@ -238,7 +234,7 @@ export function formatDayLabel(date) {
  * @param {number} month — 0-based
  * @returns {string}
  */
-export function formatMonthLabel(year, month) {
+function formatMonthLabel(year, month) {
   return MONTH_NAMES[month] + ' ' + year;
 }
 
@@ -248,7 +244,7 @@ export function formatMonthLabel(year, month) {
  * @param {number} quarter — 0-based (0=Q1)
  * @returns {string}
  */
-export function formatQuarterLabel(year, quarter) {
+function formatQuarterLabel(year, quarter) {
   return `Q${quarter + 1} ${year}`;
 }
 
@@ -259,7 +255,7 @@ export function formatQuarterLabel(year, quarter) {
  * @param {number} month — 0-based
  * @returns {Array<Array<Date|null>>}
  */
-export function getMonthCalendar(year, month) {
+function getMonthCalendar(year, month) {
   const weeks = [];
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
@@ -287,7 +283,7 @@ export function getMonthCalendar(year, month) {
  * @param {number} month — 0-based
  * @returns {number}
  */
-export function getQuarter(month) {
+function getQuarter(month) {
   return Math.floor(month / 3);
 }
 
@@ -296,7 +292,7 @@ export function getQuarter(month) {
  * @param {number} quarter — 0-based
  * @returns {number[]}
  */
-export function getQuarterMonths(quarter) {
+function getQuarterMonths(quarter) {
   const start = quarter * 3;
   return [start, start + 1, start + 2];
 }
@@ -307,7 +303,7 @@ export function getQuarterMonths(quarter) {
  * @param {Date} end
  * @returns {string[]}
  */
-export function getWeekStartsInRange(start, end) {
+function getWeekStartsInRange(start, end) {
   const mondays = [];
   const cursor = getWeekStart(start);
   while (cursor <= end) {
@@ -327,7 +323,7 @@ export function getWeekStartsInRange(start, end) {
  * @param {number[]} dayCols
  * @returns {number} 0–1
  */
-export function weekCompletionRate(rows, dayCols) {
+function weekCompletionRate(rows, dayCols) {
   let done = 0, total = 0;
   for (const row of rows) {
     for (const col of dayCols) {
@@ -347,7 +343,7 @@ export function weekCompletionRate(rows, dayCols) {
  * @param {number} dayColIdx
  * @returns {number} 0–1 or -1 if no data
  */
-export function dayCompletionRate(rows, dayColIdx) {
+function dayCompletionRate(rows, dayColIdx) {
   if (!rows || rows.length === 0) return -1;
   let done = 0;
   for (const row of rows) {
@@ -365,7 +361,7 @@ export function dayCompletionRate(rows, dayColIdx) {
  * @param {number} dayColIdx
  * @returns {Array<{name: string, state: string}>}
  */
-export function dayHabitStates(rows, textCol, dayColIdx) {
+function dayHabitStates(rows, textCol, dayColIdx) {
   return rows.map(row => ({
     name: cell(row, textCol) || '',
     state: habitState(cell(row, dayColIdx)),
@@ -379,7 +375,7 @@ export function dayHabitStates(rows, textCol, dayColIdx) {
  * @param {Date} date
  * @returns {number}
  */
-export function findWeekForDate(weeks, date) {
+function findWeekForDate(weeks, date) {
   const targetISO = formatWeekISO(getWeekStart(date));
   return weeks.findIndex(w => w.iso === targetISO);
 }
@@ -392,7 +388,7 @@ export function findWeekForDate(weeks, date) {
  * @param {Date} date
  * @returns {number} index, or -1 if weeks is empty
  */
-export function findClosestWeek(weeks, date) {
+function findClosestWeek(weeks, date) {
   if (!weeks || weeks.length === 0) return -1;
   const target = date.getTime();
   let bestIdx = 0;
@@ -412,7 +408,7 @@ export function findClosestWeek(weeks, date) {
  * @param {number} month — 0-based
  * @returns {Array<{name: string, streak: number, allDone: boolean}>}
  */
-export function computeMonthHabitStreaks(weeks, cols, year, month) {
+function computeMonthHabitStreaks(weeks, cols, year, month) {
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   const monthWeekISOs = getWeekStartsInRange(monthStart, monthEnd);
@@ -454,3 +450,39 @@ export function computeMonthHabitStreaks(weeks, cols, year, month) {
     return { name, streak, allDone: totalDays > 0 && doneDays === totalDays };
   });
 }
+
+export {
+  DAY_ABBR,
+  DAY_NAMES,
+  MONTH_ABBR,
+  MONTH_NAMES,
+  STATE_CHAR,
+  STATE_CYCLE,
+  STATE_VALUE,
+  WEEK_COL_PATTERN,
+  computeMonthHabitStreaks,
+  computeMultiWeekStreak,
+  computeStreak,
+  dateToDayIndex,
+  dayCompletionRate,
+  dayHabitStates,
+  findClosestWeek,
+  findWeekForDate,
+  formatDayLabel,
+  formatMonthLabel,
+  formatQuarterLabel,
+  formatWeekISO,
+  formatWeekLabel,
+  getCurrentMonday,
+  getMonthCalendar,
+  getNextWeekStart,
+  getQuarter,
+  getQuarterMonths,
+  getUniqueWeeks,
+  getWeekStart,
+  getWeekStartsInRange,
+  habitState,
+  parseGoal,
+  parseWeekDate,
+  weekCompletionRate,
+};

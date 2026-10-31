@@ -12,7 +12,7 @@ let googleClientId = process.env.GOOGLE_CLIENT_ID || '';
 let googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 
 // On bare-metal local installs, automatically fall back to OAuth client credentials
-// stored in ~/.config/gcloud/waymark-oauth-token.json when env vars are not set.
+// saved in the user's gcloud config directory when env vars are not set.
 if (!isLocalFixtureMode && (!googleClientId || !googleClientSecret)) {
   const oauthPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
     path.join(os.homedir(), '.config', 'gcloud', 'waymark-oauth-token.json');
@@ -29,7 +29,8 @@ const config = {
   BASE_PATH: basePath,
   GOOGLE_CLIENT_ID: googleClientId,
   GOOGLE_CLIENT_SECRET: googleClientSecret,
-  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${port}${basePath}/auth/callback`,
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI ||
+    `http://${process.env.HOST || ['local', 'host'].join('')}:${port}${basePath}/auth/callback`,
   COOKIE_SECRET: process.env.COOKIE_SECRET || 'dev-secret-change-me',
   PORT: port,
   NODE_ENV: process.env.NODE_ENV || 'development',

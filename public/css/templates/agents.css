@@ -961,7 +961,7 @@
   border-bottom-color: var(--color-border);
 }
 
-/* Add-agent placeholder card */
+/* Add-agent template card */
 [data-theme="dark"] .agents-add-card {
   border-color: var(--color-border);
   color: var(--color-text-muted);

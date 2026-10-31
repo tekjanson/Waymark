@@ -39,7 +39,7 @@ BLOCKED: "Migrate database schema" — needs human: no DB exists in this project
 Run these steps in order. Stop and output your line as soon as you have enough information.
 
 ### Step 1 — Read AI_LAWS (once per session is enough)
-Load `.github/instructions/AI_laws.instructions.md`. These rules govern all dispatched agents. You don't need to re-read this if you already have it in context.
+Load `.github/instructions/ai-laws.instructions.md`. These rules govern all dispatched agents. You don't need to re-read this if you already have it in context.
 
 ### Step 2 — Parse the board JSON
 

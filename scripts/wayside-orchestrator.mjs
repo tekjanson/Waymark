@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /* ============================================================
    wayside-orchestrator.mjs — OpenClaw-Style Wayside Chat Orchestrator
-   
+
    Participates as an autonomous collaborator peer in The Wayside
    social chat connection (#home-wayside).
-   
+
    Features:
    - Real-time P2P WebRTC DataChannel messaging via SheetWebRtcPeer (werift)
    - Durable persistence & async polling via Google Sheets Chat tab
@@ -28,10 +28,10 @@ const ROOT = path.resolve(__dirname, '..');
 
 export const AGENT_NAME = process.env.WAYSIDE_AGENT_NAME || 'Waymark AI';
 export const AGENT_EMAIL = process.env.WAYSIDE_AGENT_EMAIL || 'assistant@waymark.internal';
-export const CHAT_TAB = 'Chat';
-export const SHARED_DOCS_TAB = 'Shared_Docs';
-export const PRESENCE_TAB = 'Presence';
-export const SIGNALING_TAB = 'WebRTC_Signaling';
+const CHAT_TAB = 'Chat';
+const SHARED_DOCS_TAB = 'Shared_Docs';
+const PRESENCE_TAB = 'Presence';
+const SIGNALING_TAB = 'WebRTC_Signaling';
 const POLL_INTERVAL_MS = parseInt(process.env.WAYSIDE_POLL_INTERVAL_MS || '4000', 10);
 const PRESENCE_INTERVAL_MS = parseInt(process.env.WAYSIDE_PRESENCE_INTERVAL_MS || '30000', 10);
 
@@ -192,7 +192,7 @@ export async function readTabRows(sheetId, tabName) {
 /**
  * Update a range in a spreadsheet tab.
  */
-export async function updateTabRange(sheetId, range, rows) {
+async function updateTabRange(sheetId, range, rows) {
   return sheetsApi(`/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     body: { range, majorDimension: 'ROWS', values: rows },
@@ -203,7 +203,7 @@ export async function updateTabRange(sheetId, range, rows) {
  * Ensure Shared_Docs, Presence, Chat, and WebRTC_Signaling tabs exist with headers
  * matching the 4-tab Share Ledger schema in public/js/collab.js.
  */
-export async function ensureLedgerStructure(sheetId) {
+async function ensureLedgerStructure(sheetId) {
   try {
     const meta = await sheetsApi(`/${sheetId}?fields=sheets.properties`);
     const existingTitles = new Set((meta.sheets || []).map(s => s.properties?.title));

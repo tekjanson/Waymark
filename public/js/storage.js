@@ -18,37 +18,30 @@ function remove(key) {
 }
 
 /* --- Pinned Folders --- */
-
-export function getPinnedFolders() {
+function getPinnedFolders() {
   return get('pinned_folders') || [];
 }
-
-export function setPinnedFolders(folders) {
+function setPinnedFolders(folders) {
   set('pinned_folders', folders);
 }
-
-export function addPinnedFolder(folder) {
+function addPinnedFolder(folder) {
   const pinned = getPinnedFolders();
   if (pinned.find(f => f.id === folder.id)) return;
   pinned.push(folder);
   setPinnedFolders(pinned);
 }
-
-export function removePinnedFolder(folderId) {
+function removePinnedFolder(folderId) {
   setPinnedFolders(getPinnedFolders().filter(f => f.id !== folderId));
 }
-
-export function isPinned(folderId) {
+function isPinned(folderId) {
   return getPinnedFolders().some(f => f.id === folderId);
 }
 
 /* --- Pinned Sheets --- */
-
-export function getPinnedSheets() {
+function getPinnedSheets() {
   return get('pinned_sheets') || [];
 }
-
-export function setPinnedSheets(sheets) {
+function setPinnedSheets(sheets) {
   set('pinned_sheets', sheets);
 }
 
@@ -59,75 +52,60 @@ export function setPinnedSheets(sheets) {
  * user-data; this localStorage copy gives a zero-flash load on startup.
  * @returns {number}
  */
-export function getHomeTemplateMode() {
+function getHomeTemplateMode() {
   const v = parseInt(get('home_template_mode'), 10);
   return (v >= 1 && v <= 50) ? v : 1;
 }
-
-export function setHomeTemplateMode(mode) {
+function setHomeTemplateMode(mode) {
   const n = parseInt(mode, 10);
   set('home_template_mode', (n >= 1 && n <= 50) ? n : 1);
 }
 
 /* --- Wayboard widgets --- */
-
-export function getHomeWidgets() {
+function getHomeWidgets() {
   return get('home_widgets');
 }
-
-export function setHomeWidgets(widgets) {
+function setHomeWidgets(widgets) {
   set('home_widgets', widgets);
 }
-
-export function getHomeWidgetsVersion() {
+function getHomeWidgetsVersion() {
   return get('home_widgets_version') || 0;
 }
-
-export function setHomeWidgetsVersion(version) {
+function setHomeWidgetsVersion(version) {
   set('home_widgets_version', Number(version) || 0);
 }
-
-export function getAutoRefresh() {
+function getAutoRefresh() {
   const v = get('auto_refresh');
   return v === null ? true : v;   // default on
 }
-
-export function setAutoRefresh(enabled) {
+function setAutoRefresh(enabled) {
   set('auto_refresh', !!enabled);
 }
-
-export function getLastView() {
+function getLastView() {
   return get('last_view') || '/';
 }
-
-export function setLastView(hash) {
+function setLastView(hash) {
   set('last_view', hash);
 }
-
-export function getSidebarOpen() {
+function getSidebarOpen() {
   const v = get('sidebar_open');
   return v === null ? true : v;
 }
-
-export function setSidebarOpen(open) {
+function setSidebarOpen(open) {
   set('sidebar_open', !!open);
 }
 
 /* --- Tutorial --- */
-
-export function getTutorialCompleted() {
+function getTutorialCompleted() {
   return !!get('tutorial_completed');
 }
-
-export function setTutorialCompleted(done) {
+function setTutorialCompleted(done) {
   set('tutorial_completed', !!done);
 }
-
-export function getTutorialStep() {
+function getTutorialStep() {
   return get('tutorial_step') || 0;
 }
-
-export function setTutorialStep(step) {
+function setTutorialStep(step) {
   set('tutorial_step', step);
 }
 
@@ -137,7 +115,7 @@ export function setTutorialStep(step) {
  * Get the saved theme preference ('light', 'dark', or 'system').
  * @returns {string}
  */
-export function getTheme() {
+function getTheme() {
   return get('theme') || 'light';
 }
 
@@ -145,70 +123,60 @@ export function getTheme() {
  * Save the theme preference.
  * @param {'light'|'dark'|'system'} theme
  */
-export function setTheme(theme) {
+function setTheme(theme) {
   set('theme', theme);
 }
 
 /* --- Recent Sheets --- */
-
-export function getRecentSheets() {
+function getRecentSheets() {
   return get('recent_sheets') || [];
 }
-
-export function setRecentSheets(sheets) {
+function setRecentSheets(sheets) {
   set('recent_sheets', sheets);
 }
 
 /* --- Search History --- */
-
-export function getSearchHistory() {
+function getSearchHistory() {
   return get('search_history') || [];
 }
-
-export function setSearchHistory(history) {
+function setSearchHistory(history) {
   set('search_history', history);
 }
 
 /* --- Expanded Folders --- */
-
-export function getExpandedFolders() {
+function getExpandedFolders() {
   return get('expanded_folders') || [];
 }
-
-export function setExpandedFolders(folders) {
+function setExpandedFolders(folders) {
   set('expanded_folders', folders);
 }
 
 /* --- Generated Categories --- */
-
-export function getGeneratedCategories() {
+function getGeneratedCategories() {
   return get('generated_categories') || [];
 }
-
-export function setGeneratedCategories(categories) {
+function setGeneratedCategories(categories) {
   set('generated_categories', categories);
 }
 
 /* --- Import History --- */
-
-export function getImportHistory() {
+function getImportHistory() {
   return get('import_history') || [];
 }
-
-export function setImportHistory(history) {
+function setImportHistory(history) {
   set('import_history', history);
 }
 
 /* --- Calorie & Fitness Tracker profile (per sheet) --- */
 
 /** Read the stored profile/goal for a calorie tracker sheet, or null. */
-export function getCalorieProfile(sheetId) {
+function getCalorieProfile(sheetId) {
   if (!sheetId) return null;
   return get(`calorie_profile_${sheetId}`);
 }
 
 /** Persist the profile/goal for a calorie tracker sheet. */
-export function setCalorieProfile(sheetId, profile) {
+function setCalorieProfile(sheetId, profile) {
   if (!sheetId) return;
   set(`calorie_profile_${sheetId}`, profile);
 }
@@ -216,54 +184,46 @@ export function setCalorieProfile(sheetId, profile) {
 /* --- Generic per-template preferences (namespaced) --- */
 
 /** Read a namespaced template preference value, or null. */
-export function getTemplatePref(key) {
+function getTemplatePref(key) {
   if (!key) return null;
   return get(`tpl_${key}`);
 }
 
 /** Persist a namespaced template preference value. */
-export function setTemplatePref(key, value) {
+function setTemplatePref(key, value) {
   if (!key) return;
   set(`tpl_${key}`, value);
 }
 
 /* --- Dismissed Items --- */
-
-export function getDismissedItems() {
+function getDismissedItems() {
   return get('dismissed_items') || [];
 }
-
-export function setDismissedItems(items) {
+function setDismissedItems(items) {
   set('dismissed_items', items);
 }
 
 /* --- Hidden Items --- */
-
-export function getHiddenItems() {
+function getHiddenItems() {
   return get('hidden_items') || [];
 }
-
-export function setHiddenItems(items) {
+function setHiddenItems(items) {
   set('hidden_items', items);
 }
 
 /* --- Dashboards --- */
-
-export function getDashboards() {
+function getDashboards() {
   return get('dashboards') || [];
 }
-
-export function setDashboards(dashboards) {
+function setDashboards(dashboards) {
   set('dashboards', dashboards);
 }
 
 /* --- Sort Order --- */
-
-export function getSortOrder() {
+function getSortOrder() {
   return get('sort_order') || 'name';
 }
-
-export function setSortOrder(order) {
+function setSortOrder(order) {
   set('sort_order', order);
 }
 
@@ -274,7 +234,7 @@ export function setSortOrder(order) {
  * Migrates to key ring format on first access if needed.
  * @returns {string}
  */
-export function getAgentApiKey() {
+function getAgentApiKey() {
   const keys = getAgentKeys();
   return keys.length > 0 ? keys[0].key : '';
 }
@@ -284,7 +244,7 @@ export function getAgentApiKey() {
  * Migrates the value into the key ring array.
  * @param {string} key
  */
-export function setAgentApiKey(key) {
+function setAgentApiKey(key) {
   if (key) {
     const keys = getAgentKeys();
     if (keys.length === 0) {
@@ -303,7 +263,7 @@ export function setAgentApiKey(key) {
  * Handles migration from legacy single-key format.
  * @returns {Array<{key: string, nickname: string, addedAt: string, requestsToday: number, lastUsed: string|null, lastError: string|null, isBilled: boolean}>}
  */
-export function getAgentKeys() {
+function getAgentKeys() {
   const keys = get('agent_keys');
   if (Array.isArray(keys)) return keys;
   // Migrate legacy single key
@@ -321,7 +281,7 @@ export function getAgentKeys() {
  * Save the full key ring array.
  * @param {Array} keys
  */
-export function setAgentKeys(keys) {
+function setAgentKeys(keys) {
   if (Array.isArray(keys) && keys.length > 0) set('agent_keys', keys);
   else { remove('agent_keys'); remove('agent_api_key'); }
 }
@@ -330,7 +290,7 @@ export function setAgentKeys(keys) {
  * Record a successful request for a key (by index).
  * @param {number} idx
  */
-export function recordKeyUsage(idx) {
+function recordKeyUsage(idx) {
   const keys = getAgentKeys();
   if (keys[idx]) {
     keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
@@ -344,7 +304,7 @@ export function recordKeyUsage(idx) {
  * Record a rate-limit error for a key (by index).
  * @param {number} idx
  */
-export function recordKeyError(idx) {
+function recordKeyError(idx) {
   const keys = getAgentKeys();
   if (keys[idx]) {
     keys[idx].lastError = new Date().toISOString();
@@ -355,53 +315,44 @@ export function recordKeyError(idx) {
 /**
  * Reset daily request counters (call daily or on new day detection).
  */
-export function resetDailyKeyCounters() {
+function resetDailyKeyCounters() {
   const keys = getAgentKeys();
   keys.forEach(k => { k.requestsToday = 0; });
   setAgentKeys(keys);
 }
-
-export function getAgentModel() {
+function getAgentModel() {
   return get('agent_model') || '';
 }
-
-export function setAgentModel(model) {
+function setAgentModel(model) {
   if (model) set('agent_model', model);
   else remove('agent_model');
 }
 
 /* ---------- Provider selection ---------- */
-
-export function getAgentProvider() {
+function getAgentProvider() {
   return get('agent_provider') || 'gemini';
 }
-
-export function setAgentProvider(provider) {
+function setAgentProvider(provider) {
   if (provider) set('agent_provider', provider);
   else remove('agent_provider');
 }
 
 /* ---------- Claude key ring ---------- */
-
-export function getClaudeKeys() {
+function getClaudeKeys() {
   return get('agent_claude_keys') || [];
 }
-
-export function setClaudeKeys(keys) {
+function setClaudeKeys(keys) {
   if (Array.isArray(keys) && keys.length > 0) set('agent_claude_keys', keys);
   else remove('agent_claude_keys');
 }
-
-export function getClaudeModel() {
+function getClaudeModel() {
   return get('agent_claude_model') || '';
 }
-
-export function setClaudeModel(model) {
+function setClaudeModel(model) {
   if (model) set('agent_claude_model', model);
   else remove('agent_claude_model');
 }
-
-export function recordClaudeKeyUsage(idx) {
+function recordClaudeKeyUsage(idx) {
   const keys = getClaudeKeys();
   if (keys[idx]) {
     keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
@@ -410,8 +361,7 @@ export function recordClaudeKeyUsage(idx) {
     setClaudeKeys(keys);
   }
 }
-
-export function recordClaudeKeyError(idx) {
+function recordClaudeKeyError(idx) {
   const keys = getClaudeKeys();
   if (keys[idx]) {
     keys[idx].lastError = new Date().toISOString();
@@ -420,55 +370,44 @@ export function recordClaudeKeyError(idx) {
 }
 
 /* ---------- Ollama settings ---------- */
-
-export function getOllamaModel() {
+function getOllamaModel() {
   return get('agent_ollama_model') || '';
 }
-
-export function setOllamaModel(model) {
+function setOllamaModel(model) {
   if (model) set('agent_ollama_model', model);
   else remove('agent_ollama_model');
 }
-
-export function getOllamaBaseUrl() {
+function getOllamaBaseUrl() {
   return get('agent_ollama_base_url') || '';
 }
-
-export function setOllamaBaseUrl(url) {
+function setOllamaBaseUrl(url) {
   if (url) set('agent_ollama_base_url', url);
   else remove('agent_ollama_base_url');
 }
 
 /* ---------- OpenAI key ring ---------- */
-
-export function getOpenAIKeys() {
+function getOpenAIKeys() {
   return get('agent_openai_keys') || [];
 }
-
-export function setOpenAIKeys(keys) {
+function setOpenAIKeys(keys) {
   if (Array.isArray(keys) && keys.length > 0) set('agent_openai_keys', keys);
   else remove('agent_openai_keys');
 }
-
-export function getOpenAIModel() {
+function getOpenAIModel() {
   return get('agent_openai_model') || '';
 }
-
-export function setOpenAIModel(model) {
+function setOpenAIModel(model) {
   if (model) set('agent_openai_model', model);
   else remove('agent_openai_model');
 }
-
-export function getOpenAIImageModel() {
+function getOpenAIImageModel() {
   return get('agent_openai_image_model') || '';
 }
-
-export function setOpenAIImageModel(model) {
+function setOpenAIImageModel(model) {
   if (model) set('agent_openai_image_model', model);
   else remove('agent_openai_image_model');
 }
-
-export function recordOpenAIKeyUsage(idx) {
+function recordOpenAIKeyUsage(idx) {
   const keys = getOpenAIKeys();
   if (keys[idx]) {
     keys[idx].requestsToday = (keys[idx].requestsToday || 0) + 1;
@@ -477,8 +416,7 @@ export function recordOpenAIKeyUsage(idx) {
     setOpenAIKeys(keys);
   }
 }
-
-export function recordOpenAIKeyError(idx) {
+function recordOpenAIKeyError(idx) {
   const keys = getOpenAIKeys();
   if (keys[idx]) {
     keys[idx].lastError = new Date().toISOString();
@@ -494,11 +432,10 @@ export function recordOpenAIKeyError(idx) {
  * Tier 0 (cheapest) and 'paid' as Tier 1.
  * @returns {'free'|'paid'}
  */
-export function getGeminiTier() {
+function getGeminiTier() {
   return get('agent_gemini_tier') || 'free';
 }
-
-export function setGeminiTier(tier) {
+function setGeminiTier(tier) {
   set('agent_gemini_tier', tier === 'paid' ? 'paid' : 'free');
 }
 
@@ -510,21 +447,18 @@ export function setGeminiTier(tier) {
  * enabled, so existing single-provider setups keep working unchanged.
  * @returns {string[]|null}  explicit enabled list, or null for "auto"
  */
-export function getEnabledProviders() {
+function getEnabledProviders() {
   const v = get('agent_enabled_providers');
   return Array.isArray(v) ? v : null;
 }
-
-export function setEnabledProviders(providers) {
+function setEnabledProviders(providers) {
   if (Array.isArray(providers)) set('agent_enabled_providers', providers);
   else remove('agent_enabled_providers');
 }
-
-export function getAgentConversation() {
+function getAgentConversation() {
   return get('agent_conversation') || [];
 }
-
-export function setAgentConversation(messages) {
+function setAgentConversation(messages) {
   set('agent_conversation', messages || []);
 }
 
@@ -532,7 +466,7 @@ export function setAgentConversation(messages) {
  * Get the last-used key index for round-robin rotation.
  * @returns {number}
  */
-export function getAgentKeyIndex() {
+function getAgentKeyIndex() {
   return get('agent_key_index') || 0;
 }
 
@@ -540,48 +474,40 @@ export function getAgentKeyIndex() {
  * Set the current key index.
  * @param {number} idx
  */
-export function setAgentKeyIndex(idx) {
+function setAgentKeyIndex(idx) {
   set('agent_key_index', idx);
 }
 
 /* --- Agent Context Files --- */
-
-export function getAgentContextFiles() {
+function getAgentContextFiles() {
   return get('agent_context_files') || [];
 }
-
-export function setAgentContextFiles(files) {
+function setAgentContextFiles(files) {
   if (Array.isArray(files) && files.length > 0) set('agent_context_files', files);
   else remove('agent_context_files');
 }
 
 /* --- Import Folder --- */
-
-export function getImportFolderId() {
+function getImportFolderId() {
   return get('import_folder_id') || null;
 }
-
-export function setImportFolderId(folderId) {
+function setImportFolderId(folderId) {
   if (folderId) set('import_folder_id', folderId);
   else remove('import_folder_id');
 }
-
-export function getImportFolderName() {
+function getImportFolderName() {
   return get('import_folder_name') || null;
 }
-
-export function setImportFolderName(folderName) {
+function setImportFolderName(folderName) {
   if (folderName) set('import_folder_name', folderName);
   else remove('import_folder_name');
 }
 
 /* --- GitHub Ref --- */
-
-export function getGithubRef() {
+function getGithubRef() {
   return get('github_ref') || 'main';
 }
-
-export function setGithubRef(ref) {
+function setGithubRef(ref) {
   set('github_ref', ref || 'main');
 }
 
@@ -592,7 +518,7 @@ export function setGithubRef(ref) {
  * @param {string} folderId
  * @returns {Object|null}  { [sheetId]: { name, headers, firstRow, templateKey, icon, modified } }
  */
-export function getFolderIndex(folderId) {
+function getFolderIndex(folderId) {
   return get('folder_idx_' + folderId);
 }
 
@@ -601,54 +527,45 @@ export function getFolderIndex(folderId) {
  * @param {string} folderId
  * @param {Object} index
  */
-export function setFolderIndex(folderId, index) {
+function setFolderIndex(folderId, index) {
   set('folder_idx_' + folderId, index);
 }
 
 /* --- Clear All --- */
-
-export function clearAll() {
+function clearAll() {
   Object.keys(localStorage)
     .filter(k => k.startsWith(PREFIX))
     .forEach(k => localStorage.removeItem(k));
 }
 
 /* --- Notifications --- */
-
-export function getNotifications() {
+function getNotifications() {
   return get('notifications') || [];
 }
-
-export function setNotifications(items) {
+function setNotifications(items) {
   set('notifications', items || []);
 }
-
-export function getNotificationSettings() {
+function getNotificationSettings() {
   return get('notification_settings') || {};
 }
-
-export function setNotificationSettings(settings) {
+function setNotificationSettings(settings) {
   set('notification_settings', settings || {});
 }
-
-export function getNotifSheetId() {
+function getNotifSheetId() {
   return localStorage.getItem('waymark_notif_sheet_id') || null;
 }
-
-export function setNotifSheetId(id) {
+function setNotifSheetId(id) {
   if (id) {
     localStorage.setItem('waymark_notif_sheet_id', id);
   } else {
     localStorage.removeItem('waymark_notif_sheet_id');
   }
 }
-
-export function getNotificationRules(sheetId) {
+function getNotificationRules(sheetId) {
   const all = get('notification_rules') || {};
   return all[sheetId] || [];
 }
-
-export function setNotificationRules(sheetId, rules) {
+function setNotificationRules(sheetId, rules) {
   const all = get('notification_rules') || {};
   if (rules && rules.length > 0) {
     all[sheetId] = rules;
@@ -657,36 +574,29 @@ export function setNotificationRules(sheetId, rules) {
   }
   set('notification_rules', all);
 }
-
-export function getAllNotificationRules() {
+function getAllNotificationRules() {
   return get('notification_rules') || {};
 }
 
 /* --- Bilateral sharing cursors (last-seen row counts per shared sheet) --- */
-
-export function getBilateralCursors() {
+function getBilateralCursors() {
   return get('bilateral_cursors') || {};
 }
-
-export function getBilateralCursor(sheetId) {
+function getBilateralCursor(sheetId) {
   return getBilateralCursors()[sheetId] || 0;
 }
-
-export function setBilateralCursor(sheetId, count) {
+function setBilateralCursor(sheetId, count) {
   const all = getBilateralCursors();
   all[sheetId] = count;
   set('bilateral_cursors', all);
 }
-
-export function getChatCursors() {
+function getChatCursors() {
   return get('chat_cursors') || {};
 }
-
-export function getChatCursor(sheetId) {
+function getChatCursor(sheetId) {
   return getChatCursors()[sheetId] || 0;
 }
-
-export function setChatCursor(sheetId, count) {
+function setChatCursor(sheetId, count) {
   const all = getChatCursors();
   all[sheetId] = count;
   set('chat_cursors', all);
@@ -695,76 +605,62 @@ export function setChatCursor(sheetId, count) {
 /* --- Cleared notifications (so "Clear all" survives Push Notification Sheet re-sync) --- */
 
 const MAX_CLEARED_NOTIF_KEYS = 500;
-
-export function getClearedNotifKeys() {
+function getClearedNotifKeys() {
   return get('cleared_notif_keys') || [];
 }
-
-export function addClearedNotifKeys(keys) {
+function addClearedNotifKeys(keys) {
   const merged = [...new Set([...getClearedNotifKeys(), ...(keys || []).filter(Boolean)])];
   set('cleared_notif_keys', merged.slice(-MAX_CLEARED_NOTIF_KEYS));
 }
 
 /* --- Accepted & Rejected Shared Waymarks --- */
-
-export function getAcceptedShares() {
+function getAcceptedShares() {
   return get('accepted_shares') || [];
 }
-
-export function setAcceptedShares(ids) {
+function setAcceptedShares(ids) {
   set('accepted_shares', Array.isArray(ids) ? ids : []);
 }
-
-export function addAcceptedShare(docId) {
+function addAcceptedShare(docId) {
   if (!docId) return;
   const current = new Set(getAcceptedShares());
   current.add(docId);
   setAcceptedShares([...current]);
   removeRejectedShare(docId);
 }
-
-export function isShareAccepted(docId) {
+function isShareAccepted(docId) {
   return Boolean(docId && getAcceptedShares().includes(docId));
 }
-
-export function getRejectedShares() {
+function getRejectedShares() {
   return get('rejected_shares') || [];
 }
-
-export function setRejectedShares(ids) {
+function setRejectedShares(ids) {
   set('rejected_shares', Array.isArray(ids) ? ids : []);
 }
-
-export function addRejectedShare(docId) {
+function addRejectedShare(docId) {
   if (!docId) return;
   const current = new Set(getRejectedShares());
   current.add(docId);
   setRejectedShares([...current]);
   setAcceptedShares(getAcceptedShares().filter(id => id !== docId));
 }
-
-export function removeRejectedShare(docId) {
+function removeRejectedShare(docId) {
   if (!docId) return;
   setRejectedShares(getRejectedShares().filter(id => id !== docId));
 }
-
-export function isShareRejected(docId) {
+function isShareRejected(docId) {
   return Boolean(docId && getRejectedShares().includes(docId));
 }
 
 /* --- Shared Document ↔ Share Ledger Registry --- */
-
-export function getAllSharedDocLedgers() {
+function getAllSharedDocLedgers() {
   return get('shared_doc_ledgers') || {};
 }
-
-export function getSharedDocLedgers(docId) {
+function getSharedDocLedgers(docId) {
   if (!docId) return [];
   const all = getAllSharedDocLedgers();
   return Array.isArray(all[docId]) ? all[docId] : [];
 }
-
-export function recordSharedDocLedger(docId, entry = {}) {
+function recordSharedDocLedger(docId, entry = {}) {
   if (!docId || !entry.ledgerSheetId) return;
   const all = getAllSharedDocLedgers();
   const list = Array.isArray(all[docId]) ? all[docId] : [];
@@ -784,17 +680,14 @@ export function recordSharedDocLedger(docId, entry = {}) {
 }
 
 /* --- Sheet Content Digests (for collaborative change detection) --- */
-
-export function getSheetDigests() {
+function getSheetDigests() {
   return get('sheet_digests') || {};
 }
-
-export function getSheetDigest(sheetId) {
+function getSheetDigest(sheetId) {
   if (!sheetId) return null;
   return getSheetDigests()[sheetId] || null;
 }
-
-export function setSheetDigest(sheetId, digest) {
+function setSheetDigest(sheetId, digest) {
   if (!sheetId) return;
   const all = getSheetDigests();
   if (digest) {
@@ -814,7 +707,7 @@ export function setSheetDigest(sheetId, digest) {
  * @param {string} sheetId
  * @returns {Array<{featureId: string, linkedSheetId: string, linkedSheetName: string}>}
  */
-export function getCrossLinks(sheetId) {
+function getCrossLinks(sheetId) {
   const all = get('cross_links') || {};
   return all[sheetId] || [];
 }
@@ -824,7 +717,7 @@ export function getCrossLinks(sheetId) {
  * @param {string} sheetId
  * @param {Array<{featureId: string, linkedSheetId: string, linkedSheetName: string}>} links
  */
-export function setCrossLinks(sheetId, links) {
+function setCrossLinks(sheetId, links) {
   const all = get('cross_links') || {};
   if (links && links.length > 0) {
     all[sheetId] = links;
@@ -835,105 +728,300 @@ export function setCrossLinks(sheetId, links) {
 }
 
 /* ---------- Chat Preferences ---------- */
-
-export function getChatSaveHistory() {
+function getChatSaveHistory() {
   return get('chat_save_history') ?? true;
 }
-
-export function setChatSaveHistory(enabled) {
+function setChatSaveHistory(enabled) {
   set('chat_save_history', !!enabled);
 }
-
-export function getChatSoundEnabled() {
+function getChatSoundEnabled() {
   return get('chat_sound_enabled') ?? true;
 }
-
-export function setChatSoundEnabled(enabled) {
+function setChatSoundEnabled(enabled) {
   set('chat_sound_enabled', !!enabled);
 }
 
 /* ---------- Audio Processing ---------- */
 
 /** @returns {boolean} Echo cancellation enabled (default true) */
-export function getEchoCancellation() {
+function getEchoCancellation() {
   return get('audio_echo_cancellation') ?? true;
 }
 
 /** @param {boolean} enabled */
-export function setEchoCancellation(enabled) {
+function setEchoCancellation(enabled) {
   set('audio_echo_cancellation', !!enabled);
 }
 
 /** @returns {boolean} Noise suppression enabled (default true) */
-export function getNoiseSuppression() {
+function getNoiseSuppression() {
   return get('audio_noise_suppression') ?? true;
 }
 
 /** @param {boolean} enabled */
-export function setNoiseSuppression(enabled) {
+function setNoiseSuppression(enabled) {
   set('audio_noise_suppression', !!enabled);
 }
 
 /** @returns {boolean} Auto gain control enabled (default true) */
-export function getAutoGainControl() {
+function getAutoGainControl() {
   return get('audio_auto_gain') ?? true;
 }
 
 /** @param {boolean} enabled */
-export function setAutoGainControl(enabled) {
+function setAutoGainControl(enabled) {
   set('audio_auto_gain', !!enabled);
 }
 
 /** @returns {number} Noise gate threshold in dB (default -50) */
-export function getNoiseGateThreshold() {
+function getNoiseGateThreshold() {
   return get('audio_gate_threshold') ?? -50;
 }
 
 /** @param {number} dB */
-export function setNoiseGateThreshold(dB) {
+function setNoiseGateThreshold(dB) {
   set('audio_gate_threshold', Number(dB));
 }
 
 /** @returns {number} High-pass filter cutoff in Hz (default 80) */
-export function getHighPassFreq() {
+function getHighPassFreq() {
   return get('audio_highpass_freq') ?? 80;
 }
 
 /** @param {number} hz */
-export function setHighPassFreq(hz) {
+function setHighPassFreq(hz) {
   set('audio_highpass_freq', Number(hz));
 }
 
 /** @returns {number} Echo suppression strength. 0 = off, 1 = full mute while speaking. Default 0.95 */
-export function getEchoSuppression() {
+function getEchoSuppression() {
   return get('audio_echo_suppression') ?? 0.95;
 }
 
 /** @param {number} level — 0 to 1 */
-export function setEchoSuppression(level) {
+function setEchoSuppression(level) {
   set('audio_echo_suppression', Number(level));
 }
 
 /* --- AI Model Preference --- */
 
 /** @returns {string} Current AI model: 'claude' or 'gemini' (default 'claude') */
-export function getAiModel() {
+function getAiModel() {
   return get('ai_model') ?? 'claude';
 }
 
 /** @param {string} model — 'claude' or 'gemini' */
-export function setAiModel(model) {
+function setAiModel(model) {
   set('ai_model', String(model));
 }
 
 /* --- Generic get/set for model-swap --- */
 
 /** Internal: Generic storage getter */
-export function getStorageValue(key) {
+function getStorageValue(key) {
   return get(key);
 }
 
 /** Internal: Generic storage setter */
-export function setStorageValue(key, value) {
+function setStorageValue(key, value) {
   set(key, value);
 }
+
+
+/* --- Generic Raw Storage Helpers --- */
+
+function getRaw(key) {
+  try { return localStorage.getItem(key); }
+  catch { return null; }
+}
+
+function setRaw(key, value) {
+  try { localStorage.setItem(key, value); }
+  catch { /* noop */ }
+}
+
+function removeRaw(key) {
+  try { localStorage.removeItem(key); }
+  catch { /* noop */ }
+}
+
+function getJson(key, fallback = null) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch { /* noop */ }
+}
+
+function getSheetLocked(sheetId) {
+  return getRaw('waymark-lock-' + sheetId) === '1';
+}
+
+function setSheetLocked(sheetId, locked) {
+  setRaw('waymark-lock-' + sheetId, locked ? '1' : '0');
+}
+
+export {
+  getPinnedFolders,
+  setPinnedFolders,
+  addPinnedFolder,
+  removePinnedFolder,
+  isPinned,
+  getPinnedSheets,
+  setPinnedSheets,
+  getHomeTemplateMode,
+  setHomeTemplateMode,
+  getHomeWidgets,
+  setHomeWidgets,
+  getHomeWidgetsVersion,
+  setHomeWidgetsVersion,
+  getAutoRefresh,
+  setAutoRefresh,
+  getLastView,
+  setLastView,
+  getSidebarOpen,
+  setSidebarOpen,
+  getTutorialCompleted,
+  setTutorialCompleted,
+  getTutorialStep,
+  setTutorialStep,
+  getTheme,
+  setTheme,
+  getRecentSheets,
+  setRecentSheets,
+  getSearchHistory,
+  setSearchHistory,
+  getExpandedFolders,
+  setExpandedFolders,
+  getGeneratedCategories,
+  setGeneratedCategories,
+  getImportHistory,
+  setImportHistory,
+  getCalorieProfile,
+  setCalorieProfile,
+  getTemplatePref,
+  setTemplatePref,
+  getDismissedItems,
+  setDismissedItems,
+  getHiddenItems,
+  setHiddenItems,
+  getDashboards,
+  setDashboards,
+  getSortOrder,
+  setSortOrder,
+  getAgentApiKey,
+  setAgentApiKey,
+  getAgentKeys,
+  setAgentKeys,
+  recordKeyUsage,
+  recordKeyError,
+  resetDailyKeyCounters,
+  getAgentModel,
+  setAgentModel,
+  getAgentProvider,
+  setAgentProvider,
+  getClaudeKeys,
+  setClaudeKeys,
+  getClaudeModel,
+  setClaudeModel,
+  recordClaudeKeyUsage,
+  recordClaudeKeyError,
+  getOllamaModel,
+  setOllamaModel,
+  getOllamaBaseUrl,
+  setOllamaBaseUrl,
+  getOpenAIKeys,
+  setOpenAIKeys,
+  getOpenAIModel,
+  setOpenAIModel,
+  getOpenAIImageModel,
+  setOpenAIImageModel,
+  recordOpenAIKeyUsage,
+  recordOpenAIKeyError,
+  getGeminiTier,
+  setGeminiTier,
+  getEnabledProviders,
+  setEnabledProviders,
+  getAgentConversation,
+  setAgentConversation,
+  getAgentKeyIndex,
+  setAgentKeyIndex,
+  getAgentContextFiles,
+  setAgentContextFiles,
+  getImportFolderId,
+  setImportFolderId,
+  getImportFolderName,
+  setImportFolderName,
+  getGithubRef,
+  setGithubRef,
+  getFolderIndex,
+  setFolderIndex,
+  clearAll,
+  getNotifications,
+  setNotifications,
+  getNotificationSettings,
+  setNotificationSettings,
+  getNotifSheetId,
+  setNotifSheetId,
+  getNotificationRules,
+  setNotificationRules,
+  getAllNotificationRules,
+  getBilateralCursors,
+  getBilateralCursor,
+  setBilateralCursor,
+  getChatCursors,
+  getChatCursor,
+  setChatCursor,
+  getClearedNotifKeys,
+  addClearedNotifKeys,
+  getAcceptedShares,
+  setAcceptedShares,
+  addAcceptedShare,
+  isShareAccepted,
+  getRejectedShares,
+  setRejectedShares,
+  addRejectedShare,
+  removeRejectedShare,
+  isShareRejected,
+  getAllSharedDocLedgers,
+  getSharedDocLedgers,
+  recordSharedDocLedger,
+  getSheetDigests,
+  getSheetDigest,
+  setSheetDigest,
+  getCrossLinks,
+  setCrossLinks,
+  getChatSaveHistory,
+  setChatSaveHistory,
+  getChatSoundEnabled,
+  setChatSoundEnabled,
+  getEchoCancellation,
+  setEchoCancellation,
+  getNoiseSuppression,
+  setNoiseSuppression,
+  getAutoGainControl,
+  setAutoGainControl,
+  getNoiseGateThreshold,
+  setNoiseGateThreshold,
+  getHighPassFreq,
+  setHighPassFreq,
+  getEchoSuppression,
+  setEchoSuppression,
+  getAiModel,
+  setAiModel,
+  getStorageValue,
+  setStorageValue,
+  getRaw,
+  setRaw,
+  removeRaw,
+  getJson,
+  setJson,
+  getSheetLocked,
+  setSheetLocked,
+};

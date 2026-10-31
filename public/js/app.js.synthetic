@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "app-initialization",
+      "user_intent": "Initialize application session and route views",
+      "trigger": "window.load",
+      "steps": [
+        "validate:session_state",
+        "external:load_user_preferences",
+        "emit:render_initial_view"
+      ],
+      "outcome": "Application ready with active route displayed"
+    }
+  ]
+}

@@ -92,7 +92,7 @@ if $WITH_ORCHESTRATOR; then
     fi
     ORCH_LOG="$LOG_DIR/orchestrator.log"
     echo "Starting orchestrator, logging to $ORCH_LOG"
-    node test_orchestrator.mjs --mode=e2e --count=3 --timeout=180 >"$ORCH_LOG" 2>&1 &
+    node test-orchestrator.mjs --mode=e2e --count=3 --timeout=180 >"$ORCH_LOG" 2>&1 &
     ORCH_PID=$!
     echo -e "${GREEN}✓${NC} Test orchestrator started (PID=$ORCH_PID)"
     # tail orchestrator logs so user sees live progress

@@ -16,14 +16,13 @@
    ============================================================ */
 
 /* ---------- Tab titles ---------- */
-
-export const META_TAB = 'Details';
-export const LINKS_TAB = 'Links';
-export const LAYOUT_TAB = 'Layout';
-export const THANK_YOU_TAB = 'Thank You Notes';
+const META_TAB = 'Details';
+const LINKS_TAB = 'Links';
+const LAYOUT_TAB = 'Layout';
+const THANK_YOU_TAB = 'Thank You Notes';
 
 /** Ordered meta fields shown in the hero header. */
-export const META_FIELDS = [
+const META_FIELDS = [
   { key: 'party', label: 'Party' },
   { key: 'guestOfHonor', label: 'Guest of Honor' },
   { key: 'date', label: 'Date' },
@@ -31,8 +30,7 @@ export const META_FIELDS = [
   { key: 'venue', label: 'Venue' },
   { key: 'host', label: 'Host' },
 ];
-
-export const META_HEADER = META_FIELDS.map(f => f.label);
+const META_HEADER = META_FIELDS.map(f => f.label);
 
 /* ---------- Field types ----------
    text   — free text input
@@ -44,8 +42,8 @@ export const META_HEADER = META_FIELDS.map(f => f.label);
 ------------------------------------- */
 
 /** Link type → emoji icon (for external tool chips). */
-export const LINK_TYPES = ['Registry', 'Pinterest', 'Playlist', 'Invite', 'Venue', 'Other'];
-export const LINK_ICONS = {
+const LINK_TYPES = ['Registry', 'Pinterest', 'Playlist', 'Invite', 'Venue', 'Other'];
+const LINK_ICONS = {
   registry: '🎁',
   pinterest: '📌',
   playlist: '🎵',
@@ -58,7 +56,7 @@ export const LINK_ICONS = {
  * Category definitions. Each maps to a workbook tab and knows how to
  * measure its own completion. `progress(rows)` returns { done, total, pct }.
  */
-export const CATEGORIES = [
+const CATEGORIES = [
   {
     key: 'guests',
     tab: 'Guests',
@@ -191,41 +189,41 @@ export const CATEGORIES = [
 ];
 
 /** Category keys in their default order. */
-export const CATEGORY_KEYS = CATEGORIES.map(c => c.key);
+const CATEGORY_KEYS = CATEGORIES.map(c => c.key);
 
 /** Lookup a category definition by key. */
-export function categoryByKey(key) {
+function categoryByKey(key) {
   return CATEGORIES.find(c => c.key === key) || null;
 }
 
 /* ---------- Number & money helpers ---------- */
 
 /** Percent (0–100, integer) of done/total, guarding div-by-zero. */
-export function pct(done, total) {
+function pct(done, total) {
   if (!total) return 0;
   return Math.round((done / total) * 100);
 }
 
 /** Parse a money-ish string ("$1,200.50") into a number. */
-export function money(raw) {
+function money(raw) {
   if (raw == null) return 0;
   const n = parseFloat(String(raw).replace(/[^0-9.\-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
 
 /** Format a number as a compact currency string. */
-export function fmtMoney(n) {
+function fmtMoney(n) {
   const v = Math.round(n * 100) / 100;
   return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 /** Truthy Yes test for yes/no columns. */
-export function isYes(v) {
+function isYes(v) {
   return /^(yes|y|true|✓|done|paid)$/i.test((v || '').trim());
 }
 
 /** CSS bar class from a percent (low / mid / high / done). */
-export function barClass(p) {
+function barClass(p) {
   if (p >= 100) return 'party-bar-done';
   if (p >= 60) return 'party-bar-high';
   if (p >= 30) return 'party-bar-mid';
@@ -240,7 +238,7 @@ export function barClass(p) {
  * @param {string[][]} values  2D rows (header + one data row)
  * @returns {Object} meta keyed by META_FIELDS.key
  */
-export function metaFromValues(values) {
+function metaFromValues(values) {
   const meta = {};
   for (const f of META_FIELDS) meta[f.key] = '';
   if (!Array.isArray(values) || values.length === 0) return meta;
@@ -254,7 +252,7 @@ export function metaFromValues(values) {
 }
 
 /** Serialize a meta object back into Details-tab rows. */
-export function metaToValues(meta) {
+function metaToValues(meta) {
   return [META_HEADER, META_FIELDS.map(f => meta[f.key] || '')];
 }
 
@@ -265,7 +263,7 @@ export function metaToValues(meta) {
  * @param {string[][]} values
  * @returns {string[][]}
  */
-export function rowsFromTab(cat, values) {
+function rowsFromTab(cat, values) {
   const width = cat.header.length;
   const src = Array.isArray(values) ? values.slice(1) : [];
   return src
@@ -278,14 +276,14 @@ export function rowsFromTab(cat, values) {
 }
 
 /** Build a full tab values array (header + rows) for persistence. */
-export function tabValues(cat, rows) {
+function tabValues(cat, rows) {
   return [cat.header.slice(), ...rows.map(r => r.slice())];
 }
 
 /* ---------- Links ---------- */
 
 /** Parse the Links tab into { label, url, type } objects. */
-export function linksFromTab(values) {
+function linksFromTab(values) {
   const src = Array.isArray(values) ? values.slice(1) : [];
   return src
     .filter(r => Array.isArray(r) && (r[0] || r[1]))
@@ -293,17 +291,17 @@ export function linksFromTab(values) {
 }
 
 /** Serialize link objects back into Links-tab rows. */
-export function linksToValues(links) {
+function linksToValues(links) {
   return [['Label', 'URL', 'Type'], ...links.map(l => [l.label, l.url, l.type || 'Other'])];
 }
 
 /** Emoji icon for a link type. */
-export function linkIcon(type) {
+function linkIcon(type) {
   return LINK_ICONS[(type || 'other').toLowerCase()] || LINK_ICONS.other;
 }
 
 /** Ensure a URL has a protocol so it opens correctly in a new tab. */
-export function normalizeUrl(url) {
+function normalizeUrl(url) {
   const u = (url || '').trim();
   if (!u) return '';
   return /^https?:\/\//i.test(u) ? u : `https://${u}`;
@@ -312,7 +310,7 @@ export function normalizeUrl(url) {
 /* ---------- Layout (order + collapsed) ---------- */
 
 /** Parse the Layout tab (Setting/Value) into { order[], collapsed[] }. */
-export function layoutFromTab(values) {
+function layoutFromTab(values) {
   const out = { order: [], collapsed: [] };
   if (!Array.isArray(values)) return out;
   for (let i = 1; i < values.length; i++) {
@@ -326,7 +324,7 @@ export function layoutFromTab(values) {
 }
 
 /** Serialize order + collapsed set back into Layout-tab rows. */
-export function layoutToValues(order, collapsedSet) {
+function layoutToValues(order, collapsedSet) {
   return [
     ['Setting', 'Value'],
     ['order', order.join(',')],
@@ -340,7 +338,7 @@ export function layoutToValues(order, collapsedSet) {
  * @param {string[]} persisted
  * @returns {string[]}
  */
-export function resolveOrder(persisted) {
+function resolveOrder(persisted) {
   const known = CATEGORY_KEYS.concat('links');
   const seen = new Set();
   const order = [];
@@ -352,3 +350,33 @@ export function resolveOrder(persisted) {
   }
   return order;
 }
+
+export {
+  CATEGORIES,
+  CATEGORY_KEYS,
+  LAYOUT_TAB,
+  LINKS_TAB,
+  LINK_ICONS,
+  LINK_TYPES,
+  META_FIELDS,
+  META_HEADER,
+  META_TAB,
+  THANK_YOU_TAB,
+  barClass,
+  categoryByKey,
+  fmtMoney,
+  isYes,
+  layoutFromTab,
+  layoutToValues,
+  linkIcon,
+  linksFromTab,
+  linksToValues,
+  metaFromValues,
+  metaToValues,
+  money,
+  normalizeUrl,
+  pct,
+  resolveOrder,
+  rowsFromTab,
+  tabValues,
+};

@@ -25,7 +25,7 @@ test('share modal shows a contacts picker when the user has a Contacts Waymark',
 
   const select = page.locator('.share-invite-contact-select');
   await expect(select).toBeVisible({ timeout: 5_000 });
-  // Placeholder option + at least one real contact from the fixture.
+  // Prompt option + at least one real contact from the fixture.
   const optionCount = await select.locator('option').count();
   expect(optionCount).toBeGreaterThan(1);
 });

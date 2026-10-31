@@ -146,7 +146,7 @@ function gridToValues(rawSheet) {
  * @param {string} spreadsheetId
  * @returns {Promise<Object>}  { id, title, sheetTitle, numericSheetId, values, tabs }
  */
-export async function getSpreadsheet(token, spreadsheetId) {
+async function getSpreadsheet(token, spreadsheetId) {
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}?fields=properties.title,sheets.properties(sheetId,title,gridProperties),sheets.data.rowData.values.userEnteredValue`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -187,7 +187,7 @@ export async function getSpreadsheet(token, spreadsheetId) {
  * @param {string} spreadsheetId
  * @returns {Promise<Array>} flat array of protectedRange objects across all sheets
  */
-export async function getProtectedRanges(token, spreadsheetId) {
+async function getProtectedRanges(token, spreadsheetId) {
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}?fields=sheets.protectedRanges`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -219,7 +219,7 @@ export async function getProtectedRanges(token, spreadsheetId) {
  * @param {string} ownerEmail   owner email — added to editors list so they keep full access
  * @returns {Promise<Object>}   batchUpdate response
  */
-export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail, description) {
+async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex, ownerEmail, description) {
   const protectedRange = {
     range: {
       sheetId,
@@ -262,7 +262,7 @@ export async function addProtectedRange(token, spreadsheetId, sheetId, rowIndex,
  * @param {number} protectedRangeId
  * @returns {Promise<Object>}
  */
-export async function deleteProtectedRange(token, spreadsheetId, protectedRangeId) {
+async function deleteProtectedRange(token, spreadsheetId, protectedRangeId) {
   const body = { requests: [{ deleteProtectedRange: { protectedRangeId } }] };
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}:batchUpdate`,
@@ -289,7 +289,7 @@ export async function deleteProtectedRange(token, spreadsheetId, protectedRangeI
  * @param {number} endRowIndex   0-based row index + 1 (exclusive)
  * @returns {Promise<Object>}   batchUpdate response
  */
-export async function deleteRows(token, spreadsheetId, sheetId, startRowIndex, endRowIndex) {
+async function deleteRows(token, spreadsheetId, sheetId, startRowIndex, endRowIndex) {
   const body = {
     requests: [{
       deleteDimension: {
@@ -325,7 +325,7 @@ export async function deleteRows(token, spreadsheetId, sheetId, startRowIndex, e
  * @param {string} spreadsheetId
  * @returns {Promise<Object>}  { id, title, sheetTitle, values }
  */
-export async function getSpreadsheetSummary(token, spreadsheetId) {
+async function getSpreadsheetSummary(token, spreadsheetId) {
   // Fetch metadata + grid data without a range filter so the first-tab title is
   // read dynamically from the response (avoids the 'Sheet1!1:2' hardcode bug).
   // Google returns all rowData for the sheet; we truncate to 2 rows after parsing.
@@ -352,7 +352,7 @@ export async function getSpreadsheetSummary(token, spreadsheetId) {
  * @param {string} spreadsheetId
  * @returns {Promise<Object>}  { id, title, sheetTitle, values }
  */
-export async function getPublicSpreadsheet(apiKey, spreadsheetId) {
+async function getPublicSpreadsheet(apiKey, spreadsheetId) {
   const url = `${BASE}/${encodeURIComponent(spreadsheetId)}?key=${encodeURIComponent(apiKey)}&fields=properties.title,sheets.properties.sheetId,sheets.properties.title,sheets.data.rowData.values.userEnteredValue`;
   const res = await fetchWithRetry(url, {});
   if (!res.ok) throw sheetsError('Public sheet read', res);
@@ -379,7 +379,7 @@ export async function getPublicSpreadsheet(apiKey, spreadsheetId) {
  * @param {string} spreadsheetId
  * @returns {Promise<Object>}  { id, title, sheetTitle, values }
  */
-export async function getPublicSpreadsheetCsv(spreadsheetId) {
+async function getPublicSpreadsheetCsv(spreadsheetId) {
   const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/gviz/tq?tqx=out:csv`;
   const res = await fetchWithRetry(url, {});
   if (!res.ok) throw sheetsError('Public sheet read', res);
@@ -443,7 +443,7 @@ function parseCsv(csv) {
  * @param {string} [parentId] optional parent folder ID
  * @returns {Promise<Object>}
  */
-export async function createSpreadsheet(token, title, rows = [], parentId) {
+async function createSpreadsheet(token, title, rows = [], parentId) {
   const body = {
     properties: { title },
     sheets: [{
@@ -495,7 +495,7 @@ export async function createSpreadsheet(token, title, rows = [], parentId) {
  * @param {string[][]} rows           array of row arrays (each row is string[])
  * @returns {Promise<Object>}
  */
-export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
+async function appendRows(token, spreadsheetId, sheetTitle, rows) {
   const range = `${sheetTitle}!A1`;
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
@@ -521,7 +521,7 @@ export async function appendRows(token, spreadsheetId, sheetTitle, rows) {
  * @param {number} col          0-based column index
  * @param {string} value        new cell value
  */
-export async function updateCell(token, spreadsheetId, sheetTitle, row, col, value) {
+async function updateCell(token, spreadsheetId, sheetTitle, row, col, value) {
   const colLetter = String.fromCharCode(65 + col);  // A-Z
   const range = `${sheetTitle}!${colLetter}${row + 1}`;
   const res = await fetchWithRetry(
@@ -547,7 +547,7 @@ export async function updateCell(token, spreadsheetId, sheetTitle, row, col, val
  * @param {number} row 0-based row index including the header
  * @param {Array<[number,string]>} updates 0-based column/value pairs
  */
-export async function updateCells(token, spreadsheetId, sheetTitle, row, updates) {
+async function updateCells(token, spreadsheetId, sheetTitle, row, updates) {
   const columnName = (index) => {
     let n = index + 1;
     let label = '';
@@ -586,7 +586,7 @@ export async function updateCells(token, spreadsheetId, sheetTitle, row, updates
  * @param {string}     sheetTitle   e.g. 'Sheet1'
  * @param {string[][]} rows         2D array including header row
  */
-export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
+async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
   // Clear existing data
   await fetch(
     `${BASE}/${spreadsheetId}/values/${encodeURIComponent(sheetTitle)}:clear`,
@@ -622,7 +622,7 @@ export async function replaceSheetData(token, spreadsheetId, sheetTitle, rows) {
  * @param {string} tabTitle
  * @returns {Promise<number|null>}  numeric sheetId of the created tab, or null
  */
-export async function addSheetTab(token, spreadsheetId, tabTitle) {
+async function addSheetTab(token, spreadsheetId, tabTitle) {
   const body = { requests: [{ addSheet: { properties: { title: tabTitle } } }] };
   const res = await fetchWithRetry(
     `${BASE}/${spreadsheetId}:batchUpdate`,
@@ -706,7 +706,7 @@ function rawCellData(value) {
  * @param {string}     tabTitle
  * @param {string[][]} rows          2D array including header row
  */
-export async function writeTabData(token, spreadsheetId, tabTitle, rows) {
+async function writeTabData(token, spreadsheetId, tabTitle, rows) {
   let tab = await ensureSheetTab(token, spreadsheetId, tabTitle);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const rowCount = Math.max(tab.gridProperties?.rowCount || 1, rows.length);
@@ -745,3 +745,21 @@ export async function writeTabData(token, spreadsheetId, tabTitle, rows) {
     throw err;
   }
 }
+
+export {
+  addProtectedRange,
+  addSheetTab,
+  appendRows,
+  createSpreadsheet,
+  deleteProtectedRange,
+  deleteRows,
+  getProtectedRanges,
+  getPublicSpreadsheet,
+  getPublicSpreadsheetCsv,
+  getSpreadsheet,
+  getSpreadsheetSummary,
+  replaceSheetData,
+  updateCell,
+  updateCells,
+  writeTabData,
+};

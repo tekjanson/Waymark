@@ -1,3 +1,5 @@
+import { svg } from '../shared.js';
+import * as storage from '../../storage.js';
 /* ============================================================
    flow/helpers.js — Constants & pure helper functions
 
@@ -8,8 +10,7 @@
 import { cell } from '../shared.js';
 
 /* ---------- Constants ---------- */
-
-export const NODE_SHAPES = {
+const NODE_SHAPES = {
   start:      { label: 'Start',       color: '#16a34a', icon: '▶' },
   end:        { label: 'End',         color: '#dc2626', icon: '⏹' },
   process:    { label: 'Process',     color: '#2563eb', icon: '⬜' },
@@ -19,11 +20,10 @@ export const NODE_SHAPES = {
   delay:      { label: 'Delay',       color: '#94a3b8', icon: '⏳' },
   subprocess: { label: 'Sub-process', color: '#4f46e5', icon: '⊞' },
 };
-
-export const DEFAULT_TYPE = 'process';
-export const DRAG_THRESHOLD = 5;
-export const NODE_W = 180;
-export const NODE_H = 56;
+const DEFAULT_TYPE = 'process';
+const DRAG_THRESHOLD = 5;
+const NODE_W = 180;
+const NODE_H = 56;
 
 /* ---------- Position Cache ---------- */
 
@@ -31,7 +31,7 @@ const STORAGE_KEY = 'waymark:flow-positions';
 
 /** Load all saved positions from localStorage */
 function _loadPositions() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+  try { return JSON.parse(storage.getRaw(STORAGE_KEY)) || {}; } catch { return {}; }
 }
 
 /** Cached node positions across renders (key = "groupName:stepKey") */
@@ -44,7 +44,7 @@ function _scheduleSave() {
   _saveTimer = setTimeout(() => {
     const obj = {};
     for (const [k, v] of _nodePositions) obj[k] = v;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch { /* quota */ }
+    try { storage.setRaw(STORAGE_KEY, JSON.stringify(obj)); } catch { /* quota */ }
   }, 300);
 }
 
@@ -53,7 +53,7 @@ function _scheduleSave() {
  * @param {string} key
  * @returns {{ x: number, y: number } | undefined}
  */
-export function getNodePos(key) {
+function getNodePos(key) {
   return _nodePositions.get(key);
 }
 
@@ -62,7 +62,7 @@ export function getNodePos(key) {
  * @param {string} key
  * @param {{ x: number, y: number }} pos
  */
-export function setNodePos(key, pos) {
+function setNodePos(key, pos) {
   _nodePositions.set(key, pos);
   _scheduleSave();
 }
@@ -71,7 +71,7 @@ export function setNodePos(key, pos) {
  * Clear all cached positions for a given group (for re-align).
  * @param {string} groupKey
  */
-export function clearGroupPositions(groupKey) {
+function clearGroupPositions(groupKey) {
   const prefix = groupKey + ':';
   for (const k of [..._nodePositions.keys()]) {
     if (k.startsWith(prefix)) _nodePositions.delete(k);
@@ -86,7 +86,7 @@ export function clearGroupPositions(groupKey) {
  * @param {string} raw
  * @returns {string}
  */
-export function normaliseType(raw) {
+function normaliseType(raw) {
   const v = (raw || '').toLowerCase().trim();
   if (NODE_SHAPES[v]) return v;
   if (/^(begin|trigger|entry)/.test(v)) return 'start';
@@ -105,7 +105,7 @@ export function normaliseType(raw) {
  * @param {Array} steps
  * @returns {Map<string, Object>}
  */
-export function buildStepLookup(steps) {
+function buildStepLookup(steps) {
   const map = new Map();
   for (const s of steps) {
     if (s.step) map.set(s.step.toLowerCase().trim(), s);
@@ -119,7 +119,7 @@ export function buildStepLookup(steps) {
  * @param {Object} cols
  * @returns {Array<{name: string, steps: Array}>}
  */
-export function parseFlowGroups(rows, cols) {
+function parseFlowGroups(rows, cols) {
   const groups = [];
   let current = null;
 
@@ -156,19 +156,7 @@ export function parseFlowGroups(rows, cols) {
 
 /* ---------- SVG Primitives ---------- */
 
-/**
- * Create an SVG element with the given tag and attributes.
- * @param {string} tag
- * @param {Object} attrs
- * @returns {SVGElement}
- */
-export function svg(tag, attrs = {}) {
-  const elem = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    elem.setAttribute(k, String(v));
-  }
-  return elem;
-}
+// svg imported from ../shared.js
 
 /**
  * Convert client (screen) coordinates to SVG user-space coordinates.
@@ -177,7 +165,7 @@ export function svg(tag, attrs = {}) {
  * @param {number} clientY
  * @returns {{ x: number, y: number }}
  */
-export function clientToSVG(svgEl, clientX, clientY) {
+function clientToSVG(svgEl, clientX, clientY) {
   const pt = svgEl.createSVGPoint();
   pt.x = clientX;
   pt.y = clientY;
@@ -190,7 +178,24 @@ export function clientToSVG(svgEl, clientX, clientY) {
  * @param {Object} node
  * @returns {boolean}
  */
-export function isPointInNode(pt, node) {
+function isPointInNode(pt, node) {
   return pt.x >= node.x && pt.x <= node.x + node.w &&
          pt.y >= node.y - 12 && pt.y <= node.y + node.h + 12;
 }
+
+export {
+  DEFAULT_TYPE,
+  DRAG_THRESHOLD,
+  NODE_H,
+  NODE_SHAPES,
+  NODE_W,
+  buildStepLookup,
+  clearGroupPositions,
+  clientToSVG,
+  getNodePos,
+  isPointInNode,
+  normaliseType,
+  parseFlowGroups,
+  setNodePos,
+  svg,
+};

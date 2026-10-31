@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "synthetic_workflows": {
+    "require_synthetic": true,
+    "detect_duplicate_patterns": true,
+    "verify_alignment": true,
+    "min_similarity": 0.85,
+    "exempt": [
+      "node_modules/**",
+      "**/node_modules/**",
+      "build/**",
+      "tests/**",
+      "scripts/**",
+      "dev-worker/**",
+      "android/**",
+      "mcp/**",
+      "generated/**",
+      "public/js/vendor/**",
+      "public/data/**",
+      "*.config.js",
+      "public/js/templates/**",
+      "public/js/arcade/**",
+      "public/js/agent/**",
+      "p2p-server/public/**",
+      "public/js/ui.js",
+      "public/js/platform.js",
+      "public/js/pin-menu.js",
+      "public/js/template-ai.js",
+      "public/js/template-parser.js",
+      "public/js/handshake-auth.js",
+      "public/js/camera-capture.js",
+      "public/js/encryption.js",
+      "public/js/api-client.js",
+      "public/js/agent.js",
+      "public/js/ai-router.js",
+      "public/js/social-widget.js",
+      "public/js/user-data.js",
+      "public/js/sheets.js",
+      "public/js/tutorial.js",
+      "public/js/model-swap.js",
+      "public/js/model-swap-ui.js",
+      "public/js/mqtt-bridge.js",
+      "public/js/mqtt-client.js",
+      "public/js/recipe-scraper.js",
+      "public/js/records.js",
+      "public/js/search.js",
+      "public/js/web-js-cli.js",
+      "public/js/explorer.js",
+      "public/js/examples.js",
+      "public/js/example-data.js",
+      "public/js/dashboard.js",
+      "public/js/auth.js",
+      "public/js/import.js",
+      "server/config.js",
+      "server/cors.js",
+      "server/mesh.js"
+    ]
+  },
+  "rules": [
+    {
+      "id": "no-cycles",
+      "type": "no-cycles",
+      "enabled": true,
+      "severity": "error",
+      "description": "Modules must not form circular dependencies.",
+      "what": "Detects import cycles across the module dependency graph.",
+      "why": "Cycles couple modules, block refactoring, and hide design flaws.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "canonical-abstractions",
+      "type": "canonical-abstractions",
+      "enabled": true,
+      "severity": "error",
+      "description": "Capabilities must be abstracted into canonical patterns rather than rebuilt.",
+      "what": "Blocks direct usage of restricted libraries, primitives, and symbols outside declared canonical modules.",
+      "why": "Stops agents and developers from rebuilding the wheel instead of abstracting and reusing shared code.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ],
+      "abstractions": [
+        {
+          "id": "canonical-storage",
+          "name": "canonical-storage",
+          "canonical": [
+            "public/js/storage.js"
+          ],
+          "restricted_primitives": [
+            "localStorage"
+          ],
+          "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
+            "tests/**",
+            "server/**",
+            "scripts/**",
+            "public/js/vendor/**"
+          ],
+          "message": "Direct localStorage access is restricted outside public/js/storage.js. Use storage helpers instead."
+        },
+        {
+          "id": "canonical-webrtc",
+          "name": "canonical-webrtc",
+          "canonical": [
+            "public/js/webrtc.js",
+            "public/js/social-session.js",
+            "public/js/camera-capture.js"
+          ],
+          "restricted_primitives": [
+            "RTCPeerConnection",
+            "mediaDevices.getUserMedia",
+            "RTCDataChannel"
+          ],
+          "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
+            "tests/**",
+            "server/**",
+            "p2p-server/**",
+            "mcp/**",
+            "public/js/vendor/**"
+          ],
+          "message": "WebRTC and media capture primitives are restricted outside canonical webrtc/camera modules."
+        },
+        {
+          "id": "canonical-encryption",
+          "name": "canonical-encryption",
+          "canonical": [
+            "public/js/encryption.js"
+          ],
+          "restricted_primitives": [
+            "crypto.subtle"
+          ],
+          "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
+            "tests/**",
+            "server/**",
+            "scripts/**",
+            "public/js/vendor/**"
+          ],
+          "message": "Direct WebCrypto subtle calls are restricted outside public/js/encryption.js."
+        }
+      ]
+    },
+    {
+      "id": "no-duplicate-implementations",
+      "type": "no-duplicate-implementations",
+      "enabled": true,
+      "severity": "error",
+      "min_similarity": 1.0,
+      "min_features": 16,
+      "allow": [
+        "tests/**",
+        "node_modules/**",
+        "public/js/vendor/**",
+        "scripts/**",
+        "dev-worker/**"
+      ],
+      "description": "Similar function implementation shapes should be reviewed for a shared abstraction.",
+      "what": "Finds cross-module functions with highly similar normalized control, operator, and call patterns.",
+      "why": "Renamed copy-paste can evade duplicate symbol-name checks while rebuilding the same capability.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "no-duplicate-symbols",
+      "type": "no-duplicate-symbols",
+      "enabled": true,
+      "severity": "error",
+      "allow_same_domain": true,
+      "allow": [
+        "tests/**",
+        "public/js/vendor/**",
+        "node_modules/**",
+        "generated/**",
+        "scripts/**",
+        "dev-worker/**",
+        "mcp/**",
+        "p2p-server/**",
+        "android/**"
+      ],
+      "ignore": [
+        "init",
+        "render",
+        "update",
+        "cleanup",
+        "reset",
+        "destroy",
+        "start",
+        "stop",
+        "save",
+        "load",
+        "main",
+        "run",
+        "handler"
+      ],
+      "description": "Core functions and classes should be defined once and reused.",
+      "what": "Flags duplicate function and class names defined across multiple modules.",
+      "why": "Duplicate symbols across feature modules signal copy-pasting instead of abstraction.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "orphan-modules",
+      "type": "orphan-modules",
+      "enabled": true,
+      "severity": "error",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "build/**",
+        "**/__init__.py",
+        "**/main.py",
+        "**/cli.py",
+        "tests/**",
+        "**/*test*",
+        "scripts/**",
+        "dev-worker/**",
+        "server/**",
+        "p2p-server/**",
+        "mcp/**",
+        "android/**",
+        "generated/**",
+        "public/js/vendor/**",
+        "public/js/arcade/**",
+        "public/js/app.js",
+        "public/index.html",
+        "*.config.js"
+      ],
+      "description": "Every module should be reachable from the graph.",
+      "what": "Flags modules that nothing imports (excluding entrypoints).",
+      "why": "Orphan modules are usually dead code or a missing wiring.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "require-synthetic",
+      "type": "require-synthetic",
+      "enabled": true,
+      "severity": "error",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "build/**",
+        "tests/**",
+        "scripts/**",
+        "dev-worker/**",
+        "android/**",
+        "mcp/**",
+        "generated/**",
+        "public/js/vendor/**",
+        "public/data/**",
+        "*.config.js",
+        "public/js/templates/**",
+        "public/js/arcade/**",
+        "public/js/agent/**",
+        "p2p-server/public/**",
+        "public/js/ui.js",
+        "public/js/platform.js",
+        "public/js/pin-menu.js",
+        "public/js/template-ai.js",
+        "public/js/template-parser.js",
+        "public/js/handshake-auth.js",
+        "public/js/camera-capture.js",
+        "public/js/encryption.js",
+        "public/js/api-client.js",
+        "public/js/agent.js",
+        "public/js/ai-router.js",
+        "public/js/social-widget.js",
+        "public/js/user-data.js",
+        "public/js/sheets.js",
+        "public/js/tutorial.js",
+        "public/js/model-swap.js",
+        "public/js/model-swap-ui.js",
+        "public/js/mqtt-bridge.js",
+        "public/js/mqtt-client.js",
+        "public/js/recipe-scraper.js",
+        "public/js/records.js",
+        "public/js/search.js",
+        "public/js/web-js-cli.js",
+        "public/js/explorer.js",
+        "public/js/examples.js",
+        "public/js/example-data.js",
+        "public/js/dashboard.js",
+        "public/js/auth.js",
+        "public/js/import.js",
+        "server/config.js",
+        "server/cors.js",
+        "server/mesh.js"
+      ],
+      "description": "Governed source files must have companion .synthetic files defining user workflows.",
+      "what": "Verifies that source files have a sibling .synthetic file declaring user-journey workflows.",
+      "why": "Enforces intentional behavioral documentation and enables user-journey governance.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "verify-synthetic-alignment",
+      "type": "verify-synthetic-alignment",
+      "enabled": true,
+      "severity": "error",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "tests/**",
+        "scripts/**",
+        "dev-worker/**",
+        "android/**",
+        "mcp/**",
+        "generated/**",
+        "public/js/vendor/**",
+        "public/data/**",
+        "*.config.js",
+        "public/js/templates/**",
+        "public/js/arcade/**",
+        "public/js/agent/**",
+        "p2p-server/public/**",
+        "public/js/ui.js",
+        "public/js/platform.js",
+        "public/js/pin-menu.js",
+        "public/js/template-ai.js",
+        "public/js/template-parser.js",
+        "public/js/handshake-auth.js",
+        "public/js/camera-capture.js",
+        "public/js/encryption.js",
+        "public/js/api-client.js",
+        "public/js/agent.js",
+        "public/js/ai-router.js",
+        "public/js/social-widget.js",
+        "public/js/user-data.js",
+        "public/js/sheets.js",
+        "public/js/tutorial.js",
+        "public/js/model-swap.js",
+        "public/js/model-swap-ui.js",
+        "public/js/mqtt-bridge.js",
+        "public/js/mqtt-client.js",
+        "public/js/recipe-scraper.js",
+        "public/js/records.js",
+        "public/js/search.js",
+        "public/js/web-js-cli.js",
+        "public/js/explorer.js",
+        "public/js/examples.js",
+        "public/js/example-data.js",
+        "public/js/dashboard.js",
+        "public/js/auth.js",
+        "public/js/import.js",
+        "server/config.js",
+        "server/cors.js",
+        "server/mesh.js"
+      ],
+      "description": "Declared .synthetic workflow steps must align with code AST and token reality.",
+      "what": "Cross-checks external:* and emit:* steps and validates that declared orchestrators are not empty stubs.",
+      "why": "Prevents synthetic drift where .synthetic companion files become stale or hallucinated.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    }
+  ]
+}

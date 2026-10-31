@@ -3,7 +3,7 @@
 # run-waymark.sh — Local Bare-Metal Waymark Web App Launcher
 #
 # Usage:
-#   ./run-waymark.sh                  # Start Waymark web server on http://localhost:3000
+#   ./run-waymark.sh                  # Start Waymark web server (default PORT=3000)
 #   ./run-waymark.sh --with-wayside   # Start Waymark web server + Wayside AI Orchestrator
 #   PORT=3005 ./run-waymark.sh        # Custom port
 # ============================================================

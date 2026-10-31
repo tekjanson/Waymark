@@ -11,7 +11,7 @@ import { el } from '../shared.js';
 /* ---------- Quantity parsing & scaling helpers ---------- */
 
 /** Common Unicode fraction map */
-export const FRAC_MAP = { '½': 0.5, '⅓': 1/3, '⅔': 2/3, '¼': 0.25, '¾': 0.75,
+const FRAC_MAP = { '½': 0.5, '⅓': 1/3, '⅔': 2/3, '¼': 0.25, '¾': 0.75,
                    '⅕': 0.2, '⅖': 0.4, '⅗': 0.6, '⅘': 0.8,
                    '⅙': 1/6, '⅚': 5/6, '⅛': 0.125, '⅜': 0.375,
                    '⅝': 0.625, '⅞': 0.875 };
@@ -24,7 +24,7 @@ export const FRAC_MAP = { '½': 0.5, '⅓': 1/3, '⅔': 2/3, '¼': 0.25, '¾': 0
  * @param {string} raw — e.g. "400g", "2 tbsp", "1/2 cup", "1 ½ tsp"
  * @returns {{ number: number|null, unit: string, extra: string }}
  */
-export function parseQuantity(raw) {
+function parseQuantity(raw) {
   if (!raw) return { number: null, unit: '', extra: '' };
   let s = raw.trim();
 
@@ -64,7 +64,7 @@ export function parseQuantity(raw) {
  * @param {number} n
  * @returns {string}
  */
-export function formatNumber(n) {
+function formatNumber(n) {
   if (n === 0) return '0';
   const whole = Math.floor(n);
   const frac = n - whole;
@@ -93,7 +93,7 @@ export function formatNumber(n) {
  * @param {number} scale — multiplier (0.5, 1, 2, 3, etc.)
  * @returns {string}
  */
-export function scaleQuantity(raw, scale) {
+function scaleQuantity(raw, scale) {
   if (scale === 1) return raw;
   const { number, unit, extra } = parseQuantity(raw);
   if (number === null) return raw;              // no numeric part — return as-is
@@ -117,7 +117,7 @@ export function scaleQuantity(raw, scale) {
  * @param {number} scale
  * @returns {string}
  */
-export function scaleServings(raw, scale) {
+function scaleServings(raw, scale) {
   if (scale === 1) return raw;
   const n = parseFloat(raw);
   if (isNaN(n)) return raw;
@@ -132,7 +132,7 @@ export function scaleServings(raw, scale) {
  * @param {string} raw
  * @returns {number|null}
  */
-export function parseQtyNumber(raw) {
+function parseQtyNumber(raw) {
   if (!raw) return null;
   const trimmed = raw.trim();
   const unicodeFracs = {
@@ -161,7 +161,7 @@ export function parseQtyNumber(raw) {
  * Canonical unit aliases — map user-facing abbreviations to a normalised key.
  * All keys are lowercase.
  */
-export const UNIT_ALIASES = {
+const UNIT_ALIASES = {
   // Volume — metric
   ml: 'ml', milliliter: 'ml', millilitre: 'ml', milliliters: 'ml', millilitres: 'ml',
   l: 'l', liter: 'l', litre: 'l', liters: 'l', litres: 'l',
@@ -182,14 +182,14 @@ export const UNIT_ALIASES = {
 };
 
 /** Volume units → ml conversion factors */
-export const TO_ML = {
+const TO_ML = {
   ml: 1, l: 1000,
   tsp: 4.929, tbsp: 14.787, cup: 236.588,
   'fl oz': 29.574, pt: 473.176, qt: 946.353, gal: 3785.41,
 };
 
 /** Weight units → g conversion factors */
-export const TO_G = {
+const TO_G = {
   g: 1, kg: 1000,
   oz: 28.3495, lb: 453.592,
 };
@@ -205,7 +205,7 @@ const IMPERIAL_UNITS = new Set(['tsp', 'tbsp', 'cup', 'fl oz', 'pt', 'qt', 'gal'
  * @param {string} raw
  * @returns {string|null}
  */
-export function normaliseUnit(raw) {
+function normaliseUnit(raw) {
   if (!raw) return null;
   const lower = raw.trim().toLowerCase();
   return UNIT_ALIASES[lower] || null;
@@ -257,7 +257,7 @@ function bestImperialUnit(value, type) {
  * @param {'original'|'metric'|'imperial'} system — target system
  * @returns {{ qty: number, unit: string }|null} — null if no conversion possible
  */
-export function convertUnit(qty, unit, system) {
+function convertUnit(qty, unit, system) {
   if (system === 'original') return null; // signal: use original values
   const canon = normaliseUnit(unit);
   if (!canon) return null; // unknown unit — leave as-is
@@ -295,10 +295,10 @@ export function convertUnit(qty, unit, system) {
  * @param {number[]}   colIndices   — column indices for the new values
  * @param {number}     totalColumns — total columns in the sheet header
  * @param {function}   onSubmit     — callback(rows: string[][])
- * @param {string[]}   placeholders — input placeholders per colIndex
+ * @param {string[]}   hints        — input hint labels per colIndex
  * @returns {HTMLElement}
  */
-export function inlineAddButton(label, colIndices, totalColumns, onSubmit, placeholders) {
+function inlineAddButton(label, colIndices, totalColumns, onSubmit, placeholders) {
   const wrap = el('div', { className: 'recipe-inline-add' });
 
   const trigger = el('button', {
@@ -359,3 +359,18 @@ export function inlineAddButton(label, colIndices, totalColumns, onSubmit, place
 
   return wrap;
 }
+
+export {
+  FRAC_MAP,
+  TO_G,
+  TO_ML,
+  UNIT_ALIASES,
+  convertUnit,
+  formatNumber,
+  inlineAddButton,
+  normaliseUnit,
+  parseQtyNumber,
+  parseQuantity,
+  scaleQuantity,
+  scaleServings,
+};

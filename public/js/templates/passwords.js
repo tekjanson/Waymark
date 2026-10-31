@@ -284,18 +284,18 @@ function buildCard(row, rowIdx, cols) {
  */
 export function getDecryptedKeySync(service, sheetData) {
   if (!sheetData || !sheetData.rows || !sheetData.cols) return null;
-  
+
   const { rows, cols } = sheetData;
   const serviceLower = service.toLowerCase();
-  
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const site = (cols.site >= 0 ? cell(row, cols.site) : '').toLowerCase();
-    
+
     // Match service name in the site/service column
     if (site.includes(serviceLower)) {
       const password = cols.password >= 0 ? cell(row, cols.password) : '';
-      
+
       if (password) {
         // If encrypted, it won't be usable here (starts with 🔒ENC:)
         // Return only plaintext passwords
@@ -305,7 +305,7 @@ export function getDecryptedKeySync(service, sheetData) {
       }
     }
   }
-  
+
   return null;
 }
 

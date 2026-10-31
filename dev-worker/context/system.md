@@ -17,7 +17,7 @@ beautiful, interactive views (kanban boards, budgets, checklists, recipe books, 
 - Google Sheets is the database
 - Google Drive is the file system
 
-**Key rule:** Never put logic in the server. See `.github/instructions/AI_laws.instructions.md`
+**Key rule:** Never put logic in the server. See `.github/instructions/ai-laws.instructions.md`
 for the complete non-negotiable rule set (AI_LAWS). Every change must comply.
 
 **Templates:** Each sheet type (kanban, budget, checklist, recipe, etc.) has:
@@ -149,5 +149,5 @@ Each container claims tasks independently. The `--agent $AGENT_NAME` flag on
 ## Source of Truth for Rules
 
 For ALL code changes to the Waymark app:
-**`.github/instructions/AI_laws.instructions.md`** is the law. Non-negotiable.
+**`.github/instructions/ai-laws.instructions.md`** is the law. Non-negotiable.
 Read it before making any change. Violations are rejected without exception.

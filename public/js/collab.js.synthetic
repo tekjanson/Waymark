@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "share-waymark-document",
+      "user_intent": "Share a waymark sheet with a collaborator",
+      "trigger": "ui.click:share_button",
+      "steps": [
+        "validate:counterparty_email",
+        "external:record_share_ledger",
+        "emit:notify_sheet_mutation"
+      ],
+      "outcome": "Collaborator added and notification dispatched"
+    }
+  ]
+}

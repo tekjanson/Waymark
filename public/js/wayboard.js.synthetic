@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "sync-wayboard-canvas",
+      "user_intent": "Sync drawing canvas strokes with collaborators",
+      "trigger": "ui.draw:stroke_complete",
+      "steps": [
+        "validate:stroke_coordinates",
+        "external:broadcast_canvas_diff",
+        "emit:canvas_updated"
+      ],
+      "outcome": "Canvas state synchronized across all room peers"
+    }
+  ]
+}

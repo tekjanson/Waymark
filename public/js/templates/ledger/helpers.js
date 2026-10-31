@@ -1,18 +1,16 @@
+import { parseAmt } from '../shared.js';
 /* ============================================================
    ledger/helpers.js — Pure helpers for the Ledger template
    ============================================================ */
 
 /* ---------- Constants ---------- */
-
-export const ENTRY_TYPES = ['Income', 'Expense', 'Transfer'];
-
-export const TYPE_COLORS = {
+const ENTRY_TYPES = ['Income', 'Expense', 'Transfer'];
+const TYPE_COLORS = {
   income:   '#059669',
   expense:  '#dc2626',
   transfer: '#7c3aed',
 };
-
-export const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /* ---------- Parsing ---------- */
 
@@ -21,9 +19,7 @@ export const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep
  * @param {string} raw
  * @returns {number}
  */
-export function parseAmt(raw) {
-  return parseFloat((raw || '0').replace(/[^-\d.]/g, '')) || 0;
-}
+export { parseAmt };
 
 /**
  * Format a number as a dollar string with 2 decimal places.
@@ -32,7 +28,7 @@ export function parseAmt(raw) {
  * @param {boolean} [opts.sign] — prefix positive values with '+'
  * @returns {string}
  */
-export function fmtDollars(n, opts = {}) {
+function fmtDollars(n, opts = {}) {
   const abs = Math.abs(n);
   const formatted = '$' + abs.toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -47,7 +43,7 @@ export function fmtDollars(n, opts = {}) {
  * @param {string} typeVal
  * @returns {boolean}
  */
-export function isIncome(typeVal) {
+function isIncome(typeVal) {
   return /^(income|revenue|credit|cr\b|deposit|receipt|sale|earning|in\b)/i.test((typeVal || '').trim());
 }
 
@@ -56,7 +52,7 @@ export function isIncome(typeVal) {
  * @param {string} typeVal
  * @returns {boolean}
  */
-export function isExpense(typeVal) {
+function isExpense(typeVal) {
   return /^(expense|cost|debit|dr\b|payment|out\b|purchase|fee|charge|withdrawal|spend)/i.test((typeVal || '').trim());
 }
 
@@ -67,7 +63,7 @@ export function isExpense(typeVal) {
  * @param {number} amt — absolute value
  * @returns {number}
  */
-export function signedAmt(typeVal, amt) {
+function signedAmt(typeVal, amt) {
   if (isExpense(typeVal)) return -Math.abs(amt);
   return Math.abs(amt);
 }
@@ -79,7 +75,7 @@ export function signedAmt(typeVal, amt) {
  * @param {function} cellFn — cell(row, idx) accessor
  * @returns {Map<string, Array<{row, idx}>>}
  */
-export function groupLedgerByCategory(rows, cols, cellFn) {
+function groupLedgerByCategory(rows, cols, cellFn) {
   const groups = new Map();
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -97,7 +93,7 @@ export function groupLedgerByCategory(rows, cols, cellFn) {
  * @param {function} cellFn
  * @returns {{ totalIncome: number, totalExpenses: number, netProfit: number }}
  */
-export function computePnL(rows, cols, cellFn) {
+function computePnL(rows, cols, cellFn) {
   let totalIncome = 0;
   let totalExpenses = 0;
   for (const row of rows) {
@@ -116,7 +112,7 @@ export function computePnL(rows, cols, cellFn) {
  * @param {function} cellFn
  * @returns {{ labels: string[], income: number[], expenses: number[] }}
  */
-export function buildMonthlyTotals(rows, cols, cellFn) {
+function buildMonthlyTotals(rows, cols, cellFn) {
   const map = new Map(); // 'YYYY-MM' → { income, expenses }
   for (const row of rows) {
     const dateStr = cellFn(row, cols.date);
@@ -140,3 +136,16 @@ export function buildMonthlyTotals(rows, cols, cellFn) {
   const expenses = sorted.map(([, v]) => v.expenses);
   return { labels, income, expenses };
 }
+
+export {
+  ENTRY_TYPES,
+  MONTH_NAMES,
+  TYPE_COLORS,
+  buildMonthlyTotals,
+  computePnL,
+  fmtDollars,
+  groupLedgerByCategory,
+  isExpense,
+  isIncome,
+  signedAmt,
+};

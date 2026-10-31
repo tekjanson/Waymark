@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "register-p2p-peer",
+      "user_intent": "Register peer in decentralized rendezvous registry",
+      "trigger": "network.http:peer_register",
+      "steps": [
+        "validate:peer_descriptor",
+        "external:record_peer_lease",
+        "emit:peer_registered"
+      ],
+      "outcome": "Peer visible to other network participants"
+    }
+  ]
+}

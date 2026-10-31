@@ -53,7 +53,7 @@ const SYSTEM = `You are an autonomous software engineer working INSIDE a real re
 You operate a computer through TOOLS — exactly one action per turn — until the
 task is implemented AND its tests pass.
 
-Obey the Waymark repository rules (.github/instructions/AI_laws.instructions.md):
+Obey the Waymark repository rules (.github/instructions/ai-laws.instructions.md):
 vanilla ES modules + raw CSS, no frameworks, no build step, DOM via el() only,
 Google API calls go through api-client.js, templates import only from shared.js,
 tests are flat test() calls using CSS selectors only.

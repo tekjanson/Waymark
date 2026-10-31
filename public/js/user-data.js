@@ -125,7 +125,7 @@ let _initPromise = null;        // singleton init promise to avoid races
  * This is idempotent — calling it multiple times is safe.
  * @returns {Promise<void>}
  */
-export async function init() {
+async function init() {
   if (_initialized) return;
   if (_initPromise) return _initPromise;
 
@@ -299,7 +299,7 @@ async function _writePrivateConfig(sheetId, config) {
  * Get the Waymark root folder ID (initializes if needed).
  * @returns {Promise<string>}
  */
-export async function getRootFolderId() {
+async function getRootFolderId() {
   await init();
   return _rootFolderId;
 }
@@ -309,7 +309,7 @@ export async function getRootFolderId() {
  * @param {string} templateKey
  * @returns {{id:string,name:string}|null}
  */
-export async function getDefaultFolderForTemplate(templateKey) {
+async function getDefaultFolderForTemplate(templateKey) {
   await init();
   const prefs = _userData?.preferences || {};
   return (prefs.defaultCreationFolderByTemplate || {})[templateKey] || null;
@@ -322,7 +322,7 @@ export async function getDefaultFolderForTemplate(templateKey) {
  * @param {string} folderId
  * @param {string} folderName
  */
-export async function setDefaultFolderForTemplate(templateKey, folderId, folderName) {
+async function setDefaultFolderForTemplate(templateKey, folderId, folderName) {
   await init();
   _userData.preferences = _userData.preferences || {};
   _userData.preferences.defaultCreationFolderByTemplate = _userData.preferences.defaultCreationFolderByTemplate || {};
@@ -338,7 +338,7 @@ export async function setDefaultFolderForTemplate(templateKey, folderId, folderN
  * Get (or create) the Examples subfolder inside Waymark/.
  * @returns {Promise<string>}  folder ID
  */
-export async function getExamplesFolderId() {
+async function getExamplesFolderId() {
   await init();
   return ensureFolder(EXAMPLES_FOLDER, _rootFolderId);
 }
@@ -348,7 +348,7 @@ export async function getExamplesFolderId() {
  * If the user has a custom import folder configured, returns that instead.
  * @returns {Promise<string>}  folder ID
  */
-export async function getImportsFolderId() {
+async function getImportsFolderId() {
   await init();
   const custom = getImportFolderId();
   if (custom) return custom;
@@ -378,7 +378,7 @@ async function ensureFolder(name, parentId) {
  * Get the full user data object (read-only snapshot).
  * @returns {Object}
  */
-export function getData() {
+function getData() {
   return _userData ? { ..._userData } : defaultUserData();
 }
 
@@ -418,26 +418,22 @@ async function save(data) {
 /**
  * @returns {{ id: string, name: string, owner?: string, shared?: boolean }[]}
  */
-export function getPinnedFolders() {
+function getPinnedFolders() {
   return (_userData?.pinnedFolders) || [];
 }
-
-export async function setPinnedFolders(folders) {
+async function setPinnedFolders(folders) {
   await save({ pinnedFolders: folders });
 }
-
-export async function addPinnedFolder(folder) {
+async function addPinnedFolder(folder) {
   const pinned = getPinnedFolders();
   if (pinned.find(f => f.id === folder.id)) return;
   pinned.push(folder);
   await save({ pinnedFolders: pinned });
 }
-
-export async function removePinnedFolder(folderId) {
+async function removePinnedFolder(folderId) {
   await save({ pinnedFolders: getPinnedFolders().filter(f => f.id !== folderId) });
 }
-
-export function isPinned(folderId) {
+function isPinned(folderId) {
   return getPinnedFolders().some(f => f.id === folderId);
 }
 
@@ -448,32 +444,27 @@ const MAX_PINNED_SHEETS = 20;
 /**
  * @returns {{ id: string, name: string, templateKey?: string, pinnedAt: string }[]}
  */
-export function getPinnedSheets() {
+function getPinnedSheets() {
   return (_userData?.pinnedSheets) || [];
 }
-
-export async function addPinnedSheet(sheet) {
+async function addPinnedSheet(sheet) {
   const pinned = getPinnedSheets().filter(s => s.id !== sheet.id);
   pinned.unshift({ ...sheet, pinnedAt: new Date().toISOString() });
   if (pinned.length > MAX_PINNED_SHEETS) pinned.length = MAX_PINNED_SHEETS;
   await save({ pinnedSheets: pinned });
 }
-
-export async function removePinnedSheet(sheetId) {
+async function removePinnedSheet(sheetId) {
   await save({ pinnedSheets: getPinnedSheets().filter(s => s.id !== sheetId) });
 }
-
-export function isSheetPinned(sheetId) {
+function isSheetPinned(sheetId) {
   return getPinnedSheets().some(s => s.id === sheetId);
 }
 
 /* ---------- Preferences ---------- */
-
-export function getAutoRefresh() {
+function getAutoRefresh() {
   return _userData?.preferences?.autoRefresh ?? true;
 }
-
-export async function setAutoRefresh(enabled) {
+async function setAutoRefresh(enabled) {
   const prefs = { ...(_userData?.preferences || {}), autoRefresh: !!enabled };
   await save({ preferences: prefs });
 }
@@ -483,52 +474,43 @@ export async function setAutoRefresh(enabled) {
  * mirror (zero-flash) when Drive data hasn't hydrated yet.
  * @returns {number}
  */
-export function getHomeTemplateMode() {
+function getHomeTemplateMode() {
   const v = parseInt(_userData?.preferences?.homeTemplateMode, 10);
   if (v >= 1 && v <= 50) return v;
   try { return storage.getHomeTemplateMode(); } catch { return 1; }
 }
-
-export async function setHomeTemplateMode(mode) {
+async function setHomeTemplateMode(mode) {
   const n = parseInt(mode, 10);
   const value = (n >= 1 && n <= 50) ? n : 1;
   const prefs = { ...(_userData?.preferences || {}), homeTemplateMode: value };
   try { storage.setHomeTemplateMode(value); } catch { /* localStorage mirror is best-effort */ }
   await save({ preferences: prefs });
 }
-
-export function getLastView() {
+function getLastView() {
   return _userData?.lastView || '/';
 }
-
-export async function setLastView(hash) {
+async function setLastView(hash) {
   await save({ lastView: hash });
 }
-
-export function getSidebarOpen() {
+function getSidebarOpen() {
   return _userData?.preferences?.sidebarOpen ?? true;
 }
-
-export async function setSidebarOpen(open) {
+async function setSidebarOpen(open) {
   const prefs = { ...(_userData?.preferences || {}), sidebarOpen: !!open };
   await save({ preferences: prefs });
 }
 
 /* ---------- Tutorial ---------- */
-
-export function getTutorialCompleted() {
+function getTutorialCompleted() {
   return !!_userData?.tutorialCompleted;
 }
-
-export async function setTutorialCompleted(done) {
+async function setTutorialCompleted(done) {
   await save({ tutorialCompleted: !!done });
 }
-
-export function getTutorialStep() {
+function getTutorialStep() {
   return _userData?.tutorialStep ?? 0;
 }
-
-export async function setTutorialStep(step) {
+async function setTutorialStep(step) {
   await save({ tutorialStep: step });
 }
 
@@ -537,7 +519,7 @@ export async function setTutorialStep(step) {
 /**
  * @returns {{ id: string, name: string, templateKey?: string, openedAt: string }[]}
  */
-export function getRecentSheets() {
+function getRecentSheets() {
   return (_userData?.recentSheets) || [];
 }
 
@@ -545,7 +527,7 @@ export function getRecentSheets() {
  * Record that a sheet was opened. Moves duplicates to the top and caps the list.
  * @param {{ id: string, name: string, templateKey?: string }} sheet
  */
-export async function addRecentSheet(sheet) {
+async function addRecentSheet(sheet) {
   const recent = getRecentSheets().filter(s => s.id !== sheet.id);
   recent.unshift({ ...sheet, openedAt: new Date().toISOString() });
   if (recent.length > MAX_RECENT_SHEETS) recent.length = MAX_RECENT_SHEETS;
@@ -557,14 +539,14 @@ export async function addRecentSheet(sheet) {
 /**
  * @returns {{ query: string, resultCount: number, searchedAt: string }[]}
  */
-export function getSearchHistory() {
+function getSearchHistory() {
   return (_userData?.searchHistory) || [];
 }
 
 /**
  * Record a search query. Deduplicates (most recent wins) and caps.
  */
-export async function addSearchEntry(query, resultCount) {
+async function addSearchEntry(query, resultCount) {
   const history = getSearchHistory().filter(e => e.query !== query);
   history.unshift({ query, resultCount, searchedAt: new Date().toISOString() });
   if (history.length > MAX_SEARCH_HISTORY) history.length = MAX_SEARCH_HISTORY;
@@ -576,23 +558,20 @@ export async function addSearchEntry(query, resultCount) {
 /**
  * @returns {string[]}  array of folder IDs
  */
-export function getExpandedFolders() {
+function getExpandedFolders() {
   return (_userData?.expandedFolders) || [];
 }
-
-export async function setExpandedFolders(folderIds) {
+async function setExpandedFolders(folderIds) {
   await save({ expandedFolders: folderIds });
 }
-
-export async function addExpandedFolder(folderId) {
+async function addExpandedFolder(folderId) {
   const expanded = getExpandedFolders();
   if (!expanded.includes(folderId)) {
     expanded.push(folderId);
     await save({ expandedFolders: expanded });
   }
 }
-
-export async function removeExpandedFolder(folderId) {
+async function removeExpandedFolder(folderId) {
   await save({ expandedFolders: getExpandedFolders().filter(id => id !== folderId) });
 }
 
@@ -601,11 +580,10 @@ export async function removeExpandedFolder(folderId) {
 /**
  * @returns {string[]}  category names that have been generated
  */
-export function getGeneratedCategories() {
+function getGeneratedCategories() {
   return (_userData?.generatedCategories) || [];
 }
-
-export async function addGeneratedCategories(categories) {
+async function addGeneratedCategories(categories) {
   const existing = new Set(getGeneratedCategories());
   for (const c of categories) existing.add(c);
   await save({ generatedCategories: [...existing] });
@@ -616,11 +594,10 @@ export async function addGeneratedCategories(categories) {
 /**
  * @returns {{ sheetId: string, sheetName: string, templateKey: string, importedAt: string }[]}
  */
-export function getImportHistory() {
+function getImportHistory() {
   return (_userData?.importHistory) || [];
 }
-
-export async function addImportEntry(entry) {
+async function addImportEntry(entry) {
   const history = getImportHistory();
   history.unshift({ ...entry, importedAt: new Date().toISOString() });
   if (history.length > MAX_IMPORT_HISTORY) history.length = MAX_IMPORT_HISTORY;
@@ -632,15 +609,13 @@ export async function addImportEntry(entry) {
 /**
  * @returns {string[]}  IDs of dismissed banners/tips
  */
-export function getDismissedItems() {
+function getDismissedItems() {
   return (_userData?.dismissedItems) || [];
 }
-
-export function isDismissed(itemId) {
+function isDismissed(itemId) {
   return getDismissedItems().includes(itemId);
 }
-
-export async function dismissItem(itemId) {
+async function dismissItem(itemId) {
   const items = getDismissedItems();
   if (!items.includes(itemId)) {
     items.push(itemId);
@@ -653,21 +628,19 @@ export async function dismissItem(itemId) {
 /**
  * @returns {{ id: string, name: string }[]}  items hidden from the explorer
  */
-export function getHiddenItems() {
+function getHiddenItems() {
   return (_userData?.hiddenItems) || [];
 }
-
-export function isHidden(itemId) {
+function isHidden(itemId) {
   return getHiddenItems().some(i => i.id === itemId);
 }
-
-export const isItemHidden = isHidden;
+const isItemHidden = isHidden;
 
 /**
  * Hide a Drive item from the explorer.
  * @param {{ id: string, name: string }} item
  */
-export async function addHiddenItem(item) {
+async function addHiddenItem(item) {
   const items = getHiddenItems();
   if (!items.some(i => i.id === item.id)) {
     items.push({ id: item.id, name: item.name });
@@ -679,17 +652,15 @@ export async function addHiddenItem(item) {
  * Un-hide a Drive item.
  * @param {string} itemId
  */
-export async function removeHiddenItem(itemId) {
+async function removeHiddenItem(itemId) {
   await save({ hiddenItems: getHiddenItems().filter(i => i.id !== itemId) });
 }
 
 /* ---------- Sort Order ---------- */
-
-export function getSortOrder() {
+function getSortOrder() {
   return _userData?.preferences?.sortOrder || 'name';
 }
-
-export async function setSortOrder(order) {
+async function setSortOrder(order) {
   const prefs = { ...(_userData?.preferences || {}), sortOrder: order };
   await save({ preferences: prefs });
 }
@@ -700,7 +671,7 @@ export async function setSortOrder(order) {
  * Get the user's theme preference ('light', 'dark', or 'system').
  * @returns {string}
  */
-export function getTheme() {
+function getTheme() {
   return _userData?.preferences?.theme || 'light';
 }
 
@@ -708,7 +679,7 @@ export function getTheme() {
  * Set the theme preference.
  * @param {'light'|'dark'|'system'} theme
  */
-export async function setTheme(theme) {
+async function setTheme(theme) {
   const prefs = { ...(_userData?.preferences || {}), theme: theme || 'light' };
   await save({ preferences: prefs });
 }
@@ -719,7 +690,7 @@ export async function setTheme(theme) {
  * Get the custom import folder ID (null = default Waymark/Imports).
  * @returns {string|null}
  */
-export function getImportFolderId() {
+function getImportFolderId() {
   return _userData?.preferences?.importFolderId || null;
 }
 
@@ -727,7 +698,7 @@ export function getImportFolderId() {
  * Get the custom import folder display name.
  * @returns {string|null}
  */
-export function getImportFolderName() {
+function getImportFolderName() {
   return _userData?.preferences?.importFolderName || null;
 }
 
@@ -736,7 +707,7 @@ export function getImportFolderName() {
  * @param {string|null} folderId  Drive folder ID (null to reset to default)
  * @param {string|null} folderName  display name
  */
-export async function setImportFolder(folderId, folderName) {
+async function setImportFolder(folderId, folderName) {
   const prefs = { ...(_userData?.preferences || {}), importFolderId: folderId, importFolderName: folderName };
   await save({ preferences: prefs });
 }
@@ -747,7 +718,7 @@ export async function setImportFolder(folderId, folderName) {
  * Get the configured Agent Registry sheet ID (used by the Fleet sidebar button).
  * @returns {string|null}
  */
-export function getFleetSheetId() {
+function getFleetSheetId() {
   return _userData?.preferences?.fleetSheetId || null;
 }
 
@@ -755,7 +726,7 @@ export function getFleetSheetId() {
  * Set the Agent Registry sheet ID.
  * @param {string|null} sheetId
  */
-export async function setFleetSheetId(sheetId) {
+async function setFleetSheetId(sheetId) {
   const prefs = { ...(_userData?.preferences || {}), fleetSheetId: sheetId || null };
   await save({ preferences: prefs });
 }
@@ -767,7 +738,7 @@ export async function setFleetSheetId(sheetId) {
  * Defaults to 'main' if not set.
  * @returns {string}
  */
-export function getGithubRef() {
+function getGithubRef() {
   return _userData?.preferences?.githubRef || 'main';
 }
 
@@ -775,27 +746,23 @@ export function getGithubRef() {
  * Pin the user to a specific GitHub ref.
  * @param {string} ref  branch name, tag, or commit SHA
  */
-export async function setGithubRef(ref) {
+async function setGithubRef(ref) {
   const prefs = { ...(_userData?.preferences || {}), githubRef: ref || 'main' };
   await save({ preferences: prefs });
 }
 
 /* ---------- MQTT Debug Bridge ---------- */
-
-export function getMqttBridge() {
+function getMqttBridge() {
   return !!_userData?.preferences?.mqttBridge;
 }
-
-export async function setMqttBridge(enabled) {
+async function setMqttBridge(enabled) {
   const prefs = { ...(_userData?.preferences || {}), mqttBridge: !!enabled };
   await save({ preferences: prefs });
 }
-
-export function getMqttBrokerUrl() {
+function getMqttBrokerUrl() {
   return _userData?.preferences?.mqttBrokerUrl || '';
 }
-
-export async function setMqttBrokerUrl(url) {
+async function setMqttBrokerUrl(url) {
   const prefs = { ...(_userData?.preferences || {}), mqttBrokerUrl: url || '' };
   await save({ preferences: prefs });
 }
@@ -806,7 +773,7 @@ export async function setMqttBrokerUrl(url) {
  * Get all stored agent conversations.
  * @returns {Array}
  */
-export function getAgentConversations() {
+function getAgentConversations() {
   return _userData?.agentConversations || [];
 }
 
@@ -814,7 +781,7 @@ export function getAgentConversations() {
  * Save or update an agent conversation.
  * @param {{ id: string, title: string, messages: Array, createdAt: string, updatedAt: string }} conversation
  */
-export async function saveAgentConversation(conversation) {
+async function saveAgentConversation(conversation) {
   const convos = getAgentConversations().filter(c => c.id !== conversation.id);
   conversation.updatedAt = new Date().toISOString();
   // Truncate messages to limit
@@ -830,7 +797,7 @@ export async function saveAgentConversation(conversation) {
  * Delete an agent conversation by ID.
  * @param {string} conversationId
  */
-export async function deleteAgentConversation(conversationId) {
+async function deleteAgentConversation(conversationId) {
   await save({ agentConversations: getAgentConversations().filter(c => c.id !== conversationId) });
 }
 
@@ -840,7 +807,7 @@ export async function deleteAgentConversation(conversationId) {
  * Get agent settings from Drive. Returns null if not synced to Drive.
  * @returns {{ apiKey: string, model: string, keys?: Array } | null}
  */
-export function getAgentSettings() {
+function getAgentSettings() {
   return _userData?.agentSettings || null;
 }
 
@@ -849,7 +816,7 @@ export function getAgentSettings() {
  * Supports both legacy single-key and multi-key ring formats.
  * @param {{ apiKey: string, model: string, keys?: Array } | null} settings
  */
-export async function saveAgentSettings(settings) {
+async function saveAgentSettings(settings) {
   await save({ agentSettings: settings });
 }
 
@@ -859,7 +826,7 @@ export async function saveAgentSettings(settings) {
  * Get the Drive-synced AI keys vault link, or null.
  * @returns {{ id: string, name: string } | null}
  */
-export function getAgentKeysSheet() {
+function getAgentKeysSheet() {
   const id = _userData?.agentKeysSheetId || null;
   if (!id) return null;
   return { id, name: _userData?.agentKeysSheetName || id };
@@ -870,7 +837,7 @@ export function getAgentKeysSheet() {
  * devices. Pass null to clear.
  * @param {{ id: string, name?: string } | null} link
  */
-export async function saveAgentKeysSheet(link) {
+async function saveAgentKeysSheet(link) {
   if (link && link.id) {
     await save({ agentKeysSheetId: link.id, agentKeysSheetName: link.name || link.id });
   } else {
@@ -884,7 +851,7 @@ export async function saveAgentKeysSheet(link) {
  * Get all stored dashboards.
  * @returns {Array<{id:string, name:string, layout:string, panels:Array}>}
  */
-export function getDashboards() {
+function getDashboards() {
   return _userData?.dashboards || [];
 }
 
@@ -893,19 +860,19 @@ export function getDashboards() {
  * an empty array means the user chose to clear the dashboard.
  * @returns {Array<{id:string,type:string,title:string,sheetId?:string,size?:string}>|null}
  */
-export function getHomeWidgets() {
+function getHomeWidgets() {
   if (Array.isArray(_userData?.homeWidgets)) return _userData.homeWidgets;
   const cached = storage.getHomeWidgets?.();
   return Array.isArray(cached) ? cached : null;
 }
 
 /** Get the synced Wayboard widget schema version for one-time migrations. */
-export function getHomeWidgetsVersion() {
+function getHomeWidgetsVersion() {
   return Number(_userData?.homeWidgetsVersion ?? storage.getHomeWidgetsVersion?.() ?? 0);
 }
 
 /** Save the user's Wayboard widget configuration to Drive and local storage. */
-export async function setHomeWidgets(widgets) {
+async function setHomeWidgets(widgets) {
   await save({ homeWidgets: Array.isArray(widgets) ? widgets.slice(0, 16) : [], homeWidgetsVersion: 2 });
 }
 
@@ -913,7 +880,7 @@ export async function setHomeWidgets(widgets) {
  * Save or update a dashboard definition.
  * @param {{ id: string, name: string, layout: string, panels: Array }} dashboard
  */
-export async function saveDashboard(dashboard) {
+async function saveDashboard(dashboard) {
   const rest = getDashboards().filter(d => d.id !== dashboard.id);
   await save({ dashboards: [dashboard, ...rest] });
 }
@@ -922,7 +889,7 @@ export async function saveDashboard(dashboard) {
  * Delete a dashboard by ID.
  * @param {string} dashboardId
  */
-export async function deleteDashboard(dashboardId) {
+async function deleteDashboard(dashboardId) {
   await save({ dashboards: getDashboards().filter(d => d.id !== dashboardId) });
 }
 
@@ -1001,7 +968,7 @@ function syncToLocalStorage(data) {
 /**
  * Clear all user data (Drive file + localStorage).
  */
-export async function clearAll() {
+async function clearAll() {
   _userData = defaultUserData();
   storage.clearAll();
   if (_dataFileId) {
@@ -1017,7 +984,7 @@ export async function clearAll() {
  * Get the user-owned private signaling sheet ID (key storage), or null if not yet created.
  * @returns {string|null}
  */
-export function getSignalingSheetId() {
+function getSignalingSheetId() {
   return _userData?.signalingSheetId ?? null;
 }
 
@@ -1025,7 +992,7 @@ export function getSignalingSheetId() {
  * Get the public P2P signaling sheet ID (encrypted WebRTC handshake), or null if not yet created.
  * @returns {string|null}
  */
-export function getPublicSignalingSheetId() {
+function getPublicSignalingSheetId() {
   return _userData?.publicSignalingSheetId ?? null;
 }
 
@@ -1035,7 +1002,7 @@ export function getPublicSignalingSheetId() {
  * Get all auto-provisioned Share Ledger mappings.
  * @returns {Array<{key: string, contactEmail?: string, group?: string, sheetId: string, createdAt: string}>}
  */
-export function getShareLedgers() {
+function getShareLedgers() {
   return (_userData?.shareLedgers) || [];
 }
 
@@ -1044,7 +1011,7 @@ export function getShareLedgers() {
  * @param {string} key
  * @returns {{key: string, sheetId: string}|null}
  */
-export function getShareLedgerFor(key) {
+function getShareLedgerFor(key) {
   return getShareLedgers().find(l => l.key === key) || null;
 }
 
@@ -1052,7 +1019,7 @@ export function getShareLedgerFor(key) {
  * Record a Share Ledger mapping (idempotent by ledger key).
  * @param {{key: string, contactEmail?: string, group?: string, sheetId: string, ownerEmail?: string, permissionAttempted?: boolean, aliases?: string[]}} entry
  */
-export async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, permissionAttempted = false, aliases = [] }) {
+async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, permissionAttempted = false, aliases = [] }) {
   if (!key || !sheetId) return;
   const replacedKeys = new Set([key, ...aliases]);
   const existing = getShareLedgers().filter(l => !replacedKeys.has(l.key));
@@ -1079,9 +1046,9 @@ export async function addShareLedger({ key, contactEmail, group, sheetId, ownerE
  *
  * @returns {Promise<void>}
  */
-export async function cycleSignalKey() {
+async function cycleSignalKey() {
   const newKey = _generateSignalKeyHex();
-  localStorage.setItem('waymark_signal_key', newKey);
+  storage.setRaw('waymark_signal_key', newKey);
   // Trigger a DataChannel key-push if the P2P mesh is active.
   if (typeof window !== 'undefined' && window._waymarkMeshPeer?.broadcastKeyExchange) {
     window._waymarkMeshPeer.broadcastKeyExchange(newKey);
@@ -1095,7 +1062,7 @@ export async function cycleSignalKey() {
  * @param {string} spreadsheetId
  * @returns {boolean}
  */
-export function getLockOnSubmit(spreadsheetId) {
+function getLockOnSubmit(spreadsheetId) {
   return !!(_userData?.lockOnSubmitSheets?.[spreadsheetId]);
 }
 
@@ -1106,7 +1073,7 @@ export function getLockOnSubmit(spreadsheetId) {
  * @param {string}  spreadsheetId
  * @param {boolean} enabled
  */
-export async function setLockOnSubmit(spreadsheetId, enabled) {
+async function setLockOnSubmit(spreadsheetId, enabled) {
   const locks = { ...(_userData?.lockOnSubmitSheets || {}) };
   if (enabled) {
     locks[spreadsheetId] = true;
@@ -1117,9 +1084,97 @@ export async function setLockOnSubmit(spreadsheetId, enabled) {
 }
 
 /* ---------- Folder name exports (for other modules) ---------- */
-
-export const FOLDER_NAMES = {
+const FOLDER_NAMES = {
   root: WAYMARK_ROOT_FOLDER,
   examples: EXAMPLES_FOLDER,
   imports: IMPORTS_FOLDER,
+};
+
+export {
+  FOLDER_NAMES,
+  addExpandedFolder,
+  addGeneratedCategories,
+  addHiddenItem,
+  addImportEntry,
+  addPinnedFolder,
+  addPinnedSheet,
+  addRecentSheet,
+  addSearchEntry,
+  addShareLedger,
+  clearAll,
+  cycleSignalKey,
+  deleteAgentConversation,
+  deleteDashboard,
+  dismissItem,
+  getAgentConversations,
+  getAgentKeysSheet,
+  getAgentSettings,
+  getAutoRefresh,
+  getDashboards,
+  getData,
+  getDefaultFolderForTemplate,
+  getDismissedItems,
+  getExamplesFolderId,
+  getExpandedFolders,
+  getFleetSheetId,
+  getGeneratedCategories,
+  getGithubRef,
+  getHiddenItems,
+  getHomeTemplateMode,
+  getHomeWidgets,
+  getHomeWidgetsVersion,
+  getImportFolderId,
+  getImportFolderName,
+  getImportHistory,
+  getImportsFolderId,
+  getLastView,
+  getLockOnSubmit,
+  getMqttBridge,
+  getMqttBrokerUrl,
+  getPinnedFolders,
+  getPinnedSheets,
+  getPublicSignalingSheetId,
+  getRecentSheets,
+  getRootFolderId,
+  getSearchHistory,
+  getShareLedgerFor,
+  getShareLedgers,
+  getSidebarOpen,
+  getSignalingSheetId,
+  getSortOrder,
+  getTheme,
+  getTutorialCompleted,
+  getTutorialStep,
+  init,
+  isDismissed,
+  isHidden,
+  isItemHidden,
+  isPinned,
+  isSheetPinned,
+  removeExpandedFolder,
+  removeHiddenItem,
+  removePinnedFolder,
+  removePinnedSheet,
+  saveAgentConversation,
+  saveAgentKeysSheet,
+  saveAgentSettings,
+  saveDashboard,
+  setAutoRefresh,
+  setDefaultFolderForTemplate,
+  setExpandedFolders,
+  setFleetSheetId,
+  setGithubRef,
+  setHomeTemplateMode,
+  setHomeWidgets,
+  setImportFolder,
+  setLastView,
+  setLockOnSubmit,
+  setMqttBridge,
+  setMqttBrokerUrl,
+  setPinnedFolders,
+  setSidebarOpen,
+  setSortOrder,
+  setTheme,
+  setTutorialCompleted,
+  setTutorialStep,
 };

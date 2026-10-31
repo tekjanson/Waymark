@@ -100,12 +100,12 @@ async function selectModel(model, statusText) {
 function updateStatusDisplay(statusText, hasKey = null) {
   const model = getCurrentModel();
   const modelName = model === 'claude' ? 'Claude' : 'Gemini';
-  
+
   let status = `Active: ${modelName}`;
-  
+
   // Check if key is available
   const keyAvailable = hasKey !== null ? hasKey : hasModelKey(model);
-  
+
   if (keyAvailable) {
     status += ' • ✓ API key ready';
   } else {
@@ -126,12 +126,12 @@ export function getModelKey(model) {
   if (_vaultSheet && _vaultSheet.rows && _vaultSheet.cols) {
     const passwordCol = _vaultSheet.cols.password;
     const siteCol = _vaultSheet.cols.site;
-    
+
     // Look for a row matching the model
     for (const row of _vaultSheet.rows) {
       const site = row[siteCol]?.toLowerCase() || '';
       const password = row[passwordCol];
-      
+
       // Match service name
       if (model === 'gemini' && (site.includes('gemini') || site.includes('google'))) {
         return password;

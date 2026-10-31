@@ -1,9 +1,10 @@
+import * as storage from './storage.js';
 /* ============================================================
    api-client.js — THE critical abstraction layer
-   
+
    In production mode → delegates to drive.js, sheets.js,
    auth.js (which call real Google APIs).
-   
+
    In local/mock mode → fetches fixture data from the
    server's /__fixtures/ endpoint and uses canned responses.
    Created records are stored in window.__WAYMARK_RECORDS
@@ -64,7 +65,7 @@ const MOCK_CREATED_SHEETS_KEY = 'waymark_mock_created_sheets_v1';
 
 function loadPersistedMockSheets() {
   try {
-    const raw = window.localStorage.getItem(MOCK_CREATED_SHEETS_KEY);
+    const raw = storage.getRaw(MOCK_CREATED_SHEETS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};
@@ -78,7 +79,7 @@ function persistMockSheetRecord(sheetId, data) {
   try {
     const existing = loadPersistedMockSheets();
     existing[sheetId] = data;
-    window.localStorage.setItem(MOCK_CREATED_SHEETS_KEY, JSON.stringify(existing));
+    storage.setRaw(MOCK_CREATED_SHEETS_KEY, JSON.stringify(existing));
   } catch {
     // Best-effort persistence in local mode.
   }

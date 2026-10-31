@@ -3,7 +3,7 @@
  * inline-edit.spec.js — Tests for universal inline editing across all templates.
  *
  * Verifies that editableCell()-wrapped fields:
- *   1. Show an <input> on click
+ *   1. Show an input field on click
  *   2. Commit the new value on Enter (emitting cell-update record)
  *   3. Cancel on Escape (reverting text, no record emitted)
  *   4. Commit on blur (clicking away)

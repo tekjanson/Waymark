@@ -176,7 +176,7 @@ function compileOne(tmpl) {
 
   writeFileSync(outputFile, compiledCopilot, "utf8");
   writeFileSync(skillFile, compiledSkill, "utf8");
-  writeFileSync(hashFile, currentHash, "utf8");
+  writeFileSync(hashFile, `${currentHash}\n`, "utf8");
 
   return { key, status: existsSync(outputFile) && !FORCE ? "recompiled" : "compiled", usedGeneric };
 }

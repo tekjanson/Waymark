@@ -1,6 +1,6 @@
 /* ============================================================
    templates/shared.js — Shared utilities for template renderers
-   
+
    Provides cell access, edit callbacks, and the template
    registry that individual template modules register into.
    ============================================================ */
@@ -23,13 +23,13 @@ let _editLocked = false;
  * Lock or unlock inline editing globally.
  * @param {boolean} locked
  */
-export function setEditLocked(locked) { _editLocked = !!locked; }
+function setEditLocked(locked) { _editLocked = !!locked; }
 
 /**
  * Check whether inline editing is currently locked.
  * @returns {boolean}
  */
-export function isEditLocked() { return _editLocked; }
+function isEditLocked() { return _editLocked; }
 
 /* ---------- Protected rows (populated by checklist.js on sheet load) ---------- */
 
@@ -40,7 +40,7 @@ let _protectedRows = new Set();
  * Called by checklist.js after fetching protectedRanges metadata.
  * @param {Set<number>} rowIndexSet
  */
-export function setProtectedRows(rowIndexSet) {
+function setProtectedRows(rowIndexSet) {
   _protectedRows = rowIndexSet instanceof Set ? rowIndexSet : new Set();
 }
 
@@ -51,7 +51,7 @@ export function setProtectedRows(rowIndexSet) {
  * @param {number} rowIndex
  * @returns {boolean}
  */
-export function isRowProtected(rowIndex) { return _protectedRows.has(rowIndex); }
+function isRowProtected(rowIndex) { return _protectedRows.has(rowIndex); }
 
 /* ---------- User name (set by checklist.js for note authoring) ---------- */
 
@@ -61,19 +61,19 @@ let _userName = '';
  * Set the display name of the current user (called by checklist.js).
  * @param {string} name
  */
-export function setUserName(name) { _userName = name || ''; }
+function setUserName(name) { _userName = name || ''; }
 
 /**
  * Get the display name of the current user.
  * @returns {string}
  */
-export function getUserName() { return _userName; }
+function getUserName() { return _userName; }
 
 /**
  * Register a callback for cell edits.
  * @param {(rowIndex: number, colIndex: number, newValue: string) => void} fn
  */
-export function onEdit(fn) { _onCellEdit = fn; }
+function onEdit(fn) { _onCellEdit = fn; }
 
 /**
  * Emit a cell edit event to the registered callback.
@@ -81,7 +81,7 @@ export function onEdit(fn) { _onCellEdit = fn; }
  * @param {number} colIndex
  * @param {string} newValue
  */
-export function emitEdit(rowIndex, colIndex, newValue) {
+function emitEdit(rowIndex, colIndex, newValue) {
   if (_editLocked) return;
   if (_onCellEdit) _onCellEdit(rowIndex, colIndex, newValue);
 }
@@ -92,7 +92,7 @@ export function emitEdit(rowIndex, colIndex, newValue) {
  * @param {number} idx
  * @returns {string}
  */
-export function cell(row, idx) {
+function cell(row, idx) {
   return (idx >= 0 && idx < row.length) ? (row[idx] || '') : '';
 }
 
@@ -103,7 +103,7 @@ export function cell(row, idx) {
  * @param {string} [rawTarget]
  * @returns {number}
  */
-export function parseProgress(raw, rawTarget) {
+function parseProgress(raw, rawTarget) {
   if (!raw) return 0;
   const s = raw.trim();
   if (s.endsWith('%')) return parseFloat(s) || 0;
@@ -124,7 +124,7 @@ export function parseProgress(raw, rawTarget) {
  * @param {string} val
  * @returns {boolean}
  */
-export function isImageUrl(val) {
+function isImageUrl(val) {
   if (!val || typeof val !== 'string') return false;
   const v = val.trim().toLowerCase();
   return /^https?:\/\/.+\.(jpe?g|png|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(v)
@@ -138,14 +138,14 @@ export function isImageUrl(val) {
  * Individual template modules call registerTemplate() to add themselves.
  * @type {Record<string, Object>}
  */
-export const TEMPLATES = {};
+const TEMPLATES = {};
 
 /**
  * Register a template definition.
  * @param {string} key — unique template key (e.g. 'checklist', 'kanban')
  * @param {Object} definition — template definition with name, icon, color, priority, detect, columns, render
  */
-export function registerTemplate(key, definition) {
+function registerTemplate(key, definition) {
   // A template MUST provide detect() and render(). Reject malformed definitions
   // (e.g. registry-metadata like detectSignals instead of a real detect()) so a
   // single bad template can never crash detectTemplate() for every sheet.
@@ -186,17 +186,17 @@ const CROSS_FEATURES = {};
  * @param {function} def.extractData — (rows, cols) → data array
  * @param {function} def.buildWidget — (container, data) → void (renders into container)
  */
-export function registerCrossFeature(id, def) {
+function registerCrossFeature(id, def) {
   CROSS_FEATURES[id] = def;
 }
 
 /** Look up a single cross-feature by ID. */
-export function getCrossFeature(id) {
+function getCrossFeature(id) {
   return CROSS_FEATURES[id] || null;
 }
 
 /** Return a shallow copy of the entire cross-feature registry. */
-export function getCrossFeatures() {
+function getCrossFeatures() {
   return { ...CROSS_FEATURES };
 }
 
@@ -208,7 +208,7 @@ export function getCrossFeatures() {
  * @param {Object} cols — result of template.columns(lower)
  * @returns {Array<{header:string, role:string, description?:string}>}
  */
-export function getMissingMigrations(template, cols) {
+function getMissingMigrations(template, cols) {
   if (!template.migrations || !Array.isArray(template.migrations)) return [];
   return template.migrations.filter(m => cols[m.role] === -1);
 }
@@ -228,7 +228,7 @@ function _looksLong(v) {
 }
 
 /**
- * Create a DOM element whose text content becomes an inline <input> on click.
+ * Create a DOM element whose text content becomes an inline input control on click.
  * On blur / Enter the edit is committed via emitEdit(); on Escape it is cancelled.
  *
  * @param {string}  tag        — wrapper element tag (e.g. 'span', 'div')
@@ -240,7 +240,7 @@ function _looksLong(v) {
  * @param {function} [opts.onCommit]  — called(newValue, element) after a successful edit for custom DOM updates
  * @returns {HTMLElement}
  */
-export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   const display = text || '—';
   const wrapper = el(tag, {
     ...attrs,
@@ -301,7 +301,7 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
       ta.style.height = `${Math.min(ta.scrollHeight, 320)}px`;
     }
 
-    /* Mount an <input> or <textarea>; re-mountable so a single-line input can
+    /* Mount an input or textarea; re-mountable so a single-line input can
        upgrade to a textarea once its content grows long. */
     function mount(kind, value, caretToEnd) {
       const existing = wrapper.querySelector('input, textarea');
@@ -374,7 +374,7 @@ export function editableCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
  * @param {Object}  [opts]     — extra options (onCommit)
  * @returns {HTMLElement}
  */
-export function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) {
+function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) {
   const display = text || '—';
   const wrapper = el(tag, {
     ...attrs,
@@ -511,7 +511,7 @@ export function comboCell(tag, attrs, text, rowIdx, colIdx, options, opts = {}) 
  * @param {Object}  [opts]     — extra options (onCommit)
  * @returns {HTMLElement}
  */
-export function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+function textareaCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   const display = text || '—';
   const wrapper = el(tag, {
     ...attrs,
@@ -592,7 +592,7 @@ function formatDateDisplay(v) {
 }
 
 /**
- * Create a cell that opens a native date picker (`<input type="date">`) on click.
+ * Create a cell that opens a native date picker (`input[type="date"]`) on click.
  * On commit the value is stored as an ISO date (YYYY-MM-DD). Free-form text
  * values are preserved when the picker is left untouched, so mixed date/label
  * columns keep working.
@@ -605,7 +605,7 @@ function formatDateDisplay(v) {
  * @param {Object}   [opts] — extra options (onCommit)
  * @returns {HTMLElement}
  */
-export function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
+function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   let current = text || '';
   const wrapper = el(tag, {
     ...attrs,
@@ -693,7 +693,7 @@ export { captureStillFromCamera };
  * @param {string}      selector  — CSS selector to match against event target
  * @param {(e: Event, match: HTMLElement) => void} handler — called with the event and matched element
  */
-export function delegateEvent(container, eventType, selector, handler) {
+function delegateEvent(container, eventType, selector, handler) {
   container.addEventListener(eventType, (e) => {
     const match = /** @type {HTMLElement} */ (e.target).closest?.(selector);
     if (match && container.contains(match)) {
@@ -709,7 +709,7 @@ export function delegateEvent(container, eventType, selector, handler) {
  * @param {HTMLElement} delegateRoot — ancestor to attach the click listener to
  * @returns {HTMLElement} the sync button element
  */
-export function buildDirSyncBtn(delegateRoot) {
+function buildDirSyncBtn(delegateRoot) {
   const btn = el('button', {
     className: 'dir-sync-btn',
     type: 'button',
@@ -731,7 +731,7 @@ export function buildDirSyncBtn(delegateRoot) {
  * @param {() => HTMLElement} buildFn — factory called once to create the section
  * @returns {HTMLElement} the (possibly new) section element
  */
-export function lazySection(parent, selector, buildFn) {
+function lazySection(parent, selector, buildFn) {
   let section = parent.querySelector(selector);
   if (!section) {
     section = buildFn();
@@ -754,7 +754,7 @@ export function lazySection(parent, selector, buildFn) {
  * @param {(child: {row: string[], idx: number}, group: Object) => void} [opts.classifyChild] — assign a child row to its group's sub-arrays
  * @returns {Array<{row: string[], idx: number, children: Array<{row: string[], idx: number}>}>}
  */
-export function parseGroups(rows, primaryColIdx, opts = {}) {
+function parseGroups(rows, primaryColIdx, opts = {}) {
   const groups = [];
   let current = null;
 
@@ -788,7 +788,7 @@ export function parseGroups(rows, primaryColIdx, opts = {}) {
  * @param {string}  [fallback] — label when the cell is empty (default: 'Other')
  * @returns {Map<string, {row: any[], originalIndex: number}[]>}
  */
-export function groupByColumn(rows, colIdx, fallback = 'Other') {
+function groupByColumn(rows, colIdx, fallback = 'Other') {
   const groups = new Map();
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -812,7 +812,7 @@ export function groupByColumn(rows, colIdx, fallback = 'Other') {
  * @param {string}      cssPrefix — base class(es) before the suffix, e.g. 'crm-stage-btn crm-stage-'
  * @returns {string} the next state label
  */
-export function cycleStatus(badge, states, classify, cssPrefix) {
+function cycleStatus(badge, states, classify, cssPrefix) {
   const current = badge.textContent.trim();
   const idx = states.findIndex(s => s.toLowerCase() === current.toLowerCase());
   const next = states[(idx + 1) % states.length];
@@ -831,7 +831,7 @@ let _addRowExpanded = false;
  * Used by the orchestrator to suppress auto-refresh.
  * @returns {boolean}
  */
-export function isAddRowOpen() { return _addRowExpanded; }
+function isAddRowOpen() { return _addRowExpanded; }
 
 /**
  * Build the add-row UI: a trigger button that expands into an inline form.
@@ -844,7 +844,7 @@ export function isAddRowOpen() { return _addRowExpanded; }
  * @param {Object}   [opts.defaults]  pre-fill values keyed by role name
  * @returns {HTMLElement}
  */
-export function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts = {}) {
+function buildAddRowForm(templateDef, cols, totalColumns, onSubmit, opts = {}) {
   const fields = typeof templateDef.addRowFields === 'function'
     ? templateDef.addRowFields(cols).filter(f => f.colIndex >= 0)
     : [];
@@ -1310,20 +1310,20 @@ import { routeAI, CAP } from '../ai-router.js';
  * device's biometric credential when available.
  * @returns {Promise<boolean>}
  */
-export async function ensureAIKeyVaultUnlocked() {
+async function ensureAIKeyVaultUnlocked() {
   if (!agentVault.isVaultSetUp() || agentVault.isVaultUnlocked()) return true;
   return agentVault.ensureVaultUnlocked();
 }
 
 /** Explain how to proceed when the linked AI keys vault could not unlock. */
-export function getAIKeyVaultUnlockMessage() {
+function getAIKeyVaultUnlockMessage() {
   return agentVault.hasBiometricVault()
     ? 'Biometric unlock was cancelled or failed. Unlock your AI keys and try again.'
     : 'Your AI keys are locked. Unlock them in AI settings and enable biometric unlock for next time.';
 }
 
 /** Capture a still image after automatically unlocking the AI keys vault. */
-export async function captureImageForAI(opts = {}) {
+async function captureImageForAI(opts = {}) {
   if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
   return captureStillFromCamera(opts);
 }
@@ -1337,7 +1337,7 @@ export async function captureImageForAI(opts = {}) {
  * @param {{ temperature?: number, maxTokens?: number, json?: boolean, provider?: string }} [opts]
  * @returns {Promise<string>}
  */
-export async function generateText(systemPrompt, userMessage, opts = {}) {
+async function generateText(systemPrompt, userMessage, opts = {}) {
   const capability = opts.json ? CAP.STRUCTURED_JSON : CAP.TEXT_BASIC;
   return routeAI(capability, { systemPrompt, userMessage }, {
     temperature: opts.temperature ?? 0.7,
@@ -1356,7 +1356,7 @@ export async function generateText(systemPrompt, userMessage, opts = {}) {
  * @param {{ temperature?: number, maxTokens?: number, userMessage?: string, provider?: string }} [opts]
  * @returns {Promise<string>}
  */
-export async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
+async function generateVision(systemPrompt, base64Image, mimeType = 'image/jpeg', opts = {}) {
   return routeAI(CAP.VISION_ANALYSIS, {
     systemPrompt, base64Image, mimeType, userMessage: opts.userMessage,
   }, {
@@ -1371,7 +1371,7 @@ export async function generateVision(systemPrompt, base64Image, mimeType = 'imag
  * @param {Blob} media
  * @returns {Promise<string>}
  */
-export function blobToBase64(media) {
+function blobToBase64(media) {
   return new Promise((resolve, reject) => {
     if (!media || typeof media.size !== 'number') {
       reject(new Error('Expected an image or audio file.'));
@@ -1405,7 +1405,7 @@ async function inlineMedia(media, mimeType, fallbackMimeType) {
  * @param {{ mimeType?: string, temperature?: number, maxTokens?: number, userMessage?: string, provider?: string }} [opts]
  * @returns {Promise<string>}
  */
-export async function analyzeImageWithAI(systemPrompt, image, opts = {}) {
+async function analyzeImageWithAI(systemPrompt, image, opts = {}) {
   if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
   const media = await inlineMedia(image, opts.mimeType, 'image/jpeg');
   return generateVision(systemPrompt, media.base64, media.mimeType, opts);
@@ -1418,14 +1418,14 @@ export async function analyzeImageWithAI(systemPrompt, image, opts = {}) {
  * @param {{ mimeType?: string, temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
  * @returns {Promise<string>}
  */
-export async function analyzeAudioWithAI(systemPrompt, audio, opts = {}) {
+async function analyzeAudioWithAI(systemPrompt, audio, opts = {}) {
   if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
   const media = await inlineMedia(audio, opts.mimeType, 'audio/webm');
   return generateAudio(systemPrompt, media.base64, media.mimeType, opts);
 }
 
 /** Parse a JSON object or array from plain or fenced model output. */
-export function parseAIJson(text) {
+function parseAIJson(text) {
   const source = String(text || '').trim();
   try { return JSON.parse(source); } catch { /* find a JSON value in surrounding prose */ }
 
@@ -1457,9 +1457,9 @@ export function parseAIJson(text) {
 }
 
 /** Whether the browser can capture audio with MediaRecorder. */
-export function isAudioRecordingSupported() {
+function isAudioRecordingSupported() {
   return typeof navigator !== 'undefined'
-    && !!navigator.mediaDevices?.getUserMedia
+    && hasUserMedia()
     && typeof MediaRecorder !== 'undefined';
 }
 
@@ -1469,14 +1469,14 @@ export function isAudioRecordingSupported() {
  * @param {{ audio?: boolean|MediaTrackConstraints }} [opts]
  * @returns {Promise<{mimeType:string, stop:()=>Promise<Blob|null>, cancel:()=>void}>}
  */
-export async function startAudioRecording(opts = {}) {
+async function startAudioRecording(opts = {}) {
   if (!isAudioRecordingSupported()) {
     throw new Error('Audio recording is not supported in this browser.');
   }
 
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: opts.audio ?? true });
+    stream = await getUserMediaStream({ audio: opts.audio ?? true });
   } catch (err) {
     if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
       throw new Error('Microphone permission denied.');
@@ -1562,7 +1562,7 @@ export async function startAudioRecording(opts = {}) {
 }
 
 /** Start an audio recording after automatically unlocking the AI keys vault. */
-export async function startAIRecording(opts = {}) {
+async function startAIRecording(opts = {}) {
   if (!await ensureAIKeyVaultUnlocked()) throw new Error(getAIKeyVaultUnlockMessage());
   return startAudioRecording(opts);
 }
@@ -1575,7 +1575,7 @@ export async function startAIRecording(opts = {}) {
  * @param {{ temperature?: number, maxTokens?: number, userMessage?: string }} [opts]
  * @returns {Promise<string>}
  */
-export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
+async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio/webm', opts = {}) {
   return routeAI(CAP.AUDIO_ANALYSIS, {
     systemPrompt, base64Audio, mimeType, userMessage: opts.userMessage,
   }, {
@@ -1591,7 +1591,7 @@ export async function generateAudio(systemPrompt, base64Audio, mimeType = 'audio
  * @param {{ size?: string, n?: number, referenceImage?: string }} [opts]
  * @returns {Promise<string>}  image data URL (or remote URL)
  */
-export async function generateImage(prompt, opts = {}) {
+async function generateImage(prompt, opts = {}) {
   return routeAI(CAP.IMAGE_GENERATION_PHOTOREAL, {
     prompt, size: opts.size, n: opts.n,
     referenceImage: opts.referenceImage,
@@ -1608,7 +1608,7 @@ import { api } from '../api-client.js';
  * @param {string} sheetId
  * @returns {Promise<{id: string, title: string, sheetTitle: string, values: string[][]}>}
  */
-export async function getSheetData(sheetId) {
+async function getSheetData(sheetId) {
   return api.sheets.getSpreadsheet(sheetId);
 }
 
@@ -1619,7 +1619,7 @@ export async function getSheetData(sheetId) {
  * @param {string} sheetTitle  e.g. 'Sheet1'
  * @param {string[][]} rows    2-D array of cell values
  */
-export async function appendSheetRows(sheetId, sheetTitle, rows) {
+async function appendSheetRows(sheetId, sheetTitle, rows) {
   return api.sheets.appendRows(sheetId, sheetTitle, rows);
 }
 
@@ -1631,7 +1631,7 @@ export async function appendSheetRows(sheetId, sheetTitle, rows) {
  * @param {number} col         0-based column index
  * @param {string} value
  */
-export async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
+async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
   return api.sheets.updateCell(sheetId, sheetTitle, row, col, value);
 }
 
@@ -1641,7 +1641,7 @@ export async function updateSheetCell(sheetId, sheetTitle, row, col, value) {
  * @param {number} numericSheetId  numeric Google Sheets tab ID (0 in mock mode)
  * @param {number} rowIndex        0-based row index including header
  */
-export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
+async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
   return api.sheets.deleteRows(sheetId, numericSheetId || 0, rowIndex, rowIndex + 1);
 }
 
@@ -1654,7 +1654,7 @@ export async function deleteSheetRow(sheetId, numericSheetId, rowIndex) {
  * @param {string}     tabTitle
  * @param {string[][]} rows       2D array including header row
  */
-export async function writeSheetTab(sheetId, tabTitle, rows) {
+async function writeSheetTab(sheetId, tabTitle, rows) {
   return api.sheets.writeTab(sheetId, tabTitle, rows);
 }
 
@@ -1664,7 +1664,7 @@ export async function writeSheetTab(sheetId, tabTitle, rows) {
  * @param {string} tabTitle
  * @returns {{title:string, values:string[][]}|null}
  */
-export function readSheetTab(tabs, tabTitle) {
+function readSheetTab(tabs, tabTitle) {
   if (!Array.isArray(tabs)) return null;
   const want = (tabTitle || '').toLowerCase();
   return tabs.find(t => (t.title || '').toLowerCase() === want) || null;
@@ -1672,11 +1672,11 @@ export function readSheetTab(tabs, tabTitle) {
 
 /**
  * Upload an image File to Google Drive and return the sharing URL + permission status.
- * @param {File}   file              Browser File object from <input type="file">
+ * @param {File}   file              Browser File object from file input control
  * @param {string} [parentFolderId]  Optional Drive folder ID
  * @returns {Promise<string>}  Drive view URL for the uploaded file
  */
-export async function uploadDriveFile(file, parentFolderId) {
+async function uploadDriveFile(file, parentFolderId) {
   const data = await api.drive.uploadFile(file, parentFolderId);
   return `https://drive.google.com/file/d/${data.id}/view`;
 }
@@ -1686,7 +1686,7 @@ export async function uploadDriveFile(file, parentFolderId) {
  * @param {string} url
  * @returns {string|null}
  */
-export function extractDriveFileId(url) {
+function extractDriveFileId(url) {
   if (!url) return null;
   const trimmed = url.trim();
   const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
@@ -1718,7 +1718,7 @@ export function extractDriveFileId(url) {
  * @param {function}         [onError] — called (no args) on failure
  * @returns {Promise<void>}
  */
-export async function loadDriveImage(fileId, imgEl, onError) {
+async function loadDriveImage(fileId, imgEl, onError) {
   try {
     const token = await api.auth.getToken();
     // Step 1: thumbnailLink (small, auth embedded, no browser cookies needed)
@@ -1753,7 +1753,7 @@ export async function loadDriveImage(fileId, imgEl, onError) {
  * @param {string}      [parentId] Drive folder to place the file in
  * @returns {Promise<{spreadsheetId: string}>}
  */
-export async function createSpreadsheet(title, rows, parentId) {
+async function createSpreadsheet(title, rows, parentId) {
   return api.sheets.createSpreadsheet(title, rows, parentId);
 }
 
@@ -1763,7 +1763,7 @@ export async function createSpreadsheet(title, rows, parentId) {
  * @param {string[]} [parents] Drive folder IDs for placement
  * @returns {Promise<{id: string, url: string}>}
  */
-export async function createGoogleDoc(title, parents = []) {
+async function createGoogleDoc(title, parents = []) {
   const data = await api.drive.createFile(
     title,
     'application/vnd.google-apps.document',
@@ -1782,7 +1782,7 @@ export async function createGoogleDoc(title, parents = []) {
  * @param {string} docId
  * @returns {Promise<string>}  full HTML document string
  */
-export async function exportDocAsHtml(docId) {
+async function exportDocAsHtml(docId) {
   if (!docId) throw new Error('No doc ID provided');
   return api.drive.exportDocAsHtml(docId);
 }
@@ -1794,7 +1794,124 @@ export async function exportDocAsHtml(docId) {
  * @param {string} docId
  * @returns {Promise<string>}  full HTML document string
  */
-export async function exportDocAsHtmlPublic(docId) {
+async function exportDocAsHtmlPublic(docId) {
   if (!docId) throw new Error('No doc ID provided');
   return api.drive.exportDocAsHtmlPublic(docId);
+}
+
+/**
+ * Parse a currency / numeric string to a number.
+ * @param {string} raw
+ * @returns {number}
+ */
+function parseAmt(raw) {
+  return parseFloat((raw || '0').replace(/[^-\d.]/g, '')) || 0;
+}
+function svg(tag, attrs = {}) {
+  const elem = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    elem.setAttribute(k, String(v));
+  }
+  return elem;
+}
+function renderSparkline(values) {
+  const nums = values.filter((v) => typeof v === 'number' && v > 0);
+  if (nums.length < 2) return null;
+  const w = 600, h = 90, pad = 8;
+  const min = Math.min(...nums), max = Math.max(...nums);
+  const span = max - min || 1;
+  const step = (w - pad * 2) / (nums.length - 1);
+  const points = nums
+    .map((v, i) => `${(pad + i * step).toFixed(1)},${(h - pad - ((v - min) / span) * (h - pad * 2)).toFixed(1)}`)
+    .join(' ');
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  s.setAttribute('preserveAspectRatio', 'none');
+  s.setAttribute('style', 'width:100%;height:90px;display:block;');
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  poly.setAttribute('points', points);
+  poly.setAttribute('fill', 'none');
+  poly.setAttribute('stroke', '#059669');
+  poly.setAttribute('stroke-width', '2.5');
+  poly.setAttribute('stroke-linecap', 'round');
+  poly.setAttribute('stroke-linejoin', 'round');
+  s.appendChild(poly);
+  return s;
+}
+
+export {
+  formatISO,
+  nowTimestamp,
+  TEMPLATES,
+  analyzeAudioWithAI,
+  analyzeImageWithAI,
+  appendSheetRows,
+  blobToBase64,
+  buildAddRowForm,
+  buildDirSyncBtn,
+  captureImageForAI,
+  cell,
+  comboCell,
+  createGoogleDoc,
+  createSpreadsheet,
+  cycleStatus,
+  dateCell,
+  delegateEvent,
+  deleteSheetRow,
+  editableCell,
+  emitEdit,
+  ensureAIKeyVaultUnlocked,
+  exportDocAsHtml,
+  exportDocAsHtmlPublic,
+  extractDriveFileId,
+  generateAudio,
+  generateImage,
+  generateText,
+  generateVision,
+  getAIKeyVaultUnlockMessage,
+  getCrossFeature,
+  getCrossFeatures,
+  getMissingMigrations,
+  getSheetData,
+  getUserName,
+  groupByColumn,
+  isAddRowOpen,
+  isAudioRecordingSupported,
+  isEditLocked,
+  isImageUrl,
+  isRowProtected,
+  lazySection,
+  loadDriveImage,
+  onEdit,
+  parseAIJson,
+  parseAmt,
+  parseGroups,
+  parseProgress,
+  readSheetTab,
+  registerCrossFeature,
+  registerTemplate,
+  renderSparkline,
+  setEditLocked,
+  setProtectedRows,
+  setUserName,
+  startAIRecording,
+  startAudioRecording,
+  svg,
+  textareaCell,
+  updateSheetCell,
+  uploadDriveFile,
+  writeSheetTab,
+};
+
+function formatISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function nowTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

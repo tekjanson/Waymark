@@ -10,15 +10,15 @@
 /* ---------- Constants ---------- */
 
 /** Fixed-point scale factor. Multiply "real" values by this. */
-export const SCALE = 100;
+const SCALE = 100;
 
 /** Convert a float to fixed-point integer. */
-export function toFixed(f) {
+function toFixed(f) {
   return Math.round(f * SCALE);
 }
 
 /** Convert a fixed-point integer to float for rendering. */
-export function toFloat(i) {
+function toFloat(i) {
   return i / SCALE;
 }
 
@@ -37,7 +37,7 @@ export function toFloat(i) {
  * @param {number} by
  * @returns {{ x: number, y: number }}
  */
-export function vecAdd(ax, ay, bx, by) {
+function vecAdd(ax, ay, bx, by) {
   return { x: ax + bx, y: ay + by };
 }
 
@@ -45,7 +45,7 @@ export function vecAdd(ax, ay, bx, by) {
  * Subtract two vectors (a - b).
  * @returns {{ x: number, y: number }}
  */
-export function vecSub(ax, ay, bx, by) {
+function vecSub(ax, ay, bx, by) {
   return { x: ax - bx, y: ay - by };
 }
 
@@ -57,7 +57,7 @@ export function vecSub(ax, ay, bx, by) {
  * @param {number} s — fixed-point scale factor
  * @returns {{ x: number, y: number }}
  */
-export function vecScale(x, y, s) {
+function vecScale(x, y, s) {
   return {
     x: Math.trunc((x * s) / SCALE),
     y: Math.trunc((y * s) / SCALE),
@@ -68,7 +68,7 @@ export function vecScale(x, y, s) {
  * Squared distance between two points (avoids sqrt).
  * @returns {number} — distance² in fixed-point² units
  */
-export function distSq(ax, ay, bx, by) {
+function distSq(ax, ay, bx, by) {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
@@ -79,7 +79,7 @@ export function distSq(ax, ay, bx, by) {
  * @param {number} n — non-negative integer
  * @returns {number} — floor(sqrt(n))
  */
-export function isqrt(n) {
+function isqrt(n) {
   if (n < 0) return 0;
   if (n < 2) return n;
   let x = n;
@@ -95,7 +95,7 @@ export function isqrt(n) {
  * Distance between two points in fixed-point.
  * @returns {number} — distance in SCALE units
  */
-export function dist(ax, ay, bx, by) {
+function dist(ax, ay, bx, by) {
   return isqrt(distSq(ax, ay, bx, by));
 }
 
@@ -106,7 +106,7 @@ export function dist(ax, ay, bx, by) {
  * @param {number} y
  * @returns {{ x: number, y: number }}
  */
-export function vecNorm(x, y) {
+function vecNorm(x, y) {
   const len = isqrt(x * x + y * y);
   if (len === 0) return { x: 0, y: 0 };
   return {
@@ -119,7 +119,7 @@ export function vecNorm(x, y) {
  * Dot product of two vectors (result is SCALE² units, divide by SCALE for SCALE units).
  * @returns {number}
  */
-export function vecDot(ax, ay, bx, by) {
+function vecDot(ax, ay, bx, by) {
   return Math.trunc((ax * bx + ay * by) / SCALE);
 }
 
@@ -135,7 +135,7 @@ export function vecDot(ax, ay, bx, by) {
  * @param {number} br — radius B (fixed-point)
  * @returns {{ hit: boolean, nx: number, ny: number, overlap: number }}
  */
-export function circleCircle(ax, ay, ar, bx, by, br) {
+function circleCircle(ax, ay, ar, bx, by, br) {
   const dx = bx - ax;
   const dy = by - ay;
   const d2 = dx * dx + dy * dy;
@@ -171,7 +171,7 @@ export function circleCircle(ax, ay, ar, bx, by, br) {
  * @param {number} rh — rect height (fixed-point)
  * @returns {{ hit: boolean, nx: number, ny: number, overlap: number }}
  */
-export function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+function circleRect(cx, cy, cr, rx, ry, rw, rh) {
   // Find closest point on rect to circle centre
   const closestX = Math.max(rx, Math.min(cx, rx + rw));
   const closestY = Math.max(ry, Math.min(cy, ry + rh));
@@ -209,7 +209,7 @@ export function circleRect(cx, cy, cr, rx, ry, rw, rh) {
  * @param {number} rh — rect height (fixed-point)
  * @returns {boolean}
  */
-export function pointInRect(px, py, rx, ry, rw, rh) {
+function pointInRect(px, py, rx, ry, rw, rh) {
   return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
 }
 
@@ -221,7 +221,7 @@ export function pointInRect(px, py, rx, ry, rw, rh) {
  * @param {number} gravity — gravity per tick (fixed-point, positive = downward)
  * @returns {number} — new vy
  */
-export function applyGravity(vy, gravity) {
+function applyGravity(vy, gravity) {
   return vy + gravity;
 }
 
@@ -231,7 +231,7 @@ export function applyGravity(vy, gravity) {
  * @param {number} vel — velocity (fixed-point, per tick)
  * @returns {number} — new position
  */
-export function integrate(pos, vel) {
+function integrate(pos, vel) {
   return pos + vel;
 }
 
@@ -242,7 +242,7 @@ export function integrate(pos, vel) {
  * @param {number} max
  * @returns {number}
  */
-export function clamp(val, min, max) {
+function clamp(val, min, max) {
   if (val < min) return min;
   if (val > max) return max;
   return val;
@@ -257,7 +257,7 @@ export function clamp(val, min, max) {
  * @param {number} restitution — bounce factor (fixed-point, 100 = perfect bounce)
  * @returns {{ vx: number, vy: number }}
  */
-export function reflect(vx, vy, nx, ny, restitution) {
+function reflect(vx, vy, nx, ny, restitution) {
   // v' = v - (1 + e) * (v · n) * n
   const dot = Math.trunc((vx * nx + vy * ny) / SCALE);
   const factor = Math.trunc(((SCALE + restitution) * dot) / SCALE);
@@ -277,7 +277,7 @@ export function reflect(vx, vy, nx, ny, restitution) {
  * @param {number} overlap — penetration depth
  * @param {number} [splitRatio=50] — how much A moves (fixed-point %, 50 = half each)
  */
-export function separate(a, b, nx, ny, overlap, splitRatio = 50) {
+function separate(a, b, nx, ny, overlap, splitRatio = 50) {
   const aShare = Math.trunc((overlap * splitRatio) / SCALE);
   const bShare = overlap - aShare;
   a.x -= Math.trunc((nx * aShare) / SCALE);
@@ -285,3 +285,25 @@ export function separate(a, b, nx, ny, overlap, splitRatio = 50) {
   b.x += Math.trunc((nx * bShare) / SCALE);
   b.y += Math.trunc((ny * bShare) / SCALE);
 }
+
+export {
+  SCALE,
+  applyGravity,
+  circleCircle,
+  circleRect,
+  clamp,
+  dist,
+  distSq,
+  integrate,
+  isqrt,
+  pointInRect,
+  reflect,
+  separate,
+  toFixed,
+  toFloat,
+  vecAdd,
+  vecDot,
+  vecNorm,
+  vecScale,
+  vecSub,
+};

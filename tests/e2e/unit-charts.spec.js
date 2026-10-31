@@ -4,7 +4,7 @@ const { setupApp } = require('../helpers/test-utils');
 
 /* ================================================================
    unit-charts.spec.js — Unit tests for charts.js pure helpers
-   
+
    Tests: normalizeValues, polarToCartesian, computePieAngles,
           formatAxisLabel
    All tests run in the browser via page.evaluate + dynamic import.

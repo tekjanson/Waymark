@@ -55,8 +55,7 @@ import {
 import * as vault from './agent/vault.js';
 
 /* ---------- Capabilities ---------- */
-
-export const CAP = {
+const CAP = {
   TEXT_BASIC: 'text_basic',
   STRUCTURED_JSON: 'structured_json',
   AGENT_REASONING: 'agent_reasoning',
@@ -75,8 +74,7 @@ const PROVIDER_META = {
   openai: { label: 'OpenAI', caps: new Set([...TEXT_CAPS, CAP.VISION_ANALYSIS, CAP.IMAGE_GENERATION_PHOTOREAL]) },
   claude: { label: 'Claude', caps: new Set([...TEXT_CAPS, CAP.VISION_ANALYSIS]) },
 };
-
-export const ALL_PROVIDERS = ['ollama', 'gemini', 'openai', 'claude'];
+const ALL_PROVIDERS = ['ollama', 'gemini', 'openai', 'claude'];
 
 /* ---------- Provider configuration / cost ---------- */
 
@@ -90,7 +88,7 @@ function serverKeyEntry(globalName) {
  * @param {string} provider
  * @returns {boolean}
  */
-export function providerHasConfig(provider) {
+function providerHasConfig(provider) {
   switch (provider) {
     case 'gemini': return pickBestKey().length > 0;
     case 'claude': return !!pickBestClaudeKey() || !!serverKeyEntry('__WAYMARK_CLAUDE_KEY');
@@ -106,7 +104,7 @@ export function providerHasConfig(provider) {
  * @param {string} provider
  * @returns {number}
  */
-export function effectiveTier(provider) {
+function effectiveTier(provider) {
   switch (provider) {
     case 'ollama': return 0;
     case 'gemini': return getGeminiTier() === 'paid' ? 1 : 0;
@@ -121,7 +119,7 @@ export function effectiveTier(provider) {
  * @param {string} provider
  * @returns {string}
  */
-export function tierBadge(provider) {
+function tierBadge(provider) {
   switch (provider) {
     case 'ollama': return 'LOCAL/FREE';
     case 'gemini': return getGeminiTier() === 'paid' ? '$' : 'FREE TIER';
@@ -137,7 +135,7 @@ export function tierBadge(provider) {
  * existing single-provider setups keep working unchanged.
  * @returns {string[]}
  */
-export function enabledProviders() {
+function enabledProviders() {
   const explicit = getEnabledProviders();
   if (Array.isArray(explicit)) {
     return explicit.filter(p => ALL_PROVIDERS.includes(p) && providerHasConfig(p));
@@ -150,7 +148,7 @@ export function enabledProviders() {
  * @param {string} capability
  * @returns {string[]}
  */
-export function providersForCapability(capability) {
+function providersForCapability(capability) {
   return enabledProviders()
     .filter(p => PROVIDER_META[p] && PROVIDER_META[p].caps.has(capability))
     .sort((a, b) => effectiveTier(a) - effectiveTier(b));
@@ -160,7 +158,7 @@ export function providersForCapability(capability) {
  * Status snapshot of every provider — for the AI settings UI.
  * @returns {Array<{provider:string,label:string,configured:boolean,enabled:boolean,tier:number,badge:string,caps:string[]}>}
  */
-export function getProviderStatus() {
+function getProviderStatus() {
   const enabled = new Set(enabledProviders());
   return ALL_PROVIDERS.map(provider => ({
     provider,
@@ -179,7 +177,7 @@ export function getProviderStatus() {
  * to the cheapest enabled provider that can reason.
  * @returns {string}
  */
-export function resolveAgentProvider() {
+function resolveAgentProvider() {
   const preferred = getAgentProvider();
   const candidates = providersForCapability(CAP.AGENT_REASONING);
   if (candidates.includes(preferred)) return preferred;
@@ -192,7 +190,7 @@ export function resolveAgentProvider() {
  * @param {string} provider
  * @returns {Promise<{ ok: boolean, message: string }>}
  */
-export async function testProviderConnection(provider) {
+async function testProviderConnection(provider) {
   try {
     if (provider === 'gemini') {
       const entry = pickBestKey()[0];
@@ -238,7 +236,7 @@ export async function testProviderConnection(provider) {
  * @param {{ temperature?: number, maxTokens?: number, provider?: string }} [opts]
  * @returns {Promise<string>} text, or an image data URL / URL for image generation
  */
-export async function routeAI(capability, payload = {}, opts = {}) {
+async function routeAI(capability, payload = {}, opts = {}) {
   if (vault.isVaultSetUp() && !vault.isVaultUnlocked()) {
     const hasBiometrics = vault.hasBiometricVault();
     const unlocked = await vault.ensureVaultUnlocked();
@@ -551,3 +549,17 @@ async function callOpenAIImageEdit(picked, model, payload) {
   if (item.url) return item.url;
   throw new Error('No image returned from OpenAI.');
 }
+
+export {
+  ALL_PROVIDERS,
+  CAP,
+  effectiveTier,
+  enabledProviders,
+  getProviderStatus,
+  providerHasConfig,
+  providersForCapability,
+  resolveAgentProvider,
+  routeAI,
+  testProviderConnection,
+  tierBadge,
+};

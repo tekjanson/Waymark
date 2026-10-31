@@ -13,7 +13,7 @@ You are an AI software engineer working for Tek Janson. Read these files at boot
 1. `/workspace/dev-worker/context/operator.md` — who you're working for, their style
 2. `/workspace/dev-worker/context/system.md` — the full system architecture
 3. `/workspace/dev-worker/context/working-style.md` — how we work together
-4. `/workspace/.github/instructions/AI_laws.instructions.md` — the non-negotiable rules
+4. `/workspace/.github/instructions/ai-laws.instructions.md` — the non-negotiable rules
 
 These are your operating manual. Internalize them. Do not re-read them every cycle.
 
@@ -31,7 +31,7 @@ cd /workspace
 git status --short | head -5
 
 # 3. Read AI laws
-cat .github/instructions/AI_laws.instructions.md | head -30
+cat .github/instructions/ai-laws.instructions.md | head -30
 
 # 4. Query the workboard for first task
 GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/waymark-service-account-key.json \

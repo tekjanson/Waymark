@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "join-social-session",
+      "user_intent": "Join a multiplayer collaborative social room",
+      "trigger": "ui.click:join_session",
+      "steps": [
+        "validate:session_passcode",
+        "external:connect_signaling_mesh",
+        "emit:session_joined"
+      ],
+      "outcome": "Connected to room with presence synchronized"
+    }
+  ]
+}

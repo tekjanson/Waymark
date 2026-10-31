@@ -62,7 +62,7 @@ async function listAll(token, params = {}) {
 /**
  * List folders at the root of the user's Drive.
  */
-export async function listRootFolders(token) {
+async function listRootFolders(token) {
   return list(token, {
     q: "'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
     orderBy: 'name',
@@ -72,7 +72,7 @@ export async function listRootFolders(token) {
 /**
  * List children (folders + sheets + docs) inside a folder.
  */
-export async function listChildren(token, folderId) {
+async function listChildren(token, folderId) {
   return list(token, {
     q: `'${folderId}' in parents and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.document')`,
     orderBy: 'folder,name',
@@ -82,7 +82,7 @@ export async function listChildren(token, folderId) {
 /**
  * List items shared with the current user (folders + sheets + docs).
  */
-export async function getSharedWithMe(token) {
+async function getSharedWithMe(token) {
   return list(token, {
     q: "sharedWithMe=true and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.document')",
     orderBy: 'name',
@@ -98,7 +98,7 @@ export async function getSharedWithMe(token) {
  * @param {string[]} parents      parent folder IDs
  * @returns {Promise<Object>}     created file metadata
  */
-export async function createFile(token, name, mimeType, parents = []) {
+async function createFile(token, name, mimeType, parents = []) {
   const res = await fetch(`${BASE}/files`, {
     method: 'POST',
     headers: {
@@ -119,7 +119,7 @@ export async function createFile(token, name, mimeType, parents = []) {
  * @param {string} [parentId]  optional parent folder ID (defaults to root)
  * @returns {Promise<Object|null>}
  */
-export async function findFolder(token, name, parentId) {
+async function findFolder(token, name, parentId) {
   const parentClause = parentId ? `'${parentId}' in parents` : "'root' in parents";
   const q = `${parentClause} and name='${name.replace(/'/g, "\\'")}'  and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   const result = await list(token, { q });
@@ -132,7 +132,7 @@ export async function findFolder(token, name, parentId) {
  * @param {string} [query]  optional extra query clause
  * @returns {Promise<Object>}
  */
-export async function listSpreadsheets(token, query) {
+async function listSpreadsheets(token, query) {
   const q = query
     ? `${query} and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
     : "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
@@ -144,7 +144,7 @@ export async function listSpreadsheets(token, query) {
  * @param {string} token
  * @returns {Promise<Object>}
  */
-export async function listImportableFiles(token) {
+async function listImportableFiles(token) {
   return listAll(token, {
     q: "trashed=false and (mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.google-apps.document')",
     pageSize: '200',
@@ -158,7 +158,7 @@ export async function listImportableFiles(token) {
  * @param {string} fileId  the Google Doc file ID
  * @returns {Promise<string>}  the document content as plain text
  */
-export async function exportDoc(token, fileId) {
+async function exportDoc(token, fileId) {
   const res = await fetch(
     `${BASE}/files/${fileId}/export?mimeType=text/plain`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -175,7 +175,7 @@ export async function exportDoc(token, fileId) {
  * @param {string} fileId
  * @returns {Promise<string>}  the document content as HTML
  */
-export async function exportDocAsHtml(token, fileId) {
+async function exportDocAsHtml(token, fileId) {
   const res = await fetch(
     `${BASE}/files/${fileId}/export?mimeType=text/html`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -190,7 +190,7 @@ export async function exportDocAsHtml(token, fileId) {
  * @param {string} fileId
  * @returns {Promise<Object>}
  */
-export async function getFile(token, fileId) {
+async function getFile(token, fileId) {
   const res = await fetch(
     `${BASE}/files/${fileId}?fields=id,name,mimeType,parents,modifiedTime`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -206,7 +206,7 @@ export async function getFile(token, fileId) {
  * @param {string} parentId   parent folder ID
  * @returns {Promise<Object|null>}
  */
-export async function findFile(token, name, parentId) {
+async function findFile(token, name, parentId) {
   const q = `'${parentId}' in parents and name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
   const result = await list(token, { q });
   return result.files?.[0] || null;
@@ -219,7 +219,7 @@ export async function findFile(token, name, parentId) {
  * @param {string} name
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
-export async function findFilesGlobal(token, name) {
+async function findFilesGlobal(token, name) {
   const q = `name='${name.replace(/'/g, "\\'")}'  and trashed=false`;
   const result = await listAll(token, { q, orderBy: 'createdTime', pageSize: '100' });
   const matches = result.files || [];
@@ -229,8 +229,7 @@ export async function findFilesGlobal(token, name) {
   );
   return matches;
 }
-
-export async function findFileGlobal(token, name) {
+async function findFileGlobal(token, name) {
   return (await findFilesGlobal(token, name))[0] || null;
 }
 
@@ -243,7 +242,7 @@ export async function findFileGlobal(token, name) {
  * @param {string[]} parents  parent folder IDs
  * @returns {Promise<Object>}  created file metadata
  */
-export async function createJsonFile(token, name, content, parents = []) {
+async function createJsonFile(token, name, content, parents = []) {
   const metadata = { name, mimeType: 'application/json', parents };
   const body = JSON.stringify(content, null, 2);
 
@@ -273,7 +272,7 @@ export async function createJsonFile(token, name, content, parents = []) {
  * @param {string} fileId
  * @returns {Promise<Object>}  parsed JSON content
  */
-export async function readJsonFile(token, fileId) {
+async function readJsonFile(token, fileId) {
   const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -287,7 +286,7 @@ export async function readJsonFile(token, fileId) {
  * @param {string} fileId
  * @returns {Promise<string>}  raw text content
  */
-export async function readTextFile(token, fileId) {
+async function readTextFile(token, fileId) {
   const res = await fetch(`${BASE}/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -302,7 +301,7 @@ export async function readTextFile(token, fileId) {
  * @param {Object} content  JSON-serializable content
  * @returns {Promise<Object>}  updated file metadata
  */
-export async function updateJsonFile(token, fileId, content) {
+async function updateJsonFile(token, fileId, content) {
   const body = JSON.stringify(content, null, 2);
   const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
     method: 'PATCH',
@@ -324,7 +323,7 @@ export async function updateJsonFile(token, fileId, content) {
  * @param {string[]} parents  parent folder IDs
  * @returns {Promise<Object>}  created file metadata
  */
-export async function createTextFile(token, name, content, parents = []) {
+async function createTextFile(token, name, content, parents = []) {
   const metadata = { name, mimeType: 'text/plain', parents };
 
   const boundary = '----WayMarkBoundary' + Date.now();
@@ -352,11 +351,11 @@ export async function createTextFile(token, name, content, parents = []) {
  * After upload, sets the file permission to publicly readable so that
  * the drive.google.com/uc?export=view&id=... URL works without sign-in.
  * @param {string} token         OAuth access token
- * @param {File}   file          Browser File object (from <input type="file">)
+ * @param {File}   file          Browser File object (from file input element)
  * @param {string} [parentFolderId]  Drive folder ID to place the file in
  * @returns {Promise<{id: string, webViewLink: string}>}  uploaded file metadata
  */
-export async function uploadImageFile(token, file, parentFolderId) {
+async function uploadImageFile(token, file, parentFolderId) {
   const meta = JSON.stringify({
     name: file.name,
     ...(parentFolderId ? { parents: [parentFolderId] } : {}),
@@ -386,7 +385,7 @@ export async function uploadImageFile(token, file, parentFolderId) {
  * @param {string} content   plain text content
  * @returns {Promise<Object>}  updated file metadata
  */
-export async function updateTextFile(token, fileId, content) {
+async function updateTextFile(token, fileId, content) {
   const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,mimeType`, {
     method: 'PATCH',
     headers: {
@@ -407,7 +406,7 @@ export async function updateTextFile(token, fileId, content) {
  * @param {string} fileId  Drive / Sheets file ID
  * @returns {Promise<void>}
  */
-export async function setPublicWritable(token, fileId) {
+async function setPublicWritable(token, fileId) {
   const res = await fetch(`${BASE}/files/${fileId}/permissions`, {
     method: 'POST',
     headers: {
@@ -428,7 +427,7 @@ export async function setPublicWritable(token, fileId) {
  * @param {{ sendNotificationEmail?: boolean, emailMessage?: string }} [opts]
  * @returns {Promise<void>}
  */
-export async function createDrivePermission(token, fileId, email, role, opts = {}) {
+async function createDrivePermission(token, fileId, email, role, opts = {}) {
   const makeReq = async (sendNotif) => {
     const qs = new URLSearchParams();
     if (typeof sendNotif === 'boolean') {
@@ -459,3 +458,28 @@ export async function createDrivePermission(token, fileId, email, role, opts = {
   }
   if (!res.ok) throw driveError('Drive createDrivePermission', res);
 }
+
+export {
+  createDrivePermission,
+  createFile,
+  createJsonFile,
+  createTextFile,
+  exportDoc,
+  exportDocAsHtml,
+  findFile,
+  findFileGlobal,
+  findFilesGlobal,
+  findFolder,
+  getFile,
+  getSharedWithMe,
+  listChildren,
+  listImportableFiles,
+  listRootFolders,
+  listSpreadsheets,
+  readJsonFile,
+  readTextFile,
+  setPublicWritable,
+  updateJsonFile,
+  updateTextFile,
+  uploadImageFile,
+};

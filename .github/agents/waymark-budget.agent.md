@@ -70,7 +70,7 @@ An income/expense ledger where each row is a transaction or budget line. The `am
 ### Balance Summary
 Sum all amounts. Report:
 - Total income (positive amounts or income-category rows)
-- Total expenses (negative amounts or expense-category rows)  
+- Total expenses (negative amounts or expense-category rows)
 - Net balance = income − expenses
 - Show as: `Income: $X | Expenses: $Y | Net: $Z`
 

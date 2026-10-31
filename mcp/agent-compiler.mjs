@@ -261,7 +261,7 @@ function toolAgentCompile(args) {
     const result = compileAgent(templateKey);
     // Persist input hash so future calls can detect changes
     mkdirSync(EVAL_DIR, { recursive: true });
-    writeFileSync(hashFile, currentHash, "utf8");
+    writeFileSync(hashFile, `${currentHash}\n`, "utf8");
     return {
       ...result,
       message: result.wasAlreadyCompiled
