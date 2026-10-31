@@ -19,11 +19,10 @@ import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotific
 import { discoverDirectory, isCandidateContactsBook, extractLedgerSheetId, normalizeContactEmail } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
-
-export const SHARED_DOCS_TAB = 'Shared_Docs';
-export const PRESENCE_TAB = 'Presence';
-export const CHAT_TAB = 'Chat';
-export const SIGNALING_TAB = 'WebRTC_Signaling';
+const SHARED_DOCS_TAB = 'Shared_Docs';
+const PRESENCE_TAB = 'Presence';
+const CHAT_TAB = 'Chat';
+const SIGNALING_TAB = 'WebRTC_Signaling';
 
 const SHARED_DOCS_HEADERS = [
   'Document_ID', 'Document_Title', 'Waymark_Type', 'Shared_With_Email',
@@ -36,7 +35,7 @@ const SIGNALING_HEADERS = ['Session_ID', 'Caller_Email', 'Callee_Email', 'SDP_Of
 /* ---------- Helpers ---------- */
 
 /** Current signed-in user's email (lowercased), or '' when unknown. */
-export function currentEmail() {
+function currentEmail() {
   try {
     const user = api.auth.getUser();
     return (user && user.email ? user.email : '').trim().toLowerCase();
@@ -79,7 +78,7 @@ function ledgerFileName(key) {
  * @param {{ contactEmail?: string, group?: string, memberEmails?: string[] }} target
  * @returns {Promise<string[]>}
  */
-export async function resolveTargetEmails(target = {}) {
+async function resolveTargetEmails(target = {}) {
   const me = currentEmail();
   const out = new Set();
 
@@ -120,7 +119,7 @@ export async function resolveTargetEmails(target = {}) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<{ key: string, sheetId: string }>}
  */
-export async function ensureShareLedger(target) {
+async function ensureShareLedger(target) {
   const identity = ledgerIdentity(target);
   const { key } = identity;
   if (key === 'contact:') throw new Error('A contact email or group is required.');
@@ -176,7 +175,7 @@ export async function ensureShareLedger(target) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<{key: string, sheetId: string}|null>}
  */
-export async function findExistingShareLedger(target) {
+async function findExistingShareLedger(target) {
   const identity = ledgerIdentity(target);
   const { key, legacyKeys } = identity;
   if (!key || key === 'contact:') return null;
@@ -303,7 +302,7 @@ async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', p
  * @param {{ sheetId: string, contactEmail?: string, group?: string, ownerEmail?: string, fileName?: string }} args
  * @returns {Promise<{ key: string, sheetId: string, target: { contactEmail?: string, group?: string } }>}
  */
-export async function registerSharedLedger(args = {}) {
+async function registerSharedLedger(args = {}) {
   const sheetId = String(args.sheetId || '').trim();
   if (!sheetId) throw new Error('A ledger sheetId is required.');
 
@@ -353,7 +352,7 @@ export async function registerSharedLedger(args = {}) {
  * @param {{ contactEmail?: string, group?: string }} [targetHint]
  * @returns {Promise<Array<{ key: string, sheetId: string }>>}
  */
-export async function connectSharedLedgerViaPicker(targetHint = {}) {
+async function connectSharedLedgerViaPicker(targetHint = {}) {
   const picked = await api.picker.pickSharedFiles({
     query: '.waymark-ledger-',
     title: 'Connect Shared Waymark Ledger',
@@ -381,7 +380,7 @@ export async function connectSharedLedgerViaPicker(targetHint = {}) {
  * @param {{ contactEmail?: string, group?: string, memberEmails?: string[], docId: string, docTitle?: string, waymarkType?: string, permission?: string }} args
  * @returns {Promise<string>} the ledger sheet id
  */
-export async function shareDocumentWithContact(args) {
+async function shareDocumentWithContact(args) {
   const { sheetId } = await ensureShareLedger(args);
   const permission = args.permission === 'writer' ? 'writer' : (args.permission || 'reader');
   const now = new Date().toISOString();
@@ -448,7 +447,7 @@ export async function shareDocumentWithContact(args) {
 }
 
 /** Back-compat alias used by the share modal grant flow. */
-export async function recordSharedWaymark(contactEmail, entry) {
+async function recordSharedWaymark(contactEmail, entry) {
   return shareDocumentWithContact({
     contactEmail,
     docId: entry.sheetId,
@@ -505,7 +504,7 @@ function resolveLedgerCounterparty(ledger = {}, rows = []) {
  * @param {string} docId
  * @returns {Promise<Array<{ ledgerSheetId: string, contactEmail?: string, group?: string, docTitle?: string, waymarkType?: string }>>}
  */
-export async function findLedgersForDocument(docId) {
+async function findLedgersForDocument(docId) {
   if (!docId) return [];
   const cached = storage.getSharedDocLedgers(docId);
   const bySheetId = new Map();
@@ -545,7 +544,7 @@ export async function findLedgersForDocument(docId) {
  * @param {string[][]} values
  * @returns {{ rowCount: number, hash: string, updatedAt: string }}
  */
-export function computeSheetDigest(values) {
+function computeSheetDigest(values) {
   if (!Array.isArray(values) || values.length === 0) {
     return { rowCount: 0, hash: '0:0', updatedAt: new Date().toISOString() };
   }
@@ -574,7 +573,7 @@ export function computeSheetDigest(values) {
  * @param {{ docId: string, docTitle?: string, waymarkType?: string, summary: string, contactEmail?: string, group?: string, actorEmail?: string }} args
  * @returns {Promise<number>} number of ledgers updated
  */
-export async function recordWaymarkActivity(args = {}) {
+async function recordWaymarkActivity(args = {}) {
   const docId = String(args.docId || '').trim();
   if (!docId) return 0;
 
@@ -656,7 +655,7 @@ export async function recordWaymarkActivity(args = {}) {
  * @param {{ docId: string, docTitle?: string, waymarkType?: string, action?: 'edit'|'add', rowLabel?: string, columnHeader?: string, newValue?: string, summary?: string }} info
  * @returns {Promise<number>}
  */
-export async function notifySheetMutation(info = {}) {
+async function notifySheetMutation(info = {}) {
   const docId = String(info.docId || '').trim();
   if (!docId) return 0;
 
@@ -699,7 +698,7 @@ export async function notifySheetMutation(info = {}) {
  * @param {{ docId: string, docTitle?: string, waymarkType?: string, ledgerSheetId?: string, from?: string }} args
  * @returns {Promise<boolean>}
  */
-export async function acceptSharedWaymark(args = {}) {
+async function acceptSharedWaymark(args = {}) {
   const docId = String(args.docId || '').trim();
   if (!docId) return false;
 
@@ -821,6 +820,13 @@ export async function acceptSharedWaymark(args = {}) {
   return true;
 }
 
+if (typeof window !== 'undefined') {
+  window._waymarkShareActionDelegate = {
+    acceptSharedWaymark,
+    rejectSharedWaymark,
+  };
+}
+
 /**
  * Reject an incoming shared Waymark:
  * - Marks the document as rejected in local storage and hides it in Explorer.
@@ -829,7 +835,7 @@ export async function acceptSharedWaymark(args = {}) {
  * @param {{ docId: string, docTitle?: string, ledgerSheetId?: string }} args
  * @returns {Promise<boolean>}
  */
-export async function rejectSharedWaymark(args = {}) {
+async function rejectSharedWaymark(args = {}) {
   const docId = String(args.docId || '').trim();
   if (!docId) return false;
 
@@ -902,12 +908,19 @@ export async function rejectSharedWaymark(args = {}) {
   return true;
 }
 
+if (typeof window !== 'undefined') {
+  window._waymarkShareActionDelegate = {
+    acceptSharedWaymark,
+    rejectSharedWaymark,
+  };
+}
+
 /**
  * Discover all past collaborators (contacts and Waymarker Crews) from known
  * Share Ledgers, even when the user has not created a Contacts Waymark sheet.
  * @returns {{ contacts: Array<{ name: string, email: string, group?: string, book: string, ledgerSheetId: string }>, crews: Array<{ name: string, members: Array<{ name: string, email: string }>, ledgerSheetId: string }> }}
  */
-export function getKnownCollaborators() {
+function getKnownCollaborators() {
   const me = currentEmail();
   const ledgers = userData.getShareLedgers();
   const contacts = [];
@@ -949,7 +962,7 @@ export function getKnownCollaborators() {
  * (e.g., edits made directly in Google Sheets outside the Waymark UI).
  * @returns {Promise<number>} number of diff notifications pushed
  */
-export async function checkSharedSheetDiffs() {
+async function checkSharedSheetDiffs() {
   const prefs = storage.getNotificationSettings();
   if (prefs.collabUpdates === false) return 0;
 
@@ -1033,7 +1046,7 @@ export async function checkSharedSheetDiffs() {
  * the last seen cursor, and push them to the top-bar notification bell.
  * @returns {Promise<number>} number of new notifications pushed
  */
-export async function pollShareLedgers() {
+async function pollShareLedgers() {
   const me = currentEmail();
   const ledgers = userData.getShareLedgers();
   const prefs = storage.getNotificationSettings();
@@ -1259,7 +1272,7 @@ export async function pollShareLedgers() {
 }
 
 /** Back-compat alias retained for the app boot/poll cycle. */
-export const pollBilateralSheets = pollShareLedgers;
+const pollBilateralSheets = pollShareLedgers;
 
 /**
  * Resolve the social store (sheet + tabs) for a contact/group, provisioning the
@@ -1267,7 +1280,7 @@ export const pollBilateralSheets = pollShareLedgers;
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<{ sheetId: string, presenceTab: string, chatTab: string, signalingTab: string }>}
  */
-export async function getSocialTarget(target) {
+async function getSocialTarget(target) {
   const { sheetId } = await ensureShareLedger(target);
   return { sheetId, presenceTab: PRESENCE_TAB, chatTab: CHAT_TAB, signalingTab: SIGNALING_TAB };
 }
@@ -1278,7 +1291,7 @@ export async function getSocialTarget(target) {
  * @param {string} sheetId
  * @returns {{ readAll: () => Promise<string[][]>, writeCell: (row: number, col: number, val: string) => Promise<void> }}
  */
-export function createLedgerSignal(sheetId) {
+function createLedgerSignal(sheetId) {
   return {
     async readAll() {
       return readTabValues(sheetId, SIGNALING_TAB);
@@ -1290,7 +1303,7 @@ export function createLedgerSignal(sheetId) {
 }
 
 /** WebRTC signaling target (same bilateral ledger sheet). */
-export async function getSignalingTarget(target) {
+async function getSignalingTarget(target) {
   const t = typeof target === 'string' ? { contactEmail: target } : target;
   const { sheetId } = await ensureShareLedger(t);
   return { sheetId, tab: SIGNALING_TAB, signal: createLedgerSignal(sheetId) };
@@ -1305,7 +1318,7 @@ export async function getSignalingTarget(target) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @param {{ status?: string, activeWaymarkId?: string, displayName?: string }} [opts]
  */
-export async function publishPresence(target, opts = {}) {
+async function publishPresence(target, opts = {}) {
   const { sheetId } = await ensureShareLedger(target);
   await upsertPresenceRow(sheetId, target, opts);
 }
@@ -1315,7 +1328,7 @@ export async function publishPresence(target, opts = {}) {
  * without creating any new sheets.
  * @param {{ status?: string, activeWaymarkId?: string, displayName?: string }} [opts]
  */
-export async function publishPresenceEverywhere(opts = {}) {
+async function publishPresenceEverywhere(opts = {}) {
   const ledgers = userData.getShareLedgers();
   for (const l of ledgers) {
     if (!l?.sheetId) continue;
@@ -1410,7 +1423,7 @@ function presenceFromRows(rows) {
  * @param {string} ledgerSheetId
  * @returns {Promise<{ chat: Array<{id:string,sender:string,text:string,ts:string}>, presence: Array<{email:string,name:string,status:string}>, files: Array<{docId:string,title:string,type:string,sharedWith:string,group:string,permission:string,ts:string,status:string}> }>}
  */
-export async function readSocialSnapshot(ledgerSheetId) {
+async function readSocialSnapshot(ledgerSheetId) {
   const data = await api.sheets.getSpreadsheet(ledgerSheetId);
   const files = tabRowsFromData(data, SHARED_DOCS_TAB)
     .filter(r => (r.Document_ID || '').trim() && !String(r.Status || '').startsWith('Updated|'))
@@ -1437,7 +1450,7 @@ export async function readSocialSnapshot(ledgerSheetId) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<Array<{ email: string, name: string, status: string }>>}
  */
-export async function readPresence(target) {
+async function readPresence(target) {
   const mapped = await findExistingShareLedger(target);
   if (!mapped) return [];
   const rows = await readTab(mapped.sheetId, PRESENCE_TAB);
@@ -1466,7 +1479,7 @@ export async function readPresence(target) {
  * @param {string} [messageId] stable ID shared with the live WebRTC message
  * @returns {Promise<{id:string,sheetId:string}|null>}
  */
-export async function sendChat(target, text, attachedLink = '', messageId = '') {
+async function sendChat(target, text, attachedLink = '', messageId = '') {
   if (!text || !text.trim()) return null;
   const { sheetId } = await ensureShareLedger(target);
   const me = currentEmail();
@@ -1495,7 +1508,7 @@ export async function sendChat(target, text, attachedLink = '', messageId = '') 
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<Array<{ sender: string, text: string, ts: string }>>}
  */
-export async function readChat(target) {
+async function readChat(target) {
   const mapped = await findExistingShareLedger(target);
   if (!mapped) return [];
   const rows = await readTab(mapped.sheetId, CHAT_TAB);
@@ -1647,3 +1660,37 @@ setShareActionDelegate({ acceptSharedWaymark, rejectSharedWaymark });
 if (typeof window !== 'undefined') {
   window.__WAYMARK_COLLAB = { acceptSharedWaymark, rejectSharedWaymark };
 }
+
+export {
+  CHAT_TAB,
+  PRESENCE_TAB,
+  SHARED_DOCS_TAB,
+  SIGNALING_TAB,
+  acceptSharedWaymark,
+  checkSharedSheetDiffs,
+  computeSheetDigest,
+  connectSharedLedgerViaPicker,
+  createLedgerSignal,
+  currentEmail,
+  ensureShareLedger,
+  findExistingShareLedger,
+  findLedgersForDocument,
+  getKnownCollaborators,
+  getSignalingTarget,
+  getSocialTarget,
+  notifySheetMutation,
+  pollBilateralSheets,
+  pollShareLedgers,
+  publishPresence,
+  publishPresenceEverywhere,
+  readChat,
+  readPresence,
+  readSocialSnapshot,
+  recordSharedWaymark,
+  recordWaymarkActivity,
+  registerSharedLedger,
+  rejectSharedWaymark,
+  resolveTargetEmails,
+  sendChat,
+  shareDocumentWithContact,
+};

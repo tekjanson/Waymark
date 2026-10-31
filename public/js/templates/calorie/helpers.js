@@ -21,10 +21,9 @@ export {
 } from '../shared.js';
 
 /* ---------- Constants ---------- */
-
-export const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
-export const EXERCISE_MEAL = 'Exercise';
-export const DEFAULT_TARGET = 2000;
+const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+const EXERCISE_MEAL = 'Exercise';
+const DEFAULT_TARGET = 2000;
 
 /* ---------- Daily aggregation ---------- */
 
@@ -34,7 +33,7 @@ export const DEFAULT_TARGET = 2000;
  * @param {Object} cols       column-index map from definition.columns()
  * @returns {{food:number,burned:number,protein:number,carbs:number,fat:number,byMeal:Object}}
  */
-export function computeDayTotals(rows, cols) {
+function computeDayTotals(rows, cols) {
   const totals = { food: 0, burned: 0, protein: 0, carbs: 0, fat: 0, byMeal: {} };
   for (const type of MEAL_TYPES) {
     totals.byMeal[type] = { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 };
@@ -70,7 +69,7 @@ export function computeDayTotals(rows, cols) {
 }
 
 /** Map an arbitrary meal label to one of the 4 canonical buckets. */
-export function canonicalMeal(meal) {
+function canonicalMeal(meal) {
   const m = (meal || '').toLowerCase();
   if (/break/.test(m)) return 'Breakfast';
   if (/lunch|midday/.test(m)) return 'Lunch';
@@ -85,7 +84,7 @@ export function canonicalMeal(meal) {
  * @param {number} burned
  * @returns {{target:number,food:number,burned:number,net:number,remaining:number}}
  */
-export function computeNet(target, food, burned) {
+function computeNet(target, food, burned) {
   const t = parseNum(target) || 0;
   const fd = parseNum(food) || 0;
   const bn = parseNum(burned) || 0;
@@ -106,7 +105,7 @@ export function computeNet(target, food, burned) {
  * @param {number} [fallback]
  * @returns {number}
  */
-export function resolveTarget(rows, cols, fallback = DEFAULT_TARGET) {
+function resolveTarget(rows, cols, fallback = DEFAULT_TARGET) {
   if (cols.target != null && cols.target >= 0) {
     for (const row of rows) {
       const t = parseNum(row[cols.target]);
@@ -122,7 +121,7 @@ export function resolveTarget(rows, cols, fallback = DEFAULT_TARGET) {
  * @param {Object} cols
  * @returns {Map<string, {row:string[], index:number}[]>}
  */
-export function groupByDate(rows, cols) {
+function groupByDate(rows, cols) {
   const map = new Map();
   rows.forEach((row, i) => {
     const date = (row[cols.date] || '').trim() || 'Undated';
@@ -133,7 +132,7 @@ export function groupByDate(rows, cols) {
 }
 
 /** Pick the "active" (latest) date from a grouped map. */
-export function latestDate(dateMap) {
+function latestDate(dateMap) {
   const dates = [...dateMap.keys()].filter(d => d !== 'Undated');
   if (!dates.length) return [...dateMap.keys()][0] || null;
   return dates.sort().at(-1);
@@ -145,7 +144,7 @@ export function latestDate(dateMap) {
  * @param {Object} cols
  * @returns {Array<Object>}
  */
-export function customFoodsFromRows(rows, cols) {
+function customFoodsFromRows(rows, cols) {
   const seen = new Set();
   const out = [];
   for (const row of rows) {
@@ -172,7 +171,7 @@ export function customFoodsFromRows(rows, cols) {
 /* ---------- Timeframe averages & trends ---------- */
 
 /** Parse a YYYY-MM-DD string to a Date (UTC midnight); null when invalid. */
-export function parseDate(str) {
+function parseDate(str) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((str || '').trim());
   if (!m) return null;
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
@@ -186,7 +185,7 @@ export function parseDate(str) {
  * @param {number} days
  * @returns {Object}
  */
-export function buildSeries(dateMap, cols, endDate, days) {
+function buildSeries(dateMap, cols, endDate, days) {
   const end = parseDate(endDate) || new Date();
   const labels = [], food = [], burned = [], net = [];
   const protein = [], carbs = [], fat = [];
@@ -214,7 +213,7 @@ export function buildSeries(dateMap, cols, endDate, days) {
  * @param {Object} series
  * @returns {Object}
  */
-export function averageSeries(series) {
+function averageSeries(series) {
   const n = series.loggedDays || 0;
   if (!n) return { food: 0, burned: 0, net: 0, protein: 0, carbs: 0, fat: 0, loggedDays: 0 };
   let f = 0, b = 0, nt = 0, p = 0, c = 0, ft = 0;
@@ -238,7 +237,7 @@ export function averageSeries(series) {
  * @param {number} goal
  * @returns {{score:number, streak:number, onTrackDays:number, loggedDays:number}}
  */
-export function adherenceScore(series, goal) {
+function adherenceScore(series, goal) {
   const g = parseNum(goal) || 0;
   if (!g) return { score: 0, streak: 0, onTrackDays: 0, loggedDays: 0 };
   const band = g * 0.15;
@@ -261,7 +260,7 @@ export function adherenceScore(series, goal) {
  * @param {{score:number, streak:number, loggedDays:number}} adh
  * @returns {number}
  */
-export function growthStage(adh) {
+function growthStage(adh) {
   if (!adh || !adh.loggedDays) return 0;
   const s = adh.score;
   const streakBonus = Math.min(2, Math.floor(adh.streak / 3));
@@ -273,3 +272,21 @@ export function growthStage(adh) {
   else stage = 1;
   return Math.min(5, Math.max(stage, streakBonus));
 }
+
+export {
+  DEFAULT_TARGET,
+  EXERCISE_MEAL,
+  MEAL_TYPES,
+  adherenceScore,
+  averageSeries,
+  buildSeries,
+  canonicalMeal,
+  computeDayTotals,
+  computeNet,
+  customFoodsFromRows,
+  groupByDate,
+  growthStage,
+  latestDate,
+  parseDate,
+  resolveTarget,
+};

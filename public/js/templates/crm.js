@@ -3,14 +3,11 @@
    activity timeline, stale deal detection
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn, parseAmt as parseValue } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
-/** Parse a currency / numeric string to a plain number */
-function parseValue(raw) {
-  return parseFloat((raw || '0').replace(/[^-\d.]/g, '')) || 0;
-}
+// parseValue imported from shared.js
 
 /** Format a number as a compact dollar string */
 function fmtDollars(n) {

@@ -28,19 +28,11 @@
 'use strict';
 
 const https = require('https');
-const { GoogleAuth } = require('google-auth-library');
+const { getGoogleAuthToken: getSheetsToken } = require('../lib/sheets');
 
 /* ---------- Auth / Sheets helpers ---------- */
 
-let _auth;
-async function getSheetsToken() {
-  if (!_auth) {
-    _auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-  }
-  const client = await _auth.getClient();
-  const tok = await client.getAccessToken();
-  return tok.token;
-}
+// getSheetsToken imported from ../lib/sheets
 
 function httpsGet(url, extraHeaders = {}) {
   return new Promise((resolve, reject) => {

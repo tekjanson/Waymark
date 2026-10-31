@@ -22,16 +22,13 @@
   <h1>Waymark P2P Notify</h1>
   <div>
     <p id="conn-status">Checking connection…</p>
-    <label>Target peer
-      <select id="target-peer"></select>
-    </label>
-    <label>Notification title
-      <input id="title" type="text" placeholder="Waymark" value="Waymark" />
-    </label>
-    <label>Notification body
-      <textarea id="body" placeholder="Type notification body..."></textarea>
-    </label>
-    <button id="send" disabled>Send to Phone</button>
+    <label for="target-peer">Target peer</label>
+    <select id="target-peer" aria-label="Target peer"></select>
+    <label for="title">Notification title</label>
+    <input id="title" type="text" placeholder="Waymark" value="Waymark" aria-label="Notification title" />
+    <label for="body">Notification body</label>
+    <textarea id="body" placeholder="Type notification body..." aria-label="Notification body"></textarea>
+    <button id="send" type="button" data-action="send" disabled>Send to Phone</button>
     <div id="status"></div>
     <div id="log"></div>
 

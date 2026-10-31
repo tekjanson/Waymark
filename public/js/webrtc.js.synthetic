@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "establish-peer-connection",
+      "user_intent": "Establish real-time peer mesh connection for collaboration",
+      "trigger": "event:peer_discovered",
+      "steps": [
+        "validate:peer_identity",
+        "external:exchange_sdp_signal",
+        "emit:peer_connected"
+      ],
+      "outcome": "WebRTC DataChannel active between peers"
+    }
+  ]
+}

@@ -3,7 +3,6 @@
    Shared constants and pure helper functions for the Waymark AI agent.
    ============================================================ */
 
-import { TEMPLATES } from '../templates/index.js';
 import {
   getAgentKeys,
   getAgentModel,
@@ -16,23 +15,20 @@ import {
 import * as vault from './vault.js';
 
 /* ---------- Constants ---------- */
-
-export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-
-export const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
-export const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
-export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
-export const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
-export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
-
-export const OPENAI_API_BASE = 'https://api.openai.com/v1';
-export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
-export const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+const CLAUDE_API_BASE = 'https://api.anthropic.com/v1';
+const CLAUDE_ANTHROPIC_VERSION = '2023-06-01';
+const DEFAULT_CLAUDE_MODEL = 'claude-haiku-3-5';
+const DEFAULT_OLLAMA_MODEL = 'qwen2.5-coder:3b';
+const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+const OPENAI_API_BASE = 'https://api.openai.com/v1';
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1';
 
 // Fallback list used when no API key is present yet (dropdown won't auto-refresh).
 // The live list is always preferred once a key is available — see fetchGeminiModels().
-export const GEMINI_MODEL_OPTIONS = [
+const GEMINI_MODEL_OPTIONS = [
   { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite (free tier default)' },
   { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (balanced)' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (best)' },
@@ -48,7 +44,7 @@ export const GEMINI_MODEL_OPTIONS = [
  * @param {Array<{value: string, label: string}>} opts
  * @returns {string} model id
  */
-export function pickSmartDefault(opts) {
+function pickSmartDefault(opts) {
   // Sort helpers — higher version wins (e.g. 3.5 > 2.5 > 2.0). Unversioned IDs sort last (score 0).
   const version = v => { const m = v.match(/(\d+\.\d+)/); return m ? parseFloat(m[1]) : 0; };
   const versionSort = (a, b) => version(b.value) - version(a.value);
@@ -73,33 +69,28 @@ export function pickSmartDefault(opts) {
   }
   return DEFAULT_MODEL;
 }
-
-export const CLAUDE_MODEL_OPTIONS = [
+const CLAUDE_MODEL_OPTIONS = [
   { value: 'claude-haiku-3-5', label: 'Claude Haiku 3.5 (fastest, cheapest)' },
   { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5 (balanced)' },
   { value: 'claude-opus-4-5', label: 'Claude Opus 4.5 (best)' },
 ];
-
-export const OLLAMA_MODEL_OPTIONS = [
+const OLLAMA_MODEL_OPTIONS = [
   { value: 'qwen2.5-coder:3b', label: 'Qwen 2.5 Coder 3B (fastest)' },
   { value: 'mistral:latest', label: 'Mistral (balanced)' },
   { value: 'neural-chat:latest', label: 'Neural Chat (good reasoning)' },
 ];
-
-export const OPENAI_MODEL_OPTIONS = [
+const OPENAI_MODEL_OPTIONS = [
   { value: 'gpt-4o-mini', label: 'GPT-4o mini (cheapest, vision)' },
   { value: 'gpt-4o', label: 'GPT-4o (balanced, vision)' },
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini (cheap)' },
   { value: 'gpt-4.1', label: 'GPT-4.1 (best)' },
 ];
-
-export const OPENAI_IMAGE_MODEL_OPTIONS = [
+const OPENAI_IMAGE_MODEL_OPTIONS = [
   { value: 'gpt-image-1', label: 'gpt-image-1 (photorealistic + 3D view reference)' },
   { value: 'gpt-image-1.5', label: 'gpt-image-1.5 (photorealistic + 3D view reference)' },
   { value: 'gpt-image-1-mini', label: 'gpt-image-1-mini (lower cost)' },
 ];
-
-export const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
+const BASE_SYSTEM_PROMPT = `You are the Waymark AI assistant. You help users organise their data by creating Google Sheets that Waymark renders as rich, interactive views.
 
 Use the create_sheet tool whenever a user asks to create, build, set up, or organise something. Pick the best template — the system fills in column headers automatically.
 
@@ -121,20 +112,19 @@ Guidelines:
 - ALWAYS link to sheets using Waymark URLs: [Title](#/sheet/{spreadsheetId}). NEVER link to docs.google.com — keep users in Waymark.
 - When a request spans multiple domains (e.g. "plan a vacation on a budget"), create MULTIPLE sheets — one per template that fits (e.g. a travel sheet AND a budget sheet). Call create_sheet multiple times.
 - Be conversational and helpful.`;
-
-export const MAX_CONTEXT_MESSAGES = 8;
-export const MAX_CONTEXT_CHARS = 3600;
-export const MAX_CONTEXT_SUMMARY_CHARS = 500;
-export const MAX_AGGRESSIVE_CONTEXT_MESSAGES = 4;
-export const MAX_USER_MESSAGE_CHARS = 900;
-export const MAX_PLANNED_USER_MESSAGE_CHARS = 1200;
-export const MAX_PLANNED_BRIEF_CHARS = 240;
-export const MAX_ASSISTANT_MESSAGE_CHARS = 500;
-export const MAX_CONTEXT_SHEETS = 12;
-export const MAX_CONTEXT_FILE_CHARS = 800;
-export const MAX_OUTPUT_TOKENS = 4096;
-export const MAX_ESTIMATED_REQUEST_TOKENS = 3400;
-export const MAX_RAW_CONVERSATION_TOKENS = 30000;
+const MAX_CONTEXT_MESSAGES = 8;
+const MAX_CONTEXT_CHARS = 3600;
+const MAX_CONTEXT_SUMMARY_CHARS = 500;
+const MAX_AGGRESSIVE_CONTEXT_MESSAGES = 4;
+const MAX_USER_MESSAGE_CHARS = 900;
+const MAX_PLANNED_USER_MESSAGE_CHARS = 1200;
+const MAX_PLANNED_BRIEF_CHARS = 240;
+const MAX_ASSISTANT_MESSAGE_CHARS = 500;
+const MAX_CONTEXT_SHEETS = 12;
+const MAX_CONTEXT_FILE_CHARS = 800;
+const MAX_OUTPUT_TOKENS = 4096;
+const MAX_ESTIMATED_REQUEST_TOKENS = 3400;
+const MAX_RAW_CONVERSATION_TOKENS = 30000;
 
 const PLANNER_TEMPLATE_HINTS = [{
   template: 'travel',
@@ -160,7 +150,7 @@ const PLANNER_TEMPLATE_HINTS = [{
  * @param {string} [query]
  * @returns {string}
  */
-export function geminiUrl(model, action, query = '') {
+function geminiUrl(model, action, query = '') {
   const suffix = query ? `?${query}` : '';
   return `${GEMINI_API_BASE}/${encodeURIComponent(model)}:${action}${suffix}`;
 }
@@ -170,7 +160,7 @@ export function geminiUrl(model, action, query = '') {
  * @param {string} apiKey
  * @returns {Object}
  */
-export function geminiHeaders(apiKey) {
+function geminiHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
     'X-goog-api-key': apiKey,
@@ -181,7 +171,7 @@ export function geminiHeaders(apiKey) {
  * Build a Claude API URL.
  * @returns {string}
  */
-export function claudeUrl() {
+function claudeUrl() {
   return `${CLAUDE_API_BASE}/messages`;
 }
 
@@ -190,7 +180,7 @@ export function claudeUrl() {
  * @param {string} baseUrl
  * @returns {string}
  */
-export function ollamaChatUrl(baseUrl = DEFAULT_OLLAMA_BASE_URL) {
+function ollamaChatUrl(baseUrl = DEFAULT_OLLAMA_BASE_URL) {
   return `${baseUrl}/api/chat`;
 }
 
@@ -199,7 +189,7 @@ export function ollamaChatUrl(baseUrl = DEFAULT_OLLAMA_BASE_URL) {
  * @param {string} apiKey
  * @returns {Object}
  */
-export function claudeHeaders(apiKey) {
+function claudeHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
@@ -211,7 +201,7 @@ export function claudeHeaders(apiKey) {
  * Build the OpenAI chat completions URL.
  * @returns {string}
  */
-export function openAiChatUrl() {
+function openAiChatUrl() {
   return `${OPENAI_API_BASE}/chat/completions`;
 }
 
@@ -219,12 +209,12 @@ export function openAiChatUrl() {
  * Build the OpenAI image generation URL.
  * @returns {string}
  */
-export function openAiImageUrl() {
+function openAiImageUrl() {
   return `${OPENAI_API_BASE}/images/generations`;
 }
 
 /** Build the OpenAI image editing URL. */
-export function openAiImageEditUrl() {
+function openAiImageEditUrl() {
   return `${OPENAI_API_BASE}/images/edits`;
 }
 
@@ -233,7 +223,7 @@ export function openAiImageEditUrl() {
  * @param {string} apiKey
  * @returns {Object}
  */
-export function openAiHeaders(apiKey) {
+function openAiHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${apiKey}`,
@@ -247,7 +237,7 @@ export function openAiHeaders(apiKey) {
  * @param {number} maxChars
  * @returns {string}
  */
-export function compactContextText(text, maxChars) {
+function compactContextText(text, maxChars) {
   const compact = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!compact) return '';
   if (compact.length <= maxChars) return compact;
@@ -261,7 +251,7 @@ export function compactContextText(text, maxChars) {
  * @param {string} text
  * @returns {string[]}
  */
-export function inferTemplateHints(text) {
+function inferTemplateHints(text) {
   const hints = [];
   for (const rule of PLANNER_TEMPLATE_HINTS) {
     if (rule.patterns.some(pattern => pattern.test(text))) {
@@ -277,7 +267,7 @@ export function inferTemplateHints(text) {
  * @param {string} userText
  * @returns {string}
  */
-export function buildPlannerBrief(userText) {
+function buildPlannerBrief(userText) {
   const text = String(userText ?? '').trim();
   if (!text) return '';
 
@@ -318,7 +308,7 @@ export function buildPlannerBrief(userText) {
  * @param {string} userText
  * @returns {boolean}
  */
-export function shouldUsePlannerRound(userText) {
+function shouldUsePlannerRound(userText) {
   const text = String(userText ?? '').trim();
   if (!text) return false;
   const hints = inferTemplateHints(text);
@@ -332,7 +322,7 @@ export function shouldUsePlannerRound(userText) {
  * @param {string} text
  * @returns {number}
  */
-export function estimateTokens(text) {
+function estimateTokens(text) {
   return Math.ceil(String(text ?? '').length / 4);
 }
 
@@ -341,7 +331,7 @@ export function estimateTokens(text) {
  * @param {Object} body
  * @returns {number}
  */
-export function estimateRequestTokens(body) {
+function estimateRequestTokens(body) {
   return estimateTokens(JSON.stringify(body));
 }
 
@@ -352,7 +342,7 @@ export function estimateRequestTokens(body) {
  * @param {string} systemPrompt
  * @returns {number}
  */
-export function estimateRawConversationTokens(messages, userMessage, systemPrompt) {
+function estimateRawConversationTokens(messages, userMessage, systemPrompt) {
   const rawHistory = messages
     .slice(0, -1)
     .map(msg => String(msg.content ?? ''))
@@ -366,7 +356,7 @@ export function estimateRawConversationTokens(messages, userMessage, systemPromp
  * @param {number} recentMessageLimit
  * @returns {string}
  */
-export function buildConversationSummary(history, recentMessageLimit) {
+function buildConversationSummary(history, recentMessageLimit) {
   const olderHistory = history.slice(0, Math.max(0, history.length - recentMessageLimit));
   const olderAssistantText = olderHistory
     .filter(msg => msg.role === 'assistant')
@@ -384,7 +374,7 @@ export function buildConversationSummary(history, recentMessageLimit) {
  * @param {string} systemPrompt
  * @returns {Object}
  */
-export function buildRequestBody(contents, systemPrompt) {
+function buildRequestBody(contents, systemPrompt) {
   return {
     contents,
     systemInstruction: {
@@ -403,7 +393,7 @@ export function buildRequestBody(contents, systemPrompt) {
  * @param {Array<{role: string, content: string}>} messages
  * @returns {Array<{title: string, id: string}>}
  */
-export function getRecentConversationSheets(messages) {
+function getRecentConversationSheets(messages) {
   const sheetPattern = /\[([^\]]+)\]\(#\/sheet\/([^)]+)\)/g;
   const seen = new Set();
   const recent = [];
@@ -431,7 +421,7 @@ export function getRecentConversationSheets(messages) {
  * @param {Array<{role: string, content: string}>} messages
  * @returns {string}
  */
-export function buildRecentSheetHint(userText, messages) {
+function buildRecentSheetHint(userText, messages) {
   const text = String(userText ?? '').trim();
   if (!text) return '';
 
@@ -446,24 +436,50 @@ export function buildRecentSheetHint(userText, messages) {
   return `Recent target hint: the most likely sheet is "${target.title}" (id: ${target.id}). This is a follow-up edit request, so use read_sheet and update_sheet for that existing sheet instead of creating a duplicate. Do not repeat the previous answer.`;
 }
 
+const DEFAULT_KNOWN_HEADERS = {
+  checklist: ['Task', 'Done', 'Due', 'Priority', 'Notes'],
+  budget: ['Description', 'Amount', 'Category', 'Date', 'Notes'],
+  kanban: ['Task', 'Status', 'Assignee', 'Priority', 'Due Date'],
+  tracker: ['Item', 'Status', 'Target', 'Current', 'Notes'],
+  schedule: ['Time', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  contacts: ['Name', 'Email', 'Phone', 'Company', 'Notes'],
+  inventory: ['Item', 'Quantity', 'Location', 'Reorder Level', 'Unit Price'],
+  log: ['Timestamp', 'Level', 'Message', 'User', 'Details'],
+  habit: ['Habit', 'Goal', 'Frequency', 'Streak', 'Notes'],
+  timesheet: ['Date', 'Project', 'Task', 'Hours', 'Billable'],
+  crm: ['Lead Name', 'Company', 'Stage', 'Value', 'Contact Date'],
+  meal: ['Day', 'Breakfast', 'Lunch', 'Dinner', 'Snacks'],
+  travel: ['Date', 'Time', 'Activity', 'Location', 'Booking Ref'],
+  roster: ['Employee', 'Role', 'Shift', 'Days', 'Hours'],
+  testcases: ['ID', 'Title', 'Steps', 'Expected', 'Status'],
+  recipe: ['Ingredient', 'Quantity', 'Unit', 'Notes'],
+  poll: ['Question', 'Option A', 'Option B', 'Option C', 'Votes'],
+  changelog: ['Version', 'Date', 'Type', 'Description', 'Author'],
+  social: ['Post', 'Author', 'Timestamp', 'Likes', 'Tags'],
+  flow: ['Step', 'Action', 'Next Step', 'Condition', 'Owner'],
+  automation: ['Trigger', 'Action', 'Target', 'Status', 'Last Run'],
+  grading: ['Student', 'Assignment', 'Score', 'Max Score', 'Feedback'],
+  gantt: ['Task', 'Start Date', 'End Date', 'Progress', 'Dependencies', 'Assignee'],
+  okr: ['Objective', 'Key Result', 'Owner', 'Quarter', 'Progress'],
+  passwords: ['Service', 'Username', 'Password', 'URL', 'Notes'],
+  linker: ['Source Sheet', 'Source Column', 'Target Sheet', 'Target Column', 'Relation']
+};
+
 /**
- * Known template headers — derived from each template's defaultHeaders property.
+ * Known template headers — safe proxy that reads registered template defaults.
  * @type {Record<string, string[]>}
  */
-export const KNOWN_HEADERS = Object.fromEntries(
-  Object.entries(TEMPLATES)
-    .filter(([k, t]) => {
-      // Alert the developer console if a template module failed to load without crashing the app
-      if (!t) {
-        console.warn(`[Waymark Debug] Template rfi ${JSON.stringify(k,null,2)} or "${k}  failed to load or is undefined. It may have been blocked by an ad-blocker or network error.`);
-        return false;
-      }
-      return Array.isArray(t.defaultHeaders);
-    })
-    .map(([k, t]) => [k, t.defaultHeaders])
-);
+const KNOWN_HEADERS = new Proxy(DEFAULT_KNOWN_HEADERS, {
+  get(target, prop) {
+    if (typeof window !== 'undefined' && window.__WAYMARK_TEMPLATES && prop in window.__WAYMARK_TEMPLATES) {
+      const def = window.__WAYMARK_TEMPLATES[prop];
+      if (Array.isArray(def?.defaultHeaders)) return def.defaultHeaders;
+    }
+    return target[prop];
+  }
+});
 
-const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
+const TEMPLATE_COLUMNS = Object.entries(DEFAULT_KNOWN_HEADERS)
   .map(([k, cols]) => `${k}: ${cols.join(', ')}`)
   .join(' | ');
 
@@ -479,10 +495,10 @@ const TEMPLATE_COLUMNS = Object.entries(KNOWN_HEADERS)
    ============================================================ */
 
 /** The fenced-block language tag the model must use to call a tool. */
-export const TOOL_CALL_FENCE = 'tool_call';
+const TOOL_CALL_FENCE = 'tool_call';
 
 /** Human/model-readable description of the available tools + calling format. */
-export const TOOL_PROTOCOL_PROMPT = `# Tools
+const TOOL_PROTOCOL_PROMPT = `# Tools
 
 You can act on the user's Google Sheets by calling tools. You do this by writing a fenced code block tagged \`${TOOL_CALL_FENCE}\` containing a single JSON object, and NOTHING else in that reply:
 
@@ -518,7 +534,7 @@ Available tools:
    - operation "update_cells": provide "updates"; each has row (1-based data row), column (header name or 0-based index), and value.`;
 
 /** Full agent system prompt = base instructions + tool protocol. */
-export const AGENT_SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}\n\n${TOOL_PROTOCOL_PROMPT}`;
+const AGENT_SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}\n\n${TOOL_PROTOCOL_PROMPT}`;
 
 /* ---------- Tool-call parsing (our protocol, not the provider's) ---------- */
 
@@ -529,7 +545,7 @@ export const AGENT_SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}\n\n${TOOL_PROTOCOL_PRO
  * @param {string} text
  * @returns {{ name: string, args: Object } | null}
  */
-export function parseToolCall(text) {
+function parseToolCall(text) {
   if (!text || typeof text !== 'string') return null;
 
   const candidates = [];
@@ -574,7 +590,7 @@ function _tryParseToolObject(raw) {
  * @param {string} text
  * @returns {string}
  */
-export function stripToolCalls(text) {
+function stripToolCalls(text) {
   if (!text || typeof text !== 'string') return '';
 
   // Remove complete fenced blocks that are actually tool calls. A ```tool_call
@@ -603,7 +619,7 @@ export function stripToolCalls(text) {
  * @param {Object} result
  * @returns {string}
  */
-export function buildToolResultText(name, result) {
+function buildToolResultText(name, result) {
   let json;
   try {
     json = JSON.stringify(result);
@@ -621,7 +637,7 @@ export function buildToolResultText(name, result) {
  * @param {Array<{role:string, parts:Array}>} geminiContents
  * @returns {Array<{role:string, content:string}>}
  */
-export function convertGeminiContentsToClaudeMessages(geminiContents) {
+function convertGeminiContentsToClaudeMessages(geminiContents) {
   return geminiContents
     .filter(c => c.role === 'user' || c.role === 'model')
     .map(c => ({
@@ -638,7 +654,7 @@ export function convertGeminiContentsToClaudeMessages(geminiContents) {
  * @param {string} model
  * @returns {Object}
  */
-export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
+function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
   const messages = convertGeminiContentsToClaudeMessages(geminiContents);
   return {
     model,
@@ -655,7 +671,7 @@ export function buildClaudeRequestBody(geminiContents, systemPrompt, model) {
  * @param {string} model
  * @returns {Object}
  */
-export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
+function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
   const messages = convertGeminiContentsToClaudeMessages(geminiContents);
   return {
     model,
@@ -668,7 +684,7 @@ export function buildOllamaRequestBody(geminiContents, systemPrompt, model) {
 }
 
 /** Select token and sampling parameters supported by the configured model. */
-export function openAiGenerationParams(model, { maxTokens = MAX_OUTPUT_TOKENS, temperature } = {}) {
+function openAiGenerationParams(model, { maxTokens = MAX_OUTPUT_TOKENS, temperature } = {}) {
   const gptVersion = Number(String(model).match(/^gpt-(\d+)/i)?.[1] || 0);
   const reasoningModel = /^o\d(?:[-.]|$)/i.test(model) || gptVersion >= 5;
   return reasoningModel
@@ -677,7 +693,7 @@ export function openAiGenerationParams(model, { maxTokens = MAX_OUTPUT_TOKENS, t
 }
 
 /** Build an OpenAI chat-completions request from Gemini-format contents. */
-export function buildOpenAiRequestBody(geminiContents, systemPrompt, model) {
+function buildOpenAiRequestBody(geminiContents, systemPrompt, model) {
   const messages = convertGeminiContentsToClaudeMessages(geminiContents);
   return {
     model,
@@ -712,7 +728,7 @@ let _lastKeyResetDate = null;
  * @param {{ model?: string }} [opts]
  * @returns {Array<{ key: string, idx: number }>}
  */
-export function pickBestKey(opts = {}) {
+function pickBestKey(opts = {}) {
   const keys = getAgentKeys();
 
   // Reset daily counters if the calendar date has changed
@@ -790,7 +806,7 @@ export function pickBestKey(opts = {}) {
  * Return the best available Claude key using the same LRU strategy as pickBestKey.
  * @returns {{ key: string, idx: number } | null}
  */
-export function pickBestClaudeKey() {
+function pickBestClaudeKey() {
   const keys = getClaudeKeys();
   if (!keys.length) return null;
 
@@ -812,7 +828,7 @@ export function pickBestClaudeKey() {
  * Prefers vault-stored OpenAI keys when the keys sheet is unlocked.
  * @returns {{ key: string, idx: number } | null}
  */
-export function pickBestOpenAIKey() {
+function pickBestOpenAIKey() {
   // Vault keys first (Drive-synced passwords sheet) — idx -1 skips localStorage tracking.
   if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
     const vaultKeys = vault.getOpenAIKeys?.() || [];
@@ -850,7 +866,7 @@ export function pickBestOpenAIKey() {
  * Falls back to localStorage keys when no vault.
  * @returns {{ key: string, idx: number } | null}
  */
-export function pickBestActiveKey() {
+function pickBestActiveKey() {
   const provider = getAgentProvider();
   if (vault.isVaultSetUp() && vault.isVaultUnlocked()) {
     const keys = provider === 'claude' ? vault.getClaudeKeys() : vault.getGeminiKeys();
@@ -884,7 +900,7 @@ const MODEL_CACHE_MS = 3_600_000; // 1 hour
  * @param {string} apiKey
  * @returns {Promise<Array<{value: string, label: string}>>}
  */
-export async function fetchGeminiModels(apiKey) {
+async function fetchGeminiModels(apiKey) {
   if (!apiKey) return GEMINI_MODEL_OPTIONS;
   const cacheKey = `gemini:${apiKey.slice(-6)}`;
   const hit = _modelCache.get(cacheKey);
@@ -912,7 +928,7 @@ export async function fetchGeminiModels(apiKey) {
  * @param {string} apiKey
  * @returns {Promise<Array<{value: string, label: string}>>}
  */
-export async function fetchClaudeModels(apiKey) {
+async function fetchClaudeModels(apiKey) {
   if (!apiKey) return CLAUDE_MODEL_OPTIONS;
   const cacheKey = `claude:${apiKey.slice(-6)}`;
   const hit = _modelCache.get(cacheKey);
@@ -951,7 +967,7 @@ function _humanizeModelId(id) {
  * @param {string} apiKey
  * @returns {Promise<Array<{value: string, label: string}>>}
  */
-export async function fetchOpenAIModels(apiKey) {
+async function fetchOpenAIModels(apiKey) {
   if (!apiKey) return OPENAI_MODEL_OPTIONS;
   const cacheKey = `openai:${apiKey.slice(-6)}`;
   const hit = _modelCache.get(cacheKey);
@@ -989,6 +1005,79 @@ export { vault };
  * @param {string} [contextBlock]  — additional context to append (e.g. today's date, user name)
  * @returns {string}
  */
-export function buildAgentSystemPrompt(basePrompt = BASE_SYSTEM_PROMPT, contextBlock = '') {
+function buildAgentSystemPrompt(basePrompt = BASE_SYSTEM_PROMPT, contextBlock = '') {
   return contextBlock ? `${basePrompt}\n\n${contextBlock}` : basePrompt;
 }
+
+export {
+  AGENT_SYSTEM_PROMPT,
+  BASE_SYSTEM_PROMPT,
+  CLAUDE_ANTHROPIC_VERSION,
+  CLAUDE_API_BASE,
+  CLAUDE_MODEL_OPTIONS,
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_MODEL,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OPENAI_IMAGE_MODEL,
+  DEFAULT_OPENAI_MODEL,
+  GEMINI_API_BASE,
+  GEMINI_MODEL_OPTIONS,
+  KNOWN_HEADERS,
+  MAX_AGGRESSIVE_CONTEXT_MESSAGES,
+  MAX_ASSISTANT_MESSAGE_CHARS,
+  MAX_CONTEXT_CHARS,
+  MAX_CONTEXT_FILE_CHARS,
+  MAX_CONTEXT_MESSAGES,
+  MAX_CONTEXT_SHEETS,
+  MAX_CONTEXT_SUMMARY_CHARS,
+  MAX_ESTIMATED_REQUEST_TOKENS,
+  MAX_OUTPUT_TOKENS,
+  MAX_PLANNED_BRIEF_CHARS,
+  MAX_PLANNED_USER_MESSAGE_CHARS,
+  MAX_RAW_CONVERSATION_TOKENS,
+  MAX_USER_MESSAGE_CHARS,
+  OLLAMA_MODEL_OPTIONS,
+  OPENAI_API_BASE,
+  OPENAI_IMAGE_MODEL_OPTIONS,
+  OPENAI_MODEL_OPTIONS,
+  TOOL_CALL_FENCE,
+  TOOL_PROTOCOL_PROMPT,
+  buildAgentSystemPrompt,
+  buildClaudeRequestBody,
+  buildConversationSummary,
+  buildOllamaRequestBody,
+  buildOpenAiRequestBody,
+  buildPlannerBrief,
+  buildRecentSheetHint,
+  buildRequestBody,
+  buildToolResultText,
+  claudeHeaders,
+  claudeUrl,
+  compactContextText,
+  convertGeminiContentsToClaudeMessages,
+  estimateRawConversationTokens,
+  estimateRequestTokens,
+  estimateTokens,
+  fetchClaudeModels,
+  fetchGeminiModels,
+  fetchOpenAIModels,
+  geminiHeaders,
+  geminiUrl,
+  getRecentConversationSheets,
+  inferTemplateHints,
+  ollamaChatUrl,
+  openAiChatUrl,
+  openAiGenerationParams,
+  openAiHeaders,
+  openAiImageEditUrl,
+  openAiImageUrl,
+  parseToolCall,
+  pickBestActiveKey,
+  pickBestClaudeKey,
+  pickBestKey,
+  pickBestOpenAIKey,
+  pickSmartDefault,
+  shouldUsePlannerRound,
+  stripToolCalls,
+};

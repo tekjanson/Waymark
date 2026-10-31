@@ -1,0 +1,14 @@
+{
+  "workflows": [
+    {
+      "id": "dispatch-collaborator-notification",
+      "user_intent": "Alert user of sheet mutations from collaborators",
+      "trigger": "event:sheet_mutation_received",
+      "steps": [
+        "validate:notification_digest",
+        "emit:display_toast_alert"
+      ],
+      "outcome": "Notification alert presented in notification center"
+    }
+  ]
+}

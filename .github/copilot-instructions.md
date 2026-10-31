@@ -19,7 +19,7 @@ These instructions apply to every session, every task, every agent invocation.
 
 ---
 
-## Codebase Laws (summary — full rules in .github/instructions/AI_laws.instructions.md)
+## Codebase Laws (summary — full rules in .github/instructions/ai-laws.instructions.md)
 
 1. **No backend business logic** — server/ only: static files, OAuth, runtime flags.
 2. **Vanilla stack** — No React, no Tailwind, no bundlers, no TypeScript. ES Modules + raw CSS.

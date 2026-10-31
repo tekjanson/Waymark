@@ -6,7 +6,7 @@
    table of entries. Self-contained so it can never break the template registry.
    ============================================================ */
 
-import { el, registerTemplate } from './shared.js';
+import { el, registerTemplate, renderSparkline } from './shared.js';
 
 const definition = {
   name: 'Weight Tracker',
@@ -99,30 +99,7 @@ function _stat(value, label) {
 }
 
 /** Dependency-free inline SVG sparkline from a numeric series (or null). */
-function _sparkline(values) {
-  const nums = values.filter((v) => typeof v === 'number' && v > 0);
-  if (nums.length < 2) return null;
-  const w = 600, h = 90, pad = 8;
-  const min = Math.min(...nums), max = Math.max(...nums);
-  const span = max - min || 1;
-  const step = (w - pad * 2) / (nums.length - 1);
-  const points = nums
-    .map((v, i) => `${(pad + i * step).toFixed(1)},${(h - pad - ((v - min) / span) * (h - pad * 2)).toFixed(1)}`)
-    .join(' ');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('style', 'width:100%;height:90px;display:block;');
-  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  poly.setAttribute('points', points);
-  poly.setAttribute('fill', 'none');
-  poly.setAttribute('stroke', '#06b6d4');
-  poly.setAttribute('stroke-width', '2');
-  poly.setAttribute('stroke-linejoin', 'round');
-  poly.setAttribute('stroke-linecap', 'round');
-  svg.appendChild(poly);
-  return svg;
-}
+const _sparkline = renderSparkline;
 
 registerTemplate('weight', definition);
 export default definition;

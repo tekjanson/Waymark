@@ -1,3 +1,4 @@
+import * as storage from '../storage.js';
 /* ============================================================
    notification.js — Notification History Viewer template
 
@@ -109,7 +110,7 @@ const definition = {
 
     /* ---- Connection state ---- */
     const sheetId = getCurrentSheetId();
-    const configuredId = localStorage.getItem('waymark_notif_sheet_id') || '';
+    const configuredId = storage.getRaw('waymark_notif_sheet_id') || '';
     const isConnected = configuredId === sheetId && sheetId;
 
     /* ---- Count helpers ---- */
@@ -136,7 +137,7 @@ const definition = {
         emitEdit(n.rowIndex, cols.status, n.status);
         if (isConnected) {
           try {
-            const stored = JSON.parse(localStorage.getItem('waymark_notifications') || '[]');
+            const stored = JSON.parse(storage.getRaw('waymark_notifications') || '[]');
             let changed = false;
             for (const item of stored) {
               if (item.title === n.title) {
@@ -145,7 +146,7 @@ const definition = {
               }
             }
             if (changed) {
-              localStorage.setItem('waymark_notifications', JSON.stringify(stored));
+              storage.setRaw('waymark_notifications', JSON.stringify(stored));
               document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
             }
           } catch { /* ignore */ }
@@ -220,12 +221,13 @@ const definition = {
         }, ['✕ Reject']);
 
         acceptBtn.addEventListener('click', async () => {
-          const collab = await import('../collab.js');
-          await collab.acceptSharedWaymark({
-            docId: n.sheet,
-            docTitle: n.title,
-            from: n.source || '',
-          });
+          if (typeof window !== 'undefined' && window._waymarkShareActionDelegate?.acceptSharedWaymark) {
+            await window._waymarkShareActionDelegate.acceptSharedWaymark({
+              docId: n.sheet,
+              docTitle: n.title,
+              from: n.source || '',
+            });
+          }
           n.status = 'Read';
           badge.textContent = 'Read';
           badge.className = 'notification-type-badge notification-badge-read';
@@ -236,11 +238,12 @@ const definition = {
         });
 
         rejectBtn.addEventListener('click', async () => {
-          const collab = await import('../collab.js');
-          await collab.rejectSharedWaymark({
-            docId: n.sheet,
-            docTitle: n.title,
-          });
+          if (typeof window !== 'undefined' && window._waymarkShareActionDelegate?.rejectSharedWaymark) {
+            await window._waymarkShareActionDelegate.rejectSharedWaymark({
+              docId: n.sheet,
+              docTitle: n.title,
+            });
+          }
           n.status = 'Dismissed';
           badge.textContent = 'Dismissed';
           badge.className = 'notification-type-badge notification-badge-dismissed';
@@ -299,7 +302,7 @@ const definition = {
     } else {
       const useBtn = el('button', { className: 'notification-use-btn' }, ['Use as Notification Sheet']);
       useBtn.addEventListener('click', () => {
-        localStorage.setItem('waymark_notif_sheet_id', sheetId);
+        storage.setRaw('waymark_notif_sheet_id', sheetId);
         const badge = el('span', { className: 'notification-connected-badge' }, ['🔔 Connected to Bell']);
         summary.replaceChild(badge, useBtn);
         connectionEl = badge;

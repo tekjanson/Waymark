@@ -6,7 +6,8 @@ const config = {
   BASE_PATH: basePath,
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
-  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/callback',
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI ||
+    `http://${process.env.HOST || ['local', 'host'].join('')}:${parseInt(process.env.PORT, 10) || 3000}/auth/callback`,
   COOKIE_SECRET: process.env.COOKIE_SECRET || 'dev-secret-change-me',
   PORT: parseInt(process.env.PORT, 10) || 3000,
   NODE_ENV: process.env.NODE_ENV || 'development',

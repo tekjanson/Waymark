@@ -241,7 +241,7 @@ export function initInspector(inspector, ctx) {
 
   /**
    * Create the Type dropdown field.
-   * Reuses the same <select> across node changes.
+   * Reuses the same select element across node changes.
    */
   function createTypeField() {
     const field = el('div', { className: 'flow-inspector-field' });

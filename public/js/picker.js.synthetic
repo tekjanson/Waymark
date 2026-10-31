@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "open-google-picker",
+      "user_intent": "Select a Google Sheet from Drive via Google Picker API",
+      "trigger": "ui.click:picker_button",
+      "steps": [
+        "validate:gapi_auth",
+        "external:request_picker_dialog",
+        "emit:file_selected"
+      ],
+      "outcome": "Selected sheet loaded into session"
+    }
+  ]
+}

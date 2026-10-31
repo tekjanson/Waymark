@@ -26,7 +26,7 @@ const GAMES = new Map();
  * @param {function} [def.cleanup] — (ctx) => void
  * @param {function} [def.onInput] — (ctx, type, data) => void  (mouse/click input)
  */
-export function registerGame(def) {
+function registerGame(def) {
   if (!def.key) throw new Error('Game definition must have a key');
   GAMES.set(def.key, def);
 }
@@ -36,7 +36,7 @@ export function registerGame(def) {
  * @param {string} key
  * @returns {Object|undefined}
  */
-export function getGame(key) {
+function getGame(key) {
   return GAMES.get(key);
 }
 
@@ -44,7 +44,7 @@ export function getGame(key) {
  * Get all registered games.
  * @returns {Map<string, Object>}
  */
-export function getGames() {
+function getGames() {
   return GAMES;
 }
 
@@ -59,7 +59,7 @@ let _activeSceneName = '';
  * @param {string} name
  * @param {{ init?: function, update?: function, render?: function, cleanup?: function }} scene
  */
-export function registerScene(name, scene) {
+function registerScene(name, scene) {
   _scenes.set(name, scene);
 }
 
@@ -68,7 +68,7 @@ export function registerScene(name, scene) {
  * @param {string} name
  * @param {*} [data] — passed to scene.init()
  */
-export function switchScene(name, data) {
+function switchScene(name, data) {
   if (_activeScene && _activeScene.cleanup) _activeScene.cleanup(data);
   _activeScene = _scenes.get(name) || null;
   _activeSceneName = name;
@@ -79,7 +79,7 @@ export function switchScene(name, data) {
  * Get current scene name.
  * @returns {string}
  */
-export function currentScene() {
+function currentScene() {
   return _activeSceneName;
 }
 
@@ -89,7 +89,7 @@ export function currentScene() {
  * Create a fresh engine context that holds all runtime state.
  * @returns {Object}
  */
-export function createContext() {
+function createContext() {
   return {
     canvas: null,
     running: false,
@@ -122,7 +122,7 @@ const MAX_FRAME_TIME = 250;   // cap to prevent spiral of death
  * Start the fixed-timestep game loop.
  * @param {Object} ctx — engine context
  */
-export function startLoop(ctx) {
+function startLoop(ctx) {
   if (ctx.running) return;
   ctx.running = true;
   ctx._lastTimestamp = performance.now();
@@ -174,7 +174,7 @@ export function startLoop(ctx) {
  * Stop the game loop.
  * @param {Object} ctx — engine context
  */
-export function stopLoop(ctx) {
+function stopLoop(ctx) {
   ctx.running = false;
   if (ctx._rafId) {
     cancelAnimationFrame(ctx._rafId);
@@ -189,7 +189,7 @@ export function stopLoop(ctx) {
  * @param {number} seed — 32-bit integer seed
  * @returns {{ next: () => number, nextInt: (min, max) => number }}
  */
-export function createRNG(seed) {
+function createRNG(seed) {
   // Splitmix32 to expand seed into 4 state words
   let s0, s1, s2, s3;
   function splitmix32(a) {
@@ -243,3 +243,16 @@ export function createRNG(seed) {
     },
   };
 }
+
+export {
+  createContext,
+  createRNG,
+  currentScene,
+  getGame,
+  getGames,
+  registerGame,
+  registerScene,
+  startLoop,
+  stopLoop,
+  switchScene,
+};

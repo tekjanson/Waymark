@@ -2,7 +2,7 @@
    P2PEndToEndTest.kt — Full end-to-end notification test
 
    This test is designed to run together with the Node.js test
-   orchestrator (test_orchestrator/test_orchestrator.mjs).
+   orchestrator (test_orchestrator/test-orchestrator.mjs).
 
    The test:
      1. Starts the WebRtcService
@@ -12,7 +12,7 @@
 
    Prerequisites:
      - Device must have a valid OAuth token cached
-     - test_orchestrator.mjs must be running with --mode=e2e
+     - test-orchestrator.mjs must be running with --mode=e2e
      - Device must have POST_NOTIFICATIONS permission granted
 
    For the in-process tests (no external orchestrator needed),

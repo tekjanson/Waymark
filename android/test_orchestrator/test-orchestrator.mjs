@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ============================================================
-   test_orchestrator.mjs — E2E test orchestrator for Waymark
+   test-orchestrator.mjs — E2E test orchestrator for Waymark
    Android P2P notification system.
 
    This is a REAL orchestrator peer that:
@@ -15,13 +15,13 @@
 
    Usage:
      # Interactive mode: send notifications on keypress
-     node test_orchestrator.mjs
+     node test-orchestrator.mjs
 
      # E2E mode: send N notifications, verify receipt, exit with code
-     node test_orchestrator.mjs --mode=e2e --count=3 --timeout=120
+     node test-orchestrator.mjs --mode=e2e --count=3 --timeout=120
 
      # Phase 1 key exchange test: verify key delivery
-     node test_orchestrator.mjs --mode=key-exchange
+     node test-orchestrator.mjs --mode=key-exchange
 
    Environment variables:
      GOOGLE_APPLICATION_CREDENTIALS — Path to service account JSON

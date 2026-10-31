@@ -1,3 +1,4 @@
+import * as storage from './storage.js';
 /* ============================================================
    checklist.js — Render a Google Sheet using detected templates
    Uses templates.js for deterministic type detection and
@@ -145,9 +146,9 @@ export function init() {
     lockBtn.addEventListener('click', () => {
       if (!currentSheetId) return;
       const key = `waymark-lock-${currentSheetId}`;
-      const isLocked = localStorage.getItem(key) === '1';
+      const isLocked = storage.getRaw(key) === '1';
       const newState = !isLocked;
-      localStorage.setItem(key, newState ? '1' : '0');
+      storage.setRaw(key, newState ? '1' : '0');
       applyLockState(newState);
       showToast(newState ? 'Sheet locked — editing disabled' : 'Sheet unlocked — editing enabled', 'success');
       lockBtn.classList.add('lock-bounce');
@@ -696,7 +697,7 @@ export async function show(sheetId, sheetName) {
   itemsEl.innerHTML = '';
   lastUpdatedEl.textContent = '';
   // Restore per-sheet lock state
-  const locked = localStorage.getItem(`waymark-lock-${sheetId}`) === '1';
+  const locked = storage.getRaw(`waymark-lock-${sheetId}`) === '1';
   applyLockState(locked);
   // Notify Android native layer so it can connect WebRTC for this sheet
   const bridge = getAndroidBridge(['onSheetOpened']);

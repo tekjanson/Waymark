@@ -158,7 +158,7 @@ test('clicking close (✕) button in Wayside closes chat and restores placeholde
   // Click close button
   await closeBtn.click();
 
-  // Placeholder is restored
+  // Empty state is restored
   await expect(page.locator('#wayside-placeholder')).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('#wayside-sheet-line')).toContainText('Pick a crew or Waymarker');
   await expect(page.locator('.crew-row.active')).toHaveCount(0);

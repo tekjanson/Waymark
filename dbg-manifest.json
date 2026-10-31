@@ -12,7 +12,7 @@
       "source_refs": [
         {
           "label": "Rule source",
-          "path": "dbg_manifest.json",
+          "path": "dbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -28,7 +28,23 @@
       "source_refs": [
         {
           "label": "Rule source",
-          "path": "dbg_manifest.json",
+          "path": "dbg-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "filename-case",
+      "type": "filename-case",
+      "enabled": true,
+      "severity": "error",
+      "description": "A directory uses one filename case convention, never a mix.",
+      "what": "Flags directories that mix snake_case and kebab-case filenames.",
+      "why": "One naming convention removes bikeshedding and import ambiguity.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "dbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -38,14 +54,14 @@
       "type": "max-exports",
       "enabled": true,
       "severity": "error",
-      "max_exports": 150,
+      "max_exports": 8,
       "description": "A module exposes a bounded surface so responsibilities stay small.",
       "what": "Flags modules whose export count exceeds the configured maximum.",
       "why": "A small public surface keeps modules single-purpose and composable.",
       "source_refs": [
         {
           "label": "Rule source",
-          "path": "dbg_manifest.json",
+          "path": "dbg-manifest.json",
           "kind": "manifest"
         }
       ]

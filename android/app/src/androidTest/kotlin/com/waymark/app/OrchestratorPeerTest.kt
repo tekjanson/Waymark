@@ -168,7 +168,7 @@ class OrchestratorPeerTest {
         // we verify that the OrchestratorPeer correctly processes inbound messages
         // by checking that the message handler works.
 
-        // For a true E2E test, we rely on the test_orchestrator.mjs which sends
+        // For a true E2E test, we rely on the test-orchestrator.mjs which sends
         // real notifications over a real DataChannel to the Android device.
         // Here we verify the in-memory signaling protocol works correctly.
         assertTrue("Peer1 should be in mesh", peer1!!.isInMesh)

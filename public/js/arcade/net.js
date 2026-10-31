@@ -3,8 +3,7 @@
    ============================================================ */
 
 /* ---------- Message Types ---------- */
-
-export const MSG = {
+const MSG = {
   INPUT:       0x01,
   INPUT_ACK:   0x02,
   STATE_SNAP:  0x03,
@@ -29,7 +28,7 @@ export const MSG = {
  * @param {number} lastAckedFrame — last remotely acked frame
  * @returns {ArrayBuffer}
  */
-export function encodeInput(frame, inputHistory, lastAckedFrame) {
+function encodeInput(frame, inputHistory, lastAckedFrame) {
   const unacked = frame - lastAckedFrame;
   const count = Math.min(Math.max(unacked, 1), 32);
   const buf = new ArrayBuffer(6 + count);
@@ -51,7 +50,7 @@ export function encodeInput(frame, inputHistory, lastAckedFrame) {
  * @param {DataView} view
  * @returns {{ frame: number, count: number, inputs: number[] }}
  */
-export function decodeInput(view) {
+function decodeInput(view) {
   const frame = view.getUint32(1, true);
   const count = view.getUint8(5);
   const inputs = [];
@@ -67,7 +66,7 @@ export function decodeInput(view) {
  * @param {number} frame — last received frame
  * @returns {ArrayBuffer}
  */
-export function encodeInputAck(frame) {
+function encodeInputAck(frame) {
   const buf = new ArrayBuffer(5);
   const view = new DataView(buf);
   view.setUint8(0, MSG.INPUT_ACK);
@@ -82,7 +81,7 @@ export function encodeInputAck(frame) {
  * @param {Uint8Array} payload — game-specific move data
  * @returns {ArrayBuffer}
  */
-export function encodeMove(seq, payload) {
+function encodeMove(seq, payload) {
   const buf = new ArrayBuffer(3 + payload.length);
   const view = new DataView(buf);
   view.setUint8(0, MSG.MOVE);
@@ -98,7 +97,7 @@ export function encodeMove(seq, payload) {
  * @param {number} byteLength
  * @returns {{ seq: number, payload: Uint8Array }}
  */
-export function decodeMove(view, byteLength) {
+function decodeMove(view, byteLength) {
   const seq = view.getUint16(1, true);
   const payload = new Uint8Array(view.buffer, view.byteOffset + 3, byteLength - 3);
   return { seq, payload };
@@ -110,7 +109,7 @@ export function decodeMove(view, byteLength) {
  * @param {number} seq
  * @returns {ArrayBuffer}
  */
-export function encodeMoveAck(seq) {
+function encodeMoveAck(seq) {
   const buf = new ArrayBuffer(3);
   const view = new DataView(buf);
   view.setUint8(0, MSG.MOVE_ACK);
@@ -125,7 +124,7 @@ export function encodeMoveAck(seq) {
  * @param {Uint8Array} data
  * @returns {ArrayBuffer}
  */
-export function encodeStateSnap(frame, data) {
+function encodeStateSnap(frame, data) {
   const buf = new ArrayBuffer(5 + data.length);
   const view = new DataView(buf);
   view.setUint8(0, MSG.STATE_SNAP);
@@ -139,7 +138,7 @@ export function encodeStateSnap(frame, data) {
  * Format: [type:1][timestamp:8]
  * @returns {ArrayBuffer}
  */
-export function encodePing() {
+function encodePing() {
   const buf = new ArrayBuffer(9);
   const view = new DataView(buf);
   view.setUint8(0, MSG.PING);
@@ -153,7 +152,7 @@ export function encodePing() {
  * @param {number} sentTime — original ping timestamp
  * @returns {ArrayBuffer}
  */
-export function encodePong(sentTime) {
+function encodePong(sentTime) {
   const buf = new ArrayBuffer(9);
   const view = new DataView(buf);
   view.setUint8(0, MSG.PONG);
@@ -168,7 +167,7 @@ export function encodePong(sentTime) {
  * @param {Object} data — JSON-serialisable payload
  * @returns {ArrayBuffer}
  */
-export function encodeControl(type, data) {
+function encodeControl(type, data) {
   const json = JSON.stringify(data);
   const encoder = new TextEncoder();
   const bytes = encoder.encode(json);
@@ -183,7 +182,7 @@ export function encodeControl(type, data) {
  * @param {ArrayBuffer} buffer
  * @returns {Object}
  */
-export function decodeMessage(buffer) {
+function decodeMessage(buffer) {
   const view = new DataView(buffer);
   const type = view.getUint8(0);
 
@@ -230,7 +229,7 @@ export function decodeMessage(buffer) {
 /**
  * Manages dual DataChannels for game traffic on an existing RTCPeerConnection.
  */
-export class ArcadeNet {
+class ArcadeNet {
   /**
    * @param {RTCPeerConnection} pc — existing peer connection
    */
@@ -292,7 +291,7 @@ export class ArcadeNet {
     }
     ch.onopen = () => {
       this._openCount++;
-      console.log(`[ArcadeNet] channel '${ch.label}' (${kind}) OPEN — openCount=${this._openCount}`);
+      console.info(`[ArcadeNet] channel '${ch.label}' (${kind}) OPEN — openCount=${this._openCount}`);
       if (this._openCount >= 2 && this.onOpen) this.onOpen();
       if (kind === 'fast' && !this._pingTimer) {
         this._pingTimer = setInterval(() => this._sendPing(), 250);
@@ -300,7 +299,7 @@ export class ArcadeNet {
     };
     ch.onclose = () => {
       this._openCount--;
-      console.log(`[ArcadeNet] channel '${ch.label}' (${kind}) CLOSED — openCount=${this._openCount}`);
+      console.info(`[ArcadeNet] channel '${ch.label}' (${kind}) CLOSED — openCount=${this._openCount}`);
       if (this.onClose) this.onClose();
     };
     ch.onmessage = (e) => {
@@ -407,7 +406,7 @@ export class ArcadeNet {
  * @param {string} remotePeerId — the peer to create game channels with
  * @returns {ArcadeNet|null}
  */
-export function createArcadeNet(waymarkConnect, remotePeerId) {
+function createArcadeNet(waymarkConnect, remotePeerId) {
   const entry = waymarkConnect._rtc.get(remotePeerId);
   if (!entry || !entry.pc) {
     const reason = !entry ? 'no RTC entry' : 'no PeerConnection';
@@ -415,6 +414,23 @@ export function createArcadeNet(waymarkConnect, remotePeerId) {
     return null;
   }
 
-  console.log(`[ArcadeNet] creating ArcadeNet for peer ${remotePeerId} (pcState=${entry.pc.connectionState})`);
+  console.info(`[ArcadeNet] creating ArcadeNet for peer ${remotePeerId} (pcState=${entry.pc.connectionState})`);
   return new ArcadeNet(entry.pc);
 }
+
+export {
+  ArcadeNet,
+  MSG,
+  createArcadeNet,
+  decodeInput,
+  decodeMessage,
+  decodeMove,
+  encodeControl,
+  encodeInput,
+  encodeInputAck,
+  encodeMove,
+  encodeMoveAck,
+  encodePing,
+  encodePong,
+  encodeStateSnap,
+};

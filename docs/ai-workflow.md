@@ -162,7 +162,7 @@ The agent is designed to be always-on without burning through token budgets duri
 
 ## Codebase Rules (AI_LAWS)
 
-The agent follows a strict set of rules defined in `.github/instructions/AI_laws.instructions.md`. These rules are non-negotiable — violating any of them causes a hard reject during QA.
+The agent follows a strict set of rules defined in `.github/instructions/ai-laws.instructions.md`. These rules are non-negotiable — violating any of them causes a hard reject during QA.
 
 ### Key Rules
 

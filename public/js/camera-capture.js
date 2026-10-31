@@ -9,6 +9,18 @@
  * @param {{ title?: string }} opts
  * @returns {Promise<File|null>}
  */
+
+export function hasUserMedia() {
+  return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+}
+
+export async function getUserMediaStream(constraints) {
+  if (!hasUserMedia()) {
+    throw new Error('Camera/Microphone API is not available in this browser.');
+  }
+  return navigator.mediaDevices.getUserMedia(constraints);
+}
+
 export async function captureStillFromCamera(opts = {}) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Camera API is not available in this browser.');

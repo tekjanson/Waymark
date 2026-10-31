@@ -1,3 +1,4 @@
+import * as storage from '../storage.js';
 /* ============================================================
    templates/agents.js — AI Agent Registry: remote personality
    and tuning config panel for dev-worker agents.
@@ -99,7 +100,7 @@ const definition = {
     // Users accessing via swiftirons.com can configure their local webhook URL via the ⚙️ button
     // and it will be persisted in localStorage so the Sync Fleet button works for them too.
     const webhookUrl = window.__WAYMARK_FLEET_WEBHOOK
-      || localStorage.getItem(LS_WEBHOOK_KEY)
+      || storage.getRaw(LS_WEBHOOK_KEY)
       || null;
 
     /* -- Sync Fleet button (visible when webhook URL is known) -- */
@@ -110,7 +111,7 @@ const definition = {
     }, ['🔄 Sync Fleet']);
 
     syncBtn.addEventListener('click', async () => {
-      const url = window.__WAYMARK_FLEET_WEBHOOK || localStorage.getItem(LS_WEBHOOK_KEY);
+      const url = window.__WAYMARK_FLEET_WEBHOOK || storage.getRaw(LS_WEBHOOK_KEY);
       if (!url) { showToast('No webhook URL configured — click ⚙️ to set one', 'error'); return; }
       syncBtn.textContent = '⏳ Syncing…';
       syncBtn.disabled = true;
@@ -138,11 +139,11 @@ const definition = {
     function _saveCfgUrl() {
       const v = cfgInput.value.trim();
       if (v) {
-        localStorage.setItem(LS_WEBHOOK_KEY, v);
+        storage.setRaw(LS_WEBHOOK_KEY, v);
         syncBtn.style.display = '';
         syncBtn.title = `Sync fleet via ${v}`;
       } else {
-        localStorage.removeItem(LS_WEBHOOK_KEY);
+        storage.removeRaw(LS_WEBHOOK_KEY);
         if (!window.__WAYMARK_FLEET_WEBHOOK) syncBtn.style.display = 'none';
       }
       cfgInput.classList.add('hidden');

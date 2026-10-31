@@ -20,17 +20,9 @@
 
 const https = require('https');
 const http  = require('http');
-const { GoogleAuth } = require('google-auth-library');
+const { getGoogleAuthToken: getToken } = require('../lib/sheets');
 
-let _auth;
-async function getToken() {
-  if (!_auth) {
-    _auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-  }
-  const client = await _auth.getClient();
-  const token  = await client.getAccessToken();
-  return token.token;
-}
+// getToken imported from ../lib/sheets
 
 function fetch(url) {
   return new Promise((resolve, reject) => {

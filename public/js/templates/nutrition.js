@@ -14,8 +14,7 @@
    No Google API access happens here — only static /data fetches
    and pure math — so it stays outside api-client.js by design.
    ============================================================ */
-
-export const DEFAULT_WEIGHT_KG = 70;
+const DEFAULT_WEIGHT_KG = 70;
 
 /* Reference DB caches (loaded once from /data/*.json). */
 let _refFoods = null;
@@ -31,14 +30,14 @@ let _exPromise = null;
  * @param {*} v
  * @returns {number}
  */
-export function parseNum(v) {
+function parseNum(v) {
   if (v == null) return 0;
   const m = String(v).replace(',', '.').match(/-?\d+(\.\d+)?/);
   return m ? parseFloat(m[0]) : 0;
 }
 
 /** Round to at most 1 decimal place. */
-export function round1(n) {
+function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }
 
@@ -54,7 +53,7 @@ function slugify(name) {
  * @param {number} newQty
  * @returns {{calories:number,protein:number,carbs:number,fat:number}}
  */
-export function scaleMacros(food, newQty) {
+function scaleMacros(food, newQty) {
   const base = parseNum(food.qty) || 1;
   const factor = (parseNum(newQty) || 0) / base;
   return {
@@ -77,7 +76,7 @@ export function scaleMacros(food, newQty) {
  * @param {number} [limit]
  * @returns {Array<Object>}
  */
-export function searchFoodDatabase(query, foods, customDb = [], limit = 25) {
+function searchFoodDatabase(query, foods, customDb = [], limit = 25) {
   const q = (query || '').toLowerCase().trim();
   if (!q) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -106,7 +105,7 @@ export function searchFoodDatabase(query, foods, customDb = [], limit = 25) {
  * compact v2 tuple layout (expanded here) and the legacy v1 object layout.
  * @returns {Promise<Array<Object>>}
  */
-export async function loadFoodDatabase() {
+async function loadFoodDatabase() {
   if (_refFoods) return _refFoods;
   if (_refPromise) return _refPromise;
   _refPromise = (async () => {
@@ -129,7 +128,7 @@ export async function loadFoodDatabase() {
  * @param {Object} data
  * @returns {Array<Object>}
  */
-export function expandReference(data) {
+function expandReference(data) {
   if (!data) return [];
   if (Array.isArray(data.foods) && data.foods.length && !Array.isArray(data.foods[0])) {
     return data.foods;
@@ -157,7 +156,7 @@ export function expandReference(data) {
 }
 
 /** Test/override hook — inject a reference dataset directly. */
-export function _setFoodDatabase(foods) {
+function _setFoodDatabase(foods) {
   _refFoods = foods;
   _refPromise = null;
 }
@@ -170,7 +169,7 @@ export function _setFoodDatabase(foods) {
  * @param {Array<Object>} [foods]
  * @returns {Promise<Object|null>}
  */
-export async function lookupBarcode(barcode, foods = null) {
+async function lookupBarcode(barcode, foods = null) {
   const code = String(barcode || '').trim();
   if (!code) return null;
   const db = foods || (await loadFoodDatabase());
@@ -193,7 +192,7 @@ export async function lookupBarcode(barcode, foods = null) {
  * @param {string} barcode
  * @returns {Object|null}
  */
-export function normalizeOffProduct(product, barcode) {
+function normalizeOffProduct(product, barcode) {
   if (!product) return null;
   const n = product.nutriments || {};
   const name = product.product_name || product.generic_name;
@@ -223,7 +222,7 @@ export function normalizeOffProduct(product, barcode) {
  * @param {number} minutes
  * @returns {number}
  */
-export function caloriesFromMet(met, weightKg, minutes) {
+function caloriesFromMet(met, weightKg, minutes) {
   const m = parseNum(met);
   const w = parseNum(weightKg) || DEFAULT_WEIGHT_KG;
   const min = parseNum(minutes);
@@ -234,7 +233,7 @@ export function caloriesFromMet(met, weightKg, minutes) {
  * Load and cache the compendium exercise reference dataset.
  * @returns {Promise<Array<Object>>}
  */
-export async function loadExerciseDatabase() {
+async function loadExerciseDatabase() {
   if (_refExercises) return _refExercises;
   if (_exPromise) return _exPromise;
   _exPromise = (async () => {
@@ -253,7 +252,7 @@ export async function loadExerciseDatabase() {
 }
 
 /** Expand the compact exercise payload into activity objects. */
-export function expandExercises(data) {
+function expandExercises(data) {
   if (!data) return [];
   if (Array.isArray(data.activities) && data.activities.length && !Array.isArray(data.activities[0])) {
     return data.activities;
@@ -269,7 +268,7 @@ export function expandExercises(data) {
 }
 
 /** Test/override hook — inject an exercise dataset directly. */
-export function _setExerciseDatabase(list) {
+function _setExerciseDatabase(list) {
   _refExercises = list;
   _exPromise = null;
 }
@@ -281,7 +280,7 @@ export function _setExerciseDatabase(list) {
  * @param {number} [limit]
  * @returns {Array<Object>}
  */
-export function searchExerciseDatabase(query, activities, limit = 25) {
+function searchExerciseDatabase(query, activities, limit = 25) {
   const q = (query || '').toLowerCase().trim();
   if (!q) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -303,23 +302,21 @@ export function searchExerciseDatabase(query, activities, limit = 25) {
 /* ---------- Profile: BMR / TDEE & goal targets ---------- */
 
 /** Activity multipliers applied to BMR to estimate TDEE. */
-export const ACTIVITY_FACTORS = {
+const ACTIVITY_FACTORS = {
   sedentary: 1.2,
   light: 1.375,
   moderate: 1.55,
   active: 1.725,
   athlete: 1.9,
 };
-
-export const ACTIVITY_LABELS = {
+const ACTIVITY_LABELS = {
   sedentary: 'Sedentary (little exercise)',
   light: 'Light (1–3 days/week)',
   moderate: 'Moderate (3–5 days/week)',
   active: 'Active (6–7 days/week)',
   athlete: 'Athlete (2x/day)',
 };
-
-export const GOAL_LABELS = {
+const GOAL_LABELS = {
   lose: 'Lose weight',
   maintain: 'Maintain',
   gain: 'Gain muscle',
@@ -333,7 +330,7 @@ const KCAL_PER_KG = 7700;
  * @param {{sex:string, age:number, heightCm:number, weightKg:number}} p
  * @returns {number} kcal/day (0 when inputs are incomplete)
  */
-export function computeBMR(p) {
+function computeBMR(p) {
   if (!p) return 0;
   const w = parseNum(p.weightKg);
   const h = parseNum(p.heightCm);
@@ -352,7 +349,7 @@ export function computeBMR(p) {
  * @param {string} activityLevel
  * @returns {number}
  */
-export function computeTDEE(bmr, activityLevel) {
+function computeTDEE(bmr, activityLevel) {
   const factor = ACTIVITY_FACTORS[activityLevel] || ACTIVITY_FACTORS.moderate;
   return Math.round((parseNum(bmr) || 0) * factor);
 }
@@ -364,7 +361,7 @@ export function computeTDEE(bmr, activityLevel) {
  * @param {number} rateKgPerWeek
  * @returns {number}
  */
-export function computeCalorieGoal(tdee, goalType, rateKgPerWeek = 0.5) {
+function computeCalorieGoal(tdee, goalType, rateKgPerWeek = 0.5) {
   const t = parseNum(tdee) || 0;
   if (!t) return 0;
   const dailyDelta = Math.round((parseNum(rateKgPerWeek) * KCAL_PER_KG) / 7);
@@ -380,7 +377,7 @@ export function computeCalorieGoal(tdee, goalType, rateKgPerWeek = 0.5) {
  * @param {{weightKg?:number, goalType?:string}} [opts]
  * @returns {{protein:number, carbs:number, fat:number}}
  */
-export function computeMacroTargets(calories, opts = {}) {
+function computeMacroTargets(calories, opts = {}) {
   const cal = parseNum(calories) || 0;
   if (!cal) return { protein: 0, carbs: 0, fat: 0 };
   const weight = parseNum(opts.weightKg) || DEFAULT_WEIGHT_KG;
@@ -399,7 +396,7 @@ export function computeMacroTargets(calories, opts = {}) {
  * @param {Object} profile
  * @returns {{bmr:number, tdee:number, calories:number, macros:Object}|null}
  */
-export function goalFromProfile(profile) {
+function goalFromProfile(profile) {
   if (!profile) return null;
   const bmr = computeBMR(profile);
   if (!bmr) return null;
@@ -410,3 +407,29 @@ export function goalFromProfile(profile) {
   });
   return { bmr, tdee, calories, macros };
 }
+
+export {
+  ACTIVITY_FACTORS,
+  ACTIVITY_LABELS,
+  DEFAULT_WEIGHT_KG,
+  GOAL_LABELS,
+  _setExerciseDatabase,
+  _setFoodDatabase,
+  caloriesFromMet,
+  computeBMR,
+  computeCalorieGoal,
+  computeMacroTargets,
+  computeTDEE,
+  expandExercises,
+  expandReference,
+  goalFromProfile,
+  loadExerciseDatabase,
+  loadFoodDatabase,
+  lookupBarcode,
+  normalizeOffProduct,
+  parseNum,
+  round1,
+  scaleMacros,
+  searchExerciseDatabase,
+  searchFoodDatabase,
+};

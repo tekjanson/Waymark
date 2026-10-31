@@ -23,7 +23,7 @@
 
 'use strict';
 
-const { GoogleAuth } = require('google-auth-library');
+const { getGoogleAuthToken: getToken } = require('./lib/sheets');
 const https = require('https');
 
 /* ---------- Config ---------- */
@@ -40,17 +40,7 @@ if (!SHEET_ID) {
 
 /* ---------- Sheets API client ---------- */
 
-let _auth;
-async function getToken() {
-  if (!_auth) {
-    _auth = new GoogleAuth({
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-  }
-  const client = await _auth.getClient();
-  const token  = await client.getAccessToken();
-  return token.token;
-}
+// getToken imported from ./lib/sheets
 
 async function sheetsGet(range) {
   const token = await getToken();

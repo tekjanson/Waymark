@@ -31,7 +31,7 @@ Set these in your `.env`:
 # For Claude
 ANTHROPIC_API_KEY=sk-ant-...
 
-# For Gemini  
+# For Gemini
 GOOGLE_GEMINI_API_KEY=AIzaSy...
 ```
 

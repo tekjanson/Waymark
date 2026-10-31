@@ -4,7 +4,7 @@ const { setupApp, navigateToSheet } = require('../helpers/test-utils');
 
 /* ================================================================
    charts.spec.js — E2E tests for SVG chart rendering engine
-   
+
    Tests chart rendering via the tracker template integration
    (sheet-010) and direct page.evaluate() calls for all three
    chart types (line, bar, pie/donut).

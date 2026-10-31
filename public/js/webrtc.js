@@ -22,6 +22,7 @@
    Cross-device:  WebRTC DataChannel + MediaStream
    ============================================================ */
 
+import { deriveHandshakeKey, encryptHandshakeSignal, decryptHandshakeSignal } from './encryption.js';
 import { getAndroidBridge } from './platform.js';
 
 /* ---------- Constants ---------- */
@@ -216,13 +217,13 @@ export class WaymarkConnect {
   sendToPeer(peerId, msg) {
     const entry = this._rtc.get(peerId);
     if (entry?.dc?.readyState === 'open') {
-      console.log(`[WC] sendToPeer → ${peerId} via DataChannel:`, msg.type);
+      console.info(`[WC] sendToPeer → ${peerId} via DataChannel:`, msg.type);
       entry.dc.send(JSON.stringify(msg));
       return;
     }
     // Fallback: BroadcastChannel for same-browser peers without an open DC
     if (this._bc) {
-      console.log(`[WC] sendToPeer → ${peerId} via BroadcastChannel (no open DC):`, msg.type);
+      console.info(`[WC] sendToPeer → ${peerId} via BroadcastChannel (no open DC):`, msg.type);
       this._bc.postMessage({ ...msg, _to: peerId });
       return;
     }
@@ -690,7 +691,7 @@ export class WaymarkConnect {
       const dcStates = Array.from(this._rtc.entries()).map(([id, r]) => `${id}:${r.dc?.readyState || 'no-dc'}`);
       const hasOpenDC = Array.from(this._rtc.values()).some(r => r.dc?.readyState === 'open');
       const status = hasOpenDC ? 'connected' : 'pairing';
-      console.log(`[WC] status → ${status} | peers=${this._peers.size} | DC states: [${dcStates.join(', ')}]`);
+      console.info(`[WC] status → ${status} | peers=${this._peers.size} | DC states: [${dcStates.join(', ')}]`);
       this.onStatusChanged(status);
     }
   }
@@ -789,7 +790,7 @@ export class WaymarkConnect {
         // Forward targeted arcade messages (invite/accept/decline)
         if (d._to && d._to !== this.peerId) return;
         if (this.onArcadeMessage) {
-          console.log(`[WC] BC arcade msg from ${d.peerId}:`, d.type);
+          console.info(`[WC] BC arcade msg from ${d.peerId}:`, d.type);
           this.onArcadeMessage(d.peerId, d);
         } else {
           console.warn(`[WC] BC arcade msg from ${d.peerId} DROPPED — no onArcadeMessage handler:`, d.type);
@@ -875,9 +876,9 @@ export class WaymarkConnect {
         return false;
       }
       if (reclaimedBlock >= 0) {
-        console.log(`[WC] _join — reclaimed slot row ${this._block} (crash/nav recovery), peerId=${this.peerId}`);
+        console.info(`[WC] _join — reclaimed slot row ${this._block} (crash/nav recovery), peerId=${this.peerId}`);
       } else {
-        console.log(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
+        console.info(`[WC] _join — claiming slot row ${this._block}, peerId=${this.peerId}`);
       }
       if (!await this._heartbeat()) {
         const failedBlock = this._block;
@@ -931,9 +932,9 @@ export class WaymarkConnect {
           this._clearBlock(failedBlock);
           return false;
         }
-        console.log(`[WC] _join — re-claimed slot row ${this._block}, peerId=${this.peerId}`);
+        console.info(`[WC] _join — re-claimed slot row ${this._block}, peerId=${this.peerId}`);
       } else {
-        console.log(`[WC] _join — slot ${this._block} confirmed for peerId=${this.peerId}`);
+        console.info(`[WC] _join — slot ${this._block} confirmed for peerId=${this.peerId}`);
       }
 
       if (typeof document === 'undefined' || !document.hidden) {
@@ -1046,7 +1047,7 @@ export class WaymarkConnect {
         if (remote.nonce) {
           const knownNonce = this._remoteNonces.get(remote.peerId);
           if (knownNonce && knownNonce !== remote.nonce && this._rtc.has(remote.peerId)) {
-            console.log(`[WC] peer ${remote.peerId} restarted (nonce changed) — closing stale connection for rebuild`);
+            console.info(`[WC] peer ${remote.peerId} restarted (nonce changed) — closing stale connection for rebuild`);
             this._closeOne(remote.peerId);
             if (myOffers[remote.peerId]) { delete myOffers[remote.peerId]; offDirty = true; }
             if (myAnswers[remote.peerId]) { delete myAnswers[remote.peerId]; ansDirty = true; }
@@ -1075,7 +1076,7 @@ export class WaymarkConnect {
           // === INITIATOR: we create offer, wait for answer ===
           if (!r) {
             try {
-              console.log(`[WC] _poll — building offer to ${remote.peerId}`);
+              console.info(`[WC] _poll — building offer to ${remote.peerId}`);
               const entry = await this._buildOffer(remote.peerId);
               myOffers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
               offDirty = true;
@@ -1095,7 +1096,7 @@ export class WaymarkConnect {
             if (ans) {
               if (r.pc?.signalingState === 'have-local-offer') {
                 try {
-                  console.log(`[WC] _poll — applying answer from ${remote.peerId}`);
+                  console.info(`[WC] _poll — applying answer from ${remote.peerId}`);
                   await r.pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
                   r.state = 'connected';
                   delete myOffers[remote.peerId];
@@ -1117,7 +1118,7 @@ export class WaymarkConnect {
             const offer = remoteOff[this.peerId];
             if (offer) {
               try {
-                console.log(`[WC] _poll — building answer for ${remote.peerId}`);
+                console.info(`[WC] _poll — building answer for ${remote.peerId}`);
                 const entry = await this._buildAnswer(remote.peerId, offer.sdp);
                 myAnswers[remote.peerId] = { sdp: entry.pc.localDescription.sdp, ts: Date.now() };
                 ansDirty = true;
@@ -1279,7 +1280,7 @@ export class WaymarkConnect {
     pc.oniceconnectionstatechange = () => {
       if (this._destroyed) return;
       const s = pc.iceConnectionState;
-      console.log(`[WC] ICE ${remotePeerId} → ${s}`);
+      console.info(`[WC] ICE ${remotePeerId} → ${s}`);
       if (s === 'failed' || s === 'closed') {
         this._closeOne(remotePeerId);
         if (this._peers.get(remotePeerId)?.channel === 'rtc') {
@@ -1353,7 +1354,7 @@ export class WaymarkConnect {
 
   _wireDC(remotePeerId, dc) {
     dc.onopen = () => {
-      console.log(`[WC] DataChannel OPEN with ${remotePeerId} (label: ${dc.label})`);
+      console.info(`[WC] DataChannel OPEN with ${remotePeerId} (label: ${dc.label})`);
       dc.send(JSON.stringify({ type: 'announce', peerId: this.peerId, name: this.displayName }));
       this._peers.set(remotePeerId, {
         ...this._peers.get(remotePeerId),
@@ -1435,7 +1436,7 @@ export class WaymarkConnect {
             break;
           default:
             if (this.onArcadeMessage) {
-              console.log(`[WC] DC arcade msg from ${remotePeerId}:`, m.type);
+              console.info(`[WC] DC arcade msg from ${remotePeerId}:`, m.type);
               this.onArcadeMessage(remotePeerId, m);
             } else {
               console.warn(`[WC] DC arcade msg from ${remotePeerId} DROPPED — no onArcadeMessage handler:`, m.type);
@@ -1453,7 +1454,7 @@ export class WaymarkConnect {
     };
 
     dc.onclose = () => {
-      console.log(`[WC] DataChannel CLOSED with ${remotePeerId}`);
+      console.info(`[WC] DataChannel CLOSED with ${remotePeerId}`);
       const p = this._peers.get(remotePeerId);
       if (p?.channel === 'rtc') {
         this._peers.set(remotePeerId, { name: p.name, channel: 'sig' });
@@ -1473,7 +1474,7 @@ export class WaymarkConnect {
 
     r.ignoreOffer = !polite && offerCollision;
     if (r.ignoreOffer) {
-      console.log(`[WC] impolite peer ignoring colliding renego-offer from ${remotePeerId}`);
+      console.info(`[WC] impolite peer ignoring colliding renego-offer from ${remotePeerId}`);
       return;
     }
 
@@ -1565,70 +1566,32 @@ export class WaymarkConnect {
   }
 
   /**
-   * Derive (and cache) an AES-GCM key from the session password.
+   * Derive (and cache) an AES-GCM key from the session password via canonical helper.
    * @returns {Promise<CryptoKey|null>}
    */
   async _deriveHandshakeKey() {
     if (this._handshakeKey) return this._handshakeKey;
     if (!this._password) return null;
-    const enc = new TextEncoder();
-    const mat = await crypto.subtle.importKey(
-      'raw', enc.encode(this._password), 'PBKDF2', false, ['deriveKey']
-    );
-    this._handshakeKey = await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: enc.encode(`waymark-handshake-${this.sheetId}`),
-        iterations: HANDSHAKE_PBKDF2_ITER,
-        hash: 'SHA-256',
-      },
-      mat,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+    this._handshakeKey = await deriveHandshakeKey(this._password, this.sheetId, HANDSHAKE_PBKDF2_ITER);
     return this._handshakeKey;
   }
 
   /**
-   * Encrypt a signaling value. Returns plaintext unchanged if no password is set.
-   * Empty strings are passed through.
+   * Encrypt a signaling value via canonical encryption helper.
    * @param {string} plaintext
    * @returns {Promise<string>}
    */
   async _encryptSignal(plaintext) {
-    if (!plaintext || !this._password) return plaintext;
-    const key = await this._deriveHandshakeKey();
-    if (!key) return plaintext;
-    const enc = new TextEncoder();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
-    const combined = new Uint8Array(12 + buf.byteLength);
-    combined.set(iv, 0);
-    combined.set(new Uint8Array(buf), 12);
-    return HANDSHAKE_ENC_PREFIX + btoa(String.fromCharCode(...combined));
+    return encryptHandshakeSignal(plaintext, this._password, this.sheetId);
   }
 
   /**
-   * Decrypt a signaling value. Returns the encoded string unchanged if it
-   * does not start with the encryption prefix (already plaintext).
-   * Returns null if password is set but decryption fails (wrong password).
+   * Decrypt a signaling value via canonical encryption helper.
    * @param {string} encoded
    * @returns {Promise<string|null>}
    */
   async _decryptSignal(encoded) {
-    if (!encoded || !encoded.startsWith(HANDSHAKE_ENC_PREFIX)) return encoded;
-    if (!this._password) return null; // Protected data but no password
-    const key = await this._deriveHandshakeKey();
-    if (!key) return null;
-    try {
-      const raw = Uint8Array.from(atob(encoded.slice(HANDSHAKE_ENC_PREFIX.length)), c => c.charCodeAt(0));
-      const iv = raw.slice(0, 12);
-      const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, raw.slice(12));
-      return new TextDecoder().decode(buf);
-    } catch {
-      return null; // Wrong password or corrupted cipher
-    }
+    return decryptHandshakeSignal(encoded, this._password, this.sheetId);
   }
 }
 

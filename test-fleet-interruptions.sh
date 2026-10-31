@@ -49,12 +49,12 @@ echo ""
 
 # Test 4: Verify documentation exists
 echo "4️⃣  Checking documentation..."
-if [[ ! -f WORKBOARD_INTERRUPTIONS.md ]]; then
-    echo "❌ WORKBOARD_INTERRUPTIONS.md not found"
+if [[ ! -f workboard-interruptions.md ]]; then
+    echo "❌ workboard-interruptions.md not found"
     exit 1
 fi
 
-if ! grep -q "Workboard Fleet Interruptions" WORKBOARD_INTERRUPTIONS.md; then
+if ! grep -q "Workboard Fleet Interruptions" workboard-interruptions.md; then
     echo "❌ Documentation header missing"
     exit 1
 fi

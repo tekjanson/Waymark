@@ -13,7 +13,7 @@ tools: [execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal,
 
 ## 0. BOOT SEQUENCE
 
-1. **Read AI_LAWS** — Load `.github/instructions/AI_laws.instructions.md`. These rules are non-negotiable. Any violation is a hard reject.
+1. **Read AI_LAWS** — Load `.github/instructions/ai-laws.instructions.md`. These rules are non-negotiable. Any violation is a hard reject.
 
 1a. **Reset to base branch** — Before touching any code, return to the integration branch so this task's work forks from the right place:
    ```bash

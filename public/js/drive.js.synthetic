@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "export-sheet-to-drive",
+      "user_intent": "Export active waymark data to Google Drive",
+      "trigger": "ui.click:export_drive",
+      "steps": [
+        "validate:auth_token",
+        "external:post_drive_file",
+        "emit:export_completed"
+      ],
+      "outcome": "File created in user's Google Drive account"
+    }
+  ]
+}

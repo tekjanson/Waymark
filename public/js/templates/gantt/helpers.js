@@ -1,3 +1,5 @@
+import { formatISO } from '../shared.js';
+import { svg } from '../shared.js';
 /* ============================================================
    gantt/helpers.js — Pure helper functions for the Gantt template
    ============================================================ */
@@ -10,13 +12,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
  * @param {Object} attrs
  * @returns {SVGElement}
  */
-export function svg(tag, attrs = {}) {
-  const elem = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    elem.setAttribute(k, String(v));
-  }
-  return elem;
-}
+export { svg };
 
 /**
  * Parse a date string (YYYY-MM-DD or ISO) to a Date object.
@@ -24,7 +20,7 @@ export function svg(tag, attrs = {}) {
  * @param {string|null|undefined} str
  * @returns {Date|null}
  */
-export function parseDate(str) {
+function parseDate(str) {
   if (!str || typeof str !== 'string') return null;
   const trimmed = str.trim();
   if (!trimmed) return null;
@@ -37,7 +33,7 @@ export function parseDate(str) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatMonthLabel(date) {
+function formatMonthLabel(date) {
   return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
 }
 
@@ -46,7 +42,7 @@ export function formatMonthLabel(date) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatShortDate(date) {
+function formatShortDate(date) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
@@ -55,12 +51,7 @@ export function formatShortDate(date) {
  * @param {Date} date
  * @returns {string}
  */
-export function formatISO(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+// formatISO imported from shared.js
 
 /**
  * Return the number of whole days from d1 to d2 (may be negative).
@@ -68,7 +59,7 @@ export function formatISO(date) {
  * @param {Date} d2
  * @returns {number}
  */
-export function daysBetween(d1, d2) {
+function daysBetween(d1, d2) {
   return Math.round((d2.getTime() - d1.getTime()) / 86400000);
 }
 
@@ -78,7 +69,7 @@ export function daysBetween(d1, d2) {
  * @param {number} n
  * @returns {Date}
  */
-export function addDays(date, n) {
+function addDays(date, n) {
   const d = new Date(date.getTime());
   d.setDate(d.getDate() + n);
   return d;
@@ -92,7 +83,7 @@ export function addDays(date, n) {
  * @param {{ start: Date|null, end: Date|null }[]} tasks
  * @returns {{ minDate: Date, maxDate: Date, totalDays: number }|null}
  */
-export function computeGanttRange(tasks) {
+function computeGanttRange(tasks) {
   let minDate = null;
   let maxDate = null;
   for (const t of tasks) {
@@ -111,7 +102,7 @@ export function computeGanttRange(tasks) {
  * @param {string} depStr
  * @returns {string[]}
  */
-export function parseDependencies(depStr) {
+function parseDependencies(depStr) {
   if (!depStr || !depStr.trim()) return [];
   return depStr.split(',').map(s => s.trim()).filter(Boolean);
 }
@@ -121,7 +112,7 @@ export function parseDependencies(depStr) {
  * @param {number} pct  0–100
  * @returns {string}
  */
-export function progressClass(pct) {
+function progressClass(pct) {
   if (pct >= 100) return 'gantt-bar-complete';
   if (pct > 0)    return 'gantt-bar-active';
   return 'gantt-bar-pending';
@@ -142,7 +133,7 @@ let _colorIdx = 0;
  * @param {string|null} name
  * @returns {string}  hex color
  */
-export function assigneeColor(name) {
+function assigneeColor(name) {
   if (!name) return '#6b7280';
   if (!_colorMap[name]) {
     _colorMap[name] = ASSIGNEE_COLORS[_colorIdx % ASSIGNEE_COLORS.length];
@@ -152,7 +143,7 @@ export function assigneeColor(name) {
 }
 
 /** Reset the assignee color mapping (call at the start of each render). */
-export function resetAssigneeColors() {
+function resetAssigneeColors() {
   for (const k of Object.keys(_colorMap)) delete _colorMap[k];
   _colorIdx = 0;
 }
@@ -164,7 +155,7 @@ export function resetAssigneeColors() {
  * @param {{ name: string, duration: number, depStr: string }[]} tasks
  * @returns {Set<number>}
  */
-export function findCriticalPath(tasks) {
+function findCriticalPath(tasks) {
   const n = tasks.length;
   if (n === 0) return new Set();
 
@@ -207,3 +198,18 @@ export function findCriticalPath(tasks) {
   }
   return critical;
 }
+
+export {
+  addDays,
+  assigneeColor,
+  computeGanttRange,
+  daysBetween,
+  findCriticalPath,
+  formatISO,
+  formatMonthLabel,
+  formatShortDate,
+  parseDate,
+  parseDependencies,
+  progressClass,
+  resetAssigneeColors,
+};

@@ -19,6 +19,7 @@ export function init(navigateFn) {
 
   const form  = document.getElementById('search-form');
   const input = document.getElementById('search-input');
+  const btn   = document.getElementById('search-btn');
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();

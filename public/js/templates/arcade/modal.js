@@ -117,12 +117,12 @@ export function openGameModal(opts) {
     // Set up arcade network channels
     const arcadeNet = createArcadeNet(waymarkConnect, remotePeerId);
     if (arcadeNet) {
-      console.log(`[Arcade] ArcadeNet created for peer ${remotePeerId} (localPlayer=${_ctx.localPlayerId})`);
+      console.info(`[Arcade] ArcadeNet created for peer ${remotePeerId} (localPlayer=${_ctx.localPlayerId})`);
       _ctx.net = arcadeNet;
       _ctx.netReady = false;
 
       arcadeNet.onOpen = () => {
-        console.log(`[Arcade] ArcadeNet READY — both channels open for peer ${remotePeerId}`);
+        console.info(`[Arcade] ArcadeNet READY — both channels open for peer ${remotePeerId}`);
         _ctx.netReady = true;
         // Dismiss connecting overlay
         const overlay = document.getElementById('arcade-connecting');

@@ -1,7 +1,7 @@
 # P2P Game Arcade — Design Document
 
-> **Status:** Research & Planning  
-> **Constraint:** 100% vanilla JavaScript, CSS, HTML — no frameworks, no build step  
+> **Status:** Research & Planning
+> **Constraint:** 100% vanilla JavaScript, CSS, HTML — no frameworks, no build step
 > **Foundation:** Existing Waymark WebRTC mesh (webrtc.js)
 
 ---
@@ -104,9 +104,9 @@ use case:
 are transmitted. Given identical initial state + identical inputs applied at
 identical frames → identical results on both machines.
 
-**Bandwidth:** Minimal — just input bits per frame  
-**Latency model:** Both players experience delay equal to the slower peer's RTT/2  
-**Determinism requirement:** ABSOLUTE — bit-identical results required  
+**Bandwidth:** Minimal — just input bits per frame
+**Latency model:** Both players experience delay equal to the slower peer's RTT/2
+**Determinism requirement:** ABSOLUTE — bit-identical results required
 **Best for:** Turn-based games, RTS, fighting games with input delay
 
 **P2P suitability:** ★★★★★ — No server needed. Peers exchange inputs and
@@ -130,11 +130,11 @@ input + last-known remote input. When the actual remote input arrives, if it
 differs from prediction, the simulation **rolls back** to the divergence point
 and **replays** forward with correct inputs.
 
-**Bandwidth:** Same as lockstep — just inputs  
+**Bandwidth:** Same as lockstep — just inputs
 **Latency model:** Local player sees zero delay. Remote player may "teleport"
-on misprediction, but this is masked by visual smoothing.  
+on misprediction, but this is masked by visual smoothing.
 **Determinism requirement:** Same as lockstep (must be deterministic for
-rollback/replay to work)  
+rollback/replay to work)
 **Best for:** Fighting games, fast-paced 1v1 action, up to ~150ms RTT
 
 **P2P suitability:** ★★★★★ — Born for P2P. GGPO was designed for P2P
@@ -154,9 +154,9 @@ action games.**
 state snapshots. The other side doesn't simulate — it just interpolates between
 received snapshots for smooth rendering.
 
-**Bandwidth:** High — full state every update  
-**Latency model:** Always rendering the past (~100-350ms behind real state)  
-**Determinism requirement:** None  
+**Bandwidth:** High — full state every update
+**Latency model:** Always rendering the past (~100-350ms behind real state)
+**Determinism requirement:** None
 **Best for:** Large-state games, spectator mode
 
 **P2P suitability:** ★★★☆☆ — Works but one peer becomes the "host" (authority).
@@ -170,9 +170,9 @@ primary model — prefer lockstep/rollback for fairness.**
 **How it works:** One peer is the "host" (mini-server). Sends authoritative
 state. Guest peer predicts locally and reconciles with host updates.
 
-**Bandwidth:** Medium — state diffs from host, inputs from guest  
-**Latency model:** Host has zero latency. Guest predicts + reconciles.  
-**Determinism requirement:** Low (only guest predicts)  
+**Bandwidth:** Medium — state diffs from host, inputs from guest
+**Latency model:** Host has zero latency. Guest predicts + reconciles.
+**Determinism requirement:** Low (only guest predicts)
 **Best for:** Fast-action games where rollback would need too many frames
 
 **P2P suitability:** ★★★☆☆ — Inherently unfair (host advantage). Acceptable
@@ -757,10 +757,10 @@ function encodeChessMove(from, to, promotion) {
 
 ### 11.1 Chess
 
-**Net model:** Lockstep (turn-based)  
-**State size:** 64 squares × 4 bits = 32 bytes + metadata  
-**Input:** Click square (from) → click square (to)  
-**Validation:** Both peers validate moves locally. Reject illegal moves.  
+**Net model:** Lockstep (turn-based)
+**State size:** 64 squares × 4 bits = 32 bytes + metadata
+**Input:** Click square (from) → click square (to)
+**Validation:** Both peers validate moves locally. Reject illegal moves.
 **Special rules:** Castling, en passant, promotion, 50-move rule, threefold repetition
 
 ```
@@ -778,19 +778,19 @@ check/checkmate detection.
 
 ### 11.2 Checkers
 
-**Net model:** Lockstep (turn-based)  
-**State size:** 32 playable squares × 2 bits = 8 bytes  
-**Input:** Click piece → click destination  
+**Net model:** Lockstep (turn-based)
+**State size:** 32 playable squares × 2 bits = 8 bytes
+**Input:** Click piece → click destination
 **Validation:** Both peers validate. Handle multi-jump sequences.
 
 **Rendering:** 8×8 board, pieces are circles with optional crown (king).
 
 ### 11.3 Slime Volleyball
 
-**Net model:** Rollback (GGPO-style)  
-**Tick rate:** 60 Hz  
-**State size:** ~40 bytes (2 slimes × {x, y, vx, vy} + ball × {x, y, vx, vy})  
-**Input:** 3 bits per player (left, right, jump)  
+**Net model:** Rollback (GGPO-style)
+**Tick rate:** 60 Hz
+**State size:** ~40 bytes (2 slimes × {x, y, vx, vy} + ball × {x, y, vx, vy})
+**Input:** 3 bits per player (left, right, jump)
 
 **Physics (integer/fixed-point):**
 
@@ -816,10 +816,10 @@ Example: position (32050, 18000) = screen (320.50, 180.00)
 
 ### 11.4 Slime Soccer
 
-**Net model:** Rollback  
-**Tick rate:** 60 Hz  
-**State:** 2 slimes + ball + 2 goals  
-**Input:** 4 bits per player (left, right, jump, kick)  
+**Net model:** Rollback
+**Tick rate:** 60 Hz
+**State:** 2 slimes + ball + 2 goals
+**Input:** 4 bits per player (left, right, jump, kick)
 
 Similar physics to slime volleyball but:
 - Full-width field instead of halves

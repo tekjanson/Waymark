@@ -32,8 +32,9 @@ module.exports = defineConfig({
     timeout: 10_000,
   },
 
+  outputDir: '../build/test-results',
   reporter: [
     ['list'],
-    ['html', { open: 'never', outputFolder: '../playwright-report' }],
+    ['html', { open: 'never', outputFolder: '../build/playwright-report' }],
   ],
 });

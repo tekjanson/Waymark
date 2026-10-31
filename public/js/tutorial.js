@@ -7,6 +7,7 @@
    ============================================================ */
 
 import * as userData from './user-data.js';
+import { getRaw, setRaw } from './storage.js';
 
 /* ---------- Tutorial Steps ---------- */
 
@@ -401,8 +402,8 @@ const TEMPLATE_TUTORIALS = {
 function startTemplateTutorial(key, force = false) {
   const storageKey = `waymark_template-tutorial-${key}`;
   if (!force) {
-    try { if (localStorage.getItem(storageKey)) return; } catch { /* ignore */ }
-    try { if (localStorage.getItem('waymark_template_tutorials_auto') === 'false') return; } catch { /* ignore */ }
+    try { if (getRaw(storageKey)) return; } catch { /* ignore */ }
+    try { if (getRaw('waymark_template_tutorials_auto') === 'false') return; } catch { /* ignore */ }
   }
 
   const steps = TEMPLATE_TUTORIALS[key];
@@ -418,7 +419,7 @@ function startTemplateTutorial(key, force = false) {
 
   _activeSteps = steps;
   _onComplete = () => {
-    try { localStorage.setItem(storageKey, 'true'); } catch { /* ignore */ }
+    try { setRaw(storageKey, 'true'); } catch { /* ignore */ }
     _activeSteps = savedSteps;
     _onComplete = savedCallback;
   };

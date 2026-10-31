@@ -3,7 +3,7 @@
     {
       "id": "placeholder-comments",
       "type": "placeholder-comments",
-      "enabled": false,
+      "enabled": true,
       "patterns": [
         "placeholder",
         "put your code here",
@@ -23,7 +23,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -31,11 +31,9 @@
     {
       "id": "marker-spam",
       "type": "marker-spam",
-      "enabled": false,
+      "enabled": true,
       "patterns": [
-        "TODO",
-        "FIXME",
-        "XXX"
+        "(?://|#|/\\*)\\s*(?:TODO|FIXME|XXX)\\b"
       ],
       "threshold": 3,
       "description": "Freeze marker-heavy comments that accumulate as slop debt.",
@@ -50,10 +48,11 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
-      ]
+      ],
+      "mode": "regex"
     },
     {
       "id": "empty-files",
@@ -71,7 +70,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -93,7 +92,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -101,7 +100,7 @@
     {
       "id": "button-actions",
       "type": "button-actions",
-      "enabled": false,
+      "enabled": true,
       "description": "Freeze UI buttons that do not declare an explicit action hook.",
       "what": "Require every button to expose a clear action so its effect is discoverable and reviewable.",
       "why": "Buttons without explicit actions create dead-end UI that looks interactive but cannot be traced reliably.",
@@ -114,7 +113,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -122,7 +121,7 @@
     {
       "id": "button-types",
       "type": "button-types",
-      "enabled": false,
+      "enabled": true,
       "description": "Freeze button types so UI intent is explicit.",
       "what": "Require button elements to declare an explicit type so forms and interactions remain predictable.",
       "why": "Implicit button types create subtle form submission and reset behavior that is easy to miss in generated UI.",
@@ -135,7 +134,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -143,7 +142,7 @@
     {
       "id": "form-labels",
       "type": "form-labels",
-      "enabled": false,
+      "enabled": true,
       "description": "Freeze form labels so the interface remains accessible.",
       "what": "Require form controls to expose a clear label or accessible name.",
       "why": "Labels make forms usable for assistive technology and reduce the chance that generated UI silently becomes confusing.",
@@ -156,7 +155,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -177,7 +176,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -199,7 +198,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -220,7 +219,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -241,7 +240,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -249,7 +248,7 @@
     {
       "id": "dynamic-config",
       "type": "dynamic-config",
-      "enabled": false,
+      "enabled": true,
       "description": "Freeze hard-coded environment-specific paths and loopback endpoints that make the framework brittle.",
       "what": "Require configuration and code to use runtime-derived values instead of absolute machine-specific paths or local-only hosts.",
       "why": "Hard-coded paths and loopback endpoints break portability and make the framework behave like a one-machine patchwork instead of a reusable system.",
@@ -262,9 +261,20 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
+      ],
+      "exclude": [
+        "dev-worker/**",
+        ".github/**",
+        "tests/**",
+        "docs/**",
+        "android/**",
+        "scripts/**",
+        "Makefile",
+        "agent-templates/**",
+        "**/*.md"
       ]
     },
     {
@@ -283,7 +293,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -304,7 +314,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -312,7 +322,7 @@
     {
       "id": "debug-artifacts",
       "type": "debug-artifacts",
-      "enabled": false,
+      "enabled": true,
       "description": "Freeze leftover debugging statements so temporary instrumentation never ships.",
       "what": "Reject debugger/console/breakpoint statements that were added for local debugging and never removed.",
       "why": "Debug artifacts leak noise into production, can pause execution, and signal that a change was not cleaned up before committing.",
@@ -325,9 +335,17 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
+      ],
+      "exclude": [
+        "scripts/**",
+        "tests/**",
+        "android/**",
+        "dev-worker/**",
+        "mcp/**",
+        "p2p-server/**"
       ]
     },
     {
@@ -346,7 +364,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -367,7 +385,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -388,7 +406,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -409,7 +427,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -430,7 +448,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -451,7 +469,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -472,7 +490,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -495,7 +513,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -518,7 +536,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]
@@ -541,7 +559,7 @@
         },
         {
           "label": "Rule source",
-          "path": "sbg_manifest.json",
+          "path": "sbg-manifest.json",
           "kind": "manifest"
         }
       ]

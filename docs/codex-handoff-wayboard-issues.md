@@ -1,7 +1,7 @@
 # Codex Handoff: Wayboard & Wayside Core Issues
 
-**Target Branch:** `fix/wayboard-bugs-20261026`  
-**Tracking Sheet:** [wayboard bugs](https://swiftirons.com/waymark/#/sheet/1zV4PcgttUbRp3OR-QxpByhGygvmAdE9hzHHwLFa91ZI) (`1zV4PcgttUbRp3OR-QxpByhGygvmAdE9hzHHwLFa91ZI`)  
+**Target Branch:** `fix/wayboard-bugs-20261026`
+**Tracking Sheet:** [wayboard bugs](https://swiftirons.com/waymark/#/sheet/1zV4PcgttUbRp3OR-QxpByhGygvmAdE9hzHHwLFa91ZI) (`1zV4PcgttUbRp3OR-QxpByhGygvmAdE9hzHHwLFa91ZI`)
 **Status Date:** 2026-10-26
 
 ---

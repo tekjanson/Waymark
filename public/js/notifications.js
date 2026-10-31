@@ -1,6 +1,6 @@
 
 let _shareActionDelegate = null;
-export function setShareActionDelegate(delegate) {
+function setShareActionDelegate(delegate) {
   _shareActionDelegate = delegate;
 }
 /* ============================================================
@@ -18,7 +18,7 @@ import * as userData from './user-data.js';
 const MAX_NOTIFICATIONS = 50;
 
 const NOTIF_SHEET_TITLE = 'Waymark Notifications';
-export const NOTIF_SHEET_HEADERS = [
+const NOTIF_SHEET_HEADERS = [
   'Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet',
 ];
 
@@ -78,7 +78,7 @@ function _defaultIcon(type) {
  * Deduplicates by id/key so repeated polls or sheet evaluations don't create duplicates.
  * @param {{ id?: string, key?: string, type?: string, title?: string, body?: string, message?: string, icon?: string, priority?: string, sheetId?: string, from?: string, source?: string, ts?: string, timestamp?: string, read?: boolean, _fromNotifSheet?: boolean }} notif
  */
-export function addNotification(notif) {
+function addNotification(notif) {
   if (!notif || (!notif.title && !notif.message)) return null;
   const items = storage.getNotifications();
   const title = notif.title || notif.message || '';
@@ -140,7 +140,7 @@ export function addNotification(notif) {
 }
 
 /** Wait for any in-flight Push Notification Sheet appends to finish. */
-export async function flushNotificationSheetWrites() {
+async function flushNotificationSheetWrites() {
   if (_pendingSheetWrites.length === 0) return;
   const batch = _pendingSheetWrites.splice(0, _pendingSheetWrites.length);
   await Promise.allSettled(batch);
@@ -152,19 +152,19 @@ function _notifSignature(title, body) {
 }
 
 /** @returns {number} count of unread notifications */
-export function getUnreadCount() {
+function getUnreadCount() {
   return storage.getNotifications().filter(n => !n.read).length;
 }
 
 /** Mark every notification as read and refresh the badge. */
-export function markAllRead() {
+function markAllRead() {
   const items = storage.getNotifications().map(n => ({ ...n, read: true }));
   storage.setNotifications(items);
   _refreshBellBadge();
 }
 
 /** Clear all notifications and refresh the badge and open panel. */
-export function clearAll() {
+function clearAll() {
   // Remember what was cleared so the Push Notification Sheet sync doesn't
   // re-import the same Active rows on the next poll / page reload.
   const keys = [];
@@ -199,7 +199,7 @@ function _refreshBellBadge() {
 }
 
 /** Public: refresh the bell badge (called after polling). */
-export function refreshBell() {
+function refreshBell() {
   _refreshBellBadge();
 }
 
@@ -209,7 +209,7 @@ export function refreshBell() {
  * Get the current notification sheet ID (if configured).
  * @returns {string|null}
  */
-export function getSheetId() {
+function getSheetId() {
   return storage.getNotifSheetId();
 }
 
@@ -218,7 +218,7 @@ export function getSheetId() {
  * In local/test mode this is a no-op unless explicitly invoked.
  * @returns {Promise<string|null>}
  */
-export async function ensureSheet() {
+async function ensureSheet() {
   if (typeof window !== 'undefined' && window.__WAYMARK_LOCAL) return null;
 
   const existingId = storage.getNotifSheetId();
@@ -287,7 +287,7 @@ async function _appendAlertsToSheet(alerts) {
  *   to `Read` or `Dismissed`.
  * @returns {Promise<number>} count of new active notifications synced from the sheet
  */
-export async function pollNotificationSheet() {
+async function pollNotificationSheet() {
   const notifSheetId = storage.getNotifSheetId();
   if (!notifSheetId) return 0;
 
@@ -386,7 +386,7 @@ export async function pollNotificationSheet() {
  * @param {Object} cols
  * @param {string[]} [headers]
  */
-export function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols, headers) {
+function evaluateSheet(sheetId, sheetTitle, templateKey, rows, cols, headers) {
   if (!sheetId || !Array.isArray(rows)) return;
   _lastEvaluatedSheet = { sheetId, sheetTitle, templateKey, rows, cols, headers };
 
@@ -610,7 +610,7 @@ function _checkCustomRules(sheetId, sheetTitle, rows, headers, alerts) {
  * @param {string} sheetTitle
  * @param {string[]} headers — raw header strings from the sheet
  */
-export function showRuleBuilder(sheetId, sheetTitle, headers) {
+function showRuleBuilder(sheetId, sheetTitle, headers) {
   const existing = document.getElementById('notif-rule-builder-modal');
   if (existing) existing.remove();
 
@@ -1196,7 +1196,7 @@ function _openPanel(bellEl) {
  * Initialize the notification bell in the top-bar and wire sheet/peer listeners.
  * Call once during app boot.
  */
-export function initBell() {
+function initBell() {
   if (!_bellInitialized && typeof document !== 'undefined') {
     _bellInitialized = true;
 
@@ -1293,5 +1293,22 @@ export function initBell() {
 
   _refreshBellBadge();
 }
+const init = initBell;
 
-export const init = initBell;
+export {
+  NOTIF_SHEET_HEADERS,
+  addNotification,
+  clearAll,
+  ensureSheet,
+  evaluateSheet,
+  flushNotificationSheetWrites,
+  getSheetId,
+  getUnreadCount,
+  init,
+  initBell,
+  markAllRead,
+  pollNotificationSheet,
+  refreshBell,
+  setShareActionDelegate,
+  showRuleBuilder,
+};

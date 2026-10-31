@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "toggle-checklist-item",
+      "user_intent": "Toggle completion status of a checklist task",
+      "trigger": "ui.click:task_checkbox",
+      "steps": [
+        "validate:row_index",
+        "external:commit_sheet_edit",
+        "emit:update_task_row"
+      ],
+      "outcome": "Task state updated in sheet and view"
+    }
+  ]
+}

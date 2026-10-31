@@ -35,7 +35,7 @@
       <img src="assets/logo.svg" alt="Waymark" class="logo">
       <h1>Waymark</h1>
       <p class="tagline"><strong>FREE</strong> AI-powered Google Sheets tools. No fees. No lock-in. Open source forever.</p>
-      <button id="login-btn" class="btn btn-google">
+      <button type="button" data-action="login-btn" id="login-btn" class="btn btn-google">
         <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
         Sign in with Google
       </button>
@@ -53,7 +53,7 @@
     <!-- Top Bar -->
     <header id="top-bar">
       <div class="top-bar-left">
-        <button id="sidebar-toggle" class="btn-icon" aria-label="Toggle sidebar">
+        <button type="button" data-action="sidebar-toggle" id="sidebar-toggle" class="btn-icon" aria-label="Toggle sidebar">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <a href="#/" class="brand">WayMark</a>
@@ -62,22 +62,22 @@
       <div class="top-bar-center">
         <form id="search-form" class="search-container" autocomplete="off">
           <input type="text" id="search-input" placeholder="Search your lists..." aria-label="Search">
-          <button type="submit" id="search-btn" class="btn-icon" aria-label="Search">
+          <button data-action="search-btn" type="submit" id="search-btn" class="btn-icon" aria-label="Search">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
         </form>
       </div>
 
       <div class="top-bar-right">
-        <button id="theme-toggle-btn" class="btn-theme" aria-label="Toggle theme" title="Toggle dark/light mode">
+        <button type="button" data-action="theme-toggle-btn" id="theme-toggle-btn" class="btn-theme" aria-label="Toggle theme" title="Toggle dark/light mode">
           <span id="theme-toggle-icon">🌙</span>
         </button>
-        <button id="tutorial-btn" class="btn-icon" aria-label="Tutorial" title="Show tutorial">
+        <button type="button" data-action="tutorial-btn" id="tutorial-btn" class="btn-icon" aria-label="Tutorial" title="Show tutorial">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
         <span id="user-name"></span>
         <img id="user-avatar" src="" alt="" class="avatar hidden">
-        <button id="logout-btn" class="btn-text">Sign out</button>
+        <button type="button" data-action="logout-btn" id="logout-btn" class="btn-text">Sign out</button>
       </div>
     </header>
 
@@ -91,36 +91,36 @@
         </div>
         <nav class="sidebar-nav">
           <div class="sidebar-nav-label">Workspace</div>
-          <button id="menu-home-btn" class="sidebar-nav-item active" data-menu="home">
+          <button type="button" data-action="menu-home-btn" id="menu-home-btn" class="sidebar-nav-item active" data-menu="home">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             <span>Home</span>
           </button>
-          <button id="menu-explorer-btn" class="sidebar-nav-item" data-menu="explorer">
+          <button type="button" data-action="menu-explorer-btn" id="menu-explorer-btn" class="sidebar-nav-item" data-menu="explorer">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             <span>Browse Files</span>
           </button>
-          <button id="menu-dashboard-btn" class="sidebar-nav-item" data-menu="dashboard">
+          <button type="button" data-action="menu-dashboard-btn" id="menu-dashboard-btn" class="sidebar-nav-item" data-menu="dashboard">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             <span>Dashboards</span>
           </button>
           <div class="sidebar-nav-divider"></div>
           <div class="sidebar-nav-label">Create</div>
-          <button id="menu-create-btn" class="sidebar-nav-item">
+          <button type="button" data-action="menu-create-btn" id="menu-create-btn" class="sidebar-nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
             <span>Create New Waymark</span>
           </button>
-          <button id="menu-import-btn" class="sidebar-nav-item">
+          <button type="button" data-action="menu-import-btn" id="menu-import-btn" class="sidebar-nav-item">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span>Import File</span>
           </button>
           <div class="sidebar-nav-divider"></div>
-          <button id="menu-agent-btn" class="sidebar-nav-item" data-menu="agent">
+          <button type="button" data-action="menu-agent-btn" id="menu-agent-btn" class="sidebar-nav-item" data-menu="agent">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v2h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/><path d="M9 18h6"/></svg>
             <span>AI Agent</span>
           </button>
           <div class="sidebar-nav-spacer"></div>
           <div class="sidebar-nav-divider"></div>
-          <button id="menu-profile-btn" class="sidebar-nav-item" data-menu="profile">
+          <button type="button" data-action="menu-profile-btn" id="menu-profile-btn" class="sidebar-nav-item" data-menu="profile">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <span>Profile</span>
           </button>
@@ -150,8 +150,8 @@
                   <div class="section-head">
                     <span>🎛️ Your Wayboard</span>
                     <div class="wayboard-head-actions">
-                      <button id="wayboard-expand-toggle" class="wayboard-head-action" type="button" aria-pressed="false" title="Give the Wayboard more room">⤢ Expand Wayboard</button>
-                      <button id="wayboard-add-widget" class="wayboard-head-action" type="button" aria-haspopup="dialog">+ Add Waymark Widget</button>
+                      <button data-action="wayboard-expand-toggle" id="wayboard-expand-toggle" class="wayboard-head-action" type="button" aria-pressed="false" title="Give the Wayboard more room">⤢ Expand Wayboard</button>
+                      <button data-action="wayboard-add-widget" id="wayboard-add-widget" class="wayboard-head-action" type="button" aria-haspopup="dialog">+ Add Waymark Widget</button>
                     </div>
                   </div>
                   <div id="wayboard-grid" class="wayboard-grid"></div>
@@ -170,7 +170,7 @@
         <section id="explorer-view" class="view hidden" data-view="explorer">
           <div class="explorer-view-header">
             <h2>Drive Explorer</h2>
-            <button id="explorer-refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh Drive">
+            <button type="button" data-action="explorer-refresh-btn" id="explorer-refresh-btn" class="btn-icon" aria-label="Refresh" title="Refresh Drive">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
           </div>
@@ -186,64 +186,64 @@
             <a class="public-banner-login" href="#/">Sign in for full access</a>
           </div>
           <div class="checklist-header">
-            <button id="back-btn" class="btn-icon" aria-label="Back">
+            <button type="button" data-action="back-btn" id="back-btn" class="btn-icon" aria-label="Back">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             </button>
             <h2 id="checklist-title"></h2>
             <span id="template-badge" class="template-badge hidden"></span>
             <span id="last-updated" class="header-updated text-muted"></span>
-            <button id="sheet-pin-btn" class="btn-pin" aria-label="Pin sheet" title="Pin sheet">📌</button>
-            <button id="share-btn" class="btn-header-icon" aria-label="Share sheet" title="Share">
+            <button type="button" data-action="sheet-pin-btn" id="sheet-pin-btn" class="btn-pin" aria-label="Pin sheet" title="Pin sheet">📌</button>
+            <button type="button" data-action="share-btn" id="share-btn" class="btn-header-icon" aria-label="Share sheet" title="Share">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             </button>
-            <button id="refresh-btn" class="btn-header-icon" aria-label="Refresh" title="Refresh">
+            <button type="button" data-action="refresh-btn" id="refresh-btn" class="btn-header-icon" aria-label="Refresh" title="Refresh">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
-            <button id="template-ai-btn" aria-label="Ask AI" title="Ask AI to update this sheet">✨ Ask AI</button>
+            <button type="button" data-action="template-ai-btn" id="template-ai-btn" aria-label="Ask AI" title="Ask AI to update this sheet">✨ Ask AI</button>
             <div class="header-overflow-wrapper">
-              <button id="more-actions-btn" class="btn-header-icon" aria-label="More actions" title="More actions">
+              <button type="button" data-action="more-actions-btn" id="more-actions-btn" class="btn-header-icon" aria-label="More actions" title="More actions">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
               </button>
               <div class="header-overflow-menu hidden">
-                <button id="download-csv-btn" class="overflow-item" aria-label="Download as CSV">
+                <button type="button" data-action="download-csv-btn" id="download-csv-btn" class="overflow-item" aria-label="Download as CSV">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   <span>Download CSV</span>
                 </button>
-                <button id="print-btn" class="overflow-item" aria-label="Print sheet">
+                <button type="button" data-action="print-btn" id="print-btn" class="overflow-item" aria-label="Print sheet">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                   <span>Print / Save PDF</span>
                 </button>
-                <button id="duplicate-sheet-btn" class="overflow-item" aria-label="Duplicate sheet">
+                <button type="button" data-action="duplicate-sheet-btn" id="duplicate-sheet-btn" class="overflow-item" aria-label="Duplicate sheet">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   <span>Duplicate</span>
                 </button>
-                <button id="open-in-sheets-btn" class="overflow-item" aria-label="Open in Google Sheets">
+                <button type="button" data-action="open-in-sheets-btn" id="open-in-sheets-btn" class="overflow-item" aria-label="Open in Google Sheets">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   <span>Open in Google Sheets</span>
                 </button>
                 <div class="overflow-divider"></div>
-                <button id="lock-btn" class="overflow-item overflow-item-lock" aria-label="Lock editing">
+                <button type="button" data-action="lock-btn" id="lock-btn" class="overflow-item overflow-item-lock" aria-label="Lock editing">
                   <span class="overflow-item-emoji">🔓</span>
                   <span>Lock editing</span>
                 </button>
-                <button id="encrypt-btn" class="overflow-item overflow-item-encrypt" aria-label="Column encryption">
+                <button type="button" data-action="encrypt-btn" id="encrypt-btn" class="overflow-item overflow-item-encrypt" aria-label="Column encryption">
                   <span class="overflow-item-emoji">🔐</span>
                   <span>Column encryption</span>
                 </button>
                 <label class="overflow-item overflow-item-toggle" id="lock-submit-label" title="Lock each submitted row to prevent editing by others">
-                  <input type="checkbox" id="lock-submit-toggle">
+                  <input type="checkbox" id="lock-submit-toggle" aria-label="Lock on submit">
                   <span>🔒 Lock rows on submit</span>
                 </label>
-                <button id="template-help-btn" class="overflow-item hidden" aria-label="Template guide">
+                <button type="button" data-action="template-help-btn" id="template-help-btn" class="overflow-item hidden" aria-label="Template guide">
                   <span class="overflow-item-emoji">❓</span>
                   <span>Template guide</span>
                 </button>
-                <button id="notif-rules-btn" class="overflow-item" aria-label="Notification rules">
+                <button type="button" data-action="notif-rules-btn" id="notif-rules-btn" class="overflow-item" aria-label="Notification rules">
                   <span class="overflow-item-emoji">🔔</span>
                   <span>Notification rules</span>
                 </button>
                 <label class="overflow-item overflow-item-toggle" title="Auto-refresh every 60s">
-                  <input type="checkbox" id="auto-refresh-toggle" checked>
+                  <input type="checkbox" id="auto-refresh-toggle" aria-label="Auto refresh" checked>
                   <span>Auto-refresh</span>
                 </label>
               </div>
@@ -255,14 +255,14 @@
         <!-- Folder Contents View (sheets inside a folder) -->
         <section id="folder-view" class="view hidden" data-view="folder">
           <div class="folder-header">
-            <button id="folder-back-btn" class="btn-icon" aria-label="Back">
+            <button type="button" data-action="folder-back-btn" id="folder-back-btn" class="btn-icon" aria-label="Back">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             </button>
             <h2 id="folder-title"></h2>
-            <button id="folder-pin-btn" class="btn-pin" aria-label="Pin folder" title="Pin folder">📌</button>
-            <button id="dir-help-btn" class="btn-template-help hidden" aria-label="Directory view guide" title="Directory view guide">❓</button>
-            <button id="folder-refresh-btn" class="btn-refresh hidden" aria-label="Sync shared content" title="Sync shared content">🔄</button>
-            <button id="open-in-drive-btn" class="btn btn-drive" aria-label="Open in Drive" title="Open in Drive">
+            <button type="button" data-action="folder-pin-btn" id="folder-pin-btn" class="btn-pin" aria-label="Pin folder" title="Pin folder">📌</button>
+            <button type="button" data-action="dir-help-btn" id="dir-help-btn" class="btn-template-help hidden" aria-label="Directory view guide" title="Directory view guide">❓</button>
+            <button type="button" data-action="folder-refresh-btn" id="folder-refresh-btn" class="btn-refresh hidden" aria-label="Sync shared content" title="Sync shared content">🔄</button>
+            <button type="button" data-action="open-in-drive-btn" id="open-in-drive-btn" class="btn btn-drive" aria-label="Open in Drive" title="Open in Drive">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               Open in Drive
             </button>
@@ -297,7 +297,7 @@
     <div class="modal settings-modal">
       <div class="modal-header">
         <h3>Settings</h3>
-        <button id="settings-modal-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="settings-modal-close" id="settings-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -322,20 +322,20 @@
         <div class="settings-row">
           <span class="settings-label">Theme</span>
           <div class="settings-theme-toggle">
-            <button id="settings-theme-light" class="settings-theme-btn active" data-theme="light">☀️ Light</button>
-            <button id="settings-theme-dark" class="settings-theme-btn" data-theme="dark">🌙 Dark</button>
-            <button id="settings-theme-system" class="settings-theme-btn" data-theme="system">🖥️ System</button>
+            <button type="button" data-action="settings-theme-light" id="settings-theme-light" class="settings-theme-btn active" data-theme="light">☀️ Light</button>
+            <button type="button" data-action="settings-theme-dark" id="settings-theme-dark" class="settings-theme-btn" data-theme="dark">🌙 Dark</button>
+            <button type="button" data-action="settings-theme-system" id="settings-theme-system" class="settings-theme-btn" data-theme="system">🖥️ System</button>
           </div>
         </div>
 
         <label class="settings-row">
           <span class="settings-label">Auto-refresh sheets</span>
-          <input type="checkbox" id="settings-auto-refresh" class="settings-toggle">
+          <input type="checkbox" id="settings-auto-refresh" class="settings-toggle" aria-label="Settings auto refresh">
         </label>
 
         <label class="settings-row">
           <span class="settings-label">Sort explorer by</span>
-          <select id="settings-sort-order" class="settings-select">
+          <select id="settings-sort-order" class="settings-select" aria-label="Sort order">
             <option value="name">Name</option>
             <option value="modified">Last Modified</option>
           </select>
@@ -345,8 +345,8 @@
           <span class="settings-label">Import directory</span>
           <div class="settings-folder-picker">
             <span id="settings-import-folder" class="settings-folder-name">Waymark / Imports</span>
-            <button id="settings-choose-folder" class="btn btn-secondary btn-sm">Choose</button>
-            <button id="settings-reset-folder" class="btn btn-secondary btn-sm hidden">Reset</button>
+            <button type="button" data-action="settings-choose-folder" id="settings-choose-folder" class="btn btn-secondary btn-sm">Choose</button>
+            <button type="button" data-action="settings-reset-folder" id="settings-reset-folder" class="btn btn-secondary btn-sm hidden">Reset</button>
           </div>
         </div>
 
@@ -362,14 +362,14 @@
         <div class="settings-row">
           <span class="settings-label">Architecture</span>
           <div class="settings-home-template-picker">
-            <button id="settings-home-template-prev" class="btn btn-secondary btn-sm" title="Previous layout" aria-label="Previous layout">‹</button>
-            <select id="settings-home-template" class="settings-select"></select>
-            <button id="settings-home-template-next" class="btn btn-secondary btn-sm" title="Next layout" aria-label="Next layout">›</button>
+            <button type="button" data-action="settings-home-template-prev" id="settings-home-template-prev" class="btn btn-secondary btn-sm" title="Previous layout" aria-label="Previous layout">‹</button>
+            <select id="settings-home-template" class="settings-select" aria-label="Home template"></select>
+            <button type="button" data-action="settings-home-template-next" id="settings-home-template-next" class="btn btn-secondary btn-sm" title="Next layout" aria-label="Next layout">›</button>
           </div>
         </div>
         <label class="settings-row">
           <span class="settings-label">Live preview on Home</span>
-          <input type="checkbox" id="settings-home-template-preview" class="settings-toggle" checked>
+          <input type="checkbox" id="settings-home-template-preview" class="settings-toggle" aria-label="Preview home template" checked>
         </label>
       </div>
 
@@ -380,7 +380,7 @@
 
         <div class="settings-row">
           <span class="settings-label">Active Model</span>
-          <select id="settings-ai-model" class="settings-select">
+          <select id="settings-ai-model" class="settings-select" aria-label="AI model">
             <option value="gemini">Google Gemini (default)</option>
             <option value="claude">Anthropic Claude</option>
           </select>
@@ -395,7 +395,7 @@
 
         <div class="settings-row">
           <span class="settings-label">Setup Instructions</span>
-          <button id="settings-ai-help-btn" class="btn btn-secondary btn-sm">View Setup Guide</button>
+          <button type="button" data-action="settings-ai-help-btn" id="settings-ai-help-btn" class="btn btn-secondary btn-sm">View Setup Guide</button>
         </div>
       </div>
 
@@ -405,15 +405,15 @@
 
         <label class="settings-row">
           <span class="settings-label">MQTT debug bridge</span>
-          <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle">
+          <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle" aria-label="Enable MQTT bridge">
         </label>
         <p class="settings-hint settings-hint-compact">Connects to an AI dev agent for live debugging via MQTT.</p>
 
         <div class="settings-row">
           <span class="settings-label">MQTT broker endpoint</span>
           <div class="flex-row-fill">
-            <input type="text" id="settings-mqtt-url" class="settings-ref-input flex-1" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false">
-            <button id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
+            <input type="text" id="settings-mqtt-url" class="settings-ref-input flex-1" aria-label="MQTT broker WebSocket URL" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false">
+            <button type="button" data-action="settings-mqtt-url-apply" id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
           </div>
         </div>
         <p class="settings-hint settings-hint-compact">Leave empty to auto-detect from current host. Requires reconnect.</p>
@@ -427,8 +427,8 @@
         <div class="settings-row">
           <span class="settings-label">Branch / Version</span>
           <div class="settings-version-picker">
-            <input type="text" id="settings-github-ref" class="settings-ref-input" placeholder="main" autocomplete="off" spellcheck="false">
-            <button id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
+            <input type="text" id="settings-github-ref" class="settings-ref-input" aria-label="GitHub reference or branch" placeholder="main" autocomplete="off" spellcheck="false">
+            <button type="button" data-action="settings-apply-ref" id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
           </div>
         </div>
 
@@ -437,7 +437,7 @@
         <div class="settings-row">
           <span class="settings-label">Quick switch</span>
           <div id="settings-ref-suggestions" class="settings-ref-suggestions">
-            <button class="settings-ref-tag active" data-ref="main">main (latest)</button>
+            <button type="button" data-action="settings-ref-tag" class="settings-ref-tag active" data-ref="main">main (latest)</button>
           </div>
         </div>
 
@@ -451,7 +451,7 @@
 
       <div class="modal-footer">
         <span class="text-muted">Changes save automatically</span>
-        <button id="settings-done-btn" class="btn btn-primary">Done</button>
+        <button type="button" data-action="settings-done-btn" id="settings-done-btn" class="btn btn-primary">Done</button>
       </div>
     </div>
   </div>
@@ -461,7 +461,7 @@
     <div class="modal ai-setup-modal">
       <div class="modal-header">
         <h3>AI Model Setup Guide</h3>
-        <button id="ai-setup-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="ai-setup-close" id="ai-setup-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -518,7 +518,7 @@
       </div>
 
       <div class="modal-footer">
-        <button id="ai-setup-done" class="btn btn-primary">Done</button>
+        <button type="button" data-action="ai-setup-done" id="ai-setup-done" class="btn btn-primary">Done</button>
       </div>
     </div>
   </div>
@@ -528,7 +528,7 @@
     <div class="modal encrypt-modal">
       <div class="modal-header">
         <h3 id="encrypt-modal-title">Unlock Encrypted Columns</h3>
-        <button id="encrypt-modal-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="encrypt-modal-close" id="encrypt-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -540,7 +540,7 @@
         <label class="encrypt-label" for="encrypt-password">Password</label>
         <div class="encrypt-password-row">
           <input type="password" id="encrypt-password" class="encrypt-input" placeholder="Enter password" autocomplete="off">
-          <button id="encrypt-toggle-vis" class="btn-icon" type="button" aria-label="Show password" title="Show password">👁️</button>
+          <button data-action="encrypt-toggle-vis" id="encrypt-toggle-vis" class="btn-icon" type="button" aria-label="Show password" title="Show password">👁️</button>
         </div>
       </div>
       <div id="encrypt-col-config" class="encrypt-col-config hidden">
@@ -550,11 +550,11 @@
       <div class="modal-footer">
         <span id="encrypt-status" class="text-muted"></span>
         <div class="modal-footer-actions">
-          <button id="encrypt-cancel-btn" class="btn btn-secondary">Cancel</button>
-          <button id="encrypt-unlock-btn" class="btn btn-primary">🔓 Unlock</button>
-          <button id="encrypt-lock-btn" class="btn btn-secondary hidden">🔒 Lock</button>
-          <button id="encrypt-decrypt-btn" class="btn btn-danger hidden">🔓 Remove Encryption</button>
-          <button id="encrypt-setup-btn" class="btn btn-primary hidden">🔐 Set Up Encryption</button>
+          <button type="button" data-action="encrypt-cancel-btn" id="encrypt-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" data-action="encrypt-unlock-btn" id="encrypt-unlock-btn" class="btn btn-primary">🔓 Unlock</button>
+          <button type="button" data-action="encrypt-lock-btn" id="encrypt-lock-btn" class="btn btn-secondary hidden">🔒 Lock</button>
+          <button type="button" data-action="encrypt-decrypt-btn" id="encrypt-decrypt-btn" class="btn btn-danger hidden">🔓 Remove Encryption</button>
+          <button type="button" data-action="encrypt-setup-btn" id="encrypt-setup-btn" class="btn btn-primary hidden">🔐 Set Up Encryption</button>
         </div>
       </div>
     </div>
@@ -565,7 +565,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Create New Waymark</h3>
-        <button id="create-sheet-modal-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="create-sheet-modal-close" id="create-sheet-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -578,7 +578,7 @@
         <label class="create-sheet-label">Location</label>
         <div class="create-sheet-folder-row">
           <span id="create-sheet-folder-display" class="create-sheet-folder-name">Waymark (default)</span>
-          <button id="create-sheet-choose-folder-btn" class="btn btn-secondary" type="button">📁 Choose Folder</button>
+          <button data-action="create-sheet-choose-folder-btn" id="create-sheet-choose-folder-btn" class="btn btn-secondary" type="button">📁 Choose Folder</button>
         </div>
       </div>
       <div class="create-sheet-search-wrap">
@@ -589,8 +589,8 @@
       <div class="modal-footer">
         <span id="create-sheet-status" class="text-muted"></span>
         <div class="modal-footer-actions">
-          <button id="create-sheet-cancel-btn" class="btn btn-secondary">Cancel</button>
-          <button id="create-sheet-create-btn" class="btn btn-primary" disabled>Create Waymark</button>
+          <button type="button" data-action="create-sheet-cancel-btn" id="create-sheet-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" data-action="create-sheet-create-btn" id="create-sheet-create-btn" class="btn btn-primary" disabled>Create Waymark</button>
         </div>
       </div>
       <div id="create-sheet-progress" class="generate-progress hidden"></div>
@@ -602,21 +602,21 @@
     <div class="modal">
       <div class="modal-header">
         <h3>Generate Example Sheets</h3>
-        <button id="examples-modal-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="examples-modal-close" id="examples-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       <p class="modal-description">Choose which example Waymarks to generate. Each category creates a folder with sample data you can explore.</p>
       <div class="modal-actions-top">
-        <button id="examples-select-all" class="btn-text">Select All</button>
-        <button id="examples-select-none" class="btn-text">Select None</button>
+        <button type="button" data-action="examples-select-all" id="examples-select-all" class="btn-text">Select All</button>
+        <button type="button" data-action="examples-select-none" id="examples-select-none" class="btn-text">Select None</button>
       </div>
       <div id="examples-categories" class="examples-grid"></div>
       <div class="modal-footer">
         <span id="examples-selection-count" class="text-muted"></span>
         <div class="modal-footer-actions">
-          <button id="examples-cancel-btn" class="btn btn-secondary">Cancel</button>
-          <button id="examples-generate-btn" class="btn btn-primary">Generate Selected</button>
+          <button type="button" data-action="examples-cancel-btn" id="examples-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" data-action="examples-generate-btn" id="examples-generate-btn" class="btn btn-primary">Generate Selected</button>
         </div>
       </div>
       <div id="examples-modal-progress" class="generate-progress hidden"></div>
@@ -628,7 +628,7 @@
     <div class="modal import-modal-wide">
       <div class="modal-header">
         <h3 id="import-modal-title">Import a File</h3>
-        <button id="import-modal-close" class="btn-icon" aria-label="Close">
+        <button type="button" data-action="import-modal-close" id="import-modal-close" class="btn-icon" aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -643,7 +643,7 @@
           <p class="text-muted recipe-import-desc">Paste a link to a recipe page and WayMark will extract the ingredients and instructions.</p>
           <div class="recipe-import-url-bar">
             <input type="url" id="recipe-url-input" placeholder="https://example.com/recipe/..." aria-label="Recipe URL">
-            <button id="recipe-url-import-btn" class="btn btn-primary btn-sm">Import Recipe</button>
+            <button type="button" data-action="recipe-url-import-btn" id="recipe-url-import-btn" class="btn btn-primary btn-sm">Import Recipe</button>
           </div>
           <div id="recipe-url-status" class="recipe-import-status hidden"></div>
         </div>
@@ -652,7 +652,7 @@
         <p class="text-muted recipe-import-desc">Or pick an existing file from your Drive:</p>
 
         <div class="import-search-bar">
-          <input type="text" id="import-search-input" placeholder="Search your files…" class="import-search-field">
+          <input type="text" id="import-search-input" aria-label="Search Drive files to import" placeholder="Search your files…" class="import-search-field">
         </div>
         <div id="import-sheet-list" class="import-sheet-list">
           <p class="text-muted import-loading">Loading your sheets…</p>
@@ -711,10 +711,10 @@
       </div>
 
       <div class="modal-footer">
-        <button id="import-back-btn" class="btn btn-secondary hidden">Back</button>
+        <button type="button" data-action="import-back-btn" id="import-back-btn" class="btn btn-secondary hidden">Back</button>
         <div class="modal-footer-actions">
-          <button id="import-cancel-btn" class="btn btn-secondary">Cancel</button>
-          <button id="import-next-btn" class="btn btn-primary" disabled>Next</button>
+          <button type="button" data-action="import-cancel-btn" id="import-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" data-action="import-next-btn" id="import-next-btn" class="btn btn-primary" disabled>Next</button>
         </div>
       </div>
       <div id="import-progress" class="generate-progress hidden"></div>
@@ -731,10 +731,10 @@
       <h4 id="tutorial-title"></h4>
       <p id="tutorial-body"></p>
       <div class="tutorial-nav">
-        <button id="tutorial-skip" class="btn-text">Skip tutorial</button>
+        <button type="button" data-action="tutorial-skip" id="tutorial-skip" class="btn-text">Skip tutorial</button>
         <div class="tutorial-nav-right">
-          <button id="tutorial-prev" class="btn btn-secondary btn-sm">Back</button>
-          <button id="tutorial-next" class="btn btn-primary btn-sm">Next</button>
+          <button type="button" data-action="tutorial-prev" id="tutorial-prev" class="btn btn-secondary btn-sm">Back</button>
+          <button type="button" data-action="tutorial-next" id="tutorial-next" class="btn btn-primary btn-sm">Next</button>
         </div>
       </div>
     </div>

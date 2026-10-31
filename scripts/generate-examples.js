@@ -2,14 +2,14 @@
 /* ============================================================
    generate-examples.js — CLI tool to create WayMark example
    sheets in a Google Drive account.
-   
+
    Usage:
      # Interactive (opens browser for OAuth):
      node scripts/generate-examples.js
-   
+
      # With existing access token:
      GOOGLE_TOKEN=ya29.xxx node scripts/generate-examples.js
-   
+
    Requires:
      - GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env or env vars
      - Google Sheets API and Google Drive API enabled

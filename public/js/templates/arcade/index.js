@@ -103,7 +103,7 @@ function startConnect(template) {
     return;
   }
 
-  console.log(`[Arcade] startConnect sheetId=${sheetId} user=${displayName}`);
+  console.info(`[Arcade] startConnect sheetId=${sheetId} user=${displayName}`);
 
   _waymarkConnect = new WaymarkConnect(sheetId, {
     displayName,
@@ -270,7 +270,7 @@ function onInvite(peerId) {
   const game = games.find(g => g.key === _selectedGame);
   const gameName = game ? game.name : _selectedGame;
 
-  console.log(`[Arcade] sending invite to ${peerId} for game=${_selectedGame}`);
+  console.info(`[Arcade] sending invite to ${peerId} for game=${_selectedGame}`);
 
   // Send invite via the waymark DataChannel
   _waymarkConnect.sendToPeer(peerId, {
@@ -307,7 +307,7 @@ function onInvite(peerId) {
 /* ---------- Arcade Message Dispatch ---------- */
 
 function handleArcadeMessage(fromPeerId, msg) {
-  console.log(`[Arcade] handleArcadeMessage from ${fromPeerId}:`, msg.type, msg);
+  console.info(`[Arcade] handleArcadeMessage from ${fromPeerId}:`, msg.type, msg);
   switch (msg.type) {
     case 'arcade-invite':
       handleIncomingInvite(fromPeerId, msg);
@@ -325,7 +325,7 @@ function handleArcadeMessage(fromPeerId, msg) {
 
 function handleIncomingInvite(fromPeerId, msg) {
   if (isGameActive()) {
-    console.log(`[Arcade] auto-declining invite from ${fromPeerId} — game already active`);
+    console.info(`[Arcade] auto-declining invite from ${fromPeerId} — game already active`);
     // Auto-decline if already in a game
     _waymarkConnect.sendToPeer(fromPeerId, {
       type: 'arcade-decline',
@@ -378,7 +378,7 @@ function handleIncomingInvite(fromPeerId, msg) {
 }
 
 function acceptInvite(fromPeerId, gameKey) {
-  console.log(`[Arcade] accepting invite from ${fromPeerId} for game=${gameKey}`);
+  console.info(`[Arcade] accepting invite from ${fromPeerId} for game=${gameKey}`);
   dismissInviteNotification();
 
   // Open the game modal FIRST so ArcadeNet listener is ready before channels arrive
@@ -399,7 +399,7 @@ function acceptInvite(fromPeerId, gameKey) {
 }
 
 function declineInvite(fromPeerId) {
-  console.log(`[Arcade] declining invite from ${fromPeerId}`);
+  console.info(`[Arcade] declining invite from ${fromPeerId}`);
   dismissInviteNotification();
   _waymarkConnect.sendToPeer(fromPeerId, {
     type: 'arcade-decline',
@@ -412,7 +412,7 @@ function handleAccept(fromPeerId, msg) {
     console.warn(`[Arcade] handleAccept from ${fromPeerId} — no matching pending invite (pending: ${_pendingInvite ? _pendingInvite.peerId : 'none'})`);
     return;
   }
-  console.log(`[Arcade] invite accepted by ${fromPeerId} for game=${_pendingInvite.gameKey}`);
+  console.info(`[Arcade] invite accepted by ${fromPeerId} for game=${_pendingInvite.gameKey}`);
   const gameKey = _pendingInvite.gameKey;
   _pendingInvite = null;
   clearWaitingState();
@@ -431,7 +431,7 @@ function handleDecline(fromPeerId, msg) {
     console.warn(`[Arcade] handleDecline from ${fromPeerId} — no matching pending invite`);
     return;
   }
-  console.log(`[Arcade] invite declined by ${fromPeerId} reason=${msg.reason || 'none'}`);
+  console.info(`[Arcade] invite declined by ${fromPeerId} reason=${msg.reason || 'none'}`);
   _pendingInvite = null;
   clearWaitingState();
   const reason = msg.reason === 'busy' ? 'They are already in a game' : 'Invite declined';
