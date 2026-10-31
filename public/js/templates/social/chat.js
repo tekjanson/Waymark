@@ -4,7 +4,6 @@
 
 import {
   el,
-  WaymarkConnect,
   getChatSaveHistory, setChatSaveHistory,
   getChatSoundEnabled, setChatSoundEnabled,
   getEchoCancellation, setEchoCancellation,
@@ -14,61 +13,26 @@ import {
   getHighPassFreq, setHighPassFreq,
   getEchoSuppression, setEchoSuppression,
 } from '../shared.js';
-import { buildAudioConstraints, buildAudioProcessing, avatarColor, timeAgo } from './helpers.js';
+import { avatarColor, timeAgo } from './helpers.js';
+import { SocialSession, startRingtone, stopRingtone, appendLinkified } from '../../social-session.js';
 
-/* ---------- Live Chat (P2P via WaymarkConnect) ---------- */
+/* ---------- Live Chat (P2P via SocialSession) ---------- */
 
-let _activeConnect = null;
+let _activeSession = null;
 let _activeSheetId = null;
 let _chatPanel = null;
 let _socialPassword = '';   // Optional session password for encrypted handshakes
 
-/* --- Ringtone via Web Audio API --- */
-let _ringCtx = null;
-let _ringOsc = null;
-let _ringGain = null;
-let _ringInterval = null;
-
-function startRingtone() {
-  if (!getChatSoundEnabled()) return;
-  stopRingtone();
-  try {
-    _ringCtx = new AudioContext();
-    _ringGain = _ringCtx.createGain();
-    _ringGain.gain.value = 0.15;
-    _ringGain.connect(_ringCtx.destination);
-    // Two-tone ring pattern
-    let on = true;
-    const play = () => {
-      if (!on) return;
-      _ringOsc = _ringCtx.createOscillator();
-      _ringOsc.type = 'sine';
-      _ringOsc.frequency.value = 440;
-      _ringOsc.connect(_ringGain);
-      _ringOsc.start();
-      _ringOsc.frequency.setValueAtTime(440, _ringCtx.currentTime);
-      _ringOsc.frequency.setValueAtTime(480, _ringCtx.currentTime + 0.15);
-      setTimeout(() => { try { _ringOsc?.stop(); } catch {} }, 300);
-    };
-    play();
-    _ringInterval = setInterval(play, 1200);
-    // Auto-stop after 30s
-    setTimeout(stopRingtone, 30000);
-  } catch {}
-}
-
-function stopRingtone() {
-  try { _ringOsc?.stop(); } catch {}
-  _ringOsc = null;
-  clearInterval(_ringInterval);
-  _ringInterval = null;
-  try { _ringCtx?.close(); } catch {}
-  _ringCtx = null;
-}
-
 /* --- Chat message log (for persistence) --- */
 let _chatLog = [];
 let _saveChatHistory = null; // set by openChat, called from destroyChat
+
+function setSocialPassword(pw) {
+  _socialPassword = pw;
+  if (_activeSession) {
+    _activeSession.setPassword(pw);
+  }
+}
 
 /** Clean up active connection and chat panel. */
 async function destroyChat() {
@@ -78,14 +42,15 @@ async function destroyChat() {
     try { await _saveChatHistory(); } catch {}
     _saveChatHistory = null;
   }
-  if (_activeConnect) {
+  if (_activeSession) {
     // When the connection was paused on navigation, skip clearing the signaling
     // block so a new WaymarkConnect with the same stable peerId can reclaim it
     // immediately, triggering nonce-change detection on remote peers for faster
     // reconnect instead of waiting for the old block to time out (ALIVE_TTL).
-    _activeConnect.destroy({ keepBlock: _activeConnect._paused });
-    _activeConnect = null;
+    _activeSession.destroy({ keepBlock: _activeSession.connect?._paused });
+    _activeSession = null;
   }
+  window.__WAYMARK_CONNECT = null;
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
   _activeSheetId = null;
   _chatLog = [];
@@ -100,7 +65,7 @@ window.addEventListener('waymark:sheet-hidden', () => {
     _saveChatHistory().catch(() => {}).finally(() => { _saveChatHistory = null; });
   }
   if (_chatPanel) { _chatPanel.remove(); _chatPanel = null; }
-  if (_activeConnect) _activeConnect.pause();
+  if (_activeSession) _activeSession.pause();
 });
 
 /**
@@ -111,7 +76,7 @@ window.addEventListener('waymark:sheet-hidden', () => {
  */
 function openChat(sheetId, displayName, signal) {
   // Don't double-open for the same sheet
-  if (_activeConnect && !_activeConnect._destroyed && _activeSheetId === sheetId) {
+  if (_activeSession?.connect && !_activeSession.connect._destroyed && _activeSheetId === sheetId) {
     if (_chatPanel) { _chatPanel.classList.remove('hidden'); return; }
     // Panel was removed (user navigated away briefly), connection is paused.
     // Fall through to rebuild the panel. destroyChat() below cleans up the
@@ -303,14 +268,15 @@ function openChat(sheetId, displayName, signal) {
 
   acceptBtn.addEventListener('click', () => {
     hideIncomingCall();
-    doAcceptCall(false);
+    _activeSession?.acceptCall(false).catch(() => {});
   });
   acceptVideoBtn.addEventListener('click', () => {
     hideIncomingCall();
-    doAcceptCall(true);
+    _activeSession?.acceptCall(true).catch(() => {});
   });
   declineBtn.addEventListener('click', () => {
     hideIncomingCall();
+    _activeSession?.declineCall();
     appendMessage('System', 'You declined the call.', Date.now(), false);
   });
 
@@ -415,8 +381,8 @@ function openChat(sheetId, displayName, signal) {
   debugBtn.addEventListener('click', () => {
     debugPanel.classList.toggle('hidden');
     debugBtn.classList.toggle('social-debug-btn-active');
-    if (!debugPanel.classList.contains('hidden') && _activeConnect && !_debugCleanup) {
-      startDebug(_activeConnect);
+    if (!debugPanel.classList.contains('hidden') && _activeSession?.connect && !_debugCleanup) {
+      startDebug(_activeSession.connect);
     }
   });
   callBar.append(debugBtn);
@@ -438,7 +404,7 @@ function openChat(sheetId, displayName, signal) {
 
   /** Collect every piece of audio/WebRTC diagnostic state and download as JSON. */
   function downloadDebugSnapshot() {
-    const connect = _activeConnect;
+    const connect = _activeSession?.connect;
     const ctx = connect?._audioCtx;
     const snap = {
       timestamp: new Date().toISOString(),
@@ -893,11 +859,6 @@ function openChat(sheetId, displayName, signal) {
   const remoteAudio = el('audio', { className: 'social-remote-audio', autoplay: true });
   mediaContainer.append(remoteVideo, localVideo);
 
-  // Cleanup handle for the Web Audio remote playback filter
-  let _remoteFilterCleanup = null;
-  let _pipelineGen = 0;
-  let _duckVolumeRAF = null;
-
   /** Enter the "in call" visual state */
   function enterCallUI(hasVideo) {
     callBtn.classList.add('hidden');
@@ -911,25 +872,11 @@ function openChat(sheetId, displayName, signal) {
     debugBtn.classList.remove('hidden');
     _chatPanel.classList.add('social-chat-in-call');
     // Only start debug if not already running (prevents start/stop spam)
-    if (_activeConnect && !_debugCleanup) startDebug(_activeConnect);
+    if (_activeSession?.connect && !_debugCleanup) startDebug(_activeSession.connect);
   }
 
   /** Leave the "in call" visual state and release all media devices */
   function exitCallUI() {
-    // Stop local tracks to release camera/mic hardware
-    if (_activeConnect?.localStream) {
-      for (const t of _activeConnect.localStream.getTracks()) t.stop();
-    }
-    // Tear down remote audio filter and stop audio element
-    if (_duckVolumeRAF) {
-      cancelAnimationFrame(_duckVolumeRAF);
-      _duckVolumeRAF = null;
-    }
-    if (_remoteFilterCleanup) {
-      _remoteFilterCleanup();
-      _remoteFilterCleanup = null;
-    }
-    remoteAudio.srcObject = null;
     stopDebug();
     debugBtn.classList.add('hidden');
     debugPanel.classList.add('hidden');
@@ -941,102 +888,32 @@ function openChat(sheetId, displayName, signal) {
     camToggleBtn.classList.add('hidden');
     mediaContainer.classList.add('hidden');
     _chatPanel.classList.remove('social-chat-in-call');
-    localVideo.srcObject = null;
-    remoteVideo.srcObject = null;
-    remoteAudio.srcObject = null;
     muteBtn.textContent = '🔇 Mute';
     camToggleBtn.textContent = '📷 Cam Off';
   }
 
-  /** Start a call with the given constraints */
-  async function startCall(constraints) {
-    if (!_activeConnect) return;
-    try {
-      const stream = await _activeConnect.startCall(constraints);
-      if (stream?._listenOnly) {
-        // Joined but couldn't get mic/camera
-        enterCallUI(false);
-        const reason = stream._deviceError?.name || '';
-        if (reason === 'NotFoundError' || reason === 'NotReadableError') {
-          appendMessage('System',
-            '🔇 Joined call in listen-only mode (no microphone detected).\n'
-            + 'You can hear the other person but they cannot hear you.\n\n'
-            + 'To fix: click the lock/tune 🔒 icon in your address bar → Site settings → Microphone → Allow, then reload.',
-            Date.now(), false);
-        } else {
-          appendMessage('System',
-            '🔇 Joined call in listen-only mode. You can hear the other person but they cannot hear you.',
-            Date.now(), false);
-        }
-      } else {
-        localVideo.srcObject = stream.getVideoTracks().length
-          ? new MediaStream(stream.getVideoTracks()) : null;
-        enterCallUI(constraints.video);
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return; // call ended while devices were opening
-      let msg = `Could not start call: ${err.message}`;
-      if (err.name === 'InsecureContextError') {
-        msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
-      } else if (err.name === 'NotAllowedError') {
-        msg = '🔒 Microphone access was blocked by your browser.\n\n'
-            + 'To fix this in Chrome:\n'
-            + '1. Click the lock/tune icon in the address bar\n'
-            + '2. Click "Site settings"\n'
-            + '3. Set Microphone to "Allow"\n'
-            + '4. Close this tab and reopen the page';
-      }
-      appendMessage('System', msg, Date.now(), false);
-    }
-  }
-
-  /** Accept an incoming call — media permission is requested HERE, not before. */
-  async function doAcceptCall(withVideo) {
-    if (!_activeConnect || _activeConnect.inCall) return;
-    appendMessage('System', 'Joining call…', Date.now(), false);
-    try {
-      const stream = await _activeConnect.startCall({ audio: buildAudioConstraints(), video: withVideo, audioProcessing: buildAudioProcessing() });
-      if (stream?._listenOnly) {
-        appendMessage('System', '🔇 Joined in listen-only mode. You can hear the caller but they cannot hear you.', Date.now(), false);
-      } else {
-        localVideo.srcObject = stream.getVideoTracks().length
-          ? new MediaStream(stream.getVideoTracks()) : null;
-      }
-      enterCallUI(withVideo && !stream?._listenOnly);
-    } catch (err) {
-      if (err.name === 'AbortError') return; // call ended while devices were opening
-      let msg = `Could not join call: ${err.message}`;
-      if (err.name === 'NotAllowedError') {
-        msg = '🔒 Microphone blocked. Click the lock 🔒 icon → Site settings → Microphone → Allow, then reload.';
-      }
-      appendMessage('System', msg, Date.now(), false);
-    }
-  }
-
-  callBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: false, audioProcessing: buildAudioProcessing() }));
-  videoCallBtn.addEventListener('click', () => startCall({ audio: buildAudioConstraints(), video: true, audioProcessing: buildAudioProcessing() }));
+  callBtn.addEventListener('click', () => {
+    _activeSession?.startCall({ audio: true, video: false }).catch(() => {});
+  });
+  videoCallBtn.addEventListener('click', () => {
+    _activeSession?.startCall({ audio: true, video: true }).catch(() => {});
+  });
 
   hangupBtn.addEventListener('click', () => {
-    if (_activeConnect) _activeConnect.endCall();
+    _activeSession?.endCall();
     exitCallUI();
   });
 
   muteBtn.addEventListener('click', () => {
-    if (!_activeConnect?.localStream) return;
-    const audioTrack = _activeConnect.localStream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      muteBtn.textContent = audioTrack.enabled ? '🔇 Mute' : '🔊 Unmute';
-    }
+    if (!_activeSession) return;
+    const isMuted = _activeSession.toggleMute();
+    muteBtn.textContent = isMuted ? '🔊 Unmute' : '🔇 Mute';
   });
 
   camToggleBtn.addEventListener('click', () => {
-    if (!_activeConnect?.localStream) return;
-    const videoTrack = _activeConnect.localStream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      camToggleBtn.textContent = videoTrack.enabled ? '📷 Cam Off' : '📷 Cam On';
-    }
+    if (!_activeSession) return;
+    const isCamOff = _activeSession.toggleCamera();
+    camToggleBtn.textContent = isCamOff ? '📷 Cam On' : '📷 Cam Off';
   });
 
   // --- Typing indicator ---
@@ -1065,14 +942,8 @@ function openChat(sheetId, displayName, signal) {
   inputBar.append(input, sendBtn);
 
   // Broadcast typing indicator on keypress
-  let _lastTypingBroadcast = 0;
   input.addEventListener('input', () => {
-    if (!_activeConnect) return;
-    const now = Date.now();
-    if (now - _lastTypingBroadcast > 2000) {
-      _lastTypingBroadcast = now;
-      _activeConnect.send(null, 'typing');
-    }
+    _activeSession?.sendTyping();
   });
 
   _chatPanel.append(header, settingsPanel, incomingCallModal, mediaContainer, remoteAudio, messages, typingIndicator, callBar, debugPanel, inputBar);
@@ -1082,11 +953,13 @@ function openChat(sheetId, displayName, signal) {
   function appendMessage(name, text, ts, isSelf) {
     const bubble = el('div', { className: `social-chat-bubble ${isSelf ? 'social-chat-self' : 'social-chat-peer'}` });
     const initial = (name || '?')[0].toUpperCase();
+    const textSpan = el('span', { className: 'social-chat-bubble-text' });
+    appendLinkified(textSpan, text);
     bubble.append(
       el('div', { className: 'social-avatar social-avatar-sm', style: `background: ${avatarColor(name || 'Anonymous')}` }, [initial]),
       el('div', { className: 'social-chat-bubble-body' }, [
         el('span', { className: 'social-chat-bubble-name' }, [name]),
-        el('span', { className: 'social-chat-bubble-text' }, [text]),
+        textSpan,
         el('span', { className: 'social-chat-bubble-time' }, [timeAgo(new Date(ts).toISOString())]),
       ]),
     );
@@ -1109,9 +982,8 @@ function openChat(sheetId, displayName, signal) {
   // --- Send handler ---
   function sendMessage() {
     const text = input.value.trim();
-    if (!text || !_activeConnect) return;
-    const msg = _activeConnect.send(text);
-    appendMessage(msg.name, msg.text, msg.ts, true);
+    if (!text || !_activeSession) return;
+    _activeSession.sendMessage(text);
     input.value = '';
   }
 
@@ -1164,11 +1036,13 @@ function openChat(sheetId, displayName, signal) {
           className: `social-chat-bubble social-chat-history ${isSelf ? 'social-chat-self' : 'social-chat-peer'}`,
         });
         const initial = (author || '?')[0].toUpperCase();
+        const textSpan = el('span', { className: 'social-chat-bubble-text' });
+        appendLinkified(textSpan, text);
         bubble.append(
           el('div', { className: 'social-avatar social-avatar-sm', style: `background: ${avatarColor(author || 'Anonymous')}` }, [initial]),
           el('div', { className: 'social-chat-bubble-body' }, [
             el('span', { className: 'social-chat-bubble-name' }, [author]),
-            el('span', { className: 'social-chat-bubble-text' }, [text]),
+            textSpan,
             el('span', { className: 'social-chat-bubble-time' }, [timeAgo(date)]),
           ]),
         );
@@ -1180,17 +1054,14 @@ function openChat(sheetId, displayName, signal) {
     }).catch(() => {}); // silent — don't block chat if read fails
   }
 
-  // --- Create connection ---
-  _activeConnect = new WaymarkConnect(sheetId, {
+  // --- Create session via SocialSession ---
+  _activeSession = new SocialSession({
+    sheetId,
     displayName,
     password: _socialPassword || null,
     signal,
     onMessage(msg) {
-      if (msg.text === null && msg.type === 'typing') {
-        showTyping(msg.name);
-        return;
-      }
-      appendMessage(msg.name, msg.text, msg.ts, false);
+      appendMessage(msg.sender || msg.name, msg.text, msg.ts, msg.self);
     },
     onPeersChanged(peers) {
       peerCount.textContent = `${peers.size} peer${peers.size !== 1 ? 's' : ''}`;
@@ -1201,554 +1072,69 @@ function openChat(sheetId, displayName, signal) {
       statusLabel.textContent = labels[status] || status;
       if (status === 'disconnected') saveChatHistory();
     },
+    onTyping(name) {
+      showTyping(name);
+    },
+    onCallStateChanged(state, details) {
+      if (state === 'ringing') {
+        showIncomingCall(details.peerId, details.name);
+      } else if (state === 'calling' || state === 'in-call') {
+        hideIncomingCall();
+        if (details?.listenOnly) {
+          enterCallUI(false);
+          const reason = details.deviceError?.name || '';
+          if (reason === 'NotFoundError' || reason === 'NotReadableError') {
+            appendMessage('System',
+              '🔇 Joined call in listen-only mode (no microphone detected).\n'
+              + 'You can hear the other person but they cannot hear you.\n\n'
+              + 'To fix: click the lock/tune 🔒 icon in your address bar → Site settings → Microphone → Allow, then reload.',
+              Date.now(), false);
+          } else {
+            appendMessage('System',
+              '🔇 Joined call in listen-only mode. You can hear the other person but they cannot hear you.',
+              Date.now(), false);
+          }
+        } else {
+          enterCallUI(details?.video);
+        }
+      } else if (state === 'idle') {
+        hideIncomingCall();
+        exitCallUI();
+        if (details?.remoteEnded) {
+          appendMessage('System', 'Peer ended the call.', Date.now(), false);
+        } else if (details?.error) {
+          const err = details.error;
+          let msg = `Could not start call: ${err.message}`;
+          if (err.name === 'InsecureContextError') {
+            msg = 'Camera/microphone require HTTPS. Please access this site over a secure connection.';
+          } else if (err.name === 'NotAllowedError') {
+            msg = '🔒 Microphone access was blocked by your browser.\n\n'
+                + 'To fix this in Chrome:\n'
+                + '1. Click the lock/tune icon in the address bar\n'
+                + '2. Click "Site settings"\n'
+                + '3. Set Microphone to "Allow"\n'
+                + '4. Close this tab and reopen the page';
+          }
+          appendMessage('System', msg, Date.now(), false);
+        }
+      }
+    },
     onRemoteStream(stream) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
-        // Attach ONLY video tracks — audio goes exclusively through the echo
-        // suppression pipeline. This prevents any unprocessed audio leaking
-        // through the <video> element (muted attr is unreliable across platforms).
-        const videoOnly = new MediaStream(stream.getVideoTracks());
-        remoteVideo.srcObject = videoOnly;
         mediaContainer.classList.remove('hidden');
-        remoteVideo.play().catch(() => {});
-      } else {
-        remoteVideo.srcObject = null;
       }
-      // Route ALL remote audio through the echo suppression pipeline.
-      // Use a generation counter so only the latest pipeline result is applied
-      // (onRemoteStream may fire multiple times from ontrack / renegotiation).
-      const nAudioTracks = stream.getAudioTracks().length;
-      if (nAudioTracks > 0 && _activeConnect) {
-        const tracks = stream.getAudioTracks();
-        const t0 = tracks[0];
-        // Show ICE state at time of track arrival for connectivity diagnostics
-        let iceInfo = '';
-        for (const [pid, r] of _activeConnect._rtc || []) {
-          iceInfo += ` ICE[${pid.slice(0, 6)}]=${r?.pc?.iceConnectionState || '?'}`;
-        }
-        debugLog(`Remote stream: ${nAudioTracks} audio track(s), gen=${_pipelineGen + 1}, track=${t0?.readyState}/${t0?.enabled ? 'en' : 'dis'}/${t0?.muted ? 'muted' : 'live'}${iceInfo}`);
-        const connect = _activeConnect;
-        const gen = ++_pipelineGen;
-        // Keep old pipeline running until new one is ready
-        const oldCleanup = _remoteFilterCleanup;
-        _remoteFilterCleanup = null;
-        connect.createRemoteAudioPipeline(stream, {
-          highPassFreq: getHighPassFreq(),
-          echoSuppression: getEchoSuppression(),
-          duckThreshold: Math.pow(10, getNoiseGateThreshold() / 20),
-        }).then(result => {
-          // Discard if superseded by a newer onRemoteStream call
-          if (_activeConnect !== connect || _pipelineGen !== gen) {
-            debugLog(`Pipeline gen=${gen} superseded by gen=${_pipelineGen} — discarded`);
-            result.cleanup();
-            if (oldCleanup) oldCleanup();
-            return;
-          }
-          // Swap: tear down old, install new
-          if (oldCleanup) oldCleanup();
-          _remoteFilterCleanup = result.cleanup;
-          // Raw remote stream goes directly on <audio> element — proven working
-          // pattern. No Web Audio routing (Chrome/Linux discards packets).
-          remoteAudio.srcObject = result.outputStream || null;
-          if (result.outputStream) {
-            remoteAudio.play().catch(() => {});
-          }
-          // Wire up volume-based echo ducking: rAF loop reads _duckState.volume
-          // computed by webrtc.js and applies it to the <audio> element.
-          if (connect._duckState) {
-            const ds = connect._duckState;
-            const applyVolume = () => {
-              if (!connect._duckState || connect._duckState !== ds) return;
-              remoteAudio.volume = ds.volume;
-              _duckVolumeRAF = requestAnimationFrame(applyVolume);
-            };
-            if (_duckVolumeRAF) cancelAnimationFrame(_duckVolumeRAF);
-            _duckVolumeRAF = requestAnimationFrame(applyVolume);
-          }
-          const ptype = connect._duckingRAF ? 'volume ducking' : 'direct';
-          const outTracks = result.outputStream?.getAudioTracks() || [];
-          const ot = outTracks[0];
-          debugLog(`Pipeline ready: ${ptype}, output=${result.outputStream ? 'stream' : 'null'}, ctx=${connect._audioCtx?.state || 'none'}, outTrack=${ot?.readyState || 'none'}/${ot?.enabled ? 'en' : '-'}`);
-        }).catch(err => {
-          debugLog(`Pipeline error: ${err.message}`);
-        });
-      } else if (nAudioTracks === 0) {
-        debugLog('Remote stream has no audio tracks');
-      }
-      // If we're already in a call (user initiated), just update UI
-      if (_activeConnect?.inCall) {
+      if (_activeSession?.inCall) {
         enterCallUI(hasVideo);
       }
     },
-    onCallActive(peerId, name) {
-      // Show incoming call prompt instead of auto-joining
-      if (!_activeConnect?.inCall) {
-        showIncomingCall(peerId, name);
-      }
-    },
-    onCallEnded() {
-      hideIncomingCall();
-      // Deduplicate: call-end arrives via both BroadcastChannel and DataChannel
-      if (!_activeConnect?.inCall) return;
-      _activeConnect.endCall();
-      exitCallUI();
-      appendMessage('System', 'Peer ended the call.', Date.now(), false);
-    },
   });
-  _activeConnect.start();
+
+  _activeSession.bindRemoteAudio(remoteAudio);
+  _activeSession.bindRemoteVideo(remoteVideo);
+  _activeSession.bindLocalVideo(localVideo);
+  _activeSession.start();
+  window.__WAYMARK_CONNECT = _activeSession.connect;
 }
 
-/* ---------- Template Definition ---------- */
-
-const definition = {
-  name: 'Social Feed',
-  icon: '💬',
-  color: '#6366f1',
-  priority: 19,
-  itemNoun: 'Post',
-  defaultHeaders: ['Post', 'Author', 'Date', 'Category', 'Mood', 'Link', 'Comment', 'Likes', 'Image'],
-
-  migrations: [
-    { role: 'likes', header: 'Likes', description: 'Engagement count per post' },
-    { role: 'image', header: 'Image', description: 'Image URL for photo posts' },
-  ],
-
-  detect(lower) {
-    return lower.some(h => /^(post|message|status|update|wall|feed|content)/.test(h))
-      && lower.some(h => /^(author|poster|user|posted.?by|from|name|who)/.test(h))
-      && lower.some(h => /^(date|time|posted|timestamp|when|created)/.test(h));
-  },
-
-  columns(lower) {
-    const cols = {
-      text: -1, author: -1, date: -1, category: -1,
-      mood: -1, link: -1, comment: -1, likes: -1, image: -1,
-    };
-    const used = () => Object.values(cols).filter(v => v >= 0);
-
-    cols.text     = lower.findIndex(h => /^(post|message|status|update|content|wall|feed)/.test(h));
-    cols.author   = lower.findIndex((h, i) => !used().includes(i) && /^(author|poster|user|posted.?by|from|name|who)/.test(h));
-    cols.date     = lower.findIndex((h, i) => !used().includes(i) && /^(date|time|posted|timestamp|when|created)/.test(h));
-    cols.category = lower.findIndex((h, i) => !used().includes(i) && /^(category|type|kind|tag|topic)/.test(h));
-    cols.mood     = lower.findIndex((h, i) => !used().includes(i) && /^(mood|feeling|emoji|vibe|status.?mood)/.test(h));
-    cols.link     = lower.findIndex((h, i) => !used().includes(i) && /^(link|url|href|website|share)/.test(h));
-    cols.comment  = lower.findIndex((h, i) => !used().includes(i) && /^(comment|reply|response|note|reaction)/.test(h));
-    cols.likes    = lower.findIndex((h, i) => !used().includes(i) && /^(likes?|upvotes?|reactions?|engagement|hearts?)/.test(h));
-    cols.image    = lower.findIndex((h, i) => !used().includes(i) && /^(image|photo|picture|img|media|attachment)/.test(h));
-
-    return cols;
-  },
-
-  addRowFields(cols) {
-    return [
-      { role: 'text',     label: 'Post',      colIndex: cols.text,     type: 'textarea', placeholder: "What's on your mind?", required: true },
-      { role: 'author',   label: 'Author',     colIndex: cols.author,   type: 'text',     placeholder: 'Your name' },
-      { role: 'date',     label: 'Date',        colIndex: cols.date,     type: 'date' },
-      { role: 'category', label: 'Category',    colIndex: cols.category, type: 'select',   options: ['update', 'photo', 'link', 'thought', 'milestone', 'question'] },
-      { role: 'mood',     label: 'Mood',        colIndex: cols.mood,     type: 'select',   options: ['', ...Object.keys(MOOD_MAP)] },
-      { role: 'link',     label: 'Link',        colIndex: cols.link,     type: 'text',     placeholder: 'https://...' },
-      { role: 'image',    label: 'Image URL',   colIndex: cols.image,    type: 'text',     placeholder: 'https://...' },
-    ];
-  },
-
-  /* ---------- Directory View (feed of shared profiles) ---------- */
-
-  directoryView(container, sheets, navigateFn) {
-    const wrapper = el('div', { className: 'social-directory' });
-
-    const titleBar = el('div', { className: 'social-dir-title-bar' });
-    titleBar.append(
-      el('span', { className: 'social-dir-icon' }, ['💬']),
-      el('span', { className: 'social-dir-title' }, ['Social Feed']),
-      el('span', { className: 'social-dir-count' }, [
-        `${sheets.length} profile${sheets.length !== 1 ? 's' : ''}`,
-      ]),
-      buildDirSyncBtn(wrapper),
-    );
-    wrapper.append(titleBar);
-
-    // Collect all posts across all sheets for the combined feed
-    const allPosts = [];
-    for (const sheet of sheets) {
-      const cols = sheet.cols;
-      for (const row of (sheet.rows || [])) {
-        const postText = cols.text >= 0 ? (row[cols.text] || '') : '';
-        if (!postText) continue;
-        // Chat rows belong in the chat panel, not the post feed
-        const cat = cols.category >= 0 ? (row[cols.category] || '') : '';
-        if (cat.toLowerCase() === 'chat') continue;
-        allPosts.push({
-          sheetId: sheet.id,
-          sheetName: sheet.name,
-          text: postText,
-          author: cols.author >= 0 ? (row[cols.author] || sheet.name) : sheet.name,
-          date: cols.date >= 0 ? (row[cols.date] || '') : '',
-          category: cols.category >= 0 ? (row[cols.category] || '') : '',
-          mood: cols.mood >= 0 ? (row[cols.mood] || '') : '',
-          link: cols.link >= 0 ? (row[cols.link] || '') : '',
-          likes: cols.likes >= 0 ? (row[cols.likes] || '') : '',
-          image: cols.image >= 0 ? (row[cols.image] || '') : '',
-        });
-      }
-    }
-
-    // Sort by date descending
-    allPosts.sort((a, b) => {
-      if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-
-    const feed = el('div', { className: 'social-feed' });
-
-    const PAGE_SIZE = 20;
-    let shown = 0;
-
-    function renderBatch() {
-      const batch = allPosts.slice(shown, shown + PAGE_SIZE);
-      for (const post of batch) {
-        feed.append(buildFeedCard(post));
-      }
-      shown += batch.length;
-
-      // Remove old "more" button
-      const oldMore = feed.querySelector('.social-feed-more');
-      if (oldMore) oldMore.remove();
-
-      if (shown < allPosts.length) {
-        const moreBtn = el('button', { className: 'social-feed-more' }, [
-          `Show ${Math.min(allPosts.length - shown, PAGE_SIZE)} more posts`,
-        ]);
-        moreBtn.addEventListener('click', renderBatch);
-        feed.append(moreBtn);
-      }
-    }
-
-    function buildFeedCard(post) {
-      const card = el('div', {
-        className: 'social-post',
-        dataset: { entryId: post.sheetId, entryName: post.sheetName },
-      });
-
-      // Header: avatar + author + date + source
-      const header = el('div', { className: 'social-post-header' });
-      const initial = (post.author || '?')[0].toUpperCase();
-      header.append(
-        el('div', {
-          className: 'social-avatar',
-          style: `background: ${avatarColor(post.author)}`,
-        }, [initial]),
-        el('div', { className: 'social-post-meta' }, [
-          el('span', { className: 'social-post-author' }, [post.author]),
-          el('span', { className: 'social-post-time' }, [timeAgo(post.date)]),
-        ]),
-      );
-
-      if (post.category) {
-        const color = CATEGORY_COLORS[post.category.toLowerCase()] || '#6b7280';
-        header.append(el('span', {
-          className: 'social-post-category',
-          style: `background: ${color}`,
-        }, [post.category]));
-      }
-
-      card.append(header);
-
-      // Body
-      card.append(el('div', { className: 'social-post-body' }, [post.text]));
-
-      // Mood
-      if (post.mood) {
-        const emoji = MOOD_MAP[post.mood.toLowerCase()] || post.mood;
-        card.append(el('div', { className: 'social-post-mood' }, [
-          `Feeling ${post.mood} ${emoji}`,
-        ]));
-      }
-
-      // Link
-      if (post.link) {
-        const a = el('a', {
-          className: 'social-post-link',
-          href: post.link,
-          target: '_blank',
-          rel: 'noopener',
-        }, [`🔗 ${post.link}`]);
-        card.append(a);
-      }
-
-      // Image
-      if (post.image) {
-        card.append(el('img', {
-          className: 'social-post-image',
-          src: post.image,
-          alt: 'Post image',
-          loading: 'lazy',
-        }));
-      }
-
-      // Likes
-      if (post.likes) {
-        card.append(el('div', { className: 'social-post-likes' }, [
-          `❤️ ${post.likes}`,
-        ]));
-      }
-
-      // Source badge
-      card.append(el('div', { className: 'social-post-source' }, [
-        `from `,
-        el('span', { className: 'social-post-source-name' }, [post.sheetName]),
-      ]));
-
-      return card;
-    }
-
-    // Delegated click: click post card → navigate to that sheet
-    delegateEvent(feed, 'click', '.social-post', (_e, card) => {
-      const a = _e.target.closest('a');
-      if (a) return; // Don't navigate when clicking links
-      navigateFn('sheet', card.dataset.entryId, card.dataset.entryName);
-    });
-
-    renderBatch();
-    wrapper.append(feed);
-
-    if (allPosts.length === 0) {
-      wrapper.append(el('p', { className: 'social-empty' }, ['No posts yet. Create a social sheet and start posting!']));
-    }
-
-    container.append(wrapper);
-  },
-
-  /* ---------- Main Render ---------- */
-
-  render(container, rows, cols, template) {
-    const groups = parseGroups(rows, cols.text, {
-      initGroup: () => ({ comments: [] }),
-      classifyChild: (child, parent) => {
-        parent.comments.push(child);
-      },
-    });
-
-    // Collect unique authors for add-row combo
-    const allAuthors = cols.author >= 0
-      ? [...new Set(groups.map(g => cell(g.row, cols.author)).filter(Boolean))].sort()
-      : [];
-
-    container.innerHTML = '';
-
-    /* ---- Profile header ---- */
-    const profileHeader = el('div', { className: 'social-profile-header' });
-
-    // Determine dominant author (page owner)
-    const authorCounts = {};
-    for (const g of groups) {
-      const a = cols.author >= 0 ? cell(g.row, cols.author) : '';
-      if (a) authorCounts[a] = (authorCounts[a] || 0) + 1;
-    }
-    const pageOwner = Object.entries(authorCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'My Feed';
-
-    const ownerInitial = pageOwner[0].toUpperCase();
-    const connectBtn = el('button', {
-      className: 'social-connect-btn',
-      title: 'Start live peer-to-peer chat with anyone viewing this sheet',
-      on: { click() { openChat(template._rtcSheetId, template._rtcUserName, template._rtcSignal); } },
-    }, ['📡 Connect']);
-
-    // Session password for encrypted handshakes
-    const { row: pwRow } = buildHandshakePasswordRow({
-      prefix: 'social',
-      initialValue: _socialPassword,
-      onPasswordChange(newPw) {
-        _socialPassword = newPw || '';
-        if (_activeConnect) _activeConnect.setPassword(newPw);
-      },
-    });
-
-    profileHeader.append(
-      el('div', {
-        className: 'social-avatar social-avatar-lg',
-        style: `background: ${avatarColor(pageOwner)}`,
-      }, [ownerInitial]),
-      el('div', { className: 'social-profile-info' }, [
-        el('h3', { className: 'social-profile-name' }, [pageOwner]),
-        el('span', { className: 'social-profile-stats' }, [
-          `${groups.length} post${groups.length !== 1 ? 's' : ''} · ${allAuthors.length} contributor${allAuthors.length !== 1 ? 's' : ''}`,
-        ]),
-      ]),
-      connectBtn,
-    );
-    container.append(profileHeader);
-    container.append(pwRow);
-
-    /* ---- Add row form ---- */
-    if (typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function') {
-      const addForm = buildAddRowForm(template, cols, template._totalColumns || 0, template._onAddRow, {
-        dynamicOptions: {},
-      });
-      container.append(addForm);
-    }
-
-    /* ---- Posts feed ---- */
-    const feed = el('div', { className: 'social-feed' });
-
-    // Sort groups by date descending
-    const sorted = [...groups].sort((a, b) => {
-      const da = cols.date >= 0 ? cell(a.row, cols.date) : '';
-      const db = cols.date >= 0 ? cell(b.row, cols.date) : '';
-      if (!da && !db) return 0;
-      if (!da) return 1;
-      if (!db) return -1;
-      return new Date(db).getTime() - new Date(da).getTime();
-    });
-
-    for (const group of sorted) {
-      const postText = cell(group.row, cols.text);
-      const author   = cols.author >= 0 ? cell(group.row, cols.author) : '';
-      const date     = cols.date >= 0 ? cell(group.row, cols.date) : '';
-      const category = cols.category >= 0 ? cell(group.row, cols.category) : '';
-      // Chat rows belong in the chat panel, not the post feed
-      if (category.toLowerCase() === 'chat') continue;
-      const mood     = cols.mood >= 0 ? cell(group.row, cols.mood) : '';
-      const link     = cols.link >= 0 ? cell(group.row, cols.link) : '';
-      const likes    = cols.likes >= 0 ? cell(group.row, cols.likes) : '';
-      const image    = cols.image >= 0 ? cell(group.row, cols.image) : '';
-
-      const post = el('div', {
-        className: 'social-post',
-        dataset: { rowIdx: String(group.idx + 1) },
-      });
-
-      /* ---- Post header ---- */
-      const header = el('div', { className: 'social-post-header' });
-      const initial = (author || '?')[0].toUpperCase();
-      header.append(
-        el('div', {
-          className: 'social-avatar',
-          style: `background: ${avatarColor(author || 'Anonymous')}`,
-        }, [initial]),
-        el('div', { className: 'social-post-meta' }, [
-          cols.author >= 0
-            ? editableCell('span', { className: 'social-post-author' }, author, group.idx + 1, cols.author)
-            : el('span', { className: 'social-post-author' }, [author || 'Anonymous']),
-          el('span', { className: 'social-post-time' }, [timeAgo(date)]),
-        ]),
-      );
-
-      if (category) {
-        const color = CATEGORY_COLORS[category.toLowerCase()] || '#6b7280';
-        header.append(el('span', {
-          className: 'social-post-category',
-          style: `background: ${color}`,
-        }, [category]));
-      }
-
-      post.append(header);
-
-      /* ---- Post body (editable) ---- */
-      post.append(editableCell('div', { className: 'social-post-body' }, postText, group.idx + 1, cols.text, {
-        multiline: true,
-      }));
-
-      /* ---- Mood ---- */
-      if (mood) {
-        const emoji = MOOD_MAP[mood.toLowerCase()] || mood;
-        post.append(el('div', { className: 'social-post-mood' }, [
-          `Feeling ${mood} ${emoji}`,
-        ]));
-      }
-
-      /* ---- Link ---- */
-      if (link) {
-        const a = el('a', {
-          className: 'social-post-link',
-          href: link,
-          target: '_blank',
-          rel: 'noopener',
-        }, [`🔗 ${link}`]);
-        post.append(a);
-      }
-
-      /* ---- Image ---- */
-      if (image) {
-        post.append(el('img', {
-          className: 'social-post-image',
-          src: image,
-          alt: 'Post image',
-          loading: 'lazy',
-        }));
-      }
-
-      /* ---- Likes ---- */
-      if (likes) {
-        post.append(el('div', { className: 'social-post-likes' }, [
-          `❤️ ${likes}`,
-        ]));
-      }
-
-      /* ---- Comments ---- */
-      if (group.comments && group.comments.length > 0) {
-        const commentsSection = el('div', { className: 'social-comments' });
-        commentsSection.append(el('div', { className: 'social-comments-label' }, [
-          `💬 ${group.comments.length} comment${group.comments.length !== 1 ? 's' : ''}`,
-        ]));
-
-        for (const cmt of group.comments) {
-          const cmtAuthor = cols.author >= 0 ? cell(cmt.row, cols.author) : '';
-          // Comment rows have empty text column (that's how parseGroups classifies them).
-          // Try dedicated comment column first, then scan all columns for any content.
-          let cmtText = '';
-          if (cols.comment >= 0) {
-            cmtText = cell(cmt.row, cols.comment);
-          }
-          if (!cmtText) {
-            // Fallback: find the first non-empty cell that isn't the author or date
-            // Skip SIG_COL (WebRTC signaling) so handshake JSON never leaks into the UX
-            const skip = new Set([cols.text, cols.author, cols.date, cols.category, cols.mood, cols.link, cols.likes, cols.image, SIG_COL].filter(c => c >= 0));
-            for (let ci = 0; ci < cmt.row.length; ci++) {
-              if (!skip.has(ci) && cell(cmt.row, ci)) { cmtText = cell(cmt.row, ci); break; }
-            }
-          }
-          // Skip rows with no visible content (e.g. signaling-only rows)
-          if (!cmtText && !cmtAuthor) continue;
-          const cmtDate   = cols.date >= 0 ? cell(cmt.row, cols.date) : '';
-
-          const cmtEl = el('div', { className: 'social-comment' });
-          const cmtInitial = (cmtAuthor || '?')[0].toUpperCase();
-          cmtEl.append(
-            el('div', {
-              className: 'social-avatar social-avatar-sm',
-              style: `background: ${avatarColor(cmtAuthor || 'Anonymous')}`,
-            }, [cmtInitial]),
-            el('div', { className: 'social-comment-content' }, [
-              el('span', { className: 'social-comment-author' }, [cmtAuthor || 'Anonymous']),
-              el('span', { className: 'social-comment-text' }, [cmtText]),
-              cmtDate ? el('span', { className: 'social-comment-time' }, [timeAgo(cmtDate)]) : null,
-            ].filter(Boolean)),
-          );
-          commentsSection.append(cmtEl);
-        }
-        post.append(commentsSection);
-      }
-
-      /* ---- Post footer (date + category) ---- */
-      const footer = el('div', { className: 'social-post-footer' });
-      if (date) {
-        footer.append(el('span', { className: 'social-post-date' }, [
-          new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        ]));
-      }
-      post.append(footer);
-
-      feed.append(post);
-    }
-
-    container.append(feed);
-
-    if (groups.length === 0) {
-      feed.append(el('p', { className: 'social-empty' }, ['No posts yet. Add your first post above!']));
-    }
-  },
-};
-
-export { openChat, destroyChat };
+export { openChat, destroyChat, setSocialPassword };
