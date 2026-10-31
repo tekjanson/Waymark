@@ -116,7 +116,8 @@ export class SocialChatWidget {
           this.peerCount.textContent = `${count} peer${count !== 1 ? 's' : ''}`;
         }
         if (this.mode === 'embedded' && this.subtitle && !this.session.inCall) {
-          this.setSubtitle(`P2P · ${count} connected · Linked: ${this.sheetId}`);
+          const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
+          this.setSubtitle(`P2P · ${count} connected · ${linkText}`);
         }
       },
       onStatusChanged: (status) => {
@@ -215,7 +216,7 @@ export class SocialChatWidget {
 
     this.statusLabel = el('span', {
       className: 'social-chat-status-label',
-    }, [this.subtitleText]);
+    }, [isFloating ? this.subtitleText : (this.sheetId ? 'Listening…' : 'Idle')]);
 
     this.peerCount = el('span', {
       className: 'social-chat-peer-count',
@@ -284,7 +285,7 @@ export class SocialChatWidget {
     header.append(
       this.titleEl,
       this.statusDot,
-      isFloating ? this.statusLabel : null,
+      this.statusLabel,
       this.peerCount,
       this.unreadBadge,
       headerActions,
@@ -473,7 +474,7 @@ export class SocialChatWidget {
     /* ---------- Assemble Root ---------- */
     this.root.append(
       header,
-      !isFloating ? this.subtitle : null,
+      ...(!isFloating ? [this.subtitle] : []),
       this.settingsPanel,
       this.incomingCallModal,
       this.mediaContainer,
@@ -670,7 +671,8 @@ export class SocialChatWidget {
       this.callBtn.classList.add('call-active');
     }
     if (this.subtitle) {
-      this.setSubtitle(`Incoming call from ${name || 'a Waymarker'} · Linked: ${this.sheetId}`);
+      const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
+      this.setSubtitle(`Incoming call from ${name || 'a Waymarker'} · ${linkText}`);
     }
   }
 
@@ -688,14 +690,19 @@ export class SocialChatWidget {
     this.videoCallBtn.classList.add('hidden');
     this.hangupBtn.classList.remove('hidden');
     this.muteBtn.classList.remove('hidden');
-    if (hasVideo) {
+    const hasLocalVideo = Boolean(hasVideo || this.localVideo?.srcObject?.getVideoTracks()?.length);
+    const hasRemoteVideo = Boolean(this.remoteVideo?.srcObject?.getVideoTracks()?.length);
+    if (hasLocalVideo) {
       this.camToggleBtn.classList.remove('hidden');
+    }
+    if (hasLocalVideo || hasRemoteVideo) {
       this.mediaContainer.classList.remove('hidden');
     }
     this.debugBtn.classList.remove('hidden');
     this.root.classList.add('social-chat-in-call');
     if (this.subtitle) {
-      this.setSubtitle(`📹 In call · Linked: ${this.sheetId}`);
+      const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
+      this.setSubtitle(`📹 In call · ${linkText}`);
     }
     if (this.session?.connect && !this._debugCleanup) {
       this._startDebug(this.session.connect);

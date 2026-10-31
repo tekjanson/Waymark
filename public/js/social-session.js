@@ -244,17 +244,19 @@ export class SocialSession {
         }
       },
       onRemoteStream: (stream) => {
-        const hasVideo = stream.getVideoTracks().length > 0;
+        const videoTracks = stream.getVideoTracks().filter(t => t.readyState !== 'ended');
+        const hasVideo = videoTracks.length > 0;
         if (this._boundRemoteVideo) {
           if (hasVideo) {
-            this._boundRemoteVideo.srcObject = new MediaStream(stream.getVideoTracks());
+            this._boundRemoteVideo.srcObject = new MediaStream(videoTracks);
             this._boundRemoteVideo.play().catch(() => {});
           } else {
             this._boundRemoteVideo.srcObject = null;
           }
         }
 
-        const nAudioTracks = stream.getAudioTracks().length;
+        const audioTracks = stream.getAudioTracks().filter(t => t.readyState !== 'ended');
+        const nAudioTracks = audioTracks.length;
         if (nAudioTracks > 0 && this.connect) {
           const gen = ++this._pipelineGen;
           const oldCleanup = this._remoteFilterCleanup;
@@ -273,6 +275,7 @@ export class SocialSession {
             if (oldCleanup) oldCleanup();
             this._remoteFilterCleanup = result.cleanup;
             if (this._boundAudio) {
+              this._boundAudio.muted = false;
               this._boundAudio.srcObject = result.outputStream || null;
               if (result.outputStream) {
                 this._boundAudio.play().catch(() => {});
@@ -281,7 +284,8 @@ export class SocialSession {
             }
           }).catch(() => {
             if (this._boundAudio) {
-              this._boundAudio.srcObject = stream;
+              this._boundAudio.muted = false;
+              this._boundAudio.srcObject = new MediaStream(audioTracks);
               this._boundAudio.play().catch(() => {});
             }
           });
@@ -426,9 +430,7 @@ export class SocialSession {
         throw new Error('No sheetId provided for call session.');
       }
       if (!this.connect || this.connect._destroyed) this.start();
-      if (this.signal && !await this.waitForSignalingReady()) {
-        throw new Error('Could not claim a Google Sheets signaling slot. Try again in a moment.');
-      }
+      const sigPromise = this.signal ? this.waitForSignalingReady() : Promise.resolve(true);
       const constraints = {
         audio: audio ? buildAudioConstraints() : false,
         video,
@@ -436,6 +438,13 @@ export class SocialSession {
       };
 
       const stream = await this.connect.startCall(constraints);
+      const sigReady = await sigPromise;
+      if (this.signal && !sigReady && (!this.connect?._peers || this.connect._peers.size === 0)) {
+        throw new Error('Could not claim a Google Sheets signaling slot. Try again in a moment.');
+      }
+      if (this.signal && sigReady) {
+        this.connect?._heartbeat?.().catch(() => {});
+      }
       if (!this._callStarting) {
         if (stream) {
           for (const t of stream.getTracks()) try { t.stop(); } catch {}
@@ -451,6 +460,9 @@ export class SocialSession {
       if (this._boundLocalVideo && stream) {
         const vTracks = stream.getVideoTracks();
         this._boundLocalVideo.srcObject = vTracks.length ? new MediaStream(vTracks) : null;
+        if (vTracks.length) {
+          this._boundLocalVideo.play().catch(() => {});
+        }
       }
 
       this.onCallStateChanged('in-call', {

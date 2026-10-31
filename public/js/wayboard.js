@@ -1033,6 +1033,16 @@ async function selectTarget(target, host) {
   // would drop an in-progress call and its media tracks.
   if (!targetChanged && _waysideWidget) {
     highlightWaysideTarget(host, target);
+    if (!_activeLedgerId) {
+      try {
+        const ledger = await collab.findExistingShareLedger(target);
+        if (generation === _waysideTargetGeneration && ledger?.sheetId && _waysideWidget) {
+          _activeLedgerId = ledger.sheetId;
+          _waysideWidget.setSignaling(ledger.sheetId, collab.createLedgerSignal(ledger.sheetId));
+        }
+      } catch {}
+    }
+    await refreshWaysideSocial(host);
     return;
   }
 
@@ -1159,6 +1169,15 @@ function renderSharedFiles(files) {
 async function refreshWaysideSocial(host) {
   if (!_activeTarget || !_waysideWidget) return;
   const generation = _waysideTargetGeneration;
+  if (!_activeLedgerId) {
+    try {
+      const ledger = await collab.findExistingShareLedger(_activeTarget);
+      if (generation === _waysideTargetGeneration && ledger?.sheetId && _waysideWidget) {
+        _activeLedgerId = ledger.sheetId;
+        _waysideWidget.setSignaling(ledger.sheetId, collab.createLedgerSignal(ledger.sheetId));
+      }
+    } catch {}
+  }
   const ledgerId = _activeLedgerId;
   const refreshKey = `${generation}:${ledgerId || 'unlinked'}`;
   if (_waysideSocialRefreshKey === refreshKey) return;

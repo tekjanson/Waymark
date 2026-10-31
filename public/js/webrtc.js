@@ -53,6 +53,9 @@ const HANDSHAKE_ENC_PREFIX = '\u{1F510}HND:';
 /** PBKDF2 iterations for signal key — lighter than column encryption (ephemeral data) */
 const HANDSHAKE_PBKDF2_ITER = 10000;
 
+/** Track active peerIds in this JS context so multiple instances on the same page never collide */
+const _activeLocalPeerIds = new Set();
+
 /* ---------- WaymarkConnect ---------- */
 
 /**
@@ -74,11 +77,18 @@ export class WaymarkConnect {
     const _peerStorageKey = `waymark-peer-${sheetId}`;
     try {
       const stored = typeof sessionStorage !== 'undefined' && sessionStorage.getItem(_peerStorageKey);
-      this.peerId = stored || crypto.randomUUID().slice(0, 8);
-      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(_peerStorageKey, this.peerId);
+      if (stored && !_activeLocalPeerIds.has(stored)) {
+        this.peerId = stored;
+      } else {
+        this.peerId = crypto.randomUUID().slice(0, 8);
+        if (!stored && typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(_peerStorageKey, this.peerId);
+        }
+      }
     } catch {
       this.peerId = crypto.randomUUID().slice(0, 8);
     }
+    _activeLocalPeerIds.add(this.peerId);
     // Fresh nonce per WaymarkConnect instance.  Remote peers detect a nonce change
     // and immediately close the stale DataChannel to rebuild — same mechanism as
     // OrchestratorPeer.kt / sheet-webrtc-peer.mjs.
@@ -159,7 +169,7 @@ export class WaymarkConnect {
     if (typeof BroadcastChannel !== 'undefined') {
       this._bc = new BroadcastChannel(`waymark-connect-${this.sheetId}`);
       this._bc.onmessage = (e) => this._onBC(e.data);
-      this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName });
+      this._bc.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName, nonce: this._sessionNonce });
     }
     if (this.signal) this._ensureSignalingJoined();
     this.onStatusChanged('listening');
@@ -309,8 +319,26 @@ export class WaymarkConnect {
 
     // Add local tracks to all peer connections
     if (this._localStream) {
-      for (const [, r] of this._rtc) {
-        for (const t of this._localStream.getTracks()) r.pc.addTrack(t, this._localStream);
+      for (const [remotePeerId, r] of this._rtc) {
+        const existingTracks = new Set(r.pc.getSenders().map(s => s.track).filter(Boolean));
+        let added = false;
+        for (const t of this._localStream.getTracks()) {
+          if (!existingTracks.has(t)) {
+            r.pc.addTrack(t, this._localStream);
+            added = true;
+          }
+        }
+        if (added) {
+          r.needsRenego = true;
+          this._renegotiate(remotePeerId);
+        }
+      }
+    }
+    if (this._bc) {
+      for (const [remotePeerId] of this._peers) {
+        if (!this._rtc.has(remotePeerId) && this.peerId < remotePeerId) {
+          this._negotiateViaBC(remotePeerId);
+        }
       }
     }
     this._inCall = true;
@@ -542,6 +570,7 @@ export class WaymarkConnect {
     this._destroyed = true;
     this._paused = false;
     this._joinPromise = null;
+    _activeLocalPeerIds.delete(this.peerId);
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', this._onUnload);
     }
@@ -669,17 +698,62 @@ export class WaymarkConnect {
   /* ---------- BroadcastChannel ---------- */
 
   _onBC(d) {
-    if (this._destroyed || d.peerId === this.peerId) return;
+    if (this._destroyed || !d) return;
+    if (d.peerId === this.peerId) {
+      // If another tab cloned our sessionStorage peerId, resolve the collision
+      if (d.nonce && d.nonce !== this._sessionNonce && this._sessionNonce < d.nonce) {
+        _activeLocalPeerIds.delete(this.peerId);
+        this.peerId = crypto.randomUUID().slice(0, 8);
+        _activeLocalPeerIds.add(this.peerId);
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(`waymark-peer-${this.sheetId}`, this.peerId);
+          }
+        } catch {}
+        this._bc?.postMessage({ type: 'announce', peerId: this.peerId, name: this.displayName, nonce: this._sessionNonce });
+      }
+      return;
+    }
     switch (d.type) {
       case 'announce':
-        this._peers.set(d.peerId, { name: d.name, channel: 'local' });
-        this._bc.postMessage({ type: 'welcome', peerId: this.peerId, name: this.displayName, to: d.peerId });
+        this._peers.set(d.peerId, {
+          ...this._peers.get(d.peerId),
+          name: d.name,
+          channel: this._rtc.get(d.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'local',
+        });
+        this._bc.postMessage({ type: 'welcome', peerId: this.peerId, name: this.displayName, to: d.peerId, nonce: this._sessionNonce });
         this._emitPeers();
+        if (this.peerId < d.peerId && !this._rtc.has(d.peerId)) {
+          this._negotiateViaBC(d.peerId);
+        }
         break;
       case 'welcome':
         if (d.to !== this.peerId) return;
-        this._peers.set(d.peerId, { name: d.name, channel: 'local' });
+        this._peers.set(d.peerId, {
+          ...this._peers.get(d.peerId),
+          name: d.name,
+          channel: this._rtc.get(d.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'local',
+        });
         this._emitPeers();
+        if (this.peerId < d.peerId && !this._rtc.has(d.peerId)) {
+          this._negotiateViaBC(d.peerId);
+        }
+        break;
+      case 'rtc-offer':
+        if (d.to !== this.peerId) return;
+        this._onBCOffer(d);
+        break;
+      case 'rtc-answer':
+        if (d.to !== this.peerId) return;
+        this._onBCAnswer(d);
+        break;
+      case 'renego-offer':
+        if (d.to && d.to !== this.peerId) return;
+        this._onRenegoOffer(d.peerId, d);
+        break;
+      case 'renego-answer':
+        if (d.to && d.to !== this.peerId) return;
+        this._onRenegoAnswer(d.peerId, d);
         break;
       case 'message':
         this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, messageId: d.messageId, channel: 'local' });
@@ -688,7 +762,10 @@ export class WaymarkConnect {
         this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
         break;
       case 'call-start':
-        this._peers.set(d.peerId, { ...this._peers.get(d.peerId), name: d.name || 'Peer', channel: 'local', inCall: true });
+        this._peers.set(d.peerId, { ...this._peers.get(d.peerId), name: d.name || 'Peer', channel: this._rtc.get(d.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'local', inCall: true });
+        if (this.peerId < d.peerId && !this._rtc.has(d.peerId)) {
+          this._negotiateViaBC(d.peerId);
+        }
         this.onCallActive(d.peerId, d.name);
         break;
       case 'call-end':
@@ -705,6 +782,7 @@ export class WaymarkConnect {
       case 'leave':
         if (this._peers.get(d.peerId)?.inCall) this.onCallEnded(d.peerId);
         this._peers.delete(d.peerId);
+        this._closeOne(d.peerId);
         this._emitPeers();
         break;
       default:
@@ -717,6 +795,61 @@ export class WaymarkConnect {
           console.warn(`[WC] BC arcade msg from ${d.peerId} DROPPED — no onArcadeMessage handler:`, d.type);
         }
         break;
+    }
+  }
+
+  async _negotiateViaBC(remotePeerId) {
+    if (this._destroyed || !this._bc || this._rtc.has(remotePeerId)) return;
+    try {
+      const entry = await this._buildOffer(remotePeerId);
+      if (this._destroyed || !this._bc || !entry.pc.localDescription) return;
+      const sdp = await this._encryptSignal(entry.pc.localDescription.sdp);
+      this._bc.postMessage({
+        type: 'rtc-offer',
+        peerId: this.peerId,
+        to: remotePeerId,
+        sdp,
+      });
+    } catch (err) {
+      console.error(`[WC] BC buildOffer to ${remotePeerId} failed:`, err);
+      this._closeOne(remotePeerId);
+    }
+  }
+
+  async _onBCOffer(d) {
+    if (this._destroyed || !this._bc) return;
+    const existing = this._rtc.get(d.peerId);
+    if (existing?.dc?.readyState === 'open') return;
+    try {
+      const sdp = await this._decryptSignal(d.sdp);
+      if (!sdp || this._destroyed) return;
+      const entry = await this._buildAnswer(d.peerId, sdp);
+      if (this._destroyed || !this._bc || !entry.pc.localDescription) return;
+      const ansSdp = await this._encryptSignal(entry.pc.localDescription.sdp);
+      this._bc.postMessage({
+        type: 'rtc-answer',
+        peerId: this.peerId,
+        to: d.peerId,
+        sdp: ansSdp,
+      });
+    } catch (err) {
+      console.error(`[WC] BC buildAnswer for ${d.peerId} failed:`, err);
+      this._closeOne(d.peerId);
+    }
+  }
+
+  async _onBCAnswer(d) {
+    if (this._destroyed) return;
+    const r = this._rtc.get(d.peerId);
+    if (!r?.pc || r.pc.signalingState !== 'have-local-offer') return;
+    try {
+      const sdp = await this._decryptSignal(d.sdp);
+      if (!sdp || this._destroyed || r.pc.signalingState !== 'have-local-offer') return;
+      await r.pc.setRemoteDescription({ type: 'answer', sdp });
+      r.state = 'connected';
+    } catch (err) {
+      console.error(`[WC] BC setRemoteDescription(answer) for ${d.peerId} failed:`, err);
+      this._closeOne(d.peerId);
     }
   }
 
@@ -951,19 +1084,29 @@ export class WaymarkConnect {
               this._closeOne(remote.peerId);
             }
           } else {
+            // Ensure our offer is written to the sheet if we are still waiting for an answer
+            if (r.pc?.signalingState === 'have-local-offer' && !myOffers[remote.peerId] && r.pc.localDescription?.sdp) {
+              myOffers[remote.peerId] = { sdp: r.pc.localDescription.sdp, ts: Date.now() };
+              offDirty = true;
+            }
             // Check if remote wrote answer to their ANSWERS row keyed by our peerId
             const remoteAns = _json(await this._decryptSignal(vals[remote.block + OFF_ANSWERS]?.[SIG_COL] || '')) || {};
             const ans = remoteAns[this.peerId];
             if (ans) {
-              try {
-                console.log(`[WC] _poll — applying answer from ${remote.peerId}`);
-                await r.pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
-                r.state = 'connected';
+              if (r.pc?.signalingState === 'have-local-offer') {
+                try {
+                  console.log(`[WC] _poll — applying answer from ${remote.peerId}`);
+                  await r.pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
+                  r.state = 'connected';
+                  delete myOffers[remote.peerId];
+                  offDirty = true;
+                } catch (err) {
+                  console.error(`[WC] _poll — setRemoteDescription(answer) for ${remote.peerId} failed:`, err);
+                  this._closeOne(remote.peerId);
+                }
+              } else if (myOffers[remote.peerId]) {
                 delete myOffers[remote.peerId];
                 offDirty = true;
-              } catch (err) {
-                console.error(`[WC] _poll — setRemoteDescription(answer) for ${remote.peerId} failed:`, err);
-                this._closeOne(remote.peerId);
               }
             }
           }
@@ -1020,7 +1163,16 @@ export class WaymarkConnect {
     this._closeOne(remotePeerId);
     const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
     const dc = pc.createDataChannel('waymark');
-    const entry = { pc, dc, state: 'offering' };
+    const entry = {
+      pc,
+      dc,
+      state: 'offering',
+      makingInitial: true,
+      makingOffer: false,
+      ignoreOffer: false,
+      isSettingRemoteAnswerPending: false,
+      needsRenego: false,
+    };
     this._rtc.set(remotePeerId, entry);
 
     this._wirePC(remotePeerId, pc);
@@ -1029,16 +1181,30 @@ export class WaymarkConnect {
       for (const t of this._localStream.getTracks()) pc.addTrack(t, this._localStream);
     }
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await this._iceReady(pc);
-    return entry;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      entry.makingInitial = false;
+      await this._iceReady(pc);
+      return entry;
+    } finally {
+      entry.makingInitial = false;
+    }
   }
 
   async _buildAnswer(remotePeerId, sdp) {
     this._closeOne(remotePeerId);
     const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-    const entry = { pc, dc: null, state: 'answering' };
+    const entry = {
+      pc,
+      dc: null,
+      state: 'answering',
+      makingInitial: true,
+      makingOffer: false,
+      ignoreOffer: false,
+      isSettingRemoteAnswerPending: false,
+      needsRenego: false,
+    };
     this._rtc.set(remotePeerId, entry);
 
     pc.ondatachannel = (e) => {
@@ -1047,34 +1213,66 @@ export class WaymarkConnect {
     };
 
     this._wirePC(remotePeerId, pc);
+    await pc.setRemoteDescription({ type: 'offer', sdp });
     if (this._localStream) {
       for (const t of this._localStream.getTracks()) pc.addTrack(t, this._localStream);
+      entry.needsRenego = true;
     }
 
-    await pc.setRemoteDescription({ type: 'offer', sdp });
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    await this._iceReady(pc);
-    return entry;
+    try {
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      entry.makingInitial = false;
+      await this._iceReady(pc);
+      return entry;
+    } finally {
+      entry.makingInitial = false;
+    }
   }
 
   _wirePC(remotePeerId, pc) {
     pc.ontrack = (e) => {
-      if (e.streams?.[0]) {
-        this._remoteStreams.set(remotePeerId, e.streams[0]);
-        this.onRemoteStream(e.streams[0], remotePeerId);
-
-        // Listen for unmute — remote tracks start muted until media
-        // packets arrive. When unmuted, re-emit so the pipeline can
-        // rebuild with live data.
-        for (const t of e.streams[0].getAudioTracks()) {
-          if (t.muted) {
-            t.addEventListener('unmute', () => {
-              const stream = this._remoteStreams.get(remotePeerId);
-              if (stream) this.onRemoteStream(stream, remotePeerId);
-            }, { once: true });
+      let stream = e.streams?.[0];
+      if (!stream) {
+        stream = this._remoteStreams.get(remotePeerId) || new MediaStream();
+        if (e.track && !stream.getTracks().includes(e.track)) {
+          stream.addTrack(e.track);
+        }
+      } else {
+        const existing = this._remoteStreams.get(remotePeerId);
+        if (existing && existing !== stream) {
+          for (const t of existing.getTracks()) {
+            if (t.readyState === 'live' && !stream.getTracks().includes(t)) {
+              stream.addTrack(t);
+            }
           }
         }
+        if (e.track && !stream.getTracks().includes(e.track)) {
+          stream.addTrack(e.track);
+        }
+      }
+      this._remoteStreams.set(remotePeerId, stream);
+      this.onRemoteStream(stream, remotePeerId);
+
+      // Listen for unmute on both audio and video tracks — remote tracks
+      // start muted until media packets arrive. When unmuted, re-emit so
+      // the pipeline and video element update with live data.
+      const tracksToWatch = e.track ? [e.track] : stream.getTracks();
+      for (const t of tracksToWatch) {
+        if (t.muted) {
+          t.addEventListener('unmute', () => {
+            const cur = this._remoteStreams.get(remotePeerId);
+            if (cur) this.onRemoteStream(cur, remotePeerId);
+          }, { once: true });
+        }
+      }
+    };
+
+    pc.onsignalingstatechange = () => {
+      if (this._destroyed) return;
+      const r = this._rtc.get(remotePeerId);
+      if (r && pc.signalingState === 'stable' && r.needsRenego && !r.makingOffer && !r.makingInitial) {
+        this._renegotiate(remotePeerId);
       }
     };
 
@@ -1106,24 +1304,51 @@ export class WaymarkConnect {
     };
 
     // Renegotiation (fires when media tracks are added/removed)
-    pc.onnegotiationneeded = async () => {
+    pc.onnegotiationneeded = () => {
       if (this._destroyed) return;
       const r = this._rtc.get(remotePeerId);
-      if (!r?.dc || r.dc.readyState !== 'open') {
-        console.warn(`[WC] renegotiation needed for ${remotePeerId} but DC not open (state: ${r?.dc?.readyState || 'none'})`);
+      if (!r || r.makingInitial) return;
+      r.needsRenego = true;
+      this._renegotiate(remotePeerId);
+    };
+  }
+
+  async _renegotiate(remotePeerId) {
+    if (this._destroyed) return;
+    const r = this._rtc.get(remotePeerId);
+    if (!r?.pc || r.makingInitial) return;
+    if (!r.dc || r.dc.readyState !== 'open') {
+      r.needsRenego = true;
+      return;
+    }
+    if (r.makingOffer || r.isSettingRemoteAnswerPending || r.pc.signalingState !== 'stable') {
+      r.needsRenego = true;
+      return;
+    }
+    r.needsRenego = false;
+    r.makingOffer = true;
+    try {
+      const offer = await r.pc.createOffer();
+      if (r.pc.signalingState !== 'stable') {
+        r.needsRenego = true;
         return;
       }
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await this._iceReady(pc);
+      await r.pc.setLocalDescription(offer);
+      if (r.dc?.readyState === 'open') {
         r.dc.send(JSON.stringify({
-          type: 'renego-offer', peerId: this.peerId, sdp: pc.localDescription.sdp,
+          type: 'renego-offer', peerId: this.peerId, sdp: r.pc.localDescription.sdp,
         }));
-      } catch (err) {
-        console.error(`[WC] renegotiation with ${remotePeerId} failed:`, err);
-      };
-    };
+      } else {
+        r.needsRenego = true;
+      }
+    } catch (err) {
+      console.error(`[WC] renegotiation with ${remotePeerId} failed:`, err);
+    } finally {
+      r.makingOffer = false;
+      if (r.needsRenego && r.pc.signalingState === 'stable' && r.dc?.readyState === 'open') {
+        this._renegotiate(remotePeerId);
+      }
+    }
   }
 
   _wireDC(remotePeerId, dc) {
@@ -1131,10 +1356,24 @@ export class WaymarkConnect {
       console.log(`[WC] DataChannel OPEN with ${remotePeerId} (label: ${dc.label})`);
       dc.send(JSON.stringify({ type: 'announce', peerId: this.peerId, name: this.displayName }));
       this._peers.set(remotePeerId, {
+        ...this._peers.get(remotePeerId),
         name: this._peers.get(remotePeerId)?.name || 'Peer',
         channel: 'rtc',
       });
       this._emitPeers();
+      const r = this._rtc.get(remotePeerId);
+      if (this._localStream && r?.pc) {
+        const existingTracks = new Set(r.pc.getSenders().map(s => s.track).filter(Boolean));
+        for (const t of this._localStream.getTracks()) {
+          if (!existingTracks.has(t)) {
+            r.pc.addTrack(t, this._localStream);
+            r.needsRenego = true;
+          }
+        }
+      }
+      if (r?.needsRenego) {
+        this._renegotiate(remotePeerId);
+      }
       // Let newly connected peer know we're in a call so they can auto-join
       if (this._inCall) {
         dc.send(JSON.stringify({ type: 'call-active', peerId: this.peerId, name: this.displayName }));
@@ -1228,23 +1467,68 @@ export class WaymarkConnect {
   async _onRenegoOffer(remotePeerId, m) {
     const r = this._rtc.get(remotePeerId);
     if (!r?.pc || this._destroyed) return;
+    const polite = this.peerId > remotePeerId;
+    const readyForOffer = !r.makingOffer && (r.pc.signalingState === 'stable' || r.isSettingRemoteAnswerPending);
+    const offerCollision = !readyForOffer;
+
+    r.ignoreOffer = !polite && offerCollision;
+    if (r.ignoreOffer) {
+      console.log(`[WC] impolite peer ignoring colliding renego-offer from ${remotePeerId}`);
+      return;
+    }
+
     try {
-      await r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
+      if (offerCollision) {
+        await Promise.all([
+          r.pc.setLocalDescription({ type: 'rollback' }),
+          r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp }),
+        ]);
+      } else {
+        await r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
+      }
+      if (this._localStream) {
+        const existingTracks = new Set(r.pc.getSenders().map(s => s.track).filter(Boolean));
+        for (const t of this._localStream.getTracks()) {
+          if (!existingTracks.has(t)) {
+            r.pc.addTrack(t, this._localStream);
+            r.needsRenego = true;
+          }
+        }
+      }
       const answer = await r.pc.createAnswer();
       await r.pc.setLocalDescription(answer);
-      await this._iceReady(r.pc);
       if (r.dc?.readyState === 'open') {
         r.dc.send(JSON.stringify({
           type: 'renego-answer', peerId: this.peerId, sdp: r.pc.localDescription.sdp,
         }));
+      } else if (this._bc) {
+        this._bc.postMessage({
+          type: 'renego-answer', peerId: this.peerId, to: remotePeerId, sdp: r.pc.localDescription.sdp,
+        });
       }
-    } catch {}
+      if (r.needsRenego && r.pc.signalingState === 'stable') {
+        this._renegotiate(remotePeerId);
+      }
+    } catch (err) {
+      console.error(`[WC] _onRenegoOffer from ${remotePeerId} failed:`, err);
+    }
   }
 
   async _onRenegoAnswer(remotePeerId, m) {
     const r = this._rtc.get(remotePeerId);
     if (!r?.pc || this._destroyed) return;
-    try { await r.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch {}
+    if (r.pc.signalingState !== 'have-local-offer') return;
+    r.isSettingRemoteAnswerPending = true;
+    try {
+      await r.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
+    } catch (err) {
+      console.error(`[WC] _onRenegoAnswer from ${remotePeerId} failed:`, err);
+    } finally {
+      r.isSettingRemoteAnswerPending = false;
+      if (r.needsRenego && r.pc.signalingState === 'stable') {
+        this._renegotiate(remotePeerId);
+      }
+    }
   }
 
   /* ---------- Helpers ---------- */

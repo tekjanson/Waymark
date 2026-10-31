@@ -309,3 +309,134 @@ test('an active Wayside call survives a home re-render (pins changed / navigatin
   expect(state.inCall).toBe(true);
   expect(state.tracksLive).toBe(true);
 });
+
+test('SocialChatWidget never renders literal "null" text in header or root and exchanges bidirectional video + audio between two peers', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .crew-row', { timeout: 5_000 });
+
+  // 1. Verify no literal "null" text node appears anywhere in the Wayside widget header or subtitle
+  const textCheck = await page.evaluate(() => {
+    const header = document.querySelector('#home-wayside .social-chat-header');
+    const subtitle = document.querySelector('#home-wayside #wayside-sheet-line');
+    const directNullNodes = [];
+    for (const el of [header, subtitle, document.querySelector('#home-wayside .social-chat-panel')]) {
+      if (!el) continue;
+      for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === 'null') {
+          directNullNodes.push(el.className);
+        }
+      }
+    }
+    return {
+      headerText: header?.textContent || '',
+      subtitleText: subtitle?.textContent || '',
+      directNullNodes,
+    };
+  });
+  expect(textCheck.directNullNodes).toEqual([]);
+  expect(textCheck.headerText).not.toContain('null');
+  expect(textCheck.subtitleText).not.toContain('Linked: null');
+
+  // 2. Mount two SocialChatWidget peers on a shared room and run a full bidirectional video + audio call,
+  //    including simultaneous renegotiation (glare) over DataChannel.
+  const callResult = await page.evaluate(async () => {
+    const { SocialChatWidget } = await import('/js/social-widget.js');
+
+    // Shared in-memory sheet signal store for 2 peers
+    const cells = Array.from({ length: 45 }, () => Array(21).fill(''));
+    const makeSignal = () => ({
+      readAll: async () => cells.map(r => [...r]),
+      writeCell: async (row, col, val) => {
+        if (!cells[row]) cells[row] = Array(21).fill('');
+        cells[row][col] = val;
+      },
+    });
+
+    const hostA = document.createElement('div');
+    const hostB = document.createElement('div');
+    document.body.append(hostA, hostB);
+
+    const widgetA = new SocialChatWidget({
+      mode: 'embedded',
+      sheetId: 'call-room-e2e',
+      displayName: 'Alice',
+      signal: makeSignal(),
+      mountTo: hostA,
+    });
+    const widgetB = new SocialChatWidget({
+      mode: 'floating',
+      sheetId: 'call-room-e2e',
+      displayName: 'Bob',
+      signal: makeSignal(),
+      mountTo: hostB,
+    });
+
+    try {
+      // Wait for DataChannel between Alice and Bob to open
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const dcA = widgetA.session.connect?.connectedPeers()?.length || 0;
+        const dcB = widgetB.session.connect?.connectedPeers()?.length || 0;
+        if (dcA > 0 && dcB > 0) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      // Alice starts a video call and Bob accepts with video simultaneously (triggers glare test)
+      await Promise.all([
+        widgetA.toggleCall({ video: true }),
+        widgetB.toggleCall({ video: true }),
+      ]);
+
+      // Wait for both peers to receive each other's remote video AND audio streams
+      const mediaDeadline = Date.now() + 8000;
+      while (Date.now() < mediaDeadline) {
+        const aRemVideo = widgetA.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
+        const bRemVideo = widgetB.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
+        const aRemAudio = widgetA.remoteAudio?.srcObject?.getAudioTracks()?.length || 0;
+        const bRemAudio = widgetB.remoteAudio?.srcObject?.getAudioTracks()?.length || 0;
+        if (aRemVideo > 0 && bRemVideo > 0 && aRemAudio > 0 && bRemAudio > 0) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      const pcA = Array.from(widgetA.session.connect._rtc.values())[0]?.pc;
+      const pcB = Array.from(widgetB.session.connect._rtc.values())[0]?.pc;
+
+      return {
+        statusA: widgetA.statusLabel?.textContent,
+        statusB: widgetB.statusLabel?.textContent,
+        signalingA: pcA?.signalingState,
+        signalingB: pcB?.signalingState,
+        aLocalVideo: widgetA.localVideo?.srcObject?.getVideoTracks()?.length || 0,
+        bLocalVideo: widgetB.localVideo?.srcObject?.getVideoTracks()?.length || 0,
+        aRemoteVideo: widgetA.remoteVideo?.srcObject?.getVideoTracks()?.length || 0,
+        bRemoteVideo: widgetB.remoteVideo?.srcObject?.getVideoTracks()?.length || 0,
+        aRemoteAudio: widgetA.remoteAudio?.srcObject?.getAudioTracks()?.length || 0,
+        bRemoteAudio: widgetB.remoteAudio?.srcObject?.getAudioTracks()?.length || 0,
+        aMediaVisible: !widgetA.mediaContainer.classList.contains('hidden'),
+        bMediaVisible: !widgetB.mediaContainer.classList.contains('hidden'),
+        aAudioCtxState: widgetA.session.connect?._audioCtx?.state,
+        bAudioCtxState: widgetB.session.connect?._audioCtx?.state,
+      };
+    } finally {
+      widgetA.destroy();
+      widgetB.destroy();
+      hostA.remove();
+      hostB.remove();
+    }
+  });
+
+  expect(callResult.statusA).toBe('Connected');
+  expect(callResult.statusB).toBe('Connected');
+  expect(callResult.signalingA).toBe('stable');
+  expect(callResult.signalingB).toBe('stable');
+  expect(callResult.aLocalVideo).toBe(1);
+  expect(callResult.bLocalVideo).toBe(1);
+  expect(callResult.aRemoteVideo).toBe(1);
+  expect(callResult.bRemoteVideo).toBe(1);
+  expect(callResult.aRemoteAudio).toBe(1);
+  expect(callResult.bRemoteAudio).toBe(1);
+  expect(callResult.aMediaVisible).toBe(true);
+  expect(callResult.bMediaVisible).toBe(true);
+});
