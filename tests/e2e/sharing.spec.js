@@ -18,9 +18,11 @@ test('pre-seeded pinned folders appear on home immediately', async ({ page }) =>
       { id: 'f3', name: 'Family Chores', owner: 'spouse@gmail.com', shared: true },
     ],
   });
+  await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  const cards = page.locator('.pinned-card');
-  expect(await cards.count()).toBe(2);
-  await expect(page.locator('.pinned-card-name', { hasText: 'Groceries' })).toBeVisible();
-  await expect(page.locator('.pinned-card-name', { hasText: 'Family Chores' })).toBeVisible();
+  // Pinned folders render in the Pinned waypoints wayboard widget
+  const rows = page.locator('.wayboard-widget-folders .wayboard-data-name');
+  await expect(rows).toHaveCount(2, { timeout: 5_000 });
+  await expect(rows.filter({ hasText: 'Groceries' })).toBeVisible();
+  await expect(rows.filter({ hasText: 'Family Chores' })).toBeVisible();
 });

@@ -644,7 +644,7 @@ test('knowledge directoryView shows folder refresh button in header', async ({ p
 
 test('article with Comments Sheet column shows lazy-loaded comments on expand', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-061');
+  await navigateToSheet(page, 'sheet-078');
   await page.waitForSelector('.knowledge-card', { timeout: 5000 });
 
   // Expand the first article (which has a comments sheet)
@@ -664,7 +664,7 @@ test('article with Comments Sheet column shows lazy-loaded comments on expand', 
 
 test('external comments show author names and dates', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-061');
+  await navigateToSheet(page, 'sheet-078');
   await page.waitForSelector('.knowledge-card', { timeout: 5000 });
 
   await page.click('.knowledge-card .knowledge-expand-btn');
@@ -702,7 +702,7 @@ test('article without Comments Sheet column uses inline comments', async ({ page
 
 test('expanding article with external comments shows add comment form', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-061');
+  await navigateToSheet(page, 'sheet-078');
   await page.waitForSelector('.knowledge-card', { timeout: 5000 });
 
   await page.click('.knowledge-card .knowledge-expand-btn');
@@ -722,7 +722,7 @@ test('expanding article with external comments shows add comment form', async ({
 
 test('knowledge template detects Comments Sheet column', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-061');
+  await navigateToSheet(page, 'sheet-078');
   await page.waitForSelector('#template-badge', { timeout: 5000 });
   await expect(page.locator('#template-badge')).toContainText('Knowledge Base');
 
