@@ -4,7 +4,7 @@ const { setupApp, navigateToSheet, getCreatedRecords } = require('../helpers/tes
 
 test('password manager detected from fixture', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
+  await navigateToSheet(page, 'sheet-069');
   await page.waitForSelector('.passwords-card', { timeout: 5_000 });
 
   await expect(page.locator('#template-badge')).toContainText('Password Manager');
@@ -16,7 +16,7 @@ test('password manager detected from fixture', async ({ page }) => {
 
 test('password cards show site names and usernames', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
+  await navigateToSheet(page, 'sheet-069');
   await page.waitForSelector('.passwords-card', { timeout: 5_000 });
 
   // Site names rendered
@@ -31,7 +31,7 @@ test('password cards show site names and usernames', async ({ page }) => {
 
 test('password cards grouped by category', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
+  await navigateToSheet(page, 'sheet-069');
   await page.waitForSelector('.passwords-category-header', { timeout: 5_000 });
 
   const headers = await page.locator('.passwords-category-name').allTextContents();
@@ -42,7 +42,7 @@ test('password cards grouped by category', async ({ page }) => {
 
 test('password search filters cards', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
+  await navigateToSheet(page, 'sheet-069');
   await page.waitForSelector('.passwords-card', { timeout: 5_000 });
 
   const searchInput = page.locator('.passwords-search');
@@ -55,7 +55,7 @@ test('password search filters cards', async ({ page }) => {
 
 test('password site name is editable inline', async ({ page }) => {
   await setupApp(page);
-  await navigateToSheet(page, 'sheet-057');
+  await navigateToSheet(page, 'sheet-069');
   await page.waitForSelector('.passwords-card-site.editable-cell', { timeout: 5_000 });
 
   const siteCell = page.locator('.passwords-card-site.editable-cell').first();

@@ -1,0 +1,202 @@
+#!/usr/bin/env node
+/* ============================================================
+   interaction-audit.js — Drift guard for equivalent UI behaviors
+
+   WayMark implements the same user-facing behavior (e.g. "voice
+   input") in more than one template, each with its own code path and
+   DOM. Static style/lint gates do not catch when those equivalent
+   surfaces drift apart — e.g. one surface degrades gracefully while
+   another dead-ends on a toast.
+
+   This audit encodes behavioral-parity rules so that class of bug is
+   caught before merge. It is the in-repo reference for the external
+   "drift-be-gone" (SpamApply1) harness.
+
+   Rule: VOICE_GRACEFUL_DEGRADATION
+   -------------------------------------------------------------------
+   Any template UI module that gates a feature on a voice / media
+   capture capability (isAudioRecordingSupported, SpeechRecognition,
+   getUserMedia, startAIRecording) MUST also provide a non-capture
+   fallback input (a typed text field or a known fallback function) so
+   the feature never dead-ends when the capability is unavailable
+   (insecure http context, denied permission, unsupported browser).
+
+   Usage:
+     node scripts/interaction-audit.js        # report + exit 1 on drift
+     npm run audit:interactions
+     make audit
+   ============================================================ */
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const TEMPLATES_DIR = path.join(ROOT, 'public', 'js', 'templates');
+
+/* ---------- File discovery ---------- */
+
+/** Recursively collect .js files under a directory. */
+function collectJsFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectJsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith('.js')) out.push(full);
+  }
+  return out;
+}
+
+/* ---------- Rule: voice graceful degradation ---------- */
+
+// Markers that mean "this module gates behavior on a capture capability".
+const CAPABILITY_MARKERS = [
+  /isAudioRecordingSupported\s*\(/,
+  /\bSpeechRecognition\b/,
+  /\bwebkitSpeechRecognition\b/,
+  /getUserMedia\s*\(/,
+  /startAIRecording\s*\(/,
+  /startAudioRecording\s*\(/,
+];
+
+// Markers that mean "this module also offers voice-INTAKE UI" (as opposed to
+// a real-time call surface, which is a different feature audited elsewhere).
+const VOICE_UI_MARKERS = [
+  /voice/i,
+  /\bmic\b/i,
+  /\uD83C\uDF99/,        // 🎙 studio microphone
+  /Record/i,
+];
+
+// Markers that prove a non-capture fallback input exists.
+const FALLBACK_MARKERS = [
+  /type:\s*['"]text['"]/,        // an el('input', { type: 'text' }) fallback
+  /showVoiceTranscriptInput/,    // kanban's typed fallback
+  /analyzeVoiceText/,            // calorie's typed fallback analysis
+  /voice-text/,                  // calorie-voice-text fallback field
+  /voice-input/,                 // kanban-voice-input fallback field
+];
+
+// Helper/library modules that DEFINE capabilities for templates but render no
+// voice UI of their own — excluded from the UI parity rule. Paths are relative
+// to the templates dir so folder-layout templates ({key}/index.js) are NOT
+// excluded (their logic lives in index.js and must still be audited).
+const LIBRARY_RELPATHS = new Set(['shared.js', 'index.js']);
+
+/** True for the top-level templates barrel + shared helpers, not {key}/index.js. */
+function isLibraryFile(file) {
+  const rel = path.relative(TEMPLATES_DIR, file);
+  return LIBRARY_RELPATHS.has(rel);
+}
+
+// The dead-end anti-pattern: a capability guard whose only failure action is a
+// toast followed by a return, with no fallback UI built in between.
+const DEAD_END_GUARD =
+  /if\s*\(\s*!\s*isAudioRecordingSupported\s*\(\)\s*\)\s*\{[^}]*showToast\([^}]*return;[^}]*\}/;
+
+/**
+ * Audit a single file against the voice-degradation rule.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditVoiceDegradation(file) {
+  if (isLibraryFile(file)) return null;
+
+  const src = fs.readFileSync(file, 'utf8');
+  const usesCapability = CAPABILITY_MARKERS.some(re => re.test(src));
+  if (!usesCapability) return null;
+
+  const isVoiceUi = VOICE_UI_MARKERS.some(re => re.test(src));
+  if (!isVoiceUi) return null; // e.g. a non-voice media surface
+
+  const violations = [];
+  const hasFallback = FALLBACK_MARKERS.some(re => re.test(src));
+  if (!hasFallback) {
+    violations.push(
+      'voice/capture affordance has no typed fallback input — it will dead-end '
+      + 'when the capability is unavailable (insecure context / denied mic / '
+      + 'unsupported browser). Add a text fallback like kanban\'s '
+      + 'showVoiceTranscriptInput or calorie\'s analyzeVoiceText.',
+    );
+  }
+  if (DEAD_END_GUARD.test(src)) {
+    violations.push(
+      'capability guard dead-ends on showToast()+return with no fallback UI. '
+      + 'Open the affordance anyway and offer a typed fallback.',
+    );
+  }
+  return violations.length ? { file: path.relative(ROOT, file), violations } : null;
+}
+
+/* ---------- Rule: clipboard graceful degradation ---------- */
+
+// Direct async-Clipboard calls throw a synchronous TypeError when
+// navigator.clipboard is undefined (insecure http context) — a bare
+// `.writeText(...).catch()` does NOT catch it. Templates must route through the
+// shared copyToClipboard() helper, which falls back to execCommand('copy').
+const DIRECT_CLIPBOARD = /navigator\s*\.\s*clipboard\s*\.\s*writeText\s*\(/;
+
+/**
+ * Audit a single file against the clipboard-degradation rule.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditClipboardDegradation(file) {
+  if (isLibraryFile(file)) return null;
+  const src = fs.readFileSync(file, 'utf8');
+  if (!DIRECT_CLIPBOARD.test(src)) return null;
+  return {
+    file: path.relative(ROOT, file),
+    violations: [
+      'calls navigator.clipboard.writeText directly — this throws on insecure '
+      + 'contexts and silently fails. Use the shared copyToClipboard() helper '
+      + '(execCommand fallback) instead.',
+    ],
+  };
+}
+
+/* ---------- Runner ---------- */
+
+function main() {
+  if (!fs.existsSync(TEMPLATES_DIR)) {
+    console.error(`interaction-audit: templates dir not found: ${TEMPLATES_DIR}`);
+    process.exit(2);
+  }
+
+  const files = collectJsFiles(TEMPLATES_DIR);
+  const findings = [];
+  let voiceSurfaces = 0;
+  let clipboardSurfaces = 0;
+
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    if (CAPABILITY_MARKERS.some(re => re.test(src)) && VOICE_UI_MARKERS.some(re => re.test(src))
+        && !isLibraryFile(file)) {
+      voiceSurfaces++;
+    }
+    if (/navigator\s*\.\s*clipboard/.test(src) && !isLibraryFile(file)) clipboardSurfaces++;
+    const voice = auditVoiceDegradation(file);
+    if (voice) findings.push(voice);
+    const clip = auditClipboardDegradation(file);
+    if (clip) findings.push(clip);
+  }
+
+  console.log('interaction-audit — behavioral parity drift guard');
+  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION`);
+  console.log(`  voice-intake surfaces scanned: ${voiceSurfaces}`);
+  console.log(`  clipboard surfaces scanned: ${clipboardSurfaces}`);
+
+  if (!findings.length) {
+    console.log('  ✓ no drift — every voice & clipboard surface degrades gracefully');
+    process.exit(0);
+  }
+
+  console.log(`\n  ✗ ${findings.length} surface(s) with drift:\n`);
+  for (const { file, violations } of findings) {
+    console.log(`  • ${file}`);
+    for (const v of violations) console.log(`      - ${v}`);
+  }
+  console.log('');
+  process.exit(1);
+}
+
+main();

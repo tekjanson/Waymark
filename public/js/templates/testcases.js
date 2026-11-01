@@ -2,7 +2,7 @@
    templates/testcases.js — Test Cases: cycle, filter, bulk ops
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn, copyToClipboard, showToast } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -91,7 +91,7 @@ function bulkSet(container, targetStatus, onlyVisible, cols) {
 /** Copy all Fail + Blocked test names to the clipboard.
  * @param {HTMLElement} container
  */
-function copyFailures(container) {
+async function copyFailures(container) {
   const rows = container.querySelectorAll('.tc-row[data-status="fail"], .tc-row[data-status="blocked"]');
   const lines = [];
   rows.forEach(r => {
@@ -100,7 +100,8 @@ function copyFailures(container) {
     if (label) lines.push(`[${status}] ${label}`);
   });
   if (!lines.length) return;
-  navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
+  const ok = await copyToClipboard(lines.join('\n'));
+  showToast(ok ? `Copied ${lines.length} failing test${lines.length === 1 ? '' : 's'}` : 'Could not copy failures', ok ? 'success' : 'error');
 }
 
 /* ---------- Template definition ---------- */

@@ -63,7 +63,7 @@ CONTAINER_NAME="$(CONTAINER)"
 endef
 
 .PHONY: help up down start restart fleet-tail \
-        dev test test-watch test-full \
+        dev test test-watch test-full audit \
         agent-start agent-stop agent-restart agent-build agent-rebuild agent-logs agent-status agent-shell \
         agent-test agent-test-boot agent-test-suite \
         gemini-start gemini-logs dream-test dream-run dream-reset \
@@ -298,6 +298,9 @@ test-full: ## Run full E2E suite including slow tests
 		kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); sleep 1; \
 	fi
 	npx playwright test --config tests/playwright.config.js --workers 4
+
+audit: ## Run behavioral-parity drift guards (voice graceful-degradation, etc.)
+	node scripts/interaction-audit.js
 
 # ── Dev-worker: single agent ──────────────────────────────────────────
 

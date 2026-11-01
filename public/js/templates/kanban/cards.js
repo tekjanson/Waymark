@@ -6,7 +6,7 @@
    sub-tasks, and notes.
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, comboCell, textareaCell, getUserName, showToast } from '../shared.js';
+import { el, cell, editableCell, emitEdit, comboCell, textareaCell, getUserName, showToast, copyToClipboard } from '../shared.js';
 import { projectColor, dueBadgeClass, formatDue, isStatusNote, formatNoteDate, formatRelativeDate, nowTimestamp, STATUS_PREFIX, parseBranchName } from './helpers.js';
 
 /* ---------- Card builder (lightweight — no detail panel, no per-card listeners) ---------- */
@@ -395,15 +395,15 @@ export function buildCardDetail(group, ctx) {
             title: 'Click to copy branch name',
             on: { click: async (e) => {
               e.stopPropagation();
-              try {
-                await navigator.clipboard.writeText(branch);
+              const ok = await copyToClipboard(branch);
+              if (ok) {
                 badge.textContent = '\u2713 Copied';
                 badge.classList.add('kanban-branch-copy-done');
                 setTimeout(() => {
                   badge.textContent = branch;
                   badge.classList.remove('kanban-branch-copy-done');
                 }, 1500);
-              } catch (_) {
+              } else {
                 showToast('Copy failed — please select manually', 'error');
               }
             } },
