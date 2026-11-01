@@ -1384,12 +1384,16 @@ function renderWithTemplate(values) {
         rowLabel: String(insertedLabel || '').trim(),
       }).catch(() => {});
       // Use the data we already fetched — avoid an extra round-trip to Sheets.
-      // Skip re-render if the user has an inline edit active; the next
-      // auto-refresh cycle will pick up the updated state.
+      // Skip re-render only when a real inline cell edit is focused (so we don't
+      // clobber in-progress typing); an explicit insert via a form button must
+      // always refresh the view.
       currentValues = values;
       lastFetchTime = new Date();
       updateTimestamp();
-      if (!(itemsEl && document.activeElement && itemsEl.contains(document.activeElement))) {
+      const activeEl = document.activeElement;
+      const inlineEditActive = activeEl && typeof activeEl.matches === 'function'
+        && activeEl.matches('input.editable-cell-input, .editable-cell-input, [contenteditable="true"]');
+      if (!inlineEditActive) {
         renderWithTemplate(currentValues);
       }
     } catch (err) {

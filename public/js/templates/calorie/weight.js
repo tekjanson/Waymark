@@ -181,7 +181,10 @@ export function renderWeightCard(container, { sheetId, tabs, profile, onChange, 
     ]);
 
     const spark = _sparkline(entries.map((e) => e.weight));
-    if (spark) card.append(el('div', { className: 'calorie-weight-chart' }, [spark]));
+    if (spark) {
+      spark.classList.add('calorie-weight-spark');
+      card.append(el('div', { className: 'calorie-weight-chart' }, [spark]));
+    }
 
     // History log — every weigh-in, newest first (this is the durable record).
     if (entries.length) {

@@ -625,9 +625,10 @@ test('agents template delete button sends edit', async ({ page }) => {
   // Wait for agents cards to fully render (not just checklist-view)
   await page.waitForSelector('.agents-card', { timeout: 5000 });
 
-  // Delete button is hidden until hover (opacity:0) — force click bypasses visibility
+  // Delete button is revealed on hover (opacity:0 → 1). Dispatch the click
+  // directly so the hover-reveal transition can't make a coordinate click flaky.
   await page.locator('.agents-card').first().hover();
-  await page.locator('.agents-delete-btn').first().click({ force: true });
+  await page.locator('.agents-delete-btn').first().dispatchEvent('click');
 
   // Wait for delete confirmation modal
   await page.waitForFunction(
@@ -636,7 +637,7 @@ test('agents template delete button sends edit', async ({ page }) => {
   );
 
   // Click confirm delete
-  await page.locator('.agents-confirm-delete-btn').click({ force: true });
+  await page.locator('.agents-confirm-delete-btn').dispatchEvent('click');
 
   // Check for either success (row-delete record) or a toast indicating what happened
   const outcome = await page.waitForFunction(() => {
