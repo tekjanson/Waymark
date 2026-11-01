@@ -7,7 +7,7 @@
 
 import { el, showToast } from '../ui.js';
 import * as agentVault from '../agent/vault.js';
-import { captureStillFromCamera } from '../camera-capture.js';
+import { captureStillFromCamera, hasUserMedia, getUserMediaStream } from '../camera-capture.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
 

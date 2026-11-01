@@ -74,6 +74,37 @@
       ]
     },
     {
+      "id": "resolve-imports",
+      "type": "resolve-imports",
+      "enabled": true,
+      "severity": "error",
+      "description": "Every called symbol must resolve to an import or a local declaration.",
+      "what": "Flags a symbol called in a module that is neither imported nor defined there, yet is exported by another module in the repo.",
+      "why": "Catches 'used but never imported' ReferenceErrors (e.g. calling hasUserMedia() without importing it) that the dependency graph cannot see.",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "tests/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "public/js/vendor/**",
+        "build/**",
+        "playwright-report/**",
+        "test-results/**",
+        "generated/**",
+        "android/**",
+        "p2p-server/public/**",
+        "**/*.min.js"
+      ],
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
       "id": "canonical-abstractions",
       "type": "canonical-abstractions",
       "enabled": true,
