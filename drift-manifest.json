@@ -105,6 +105,32 @@
       ]
     },
     {
+      "id": "no-duplicate-keys",
+      "type": "no-duplicate-keys",
+      "enabled": true,
+      "severity": "error",
+      "description": "Object literals must not declare the same key twice.",
+      "what": "Detects a duplicate data-property key within a single JS object literal, where the later entry silently overwrites the earlier one.",
+      "why": "Catches map/registry collisions like a fixture-id mapping listing the same sheet-NNN twice, which silently drops a template behind another.",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "public/js/vendor/**",
+        "build/**",
+        "playwright-report/**",
+        "test-results/**",
+        "android/**",
+        "**/*.min.js"
+      ],
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
       "id": "canonical-abstractions",
       "type": "canonical-abstractions",
       "enabled": true,
