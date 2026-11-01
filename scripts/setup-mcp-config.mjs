@@ -29,12 +29,11 @@ export function buildMcpConfig(opts = {}) {
   const rootDir = opts.rootDir || ROOT;
   const saKeyPath = opts.saKeyPath || process.env.GOOGLE_APPLICATION_CREDENTIALS || (fs.existsSync(SA_KEY_DEFAULT) ? SA_KEY_DEFAULT : '');
   const oauthTokenPath = opts.oauthTokenPath || process.env.WAYMARK_OAUTH_TOKEN_PATH || (fs.existsSync(OAUTH_TOKEN_DEFAULT) ? OAUTH_TOKEN_DEFAULT : '');
-  const parentFolderId = opts.parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || '1Jg9iDcTkyIhJFwFTTh1_3zW3v-0RyYVM';
-  const workboardSheetId = opts.workboardSheetId || process.env.WAYMARK_WORKBOARD_SHEET_ID || '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+  const parentFolderId = opts.parentFolderId ?? process.env.WAYMARK_PARENT_FOLDER_ID ?? '';
+  const workboardSheetId = opts.workboardSheetId ?? process.env.WAYMARK_WORKBOARD_SHEET_ID ?? '';
 
-  const waymarkEnv = {
-    WAYMARK_PARENT_FOLDER_ID: parentFolderId,
-  };
+  const waymarkEnv = {};
+  if (parentFolderId) waymarkEnv.WAYMARK_PARENT_FOLDER_ID = parentFolderId;
   if (saKeyPath) waymarkEnv.GOOGLE_APPLICATION_CREDENTIALS = saKeyPath;
   if (oauthTokenPath) waymarkEnv.WAYMARK_OAUTH_TOKEN_PATH = oauthTokenPath;
   if (workboardSheetId) waymarkEnv.WAYMARK_WORKBOARD_SHEET_ID = workboardSheetId;
@@ -70,7 +69,8 @@ export function writeConfigs(opts = {}) {
     let merged = config;
     if (fs.existsSync(GLOBAL_CONFIG_PATH)) {
       try {
-        const existing = JSON.parse(fs.readFileSync(GLOBAL_CONFIG_PATH, 'utf8'));
+        const raw = fs.readFileSync(GLOBAL_CONFIG_PATH, 'utf8').replace(/^\uFEFF/, '');
+        const existing = JSON.parse(raw);
         merged = {
           ...existing,
           mcpServers: {
@@ -92,7 +92,8 @@ export function writeConfigs(opts = {}) {
       let mergedRoot = config;
       if (fs.existsSync(WORKSPACE_ROOT_CONFIG)) {
         try {
-          const existing = JSON.parse(fs.readFileSync(WORKSPACE_ROOT_CONFIG, 'utf8'));
+          const raw = fs.readFileSync(WORKSPACE_ROOT_CONFIG, 'utf8').replace(/^\uFEFF/, '');
+          const existing = JSON.parse(raw);
           mergedRoot = {
             ...existing,
             mcpServers: {

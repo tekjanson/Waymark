@@ -311,7 +311,7 @@ export class SheetWebRtcPeer {
             if (!cell) { chosen = slotRow; break; }
             try {
                 const obj = JSON.parse(cell);
-                if (!obj.peerId || Date.now() - (obj.ts || 0) > ALIVE_TTL) {
+                if (!obj.peerId || obj.peerId === this.peerId || Date.now() - (obj.ts || 0) > ALIVE_TTL) {
                     chosen = slotRow; break;
                 }
             } catch { chosen = slotRow; break; }
@@ -356,10 +356,11 @@ export class SheetWebRtcPeer {
     async _writePresence() {
         this._diag.counters.heartbeatAttempts += 1;
         const p = JSON.stringify({
-            peerId: this.peerId,
-            name:   this.displayName,
-            ts:     Date.now(),
-            nonce:  this._sessionNonce,
+            peerId:  this.peerId,
+            name:    this.displayName,
+            ts:      Date.now(),
+            nonce:   this._sessionNonce,
+            isAgent: String(this.peerId || '').startsWith('ai-'),
         });
         try {
             await this._writeCell(`${this.tabName}!T${this.block}`, p);
@@ -943,8 +944,9 @@ export class SheetWebRtcPeer {
         this._diag.counters.broadcastDelivered += sent;
         this._diagEvent('broadcast-send', { sent });
         if (sent > 0) return sent;
-        // Fallback: persist into notification slot (block+3)
-        if (this.block > 0) {
+        // Fallback: persist only explicit notification payloads into notification slot (block+3)
+        const isNotif = typeof titleOrPayload === 'string' || titleOrPayload?.type === 'notification';
+        if (this.block > 0 && isNotif) {
             this._writeCell(`${this.tabName}!T${this.block + 3}`, json).catch(() => {});
         }
         return 0;
@@ -964,6 +966,16 @@ export class SheetWebRtcPeer {
             return true;
         }
         return false;
+    }
+
+    async leave() {
+        const oldBlock = this.block;
+        this.stop();
+        if (oldBlock > 0) {
+            for (let offset = 0; offset < 4; offset++) {
+                await this._writeCell(`${this.tabName}!T${oldBlock + offset}`, '').catch(() => {});
+            }
+        }
     }
 
     stop() {

@@ -1238,8 +1238,12 @@ async function pollShareLedgers() {
             const peerName = String(p.name || '').trim();
             const fresh = p.ts && (Date.now() - p.ts < 50_000);
             const isOtherPeer = peerName && peerName.toLowerCase() !== myName && (!me || peerName.toLowerCase() !== me);
+            const isAiPeer = Boolean(p.isAgent)
+              || String(p.peerId || '').startsWith('ai-')
+              || peerName.toLowerCase() === 'waymark ai';
             const nextRowOffer = String((sigValues[r + 1] && sigValues[r + 1][19]) || '').trim();
-            if (fresh && isOtherPeer && (p.inCall || nextRowOffer)) {
+            const hasMediaOffer = Boolean(nextRowOffer) && /m=(audio|video)\b/.test(nextRowOffer);
+            if (fresh && isOtherPeer && !isAiPeer && (p.inCall || hasMediaOffer)) {
               const callerFrom = cp.contactEmail || peerName;
               const entry = addNotification({
                 id: `call:${l.sheetId}:${p.peerId || peerName}:${ p.nonce || Math.floor((p.ts || 0) / 60000) }`,

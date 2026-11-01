@@ -173,8 +173,9 @@ async function getUserOAuthToken() {
     return null; // token file missing — caller should fall back
   }
 
-  // Refresh if expired (with 60s buffer)
-  if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
+  // Refresh if expired or missing expiry_date (with 60s buffer)
+  const expiryMs = Number(tokenData.expiry_date);
+  if (!tokenData.access_token || !Number.isFinite(expiryMs) || Date.now() >= (expiryMs - 60_000)) {
     if (!tokenData.refresh_token) return null;
     const res = await fetch(TOKEN_URL, {
       method: "POST",
@@ -189,10 +190,16 @@ async function getUserOAuthToken() {
     const refreshed = await res.json();
     if (refreshed.error || !refreshed.access_token) return null;
     tokenData.access_token = refreshed.access_token;
-    tokenData.expiry_date = Date.now() + (refreshed.expires_in * 1000);
+    if (refreshed.refresh_token) tokenData.refresh_token = refreshed.refresh_token;
+    tokenData.expiry_date = Date.now() + ((Number(refreshed.expires_in) || 3600) * 1000);
     try {
-      const { writeFileSync: write } = await import("node:fs");
-      write(tokenPath, JSON.stringify(tokenData, null, 2));
+      const { writeFileSync: write, renameSync: rename, chmodSync: chmod } = await import("node:fs");
+      const tmpPath = `${tokenPath}.${process.pid}.tmp`;
+      write(tmpPath, JSON.stringify(tokenData, null, 2) + "\n", { mode: 0o600 });
+      if (process.platform !== "win32") {
+        try { chmod(tmpPath, 0o600); } catch {}
+      }
+      rename(tmpPath, tokenPath);
     } catch { /* read-only mount — ignore, token still usable this session */ }
   }
 
@@ -201,9 +208,20 @@ async function getUserOAuthToken() {
 
 /* ---------- REST helpers ---------- */
 
-async function apiRequest(baseUrl, path, { method = "GET", body } = {}) {
-  const token = await getToken();
-  return apiRequestWithToken(token, baseUrl, path, { method, body });
+async function apiRequest(baseUrl, pathSuffix, { method = "GET", body } = {}) {
+  const userToken = await getUserOAuthToken();
+  const primaryToken = userToken || await getToken();
+  try {
+    return await apiRequestWithToken(primaryToken, baseUrl, pathSuffix, { method, body });
+  } catch (err) {
+    if (userToken && String(err.message || "").includes("API 403")) {
+      const saToken = await getSaToken();
+      if (saToken) {
+        return await apiRequestWithToken(saToken, baseUrl, pathSuffix, { method, body });
+      }
+    }
+    throw err;
+  }
 }
 
 async function apiRequestWithToken(token, baseUrl, path, { method = "GET", body } = {}) {
@@ -300,8 +318,19 @@ function mapColumnRoles(headers, templateKey) {
 
 /* ---------- Sheet data helpers ---------- */
 
+function formatSheetRange(sheetTitle, a1 = "A1:ZZ") {
+  if (!sheetTitle) return a1;
+  const raw = String(sheetTitle);
+  const quoted = /^[A-Za-z0-9_]+$/.test(raw) ? raw : `'${raw.replace(/'/g, "''")}'`;
+  return a1 ? `${quoted}!${a1}` : quoted;
+}
+
+function escapeDriveQueryValue(val) {
+  return String(val || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 async function getSheetValues(spreadsheetId, sheetTitle) {
-  const range = sheetTitle ? `${sheetTitle}!A1:ZZ` : "A1:ZZ";
+  const range = sheetTitle ? formatSheetRange(sheetTitle, "A1:ZZ") : "A1:ZZ";
   const data = await sheets(`/${spreadsheetId}/values/${encodeURIComponent(range)}`);
   return data.values || [];
 }
@@ -684,7 +713,7 @@ async function handleWaymarkAddEntry({ spreadsheetId, sheetTitle, entry }) {
     }
   }
 
-  const range = `${title}!A1`;
+  const range = formatSheetRange(title, "A1");
   await sheets(`/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
     method: "POST",
     body: { values: [row] },
@@ -699,6 +728,12 @@ async function handleWaymarkAddEntry({ spreadsheetId, sheetTitle, entry }) {
 }
 
 async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, updates }) {
+  const parsedRowIndex = Number(rowIndex);
+  if (!Number.isInteger(parsedRowIndex) || parsedRowIndex < 1) {
+    throw new Error(
+      `Invalid rowIndex (${rowIndex}). rowIndex must be a 1-based integer (>= 1) matching _rowIndex from waymark_get_sheet or waymark_search_entries (row 1 is the first data row; header row cannot be overwritten).`
+    );
+  }
   const title = sheetTitle || await getFirstSheetTitle(spreadsheetId);
   const values = await getSheetValues(spreadsheetId, title);
   if (values.length === 0) throw new Error("Sheet has no header row");
@@ -708,8 +743,8 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
   const columnRoles = mapColumnRoles(headers, detection.templateKey);
 
   // Rows in the sheet are 1-indexed, header is row 1, first data row is row 2
-  // rowIndex is 1-based data row, so sheet row = rowIndex + 1
-  const sheetRow = rowIndex + 1;
+  // rowIndex is 1-based data row, so sheet row = parsedRowIndex + 1
+  const sheetRow = parsedRowIndex + 1;
 
   const results = [];
   for (const [role, val] of Object.entries(updates)) {
@@ -718,7 +753,7 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
 
     // Convert col index to A1 column letter
     const colLetter = colIndexToLetter(colIdx);
-    const cellRange = `${title}!${colLetter}${sheetRow}`;
+    const cellRange = formatSheetRange(title, `${colLetter}${sheetRow}`);
 
     await sheets(`/${spreadsheetId}/values/${encodeURIComponent(cellRange)}?valueInputOption=USER_ENTERED`, {
       method: "PUT",
@@ -727,7 +762,7 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
     results.push({ role, colIdx, cellRange, value: val });
   }
 
-  return { success: true, updated: results, rowIndex };
+  return { success: true, updated: results, rowIndex: parsedRowIndex };
 }
 
 async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, shareWith = [], seedRows = [] }) {
@@ -1006,43 +1041,51 @@ async function handleWaymarkShareSheet({ spreadsheetId, shareWith = [], shareWit
   };
 }
 
-async function handleWaymarkListFiles({ query, type = "all", parentFolderId, pageSize = 25 } = {}) {
-  const effectiveFolderId = parentFolderId !== undefined
-    ? parentFolderId
-    : (process.env.WAYMARK_PARENT_FOLDER_ID || null);
+async function handleWaymarkListFiles({ query, type = "all", parentFolderId, pageSize, maxResults, includeSystemFiles = false } = {}) {
+  // Only restrict by folder when parentFolderId is explicitly provided so sheets in subfolders or root Drive are never hidden
+  const effectiveFolderId = (typeof parentFolderId === "string" && parentFolderId.trim())
+    ? parentFolderId.trim()
+    : null;
 
+  const normalizedType = type === "sheets" ? "spreadsheet" : (type === "docs" ? "document" : type);
   const clauses = ["trashed = false"];
 
-  if (type === "spreadsheet") {
+  if (normalizedType === "spreadsheet") {
     clauses.push("mimeType = 'application/vnd.google-apps.spreadsheet'");
-  } else if (type === "document") {
+  } else if (normalizedType === "document") {
     clauses.push("mimeType = 'application/vnd.google-apps.document'");
-  } else if (type === "folder") {
+  } else if (normalizedType === "folder") {
     clauses.push("mimeType = 'application/vnd.google-apps.folder'");
   }
 
   if (effectiveFolderId) {
-    clauses.push(`'${effectiveFolderId}' in parents`);
+    clauses.push(`'${escapeDriveQueryValue(effectiveFolderId)}' in parents`);
   }
 
   if (query) {
-    const safeQuery = query.replace(/'/g, "\\'");
-    clauses.push(`name contains '${safeQuery}'`);
+    clauses.push(`name contains '${escapeDriveQueryValue(query)}'`);
   }
 
   const q = encodeURIComponent(clauses.join(" and "));
   const userToken = await getUserOAuthToken();
   const token = userToken || await getToken();
   const fields = encodeURIComponent("files(id, name, mimeType, modifiedTime, createdTime, size, webViewLink, parents)");
-  const limit = Math.min(Math.max(pageSize || 25, 1), 100);
+  const requestedLimit = Number(pageSize ?? maxResults ?? 25) || 25;
+  const limit = Math.min(Math.max(requestedLimit, 1), 100);
+  const allowDotfiles = includeSystemFiles || (typeof query === "string" && query.trim().startsWith(".waymark"));
+  const fetchLimit = allowDotfiles ? limit : Math.min(limit + 15, 100);
 
   const res = await apiRequestWithToken(
     token,
     DRIVE_BASE,
-    `/files?q=${q}&pageSize=${limit}&fields=${fields}&orderBy=modifiedTime desc`
+    `/files?q=${q}&pageSize=${fetchLimit}&fields=${fields}&orderBy=modifiedTime desc`
   );
 
-  const files = (res.files || []).map(f => ({
+  const rawFiles = allowDotfiles
+    ? (res.files || [])
+    : (res.files || []).filter(f => !String(f.name || "").startsWith(".waymark-"));
+
+  const files = rawFiles.slice(0, limit).map(f => ({
     id: f.id,
     name: f.name,
     mimeType: f.mimeType,
@@ -1160,7 +1203,8 @@ async function handleWaymarkAppendDoc({ documentId, text }) {
   };
 }
 
-async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, column }) {
+async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, column, role }) {
+  const targetColumn = column || role;
   const title = sheetTitle || await getFirstSheetTitle(spreadsheetId);
   const values = await getSheetValues(spreadsheetId, title);
   if (values.length === 0) return { matches: [], totalRows: 0 };
@@ -1169,15 +1213,15 @@ async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, co
   const detection = detectTemplate(headers);
   const columnRoles = mapColumnRoles(headers, detection.templateKey);
   const indexToRole = {};
-  for (const [role, idx] of Object.entries(columnRoles)) {
-    if (!indexToRole[idx]) indexToRole[idx] = role;
+  for (const [rName, idx] of Object.entries(columnRoles)) {
+    if (!indexToRole[idx]) indexToRole[idx] = rName;
   }
 
   // If column role specified, find its index
   let searchColIdx = -1;
-  if (column) {
-    searchColIdx = columnRoles[column] ?? -1;
-    if (searchColIdx < 0) throw new Error(`Column role '${column}' not found. Available roles: ${Object.keys(columnRoles).join(", ")}`);
+  if (targetColumn) {
+    searchColIdx = columnRoles[targetColumn] ?? -1;
+    if (searchColIdx < 0) throw new Error(`Column role '${targetColumn}' not found. Available roles: ${Object.keys(columnRoles).join(", ")}`);
   }
 
   const lQuery = query.toLowerCase();

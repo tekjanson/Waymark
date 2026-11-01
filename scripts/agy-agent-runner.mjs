@@ -7,14 +7,12 @@
    disclosure skills and MCP tools (waymark, google-sheets).
    ============================================================ */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFile, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, realpathSync } from 'node:fs';
 
-const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
@@ -167,9 +165,9 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
    - Discovering files: call waymark_list_files({ query?, type? }) to find existing sheets or docs.
    - Creating new sheets: call waymark_create_sheet({ templateKey, title, seedRows? })
    - Reading sheets: call waymark_get_sheet({ spreadsheetId, sheetTitle? })
-   - Modifying rows: call waymark_update_entry({ spreadsheetId, rowIndex, updates })
+   - Modifying rows: call waymark_update_entry({ spreadsheetId, rowIndex, updates }) using 1-based rowIndex (_rowIndex >= 1)
    - Appending rows: call waymark_add_entry({ spreadsheetId, entry })
-   - Searching rows: call waymark_search_entries({ spreadsheetId, query })
+   - Searching rows: call waymark_search_entries({ spreadsheetId, query, column? })
    - Document operations: call waymark_create_doc, waymark_get_doc, waymark_append_doc
 2. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
 3. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
@@ -178,8 +176,85 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
   return parts.join('\n\n');
 }
 
+function killChildProcessTree(child) {
+  if (!child || !child.pid) return;
+  if (process.platform === 'win32') {
+    execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+    return;
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    try { child.kill('SIGTERM'); } catch {}
+  }
+  setTimeout(() => {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {
+      try { child.kill('SIGKILL'); } catch {}
+    }
+  }, 1500).unref?.();
+}
+
+function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 * 1024 }) {
+  return new Promise((resolve, reject) => {
+    const isWin = process.platform === 'win32';
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      shell: false,
+      windowsHide: true,
+      detached: !isWin,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killChildProcessTree(child);
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < maxBuffer) stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length < maxBuffer) stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) {
+        const err = new Error(`Timed out after ${timeoutMs}ms`);
+        err.killed = true;
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      if (code !== 0) {
+        const err = new Error(stderr.trim() || `agy exited with code ${code}`);
+        err.code = code;
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 /**
- * Run a prompt through agy.
+ * Run a prompt through agy safely without shell command injection.
  * @param {object} opts
  * @param {string} opts.task
  * @param {string} [opts.templateKey]
@@ -188,7 +263,7 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
  * @param {string} [opts.model]
  * @param {number} [opts.timeoutMs]
  * @param {string} [opts.cwd]
- * @returns {Promise<{ ok: boolean, output: string, sheetId?: string, durationMs: number, error?: string }>}
+ * @returns {Promise<{ ok: boolean, output: string, sheetId?: string, createdNewSheet?: boolean, durationMs: number, error?: string }>}
  */
 export async function runAgyTask({
   task,
@@ -202,13 +277,6 @@ export async function runAgyTask({
   const prompt = buildAgyPrompt({ task, templateKey, sheetId, context });
   const start = Date.now();
   const { bin: agyBin, useShell } = resolveAgyBinary();
-  const effectivePrompt = useShell ? prompt.replace(/\r?\n+/g, ' ') : prompt;
-
-  const agyArgs = [
-    '--model', model,
-    '--dangerously-skip-permissions',
-    '-p', effectivePrompt,
-  ];
 
   const homeDir = os.homedir();
   const defaultSa = path.join(homeDir, '.config', 'gcloud', 'waymark-service-account-key.json');
@@ -221,19 +289,38 @@ export async function runAgyTask({
     childEnv.WAYMARK_OAUTH_TOKEN_PATH = defaultOAuth;
   }
 
+  // On Windows when agy resolves to a .cmd/.bat shim, invoke via powershell.exe with shell: false
+  // and pass arguments via environment variables so untrusted prompts can never inject cmd.exe metacharacters.
+  let execCmd = agyBin;
+  let execArgs = [
+    '--model', model,
+    '--dangerously-skip-permissions',
+    '-p', prompt,
+  ];
+  if (useShell && process.platform === 'win32') {
+    execCmd = 'powershell.exe';
+    execArgs = [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      '& $env:WAYMARK_AGY_BIN --model $env:WAYMARK_AGY_MODEL --dangerously-skip-permissions -p $env:WAYMARK_AGY_PROMPT; exit $LASTEXITCODE',
+    ];
+    childEnv.WAYMARK_AGY_BIN = agyBin;
+    childEnv.WAYMARK_AGY_MODEL = model;
+    childEnv.WAYMARK_AGY_PROMPT = prompt;
+  }
+
   try {
-    const { stdout } = await execFileAsync(agyBin, agyArgs, {
+    const { stdout } = await spawnSafe(execCmd, execArgs, {
       cwd,
-      timeout: timeoutMs,
-      shell: useShell,
-      windowsHide: true,
+      timeoutMs,
       env: childEnv,
-      maxBuffer: 10 * 1024 * 1024,
     });
 
     const output = (stdout || '').trim();
     const refs = extractFileReferences(output);
-    const detectedSheetId = sheetId || refs.sheetId;
+    const detectedSheetId = refs.sheetId || sheetId;
+    const createdNewSheet = Boolean(refs.sheetId && refs.sheetId !== sheetId);
     const detectedDocId = refs.docId;
     const durationMs = Date.now() - start;
 
@@ -241,6 +328,7 @@ export async function runAgyTask({
       ok: true,
       output,
       sheetId: detectedSheetId,
+      createdNewSheet,
       sheetTitle: refs.sheetTitle,
       docId: detectedDocId,
       docTitle: refs.docTitle,

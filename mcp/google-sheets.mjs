@@ -55,7 +55,8 @@ async function getUserOAuthToken() {
     return null;
   }
 
-  if (!tokenData.access_token || Date.now() > (tokenData.expiry_date - 60_000)) {
+  const expiryMs = Number(tokenData.expiry_date);
+  if (!tokenData.access_token || !Number.isFinite(expiryMs) || Date.now() >= (expiryMs - 60_000)) {
     if (!tokenData.refresh_token) return null;
     const res = await fetch(TOKEN_URL, {
       method: "POST",
@@ -70,41 +71,65 @@ async function getUserOAuthToken() {
     const refreshed = await res.json();
     if (refreshed.error || !refreshed.access_token) return null;
     tokenData.access_token = refreshed.access_token;
-    tokenData.expiry_date = Date.now() + (refreshed.expires_in * 1000);
+    if (refreshed.refresh_token) tokenData.refresh_token = refreshed.refresh_token;
+    tokenData.expiry_date = Date.now() + ((Number(refreshed.expires_in) || 3600) * 1000);
     try {
-      const { writeFileSync: write } = await import("node:fs");
-      write(tokenPath, JSON.stringify(tokenData, null, 2));
+      const { writeFileSync: write, renameSync: rename, chmodSync: chmod } = await import("node:fs");
+      const tmpPath = `${tokenPath}.${process.pid}.tmp`;
+      write(tmpPath, JSON.stringify(tokenData, null, 2) + "\n", { mode: 0o600 });
+      if (process.platform !== "win32") {
+        try { chmod(tmpPath, 0o600); } catch {}
+      }
+      rename(tmpPath, tokenPath);
     } catch {}
   }
 
   return tokenData.access_token;
 }
 
+async function getSaToken() {
+  if (!auth) return null;
+  try {
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getToken() {
   const userToken = await getUserOAuthToken();
   if (userToken) return userToken;
-  if (auth) {
-    const client = await auth.getClient();
-    const { token } = await client.getAccessToken();
-    return token;
-  }
+  const saToken = await getSaToken();
+  if (saToken) return saToken;
   throw new Error("No Google authentication configured for google-sheets MCP. Set GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
 /* ---------- Sheets REST helpers ---------- */
 
-async function sheetsRequest(path, { method = "GET", body } = {}) {
-  const token = await getToken();
-  const opts = {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+async function sheetsRequest(pathSuffix, { method = "GET", body } = {}) {
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+  const buildOpts = (bearer) => {
+    const o = {
+      method,
+      headers: {
+        Authorization: `Bearer ${bearer}`,
+        "Content-Type": "application/json",
+      },
+    };
+    if (body) o.body = JSON.stringify(body);
+    return o;
   };
-  if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`${SHEETS_BASE}${path}`, opts);
+  let res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(token));
+  if (!res.ok && res.status === 403 && userToken) {
+    const saToken = await getSaToken();
+    if (saToken) {
+      res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(saToken));
+    }
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Sheets API ${res.status}: ${text}`);

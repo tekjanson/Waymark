@@ -238,12 +238,12 @@ You are the Waymark Orchestrator. You help users create, view, search, organize,
 ## Available Waymark MCP Tools
 1. \`waymark_list_templates({})\` — List all Waymark templates and their column roles.
 2. \`waymark_detect_template({ headers })\` — Detect the best Waymark template for a row of headers.
-3. \`waymark_list_files({ query?, type?, maxResults? })\` — Discover existing spreadsheets and Google Docs in Drive.
+3. \`waymark_list_files({ query?, type?, pageSize?, parentFolderId? })\` — Discover existing spreadsheets and Google Docs across Drive (\`type\`: \`"all" | "spreadsheet" | "document" | "folder"\`).
 4. \`waymark_create_sheet({ templateKey, title, seedRows?, shareWith?, parentFolderId? })\` — Create a new Waymark spreadsheet with proper headers and optional initial rows.
-5. \`waymark_get_sheet({ spreadsheetId, sheetTitle?, maxRows? })\` — Read a spreadsheet with automatic template detection and column role mapping.
-6. \`waymark_search_entries({ spreadsheetId, query, role?, sheetTitle? })\` — Search rows in a sheet by keyword or column role without loading the entire sheet.
+5. \`waymark_get_sheet({ spreadsheetId, sheetTitle?, maxRows? })\` — Read a spreadsheet with automatic template detection and column role mapping (each row carries a 1-based \`_rowIndex\`).
+6. \`waymark_search_entries({ spreadsheetId, query, column?, sheetTitle? })\` — Search rows in a sheet by keyword or column role without loading the entire sheet.
 7. \`waymark_add_entry({ spreadsheetId, entry, sheetTitle? })\` — Append a new row mapped by column role names.
-8. \`waymark_update_entry({ spreadsheetId, rowIndex, updates, sheetTitle? })\` — Update specific column roles on a 0-based data row index.
+8. \`waymark_update_entry({ spreadsheetId, rowIndex, updates, sheetTitle? })\` — Update specific column roles using the **1-based** data \`rowIndex\` (\`_rowIndex >= 1\` from \`waymark_get_sheet\` or \`waymark_search_entries\`).
 9. \`waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })\` — Share a spreadsheet with collaborators.
 10. \`waymark_create_doc({ title, body?, parentFolderId?, shareWith? })\` — Create a Google Doc.
 11. \`waymark_get_doc({ documentId })\` — Read a Google Doc's title and plain text body.
@@ -268,10 +268,10 @@ description: >-
 You are the Waymark File & Document specialist. Use this skill when the user wants to find existing spreadsheets or documents, search across entries, or read/write Google Docs.
 
 ## Available File & Document MCP Tools
-- **\`waymark_list_files({ query, type, maxResults })\`**: List or search spreadsheets and docs in Google Drive. \`type\` can be \`"all"\`, \`"sheets"\`, or \`"docs"\`.
-- **\`waymark_search_entries({ spreadsheetId, query, role, sheetTitle })\`**: Search rows in a spreadsheet by keyword (optionally restricted to a specific column \`role\`).
+- **\`waymark_list_files({ query?, type?, pageSize?, parentFolderId? })\`**: List or search spreadsheets and docs across Google Drive. \`type\` can be \`"all"\`, \`"spreadsheet"\`, \`"document"\`, or \`"folder"\`.
+- **\`waymark_search_entries({ spreadsheetId, query, column?, sheetTitle? })\`**: Search rows in a spreadsheet by keyword (optionally restricted to a specific \`column\` role). Returns 1-based \`_rowIndex\` for each match.
 - **\`waymark_get_doc({ documentId })\`**: Read the full plain-text content of a Google Doc.
-- **\`waymark_create_doc({ title, body, parentFolderId, shareWith })\`**: Create a new Google Doc and optionally link it in a \`blog\` or \`knowledge\` sheet.
+- **\`waymark_create_doc({ title, body?, parentFolderId?, shareWith? })\`**: Create a new Google Doc and optionally link it in a \`blog\` or \`knowledge\` sheet.
 - **\`waymark_append_doc({ documentId, text })\`**: Append new paragraphs or notes to an existing Google Doc.
 `;
 writeFileSync(path.join(filesSkillDir, "SKILL.md"), filesSkillContent, "utf8");
@@ -343,9 +343,15 @@ for (const t of registry.templates) {
   });
 }
 
-const catalog = {
+let previousCatalog = null;
+try {
+  if (existsSync(CATALOG_PATH)) {
+    previousCatalog = JSON.parse(readFileSync(CATALOG_PATH, "utf8"));
+  }
+} catch { /* ignore */ }
+
+const catalogPayload = {
   version: "1.0.0",
-  generatedAt: new Date().toISOString(),
   fallbackAgent: agentsConfig.fallbackAgent || "waymark-builder",
   keywordRoutes: agentsConfig.keywordRoutes || [],
   codeKeywords: agentsConfig.codeKeywords || [],
@@ -353,6 +359,24 @@ const catalog = {
   templates: uniqueTemplates,
 };
 
+let generatedAt = new Date().toISOString();
+if (previousCatalog && previousCatalog.generatedAt) {
+  const { generatedAt: _oldTs, ...prevPayload } = previousCatalog;
+  if (JSON.stringify(prevPayload) === JSON.stringify(catalogPayload)) {
+    generatedAt = previousCatalog.generatedAt;
+  }
+}
+
+const catalog = {
+  version: catalogPayload.version,
+  generatedAt,
+  fallbackAgent: catalogPayload.fallbackAgent,
+  keywordRoutes: catalogPayload.keywordRoutes,
+  codeKeywords: catalogPayload.codeKeywords,
+  builderLabels: catalogPayload.builderLabels,
+  templates: catalogPayload.templates,
+};
+
 mkdirSync(GENERATED_DIR, { recursive: true });
-writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2), "utf8");
+writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2) + "\n", "utf8");
 console.log(`  ✓ generated ${path.relative(ROOT, CATALOG_PATH)}\n`);

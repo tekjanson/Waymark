@@ -104,10 +104,25 @@ export function parseAuthCode(input) {
 /* ---------- Helper: Discover Client Credentials ---------- */
 
 export function resolveClientCredentials(opts = {}) {
-  let clientId = opts.clientId || process.env.WAYMARK_CLIENT_ID || null;
-  let clientSecret = opts.clientSecret || process.env.WAYMARK_CLIENT_SECRET || null;
+  let clientId = opts.clientId || process.env.WAYMARK_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || null;
+  let clientSecret = opts.clientSecret || process.env.WAYMARK_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || null;
 
-  // 1. Check existing token file
+  // 1. Check .env in repo root if present
+  const envFilePath = path.join(ROOT, '.env');
+  if ((!clientId || !clientSecret) && fs.existsSync(envFilePath)) {
+    try {
+      const lines = fs.readFileSync(envFilePath, 'utf8').split(/\r?\n/);
+      for (const line of lines) {
+        const m = line.trim().match(/^([A-Z0-9_]+)=(.*)$/);
+        if (!m) continue;
+        const val = m[2].trim().replace(/^['"]|['"]$/g, '');
+        if (!clientId && (m[1] === 'GOOGLE_CLIENT_ID' || m[1] === 'WAYMARK_CLIENT_ID') && val) clientId = val;
+        if (!clientSecret && (m[1] === 'GOOGLE_CLIENT_SECRET' || m[1] === 'WAYMARK_CLIENT_SECRET') && val) clientSecret = val;
+      }
+    } catch {}
+  }
+
+  // 2. Check existing token file
   const tokenPath = opts.tokenPath || TOKEN_PATH;
   if ((!clientId || !clientSecret) && fs.existsSync(tokenPath)) {
     try {
@@ -273,18 +288,21 @@ export async function checkStatus(tokenPath = TOKEN_PATH, saKeyPath = SA_KEY_PAT
 
 export function saveToken(tokenData, targetPath = TOKEN_PATH) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, JSON.stringify(tokenData, null, 2));
+  const tmpPath = `${targetPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(tokenData, null, 2) + '\n', { mode: 0o600 });
   if (process.platform !== 'win32') {
     try {
-      fs.chmodSync(targetPath, 0o600);
+      fs.chmodSync(tmpPath, 0o600);
     } catch { /* ignore on filesystems without POSIX permissions */ }
   }
+  fs.renameSync(tmpPath, targetPath);
 }
 
 /* ---------- Interactive / Headless OAuth Flow ---------- */
 
 async function runInteractiveSetup(opts) {
-  const { clientId, clientSecret: resolvedSecret } = resolveClientCredentials(opts);
+  const { clientId: resolvedId, clientSecret: resolvedSecret } = resolveClientCredentials(opts);
+  let clientId = resolvedId;
   let clientSecret = resolvedSecret;
 
   const rl = readline.createInterface({
@@ -295,8 +313,11 @@ async function runInteractiveSetup(opts) {
   const promptUser = (query) => new Promise(resolve => rl.question(query, resolve));
 
   if (!clientSecret) {
-    console.log('\nClient secret is required to exchange the OAuth authorization code.');
-    console.log('If you have the Google Cloud Console Web Application secret, paste it here.');
+    console.log('\nGoogle OAuth Client credentials are required to exchange the authorization code.');
+    if (!opts.clientId) {
+      const enteredId = (await promptUser(`Enter Google OAuth Client ID [${clientId}]: `)).trim();
+      if (enteredId) clientId = enteredId;
+    }
     clientSecret = (await promptUser('Enter Google OAuth Client Secret: ')).trim();
     if (!clientSecret) {
       console.error('Error: Client secret cannot be empty.');

@@ -25,6 +25,17 @@ export PORT="${PORT:-3000}"
 export GITHUB_SOURCE_LOCAL="${GITHUB_SOURCE_LOCAL:-true}"
 export AGY_MODEL="${AGY_MODEL:-gemini-3.8-flash-high}"
 
+# Ensure local browser login redirects back to this machine rather than a remote production URL in .env
+LOCAL_HOST="${HOST:-localhost}"
+if [ "${KEEP_REMOTE_REDIRECT_URI:-0}" != "1" ]; then
+  if [ -n "${GOOGLE_REDIRECT_URI:-}" ] && [[ "${GOOGLE_REDIRECT_URI}" != *"://localhost"* ]] && [[ "${GOOGLE_REDIRECT_URI}" != *"://127."* ]]; then
+    export GOOGLE_REDIRECT_URI="http://${LOCAL_HOST}:${PORT}${BASE_PATH:-}/auth/callback"
+  fi
+  if [[ "${GOOGLE_REDIRECT_URI:-http://${LOCAL_HOST}}" == http://* ]]; then
+    export NODE_ENV="development"
+  fi
+fi
+
 WITH_WAYSIDE="${WITH_WAYSIDE:-0}"
 LEDGER_ID="${WAYSIDE_LEDGER_ID:-${WAYMARK_SHEET_ID:-}}"
 

@@ -8,14 +8,14 @@
 #   ./scripts/install-headless.sh
 #
 #   # Run directly via curl from any headless machine:
-#   curl -fsSL https://raw.githubusercontent.com/tekjanson/Waymark/feature/agy-wayside-orchestrator/scripts/install-headless.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tekjanson/Waymark/main/scripts/install-headless.sh | bash
 #
 # Environment variables:
 #   WAYMARK_DIR         Target install directory (default: ~/Waymark or current dir)
-#   WAYMARK_BRANCH      Git branch to checkout (default: feature/agy-wayside-orchestrator)
+#   WAYMARK_BRANCH      Git branch to checkout (default: main)
 #   WAYMARK_SHEET_ID    Wayside Share Ledger spreadsheet ID
 #   NON_INTERACTIVE     Set to 1 to skip interactive prompts (default: 0)
-#   INSTALL_SYSTEMD     Set to 1 to auto-enable user systemd service (default: 0)
+#   INSTALL_SYSTEMD     Set to 1 to auto-enable user systemd service (alias: INSTALL_SERVICE=1)
 # ============================================================
 
 set -eo pipefail
@@ -78,7 +78,7 @@ fi
 echo -e "  ${GREEN}✓${NC} npm v$(npm -v)"
 
 # Check agy (Antigravity CLI)
-if command -v agy >/dev/null 2>&1; then
+if command -v agy >/dev/null 2>&1 || [ -x "$HOME/.local/bin/agy" ]; then
   echo -e "  ${GREEN}✓${NC} agy CLI is installed"
 else
   echo -e "  ${YELLOW}⚠️  Warning: agy CLI was not found in PATH.${NC}"
@@ -128,10 +128,12 @@ else
   fi
 fi
 
-# 8. Ensure convenient run-wayside.sh & run-waymark.sh runners are executable
+# 8. Ensure tracked run-wayside.sh & run-waymark.sh launchers are executable without dirtying git status
 RUN_SCRIPT="$TARGET_DIR/run-wayside.sh"
-cat << 'RUNNER_EOF' > "$RUN_SCRIPT"
+if [ ! -f "$RUN_SCRIPT" ]; then
+  cat << 'RUNNER_EOF' > "$RUN_SCRIPT"
 #!/usr/bin/env bash
+set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -144,10 +146,13 @@ else
   exec node scripts/wayside-orchestrator.mjs
 fi
 RUNNER_EOF
-chmod +x "$RUN_SCRIPT"
-if [ -f "$TARGET_DIR/run-waymark.sh" ]; then
-  chmod +x "$TARGET_DIR/run-waymark.sh"
 fi
+
+for runner in "$TARGET_DIR/run-wayside.sh" "$TARGET_DIR/run-waymark.sh"; do
+  if [ -f "$runner" ]; then
+    chmod +x "$runner"
+  fi
+done
 
 # 9. Optional Systemd User Service Generation
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
@@ -161,12 +166,12 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$TARGET_DIR
+WorkingDirectory="$TARGET_DIR"
 Environment=NODE_ENV=production
 Environment=PATH=$HOME/.local/bin:$PATH
 Environment=AGY_MODEL=gemini-3.8-flash-high
 Environment=WAYSIDE_LEDGER_ID=${WAYMARK_SHEET_ID:-}
-ExecStart=$(command -v node) $TARGET_DIR/scripts/wayside-orchestrator.mjs
+ExecStart="$(command -v node)" "$TARGET_DIR/scripts/wayside-orchestrator.mjs"
 Restart=always
 RestartSec=10
 
@@ -174,7 +179,7 @@ RestartSec=10
 WantedBy=default.target
 SYSTEMD_EOF
 
-if [ "${INSTALL_SYSTEMD:-0}" = "1" ] && command -v systemctl >/dev/null 2>&1; then
+if { [ "${INSTALL_SYSTEMD:-0}" = "1" ] || [ "${INSTALL_SERVICE:-0}" = "1" ]; } && command -v systemctl >/dev/null 2>&1; then
   systemctl --user daemon-reload
   systemctl --user enable --now waymark-wayside.service
   echo -e "  ${GREEN}✓${NC} systemd user service enabled and started!"

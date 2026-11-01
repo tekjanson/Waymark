@@ -13,7 +13,7 @@
    - Headless AGY CLI execution targeted at Gemini 3.8 Flash
    ============================================================ */
 
-import { readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync, renameSync, chmodSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,8 +77,9 @@ export async function getAuthToken() {
   if (existsSync(oauthPath)) {
     try {
       const data = JSON.parse(readFileSync(oauthPath, 'utf8'));
-      if (data.access_token && data.expiry_date && Date.now() < data.expiry_date - 60000) {
-        _cachedAuth = { token: data.access_token, expiry: data.expiry_date, sourceKey };
+      const expiryMs = Number(data.expiry_date);
+      if (data.access_token && Number.isFinite(expiryMs) && Date.now() < expiryMs - 60000) {
+        _cachedAuth = { token: data.access_token, expiry: expiryMs, sourceKey };
         return data.access_token;
       }
       if (data.refresh_token && data.client_id && data.client_secret) {
@@ -94,17 +95,23 @@ export async function getAuthToken() {
         });
         const ref = await res.json();
         if (ref.access_token) {
-          const expiry = Date.now() + ((ref.expires_in || 3600) * 1000);
+          const expiry = Date.now() + ((Number(ref.expires_in) || 3600) * 1000);
           data.access_token = ref.access_token;
+          if (ref.refresh_token) data.refresh_token = ref.refresh_token;
           data.expiry_date = expiry;
           try {
-            writeFileSync(oauthPath, JSON.stringify(data, null, 2));
+            const tmpPath = `${oauthPath}.${process.pid}.tmp`;
+            writeFileSync(tmpPath, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+            if (process.platform !== 'win32') {
+              try { chmodSync(tmpPath, 0o600); } catch {}
+            }
+            renameSync(tmpPath, oauthPath);
           } catch { /* read-only mount — ignore */ }
           _cachedAuth = { token: ref.access_token, expiry, sourceKey };
           return ref.access_token;
         }
       }
-      if (data.access_token && !data.expiry_date) {
+      if (data.access_token && !data.refresh_token) {
         _cachedAuth = { token: data.access_token, expiry: Date.now() + 300000, sourceKey };
         return data.access_token;
       }
@@ -167,11 +174,17 @@ async function sheetsApi(pathUrl, { method = 'GET', body = null } = {}) {
   return res.json();
 }
 
+function quoteTabTitle(tabName) {
+  const raw = String(tabName || '');
+  return /^[A-Za-z0-9_]+$/.test(raw) ? raw : `'${raw.replace(/'/g, "''")}'`;
+}
+
 /**
  * Append row(s) to a spreadsheet tab.
  */
 export async function appendTabRows(sheetId, tabName, rows) {
-  return sheetsApi(`/${sheetId}/values/${encodeURIComponent(tabName)}:append?valueInputOption=USER_ENTERED`, {
+  const safeTab = quoteTabTitle(tabName);
+  return sheetsApi(`/${sheetId}/values/${encodeURIComponent(safeTab)}:append?valueInputOption=USER_ENTERED`, {
     method: 'POST',
     body: { values: rows },
   });
@@ -182,7 +195,8 @@ export async function appendTabRows(sheetId, tabName, rows) {
  */
 export async function readTabRows(sheetId, tabName) {
   try {
-    const data = await sheetsApi(`/${sheetId}/values/${encodeURIComponent(tabName)}`);
+    const safeTab = quoteTabTitle(tabName);
+    const data = await sheetsApi(`/${sheetId}/values/${encodeURIComponent(safeTab)}`);
     return data.values || [];
   } catch (err) {
     return [];
@@ -255,6 +269,31 @@ async function ensureLedgerStructure(sheetId) {
   }
 }
 
+function ledgerFileName(key) {
+  return `.waymark-ledger-${String(key).replace(/[^a-z0-9@._:-]/g, '-')}`;
+}
+
+async function resolveCurrentUserEmail(existingToken = null) {
+  const envEmail = (process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
+  if (envEmail) return envEmail;
+  try {
+    const token = existingToken || await getAuthToken();
+    const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+    const driveRoot = driveFilesBase.replace(/\/files\/?$/, '');
+    const aboutRes = await fetch(`${driveRoot}/about?fields=user`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (aboutRes.ok) {
+      const about = await aboutRes.json();
+      const detected = (about?.user?.emailAddress || '').trim().toLowerCase();
+      if (detected && !detected.endsWith('.gserviceaccount.com')) {
+        return detected;
+      }
+    }
+  } catch { /* best-effort user email detection */ }
+  return '';
+}
+
 /**
  * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one
  * using the canonical `.waymark-ledger-contact-pair:` naming from public/js/collab.js.
@@ -263,31 +302,17 @@ async function ensureLedgerStructure(sheetId) {
 export async function discoverOrCreateWaysideLedger() {
   const token = await getAuthToken();
   const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
-  const driveRoot = driveFilesBase.replace(/\/files\/?$/, '');
   const agentEmailLower = AGENT_EMAIL.toLowerCase();
+  const userEmail = await resolveCurrentUserEmail(token);
 
-  let userEmail = (process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
-  if (!userEmail) {
-    try {
-      const aboutRes = await fetch(`${driveRoot}/about?fields=user`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (aboutRes.ok) {
-        const about = await aboutRes.json();
-        const detected = (about?.user?.emailAddress || '').trim().toLowerCase();
-        if (detected && !detected.endsWith('.gserviceaccount.com')) {
-          userEmail = detected;
-        }
-      }
-    } catch { /* best-effort user email detection */ }
-  }
-
-  const canonicalTitle = userEmail && userEmail !== agentEmailLower
-    ? `.waymark-ledger-contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
-    : `.waymark-ledger-contact:${agentEmailLower}`;
+  const ledgerKey = userEmail && userEmail !== agentEmailLower
+    ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
+    : `contact:${agentEmailLower}`;
+  const canonicalTitle = ledgerFileName(ledgerKey);
+  const legacyTitle = ledgerFileName(`contact:${agentEmailLower}`);
 
   const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
-  const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50`;
+  const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime&pageSize=100`;
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -295,11 +320,12 @@ export async function discoverOrCreateWaysideLedger() {
   if (res.ok) {
     const data = await res.json();
     const files = data.files || [];
+    // Sort oldest-first matching public/js/drive.js findFilesGlobal so browser and orchestrator always pick the same ledger
     const exactMatch = files.find(f => (f.name || '').toLowerCase() === canonicalTitle.toLowerCase());
     if (exactMatch?.id) return exactMatch.id;
 
-    const aiLedger = files.find(f => (f.name || '').toLowerCase().includes(agentEmailLower));
-    if (aiLedger?.id) return aiLedger.id;
+    const legacyMatch = files.find(f => (f.name || '').toLowerCase() === legacyTitle.toLowerCase());
+    if (legacyMatch?.id) return legacyMatch.id;
   }
 
   // Create a dedicated Wayside Share Ledger matching collab.js ledgerFileName
@@ -426,14 +452,17 @@ export function classifyMessage(text) {
 export class WaysideOrchestrator {
   constructor(opts = {}) {
     this.sheetId = opts.sheetId;
-    this.peerId = opts.peerId || `ai-${crypto.randomBytes(3).toString('hex')}`;
+    const stableHash = crypto.createHash('sha1').update(String(opts.sheetId || 'wayside')).digest('hex').slice(0, 6);
+    this.peerId = opts.peerId || `ai-${stableHash}`;
     this.agentName = opts.agentName || AGENT_NAME;
     this.agentEmail = opts.agentEmail || AGENT_EMAIL;
+    this.userEmail = (opts.userEmail || process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
     this.pollIntervalMs = opts.pollIntervalMs || POLL_INTERVAL_MS;
     this.presenceIntervalMs = opts.presenceIntervalMs || PRESENCE_INTERVAL_MS;
 
     this.peer = null;
     this.processedMessageIds = new Set();
+    this.knownSharedDocIds = new Set();
     this.conversations = new Map();
     this.pollTimer = null;
     this.presenceTimer = null;
@@ -446,17 +475,47 @@ export class WaysideOrchestrator {
       throw new Error('WaysideOrchestrator requires a valid sheetId (Share Ledger).');
     }
     this.running = true;
+    if (!this.userEmail) {
+      this.userEmail = await resolveCurrentUserEmail();
+    }
     console.log(`[WaysideOrchestrator] Starting as '${this.agentName}' (${this.peerId}) on ledger ${this.sheetId}...`);
 
     // Ensure ledger has all 4 Share Ledger tabs
     await ensureLedgerStructure(this.sheetId);
 
-    // Seed existing message IDs from Chat tab to prevent processing historical messages on restart
-    const history = await readTabRows(this.sheetId, CHAT_TAB);
-    for (const row of history) {
-      if (row[0]) this.processedMessageIds.add(String(row[0]).trim());
+    // Seed existing Shared_Docs IDs to avoid appending duplicate rows on follow-up edits
+    const sharedRows = await readTabRows(this.sheetId, SHARED_DOCS_TAB);
+    for (let i = 1; i < sharedRows.length; i++) {
+      const docId = String(sharedRows[i]?.[0] || '').trim();
+      if (docId) this.knownSharedDocIds.add(docId);
     }
-    console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} existing chat messages into cache.`);
+
+    // Seed processedMessageIds from Chat tab while preserving any recent (< 10 min) unanswered trailing user messages
+    const history = await readTabRows(this.sheetId, CHAT_TAB);
+    if (history.length > 0 && history[0]?.[0]) {
+      this.processedMessageIds.add(String(history[0][0]).trim());
+    }
+    let lastAiIdx = 0;
+    for (let i = 1; i < history.length; i++) {
+      const senderCol = String(history[i]?.[2] || '').trim().toLowerCase();
+      if (senderCol === this.agentEmail.toLowerCase()) {
+        lastAiIdx = i;
+      }
+    }
+    const recentCutoffMs = Date.now() - (10 * 60 * 1000);
+    for (let i = 1; i < history.length; i++) {
+      const msgId = String(history[i]?.[0] || '').trim();
+      if (!msgId) continue;
+      if (i <= lastAiIdx) {
+        this.processedMessageIds.add(msgId);
+        continue;
+      }
+      const msgTs = Date.parse(String(history[i]?.[1] || ''));
+      if (!Number.isFinite(msgTs) || msgTs < recentCutoffMs) {
+        this.processedMessageIds.add(msgId);
+      }
+    }
+    console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} historical chat messages into cache.`);
 
     // Publish online presence on Presence tab
     await this.publishPresence('online').catch(() => {});
@@ -482,7 +541,8 @@ export class WaysideOrchestrator {
       console.warn(`[WaysideOrchestrator] WebRTC signaling start warning: ${err.message}`);
     });
 
-    // Start background poll loop for async catch-up
+    // Catch up immediately on any unanswered pre-boot messages, then start periodic polling
+    this.pollChatTab().catch(() => {});
     this.pollTimer = setInterval(() => this.pollChatTab().catch(() => {}), this.pollIntervalMs);
     console.log(`[WaysideOrchestrator] Online. Listening via WebRTC DataChannel + Sheet polling (${this.pollIntervalMs}ms).`);
   }
@@ -493,7 +553,10 @@ export class WaysideOrchestrator {
     if (this.presenceTimer) clearInterval(this.presenceTimer);
     await this.publishPresence('offline').catch(() => {});
     if (this.peer) {
-      try { this.peer.destroy(); } catch {}
+      try {
+        if (typeof this.peer.leave === 'function') await this.peer.leave();
+        else this.peer.destroy();
+      } catch {}
       this.peer = null;
     }
     console.log(`[WaysideOrchestrator] Stopped.`);
@@ -523,13 +586,18 @@ export class WaysideOrchestrator {
     const messageId = String(data.messageId || data.id || `${data.peerId}:${data.ts}`).trim();
     if (this.processedMessageIds.has(messageId)) return;
 
-    // Ignore messages from self
-    const sender = (data.name || data.sender || '').trim();
-    if (sender === this.agentName || (data.peerId && data.peerId === this.peerId)) return;
+    // Ignore messages from self using peerId or agentEmail
+    const rawSender = (data.sender || data.email || data.name || '').trim();
+    if ((data.peerId && data.peerId === this.peerId) || rawSender.toLowerCase() === this.agentEmail.toLowerCase()) {
+      return;
+    }
+
+    const senderEmail = rawSender.includes('@') ? rawSender.toLowerCase() : (this.userEmail || rawSender || remotePeerId);
 
     this.queueMessageProcessing({
       text: data.text,
-      sender: sender || remotePeerId,
+      sender: senderEmail,
+      displayName: (data.name || senderEmail.split('@')[0] || 'Waymarker').trim(),
       messageId,
       remotePeerId,
       fromWebRtc: true,
@@ -554,9 +622,14 @@ export class WaysideOrchestrator {
         }
 
         if (text && text.trim()) {
+          const normalizedSender = (senderEmail || this.userEmail || 'Waymarker').trim();
+          if (!this.userEmail && normalizedSender.includes('@')) {
+            this.userEmail = normalizedSender.toLowerCase();
+          }
           this.queueMessageProcessing({
             text: text.trim(),
-            sender: senderEmail || 'Waymarker',
+            sender: normalizedSender,
+            displayName: normalizedSender.split('@')[0] || 'Waymarker',
             messageId: msgId,
             fromWebRtc: false,
           });
@@ -578,13 +651,14 @@ export class WaysideOrchestrator {
       });
   }
 
-  async processMessage({ text, sender, messageId, remotePeerId, fromWebRtc }) {
+  async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc }) {
     console.log(`[WaysideOrchestrator] 📨 Processing from ${sender}: "${text}"`);
 
     // 1. Send immediate typing indicator
     this.broadcastTyping();
 
-    const senderKey = (sender || 'unknown').toLowerCase();
+    const senderKey = (sender || this.userEmail || 'unknown').toLowerCase();
+    const friendlyName = displayName || sender.split('@')[0] || 'Waymarker';
     const conv = this.conversations.get(senderKey) || {
       history: [],
       lastSheetId: null,
@@ -596,18 +670,20 @@ export class WaysideOrchestrator {
     const classification = classifyMessage(text);
     const explicitSheetId = extractSpreadsheetId(text);
     const isFollowUp = /\b(add|append|update|change|edit|remove|delete|mark|complete|move|set|search|find|show|list|what'?s\s+on|in\s+it|to\s+it|that\s+sheet)\b/i.test(text)
-      && !/\b(create|build|make|start|new)\b/i.test(text);
+      && !/\b(create|build|make|generate|start|new)\b/i.test(text);
     const targetSheetId = explicitSheetId || (isFollowUp ? conv.lastSheetId : null);
     const effectiveTemplateKey = classification.templateKey || (targetSheetId ? conv.lastTemplateKey : null);
 
     let replyText = '';
     let createdSheetId = null;
+    let shouldLinkSheet = false;
     let createdSheetTitle = null;
     let createdDocId = null;
+    let shouldLinkDoc = false;
     let createdDocTitle = null;
 
     if (classification.isConversation || classification.isHelp) {
-      replyText = `Hello ${sender.split('@')[0]}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
+      replyText = `Hello ${friendlyName}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
         + `I can create, inspect, search, and update sheets across all ${CATALOG.templates?.length || 41} Waymark templates — including Kanban, Budget, Travel, Meal, CRM, Recipes, Party, and Checklists.\n\n`
         + `Try asking me something like:\n`
         + `• *"Create a 4-day travel itinerary for Paris in spring"*\n`
@@ -637,7 +713,9 @@ export class WaysideOrchestrator {
         replyText = agyResult.output;
         createdSheetId = agyResult.sheetId;
         createdDocId = agyResult.docId;
-        createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'New Waymark');
+        shouldLinkSheet = Boolean(createdSheetId && !this.knownSharedDocIds.has(createdSheetId));
+        shouldLinkDoc = Boolean(createdDocId && !this.knownSharedDocIds.has(createdDocId));
+        createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'Shared Waymark');
         createdDocTitle = agyResult.docTitle || 'Waymark Document';
       } else {
         replyText = `I encountered an issue executing your request: ${agyResult.error}\n\nPlease try again or clarify your prompt.`;
@@ -654,12 +732,15 @@ export class WaysideOrchestrator {
     this.conversations.set(senderKey, conv);
 
     // 3. Deliver reply
+    const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
     await this.deliverReply({
       replyText,
-      targetUser: sender,
+      targetUser: recipientEmail,
       createdSheetId,
+      shouldLinkSheet,
       createdSheetTitle,
       createdDocId,
+      shouldLinkDoc,
       createdDocTitle,
       templateKey: effectiveTemplateKey,
     });
@@ -668,12 +749,12 @@ export class WaysideOrchestrator {
   broadcastTyping() {
     if (this.peer) {
       try {
-        this.peer.broadcast({ type: 'typing', text: null, name: this.agentName, ts: Date.now() });
+        this.peer.broadcast({ type: 'typing', text: null, peerId: this.peerId, name: this.agentName, ts: Date.now() });
       } catch {}
     }
   }
 
-  async deliverReply({ replyText, targetUser, createdSheetId, createdSheetTitle, createdDocId, createdDocTitle, templateKey }) {
+  async deliverReply({ replyText, targetUser, createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
 
@@ -684,26 +765,48 @@ export class WaysideOrchestrator {
       attachedLink = `https://docs.google.com/document/d/${createdDocId}/edit`;
     }
 
-    // A. Broadcast over WebRTC DataChannel (instant display)
-    if (this.peer) {
+    // A. Link newly discovered/created sheet or doc into Shared_Docs FIRST (deduplicated)
+    // so when the WebRTC DataChannel message triggers refreshWaysideSocial() in the browser,
+    // the Shared_Docs row is already committed in Google Sheets.
+    if (createdSheetId && shouldLinkSheet && !this.knownSharedDocIds.has(createdSheetId)) {
       try {
-        const payload = {
-          type: 'message',
-          messageId: replyId,
-          id: replyId,
-          name: this.agentName,
-          sender: this.agentEmail,
-          text: replyText,
-          attachedLink,
-          ts: Date.now(),
-        };
-        this.peer.broadcast(payload);
+        await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
+          createdSheetId,
+          createdSheetTitle || 'Shared Waymark',
+          templateKey || 'Waymark',
+          targetUser || '',
+          '',
+          'writer',
+          new Date().toISOString(),
+          'Shared',
+        ]]);
+        this.knownSharedDocIds.add(createdSheetId);
+        console.log(`[WaysideOrchestrator] 📄 Added sheet ${createdSheetId} to Shared_Docs in ledger!`);
       } catch (err) {
-        console.warn('[WaysideOrchestrator] WebRTC broadcast failed:', err.message);
+        console.error('[WaysideOrchestrator] Error appending sheet to Shared_Docs:', err.message);
       }
     }
 
-    // B. Append to Chat tab for durability
+    if (createdDocId && shouldLinkDoc && !this.knownSharedDocIds.has(createdDocId)) {
+      try {
+        await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
+          createdDocId,
+          createdDocTitle || 'Shared Document',
+          'doc',
+          targetUser || '',
+          '',
+          'writer',
+          new Date().toISOString(),
+          'Shared',
+        ]]);
+        this.knownSharedDocIds.add(createdDocId);
+        console.log(`[WaysideOrchestrator] 📝 Added doc ${createdDocId} to Shared_Docs in ledger!`);
+      } catch (err) {
+        console.error('[WaysideOrchestrator] Error appending doc to Shared_Docs:', err.message);
+      }
+    }
+
+    // B. Append reply to Chat tab for durability before broadcasting
     try {
       await appendTabRows(this.sheetId, CHAT_TAB, [[
         replyId,
@@ -717,41 +820,23 @@ export class WaysideOrchestrator {
       console.error('[WaysideOrchestrator] Error appending reply to Chat tab:', err.message);
     }
 
-    // C. If a sheet was created, link it into Shared_Docs (8-column Share Ledger schema)
-    if (createdSheetId) {
+    // C. Broadcast over WebRTC DataChannel (instant display + triggers browser Shared_Docs refresh)
+    if (this.peer) {
       try {
-        await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
-          createdSheetId,
-          createdSheetTitle || 'Shared Waymark',
-          templateKey || 'Waymark',
-          targetUser || '',
-          '',
-          'writer',
-          new Date().toISOString(),
-          'Shared',
-        ]]);
-        console.log(`[WaysideOrchestrator] 📄 Added sheet ${createdSheetId} to Shared_Docs in ledger!`);
+        const payload = {
+          type: 'message',
+          messageId: replyId,
+          id: replyId,
+          peerId: this.peerId,
+          name: this.agentName,
+          sender: this.agentEmail,
+          text: replyText,
+          attachedLink,
+          ts: Date.now(),
+        };
+        this.peer.broadcast(payload);
       } catch (err) {
-        console.error('[WaysideOrchestrator] Error appending sheet to Shared_Docs:', err.message);
-      }
-    }
-
-    // D. If a doc was created, link it into Shared_Docs (8-column Share Ledger schema)
-    if (createdDocId) {
-      try {
-        await appendTabRows(this.sheetId, SHARED_DOCS_TAB, [[
-          createdDocId,
-          createdDocTitle || 'Shared Document',
-          'doc',
-          targetUser || '',
-          '',
-          'writer',
-          new Date().toISOString(),
-          'Shared',
-        ]]);
-        console.log(`[WaysideOrchestrator] 📝 Added doc ${createdDocId} to Shared_Docs in ledger!`);
-      } catch (err) {
-        console.error('[WaysideOrchestrator] Error appending doc to Shared_Docs:', err.message);
+        console.warn('[WaysideOrchestrator] WebRTC broadcast failed:', err.message);
       }
     }
 

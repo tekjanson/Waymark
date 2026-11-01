@@ -20,6 +20,31 @@ if /I "%~1"=="-WithWayside" (
   shift
   goto parse_args
 )
+if /I "%~1"=="--port" (
+  set "PS_ARGS=%PS_ARGS% -Port %~2"
+  shift
+  shift
+  goto parse_args
+)
+if /I "%~1"=="-Port" (
+  set "PS_ARGS=%PS_ARGS% -Port %~2"
+  shift
+  shift
+  goto parse_args
+)
+if /I "%~1"=="--sheet" (
+  set "PS_ARGS=%PS_ARGS% -LedgerId \"%~2\""
+  shift
+  shift
+  goto parse_args
+)
+if /I "%~1"=="-LedgerId" (
+  set "PS_ARGS=%PS_ARGS% -LedgerId \"%~2\""
+  shift
+  shift
+  goto parse_args
+)
+set "PS_ARGS=%PS_ARGS% \"%~1\""
 shift
 goto parse_args
 
