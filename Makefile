@@ -33,6 +33,7 @@ MODEL         ?= claude-sonnet-4.6
 CLAUDE_MODEL  ?= claude-opus-4-5
 COMMAND       ?= @waymark-builder start
 GEMINI_MODEL  ?= gemini-flash-latest
+AGY_MODEL     ?= gemini-3.8-flash-high
 AGENTS_SHEET  ?= $(AGENTS_SHEET_ID)
 
 # Prefer the Gemini engine automatically whenever a key pool is configured.
@@ -298,6 +299,37 @@ test-full: ## Run full E2E suite including slow tests
 		kill $$(cat $(SERVER_PID)) 2>/dev/null; rm -f $(SERVER_PID); sleep 1; \
 	fi
 	npx playwright test --config tests/playwright.config.js --workers 4
+
+# ── Wayside: AGY autonomous chat orchestrator ─────────────────────────
+
+wayside: ## Start the Wayside AGY chat orchestrator daemon (answers The Wayside)  [SHEET_ID= optional]
+	AGY_MODEL=$(AGY_MODEL) node scripts/wayside-orchestrator.mjs $(if $(SHEET_ID),--sheet $(SHEET_ID),)
+
+wayside-once: ## Run ONE Wayside catch-up pass and exit (cron / systemd-timer friendly)  [SHEET_ID= optional]
+	AGY_MODEL=$(AGY_MODEL) node scripts/wayside-orchestrator.mjs --once $(if $(SHEET_ID),--sheet $(SHEET_ID),)
+
+wayside-web: ## Start the Waymark web server + Wayside orchestrator together (bare-metal)  [PORT=3000]
+	WITH_WAYSIDE=1 ./run-waymark.sh
+
+wayside-setup: ## Configure headless Google OAuth + MCP config the Wayside daemon needs
+	node scripts/setup-headless-auth.mjs
+	node scripts/setup-mcp-config.mjs
+
+wayside-auth-check: ## Check the Google OAuth / Service Account credentials for the Wayside daemon
+	node scripts/setup-headless-auth.mjs --check
+
+wayside-install: ## Install the Wayside daemon as a background service (systemd user service on Linux)
+	INSTALL_SYSTEMD=1 ./scripts/install-headless.sh
+
+agy: ## Run ONE AGY task headlessly and print the result  [TASK="..." required | TEMPLATE= SHEET_ID=]
+	@test -n "$(TASK)" || { echo 'Usage: make agy TASK="create a budget sheet" [TEMPLATE=budget] [SHEET_ID=<id>]'; exit 1; }
+	AGY_MODEL=$(AGY_MODEL) node scripts/agy-agent-runner.mjs $(if $(TEMPLATE),--template $(TEMPLATE),) $(if $(SHEET_ID),--sheet $(SHEET_ID),) --task "$(TASK)"
+
+agents-compile: ## Compile all AGY template agents + regenerate the agent catalog (deterministic)
+	node scripts/compile-all-agents.mjs --force
+
+agents-check: ## Verify the generated agent catalog + skill manifests are in sync
+	node scripts/check-generated-integrity.mjs
 
 # ── Dev-worker: single agent ──────────────────────────────────────────
 

@@ -286,4 +286,34 @@ test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
     }
   });
 
+  test('runOnce performs a single catch-up pass: seeds, drains the queue, goes offline, and never starts timers', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+    const orch = new WaysideOrchestrator({ sheetId: 'once-ledger' });
+
+    const calls = [];
+    orch._seedLedgerState = async () => { orch.running = true; calls.push('seed'); };
+    // Simulate one pending user message queued during the catch-up poll.
+    orch.pollChatTab = async () => {
+      calls.push('poll');
+      orch.queueMessageProcessing({ text: 'hello', sender: 'u@x.com', displayName: 'u', messageId: 'm-once', fromWebRtc: false });
+    };
+    orch.processMessage = async () => {
+      await new Promise(r => setTimeout(r, 10));
+      calls.push('processed');
+    };
+    let presenceStatus = null;
+    orch.publishPresence = async (status) => { presenceStatus = status; calls.push('offline'); };
+
+    await orch.runOnce();
+
+    // Queue must be fully drained before runOnce resolves, and offline must come last.
+    expect(calls).toEqual(['seed', 'poll', 'processed', 'offline']);
+    expect(presenceStatus).toBe('offline');
+    expect(orch.running).toBe(false);
+    // No persistent peer or timers may be left behind by a single pass.
+    expect(orch.peer).toBeNull();
+    expect(orch.pollTimer).toBeNull();
+    expect(orch.presenceTimer).toBeNull();
+  });
+
 });

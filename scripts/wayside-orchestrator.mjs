@@ -470,7 +470,13 @@ export class WaysideOrchestrator {
     this._processingQueue = Promise.resolve();
   }
 
-  async start() {
+  /**
+   * Resolve the user email, ensure the 4-tab ledger structure, and seed the
+   * processed-message cache — preserving any recent (< 10 min) unanswered
+   * trailing user messages so they are still answered after a restart.
+   * Shared by both the persistent daemon (start) and the single pass (runOnce).
+   */
+  async _seedLedgerState() {
     if (!this.sheetId) {
       throw new Error('WaysideOrchestrator requires a valid sheetId (Share Ledger).');
     }
@@ -516,6 +522,24 @@ export class WaysideOrchestrator {
       }
     }
     console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} historical chat messages into cache.`);
+  }
+
+  /**
+   * Run a single catch-up pass: answer any pending trailing messages on the
+   * Chat tab, drain the processing queue, publish offline presence, then return.
+   * No WebRTC peer or polling timers are started — cron / systemd-timer friendly.
+   */
+  async runOnce() {
+    await this._seedLedgerState();
+    await this.pollChatTab();
+    await this._processingQueue;
+    await this.publishPresence('offline').catch(() => {});
+    this.running = false;
+    console.log('[WaysideOrchestrator] Single polling pass complete.');
+  }
+
+  async start() {
+    await this._seedLedgerState();
 
     // Publish online presence on Presence tab
     await this.publishPresence('online').catch(() => {});
@@ -862,9 +886,11 @@ function isMainModule(metaUrl) {
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   let sheetId = process.env.WAYSIDE_LEDGER_ID || process.env.WAYMARK_SHEET_ID || null;
+  let once = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--sheet' && args[i + 1]) { sheetId = args[++i]; }
+    else if (args[i] === '--once') { once = true; }
     else if (!sheetId && !args[i].startsWith('--')) { sheetId = args[i]; }
   }
 
@@ -876,6 +902,12 @@ if (isMainModule(import.meta.url)) {
     }
 
     const orchestrator = new WaysideOrchestrator({ sheetId });
+
+    if (once) {
+      await orchestrator.runOnce();
+      process.exit(0);
+    }
+
     await orchestrator.start();
 
     process.on('SIGINT', async () => {

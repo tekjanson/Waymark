@@ -96,6 +96,12 @@ sequenceDiagram
 | `scripts/install-headless.sh` | Bash installer for Linux bare-metal hosts (configures dependencies, skills, MCP, and optional systemd service). |
 | `scripts/install-headless.ps1` | PowerShell installer for Windows 10/11 hosts (configures dependencies, skills, MCP, and optional Scheduled Task). |
 
+> **Make is the interface.** On Linux/macOS (and Windows via Git Bash/WSL) these
+> scripts are all wrapped as `make` targets — `make wayside`, `make wayside-once`,
+> `make wayside-web`, `make wayside-setup`, `make wayside-auth-check`,
+> `make wayside-install`, `make agy TASK="…"`, `make agents-compile`,
+> `make agents-check`. Prefer the targets; `make help` lists them all.
+
 ---
 
 ## 4. Bare-Metal Host Setup & Verification Guide
@@ -108,30 +114,34 @@ sequenceDiagram
 - **Service Account**: Saved at `~/.config/gcloud/waymark-service-account-key.json`.
 - **MCP Config**: Saved at `~/.gemini/config/mcp_config.json`.
 
-### How to Run on Linux Bare-Metal:
+> First-time setup on a fresh machine is also a single target:
+> `make wayside-setup` (headless Google OAuth + MCP config), then
+> `make wayside-auth-check` to confirm the credentials resolve.
+
+### How to Run on Linux Bare-Metal (Make is the interface):
+
+Every operation is a `make` target — you never need to call the raw `node`/`bash`
+scripts directly. Run `make help` to see them all.
 
 #### Option A: Run Web Server + Wayside Together
 ```bash
 cd /home/tekjanson/Documents/Code/Waymark.worktrees/agy-wayside-orchestrator
-./run-waymark.sh --with-wayside
+make wayside-web
 ```
 This boots:
-1. Waymark web server on `http://localhost:8080` (overriding `GOOGLE_REDIRECT_URI` to localhost).
+1. Waymark web server on `http://localhost:3000` (overriding `GOOGLE_REDIRECT_URI` to localhost; set `PORT=` to change).
 2. Wayside daemon in the background auto-polling the user's bilateral AI ledger.
 
 #### Option B: Run Wayside Standalone
 ```bash
-./run-wayside.sh
-# Or with a specific ledger ID:
-./run-wayside.sh <optionalSpreadsheetId>
-# Or single pass:
-./run-wayside.sh --once
+make wayside                  # Persistent daemon — auto-discovers/provisions the ledger
+make wayside SHEET_ID=<id>    # Pin a specific ledger spreadsheet
+make wayside-once             # Single catch-up pass, then exit (cron / systemd-timer friendly)
 ```
 
-#### Option C: Run as a systemd User Service
+#### Option C: Install as a systemd User Service
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now waymark-wayside.service
+make wayside-install          # Generates + enables the waymark-wayside user service
 journalctl --user -u waymark-wayside -f
 ```
 
@@ -154,6 +164,9 @@ This verifies Node, compiles skills, configures MCP, and optionally registers a 
 run-waymark.cmd --with-wayside
 ```
 
+> Under Git Bash or WSL the same `make` targets as Linux work on Windows too
+> (`make wayside-web`, `make wayside`, `make wayside-once`).
+
 ---
 
 ## 6. Rules of Engagement & Maintenance Guardrails
@@ -167,8 +180,8 @@ When modifying this codebase, the next agent must strictly enforce these rules:
    - **`cbg` (chaos-be-gone):** Strictly checks workflow docs and entrypoints.
 
 2. **Catalog Integrity:**
-   - Always run `node scripts/compile-all-agents.mjs --force` after modifying skills in `.agents/skills/` or `compile-all-agents.mjs`.
-   - Check integrity with `node scripts/check-generated-integrity.mjs`.
+   - Always run `make agents-compile` after modifying skills in `.agents/skills/` or `compile-all-agents.mjs`.
+   - Check integrity with `make agents-check`. Both are deterministic — a clean tree after `make agents-compile` proves there is no timestamp churn.
 
 3. **Google Drive Scoping & API Permissions:**
    - The web app uses OAuth scope `drive.file`. Google restricts access strictly to files created by the same GCP OAuth Client ID. Never change client IDs without re-authenticating both the web app and headless tokens.
@@ -185,10 +198,11 @@ When modifying this codebase, the next agent must strictly enforce these rules:
 
 ## 7. Status & Next Actions for PR #205
 
-- **Current Branch Status:** Clean, all commits pushed (`020fdb2`).
+- **Current Branch Status:** Clean, all work pushed to `feature/agy-wayside-orchestrator`.
 - **PR State:** `MERGEABLE` on GitHub.
+- **Verified this pass:** `make gates` (0 violations), 421 unit tests, 134 Wayside/MCP/Wayboard/Social integration tests, and 42 agents compile deterministically (no git churn).
 - **Immediate Next Steps for User or Agent:**
   1. Review and approve PR #205 on GitHub (`gh pr merge 205 --merge` or via GitHub UI).
   2. Switch to main workspace: `cd /home/tekjanson/Documents/Code/Waymark`.
   3. Pull main: `git pull origin main`.
-  4. Run `./scripts/install-headless.sh` or `./run-waymark.sh --with-wayside` directly on the laptop.
+  4. Run `make wayside-install` (background service) or `make wayside-web` (foreground web + daemon) on the laptop.
