@@ -48,10 +48,21 @@ function currentEmail() {
  * Give both ends of a direct contact relationship the same ledger identity.
  * Older versions used `contact:<other person's email>`, which meant each
  * account created a different sheet for the same pair.
+ *
+ * Legacy per-contact names split into two classes:
+ *   • `contact:<other party>` uniquely identifies THIS pair, so it is safe to
+ *     resolve by name in a global Drive search.
+ *   • `selfLegacyKeys` — `contact:<me>` does NOT identify the other party (any
+ *     Waymarker who added me created a sheet by that exact name), so a global
+ *     match must be participant-verified before it is trusted. Skipping this
+ *     check lets an unrelated contact's — or the AI's — chat load the wrong
+ *     ledger (see findExistingShareLedger).
  */
 function ledgerIdentity(target = {}) {
   const group = String(target.group || '').trim();
-  if (group) return { key: `group:${group.toLowerCase()}`, legacyKeys: [] };
+  if (group) {
+    return { key: `group:${group.toLowerCase()}`, legacyKeys: [], selfLegacyKeys: [], contactEmail: '' };
+  }
 
   const contactEmail = String(target.contactEmail || '').trim().toLowerCase();
   const me = currentEmail();
@@ -60,11 +71,48 @@ function ledgerIdentity(target = {}) {
     return {
       key: `contact-pair:${emails.join('::')}`,
       legacyKeys: emails.map(email => `contact:${email}`),
+      selfLegacyKeys: [`contact:${me}`],
+      contactEmail,
     };
   }
 
   // Preserve the previous identity when the signed-in email is unavailable.
-  return { key: `contact:${contactEmail}`, legacyKeys: [] };
+  return { key: `contact:${contactEmail}`, legacyKeys: [], selfLegacyKeys: [], contactEmail };
+}
+
+/**
+ * Confirm a discovered ledger file actually belongs to a pair with `contactEmail`.
+ * Used to vet `contact:<me>`-named legacy sheets, whose name alone cannot prove
+ * which other participant they belong to.
+ * @param {{ id: string, owners?: Array<{emailAddress?: string}> }} file
+ * @param {string} contactEmail
+ * @returns {Promise<boolean>}
+ */
+async function ledgerInvolvesContact(file, contactEmail) {
+  const needle = String(contactEmail || '').trim().toLowerCase();
+  if (!needle || !file?.id) return false;
+
+  // Fast path: Drive owner metadata already returned by the search.
+  const owners = Array.isArray(file.owners) ? file.owners : [];
+  if (owners.some(o => String(o?.emailAddress || '').trim().toLowerCase() === needle)) return true;
+
+  // Otherwise inspect the ledger's own participant columns.
+  try {
+    const data = await api.sheets.getSpreadsheet(file.id);
+    const scan = [
+      [CHAT_TAB, 'Sender_Email'],
+      [PRESENCE_TAB, 'User_Email'],
+      [SHARED_DOCS_TAB, 'Shared_With_Email'],
+    ];
+    for (const [tab, col] of scan) {
+      for (const row of tabRowsFromData(data, tab)) {
+        if (String(row[col] || '').trim().toLowerCase() === needle) return true;
+      }
+    }
+  } catch {
+    /* an unreadable ledger cannot be verified as this pair's */
+  }
+  return false;
 }
 
 /** Deterministic Drive file name for a ledger key. */
@@ -182,15 +230,30 @@ async function findExistingShareLedger(target) {
 
   const mapped = userData.getShareLedgerFor(key);
 
-  // Search the canonical pair name first, then both old per-contact names in
-  // a stable email order. Finding every match also lets simultaneous first
-  // use settle on one canonical file and merge older chat/share history.
-  const candidateKeys = [key, ...legacyKeys];
+  // Search the canonical pair name first, then both old per-contact names in the
+  // SAME stable email-sorted order both accounts compute, so simultaneous first
+  // use settles on one canonical primary file and merges older chat/share history.
   const candidates = [];
-  for (const candidateKey of candidateKeys) {
+  try {
+    const files = await api.drive.findFilesGlobal(ledgerFileName(key));
+    for (const file of files || []) if (file?.id) candidates.push(file);
+  } catch {
+    /* continue to other known names and local mappings */
+  }
+
+  // `contact:<other party>` uniquely identifies this pair, but `contact:<me>` is
+  // ambiguous: every Waymarker who ever added me created a file by that exact
+  // name, so a bare name match can surface a stranger's — or the AI companion's —
+  // chat. Keep a self-named match only when its participants include the target.
+  const selfLegacy = new Set(identity.selfLegacyKeys || []);
+  for (const legacyKey of legacyKeys) {
     try {
-      const files = await api.drive.findFilesGlobal(ledgerFileName(candidateKey));
-      for (const file of files || []) if (file?.id) candidates.push(file);
+      const files = await api.drive.findFilesGlobal(ledgerFileName(legacyKey));
+      for (const file of files || []) {
+        if (!file?.id || candidates.some(c => c.id === file.id)) continue;
+        if (selfLegacy.has(legacyKey) && !(await ledgerInvolvesContact(file, identity.contactEmail))) continue;
+        candidates.push(file);
+      }
     } catch {
       /* continue to other known names and local mappings */
     }
