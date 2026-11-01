@@ -1456,6 +1456,14 @@ export function parseAIJson(text) {
   return null;
 }
 
+/**
+ * Copy text to the clipboard with a robust execCommand fallback.
+ * Re-exported from ui.js so templates (which may only import from shared.js)
+ * get the same single, safe implementation as the rest of the app.
+ * @see ui.js copyToClipboard
+ */
+export { copyToClipboard } from '../ui.js';
+
 /** Whether the browser can capture audio with MediaRecorder. */
 export function isAudioRecordingSupported() {
   return typeof navigator !== 'undefined'

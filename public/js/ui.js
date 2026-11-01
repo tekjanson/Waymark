@@ -110,6 +110,42 @@ export function timeAgo(date) {
   return new Date(date).toLocaleDateString();
 }
 
+/* ---------- Clipboard ---------- */
+
+/**
+ * Copy text to the clipboard with a robust fallback. The async Clipboard API
+ * only works in a secure (https) context and when the document is focused; on
+ * insecure contexts navigator.clipboard is undefined and a bare
+ * `navigator.clipboard.writeText(...)` throws a synchronous TypeError. This
+ * helper prefers the modern API and falls back to a hidden-textarea
+ * execCommand('copy') so "Copy" never silently dead-ends.
+ * @param {string} text
+ * @returns {Promise<boolean>} true if the copy succeeded
+ */
+export async function copyToClipboard(text) {
+  const value = String(text ?? '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch { /* fall through to legacy path */ }
+
+  try {
+    const ta = el('textarea', { value, className: 'hidden', readOnly: true });
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 /* ---------- Sidebar toggle ---------- */
 
 export function toggleSidebar(forceOpen) {

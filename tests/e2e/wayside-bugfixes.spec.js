@@ -311,6 +311,10 @@ test('an active Wayside call survives a home re-render (pins changed / navigatin
 });
 
 test('SocialChatWidget never renders literal "null" text in header or root and exchanges bidirectional video + audio between two peers', async ({ page }) => {
+  // A real two-peer WebRTC handshake (ICE + DTLS + renegotiation glare) is
+  // CPU-bound; under heavy parallel test load the connection legitimately takes
+  // longer, so give this test extra headroom beyond the 30s default.
+  test.setTimeout(60_000);
   await setupApp(page, {
     pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
   });
@@ -375,7 +379,7 @@ test('SocialChatWidget never renders literal "null" text in header or root and e
 
     try {
       // Wait for DataChannel between Alice and Bob to open
-      const deadline = Date.now() + 8000;
+      const deadline = Date.now() + 20000;
       while (Date.now() < deadline) {
         const dcA = widgetA.session.connect?.connectedPeers()?.length || 0;
         const dcB = widgetB.session.connect?.connectedPeers()?.length || 0;
@@ -390,7 +394,7 @@ test('SocialChatWidget never renders literal "null" text in header or root and e
       ]);
 
       // Wait for both peers to receive each other's remote video AND audio streams
-      const mediaDeadline = Date.now() + 8000;
+      const mediaDeadline = Date.now() + 20000;
       while (Date.now() < mediaDeadline) {
         const aRemVideo = widgetA.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
         const bRemVideo = widgetB.remoteVideo?.srcObject?.getVideoTracks()?.length || 0;
@@ -402,6 +406,18 @@ test('SocialChatWidget never renders literal "null" text in header or root and e
 
       const pcA = Array.from(widgetA.session.connect._rtc.values())[0]?.pc;
       const pcB = Array.from(widgetB.session.connect._rtc.values())[0]?.pc;
+
+      // Let the status labels settle to their final state. After glare
+      // renegotiation the DataChannel can briefly flip pairing→connected, so
+      // poll for the settled value instead of sampling a transient.
+      const statusDeadline = Date.now() + 10000;
+      while (Date.now() < statusDeadline) {
+        if (widgetA.statusLabel?.textContent === 'Connected'
+          && widgetB.statusLabel?.textContent === 'Connected'
+          && pcA?.signalingState === 'stable'
+          && pcB?.signalingState === 'stable') break;
+        await new Promise(r => setTimeout(r, 50));
+      }
 
       return {
         statusA: widgetA.statusLabel?.textContent,

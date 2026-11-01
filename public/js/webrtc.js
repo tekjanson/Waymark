@@ -1478,14 +1478,13 @@ export class WaymarkConnect {
     }
 
     try {
-      if (offerCollision) {
-        await Promise.all([
-          r.pc.setLocalDescription({ type: 'rollback' }),
-          r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp }),
-        ]);
-      } else {
-        await r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
-      }
+      // Perfect negotiation: applying the remote offer while our own local
+      // offer is still pending performs an *implicit* rollback in modern
+      // browsers. Doing it in a single setRemoteDescription call — rather than a
+      // racy Promise.all([rollback, setRemoteDescription]) — prevents the polite
+      // peer from throwing mid-glare and never sending its answer, which would
+      // otherwise strand the impolite peer in 'have-local-offer' forever.
+      await r.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
       if (this._localStream) {
         const existingTracks = new Set(r.pc.getSenders().map(s => s.track).filter(Boolean));
         for (const t of this._localStream.getTracks()) {

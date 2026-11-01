@@ -3,14 +3,16 @@
    with inline editing, category grouping, and search
    ============================================================ */
 
-import { el, cell, editableCell, delegateEvent, registerTemplate } from './shared.js';
+import { el, cell, editableCell, delegateEvent, registerTemplate, copyToClipboard, showToast } from './shared.js';
 import * as encryption from '../encryption.js';
 
 /* ---------- Copy to clipboard helper ---------- */
 
-function copyToClip(text, label) {
-  if (!text) return;
-  navigator.clipboard.writeText(text).catch(() => {});
+async function copyToClip(text, label) {
+  if (!text) return false;
+  const ok = await copyToClipboard(text);
+  if (!ok) showToast(`Could not copy ${label || 'value'}`, 'error');
+  return ok;
 }
 
 export async function getDecryptedKey(model, vaultSheet, sheetId = null) {
@@ -192,7 +194,7 @@ const definition = {
     });
 
     /* ---------- Delegated copy buttons ---------- */
-    delegateEvent(grid, 'click', '.passwords-copy-btn', (e, btn) => {
+    delegateEvent(grid, 'click', '.passwords-copy-btn', async (e, btn) => {
       const field = btn.dataset.field;
       const rIdx = Number(btn.dataset.rowIdx);
       const entry = rows[rIdx - 1];
@@ -202,9 +204,11 @@ const definition = {
       if (field === 'password' && cols.password >= 0) val = cell(entry, cols.password);
       if (field === 'url' && cols.url >= 0) val = cell(entry, cols.url);
       if (val) {
-        copyToClip(val, field);
-        btn.textContent = '✓';
-        setTimeout(() => { btn.textContent = '📋'; }, 1200);
+        const ok = await copyToClip(val, field);
+        if (ok) {
+          btn.textContent = '✓';
+          setTimeout(() => { btn.textContent = '📋'; }, 1200);
+        }
       }
     });
   },
