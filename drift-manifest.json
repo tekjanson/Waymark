@@ -372,6 +372,60 @@
           "kind": "manifest"
         }
       ]
+    },
+    {
+      "id": "capability-parity",
+      "type": "capability-parity",
+      "enabled": true,
+      "severity": "error",
+      "description": "Browser-capability affordances must degrade gracefully and share one safe implementation.",
+      "what": "Detects equivalent capabilities (voice input, clipboard copy) implemented inconsistently \u2014 one surface degrades gracefully while another dead-ends when the capability is unavailable.",
+      "why": "Insecure (http) contexts, denied permissions, and unsupported browsers make navigator.mediaDevices/clipboard undefined; a bare guard+toast or a direct writeText() leaves the feature silently broken.",
+      "capabilities": [
+        {
+          "id": "voice",
+          "capability": [
+            "isAudioRecordingSupported\\s*\\(",
+            "\\bSpeechRecognition\\b",
+            "\\bwebkitSpeechRecognition\\b",
+            "startAIRecording\\s*\\("
+          ],
+          "intent": [
+            "voice",
+            "\\bmic\\b",
+            "[Rr]ecord"
+          ],
+          "fallback": [
+            "showVoiceTranscriptInput",
+            "analyzeVoiceText",
+            "voice-text",
+            "voice-input"
+          ],
+          "exempt": [
+            "public/js/templates/shared.js"
+          ],
+          "message": "voice/capture affordance has no typed fallback \u2014 it dead-ends when the mic is unavailable (insecure context / denied / unsupported). Add a text fallback like kanban's showVoiceTranscriptInput or calorie's analyzeVoiceText."
+        },
+        {
+          "id": "clipboard",
+          "capability": [
+            "navigator\\s*\\.\\s*clipboard\\s*\\.\\s*writeText\\s*\\("
+          ],
+          "forbid_direct": true,
+          "exempt": [
+            "public/js/ui.js",
+            "public/js/templates/shared.js"
+          ],
+          "message": "calls navigator.clipboard.writeText directly \u2014 throws on insecure contexts and silently fails. Route through the shared copyToClipboard() helper (execCommand fallback)."
+        }
+      ],
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
     }
   ]
 }
