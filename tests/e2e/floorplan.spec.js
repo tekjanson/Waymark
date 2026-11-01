@@ -928,9 +928,16 @@ test('off-center rooms stay off-center after resize updates', async ({ page }) =
 
   await page.reload();
   await page.waitForSelector('.floorplan-board', { timeout: 5_000 });
-  await page.locator('.floorplan-svg').evaluate((svg) => svg.setAttribute('viewBox', '900 120 960 620'));
   await selectTool(page, 'select');
-  await page.click(`[data-floorplan-item="${roomId}"]`);
+  // Select the moved room at its actual on-screen position. boundingBox reflects
+  // whatever viewBox the board settled on after reload, so the click lands on the
+  // room regardless of pan/auto-fit (a fixed artificial viewBox gets overwritten
+  // by the board's own render).
+  const roomLoc = page.locator(`[data-floorplan-item="${roomId}"]`);
+  await expect(roomLoc).toHaveCount(1);
+  const roomBox = await roomLoc.boundingBox();
+  if (!roomBox) throw new Error('Moved room not visible');
+  await page.mouse.click(roomBox.x + roomBox.width / 2, roomBox.y + roomBox.height / 2);
 
   const handle = page.locator('.floorplan-resize-handle[data-floorplan-handle="room-nw"]').first();
   await expect(handle).toHaveCount(1);
