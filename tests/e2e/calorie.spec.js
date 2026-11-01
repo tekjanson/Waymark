@@ -564,3 +564,40 @@ test('deleting or updating items preserves scroll position instead of snapping t
   expect(afterScroll).toBeGreaterThan(150);
 });
 
+test('voice modal still opens with a text fallback when the mic is unavailable (insecure context)', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-root', { timeout: 5_000 });
+
+  // Simulate an insecure (http) context where navigator.mediaDevices is undefined,
+  // which makes isAudioRecordingSupported() return false. The modal must still open
+  // with a usable text fallback instead of dead-ending on a toast.
+  await page.evaluate(() => {
+    try { Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined }); } catch {}
+    // @ts-ignore — remove MediaRecorder so the support check fails deterministically.
+    delete window.MediaRecorder;
+  });
+
+  await page.locator('.calorie-tool-btn[aria-label="Voice log"]').click();
+
+  // The record clicker modal pops up (the reported bug was that it never appeared).
+  await page.waitForSelector('.calorie-voice-body', { timeout: 5_000 });
+  await expect(page.locator('.calorie-voice-text')).toBeVisible();
+  await expect(page.locator('.calorie-voice-mic')).toHaveCount(0);
+  await expect(page.locator('.calorie-ai-status')).toContainText('secure');
+});
+
+test('voice modal always offers a text fallback alongside the mic when recording is supported', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, SHEET);
+  await page.waitForSelector('.calorie-root', { timeout: 5_000 });
+
+  await page.locator('.calorie-tool-btn[aria-label="Voice log"]').click();
+
+  // Both the mic button AND the typed fallback are present, so voice input never
+  // dead-ends — the same graceful-degradation contract the kanban voice intake honors.
+  await page.waitForSelector('.calorie-voice-body', { timeout: 5_000 });
+  await expect(page.locator('.calorie-voice-mic')).toBeVisible();
+  await expect(page.locator('.calorie-voice-text')).toBeVisible();
+});
+
