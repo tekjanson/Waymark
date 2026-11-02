@@ -159,14 +159,14 @@ test('sidebar is hidden off-canvas when closed at 375px', async ({ page }) => {
     await expect(sidebar).not.toHaveClass(/sidebar-open/);
   }
 
-  // On mobile, closed sidebar should be translated off-canvas (left of viewport)
-  const rect = await sidebar.boundingBox();
-  if (rect) {
-    // Either hidden or off the left edge — sidebar should not be visible in viewport
-    const isOffCanvas = rect.x + rect.width <= 0;
-    const isHidden = rect.width === 0;
-    expect(isOffCanvas || isHidden).toBe(true);
-  }
+  // On mobile, closed sidebar should be translated off-canvas (left of viewport).
+  // Poll the box so we wait for the CSS transform transition to settle rather
+  // than sleeping a fixed interval.
+  await expect.poll(async () => {
+    const rect = await sidebar.boundingBox();
+    if (!rect) return true;                 // not rendered → hidden
+    return rect.width === 0 || rect.x + rect.width <= 0;
+  }, { timeout: 2000 }).toBe(true);
 });
 
 /* ────────────────── Top-bar at 768px (tablet) ────────────────── */
