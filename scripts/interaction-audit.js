@@ -32,6 +32,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATES_DIR = path.join(ROOT, 'public', 'js', 'templates');
+const PUBLIC_JS_DIR = path.join(ROOT, 'public', 'js');
 
 /* ---------- File discovery ---------- */
 
@@ -186,6 +187,39 @@ function auditImportBoundary(file) {
   };
 }
 
+/* ---------- Rule: no dynamic innerHTML (AI_LAWS §3.4 / §12 — XSS) ---------- */
+
+// Assigning a template literal that interpolates runtime values into innerHTML
+// is an XSS vector (e.g. `innerHTML = `…${err.message}`` injects unescaped
+// content). Static strings and `innerHTML = ''` clearing are fine; dynamic
+// content must be built with el() + textContent. Scans all of public/js.
+const DYNAMIC_INNERHTML = /\.innerHTML\s*=\s*`[^`]*\$\{/;
+
+/** Collect .js files under public/js, skipping the third-party vendor tree. */
+function collectPublicJsFiles() {
+  return collectJsFiles(PUBLIC_JS_DIR).filter(
+    f => !path.relative(PUBLIC_JS_DIR, f).split(path.sep).includes('vendor'),
+  );
+}
+
+/**
+ * Audit a file for dynamic innerHTML interpolation.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditDynamicInnerHtml(file) {
+  const src = fs.readFileSync(file, 'utf8');
+  if (!DYNAMIC_INNERHTML.test(src)) return null;
+  return {
+    file: path.relative(ROOT, file),
+    violations: [
+      'assigns a template literal with ${…} interpolation to innerHTML — an XSS '
+      + 'vector for any runtime/user value. Build the node with el() and set '
+      + 'text via textContent instead (AI_LAWS §3.4, §12).',
+    ],
+  };
+}
+
 /* ---------- Runner ---------- */
 
 function main() {
@@ -217,13 +251,21 @@ function main() {
   }
 
   console.log('interaction-audit — behavioral parity drift guard');
-  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY`);
+  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY, DYNAMIC_INNERHTML`);
   console.log(`  voice-intake surfaces scanned: ${voiceSurfaces}`);
   console.log(`  clipboard surfaces scanned: ${clipboardSurfaces}`);
   console.log(`  template modules scanned for import boundary: ${importSurfaces}`);
 
+  // Dynamic-innerHTML XSS scan spans all of public/js, not just templates.
+  const publicFiles = collectPublicJsFiles();
+  for (const file of publicFiles) {
+    const xss = auditDynamicInnerHtml(file);
+    if (xss) findings.push(xss);
+  }
+  console.log(`  public/js modules scanned for dynamic innerHTML: ${publicFiles.length}`);
+
   if (!findings.length) {
-    console.log('  ✓ no drift — voice/clipboard degrade gracefully & no template imports Google APIs directly');
+    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML');
     process.exit(0);
   }
 

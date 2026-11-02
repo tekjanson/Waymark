@@ -63,6 +63,24 @@ a clean pass. Current: **0 clean / 12 needed.**
 - **Result:** audit scans 82 template modules clean; gates green; agents +
   floorplan + shared specs pass in isolation and at low parallelism.
 
+### Iteration 3 — dynamic `innerHTML` XSS vectors ✅ FIXED
+- **Symptom:** Two modules injected a runtime value into `innerHTML` via a
+  template literal: `search.js` (`…${err.message}`) and `app.js`
+  (`Failed to load folder: ${err.message}`) — an XSS vector per AI_LAWS §3.4/§12.
+- **Root cause:** No gate flagged dynamic `innerHTML` interpolation. Static
+  strings and `innerHTML = ''` clearing are fine, so a blunt grep over-reports;
+  the real risk is *interpolated* content.
+- **Upgrade:** Added `DYNAMIC_INNERHTML` rule to `scripts/interaction-audit.js`
+  (`/\.innerHTML\s*=\s*` + backtick + `…${/`), scanning *all* of `public/js`
+  (not just templates), skipping `vendor/`. Negative-tested: catches dynamic,
+  ignores static strings, `''` clears, and sanitized function calls
+  (`innerHTML = sanitizeDocHtml(...)`).
+- **Fix:** Rebuilt both empty-states with `el('p', {className:'empty-state'}, [text])`
+  + `textContent` semantics (el() escapes text). Confirmed 0 dynamic-innerHTML
+  sites remain across `public/js`.
+- **Result:** audit scans 141 public/js modules clean; gates green; 100
+  search/folder specs pass.
+
 ### Backlog (found, not yet fixed)
 - **B1 — broader §1.5 cleanup (18 remaining):** templates still import
   `storage.js`, `encryption.js`, `camera-capture.js`, `social-widget.js`
