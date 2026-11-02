@@ -81,15 +81,28 @@ a clean pass. Current: **0 clean / 12 needed.**
 - **Result:** audit scans 141 public/js modules clean; gates green; 100
   search/folder specs pass.
 
+### Iteration 4 — storage.js direct imports (§1.5) ✅ FIXED
+- **Symptom:** 7 templates imported `storage.js` directly (`notification.js`,
+  `blog.js`, `agents.js`, `flow/helpers.js`, `iot/index.js`,
+  `kanban/brainstorm.js`, `floorplan/index.js`) — all using only
+  `getRaw`/`setRaw`/`removeRaw`.
+- **Root cause:** The iteration-2 boundary rule only covered the Google-API
+  gateway (api-client/drive/sheets), so storage.js slipped through.
+- **Upgrade:** Extended the `GOOGLE_API_IMPORT_BOUNDARY` regex to include
+  `storage.js`.
+- **Fix:** Re-exported `getRaw`/`setRaw`/`removeRaw` via `shared.js`; re-pointed
+  all 7 templates to import them from shared.js and dropped the direct
+  `import * as storage` namespace lines.
+- **Result:** audit clean; gates green; 615 affected-template specs pass.
+
 ### Backlog (found, not yet fixed)
-- **B1 — broader §1.5 cleanup (18 remaining):** templates still import
-  `storage.js`, `encryption.js`, `camera-capture.js`, `social-widget.js`
-  directly, and the `arcade/*` template reaches its `public/js/arcade/**` game
-  engine. The arcade engine is a legitimate subsystem (candidate for an
-  allow-listed exception + an AI_LAWS §1.5 clarification); the storage /
-  encryption / camera / social-widget imports should route through shared.js
-  re-exports in a future iteration. The new audit rule is intentionally scoped
-  to the §1.4 Google-API gateway for now to keep each iteration safe + tested.
+- **B1 — broader §1.5 cleanup (remaining):** templates still import
+  `encryption.js`, `camera-capture.js`, `social-widget.js` directly, and the
+  `arcade/*` template reaches its `public/js/arcade/**` game engine. The arcade
+  engine is a legitimate subsystem (candidate for an allow-listed exception + an
+  AI_LAWS §1.5 clarification); encryption / camera / social-widget imports should
+  route through shared.js re-exports in a future iteration.
+  **(storage.js — DONE in iteration 4.)**
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
   loop work (verified with loop changes stashed). Likely a headless WebAuthn

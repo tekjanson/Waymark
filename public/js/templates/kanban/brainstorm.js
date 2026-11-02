@@ -1,4 +1,3 @@
-import * as storage from '../../storage.js';
 /* ============================================================
    kanban/brainstorm.js — Brainstorming mode for kanban ideas
 
@@ -7,7 +6,7 @@ import * as storage from '../../storage.js';
    creation, AI-driven discussion, and task promotion.
    ============================================================ */
 
-import { el, editableCell, emitEdit, getUserName, showToast } from '../shared.js';
+import { getRaw, setRaw, el, editableCell, emitEdit, getUserName, showToast } from '../shared.js';
 import { formatRelativeDate, nowTimestamp } from './helpers.js';
 
 /* ---------- Brainstorm State ---------- */
@@ -23,7 +22,7 @@ const BRAINSTORM_STORAGE_KEY = 'waymark_brainstorm_ideas';
 function saveBrainstormIdeas() {
   const data = JSON.stringify(_brainstormIdeas);
   try {
-    storage.setRaw(BRAINSTORM_STORAGE_KEY, data);
+    setRaw(BRAINSTORM_STORAGE_KEY, data);
   } catch (e) {
     console.warn('Failed to save brainstorm ideas:', e);
   }
@@ -31,7 +30,7 @@ function saveBrainstormIdeas() {
 
 function loadBrainstormIdeas() {
   try {
-    const data = storage.getRaw(BRAINSTORM_STORAGE_KEY);
+    const data = getRaw(BRAINSTORM_STORAGE_KEY);
     _brainstormIdeas = data ? JSON.parse(data) : [];
   } catch (e) {
     console.warn('Failed to load brainstorm ideas:', e);

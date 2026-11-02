@@ -1,4 +1,3 @@
-import * as storage from '../storage.js';
 /* ============================================================
    templates/agents.js — AI Agent Registry: remote personality
    and tuning config panel for dev-worker agents.
@@ -8,7 +7,7 @@ import * as storage from '../storage.js';
    agents read their row on boot and pick up the config.
    ============================================================ */
 
-import { api, el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
+import { getRaw, setRaw, removeRaw, api, el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';
@@ -99,7 +98,7 @@ const definition = {
     // Users accessing via swiftirons.com can configure their local webhook URL via the ⚙️ button
     // and it will be persisted in localStorage so the Sync Fleet button works for them too.
     const webhookUrl = window.__WAYMARK_FLEET_WEBHOOK
-      || storage.getRaw(LS_WEBHOOK_KEY)
+      || getRaw(LS_WEBHOOK_KEY)
       || null;
 
     /* -- Sync Fleet button (visible when webhook URL is known) -- */
@@ -110,7 +109,7 @@ const definition = {
     }, ['🔄 Sync Fleet']);
 
     syncBtn.addEventListener('click', async () => {
-      const url = window.__WAYMARK_FLEET_WEBHOOK || storage.getRaw(LS_WEBHOOK_KEY);
+      const url = window.__WAYMARK_FLEET_WEBHOOK || getRaw(LS_WEBHOOK_KEY);
       if (!url) { showToast('No webhook URL configured — click ⚙️ to set one', 'error'); return; }
       syncBtn.textContent = '⏳ Syncing…';
       syncBtn.disabled = true;
@@ -138,11 +137,11 @@ const definition = {
     function _saveCfgUrl() {
       const v = cfgInput.value.trim();
       if (v) {
-        storage.setRaw(LS_WEBHOOK_KEY, v);
+        setRaw(LS_WEBHOOK_KEY, v);
         syncBtn.style.display = '';
         syncBtn.title = `Sync fleet via ${v}`;
       } else {
-        storage.removeRaw(LS_WEBHOOK_KEY);
+        removeRaw(LS_WEBHOOK_KEY);
         if (!window.__WAYMARK_FLEET_WEBHOOK) syncBtn.style.display = 'none';
       }
       cfgInput.classList.add('hidden');

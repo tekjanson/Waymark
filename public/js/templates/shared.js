@@ -1301,6 +1301,9 @@ export {
   setCalorieProfile,
   getTemplatePref,
   setTemplatePref,
+  getRaw,
+  setRaw,
+  removeRaw,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */

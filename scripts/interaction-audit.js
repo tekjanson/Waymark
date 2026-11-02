@@ -162,8 +162,11 @@ function auditClipboardDegradation(file) {
 // sheets.js directly bypasses the gateway, which breaks the mock-mode + test
 // isolation the whole suite depends on. shared.js is the one legitimate importer
 // (it re-exports the `api` object + sheet helpers) and is exempt via isLibraryFile.
+//
+// storage.js is also re-exported by shared.js (getRaw/setRaw/removeRaw + prefs);
+// templates must use those re-exports, not import storage.js directly (§1.5).
 const GATEWAY_IMPORT =
-  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets)\.js['"]/;
+  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage)\.js['"]/;
 
 /**
  * Audit a single template file against the Google-API import boundary.
@@ -179,10 +182,11 @@ function auditImportBoundary(file) {
   return {
     file: path.relative(ROOT, file),
     violations: [
-      `imports ${moduleName} directly — templates must route all Google API `
-      + 'access through shared.js (which re-exports the canonical `api` object), '
-      + 'never import api-client.js/drive.js/sheets.js. This preserves mock mode '
-      + 'and test isolation (AI_LAWS §1.4, §1.5).',
+      `imports ${moduleName} directly — templates must route canonical access `
+      + 'through shared.js (which re-exports the `api` object, sheet helpers, and '
+      + 'storage getRaw/setRaw/removeRaw), never import '
+      + 'api-client.js/drive.js/sheets.js/storage.js directly. This preserves '
+      + 'mock mode and test isolation (AI_LAWS §1.4, §1.5).',
     ],
   };
 }

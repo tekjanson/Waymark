@@ -1,5 +1,4 @@
-import { svg } from '../shared.js';
-import * as storage from '../../storage.js';
+import { svg, getRaw, setRaw } from '../shared.js';
 /* ============================================================
    flow/helpers.js — Constants & pure helper functions
 
@@ -31,7 +30,7 @@ const STORAGE_KEY = 'waymark:flow-positions';
 
 /** Load all saved positions from localStorage */
 function _loadPositions() {
-  try { return JSON.parse(storage.getRaw(STORAGE_KEY)) || {}; } catch { return {}; }
+  try { return JSON.parse(getRaw(STORAGE_KEY)) || {}; } catch { return {}; }
 }
 
 /** Cached node positions across renders (key = "groupName:stepKey") */
@@ -44,7 +43,7 @@ function _scheduleSave() {
   _saveTimer = setTimeout(() => {
     const obj = {};
     for (const [k, v] of _nodePositions) obj[k] = v;
-    try { storage.setRaw(STORAGE_KEY, JSON.stringify(obj)); } catch { /* quota */ }
+    try { setRaw(STORAGE_KEY, JSON.stringify(obj)); } catch { /* quota */ }
   }, 300);
 }
 
