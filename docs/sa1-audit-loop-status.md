@@ -133,11 +133,34 @@ a clean pass. Current: **0 clean / 12 needed.**
   (api-client/drive/sheets/storage/camera-capture/encryption/social-widget) is
   caught, with exactly one documented, code-reviewed exception.
 
+### Iteration 8 — test hygiene (§7.2): flat/isolated specs ✅ RULE ADDED + 2 FIXED
+- **Symptom:** `rfi.spec.js` used `test.describe` + `test.beforeEach`;
+  `design-audit.spec.js` used `test.beforeAll`. A wider legacy backlog exists:
+  11 specs use `page.waitForTimeout()` and 3 use `test.describe()`
+  (`headless-oauth-mcp`, `unit-wayside-orchestrator`, `wayside-ai` — from #205).
+- **Upgrade:** Added a `TEST_HYGIENE` rule to `scripts/interaction-audit.js`
+  scanning `tests/e2e/*.spec.js` for `test.describe`, lifecycle hooks
+  (`beforeEach`/`afterEach`/`beforeAll`/`afterAll`), `data-testid`, and
+  `waitForTimeout`. Verified a new violation fails the gate (probe test).
+- **Fix (full):** `rfi.spec.js` — converted `beforeEach` to a `mountRfi(page)`
+  helper called in each test, removed the `describe` wrapper (5/5 pass).
+  `design-audit.spec.js` — moved the `beforeAll` dir reset to module-level
+  (runs once at spec load, no hook).
+- **Baseline:** The remaining 14 legacy violators are grandfathered in
+  `TEST_HYGIENE_BASELINE` — the gate blocks **new** violations while these are
+  burned down in later iterations. **Do not add new entries; fix the spec.**
+- **Result:** gate green (14 grandfathered); gates green; rfi 5/5 pass.
+
 ### Backlog (found, not yet fixed)
+- **B3 — §7.2 baseline burn-down (14 specs):** remove `waitForTimeout`
+  (→ `waitForSelector`) from `agent, agents, blog, cache-update, contacts,
+  design-audit, kanban, linker, mobile-layout, public, tutorial`; remove
+  `test.describe` from `headless-oauth-mcp, unit-wayside-orchestrator,
+  wayside-ai`. Delete each from `TEST_HYGIENE_BASELINE` as it is cleaned. Do one
+  or a few specs per iteration, running each spec after to avoid flakiness.
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
-  loop work (verified with loop changes stashed). Likely a headless WebAuthn
-  virtual-authenticator gap. No gate covers the biometric unlock flow.
+  loop work. No gate covers the biometric unlock flow.
   **(B1 §1.5 cleanup — COMPLETE as of iter 7.)**
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of

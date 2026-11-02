@@ -243,6 +243,54 @@ function auditDynamicInnerHtml(file) {
   };
 }
 
+/* ---------- Rule: test hygiene (AI_LAWS §7.2) ---------- */
+
+// Playwright specs must be flat: no describe() blocks, no beforeEach/afterEach/
+// beforeAll/afterAll hooks (every test is independently isolated), no
+// data-testid selectors, and no page.waitForTimeout() (use waitForSelector).
+const E2E_DIR = path.join(ROOT, 'tests', 'e2e');
+const TEST_HYGIENE_RULES = [
+  { re: /\btest\s*\.\s*describe\s*\(/, msg: 'uses test.describe() — specs must be flat test() calls (no describe blocks).' },
+  { re: /\btest\s*\.\s*(beforeEach|afterEach|beforeAll|afterAll)\s*\(/, msg: 'uses a test lifecycle hook — every test must be self-contained (no beforeEach/afterEach/beforeAll/afterAll); extract shared setup into a helper called inside each test.' },
+  { re: /['"`]data-testid['"`]|\[data-testid/, msg: 'uses a data-testid selector — select by semantic CSS classes / element IDs instead.' },
+  { re: /\.waitForTimeout\s*\(/, msg: 'uses page.waitForTimeout() — use waitForSelector() with an explicit timeout instead.' },
+];
+
+/**
+ * Audit a single e2e spec against the test-hygiene rules.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditTestHygiene(file) {
+  const src = fs.readFileSync(file, 'utf8');
+  const violations = [];
+  for (const { re, msg } of TEST_HYGIENE_RULES) {
+    if (re.test(src)) violations.push(msg);
+  }
+  return violations.length ? { file: path.relative(ROOT, file), violations } : null;
+}
+
+// Grandfathered §7.2 violators present when the rule was introduced. The rule
+// blocks any NEW violation; these are burned down in later loop iterations and
+// removed from this list as each spec is cleaned. DO NOT add new entries — fix
+// the spec instead. (rfi.spec.js was fully fixed and is intentionally absent.)
+const TEST_HYGIENE_BASELINE = new Set([
+  'tests/e2e/agent.spec.js',
+  'tests/e2e/agents.spec.js',
+  'tests/e2e/blog.spec.js',
+  'tests/e2e/cache-update.spec.js',
+  'tests/e2e/contacts.spec.js',
+  'tests/e2e/design-audit.spec.js',
+  'tests/e2e/headless-oauth-mcp.spec.js',
+  'tests/e2e/kanban.spec.js',
+  'tests/e2e/linker.spec.js',
+  'tests/e2e/mobile-layout.spec.js',
+  'tests/e2e/public.spec.js',
+  'tests/e2e/tutorial.spec.js',
+  'tests/e2e/unit-wayside-orchestrator.spec.js',
+  'tests/e2e/wayside-ai.spec.js',
+]);
+
 /* ---------- Runner ---------- */
 
 function main() {
@@ -287,8 +335,24 @@ function main() {
   }
   console.log(`  public/js modules scanned for dynamic innerHTML: ${publicFiles.length}`);
 
+  // Test-hygiene scan over the e2e specs (AI_LAWS §7.2). Grandfathered specs in
+  // TEST_HYGIENE_BASELINE are reported as backlog but don't fail the gate; any
+  // NEW violation (a spec not in the baseline) fails.
+  let e2eSpecs = [];
+  let grandfathered = 0;
+  if (fs.existsSync(E2E_DIR)) {
+    e2eSpecs = collectJsFiles(E2E_DIR).filter(f => f.endsWith('.spec.js'));
+    for (const file of e2eSpecs) {
+      const hyg = auditTestHygiene(file);
+      if (!hyg) continue;
+      if (TEST_HYGIENE_BASELINE.has(hyg.file)) grandfathered++;
+      else findings.push(hyg);
+    }
+  }
+  console.log(`  e2e specs scanned for test hygiene: ${e2eSpecs.length} (grandfathered backlog: ${grandfathered})`);
+
   if (!findings.length) {
-    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML');
+    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML, flat/isolated e2e specs');
     process.exit(0);
   }
 
