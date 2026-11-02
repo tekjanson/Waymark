@@ -6,6 +6,7 @@
 > this file + `docs/sa1-audit-loop-handoff.md` and continues from "Next Action".
 
 **Loop branch (Waymark):** `chore/sa1-audit-loop-20261101`
+**Iterations complete:** 10 (see below). **Commit+push every iteration** — the shared worktree is used by an autonomous fleet that can switch branches.
 **Base:** `origin/main` @ `b4eb826` (PR #205 merged — AGY local-AI + #208 fixes)
 **SA1 repo:** `/home/tekjanson/Documents/Code/SpamApply1` (NOT a git repo locally —
 patches are applied to the on-disk source that `make gates` uses; mirror each
@@ -151,16 +152,33 @@ a clean pass. Current: **0 clean / 12 needed.**
   burned down in later iterations. **Do not add new entries; fix the spec.**
 - **Result:** gate green (14 grandfathered); gates green; rfi 5/5 pass.
 
+### Iteration 9 — §7.2 burn-down: de-nest 3 `test.describe` specs ✅ FIXED
+- Removed the single `test.describe` wrapper (no inner hooks) from
+  `headless-oauth-mcp`, `unit-wayside-orchestrator`, `wayside-ai`; dropped them
+  from `TEST_HYGIENE_BASELINE` (14→11). 27 tests pass.
+
+### Iteration 10 — §7.2 burn-down: 3 `waitForTimeout` → deterministic waits ✅ FIXED
+- `cache-update.spec.js`: dropped a redundant `waitForTimeout(100)` (the next
+  line already `waitForSelector('.toast')`).
+- `mobile-layout.spec.js`: replaced `waitForTimeout(300)` with a poll on the
+  sidebar bounding box (waits for the CSS transform transition to settle —
+  simply waiting for the class removal fired mid-animation).
+- `agents.spec.js`: replaced `waitForTimeout(500)` with
+  `expect.poll(() => capturedRequest !== null)`.
+- Dropped the 3 from `TEST_HYGIENE_BASELINE` (11→8). All pass; gates green.
+- **⚠️ Infra note:** the repo's autonomous fleet checked out `main` in the shared
+  worktree between iter9 and iter10, discarding uncommitted edits. **Commit +
+  push after every iteration** (now standard practice here). Recovered via the
+  pushed remote branch + reflog.
+
 ### Backlog (found, not yet fixed)
-- **B3 — §7.2 baseline burn-down (14 specs):** remove `waitForTimeout`
-  (→ `waitForSelector`) from `agent, agents, blog, cache-update, contacts,
-  design-audit, kanban, linker, mobile-layout, public, tutorial`; remove
-  `test.describe` from `headless-oauth-mcp, unit-wayside-orchestrator,
-  wayside-ai`. Delete each from `TEST_HYGIENE_BASELINE` as it is cleaned. Do one
-  or a few specs per iteration, running each spec after to avoid flakiness.
+- **B3 — §7.2 baseline burn-down (8 specs left):** remove `waitForTimeout`
+  (→ deterministic waits) from `agent, blog, contacts, kanban, linker, public,
+  tutorial, design-audit`. (`agent`/`blog` wait for *error-absence* and need a
+  real settle signal — convert carefully.) Delete each from
+  `TEST_HYGIENE_BASELINE` as cleaned.
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
-  `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
-  loop work. No gate covers the biometric unlock flow.
+  `:4050` fail on `origin/main` independent of loop work.
   **(B1 §1.5 cleanup — COMPLETE as of iter 7.)**
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
