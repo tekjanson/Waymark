@@ -5,7 +5,7 @@
    registry that individual template modules register into.
    ============================================================ */
 
-import { el, showToast } from '../ui.js';
+import { el, showToast, copyToClipboard } from '../ui.js';
 import * as agentVault from '../agent/vault.js';
 import { captureStillFromCamera, hasUserMedia, getUserMediaStream } from '../camera-capture.js';
 export { WaymarkConnect } from '../webrtc.js';
@@ -673,8 +673,10 @@ function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
   return wrapper;
 }
 
-/* Re-export el and showToast for convenience — templates only need to import from shared */
-export { el, showToast };
+/* Re-export el, showToast, and the clipboard helper for convenience —
+   templates only need to import from shared. copyToClipboard is the single safe
+   implementation (secure-context Clipboard API + execCommand fallback). */
+export { el, showToast, copyToClipboard };
 
 /* Re-export the camera still-capture helper so template sub-modules can access
    it without importing outside their folder (§1.5). */

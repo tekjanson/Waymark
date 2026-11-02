@@ -6,7 +6,7 @@ import * as storage from './storage.js';
    ============================================================ */
 
 import { api } from './api-client.js';
-import { el, showToast, timeAgo } from './ui.js';
+import { el, showToast, timeAgo, copyToClipboard } from './ui.js';
 import { show as showTemplateAI } from './template-ai.js';
 import * as userData from './user-data.js';
 import { showPinMenu } from './pin-menu.js';
@@ -990,7 +990,7 @@ function openDuplicateModal() {
 
 /* ---------- Data loading ---------- */
 
-  async function loadSheet(sheetId, { background = false } = {}) {
+  async function loadSheet(sheetId, { background = false, forceRender = false } = {}) {
   try {
     const previousDigest = currentSheetId === sheetId && Array.isArray(currentValues) && currentValues.length
       ? collab.computeSheetDigest(currentValues).hash
@@ -1041,7 +1041,13 @@ function openDuplicateModal() {
     }
 
     const nextDigest = currentValues?.length ? collab.computeSheetDigest(currentValues) : null;
-    if (previousDigest !== nextDigest?.hash) renderWithTemplate(currentValues);
+    // Normally skip a redundant re-render when the sheet is byte-identical (used
+    // by background polling). After an explicit mutation (add row), force the
+    // render: in mock/local mode currentValues aliases the fetched array so the
+    // digest can appear unchanged, and in production an eventually-consistent
+    // re-fetch could momentarily return pre-append data — either way the new
+    // row must be reflected immediately.
+    if (forceRender || previousDigest !== nextDigest?.hash) renderWithTemplate(currentValues);
     if (currentValues && currentValues.length) {
       setSheetDigest(sheetId, nextDigest);
     }
@@ -1326,7 +1332,7 @@ function renderWithTemplate(values) {
         }
       }
 
-      await loadSheet(currentSheetId);
+      await loadSheet(currentSheetId, { forceRender: true });
     } catch (err) {
       showToast(`Failed to add: ${err.message}`, 'error');
     }
@@ -1384,16 +1390,18 @@ function renderWithTemplate(values) {
         rowLabel: String(insertedLabel || '').trim(),
       }).catch(() => {});
       // Use the data we already fetched — avoid an extra round-trip to Sheets.
-      // Skip re-render only when a real inline cell edit is focused (so we don't
-      // clobber in-progress typing); an explicit insert via a form button must
-      // always refresh the view.
+      // Skip re-render only if the user has an active inline *cell edit* (a
+      // focused text field inside the view) so we don't clobber unsaved text.
+      // A focused button — e.g. a template's own "Create"/"Add" control that
+      // lives inside the view — is NOT an inline edit and must not suppress the
+      // re-render, otherwise the just-inserted row never appears.
       currentValues = values;
       lastFetchTime = new Date();
       updateTimestamp();
       const activeEl = document.activeElement;
-      const inlineEditActive = activeEl && typeof activeEl.matches === 'function'
-        && activeEl.matches('input.editable-cell-input, .editable-cell-input, [contenteditable="true"]');
-      if (!inlineEditActive) {
+      const activeInlineEdit = itemsEl && activeEl && itemsEl.contains(activeEl)
+        && activeEl.matches('input, textarea, [contenteditable="true"]');
+      if (!activeInlineEdit) {
         renderWithTemplate(currentValues);
       }
     } catch (err) {
@@ -1812,17 +1820,13 @@ async function openShareModal(sheetId, sheetName) {
   modal.querySelectorAll('.share-copy-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const link = btn.dataset.link;
-      try {
-        await navigator.clipboard.writeText(link);
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
-      } catch {
-        // Fallback: select the input
+      const ok = await copyToClipboard(link);
+      if (!ok) {
         const input = btn.parentElement.querySelector('.share-link-input');
-        if (input) { input.select(); document.execCommand('copy'); }
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+        if (input) input.select();
       }
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
     });
   });
 

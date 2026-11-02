@@ -3,7 +3,7 @@
    track what resonates, find your voice, grow your audience
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn, generateText, showToast } from './shared.js';
+import { el, cell, editableCell, emitEdit, registerTemplate, delegateEvent, cycleStatus, buildDirSyncBtn, generateText, showToast, copyToClipboard } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -103,14 +103,10 @@ function _showMetricsModal(sheetId) {
   const copyBtn = el('button', { className: 'marketing-metrics-copy-btn' }, ['Copy Config']);
   const configArea = el('pre', { className: 'marketing-metrics-config' }, [configJson]);
 
-  copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(configJson).then(() => {
-      copyBtn.textContent = '✓ Copied';
-      setTimeout(() => { copyBtn.textContent = 'Copy Config'; }, 2000);
-    }).catch(() => {
-      copyBtn.textContent = 'Copy failed';
-      setTimeout(() => { copyBtn.textContent = 'Copy Config'; }, 2000);
-    });
+  copyBtn.addEventListener('click', async () => {
+    const ok = await copyToClipboard(configJson);
+    copyBtn.textContent = ok ? '✓ Copied' : 'Copy failed';
+    setTimeout(() => { copyBtn.textContent = 'Copy Config'; }, 2000);
   });
 
   const modal = el('div', { className: 'marketing-metrics-modal' }, [
