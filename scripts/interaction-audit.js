@@ -166,7 +166,7 @@ function auditClipboardDegradation(file) {
 // storage.js is also re-exported by shared.js (getRaw/setRaw/removeRaw + prefs);
 // templates must use those re-exports, not import storage.js directly (§1.5).
 const GATEWAY_IMPORT =
-  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage|camera-capture)\.js['"]/;
+  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage|camera-capture|encryption)\.js['"]/;
 
 /**
  * Audit a single template file against the Google-API import boundary.

@@ -103,16 +103,31 @@ a clean pass. Current: **0 clean / 12 needed.**
   re-export block and re-pointed `scanner.js`.
 - **Result:** audit clean; gates green; 51 calorie specs pass.
 
+### Iteration 6 — encryption.js direct import (§1.5) ✅ FIXED
+- **Symptom:** `passwords.js` imported `encryption.js` directly (`decrypt`,
+  `isEncrypted`, `isUnlocked`).
+- **Upgrade:** Extended the boundary regex to include `encryption.js`.
+- **Fix:** Imported the three helpers into `shared.js` and **folded them into the
+  existing big `export {}` block** (not a standalone `export … from` statement);
+  re-pointed `passwords.js`.
+- **⚠️ Gotcha learned:** `shared.js` sits at the **dbg `max-exports` cap of 8
+  export *statements*.** A standalone `export { … } from '…'` adds a 9th and
+  fails dbg. **Future re-exports MUST be `import … from` + add the names to the
+  big consolidated `export {}` block** (one statement). This is why the
+  encryption/camera/storage re-exports differ in style.
+- **Result:** gates green; audit clean; 5 passwords specs + 28 encryption units pass.
+
 ### Backlog (found, not yet fixed)
-- **B1 — remaining §1.5 cleanup:** `encryption.js` (passwords.js uses
-  `decrypt`/`getDecryptedKey`/`getDecryptedKeySync`/`isEncrypted`) and
-  `social-widget.js` (`social/chat.js` imports `SocialChatWidget`) are still
-  imported directly; and the `arcade/*` template reaches its
-  `public/js/arcade/**` game engine (legitimate subsystem — needs an
-  allow-listed exception + AI_LAWS §1.5 clarification). Next iterations:
-  re-export the encryption helpers + `SocialChatWidget` via shared.js, then
-  extend the boundary regex to include `encryption`/`social-widget`.
-  **(storage.js — DONE iter4; camera-capture.js — DONE iter5.)**
+- **B1 — remaining §1.5 cleanup:** `social-widget.js` (`social/chat.js` imports
+  `SocialChatWidget`) and the `arcade/*` engine remain. **`social-widget.js`
+  CANNOT be re-exported via shared.js** — it imports
+  `templates/social/helpers.js`, which imports `../shared.js`, so re-exporting
+  would create a circular import. Both `social-widget` and `arcade` need an
+  **allow-listed exception** in the boundary rule + an AI_LAWS §1.5 clarification
+  that cross-cutting widgets / game-engine subsystems may be imported directly.
+  Recommend: add an `ALLOW` set to `auditImportBoundary` for these two, document
+  the exception, and close out §1.5. **(storage ✅ iter4, camera ✅ iter5,
+  encryption ✅ iter6.)**
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
   loop work (verified with loop changes stashed). Likely a headless WebAuthn

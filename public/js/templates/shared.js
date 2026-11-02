@@ -10,6 +10,7 @@ import * as agentVault from '../agent/vault.js';
 import { captureStillFromCamera, hasUserMedia, getUserMediaStream } from '../camera-capture.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
+import { decrypt, isEncrypted, isUnlocked } from '../encryption.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
@@ -1862,6 +1863,7 @@ export {
   createSpreadsheet,
   cycleStatus,
   dateCell,
+  decrypt,
   delegateEvent,
   deleteSheetRow,
   editableCell,
@@ -1884,8 +1886,10 @@ export {
   isAddRowOpen,
   isAudioRecordingSupported,
   isEditLocked,
+  isEncrypted,
   isImageUrl,
   isRowProtected,
+  isUnlocked,
   lazySection,
   loadDriveImage,
   onEdit,
