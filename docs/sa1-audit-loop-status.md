@@ -95,14 +95,24 @@ a clean pass. Current: **0 clean / 12 needed.**
   `import * as storage` namespace lines.
 - **Result:** audit clean; gates green; 615 affected-template specs pass.
 
+### Iteration 5 — camera-capture.js direct import (§1.5) ✅ FIXED
+- **Symptom:** `calorie/scanner.js` imported `camera-capture.js` directly
+  (`hasUserMedia`, `getUserMediaStream`).
+- **Upgrade:** Extended the boundary regex to include `camera-capture.js`.
+- **Fix:** shared.js already imported those helpers — added them to its
+  re-export block and re-pointed `scanner.js`.
+- **Result:** audit clean; gates green; 51 calorie specs pass.
+
 ### Backlog (found, not yet fixed)
-- **B1 — broader §1.5 cleanup (remaining):** templates still import
-  `encryption.js`, `camera-capture.js`, `social-widget.js` directly, and the
-  `arcade/*` template reaches its `public/js/arcade/**` game engine. The arcade
-  engine is a legitimate subsystem (candidate for an allow-listed exception + an
-  AI_LAWS §1.5 clarification); encryption / camera / social-widget imports should
-  route through shared.js re-exports in a future iteration.
-  **(storage.js — DONE in iteration 4.)**
+- **B1 — remaining §1.5 cleanup:** `encryption.js` (passwords.js uses
+  `decrypt`/`getDecryptedKey`/`getDecryptedKeySync`/`isEncrypted`) and
+  `social-widget.js` (`social/chat.js` imports `SocialChatWidget`) are still
+  imported directly; and the `arcade/*` template reaches its
+  `public/js/arcade/**` game engine (legitimate subsystem — needs an
+  allow-listed exception + AI_LAWS §1.5 clarification). Next iterations:
+  re-export the encryption helpers + `SocialChatWidget` via shared.js, then
+  extend the boundary regex to include `encryption`/`social-widget`.
+  **(storage.js — DONE iter4; camera-capture.js — DONE iter5.)**
 - **B2 — pre-existing biometric test failures:** `agent.spec.js:3967` and
   `:4050` (mobile WebAuthn/passkey unlock) fail on `origin/main` independent of
   loop work (verified with loop changes stashed). Likely a headless WebAuthn

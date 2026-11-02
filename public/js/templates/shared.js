@@ -678,9 +678,9 @@ function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
    implementation (secure-context Clipboard API + execCommand fallback). */
 export { el, showToast, copyToClipboard };
 
-/* Re-export the camera still-capture helper so template sub-modules can access
-   it without importing outside their folder (§1.5). */
-export { captureStillFromCamera };
+/* Re-export camera helpers so template sub-modules can access capture +
+   getUserMedia without importing outside their folder (§1.5). */
+export { captureStillFromCamera, hasUserMedia, getUserMediaStream };
 
 
 /* ---------- Generic Helpers ---------- */
