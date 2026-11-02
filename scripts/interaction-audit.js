@@ -281,14 +281,11 @@ const TEST_HYGIENE_BASELINE = new Set([
   'tests/e2e/cache-update.spec.js',
   'tests/e2e/contacts.spec.js',
   'tests/e2e/design-audit.spec.js',
-  'tests/e2e/headless-oauth-mcp.spec.js',
   'tests/e2e/kanban.spec.js',
   'tests/e2e/linker.spec.js',
   'tests/e2e/mobile-layout.spec.js',
   'tests/e2e/public.spec.js',
   'tests/e2e/tutorial.spec.js',
-  'tests/e2e/unit-wayside-orchestrator.spec.js',
-  'tests/e2e/wayside-ai.spec.js',
 ]);
 
 /* ---------- Runner ---------- */
