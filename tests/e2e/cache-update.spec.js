@@ -104,7 +104,6 @@ test('persistent toast stays visible without auto-dismiss', async ({ page }) => 
   expect(toastVisible).toBe(true);
 
   // Toast should still be visible after 5 seconds (normal toasts dismiss in 4s)
-  await page.waitForTimeout(100); // small delay for DOM update
   await page.waitForSelector('.toast', { timeout: 2000 });
   await expect(page.locator('.toast')).toBeVisible();
 

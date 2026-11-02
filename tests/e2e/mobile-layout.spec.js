@@ -156,7 +156,7 @@ test('sidebar is hidden off-canvas when closed at 375px', async ({ page }) => {
   const isOpen = await sidebar.evaluate(el => el.classList.contains('sidebar-open'));
   if (isOpen) {
     await page.locator('#sidebar-toggle').click();
-    await page.waitForTimeout(300); // transition completes
+    await expect(sidebar).not.toHaveClass(/sidebar-open/);
   }
 
   // On mobile, closed sidebar should be translated off-canvas (left of viewport)
