@@ -167,6 +167,47 @@ test('existing per-contact ledgers converge on the same legacy sheet for both co
   await bobPage.close();
 });
 
+test('selecting the Waymark AI never hijacks a stranger\'s legacy contact:<me> ledger', async ({ page }) => {
+  // A different Waymarker (bob) once added me (testuser) under the old naming
+  // scheme, so a sheet literally named `.waymark-ledger-contact:testuser@gmail.com`
+  // lives in my Drive. It belongs to the (bob, testuser) pair — NOT to the AI.
+  await page.addInitScript(() => {
+    const sharedDocs = ['Document_ID', 'Document_Title', 'Waymark_Type', 'Shared_With_Email', 'Group', 'Permission_Level', 'Shared_Timestamp', 'Status'];
+    const presence = ['User_Email', 'Display_Name', 'Group', 'Online_Status', 'Last_Heartbeat_UTC', 'Active_Waymark_ID'];
+    const chat = ['Message_ID', 'Timestamp_UTC', 'Sender_Email', 'Target_Group_Or_Contact', 'Message_Text', 'Attached_Waymark_Link'];
+    const signaling = ['Session_ID', 'Caller_Email', 'Callee_Email', 'SDP_Offer_Answer_JSON', 'ICE_Candidates_JSON', 'Call_Status'];
+    localStorage.setItem('waymark_mock_created_sheets_v1', JSON.stringify({
+      'bob-stranger-ledger': {
+        id: 'bob-stranger-ledger',
+        title: '.waymark-ledger-contact:testuser@gmail.com',
+        sheetTitle: 'Shared_Docs',
+        values: [sharedDocs],
+        tabs: [
+          { title: 'Shared_Docs', numericSheetId: 0, values: [sharedDocs] },
+          { title: 'Presence', numericSheetId: 1, values: [presence] },
+          { title: 'Chat', numericSheetId: 2, values: [chat, ['msg-bob', new Date().toISOString(), 'bob@example.com', '', 'Bob private secret', '']] },
+          { title: 'WebRTC_Signaling', numericSheetId: 3, values: [signaling] },
+        ],
+      },
+    }));
+  });
+
+  await setMockUser(page, { id: 'testuser', name: 'Test User', email: 'testuser@gmail.com' });
+  await setupApp(page);
+
+  const result = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const ledger = await collab.findExistingShareLedger({ contactEmail: 'assistant@waymark.internal' });
+    const messages = await collab.readChat({ contactEmail: 'assistant@waymark.internal' });
+    return { ledgerId: ledger ? ledger.sheetId : null, texts: messages.map(m => m.text) };
+  });
+
+  // The AI must not resolve to bob's unrelated ledger, and bob's chat must stay private.
+  expect(result.ledgerId).not.toBe('bob-stranger-ledger');
+  expect(result.ledgerId).toBeNull();
+  expect(result.texts).not.toContain('Bob private secret');
+});
+
 test('notification sync pushes documents shared WITH me to the bell', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('.notif-bell', { timeout: 5_000 });

@@ -461,6 +461,21 @@
 .calorie-voice-recording { background: var(--color-error); animation: caloriePulse 1.2s ease-in-out infinite; }
 @keyframes caloriePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.5); } 50% { box-shadow: 0 0 0 16px rgba(220,38,38,0); } }
 .calorie-voice-hint { font-size: 0.82rem; color: var(--color-text-muted); }
+.calorie-voice-or { font-size: 0.78rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.calorie-voice-text-row { display: flex; gap: 8px; width: 100%; max-width: 360px; }
+.calorie-voice-text {
+  flex: 1; padding: 10px 12px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--color-text);
+  background: var(--color-surface);
+}
+.calorie-voice-text:focus { outline: none; border-color: var(--color-primary); }
+.calorie-voice-text-submit {
+  padding: 10px 16px; border: none; border-radius: var(--radius-sm);
+  background: var(--color-primary); color: #fff; font-weight: 600; cursor: pointer;
+  transition: filter var(--transition);
+}
+.calorie-voice-text-submit:hover { filter: brightness(1.05); }
+.calorie-voice-text-submit:disabled { opacity: 0.6; cursor: default; }
 
 /* Scanner */
 .calorie-scan-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }

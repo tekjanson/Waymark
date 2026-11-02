@@ -6,6 +6,9 @@
     "verify_alignment": true,
     "min_similarity": 0.85,
     "exempt": [
+      "node_modules/**",
+      "**/node_modules/**",
+      "build/**",
       "tests/**",
       "scripts/**",
       "dev-worker/**",
@@ -71,6 +74,63 @@
       ]
     },
     {
+      "id": "resolve-imports",
+      "type": "resolve-imports",
+      "enabled": true,
+      "severity": "error",
+      "description": "Every called symbol must resolve to an import or a local declaration.",
+      "what": "Flags a symbol called in a module that is neither imported nor defined there, yet is exported by another module in the repo.",
+      "why": "Catches 'used but never imported' ReferenceErrors (e.g. calling hasUserMedia() without importing it) that the dependency graph cannot see.",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "tests/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "public/js/vendor/**",
+        "build/**",
+        "playwright-report/**",
+        "test-results/**",
+        "generated/**",
+        "android/**",
+        "p2p-server/public/**",
+        "**/*.min.js"
+      ],
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "no-duplicate-keys",
+      "type": "no-duplicate-keys",
+      "enabled": true,
+      "severity": "error",
+      "description": "Object literals must not declare the same key twice.",
+      "what": "Detects a duplicate data-property key within a single JS object literal, where the later entry silently overwrites the earlier one.",
+      "why": "Catches map/registry collisions like a fixture-id mapping listing the same sheet-NNN twice, which silently drops a template behind another.",
+      "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "public/js/vendor/**",
+        "build/**",
+        "playwright-report/**",
+        "test-results/**",
+        "android/**",
+        "**/*.min.js"
+      ],
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
       "id": "canonical-abstractions",
       "type": "canonical-abstractions",
       "enabled": true,
@@ -96,6 +156,8 @@
             "localStorage"
           ],
           "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
             "tests/**",
             "server/**",
             "scripts/**",
@@ -117,6 +179,8 @@
             "RTCDataChannel"
           ],
           "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
             "tests/**",
             "server/**",
             "p2p-server/**",
@@ -135,6 +199,8 @@
             "crypto.subtle"
           ],
           "allow": [
+            "node_modules/**",
+            "**/node_modules/**",
             "tests/**",
             "server/**",
             "scripts/**",
@@ -218,6 +284,9 @@
       "enabled": true,
       "severity": "error",
       "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "build/**",
         "**/__init__.py",
         "**/main.py",
         "**/cli.py",
@@ -253,6 +322,9 @@
       "enabled": true,
       "severity": "error",
       "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
+        "build/**",
         "tests/**",
         "scripts/**",
         "dev-worker/**",
@@ -316,6 +388,8 @@
       "enabled": true,
       "severity": "error",
       "allow": [
+        "node_modules/**",
+        "**/node_modules/**",
         "tests/**",
         "scripts/**",
         "dev-worker/**",
@@ -365,6 +439,60 @@
       "description": "Declared .synthetic workflow steps must align with code AST and token reality.",
       "what": "Cross-checks external:* and emit:* steps and validates that declared orchestrators are not empty stubs.",
       "why": "Prevents synthetic drift where .synthetic companion files become stale or hallucinated.",
+      "source_refs": [
+        {
+          "label": "Rule source",
+          "path": "drift-manifest.json",
+          "kind": "manifest"
+        }
+      ]
+    },
+    {
+      "id": "capability-parity",
+      "type": "capability-parity",
+      "enabled": true,
+      "severity": "error",
+      "description": "Browser-capability affordances must degrade gracefully and share one safe implementation.",
+      "what": "Detects equivalent capabilities (voice input, clipboard copy) implemented inconsistently \u2014 one surface degrades gracefully while another dead-ends when the capability is unavailable.",
+      "why": "Insecure (http) contexts, denied permissions, and unsupported browsers make navigator.mediaDevices/clipboard undefined; a bare guard+toast or a direct writeText() leaves the feature silently broken.",
+      "capabilities": [
+        {
+          "id": "voice",
+          "capability": [
+            "isAudioRecordingSupported\\s*\\(",
+            "\\bSpeechRecognition\\b",
+            "\\bwebkitSpeechRecognition\\b",
+            "startAIRecording\\s*\\("
+          ],
+          "intent": [
+            "voice",
+            "\\bmic\\b",
+            "[Rr]ecord"
+          ],
+          "fallback": [
+            "showVoiceTranscriptInput",
+            "analyzeVoiceText",
+            "voice-text",
+            "voice-input"
+          ],
+          "exempt": [
+            "public/js/templates/shared.js"
+          ],
+          "message": "voice/capture affordance has no typed fallback \u2014 it dead-ends when the mic is unavailable (insecure context / denied / unsupported). Add a text fallback like kanban's showVoiceTranscriptInput or calorie's analyzeVoiceText."
+        },
+        {
+          "id": "clipboard",
+          "capability": [
+            "navigator\\s*\\.\\s*clipboard\\s*\\.\\s*writeText\\s*\\("
+          ],
+          "forbid_direct": true,
+          "exempt": [
+            "public/js/ui.js",
+            "public/js/templates/shared.js"
+          ],
+          "message": "calls navigator.clipboard.writeText directly \u2014 throws on insecure contexts and silently fails. Route through the shared copyToClipboard() helper (execCommand fallback)."
+        }
+      ],
       "source_refs": [
         {
           "label": "Rule source",

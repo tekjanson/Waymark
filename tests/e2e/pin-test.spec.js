@@ -14,58 +14,40 @@ async function togglePinViaMenu(page) {
 
 test('pin a sheet → navigate home → verify card → unpin → verify gone', async ({ page }) => {
   await setupApp(page);
-
-  // Navigate to a sheet
   await navigateToSheet(page, 'sheet-001');
-
-  // Wait for pin button
   await page.waitForSelector('#sheet-pin-btn', { timeout: 5_000 });
 
-  // Verify not pinned initially
   const pinBtn = page.locator('#sheet-pin-btn');
   await expect(pinBtn).not.toHaveClass(/pinned/);
 
-  // Pin the sheet via the contextual menu
   await togglePinViaMenu(page);
-
-  // Verify pin button has pinned class
   await expect(pinBtn).toHaveClass(/pinned/);
 
-  // Verify toast
   const toast = page.locator('.toast');
   await expect(toast).toBeVisible({ timeout: 3000 });
   await expect(toast).toContainText('Pinned to Home');
 
-  // Navigate to home
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // Verify pinned sheets section is visible
-  const pinnedSection = page.locator('#home-pinned-sheets');
-  await expect(pinnedSection).not.toHaveClass(/hidden/, { timeout: 5_000 });
+  // The Pinned Waymarks widget renders the pinned sheet
+  const pinnedRows = page.locator('.wayboard-widget-pinned .wayboard-data-name');
+  await expect(pinnedRows).toHaveCount(1, { timeout: 5_000 });
 
-  // Verify the pinned card exists
-  const pinnedCards = page.locator('#pinned-sheets .pinned-card');
-  await expect(pinnedCards).toHaveCount(1, { timeout: 5_000 });
-
-  // Click the pinned card to navigate back to the sheet
-  await pinnedCards.first().click();
+  // Click the pinned row to navigate back to the sheet
+  await page.locator('.wayboard-widget-pinned .wayboard-data-row').first().click();
   await page.waitForSelector('#checklist-view:not(.hidden)', { timeout: 5_000 });
 
-  // Unpin the sheet via the menu
   const pinBtn2 = page.locator('#sheet-pin-btn');
   await expect(pinBtn2).toHaveClass(/pinned/);
   await togglePinViaMenu(page);
-
-  // Verify pinned class removed
   await expect(pinBtn2).not.toHaveClass(/pinned/);
 
-  // Navigate to home again
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // Verify pinned sheets section is hidden
-  await expect(page.locator('#home-pinned-sheets')).toHaveClass(/hidden/, { timeout: 5_000 });
+  // With no pins left, the Pinned Waymarks widget is not rendered
+  await expect(page.locator('.wayboard-widget-pinned')).toHaveCount(0, { timeout: 5_000 });
 });
 
 test('pinned sheet persists after page reload', async ({ page }) => {
@@ -75,19 +57,14 @@ test('pinned sheet persists after page reload', async ({ page }) => {
   await togglePinViaMenu(page);
   await expect(page.locator('.toast')).toContainText('Pinned to Home');
 
-  // Reload the page
   await page.reload();
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
 
-  // Navigate home
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // Verify pinned sheet still appears
-  const pinnedSection = page.locator('#home-pinned-sheets');
-  await expect(pinnedSection).not.toHaveClass(/hidden/, { timeout: 5_000 });
-  const cards = page.locator('#pinned-sheets .pinned-card');
-  await expect(cards).toHaveCount(1, { timeout: 5_000 });
+  const rows = page.locator('.wayboard-widget-pinned .wayboard-data-name');
+  await expect(rows).toHaveCount(1, { timeout: 5_000 });
 });
 
 test('pin via menu, unpin via menu, pin again results in pinned state', async ({ page }) => {
@@ -96,50 +73,34 @@ test('pin via menu, unpin via menu, pin again results in pinned state', async ({
   await page.waitForSelector('#sheet-pin-btn', { timeout: 5_000 });
   const pinBtn = page.locator('#sheet-pin-btn');
 
-  // pin → unpin → pin (each via the contextual menu)
   await togglePinViaMenu(page);
   await togglePinViaMenu(page);
   await togglePinViaMenu(page);
 
-  // Should end up pinned (odd number of toggles)
   await expect(pinBtn).toHaveClass(/pinned/);
 
-  // Navigate home and verify
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  const pinnedSection = page.locator('#home-pinned-sheets');
-  await expect(pinnedSection).not.toHaveClass(/hidden/, { timeout: 5_000 });
+  await expect(page.locator('.wayboard-widget-pinned .wayboard-data-name')).toHaveCount(1, { timeout: 5_000 });
 });
 
 test('pin a folder → navigate home → verify card exists', async ({ page }) => {
   await setupApp(page);
-
-  // Navigate to a folder
   await page.evaluate(() => { window.location.hash = '#/folder/f-groceries/Groceries'; });
   await page.waitForSelector('#folder-view:not(.hidden)', { timeout: 5_000 });
 
-  // Wait for pin button
   const pinBtn = page.locator('#folder-pin-btn');
   await expect(pinBtn).toBeVisible({ timeout: 5_000 });
-
-  // Pin the folder
   await pinBtn.click();
-
-  // Verify pinned class
   await expect(pinBtn).toHaveClass(/pinned/);
 
-  // Navigate to home
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // Verify the folder appears in pinned section
-  const folderCards = page.locator('#pinned-folders .pinned-card');
-  const count = await folderCards.count();
-  expect(count).toBeGreaterThanOrEqual(1);
-
-  // Verify "Groceries" card exists
-  await expect(page.locator('.pinned-card-name', { hasText: 'Groceries' })).toBeVisible({ timeout: 5_000 });
+  // Verify the folder appears in the Pinned waypoints widget
+  const folderRows = page.locator('.wayboard-widget-folders .wayboard-data-name');
+  await expect(folderRows.filter({ hasText: 'Groceries' })).toBeVisible({ timeout: 5_000 });
 });
 
 test('folder pin button shows pinned state for already-pinned folder', async ({ page }) => {
@@ -147,33 +108,28 @@ test('folder pin button shows pinned state for already-pinned folder', async ({ 
     pinnedFolders: [{ id: 'f-groceries', name: 'Groceries' }],
   });
 
-  // Navigate to the already-pinned folder
   await page.evaluate(() => { window.location.hash = '#/folder/f-groceries/Groceries'; });
   await page.waitForSelector('#folder-view:not(.hidden)', { timeout: 5_000 });
 
-  // Pin button should show pinned state
   const pinBtn = page.locator('#folder-pin-btn');
   await expect(pinBtn).toHaveClass(/pinned/, { timeout: 5_000 });
 
-  // Unpin it
   await pinBtn.click();
   await expect(pinBtn).not.toHaveClass(/pinned/);
 
-  // Navigate home
   await page.evaluate(() => { window.location.hash = '#/'; });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // Verify the "Groceries" card is gone (only auto-pinned Waymark should remain)
-  await expect(page.locator('.pinned-card-name', { hasText: 'Groceries' })).toHaveCount(0, { timeout: 5_000 });
+  // With no folders pinned, the Pinned waypoints widget is not rendered
+  await expect(page.locator('.wayboard-widget-folders')).toHaveCount(0, { timeout: 5_000 });
 });
 
-test('pinned sheets section hidden by default on home', async ({ page }) => {
+test('pinned sheets widget hidden by default on home', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // No sheets pinned → section should be hidden
-  const section = page.locator('#home-pinned-sheets');
-  await expect(section).toHaveClass(/hidden/);
+  // No sheets pinned → the Pinned Waymarks widget is not rendered
+  await expect(page.locator('.wayboard-widget-pinned')).toHaveCount(0);
 });
 
 test('pre-seeded pinned sheet appears on home page', async ({ page }) => {
@@ -182,12 +138,7 @@ test('pre-seeded pinned sheet appears on home page', async ({ page }) => {
   });
   await page.waitForSelector('#home-view:not(.hidden)', { timeout: 5_000 });
 
-  // The pinned sheets section should be visible
-  const section = page.locator('#home-pinned-sheets');
-  await expect(section).not.toHaveClass(/hidden/, { timeout: 5_000 });
-
-  // Card should exist
-  const cards = page.locator('#pinned-sheets .pinned-card');
-  await expect(cards).toHaveCount(1);
-  await expect(page.locator('.pinned-card-name', { hasText: 'Test Checklist' })).toBeVisible();
+  const rows = page.locator('.wayboard-widget-pinned .wayboard-data-name');
+  await expect(rows).toHaveCount(1, { timeout: 5_000 });
+  await expect(rows.filter({ hasText: 'Test Checklist' })).toBeVisible();
 });

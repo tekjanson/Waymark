@@ -872,6 +872,17 @@ async function discoverCrews() {
     }
   } catch { /* ignore */ }
 
+  // Always surface Waymark AI companion in Wayside
+  if (!emailSeen.has('assistant@waymark.internal')) {
+    emailSeen.add('assistant@waymark.internal');
+    people.unshift({
+      name: 'Waymark AI',
+      email: 'assistant@waymark.internal',
+      group: '',
+      isAgent: true,
+    });
+  }
+
   return { crews: [...crews.keys()].map(name => ({ name })), people };
 }
 
@@ -989,9 +1000,13 @@ async function renderWayside({ autoSelect = true } = {}) {
   ]);
   const avatarRow = el('div', { className: 'avatar-row' });
   for (const p of people.slice(0, 8)) {
-    const initials = (p.name || p.email).split(/[\s@.]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
-    const av = el('div', { className: 'avatar', title: `${p.name} (${p.email})` }, [initials || '?']);
-    av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name }, host));
+    const isAi = p.isAgent || p.email === 'assistant@waymark.internal';
+    const initials = isAi ? '🤖' : (p.name || p.email).split(/[\s@.]/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('');
+    const av = el('div', {
+      className: `avatar${isAi ? ' avatar-ai' : ''}`,
+      title: `${p.name} (${p.email})`
+    }, [initials || '?']);
+    av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name, isAgent: isAi }, host));
     avatarRow.append(av);
   }
   if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers on this trail yet.']));
@@ -1016,9 +1031,10 @@ async function renderWayside({ autoSelect = true } = {}) {
   renderWaysidePlaceholder(chatContainer);
 
   if (autoSelect) {
-    // Auto-select the first crew / Waymarker.
+    // Auto-select the first crew / human Waymarker (Waymark AI stays ready as a one-click avatar).
+    const firstHuman = people.find(p => !p.isAgent && p.email !== 'assistant@waymark.internal');
     if (crews.length) selectTarget({ group: crews[0].name, label: crews[0].name }, host);
-    else if (people.length) selectTarget({ contactEmail: people[0].email, label: people[0].name }, host);
+    else if (firstHuman) selectTarget({ contactEmail: firstHuman.email, label: firstHuman.name }, host);
   }
 }
 
@@ -1090,6 +1106,11 @@ async function selectTarget(target, host) {
     onClose: () => deselectTarget(host),
     onOpenSheet: () => openSocialSheet(),
     onConnectDrive: () => connectSharedLedgerFromWayside(host),
+    onPeerMessage: () => {
+      setTimeout(() => {
+        refreshWaysideSocial(host).catch(() => {});
+      }, 600);
+    },
     onBeforeStartCall: async () => {
       if (!_activeTarget) return;
       const signaling = _activeLedgerId
@@ -1153,12 +1174,18 @@ function renderSharedFiles(files) {
     const title = f.title || f.Document_Title || docId;
     const type = f.type || f.Waymark_Type || 'Waymark';
     const permission = f.permission || f.Permission_Level || '';
-    listEl.append(el('a', {
+    const isGoogleDoc = type.toLowerCase() === 'doc';
+    const linkAttrs = {
       className: 'wayside-file',
-      href: `#/sheet/${docId}`,
+      href: isGoogleDoc ? `https://docs.google.com/document/d/${docId}/edit` : `#/sheet/${docId}`,
       title: `${title} (${type}${permission ? ` · ${permission}` : ''})`,
-    }, [
-      el('span', {}, [`📄 ${title}`]),
+    };
+    if (isGoogleDoc) {
+      linkAttrs.target = '_blank';
+      linkAttrs.rel = 'noopener noreferrer';
+    }
+    listEl.append(el('a', linkAttrs, [
+      el('span', {}, [`${isGoogleDoc ? '📝' : '📄'} ${title}`]),
       el('small', {}, [`${type}${permission ? ` · ${permission}` : ''}`]),
     ]));
   }

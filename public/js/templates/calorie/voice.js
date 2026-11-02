@@ -13,7 +13,7 @@
    ============================================================ */
 
 import {
-  el, showToast, analyzeAudioWithAI, parseAIJson,
+  el, showToast, analyzeAudioWithAI, generateText, parseAIJson,
   isAudioRecordingSupported, startAIRecording,
 } from '../shared.js';
 import { parseNum, round1, MEAL_TYPES } from './helpers.js';
@@ -88,6 +88,28 @@ export async function analyzeVoice(blob, mimeType) {
   const text = await analyzeAudioWithAI(SYSTEM_PROMPT, blob, {
     mimeType: mimeType || blob.type || 'audio/webm',
     userMessage: 'Log what I said.',
+    temperature: 0.2,
+  });
+  return parseItems(text);
+}
+
+/**
+ * Analyze a typed food/exercise description into structured items. This is the
+ * graceful fallback used whenever microphone capture is unavailable (e.g. an
+ * insecure http:// context where navigator.mediaDevices is undefined) so the
+ * voice flow never dead-ends — mirroring the kanban voice intake's text path.
+ * @param {string} description
+ * @returns {Promise<Array<Object>>}
+ */
+export async function analyzeVoiceText(description) {
+  const mock = typeof window !== 'undefined' ? window.__WAYMARK_VOICE_MOCK : null;
+  if (mock) {
+    const val = typeof mock === 'function' ? mock() : mock;
+    const items = Array.isArray(val) ? val : (val.items || []);
+    return items.map(normalizeItem).filter(Boolean);
+  }
+  const text = await generateText(SYSTEM_PROMPT, description, {
+    json: true,
     temperature: 0.2,
   });
   return parseItems(text);
@@ -200,14 +222,12 @@ export async function openVoiceModal({ onConfirm }) {
     return;
   }
 
-  if (!isAudioRecordingSupported()) {
-    showToast('Voice logging is not supported in this browser', 'error');
-    return;
-  }
+  const recordingSupported = isAudioRecordingSupported();
 
   let audioRecording = null;
   let recording = false;
   let startingRecording = false;
+  let analyzing = false;
   let closed = false;
   const cleanup = () => {
     if (audioRecording) audioRecording.cancel();
@@ -222,17 +242,81 @@ export async function openVoiceModal({ onConfirm }) {
   ]);
   header.querySelector('.calorie-modal-close').addEventListener('click', close);
 
-  const status = el('div', { className: 'calorie-ai-status' }, ['Tap the mic, then say what you ate or did.']);
-  const micBtn = el('button', { className: 'calorie-voice-mic', type: 'button', 'aria-label': 'Record' }, ['\uD83C\uDF99\uFE0F']);
-  const hint = el('div', { className: 'calorie-voice-hint' }, ['e.g. "two scrambled eggs, toast with butter, and a coffee"']);
+  const status = el('div', { className: 'calorie-ai-status' }, [
+    recordingSupported
+      ? 'Tap the mic, then say what you ate or did.'
+      : 'Type what you ate or did — voice capture needs a secure (https) connection.',
+  ]);
 
-  modal.append(header, el('div', { className: 'calorie-modal-body calorie-voice-body' }, [status, micBtn, hint]));
+  // Text fallback — always present so the flow never dead-ends when the mic is
+  // unavailable (insecure context, denied permission, unsupported browser).
+  const textInput = el('input', {
+    className: 'calorie-voice-text',
+    type: 'text',
+    'aria-label': 'Describe food or exercise',
+    placeholder: 'e.g. two eggs, toast, and a 20 min run',
+  });
+  const textSubmit = el('button', { className: 'calorie-voice-text-submit', type: 'button' }, ['Log']);
+  const textRow = el('div', { className: 'calorie-voice-text-row' }, [textInput, textSubmit]);
+
+  const bodyChildren = [status];
+  let micBtn = null;
+  if (recordingSupported) {
+    micBtn = el('button', { className: 'calorie-voice-mic', type: 'button', 'aria-label': 'Record' }, ['\uD83C\uDF99\uFE0F']);
+    bodyChildren.push(micBtn);
+    bodyChildren.push(el('div', { className: 'calorie-voice-or' }, ['or type it']));
+  }
+  bodyChildren.push(textRow);
+  bodyChildren.push(el('div', { className: 'calorie-voice-hint' }, ['e.g. "two scrambled eggs, toast with butter, and a coffee"']));
+
+  modal.append(header, el('div', { className: 'calorie-modal-body calorie-voice-body' }, bodyChildren));
   overlay.append(modal);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.body.appendChild(overlay);
+  if (!recordingSupported) textInput.focus();
+
+  /** Hand off recognised items to the confirm modal (shared by mic + text). */
+  function presentItems(items) {
+    if (closed) return;
+    closed = true;
+    overlay.remove();
+    if (!items.length) { showToast('Nothing recognised — try again', 'error'); return; }
+    buildConfirmModal(items, onConfirm);
+  }
+
+  async function submitText() {
+    const description = textInput.value.trim();
+    if (!description || analyzing || recording || startingRecording || closed) return;
+    analyzing = true;
+    textSubmit.disabled = true;
+    textInput.disabled = true;
+    if (micBtn) micBtn.disabled = true;
+    status.textContent = 'Analyzing…';
+    try {
+      const items = await analyzeVoiceText(description);
+      presentItems(items);
+    } catch (err) {
+      if (closed) return;
+      status.textContent = recordingSupported ? 'Tap the mic or type to try again.' : 'Type to try again.';
+      showToast(err.message || 'Voice analysis failed', 'error');
+    } finally {
+      analyzing = false;
+      if (!closed) {
+        textSubmit.disabled = false;
+        textInput.disabled = false;
+        if (micBtn) micBtn.disabled = false;
+      }
+    }
+  }
+  textSubmit.addEventListener('click', () => { void submitText(); });
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); void submitText(); }
+  });
+
+  if (!recordingSupported) return;
 
   async function startRecording() {
-    if (startingRecording || recording || closed) return;
+    if (startingRecording || recording || analyzing || closed) return;
     startingRecording = true;
     micBtn.disabled = true;
     try {
@@ -263,11 +347,7 @@ export async function openVoiceModal({ onConfirm }) {
       if (audioRecording === activeRecording) audioRecording = null;
       if (!blob || closed) return;
       const items = await analyzeVoice(blob, blob.type);
-      if (closed) return;
-      closed = true;
-      overlay.remove();
-      if (!items.length) { showToast('Nothing recognised — try again', 'error'); return; }
-      buildConfirmModal(items, onConfirm);
+      presentItems(items);
     } catch (err) {
       if (closed) return;
       status.textContent = 'Tap the mic to try again.';

@@ -1,0 +1,148 @@
+---
+name: waymark-meal
+description: >-
+  Use this skill to read, create, update, or manipulate Google Sheets for the Meal Planner template (Health).
+---
+
+# Waymark Meal Planner Skill
+
+> Specialized skill for **Meal Planner** sheets in Waymark. Uses Waymark and Google Sheets MCP tools to perform operations according to Meal Planner domain rules.
+
+---
+
+## 0. IDENTITY
+
+| Field | Value |
+|---|---|
+| Template Key | `meal` |
+| Template Name | Meal Planner |
+| Category | Health |
+| Interaction Type | `none` |
+
+---
+
+## 1. COLUMN ROLES
+
+This is the authoritative column mapping for Meal Planner sheets. When reading or writing, use these role names to identify the correct column regardless of exact header text.
+
+```
+1. meal
+2. day
+3. calories
+4. protein
+5. notes
+```
+
+**Default headers when creating a new Meal Planner sheet:**
+```
+Day, Meal, Recipe, Calories, Protein
+```
+
+**Detection signals** — headers that indicate a sheet is a Meal Planner:
+```
+meal, recipe, calories, protein, breakfast, lunch, dinner, snack
+```
+
+---
+
+## 2. STATE MACHINE
+
+This template has no state machine. The interaction type is `none` — cells are edited directly without cycling.
+
+---
+
+## 3. DOMAIN KNOWLEDGE — Meal Planner
+
+# Meal Planner — Domain Knowledge
+
+## What This Template Is
+A weekly food plan where each row is a meal. The `day` column groups meals by day (Mon–Sun or full date). The `meal` column is the meal type (Breakfast, Lunch, Dinner, Snack). The `calories` and `protein` columns are nutrition data. The `recipe` column names the dish.
+
+## Smart Operations
+
+### Week View
+Group rows by `day`. For each day, list meals in order (Breakfast → Lunch → Dinner → Snack):
+```
+{Day}
+  Breakfast: {recipe} ({calories} kcal, {protein}g protein)
+  Lunch:     {recipe}
+  Dinner:    {recipe}
+```
+If nutrition data is missing, skip those fields.
+
+### Daily Nutrition Total
+For a given day, sum:
+- Total calories across all meals
+- Total protein across all meals
+Compare to common targets if asked (e.g. 2000 kcal, 50g protein).
+Report surplus/deficit: `+{N} kcal above / -{N} kcal below daily target`
+
+### Weekly Nutrition Summary
+Sum calories and protein for the entire week. Average per day. Identify highest/lowest calorie days.
+
+### Missing Meals
+Scan all days (Mon–Sun or dates in the plan) and report any meal type with no entry:
+`Missing: {day} Lunch, {day} Dinner`
+
+### Adding a Meal
+Append a row. Required: `day`, `meal` (type), `recipe` (dish name).
+Optional: `calories`, `protein`, `notes`.
+Use the same day/meal format already present in the sheet.
+If a meal type already exists for that day, warn before adding a duplicate.
+
+### Recipe Lookup
+When asked "what are we having for dinner on {day}":
+- Find row where day matches AND meal = "Dinner"
+- Return: recipe, calories, protein, notes
+
+### Meal Swap
+When asked to replace a meal:
+- Find the row by day + meal type
+- Update `recipe` (and optionally calories/protein)
+
+### Shopping List Hint
+When asked to generate a shopping list:
+- Return all unique `recipe` values for the week
+- Note: ingredient extraction is not possible from recipe names alone — provide the recipe list for the user to reference
+
+## Interpretation Rules
+- `day` may be a weekday name or a date — detect from existing data and preserve the format
+- Multiple rows for the same day + meal type may be intentional (multiple dishes) — do not flag as error by default
+- Empty `calories`/`protein` is very common — skip those fields in totals rather than treating as 0
+- Meal types like "Breakfast" should be case-consistent with what's already in the sheet
+
+---
+
+## 4. MCP TOOL OPERATIONS
+
+### 4.1 Reading a Sheet
+Call `waymark_get_sheet(spreadsheetId, sheetTitle?)`
+- Returns `templateKey`, `columnRoles{}`, and `rows[]` as objects with role-named keys.
+- Always resolve columns by role name, not index.
+
+### 4.2 Updating an Existing Row
+Call `waymark_update_entry(spreadsheetId, rowIndex, updates, sheetTitle?)`
+- `rowIndex` is 1-based data row index (1 = first row under headers).
+- `updates` is `{ roleName: newValue }`.
+- For `status-cycle`, only write values from the valid states list (§2).
+- For `toggle`, only write `done` or ``.
+
+### 4.3 Appending a Row
+Call `waymark_add_entry(spreadsheetId, entry, sheetTitle?)`
+- `entry` is `{ roleName: value }`.
+
+### 4.4 Creating a New Sheet
+Call `waymark_create_sheet({ templateKey: "meal", title, seedRows? })`
+- Creates a new Google Sheet pre-formatted with default Meal Planner headers and initial rows.
+- Created under user account via OAuth, automatically shared with service account and editors.
+- Returns `{ spreadsheetId, waymarkUrl, sheetsUrl, title, templateKey }`.
+
+### 4.5 Searching Entries & Files
+- Search rows in a sheet: Call `waymark_search_entries({ spreadsheetId, query, column? })`.
+- Search files in Google Drive: Call `waymark_list_files({ query?, type?: 'all'|'spreadsheet'|'document'|'folder', parentFolderId? })`.
+- Share a sheet: Call `waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })`.
+
+### 4.6 Document Operations
+- Create Google Doc: Call `waymark_create_doc({ title, body?, parentFolderId?, shareWith? })`.
+- Read Google Doc: Call `waymark_get_doc({ documentId })`.
+- Append to Google Doc: Call `waymark_append_doc({ documentId, text })`.

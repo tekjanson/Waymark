@@ -3,7 +3,7 @@
    DOM-safe markdown rendering for chat messages and code blocks.
    ============================================================ */
 
-import { el } from '../ui.js';
+import { el, copyToClipboard } from '../ui.js';
 
 /**
  * Render markdown text into container.
@@ -194,11 +194,12 @@ function buildCodeBlock(code, lang) {
     className: 'agent-code-copy',
     title: 'Copy to clipboard',
     on: {
-      click: () => {
-        navigator.clipboard.writeText(code).then(() => {
+      click: async () => {
+        const ok = await copyToClipboard(code);
+        if (ok) {
           copyBtn.textContent = '✓ Copied';
           setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000);
-        });
+        }
       },
     },
   }, ['📋 Copy']);

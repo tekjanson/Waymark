@@ -38,7 +38,7 @@ This is the authoritative column mapping for Blog sheets. When reading or writin
 
 **Default headers when creating a new Blog sheet:**
 ```
-Title, Doc, Date, Author, Category
+Title, Doc, Date, Author, Category, Status
 ```
 
 **Detection signals** — headers that indicate a sheet is a Blog:
@@ -183,7 +183,7 @@ When the orchestrator asks you to set up a new Blog sheet:
 waymark_create_sheet(templateKey: "blog", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `blog`: `Title, Doc, Date, Author, Category`.
+The server uses the default headers for `blog`: `Title, Doc, Date, Author, Category, Status`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "blog"`.
 
 ---

@@ -90,6 +90,24 @@ function persistIfCreatedSheet(sheetId, data) {
   persistMockSheetRecord(sheetId, data);
 }
 
+/**
+ * Deep-copy a mock spreadsheet payload so callers get independent arrays,
+ * matching the real Sheets API (which returns freshly-parsed JSON each call).
+ * @param {Object} data
+ * @returns {Object}
+ */
+function cloneMockData(data) {
+  try {
+    return structuredClone(data);
+  } catch {
+    try {
+      return JSON.parse(JSON.stringify(data));
+    } catch {
+      return data;
+    }
+  }
+}
+
 async function loadFixtures() {
   if (mockFixtures) {
     Object.assign(mockFixtures.sheets, loadPersistedMockSheets());
@@ -152,8 +170,8 @@ async function loadMockSheet(sheetId) {
     'sheet-043': 'kanban-ai-status',
     'sheet-044': 'knowledge-devops',
     'sheet-045': 'knowledge-waymark',
-    'sheet-061': 'knowledge-with-comments',
-    'sheet-062': 'knowledge-article-comments',
+    'sheet-078': 'knowledge-with-comments',
+    'sheet-079': 'knowledge-article-comments',
     'sheet-063': 'knowledge-no-comments-id',
     'sheet-046': 'notification-waymark',
     'sheet-049': 'guide-composting',
@@ -932,7 +950,11 @@ export const api = {
         // Normalise fixture: ensure tabs[] is present for multi-tab fixtures
         // and synthesised from top-level values for legacy single-tab fixtures.
         const tabs = data.tabs || [{ title: data.sheetTitle || 'Sheet1', numericSheetId: 0, values: data.values }];
-        return { numericSheetId: 0, ...data, tabs };
+        // Return an independent copy so callers never share the mock's internal
+        // arrays. The real Sheets API returns freshly-parsed JSON on every call;
+        // leaking the same `values` reference lets an in-place appendRows mutate
+        // a caller's cached snapshot, defeating change-detection on re-render.
+        return cloneMockData({ numericSheetId: 0, ...data, tabs });
       }
       return withAuthRetry(async () => {
         const token = await requireToken();

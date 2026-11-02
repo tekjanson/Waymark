@@ -152,7 +152,7 @@ function computeARSummary(invoices, cols, cellFn) {
  * @returns {boolean}
  */
 function isOverdue(dueDate, status) {
-  if (!dueDate || /^(paid|cancelled)/i.test((status || '').trim())) return false;
+  if (!dueDate || /^(paid|cancelled|draft)/i.test((status || '').trim())) return false;
   const due = new Date(dueDate);
   return !isNaN(due.getTime()) && due < new Date();
 }

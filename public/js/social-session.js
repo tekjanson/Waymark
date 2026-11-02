@@ -87,15 +87,30 @@ export function stopRingtone() {
 
 /* ---------- URL Linkifier ---------- */
 
-export const URL_REGEX = /https?:\/\/[^\s<>"]+/g;
+export const URL_REGEX = /https?:\/\/[^\s<>"']+/gi;
+const LINK_TOKEN_RE = /\[([^\]]+)\]\((#\/(?:sheet|public)\/[a-zA-Z0-9_-]+|https?:\/\/[^\s<>")]+)\)|(#\/(?:sheet|public)\/[a-zA-Z0-9_-]+)|(https?:\/\/[^\s<>"']+)/gi;
 
 export function appendLinkified(parent, text) {
   const str = String(text ?? '');
   let last = 0;
-  for (const match of str.matchAll(URL_REGEX)) {
-    let url = match[0];
-    const trail = url.match(/[.,;:!?)\]}'"]+$/);
-    if (trail) url = url.slice(0, -trail[0].length);
+  for (const match of str.matchAll(LINK_TOKEN_RE)) {
+    const mdLabel = match[1];
+    const mdUrl = match[2];
+    const hashUrl = match[3];
+    const rawUrl = match[4];
+
+    let url = mdUrl || hashUrl || rawUrl || '';
+    let label = mdLabel || url;
+    let consumedLen = match[0].length;
+
+    if (rawUrl) {
+      const trail = url.match(/[.,;:!?)\]}'"]+$/);
+      if (trail) {
+        url = url.slice(0, -trail[0].length);
+        label = url;
+        consumedLen -= trail[0].length;
+      }
+    }
     if (!url) continue;
 
     if (match.index > last) {
@@ -103,18 +118,20 @@ export function appendLinkified(parent, text) {
     }
     const a = document.createElement('a');
     a.href = url;
-    a.textContent = url;
+    a.textContent = label;
     a.className = 'chat-link';
-    let sameOrigin = false;
-    try {
-      sameOrigin = new URL(url).origin === window.location.origin;
-    } catch {}
+    let sameOrigin = url.startsWith('#/');
+    if (!sameOrigin) {
+      try {
+        sameOrigin = new URL(url).origin === window.location.origin;
+      } catch {}
+    }
     if (!sameOrigin) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
     }
     parent.append(a);
-    last = match.index + url.length;
+    last = match.index + consumedLen;
   }
   if (last < str.length) {
     parent.append(document.createTextNode(str.slice(last)));
@@ -198,10 +215,11 @@ export class SocialSession {
       signal: this.signal,
       onMessage: (msg) => {
         if (!msg) return;
-        if (msg.text === null && msg.type === 'typing') {
+        if (msg.type === 'typing' && !msg.text) {
           this.onTyping(msg.name || 'Collaborator');
           return;
         }
+        if (!msg.text) return;
         const key = msg.messageId || `${msg.peerId || ''}:${msg.ts || ''}:${msg.text}`;
         if (this._liveMessageIds.has(key)) return;
         this._liveMessageIds.add(key);

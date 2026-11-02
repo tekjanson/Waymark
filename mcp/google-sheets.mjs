@@ -12,47 +12,124 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleAuth } from "google-auth-library";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 /* ---------- Config ---------- */
 
 const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-if (!credPath) {
-  process.stderr.write(
-    "ERROR: Set GOOGLE_APPLICATION_CREDENTIALS to the path of your service-account key JSON.\n"
-  );
-  process.exit(1);
-}
+const defaultSaPath = path.join(
+  os.homedir(),
+  ".config",
+  "gcloud",
+  "waymark-service-account-key.json"
+);
+const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || (existsSync(defaultSaPath) ? defaultSaPath : null);
 
 /* ---------- Auth ---------- */
 
-const auth = new GoogleAuth({
-  keyFile: credPath,
-  scopes: SCOPES,
-});
+let auth = null;
+if (credPath && existsSync(credPath)) {
+  try {
+    auth = new GoogleAuth({
+      keyFile: credPath,
+      scopes: SCOPES,
+    });
+  } catch (err) {
+    process.stderr.write(`Warning: Failed initializing google-sheets SA auth: ${err.message}\n`);
+  }
+}
+
+async function getUserOAuthToken() {
+  const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+    path.join(os.homedir(), ".config", "gcloud", "waymark-oauth-token.json");
+  let tokenData;
+  try {
+    tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
+  } catch {
+    return null;
+  }
+
+  const expiryMs = Number(tokenData.expiry_date);
+  if (!tokenData.access_token || !Number.isFinite(expiryMs) || Date.now() >= (expiryMs - 60_000)) {
+    if (!tokenData.refresh_token) return null;
+    const res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: tokenData.refresh_token,
+        client_id: tokenData.client_id,
+        client_secret: tokenData.client_secret,
+      }),
+    });
+    const refreshed = await res.json();
+    if (refreshed.error || !refreshed.access_token) return null;
+    tokenData.access_token = refreshed.access_token;
+    if (refreshed.refresh_token) tokenData.refresh_token = refreshed.refresh_token;
+    tokenData.expiry_date = Date.now() + ((Number(refreshed.expires_in) || 3600) * 1000);
+    try {
+      const { writeFileSync: write, renameSync: rename, chmodSync: chmod } = await import("node:fs");
+      const tmpPath = `${tokenPath}.${process.pid}.tmp`;
+      write(tmpPath, JSON.stringify(tokenData, null, 2) + "\n", { mode: 0o600 });
+      if (process.platform !== "win32") {
+        try { chmod(tmpPath, 0o600); } catch {}
+      }
+      rename(tmpPath, tokenPath);
+    } catch {}
+  }
+
+  return tokenData.access_token;
+}
+
+async function getSaToken() {
+  if (!auth) return null;
+  try {
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
 
 async function getToken() {
-  const client = await auth.getClient();
-  const { token } = await client.getAccessToken();
-  return token;
+  const userToken = await getUserOAuthToken();
+  if (userToken) return userToken;
+  const saToken = await getSaToken();
+  if (saToken) return saToken;
+  throw new Error("No Google authentication configured for google-sheets MCP. Set GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
 /* ---------- Sheets REST helpers ---------- */
 
-async function sheetsRequest(path, { method = "GET", body } = {}) {
-  const token = await getToken();
-  const opts = {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+async function sheetsRequest(pathSuffix, { method = "GET", body } = {}) {
+  const userToken = await getUserOAuthToken();
+  const token = userToken || await getToken();
+  const buildOpts = (bearer) => {
+    const o = {
+      method,
+      headers: {
+        Authorization: `Bearer ${bearer}`,
+        "Content-Type": "application/json",
+      },
+    };
+    if (body) o.body = JSON.stringify(body);
+    return o;
   };
-  if (body) opts.body = JSON.stringify(body);
 
-  const res = await fetch(`${SHEETS_BASE}${path}`, opts);
+  let res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(token));
+  if (!res.ok && res.status === 403 && userToken) {
+    const saToken = await getSaToken();
+    if (saToken) {
+      res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(saToken));
+    }
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Sheets API ${res.status}: ${text}`);
@@ -454,5 +531,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+function isMainModule(metaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    const a = realpathSync(fileURLToPath(metaUrl));
+    const b = realpathSync(path.resolve(process.argv[1]));
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    const a = path.resolve(fileURLToPath(metaUrl));
+    const b = path.resolve(process.argv[1]);
+    return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("Waymark Google Sheets MCP server ready (11 tools)\n");
+}
+
+export {
+  handleTool,
+  TOOLS,
+  getToken,
+  getUserOAuthToken,
+};

@@ -21,19 +21,14 @@ test.describe('Waymark Construction RFI Template', () => {
     // Navigate to local Waymark runtime (WAYMARK_LOCAL=true environment)
     await page.goto('/');
 
-    // Expose capture function to assert Waymark's native emitEdit / onEdit synchronization
-    await page.exposeFunction('captureEdit', (rowIndex, colIndex, newValue) => {
-      window.lastCapturedEdit = { rowIndex, colIndex, newValue };
-    });
-
     // Mount the template inside the browser context using native Waymark APIs
     await page.evaluate(async ({ headers, rows }) => {
-      const tpl = await import('./rfi.js').then(m => m.default || m);
-      const shared = await import('./shared.js');
+      const tpl = await import('/js/templates/rfi.js').then(m => m.default || m);
+      const shared = await import('/js/templates/shared.js');
 
-      // Intercept native cell edits and forward to Playwright
+      // Capture native cell edits in the page so the test can assert write-back.
       shared.onEdit((rowIdx, colIdx, val) => {
-        window.captureEdit(rowIdx, colIdx, val);
+        window.lastCapturedEdit = { rowIndex: rowIdx, colIndex: colIdx, newValue: val };
       });
 
       // Compute column mapping from headers

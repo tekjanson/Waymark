@@ -47,11 +47,11 @@ test('mcp/waymark.mjs file exists', () => {
   expect(fs.existsSync(MCP_PATH)).toBe(true);
 });
 
-test('mcp/waymark.mjs has 7 tool definitions', () => {
+test('mcp/waymark.mjs has 12 tool definitions', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
   const toolsSection = src.match(/const TOOLS = \[([\s\S]*?)\];/)?.[1] || '';
   const toolNamesInArray = [...toolsSection.matchAll(/name: "waymark_(\w+)"/g)].map(m => m[1]);
-  expect(toolNamesInArray.length).toBe(7);
+  expect(toolNamesInArray.length).toBe(12);
 });
 
 test('mcp/waymark.mjs exposes waymark_list_templates tool', () => {
@@ -167,11 +167,11 @@ test('browser detects testcases template when opening testcases fixture', async 
   expect(badge).toMatch(/test.?cases?/i);
 });
 
-test('mcp/waymark.mjs handles all 7 tool names in switch statement', () => {
+test('mcp/waymark.mjs handles all 12 tool names in switch statement', () => {
   const src = fs.readFileSync(MCP_PATH, 'utf8');
   const switchSection = src.match(/switch \(name\) \{([\s\S]*?)\}/)?.[1] || '';
   const handledTools = [...switchSection.matchAll(/case "waymark_(\w+)"/g)].map(m => m[1]);
-  expect(handledTools.length).toBe(7);
+  expect(handledTools.length).toBe(12);
 });
 
 test('mcp/waymark.mjs createSheet uses spreadsheets batch update for pre-populated headers', () => {

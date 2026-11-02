@@ -18,7 +18,7 @@ test('tutorial auto-starts for first-time users', async ({ page }) => {
 
   // Tutorial overlay should become visible shortly after boot
   await expect(page.locator('#tutorial-overlay')).toBeVisible({ timeout: 3000 });
-  await expect(page.locator('#tutorial-title')).toContainText('Welcome to WayMark');
+  await expect(page.locator('#tutorial-title')).toContainText('Welcome to Waymark');
 });
 
 test('tutorial does NOT auto-start when previously completed', async ({ page }) => {
@@ -37,7 +37,7 @@ test('clicking help button in top bar starts the tutorial', async ({ page }) => 
   await expect(page.locator('#tutorial-overlay')).toBeHidden();
   await page.locator('#tutorial-btn').click();
   await expect(page.locator('#tutorial-overlay')).toBeVisible();
-  await expect(page.locator('#tutorial-title')).toContainText('Welcome to WayMark');
+  await expect(page.locator('#tutorial-title')).toContainText('Welcome to Waymark');
 });
 
 /* ────────────────── Navigation ────────────────── */

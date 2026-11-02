@@ -142,6 +142,44 @@ npm run dev
 
 This starts the app in local mock mode with fixture data, which is useful for development, UI iteration, and end-to-end testing without a Google account.
 
+### Bare-Metal & Wayside AGY Orchestrator (Linux, macOS & Windows)
+
+WayMark includes an autonomous **Wayside AI** orchestrator (`assistant@waymark.internal`) powered by Antigravity CLI (`agy`) and two local MCP servers (`waymark` + `google-sheets`) with 42 compiled template skills.
+
+#### Linux & macOS
+
+```bash
+# Install dependencies, compile 42 AGY skills, register MCP servers, and verify Google OAuth
+./scripts/install-headless.sh
+
+# Launch the local WayMark web app + Wayside AI Orchestrator together
+./run-waymark.sh --with-wayside
+
+# Or run Wayside AI standalone (auto-discovers or provisions your Wayside Share Ledger)
+./run-wayside.sh
+
+# Optional: enable as a background user systemd daemon
+systemctl --user enable --now waymark-wayside
+```
+
+#### Windows (PowerShell & Command Prompt)
+
+```powershell
+# Install dependencies, compile 42 AGY skills, register MCP servers, and verify Google OAuth
+powershell -ExecutionPolicy Bypass -File .\scripts\install-headless.ps1
+
+# Launch the local WayMark web app + Wayside AI Orchestrator together
+.\run-waymark.ps1 -WithWayside
+# (or from cmd.exe: run-waymark.cmd --with-wayside)
+
+# Or run Wayside AI standalone (auto-discovers or provisions your Wayside Share Ledger)
+.\run-wayside.ps1
+# (or from cmd.exe: run-wayside.cmd)
+
+# Optional: register and start as a background Windows Scheduled Task
+powershell -ExecutionPolicy Bypass -File .\scripts\install-headless.ps1 -InstallTask -NonInteractive
+```
+
 ---
 
 ## Testing

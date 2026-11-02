@@ -45,6 +45,9 @@ test('travel itinerary shows cost summary bar', async ({ page }) => {
 });
 
 test('travel itinerary shows departure countdown', async ({ page }) => {
+  // Pin a deterministic "now" before the itinerary's first date so the
+  // countdown is stable regardless of the real calendar date (no date-rot).
+  await page.clock.setFixedTime(new Date('2026-06-01T12:00:00'));
   await setupApp(page);
   await navigateToSheet(page, 'sheet-025');
   await page.waitForSelector('.travel-summary', { timeout: 5_000 });

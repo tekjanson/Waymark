@@ -39,7 +39,7 @@ This is the authoritative column mapping for Worker Jobs sheets. When reading or
 
 **Default headers when creating a new Worker Jobs sheet:**
 ```
-Job, Handler, Config, Status, Schedule
+Job, Handler, Status, Schedule, Input, Output, LastRun, Logs
 ```
 
 **Detection signals** — headers that indicate a sheet is a Worker Jobs:
@@ -176,7 +176,7 @@ When the orchestrator asks you to set up a new Worker Jobs sheet:
 waymark_create_sheet(templateKey: "worker", title: "My Sheet", seedRows?: [...])
 ```
 
-The server uses the default headers for `worker`: `Job, Handler, Config, Status, Schedule`.
+The server uses the default headers for `worker`: `Job, Handler, Status, Schedule, Input, Output, LastRun, Logs`.
 After creation, verify by calling `waymark_get_sheet` and confirming `templateKey === "worker"`.
 
 ---

@@ -4,7 +4,7 @@
    Generates a styled "space concept" from current floorplan geometry.
    ============================================================ */
 
-import { el, generateText, analyzeImageWithAI, generateImage, showToast } from '../shared.js';
+import { el, generateText, analyzeImageWithAI, generateImage, showToast, copyToClipboard } from '../shared.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -641,12 +641,8 @@ export function openFloorplanAiRenderModal({ items }) {
       showToast('Generate a concept or photoreal view first', 'error');
       return;
     }
-    try {
-      await navigator.clipboard.writeText(prompt);
-      showToast('Render prompt copied', 'success');
-    } catch {
-      showToast('Could not copy prompt', 'error');
-    }
+    const ok = await copyToClipboard(prompt);
+    showToast(ok ? 'Render prompt copied' : 'Could not copy prompt', ok ? 'success' : 'error');
   });
 
   // Use a clean raster of the selected 3D camera view as the image model's

@@ -5,6 +5,7 @@ public/js/vendor/
 public/data/
 playwright-report/
 test-results/
+build/
 generated/
 android/.gradle/
 android/app/build/

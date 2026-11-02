@@ -1,0 +1,88 @@
+---
+name: waymark-{{TEMPLATE_KEY}}
+description: >-
+  Use this skill to read, create, update, or manipulate Google Sheets for the {{TEMPLATE_NAME}} template ({{TEMPLATE_CATEGORY}}).
+---
+
+# Waymark {{TEMPLATE_NAME}} Skill
+
+> Specialized skill for **{{TEMPLATE_NAME}}** sheets in Waymark. Uses Waymark and Google Sheets MCP tools to perform operations according to {{TEMPLATE_NAME}} domain rules.
+
+---
+
+## 0. IDENTITY
+
+| Field | Value |
+|---|---|
+| Template Key | `{{TEMPLATE_KEY}}` |
+| Template Name | {{TEMPLATE_NAME}} |
+| Category | {{TEMPLATE_CATEGORY}} |
+| Interaction Type | `{{INTERACTION_TYPE}}` |
+
+---
+
+## 1. COLUMN ROLES
+
+This is the authoritative column mapping for {{TEMPLATE_NAME}} sheets. When reading or writing, use these role names to identify the correct column regardless of exact header text.
+
+```
+{{COLUMN_ROLES_LIST}}
+```
+
+**Default headers when creating a new {{TEMPLATE_NAME}} sheet:**
+```
+{{DEFAULT_HEADERS}}
+```
+
+**Detection signals** — headers that indicate a sheet is a {{TEMPLATE_NAME}}:
+```
+{{DETECT_SIGNALS}}
+```
+
+---
+
+## 2. STATE MACHINE
+
+{{INTERACTION_STATES_BLOCK}}
+
+---
+
+## 3. DOMAIN KNOWLEDGE — {{TEMPLATE_NAME}}
+
+{{DOMAIN_KNOWLEDGE}}
+
+---
+
+## 4. MCP TOOL OPERATIONS
+
+### 4.1 Reading a Sheet
+Call `waymark_get_sheet(spreadsheetId, sheetTitle?)`
+- Returns `templateKey`, `columnRoles{}`, and `rows[]` as objects with role-named keys.
+- Always resolve columns by role name, not index.
+
+### 4.2 Updating an Existing Row
+Call `waymark_update_entry(spreadsheetId, rowIndex, updates, sheetTitle?)`
+- `rowIndex` is 1-based data row index (1 = first row under headers).
+- `updates` is `{ roleName: newValue }`.
+- For `status-cycle`, only write values from the valid states list (§2).
+- For `toggle`, only write `{{TOGGLE_ON}}` or `{{TOGGLE_OFF}}`.
+
+### 4.3 Appending a Row
+Call `waymark_add_entry(spreadsheetId, entry, sheetTitle?)`
+- `entry` is `{ roleName: value }`.
+
+### 4.4 Creating a New Sheet
+Call `waymark_create_sheet({ templateKey: "{{TEMPLATE_KEY}}", title, seedRows? })`
+- Creates a new Google Sheet pre-formatted with default {{TEMPLATE_NAME}} headers and initial rows.
+- Created under user account via OAuth, automatically shared with service account and editors.
+- Returns `{ spreadsheetId, waymarkUrl, sheetsUrl, title, templateKey }`.
+
+### 4.5 Searching Entries & Files
+- Search rows in a sheet: Call `waymark_search_entries({ spreadsheetId, query, column? })`.
+- Search files in Google Drive: Call `waymark_list_files({ query?, type?: 'all'|'spreadsheet'|'document'|'folder', parentFolderId? })`.
+- Share a sheet: Call `waymark_share_sheet({ spreadsheetId, shareWith?, shareWithAnyone?, role? })`.
+
+### 4.6 Document Operations
+- Create Google Doc: Call `waymark_create_doc({ title, body?, parentFolderId?, shareWith? })`.
+- Read Google Doc: Call `waymark_get_doc({ documentId })`.
+- Append to Google Doc: Call `waymark_append_doc({ documentId, text })`.

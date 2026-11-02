@@ -80,6 +80,7 @@ export class SocialChatWidget {
     this.onOpenSheet = opts.onOpenSheet || (() => {});
     this.onConnectDrive = opts.onConnectDrive || (() => {});
     this.onBeforeStartCall = opts.onBeforeStartCall || null;
+    this.onPeerMessage = opts.onPeerMessage || null;
 
     this.showClose = opts.showClose !== false;
     this.showMinimize = opts.showMinimize !== undefined ? opts.showMinimize : (this.mode === 'floating');
@@ -109,6 +110,9 @@ export class SocialChatWidget {
           ts: msg.ts,
           self: msg.self,
         });
+        if (!msg.self && typeof this.onPeerMessage === 'function') {
+          this.onPeerMessage(msg);
+        }
       },
       onPeersChanged: (peers) => {
         const count = peers?.size ?? (Array.isArray(peers) ? peers.length : 0);
@@ -822,7 +826,13 @@ export class SocialChatWidget {
       dataset: { messageKey: key },
     });
 
-    const initial = (sender || '?')[0].toUpperCase();
+    if (!history && !isSelf && sender !== 'System') {
+      clearTimeout(this._typingTimer);
+      this.typingIndicator.classList.add('hidden');
+    }
+
+    const isAiSender = sender === 'Waymark AI' || (sender || '').toLowerCase() === 'assistant@waymark.internal';
+    const initial = isAiSender ? '🤖' : (sender || '?')[0].toUpperCase();
     const textSpan = el('span', { className: 'social-chat-bubble-text' });
     appendLinkified(textSpan, text);
 
@@ -830,7 +840,7 @@ export class SocialChatWidget {
     const timeText = (numTs && !isNaN(numTs) && numTs > 0)
       ? timeAgo(new Date(numTs).toISOString())
       : '';
-    const who = isSelf ? 'You' : (sender || '').split('@')[0];
+    const who = isSelf ? 'You' : (isAiSender ? 'Waymark AI' : (sender || '').split('@')[0]);
 
     const bodyChildren = [
       el('span', { className: 'social-chat-bubble-name' }, [who]),
