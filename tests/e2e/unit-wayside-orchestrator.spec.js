@@ -5,7 +5,6 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
 
-test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
 
   test('classifyMessage identifies conversational greetings and help requests', async () => {
     const { classifyMessage } = await import('../../scripts/wayside-orchestrator.mjs');
@@ -316,4 +315,3 @@ test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
     expect(orch.presenceTimer).toBeNull();
   });
 
-});

@@ -10,6 +10,7 @@ import * as agentVault from '../agent/vault.js';
 import { captureStillFromCamera, hasUserMedia, getUserMediaStream } from '../camera-capture.js';
 export { WaymarkConnect } from '../webrtc.js';
 export { buildHandshakePasswordRow } from '../handshake-auth.js';
+import { decrypt, isEncrypted, isUnlocked } from '../encryption.js';
 
 /* ---------- Edit callback (set by checklist.js) ---------- */
 
@@ -678,9 +679,9 @@ function dateCell(tag, attrs, text, rowIdx, colIdx, opts = {}) {
    implementation (secure-context Clipboard API + execCommand fallback). */
 export { el, showToast, copyToClipboard };
 
-/* Re-export the camera still-capture helper so template sub-modules can access
-   it without importing outside their folder (§1.5). */
-export { captureStillFromCamera };
+/* Re-export camera helpers so template sub-modules can access capture +
+   getUserMedia without importing outside their folder (§1.5). */
+export { captureStillFromCamera, hasUserMedia, getUserMediaStream };
 
 
 /* ---------- Generic Helpers ---------- */
@@ -1301,6 +1302,9 @@ export {
   setCalorieProfile,
   getTemplatePref,
   setTemplatePref,
+  getRaw,
+  setRaw,
+  removeRaw,
 } from '../storage.js';
 
 /* ---------- AI text generation ---------- */
@@ -1847,6 +1851,7 @@ export {
   TEMPLATES,
   analyzeAudioWithAI,
   analyzeImageWithAI,
+  api,
   appendSheetRows,
   blobToBase64,
   buildAddRowForm,
@@ -1858,6 +1863,7 @@ export {
   createSpreadsheet,
   cycleStatus,
   dateCell,
+  decrypt,
   delegateEvent,
   deleteSheetRow,
   editableCell,
@@ -1880,8 +1886,10 @@ export {
   isAddRowOpen,
   isAudioRecordingSupported,
   isEditLocked,
+  isEncrypted,
   isImageUrl,
   isRowProtected,
+  isUnlocked,
   lazySection,
   loadDriveImage,
   onEdit,

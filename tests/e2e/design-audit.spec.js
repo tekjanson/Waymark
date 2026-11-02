@@ -18,12 +18,12 @@ const path = require('path');
 /* ────────── Output directory ────────── */
 const OUT = path.resolve(__dirname, '..', '..', 'design-audit-screenshots');
 
-test.beforeAll(() => {
-  if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true });
-  fs.mkdirSync(OUT, { recursive: true });
-  fs.mkdirSync(path.join(OUT, 'light'), { recursive: true });
-  fs.mkdirSync(path.join(OUT, 'dark'),  { recursive: true });
-});
+// Reset the screenshot output tree once when this spec file loads — no beforeAll
+// hook (AI_LAWS §7.2). The runner evaluates the spec module before executing any
+// test, so this runs up front; mkdirSync({recursive}) also creates OUT itself.
+if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true });
+fs.mkdirSync(path.join(OUT, 'light'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'dark'), { recursive: true });
 
 /* ────────── Template definitions ────────── */
 const TEMPLATES = [

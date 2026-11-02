@@ -32,6 +32,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TEMPLATES_DIR = path.join(ROOT, 'public', 'js', 'templates');
+const PUBLIC_JS_DIR = path.join(ROOT, 'public', 'js');
 
 /* ---------- File discovery ---------- */
 
@@ -154,6 +155,136 @@ function auditClipboardDegradation(file) {
   };
 }
 
+/* ---------- Rule: Google-API import boundary (AI_LAWS §1.4 / §1.5) ---------- */
+
+// api-client.js is the SOLE gateway to Google APIs (§1.4); templates import only
+// from shared.js (§1.5). A template that imports api-client.js / drive.js /
+// sheets.js directly bypasses the gateway, which breaks the mock-mode + test
+// isolation the whole suite depends on. shared.js is the one legitimate importer
+// (it re-exports the `api` object + sheet helpers) and is exempt via isLibraryFile.
+//
+// storage.js is also re-exported by shared.js (getRaw/setRaw/removeRaw + prefs);
+// templates must use those re-exports, not import storage.js directly (§1.5).
+// camera-capture.js and encryption.js are likewise re-exported by shared.js.
+const GATEWAY_IMPORT =
+  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage|camera-capture|encryption|social-widget)\.js['"]/;
+
+// Documented, intentional exceptions where routing through shared.js is not
+// possible. Each entry is a [templateRelPath, moduleName] pair.
+//   - social/chat.js → social-widget.js: SocialChatWidget is a cross-cutting UI
+//     widget whose module imports templates/social/helpers.js, which imports
+//     shared.js — re-exporting it via shared.js would create a circular import.
+// The arcade template's imports of its public/js/arcade/** game engine are a
+// separate architectural subsystem (not a canonical shared.js gateway) and are
+// intentionally NOT matched by GATEWAY_IMPORT.
+const IMPORT_BOUNDARY_ALLOW = [
+  ['public/js/templates/social/chat.js', 'social-widget.js'],
+];
+
+/**
+ * Audit a single template file against the Google-API import boundary.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditImportBoundary(file) {
+  if (isLibraryFile(file)) return null;
+  const src = fs.readFileSync(file, 'utf8');
+  const match = src.match(GATEWAY_IMPORT);
+  if (!match) return null;
+  const moduleName = `${match[1]}.js`;
+  const rel = path.relative(ROOT, file);
+  if (IMPORT_BOUNDARY_ALLOW.some(([f, m]) => f === rel && m === moduleName)) {
+    return null; // documented exception
+  }
+  return {
+    file: rel,
+    violations: [
+      `imports ${moduleName} directly — templates must route canonical access `
+      + 'through shared.js (which re-exports the `api` object, sheet helpers, '
+      + 'storage getRaw/setRaw/removeRaw, camera + encryption helpers), never '
+      + 'import these modules directly. This preserves mock mode and test '
+      + 'isolation (AI_LAWS §1.4, §1.5). If a module genuinely cannot route '
+      + 'through shared.js (e.g. a circular import), add it to '
+      + 'IMPORT_BOUNDARY_ALLOW with a comment explaining why.',
+    ],
+  };
+}
+
+/* ---------- Rule: no dynamic innerHTML (AI_LAWS §3.4 / §12 — XSS) ---------- */
+
+// Assigning a template literal that interpolates runtime values into innerHTML
+// is an XSS vector (e.g. `innerHTML = `…${err.message}`` injects unescaped
+// content). Static strings and `innerHTML = ''` clearing are fine; dynamic
+// content must be built with el() + textContent. Scans all of public/js.
+const DYNAMIC_INNERHTML = /\.innerHTML\s*=\s*`[^`]*\$\{/;
+
+/** Collect .js files under public/js, skipping the third-party vendor tree. */
+function collectPublicJsFiles() {
+  return collectJsFiles(PUBLIC_JS_DIR).filter(
+    f => !path.relative(PUBLIC_JS_DIR, f).split(path.sep).includes('vendor'),
+  );
+}
+
+/**
+ * Audit a file for dynamic innerHTML interpolation.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditDynamicInnerHtml(file) {
+  const src = fs.readFileSync(file, 'utf8');
+  if (!DYNAMIC_INNERHTML.test(src)) return null;
+  return {
+    file: path.relative(ROOT, file),
+    violations: [
+      'assigns a template literal with ${…} interpolation to innerHTML — an XSS '
+      + 'vector for any runtime/user value. Build the node with el() and set '
+      + 'text via textContent instead (AI_LAWS §3.4, §12).',
+    ],
+  };
+}
+
+/* ---------- Rule: test hygiene (AI_LAWS §7.2) ---------- */
+
+// Playwright specs must be flat: no describe() blocks, no beforeEach/afterEach/
+// beforeAll/afterAll hooks (every test is independently isolated), no
+// data-testid selectors, and no page.waitForTimeout() (use waitForSelector).
+const E2E_DIR = path.join(ROOT, 'tests', 'e2e');
+const TEST_HYGIENE_RULES = [
+  { re: /\btest\s*\.\s*describe\s*\(/, msg: 'uses test.describe() — specs must be flat test() calls (no describe blocks).' },
+  { re: /\btest\s*\.\s*(beforeEach|afterEach|beforeAll|afterAll)\s*\(/, msg: 'uses a test lifecycle hook — every test must be self-contained (no beforeEach/afterEach/beforeAll/afterAll); extract shared setup into a helper called inside each test.' },
+  { re: /['"`]data-testid['"`]|\[data-testid/, msg: 'uses a data-testid selector — select by semantic CSS classes / element IDs instead.' },
+  { re: /\.waitForTimeout\s*\(/, msg: 'uses page.waitForTimeout() — use waitForSelector() with an explicit timeout instead.' },
+];
+
+/**
+ * Audit a single e2e spec against the test-hygiene rules.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditTestHygiene(file) {
+  const src = fs.readFileSync(file, 'utf8');
+  const violations = [];
+  for (const { re, msg } of TEST_HYGIENE_RULES) {
+    if (re.test(src)) violations.push(msg);
+  }
+  return violations.length ? { file: path.relative(ROOT, file), violations } : null;
+}
+
+// Grandfathered §7.2 violators present when the rule was introduced. The rule
+// blocks any NEW violation; these are burned down in later loop iterations and
+// removed from this list as each spec is cleaned. DO NOT add new entries — fix
+// the spec instead. (rfi.spec.js was fully fixed and is intentionally absent.)
+const TEST_HYGIENE_BASELINE = new Set([
+  'tests/e2e/agent.spec.js',
+  'tests/e2e/blog.spec.js',
+  'tests/e2e/contacts.spec.js',
+  'tests/e2e/design-audit.spec.js',
+  'tests/e2e/kanban.spec.js',
+  'tests/e2e/linker.spec.js',
+  'tests/e2e/public.spec.js',
+  'tests/e2e/tutorial.spec.js',
+]);
+
 /* ---------- Runner ---------- */
 
 function main() {
@@ -166,6 +297,7 @@ function main() {
   const findings = [];
   let voiceSurfaces = 0;
   let clipboardSurfaces = 0;
+  let importSurfaces = 0;
 
   for (const file of files) {
     const src = fs.readFileSync(file, 'utf8');
@@ -174,19 +306,47 @@ function main() {
       voiceSurfaces++;
     }
     if (/navigator\s*\.\s*clipboard/.test(src) && !isLibraryFile(file)) clipboardSurfaces++;
+    if (!isLibraryFile(file)) importSurfaces++;
     const voice = auditVoiceDegradation(file);
     if (voice) findings.push(voice);
     const clip = auditClipboardDegradation(file);
     if (clip) findings.push(clip);
+    const imp = auditImportBoundary(file);
+    if (imp) findings.push(imp);
   }
 
   console.log('interaction-audit — behavioral parity drift guard');
-  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION`);
+  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY, DYNAMIC_INNERHTML`);
   console.log(`  voice-intake surfaces scanned: ${voiceSurfaces}`);
   console.log(`  clipboard surfaces scanned: ${clipboardSurfaces}`);
+  console.log(`  template modules scanned for import boundary: ${importSurfaces}`);
+
+  // Dynamic-innerHTML XSS scan spans all of public/js, not just templates.
+  const publicFiles = collectPublicJsFiles();
+  for (const file of publicFiles) {
+    const xss = auditDynamicInnerHtml(file);
+    if (xss) findings.push(xss);
+  }
+  console.log(`  public/js modules scanned for dynamic innerHTML: ${publicFiles.length}`);
+
+  // Test-hygiene scan over the e2e specs (AI_LAWS §7.2). Grandfathered specs in
+  // TEST_HYGIENE_BASELINE are reported as backlog but don't fail the gate; any
+  // NEW violation (a spec not in the baseline) fails.
+  let e2eSpecs = [];
+  let grandfathered = 0;
+  if (fs.existsSync(E2E_DIR)) {
+    e2eSpecs = collectJsFiles(E2E_DIR).filter(f => f.endsWith('.spec.js'));
+    for (const file of e2eSpecs) {
+      const hyg = auditTestHygiene(file);
+      if (!hyg) continue;
+      if (TEST_HYGIENE_BASELINE.has(hyg.file)) grandfathered++;
+      else findings.push(hyg);
+    }
+  }
+  console.log(`  e2e specs scanned for test hygiene: ${e2eSpecs.length} (grandfathered backlog: ${grandfathered})`);
 
   if (!findings.length) {
-    console.log('  ✓ no drift — every voice & clipboard surface degrades gracefully');
+    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML, flat/isolated e2e specs');
     process.exit(0);
   }
 

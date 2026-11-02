@@ -2,7 +2,6 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp } = require('../helpers/test-utils');
 
-test.describe('Wayside AI Assistant Integration', () => {
 
   test('Waymark AI avatar appears in The Wayside and can be selected', async ({ page }) => {
     await setupApp(page);
@@ -50,4 +49,3 @@ test.describe('Wayside AI Assistant Integration', () => {
     ]);
   });
 
-});
