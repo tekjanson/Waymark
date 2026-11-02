@@ -165,8 +165,21 @@ function auditClipboardDegradation(file) {
 //
 // storage.js is also re-exported by shared.js (getRaw/setRaw/removeRaw + prefs);
 // templates must use those re-exports, not import storage.js directly (§1.5).
+// camera-capture.js and encryption.js are likewise re-exported by shared.js.
 const GATEWAY_IMPORT =
-  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage|camera-capture|encryption)\.js['"]/;
+  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets|storage|camera-capture|encryption|social-widget)\.js['"]/;
+
+// Documented, intentional exceptions where routing through shared.js is not
+// possible. Each entry is a [templateRelPath, moduleName] pair.
+//   - social/chat.js → social-widget.js: SocialChatWidget is a cross-cutting UI
+//     widget whose module imports templates/social/helpers.js, which imports
+//     shared.js — re-exporting it via shared.js would create a circular import.
+// The arcade template's imports of its public/js/arcade/** game engine are a
+// separate architectural subsystem (not a canonical shared.js gateway) and are
+// intentionally NOT matched by GATEWAY_IMPORT.
+const IMPORT_BOUNDARY_ALLOW = [
+  ['public/js/templates/social/chat.js', 'social-widget.js'],
+];
 
 /**
  * Audit a single template file against the Google-API import boundary.
@@ -179,14 +192,20 @@ function auditImportBoundary(file) {
   const match = src.match(GATEWAY_IMPORT);
   if (!match) return null;
   const moduleName = `${match[1]}.js`;
+  const rel = path.relative(ROOT, file);
+  if (IMPORT_BOUNDARY_ALLOW.some(([f, m]) => f === rel && m === moduleName)) {
+    return null; // documented exception
+  }
   return {
-    file: path.relative(ROOT, file),
+    file: rel,
     violations: [
       `imports ${moduleName} directly — templates must route canonical access `
-      + 'through shared.js (which re-exports the `api` object, sheet helpers, and '
-      + 'storage getRaw/setRaw/removeRaw), never import '
-      + 'api-client.js/drive.js/sheets.js/storage.js directly. This preserves '
-      + 'mock mode and test isolation (AI_LAWS §1.4, §1.5).',
+      + 'through shared.js (which re-exports the `api` object, sheet helpers, '
+      + 'storage getRaw/setRaw/removeRaw, camera + encryption helpers), never '
+      + 'import these modules directly. This preserves mock mode and test '
+      + 'isolation (AI_LAWS §1.4, §1.5). If a module genuinely cannot route '
+      + 'through shared.js (e.g. a circular import), add it to '
+      + 'IMPORT_BOUNDARY_ALLOW with a comment explaining why.',
     ],
   };
 }
