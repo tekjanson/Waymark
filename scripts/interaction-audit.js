@@ -154,6 +154,38 @@ function auditClipboardDegradation(file) {
   };
 }
 
+/* ---------- Rule: Google-API import boundary (AI_LAWS §1.4 / §1.5) ---------- */
+
+// api-client.js is the SOLE gateway to Google APIs (§1.4); templates import only
+// from shared.js (§1.5). A template that imports api-client.js / drive.js /
+// sheets.js directly bypasses the gateway, which breaks the mock-mode + test
+// isolation the whole suite depends on. shared.js is the one legitimate importer
+// (it re-exports the `api` object + sheet helpers) and is exempt via isLibraryFile.
+const GATEWAY_IMPORT =
+  /import\s+[^;'"]*?from\s+['"][^'"]*\/(api-client|drive|sheets)\.js['"]/;
+
+/**
+ * Audit a single template file against the Google-API import boundary.
+ * @param {string} file absolute path
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditImportBoundary(file) {
+  if (isLibraryFile(file)) return null;
+  const src = fs.readFileSync(file, 'utf8');
+  const match = src.match(GATEWAY_IMPORT);
+  if (!match) return null;
+  const moduleName = `${match[1]}.js`;
+  return {
+    file: path.relative(ROOT, file),
+    violations: [
+      `imports ${moduleName} directly — templates must route all Google API `
+      + 'access through shared.js (which re-exports the canonical `api` object), '
+      + 'never import api-client.js/drive.js/sheets.js. This preserves mock mode '
+      + 'and test isolation (AI_LAWS §1.4, §1.5).',
+    ],
+  };
+}
+
 /* ---------- Runner ---------- */
 
 function main() {
@@ -166,6 +198,7 @@ function main() {
   const findings = [];
   let voiceSurfaces = 0;
   let clipboardSurfaces = 0;
+  let importSurfaces = 0;
 
   for (const file of files) {
     const src = fs.readFileSync(file, 'utf8');
@@ -174,19 +207,23 @@ function main() {
       voiceSurfaces++;
     }
     if (/navigator\s*\.\s*clipboard/.test(src) && !isLibraryFile(file)) clipboardSurfaces++;
+    if (!isLibraryFile(file)) importSurfaces++;
     const voice = auditVoiceDegradation(file);
     if (voice) findings.push(voice);
     const clip = auditClipboardDegradation(file);
     if (clip) findings.push(clip);
+    const imp = auditImportBoundary(file);
+    if (imp) findings.push(imp);
   }
 
   console.log('interaction-audit — behavioral parity drift guard');
-  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION`);
+  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY`);
   console.log(`  voice-intake surfaces scanned: ${voiceSurfaces}`);
   console.log(`  clipboard surfaces scanned: ${clipboardSurfaces}`);
+  console.log(`  template modules scanned for import boundary: ${importSurfaces}`);
 
   if (!findings.length) {
-    console.log('  ✓ no drift — every voice & clipboard surface degrades gracefully');
+    console.log('  ✓ no drift — voice/clipboard degrade gracefully & no template imports Google APIs directly');
     process.exit(0);
   }
 

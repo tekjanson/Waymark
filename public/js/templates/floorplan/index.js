@@ -8,6 +8,7 @@ import * as storage from '../../storage.js';
    ============================================================ */
 
 import {
+  api,
   cell,
   el,
   readSheetTab,
@@ -15,7 +16,6 @@ import {
   showToast,
   writeSheetTab,
 } from '../shared.js';
-import { api } from '../../api-client.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
 import {
   UNITS_PER_FOOT,

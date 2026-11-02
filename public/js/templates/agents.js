@@ -8,8 +8,7 @@ import * as storage from '../storage.js';
    agents read their row on boot and pick up the config.
    ============================================================ */
 
-import { el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
-import { api } from '../api-client.js';
+import { api, el, cell, editableCell, textareaCell, emitEdit, registerTemplate, showToast } from './shared.js';
 
 /* ---------- Fleet webhook config (localStorage key) ---------- */
 const LS_WEBHOOK_KEY = 'waymark_fleet_webhook_url';

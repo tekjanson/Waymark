@@ -1847,6 +1847,7 @@ export {
   TEMPLATES,
   analyzeAudioWithAI,
   analyzeImageWithAI,
+  api,
   appendSheetRows,
   blobToBase64,
   buildAddRowForm,
