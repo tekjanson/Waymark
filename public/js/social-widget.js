@@ -80,6 +80,9 @@ export class SocialChatWidget {
     this.onOpenSheet = opts.onOpenSheet || (() => {});
     this.onConnectDrive = opts.onConnectDrive || (() => {});
     this.onShareAgent = opts.onShareAgent || (() => {});
+    this.onSelectThread = opts.onSelectThread || (() => {});
+    this.onNewThread = opts.onNewThread || (() => {});
+    this.onClearThread = opts.onClearThread || (() => {});
     this.onBeforeStartCall = opts.onBeforeStartCall || null;
     this.onPeerMessage = opts.onPeerMessage || null;
 
@@ -88,6 +91,7 @@ export class SocialChatWidget {
     this.showSheetLink = opts.showSheetLink !== undefined ? !!opts.showSheetLink : (this.mode === 'embedded');
     this.showConnectDrive = opts.showConnectDrive !== undefined ? !!opts.showConnectDrive : (this.mode === 'embedded');
     this.showShareAgent = Boolean(opts.showShareAgent);
+    this.showAgentThreads = Boolean(opts.showAgentThreads);
 
     this._chatLog = [];
     this._unreadCount = 0;
@@ -316,6 +320,41 @@ export class SocialChatWidget {
       id: `${idPrefix}-sheet-line`,
     }, [this.subtitleTextEl, subtitleActions]);
 
+    /* ---------- Agent Conversation Thread Bar (Agent chats only) ---------- */
+    this.agentThreadBar = null;
+    this.threadSelect = null;
+    if (this.showAgentThreads) {
+      this.threadSelect = el('select', {
+        className: 'wayside-thread-select',
+        id: `${idPrefix}-thread-select`,
+        title: 'Switch between saved AI conversations in Google Drive',
+        on: { change: (e) => this.onSelectThread(e.target.value) },
+      }, [
+        el('option', { value: 'default' }, ['💬 General Conversation (0)']),
+      ]);
+
+      this.newThreadBtn = el('button', {
+        type: 'button',
+        className: 'btn btn-muted wayside-thread-btn',
+        id: `${idPrefix}-new-thread-btn`,
+        title: 'Start a new conversation thread (previous threads stay saved in Google Drive)',
+        on: { click: () => this.onNewThread() },
+      }, ['＋ New']);
+
+      this.clearThreadBtn = el('button', {
+        type: 'button',
+        className: 'btn btn-muted wayside-thread-btn',
+        id: `${idPrefix}-clear-thread-btn`,
+        title: 'Clear active context and start a fresh thread',
+        on: { click: () => this.onClearThread() },
+      }, ['🧹 Clear']);
+
+      this.agentThreadBar = el('div', {
+        className: 'wayside-thread-bar',
+        id: `${idPrefix}-thread-bar`,
+      }, [this.threadSelect, this.newThreadBtn, this.clearThreadBtn]);
+    }
+
     /* ---------- Settings Panel ---------- */
     this.settingsPanel = el('div', { className: 'social-chat-settings-panel hidden' });
     this._buildSettingsPanel();
@@ -491,6 +530,7 @@ export class SocialChatWidget {
     this.root.append(
       header,
       ...(!isFloating ? [this.subtitle] : []),
+      ...(this.agentThreadBar ? [this.agentThreadBar] : []),
       this.settingsPanel,
       this.incomingCallModal,
       this.mediaContainer,
@@ -820,7 +860,32 @@ export class SocialChatWidget {
     }
   }
 
+  clearMessages(emptyHint = '') {
+    if (!this.messages) return;
+    this.messages.replaceChildren();
+    this._chatLog = [];
+    if (emptyHint) {
+      this.messages.append(
+        el('div', { className: 'wayside-thread-empty' }, [emptyHint])
+      );
+    }
+  }
+
+  setThreads(threads = [], activeThreadId = 'default') {
+    if (!this.threadSelect) return;
+    const list = Array.isArray(threads) && threads.length
+      ? threads
+      : [{ id: 'default', label: '💬 General Conversation (0)' }];
+    this.threadSelect.replaceChildren(
+      ...list.map(t => el('option', { value: t.id }, [t.label]))
+    );
+    const hasActive = list.some(t => t.id === activeThreadId);
+    this.threadSelect.value = hasActive ? activeThreadId : list[0].id;
+  }
+
   appendMessage({ id, sender, text, ts, self = false, failed = false, history = false }) {
+    const emptyEl = this.messages?.querySelector('.wayside-thread-empty');
+    if (emptyEl) emptyEl.remove();
     const isSelf = history
       ? (self || (sender === this.displayName) || (this.userEmail && (sender || '').toLowerCase() === this.userEmail.toLowerCase()))
       : Boolean(self);

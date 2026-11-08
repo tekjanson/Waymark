@@ -1101,6 +1101,10 @@ async function selectTarget(target, host) {
   const displayName = user.name || (user.email ? user.email.split('@')[0] : 'Waymarker');
   const userEmail = collab.currentEmail();
   const isAgentTarget = Boolean(target.isAgent || target.contactEmail === 'assistant@waymark.internal');
+  if (targetChanged && isAgentTarget) {
+    _activeAgentThreadId = 'default';
+    _activeAgentThreadTitle = '';
+  }
 
   const widget = new SocialChatWidget({
     mode: 'embedded',
@@ -1116,10 +1120,14 @@ async function selectTarget(target, host) {
     showSheetLink: true,
     showConnectDrive: true,
     showShareAgent: isAgentTarget,
+    showAgentThreads: isAgentTarget,
     onClose: () => deselectTarget(host),
     onOpenSheet: () => openSocialSheet(),
     onConnectDrive: () => connectSharedLedgerFromWayside(host),
     onShareAgent: () => openShareAgentModal(host),
+    onSelectThread: (threadId) => selectAgentThread(threadId, host),
+    onNewThread: () => startNewAgentThread(host, { isClear: false }),
+    onClearThread: () => startNewAgentThread(host, { isClear: true }),
     onPeerMessage: () => {
       setTimeout(() => {
         refreshWaysideSocial(host).catch(() => {});
@@ -1137,12 +1145,30 @@ async function selectTarget(target, host) {
       }
     },
     persistChat: async (msg) => {
-      const result = await collab.sendChat(target, msg.text, '', msg.id);
+      let chatTarget = target;
+      if (isAgentTarget) {
+        if (!_activeAgentThreadTitle && _activeAgentThreadId !== 'default') {
+          _activeAgentThreadTitle = deriveAgentThreadTitle(msg.text);
+          const pending = _pendingAgentThreads.get(_activeAgentThreadId);
+          if (pending) pending.title = _activeAgentThreadTitle;
+        }
+        chatTarget = {
+          ...target,
+          threadId: _activeAgentThreadId,
+          threadTitle: _activeAgentThreadTitle,
+        };
+      }
+      const result = await collab.sendChat(chatTarget, msg.text, '', msg.id);
       const nextLedgerId = result?.sheetId || _activeLedgerId;
       if (widget && nextLedgerId && nextLedgerId !== _activeLedgerId) {
         _activeLedgerId = nextLedgerId;
         widget.setSubtitle(`Linked: ${_activeLedgerId}`);
         widget.setSignaling(_activeLedgerId, collab.createLedgerSignal(_activeLedgerId));
+      }
+      if (isAgentTarget) {
+        setTimeout(() => {
+          refreshWaysideSocial(host).catch(() => {});
+        }, 150);
       }
       return result;
     },
@@ -1206,6 +1232,128 @@ function renderSharedFiles(files) {
   container.append(listEl);
 }
 
+let _activeAgentThreadId = 'default';
+let _activeAgentThreadTitle = '';
+const _pendingAgentThreads = new Map();
+
+function deriveAgentThreadTitle(text) {
+  const clean = String(text || '')
+    .replace(/@[a-z0-9_-]+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return 'New Conversation';
+  return clean.length > 34 ? `${clean.slice(0, 31).trim()}…` : clean;
+}
+
+function buildAgentThreadList(chatRows = [], activeThreadId = 'default') {
+  const byThread = new Map();
+  for (const m of chatRows) {
+    const tId = String(m.threadId || 'default').trim() || 'default';
+    let entry = byThread.get(tId);
+    if (!entry) {
+      entry = {
+        id: tId,
+        title: m.threadTitle || '',
+        count: 0,
+        lastTs: m.ts || '',
+      };
+      byThread.set(tId, entry);
+    }
+    if (m.threadTitle && !entry.title) entry.title = m.threadTitle;
+    if (!entry.title && m.sender && m.sender.toLowerCase() !== 'assistant@waymark.internal') {
+      entry.title = deriveAgentThreadTitle(m.text);
+    }
+    entry.count += 1;
+    if (m.ts && (!entry.lastTs || m.ts > entry.lastTs)) {
+      entry.lastTs = m.ts;
+    }
+  }
+
+  for (const [pendingId, pendingMeta] of _pendingAgentThreads.entries()) {
+    if (!byThread.has(pendingId)) {
+      byThread.set(pendingId, {
+        id: pendingId,
+        title: pendingMeta.title || 'New Conversation',
+        count: 0,
+        lastTs: pendingMeta.createdAt || new Date().toISOString(),
+      });
+    }
+  }
+
+  if (!byThread.has('default')) {
+    byThread.set('default', {
+      id: 'default',
+      title: 'General Conversation',
+      count: 0,
+      lastTs: '',
+    });
+  }
+
+  if (activeThreadId && !byThread.has(activeThreadId)) {
+    byThread.set(activeThreadId, {
+      id: activeThreadId,
+      title: _activeAgentThreadTitle || 'New Conversation',
+      count: 0,
+      lastTs: new Date().toISOString(),
+    });
+  }
+
+  const list = [...byThread.values()].map(t => {
+    const title = t.title || (t.id === 'default' ? 'General Conversation' : 'Conversation');
+    return {
+      ...t,
+      title,
+      label: `💬 ${title} (${t.count})`,
+    };
+  });
+
+  list.sort((a, b) => {
+    if (a.id === activeThreadId && a.count === 0) return -1;
+    if (b.id === activeThreadId && b.count === 0) return 1;
+    return String(b.lastTs || '').localeCompare(String(a.lastTs || ''));
+  });
+
+  return list;
+}
+
+async function selectAgentThread(threadId, host) {
+  const nextId = String(threadId || 'default').trim() || 'default';
+  _activeAgentThreadId = nextId;
+  const pending = _pendingAgentThreads.get(nextId);
+  _activeAgentThreadTitle = pending?.title || '';
+  _waysideSocialRefreshKey = null;
+  if (_waysideWidget) {
+    _waysideWidget.clearMessages();
+  }
+  await refreshWaysideSocial(host);
+}
+
+async function startNewAgentThread(host, { isClear = false } = {}) {
+  const newThreadId = `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  _activeAgentThreadId = newThreadId;
+  _activeAgentThreadTitle = '';
+  _pendingAgentThreads.set(newThreadId, {
+    id: newThreadId,
+    title: 'New Conversation',
+    createdAt: new Date().toISOString(),
+  });
+  _waysideSocialRefreshKey = null;
+  if (_waysideWidget) {
+    _waysideWidget.clearMessages(
+      isClear
+        ? '🧹 Context cleared! Started a fresh conversation thread — previous chats remain saved in Google Drive above.'
+        : '✨ New conversation thread started — switch between saved Google Drive threads anytime above.'
+    );
+  }
+  showToast(
+    isClear
+      ? 'Context cleared — started a fresh thread (past chats saved in Drive)'
+      : 'Started a new Waymark AI conversation thread',
+    'info'
+  );
+  await refreshWaysideSocial(host);
+}
+
 async function refreshWaysideSocial(host) {
   if (!_activeTarget || !_waysideWidget) return;
   const generation = _waysideTargetGeneration;
@@ -1219,14 +1367,26 @@ async function refreshWaysideSocial(host) {
     } catch {}
   }
   const ledgerId = _activeLedgerId;
-  const refreshKey = `${generation}:${ledgerId || 'unlinked'}`;
+  const isAgentTarget = Boolean(_activeTarget?.isAgent || _activeTarget?.contactEmail === 'assistant@waymark.internal');
+  const refreshKey = `${generation}:${ledgerId || 'unlinked'}:${isAgentTarget ? _activeAgentThreadId : 'all'}`;
   if (_waysideSocialRefreshKey === refreshKey) return;
   _waysideSocialRefreshKey = refreshKey;
   try {
     if (ledgerId) {
       const snap = await collab.readSocialSnapshot(ledgerId);
       if (generation !== _waysideTargetGeneration || ledgerId !== _activeLedgerId) return;
-      const sheetMessages = (snap.chat || []).map(m => ({
+      const allChat = snap.chat || [];
+      let visibleChat = allChat;
+      if (isAgentTarget) {
+        const threads = buildAgentThreadList(allChat, _activeAgentThreadId);
+        const activeMeta = threads.find(t => t.id === _activeAgentThreadId);
+        if (activeMeta?.title && !_activeAgentThreadTitle && _activeAgentThreadId !== 'default') {
+          _activeAgentThreadTitle = activeMeta.title;
+        }
+        _waysideWidget.setThreads(threads, _activeAgentThreadId);
+        visibleChat = allChat.filter(m => (m.threadId || 'default') === _activeAgentThreadId);
+      }
+      const sheetMessages = visibleChat.map(m => ({
         id: m.id,
         sender: m.sender,
         text: m.text,
@@ -1244,6 +1404,10 @@ async function refreshWaysideSocial(host) {
       renderSharedFiles(snap.files || []);
       applyPresenceRings(host, snap.presence || []);
     } else {
+      if (isAgentTarget) {
+        const threads = buildAgentThreadList([], _activeAgentThreadId);
+        _waysideWidget.setThreads(threads, _activeAgentThreadId);
+      }
       renderSharedFiles([]);
       applyPresenceRings(host, []);
     }

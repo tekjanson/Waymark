@@ -1450,6 +1450,31 @@ function tabRowsFromData(data, tabTitle) {
     });
 }
 
+function parseChatThreadMeta(targetVal) {
+  const raw = String(targetVal || '').trim();
+  if (raw.startsWith('thread:')) {
+    const rest = raw.slice('thread:'.length);
+    const pipeIdx = rest.indexOf('|');
+    if (pipeIdx >= 0) {
+      return {
+        threadId: rest.slice(0, pipeIdx).trim() || 'default',
+        threadTitle: rest.slice(pipeIdx + 1).trim(),
+      };
+    }
+    return { threadId: rest.trim() || 'default', threadTitle: '' };
+  }
+  return { threadId: 'default', threadTitle: '' };
+}
+
+function formatChatThreadTarget(target = {}, threadId = 'default', threadTitle = '') {
+  const cleanId = String(threadId || 'default').trim();
+  if (!cleanId || cleanId === 'default') {
+    return target.group || target.contactEmail || '';
+  }
+  const cleanTitle = String(threadTitle || '').replace(/\|/g, ' ').trim();
+  return cleanTitle ? `thread:${cleanId}|${cleanTitle}` : `thread:${cleanId}`;
+}
+
 function chatFromRows(rows) {
   const seen = new Set();
   return rows.filter(row => {
@@ -1457,12 +1482,19 @@ function chatFromRows(rows) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).map(r => ({
-    id: r.Message_ID || '',
-    sender: r.Sender_Email || '',
-    text: r.Message_Text || '',
-    ts: r.Timestamp_UTC || '',
-  }));
+  }).map(r => {
+    const meta = parseChatThreadMeta(r.Target_Group_Or_Contact);
+    return {
+      id: r.Message_ID || '',
+      sender: r.Sender_Email || '',
+      target: r.Target_Group_Or_Contact || '',
+      threadId: meta.threadId,
+      threadTitle: meta.threadTitle,
+      text: r.Message_Text || '',
+      ts: r.Timestamp_UTC || '',
+      link: r.Attached_Waymark_Link || '',
+    };
+  });
 }
 
 function presenceFromRows(rows) {
@@ -1551,11 +1583,12 @@ async function sendChat(target, text, attachedLink = '', messageId = '') {
   const { sheetId } = await ensureShareLedger(target);
   const me = currentEmail();
   const id = messageId || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const targetCol = formatChatThreadTarget(target, target.threadId, target.threadTitle);
   const row = [
     id,
     new Date().toISOString(),
     me,
-    target.group || target.contactEmail || '',
+    targetCol,
     text.trim(),
     attachedLink || '',
   ];
@@ -1579,13 +1612,7 @@ async function readChat(target) {
   const mapped = await findExistingShareLedger(target);
   if (!mapped) return [];
   const rows = await readTab(mapped.sheetId, CHAT_TAB);
-  const seen = new Set();
-  return rows.filter(row => {
-    const key = row.Message_ID || `${row.Sender_Email || ''}:${row.Timestamp_UTC || ''}:${row.Message_Text || ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).map(r => ({ id: r.Message_ID || '', sender: r.Sender_Email || '', text: r.Message_Text || '', ts: r.Timestamp_UTC || '' }));
+  return chatFromRows(rows);
 }
 
 /* ---------- Internal ---------- */

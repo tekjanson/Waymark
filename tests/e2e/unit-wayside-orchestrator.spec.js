@@ -442,4 +442,69 @@ const ROOT = path.resolve(__dirname, '../..');
     }
   });
 
+  test('WaysideOrchestrator parses thread metadata, isolates per-thread context, and handles /clear commands', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    expect(WaysideOrchestrator.parseThreadMeta('assistant@waymark.internal')).toEqual({
+      threadId: 'default',
+      threadTitle: '',
+    });
+    expect(WaysideOrchestrator.parseThreadMeta('thread:t-123|Trip to Maui')).toEqual({
+      threadId: 't-123',
+      threadTitle: 'Trip to Maui',
+    });
+    expect(WaysideOrchestrator.formatThreadTarget('assistant@waymark.internal', 'default', '')).toBe('assistant@waymark.internal');
+    expect(WaysideOrchestrator.formatThreadTarget('assistant@waymark.internal', 't-123', 'Trip to Maui')).toBe('thread:t-123|Trip to Maui');
+
+    const orch = new WaysideOrchestrator({ sheetId: 'thread-test-ledger', userEmail: 'host@gmail.com' });
+    const delivered = [];
+    orch.deliverReply = async (payload) => {
+      delivered.push(payload);
+    };
+
+    // Seed thread-A memory
+    orch.conversations.set('host@gmail.com::thread-a', {
+      history: [{ role: 'host@gmail.com', text: 'Plan a trip' }],
+      lastSheetId: 'sheet-trip-1',
+      lastDocId: null,
+      lastTemplateKey: 'travel',
+      threadId: 'thread-a',
+      threadTitle: 'Trip',
+    });
+
+    // Sending a conversational message in thread-b does NOT inherit thread-a's lastSheetId or history
+    await orch.processMessage({
+      text: 'Hello there!',
+      sender: 'host@gmail.com',
+      displayName: 'Host',
+      messageId: 'm-b1',
+      threadId: 'thread-b',
+      threadTitle: 'Budget Chat',
+    });
+
+    const convB = orch.conversations.get('host@gmail.com::thread-b');
+    expect(convB).toBeDefined();
+    expect(convB.lastSheetId).toBeNull();
+    expect(convB.history.length).toBe(2);
+    expect(delivered[0].threadId).toBe('thread-b');
+    expect(delivered[0].threadTitle).toBe('Budget Chat');
+
+    // Sending /clear in thread-a resets thread-a's history and lastSheetId without touching thread-b
+    await orch.processMessage({
+      text: '/clear',
+      sender: 'host@gmail.com',
+      displayName: 'Host',
+      messageId: 'm-a-clear',
+      threadId: 'thread-a',
+      threadTitle: 'Trip',
+    });
+
+    const convA = orch.conversations.get('host@gmail.com::thread-a');
+    expect(convA.history).toEqual([]);
+    expect(convA.lastSheetId).toBeNull();
+    expect(delivered[1].replyText).toContain('Conversation context cleared');
+    expect(orch.conversations.get('host@gmail.com::thread-b').history.length).toBe(2);
+  });
+
+
 

@@ -643,6 +643,42 @@ export class WaysideOrchestrator {
     return shareFileWithEmails(fileId, emails, existingToken);
   }
 
+  /**
+   * Parse thread metadata encoded in Chat tab's Target_Group_Or_Contact column.
+   * Format when non-default: `thread:<threadId>|<threadTitle>`
+   * @param {string} targetVal
+   * @returns {{ threadId: string, threadTitle: string }}
+   */
+  static parseThreadMeta(targetVal) {
+    const raw = String(targetVal || '').trim();
+    if (raw.startsWith('thread:')) {
+      const rest = raw.slice('thread:'.length);
+      const pipeIdx = rest.indexOf('|');
+      if (pipeIdx >= 0) {
+        return {
+          threadId: rest.slice(0, pipeIdx).trim() || 'default',
+          threadTitle: rest.slice(pipeIdx + 1).trim(),
+        };
+      }
+      return { threadId: rest.trim() || 'default', threadTitle: '' };
+    }
+    return { threadId: 'default', threadTitle: '' };
+  }
+
+  /**
+   * Format Chat tab's Target_Group_Or_Contact column value for a conversation thread.
+   * @param {string} defaultTarget
+   * @param {string} [threadId]
+   * @param {string} [threadTitle]
+   * @returns {string}
+   */
+  static formatThreadTarget(defaultTarget = '', threadId = 'default', threadTitle = '') {
+    const cleanId = String(threadId || 'default').trim();
+    if (!cleanId || cleanId === 'default') return defaultTarget || '';
+    const cleanTitle = String(threadTitle || '').replace(/\|/g, ' ').trim();
+    return cleanTitle ? `thread:${cleanId}|${cleanTitle}` : `thread:${cleanId}`;
+  }
+
   constructor(opts = {}) {
     this.sheetId = opts.sheetId;
     const stableHash = crypto.createHash('sha1').update(String(opts.sheetId || 'wayside')).digest('hex').slice(0, 6);
@@ -706,15 +742,53 @@ export class WaysideOrchestrator {
     }
     const recentCutoffMs = Date.now() - (10 * 60 * 1000);
     for (let i = 1; i < history.length; i++) {
-      const msgId = String(history[i]?.[0] || '').trim();
+      const [rawId, rawTs, rawSender, rawTarget, rawText, rawLink] = history[i] || [];
+      const msgId = String(rawId || '').trim();
       if (!msgId) continue;
+      let isSeeded = false;
       if (i <= lastAiIdx) {
         this.processedMessageIds.add(msgId);
-        continue;
+        isSeeded = true;
+      } else {
+        const msgTs = Date.parse(String(rawTs || ''));
+        if (!Number.isFinite(msgTs) || msgTs < recentCutoffMs) {
+          this.processedMessageIds.add(msgId);
+          isSeeded = true;
+        }
       }
-      const msgTs = Date.parse(String(history[i]?.[1] || ''));
-      if (!Number.isFinite(msgTs) || msgTs < recentCutoffMs) {
-        this.processedMessageIds.add(msgId);
+      if (isSeeded && rawText) {
+        const { threadId, threadTitle } = WaysideOrchestrator.parseThreadMeta(rawTarget);
+        const senderLower = String(rawSender || '').trim().toLowerCase();
+        const isAi = senderLower === this.agentEmail.toLowerCase();
+        const ownerKey = (this.userEmail || (!isAi ? senderLower : '') || 'unknown').toLowerCase();
+        const convKey = `${ownerKey}::${threadId}`;
+        const conv = this.conversations.get(convKey) || {
+          history: [],
+          lastSheetId: null,
+          lastDocId: null,
+          lastTemplateKey: null,
+          threadId,
+          threadTitle: threadTitle || '',
+        };
+        if (threadTitle && !conv.threadTitle) conv.threadTitle = threadTitle;
+        if (/^\/?(clear|reset)(\s+(context|history|chat|thread))?$/i.test(String(rawText).trim())) {
+          conv.history = [];
+          conv.lastSheetId = null;
+          conv.lastDocId = null;
+          conv.lastTemplateKey = null;
+        } else {
+          conv.history.push({
+            role: isAi ? this.agentName : (rawSender || ownerKey),
+            text: String(rawText).slice(0, 300),
+          });
+          if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+          const foundSheet = extractSpreadsheetId(String(rawLink || '')) || extractSpreadsheetId(String(rawText || ''));
+          if (foundSheet) conv.lastSheetId = foundSheet;
+        }
+        this.conversations.set(convKey, conv);
+        if (threadId === 'default') {
+          this.conversations.set(ownerKey, conv);
+        }
       }
     }
     console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} historical chat messages into cache.`);
@@ -822,6 +896,9 @@ export class WaysideOrchestrator {
     }
 
     const senderEmail = rawSender.includes('@') ? rawSender.toLowerCase() : (this.userEmail || rawSender || remotePeerId);
+    const threadMeta = data.threadId
+      ? { threadId: String(data.threadId).trim() || 'default', threadTitle: String(data.threadTitle || '').trim() }
+      : WaysideOrchestrator.parseThreadMeta(data.target || '');
 
     this.queueMessageProcessing({
       text: data.text,
@@ -830,6 +907,8 @@ export class WaysideOrchestrator {
       messageId,
       remotePeerId,
       fromWebRtc: true,
+      threadId: threadMeta.threadId,
+      threadTitle: threadMeta.threadTitle,
     });
   }
 
@@ -864,12 +943,15 @@ export class WaysideOrchestrator {
           if (!this.userEmail && normalizedSender.includes('@')) {
             this.userEmail = normalizedSender.toLowerCase();
           }
+          const threadMeta = WaysideOrchestrator.parseThreadMeta(target);
           this.queueMessageProcessing({
             text: text.trim(),
             sender: normalizedSender,
             displayName: normalizedSender.split('@')[0] || 'Waymarker',
             messageId: msgId,
             fromWebRtc: false,
+            threadId: threadMeta.threadId,
+            threadTitle: threadMeta.threadTitle,
           });
         }
       }
@@ -889,20 +971,47 @@ export class WaysideOrchestrator {
       });
   }
 
-  async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc }) {
-    console.log(`[WaysideOrchestrator] 📨 Processing from ${sender}: "${text}"`);
+  async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc, threadId = 'default', threadTitle = '' }) {
+    const activeThreadId = String(threadId || 'default').trim() || 'default';
+    console.log(`[WaysideOrchestrator] 📨 Processing from ${sender} (thread: ${activeThreadId}): "${text}"`);
 
     // 1. Send immediate typing indicator
     this.broadcastTyping();
 
     const senderKey = (sender || this.userEmail || 'unknown').toLowerCase();
+    const convKey = `${senderKey}::${activeThreadId}`;
     const friendlyName = displayName || sender.split('@')[0] || 'Waymarker';
-    const conv = this.conversations.get(senderKey) || {
+    const conv = this.conversations.get(convKey) || (activeThreadId === 'default' ? this.conversations.get(senderKey) : null) || {
       history: [],
       lastSheetId: null,
       lastDocId: null,
       lastTemplateKey: null,
+      threadId: activeThreadId,
+      threadTitle: threadTitle || '',
     };
+    if (threadTitle && !conv.threadTitle) {
+      conv.threadTitle = threadTitle;
+    }
+
+    // Handle explicit /clear or reset context command without invoking AGY
+    if (/^\/?(clear|reset)(\s+(context|history|chat|thread))?$/i.test(String(text || '').trim())) {
+      conv.history = [];
+      conv.lastSheetId = null;
+      conv.lastDocId = null;
+      conv.lastTemplateKey = null;
+      this.conversations.set(convKey, conv);
+      if (activeThreadId === 'default') this.conversations.set(senderKey, conv);
+
+      const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
+      await this.deliverReply({
+        replyText: '🧹 Conversation context cleared for this thread! Your sheets and previous threads remain safely stored in Google Drive — what would you like to work on next?',
+        targetUser: recipientEmail,
+        shareTargets: [],
+        threadId: activeThreadId,
+        threadTitle: conv.threadTitle,
+      });
+      return;
+    }
 
     // Compute household/collaborator share list so created sheets/docs are accessible to the requester
     const shareTargets = parseEmailList([
@@ -968,14 +1077,17 @@ export class WaysideOrchestrator {
       }
     }
 
-    // Update per-sender conversation memory
+    // Update per-sender & per-thread conversation memory
     conv.history.push({ role: sender, text: text.slice(0, 300) });
     conv.history.push({ role: this.agentName, text: replyText.slice(0, 300) });
     if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
     if (createdSheetId) conv.lastSheetId = createdSheetId;
     if (createdDocId) conv.lastDocId = createdDocId;
     if (effectiveTemplateKey) conv.lastTemplateKey = effectiveTemplateKey;
-    this.conversations.set(senderKey, conv);
+    this.conversations.set(convKey, conv);
+    if (activeThreadId === 'default') {
+      this.conversations.set(senderKey, conv);
+    }
 
     // 3. Deliver reply
     const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
@@ -990,6 +1102,8 @@ export class WaysideOrchestrator {
       shouldLinkDoc,
       createdDocTitle,
       templateKey: effectiveTemplateKey,
+      threadId: activeThreadId,
+      threadTitle: conv.threadTitle,
     });
   }
 
@@ -1001,7 +1115,7 @@ export class WaysideOrchestrator {
     }
   }
 
-  async deliverReply({ replyText, targetUser, shareTargets = [], createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey }) {
+  async deliverReply({ replyText, targetUser, shareTargets = [], createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey, threadId = 'default', threadTitle = '' }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
 
@@ -1063,12 +1177,17 @@ export class WaysideOrchestrator {
     }
 
     // B. Append reply to Chat tab for durability before broadcasting
+    const targetColValue = WaysideOrchestrator.formatThreadTarget(
+      this.group || targetUser || '',
+      threadId,
+      threadTitle
+    );
     try {
       await appendTabRows(this.sheetId, CHAT_TAB, [[
         replyId,
         new Date().toISOString(),
         this.agentEmail,
-        this.group || targetUser || '',
+        targetColValue,
         replyText,
         attachedLink,
       ]]);
@@ -1088,6 +1207,8 @@ export class WaysideOrchestrator {
           sender: this.agentEmail,
           text: replyText,
           attachedLink,
+          threadId: threadId || 'default',
+          threadTitle: threadTitle || '',
           ts: Date.now(),
         };
         this.peer.broadcast(payload);

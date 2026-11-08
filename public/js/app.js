@@ -2637,12 +2637,22 @@ function openSettingsModal() {
   const nameEl = document.getElementById('settings-user-name');
   const emailEl = document.getElementById('settings-user-email');
 
+  const currentUser = api.auth.getUser?.() || {};
+  const displayName = _userName || currentUser.name || 'User';
+  const initial = (displayName.trim()[0] || 'U').toUpperCase();
+  const fallbackSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="#2563eb"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Inter, sans-serif" font-size="28" font-weight="700">${initial}</text></svg>`
+  )}`;
   if (userAvatarEl.src && !userAvatarEl.classList.contains('hidden')) {
+    avatarEl.onerror = () => { avatarEl.src = fallbackSvg; };
     avatarEl.src = userAvatarEl.src;
-    avatarEl.alt = userAvatarEl.alt;
+    avatarEl.alt = userAvatarEl.alt || displayName;
+  } else {
+    avatarEl.src = fallbackSvg;
+    avatarEl.alt = displayName;
   }
-  nameEl.textContent = _userName || '';
-  emailEl.textContent = '';
+  nameEl.textContent = _userName || currentUser.name || '';
+  emailEl.textContent = currentUser.email || '';
 
   // Version / hash display
   const versionEl = document.getElementById('settings-version');

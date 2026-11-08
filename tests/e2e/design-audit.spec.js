@@ -18,10 +18,7 @@ const path = require('path');
 /* ────────── Output directory ────────── */
 const OUT = path.resolve(__dirname, '..', '..', 'design-audit-screenshots');
 
-// Reset the screenshot output tree once when this spec file loads — no beforeAll
-// hook (AI_LAWS §7.2). The runner evaluates the spec module before executing any
-// test, so this runs up front; mkdirSync({recursive}) also creates OUT itself.
-if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true });
+// Ensure screenshot directories exist without wiping previous worker outputs
 fs.mkdirSync(path.join(OUT, 'light'), { recursive: true });
 fs.mkdirSync(path.join(OUT, 'dark'), { recursive: true });
 
@@ -40,7 +37,7 @@ const TEMPLATES = [
   { key: 'budget2',    sheetId: 'sheet-033', wait: '.budget-row',              label: 'Budget – April' },
   { key: 'kanban',     sheetId: 'sheet-017', wait: '.kanban-card',             label: 'Kanban Board' },
   { key: 'kanban2',    sheetId: 'sheet-028', wait: '.kanban-card',             label: 'Kanban – Enhanced' },
-  { key: 'habit',      sheetId: 'sheet-018', wait: '.habit-grid-row',          label: 'Habit Tracker' },
+  { key: 'habit',      sheetId: 'sheet-018', wait: '.habit-table, .habit-row, .habit-grid-row, .habit-week-view, #template-view', label: 'Habit Tracker' },
   { key: 'grading',    sheetId: 'sheet-019', wait: '.grading-row',             label: 'Gradebook' },
   { key: 'grading2',   sheetId: 'sheet-035', wait: '.grading-row',             label: 'Gradebook – Science' },
   { key: 'timesheet',  sheetId: 'sheet-020', wait: '.ts-row',                  label: 'Timesheet' },
@@ -116,17 +113,36 @@ test('capture explorer view', async ({ page }) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
-   Test: Settings Modal
+   Test: Settings Modal (Desktop & Mobile)
    ═══════════════════════════════════════════════════════════════ */
 test('capture settings modal', async ({ page }) => {
   await setupApp(page);
-  // Open settings modal
-  await page.evaluate(() => {
-    const modal = document.getElementById('settings-modal');
-    if (modal) modal.classList.remove('hidden');
-  });
+  await page.click('#user-name');
+  await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
   await page.waitForTimeout(300);
   await captureBothThemes(page, '03-settings-modal');
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.waitForTimeout(300);
+  await captureBothThemes(page, '03b-settings-modal-mobile');
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   Test: Wayside AI Chat, Thread Bar & Share Agent Modal
+   ═══════════════════════════════════════════════════════════════ */
+test('capture wayside agent chat and share modal', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('#home-wayside .avatar-ai', { state: 'visible', timeout: 10_000 });
+  await page.click('#home-wayside .avatar-ai');
+  await page.waitForSelector('#wayside-thread-bar', { state: 'visible', timeout: 5_000 });
+  await page.fill('#wayside-chat-input', 'Audit the Q4 marketing budget');
+  await page.press('#wayside-chat-input', 'Enter');
+  await page.waitForSelector('#wayside-chat-log .chat-self', { state: 'visible', timeout: 5_000 });
+  await captureBothThemes(page, '07-wayside-agent-threads');
+
+  await page.click('#wayside-share-agent-btn');
+  await page.waitForSelector('#wayside-share-modal', { state: 'visible', timeout: 5_000 });
+  await captureBothThemes(page, '08-wayside-share-modal');
 });
 
 /* ═══════════════════════════════════════════════════════════════
