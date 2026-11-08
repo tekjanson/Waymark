@@ -315,6 +315,22 @@ wayside-setup: ## Configure headless Google OAuth + MCP config the Wayside daemo
 	node scripts/setup-headless-auth.mjs
 	node scripts/setup-mcp-config.mjs
 
+wayside-mcp-config: ## (Re)point AGY's MCP servers at THIS repo and drop any hardcoded per-user token
+	node scripts/setup-mcp-config.mjs
+
+wayside-restart: ## Restart the Wayside orchestrator systemd service (bare-metal) so it reloads code
+	@if systemctl --user list-unit-files 2>/dev/null | grep -q '^waymark-wayside.service'; then \
+		systemctl --user restart waymark-wayside.service && echo "✓ Restarted waymark-wayside.service"; \
+		systemctl --user --no-pager status waymark-wayside.service | head -4; \
+	else \
+		echo "waymark-wayside.service not installed. Run: make wayside-install"; \
+	fi
+
+wayside-reload: wayside-mcp-config wayside-restart ## Regenerate AGY MCP config from this repo, then restart the orchestrator
+	@echo "✓ AGY stack reloaded from $(CURDIR). New requests use this repo's MCP code + per-requester auth."
+	@echo "  Note: kill any stale MCP server processes from old paths so AGY respawns fresh:"
+	@echo "    pgrep -af 'mcp/(waymark|google-sheets).mjs'   # inspect, then kill the stale ones"
+
 wayside-auth-check: ## Check the Google OAuth / Service Account credentials for the Wayside daemon
 	node scripts/setup-headless-auth.mjs --check
 
@@ -324,6 +340,14 @@ wayside-install: ## Install the Wayside daemon as a background service (systemd 
 agy: ## Run ONE AGY task headlessly and print the result  [TASK="..." required | TEMPLATE= SHEET_ID=]
 	@test -n "$(TASK)" || { echo 'Usage: make agy TASK="create a budget sheet" [TEMPLATE=budget] [SHEET_ID=<id>]'; exit 1; }
 	AGY_MODEL=$(AGY_MODEL) node scripts/agy-agent-runner.mjs $(if $(TEMPLATE),--template $(TEMPLATE),) $(if $(SHEET_ID),--sheet $(SHEET_ID),) --task "$(TASK)"
+
+agy-logs: ## Show the most recent AGY task diagnostics (who it acted as + full output)  [N=1]
+	@dir=agent-logs/agy-tasks; \
+	test -d "$$dir" || { echo "No AGY task logs yet ($$dir). Run a task first."; exit 0; }; \
+	n=$${N:-1}; \
+	for f in $$(ls -1t $$dir/*.log 2>/dev/null | head -n $$n); do \
+		echo "========== $$f =========="; cat "$$f"; echo; \
+	done
 
 agents-compile: ## Compile all AGY template agents + regenerate the agent catalog (deterministic)
 	node scripts/compile-all-agents.mjs --force

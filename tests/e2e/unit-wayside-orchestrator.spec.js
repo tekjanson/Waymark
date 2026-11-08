@@ -666,3 +666,22 @@ test('applyOAuthTokenBundle persists durable refresh credentials per collaborato
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
+
+test('buildMcpConfig never pins the MCP servers to a single OAuth token', async () => {
+  const { buildMcpConfig } = await import('../../scripts/setup-mcp-config.mjs');
+  const cfg = buildMcpConfig({
+    rootDir: '/opt/waymark',
+    saKeyPath: '/creds/sa.json',
+    oauthTokenPath: '/creds/owner-token.json', // even if passed, must NOT be baked in
+    parentFolderId: 'folder-1',
+  });
+  for (const name of ['waymark', 'google-sheets']) {
+    const env = cfg.mcpServers[name].env || {};
+    // Hardcoding this would make the MCP ignore active-requester.json and pin
+    // every request to one account — the bug that broke shared-agent auth.
+    expect(env.WAYMARK_OAUTH_TOKEN_PATH).toBeUndefined();
+  }
+  // Non-identity config (SA creds, parent folder) is still wired through.
+  expect(cfg.mcpServers.waymark.env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/creds/sa.json');
+  expect(cfg.mcpServers.waymark.args[0]).toBe('/opt/waymark/mcp/waymark.mjs');
+});

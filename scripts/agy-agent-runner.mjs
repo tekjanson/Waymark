@@ -11,10 +11,63 @@ import { execFile, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync, readFileSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+
+/* ---------- Diagnostics ---------- */
+
+const AGY_LOG_DIR = process.env.WAYMARK_AGENT_LOG_DIR || path.join(ROOT, 'agent-logs', 'agy-tasks');
+
+/** Read the Google identity (account email) a token file represents. */
+function identityForToken(tokenPath) {
+  try {
+    if (tokenPath && existsSync(tokenPath)) {
+      const tok = JSON.parse(readFileSync(tokenPath, 'utf8'));
+      return tok.account_email || tok.email || '';
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+/** Persist a full diagnostic record of one agy task (success or failure). */
+function writeTaskLog(record) {
+  try {
+    mkdirSync(AGY_LOG_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(AGY_LOG_DIR, `agy-${ts}.log`);
+    const body = [
+      `=== AGY TASK ${record.outcome} @ ${new Date().toISOString()} ===`,
+      `requester/actingAs : ${record.actingAs || 'UNKNOWN'}`,
+      `tokenPath          : ${record.tokenPath || 'none'}`,
+      `model              : ${record.model || ''}`,
+      `durationMs         : ${record.durationMs ?? ''}`,
+      `error              : ${record.error || ''}`,
+      `--- prompt ---`,
+      String(record.prompt || '').slice(0, 4000),
+      `--- stdout ---`,
+      String(record.stdout || ''),
+      `--- stderr ---`,
+      String(record.stderr || ''),
+      '',
+    ].join('\n');
+    writeFileSync(file, body, { mode: 0o600 });
+    return file;
+  } catch {
+    return '';
+  }
+}
+
+/** Last N non-empty lines of a stream — for surfacing a real reason to the user. */
+function tailLines(text, n = 8) {
+  return String(text || '')
+    .split('\n')
+    .map(l => l.trimEnd())
+    .filter(Boolean)
+    .slice(-n)
+    .join('\n');
+}
 
 const DEFAULT_MODEL = process.env.AGY_MODEL || 'gemini-3.8-flash-high';
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.AGY_TIMEOUT_MS || '180000', 10);
@@ -250,6 +303,7 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
         const err = new Error(`Timed out after ${timeoutMs}ms`);
         err.killed = true;
         err.stderr = stderr;
+        err.stdout = stdout;
         reject(err);
         return;
       }
@@ -257,6 +311,7 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
         const err = new Error(stderr.trim() || `agy exited with code ${code}`);
         err.code = code;
         err.stderr = stderr;
+        err.stdout = stdout;
         reject(err);
         return;
       }
@@ -342,6 +397,12 @@ export async function runAgyTask({
     childEnv.WAYMARK_AUTO_SHARE_EMAILS = shareWith.join(',');
   }
 
+  // Log exactly which Google identity the agent will act as. For a shared agent
+  // this MUST be the requester (e.g. the collaborator), not the host owner —
+  // otherwise Waymarks are created in the wrong Drive. Surfaced in diagnostics.
+  const actingAs = identityForToken(resolvedOAuth);
+  process.stderr.write(`[agy] task start — acting as: ${actingAs || 'UNKNOWN'} | token: ${resolvedOAuth || 'none'} | template: ${templateKey || 'auto'}\n`);
+
   // On Windows when agy resolves to a .cmd/.bat shim, invoke via powershell.exe with shell: false
   // and pass arguments via environment variables so untrusted prompts can never inject cmd.exe metacharacters.
   let execCmd = agyBin;
@@ -364,7 +425,7 @@ export async function runAgyTask({
   }
 
   try {
-    const { stdout } = await spawnSafe(execCmd, execArgs, {
+    const { stdout, stderr } = await spawnSafe(execCmd, execArgs, {
       cwd,
       timeoutMs,
       env: childEnv,
@@ -377,6 +438,12 @@ export async function runAgyTask({
     const detectedDocId = refs.docId;
     const durationMs = Date.now() - start;
 
+    const logFile = writeTaskLog({
+      outcome: 'OK', actingAs, tokenPath: resolvedOAuth, model, durationMs,
+      prompt, stdout, stderr,
+    });
+    process.stderr.write(`[agy] task OK in ${durationMs}ms (acting as ${actingAs || 'UNKNOWN'}) — log: ${logFile || 'n/a'}\n`);
+
     return {
       ok: true,
       output,
@@ -386,19 +453,33 @@ export async function runAgyTask({
       docId: detectedDocId,
       docTitle: refs.docTitle,
       templateKey,
+      actingAs,
       durationMs,
+      logFile,
     };
   } catch (err) {
     const durationMs = Date.now() - start;
+    const outTail = tailLines(err.stdout);
+    const errTail = tailLines(err.stderr);
+    const reason = outTail || errTail || '(no output captured — the agent produced nothing)';
     const errorMsg = err.killed
-      ? `Timed out after ${timeoutMs}ms`
-      : (err.stderr || err.message || 'Unknown agy execution error');
+      ? `Timed out after ${timeoutMs}ms while acting as ${actingAs || 'UNKNOWN'}. Last activity:\n${reason}`
+      : (errTail || err.message || 'Unknown agy execution error');
+
+    const logFile = writeTaskLog({
+      outcome: err.killed ? 'TIMEOUT' : 'ERROR',
+      actingAs, tokenPath: resolvedOAuth, model, durationMs,
+      error: errorMsg, prompt, stdout: err.stdout, stderr: err.stderr,
+    });
+    process.stderr.write(`[agy] task ${err.killed ? 'TIMEOUT' : 'ERROR'} in ${durationMs}ms (acting as ${actingAs || 'UNKNOWN'}) — log: ${logFile || 'n/a'}\n${reason}\n`);
 
     return {
       ok: false,
       output: '',
       error: errorMsg,
+      actingAs,
       durationMs,
+      logFile,
     };
   }
 }

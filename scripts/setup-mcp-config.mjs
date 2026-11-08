@@ -28,19 +28,22 @@ const OAUTH_TOKEN_DEFAULT = path.join(HOME_DIR, '.config', 'gcloud', 'waymark-oa
 export function buildMcpConfig(opts = {}) {
   const rootDir = opts.rootDir || ROOT;
   const saKeyPath = opts.saKeyPath || process.env.GOOGLE_APPLICATION_CREDENTIALS || (fs.existsSync(SA_KEY_DEFAULT) ? SA_KEY_DEFAULT : '');
-  const oauthTokenPath = opts.oauthTokenPath || process.env.WAYMARK_OAUTH_TOKEN_PATH || (fs.existsSync(OAUTH_TOKEN_DEFAULT) ? OAUTH_TOKEN_DEFAULT : '');
   const parentFolderId = opts.parentFolderId ?? process.env.WAYMARK_PARENT_FOLDER_ID ?? '';
   const workboardSheetId = opts.workboardSheetId ?? process.env.WAYMARK_WORKBOARD_SHEET_ID ?? '';
 
   const waymarkEnv = {};
   if (parentFolderId) waymarkEnv.WAYMARK_PARENT_FOLDER_ID = parentFolderId;
   if (saKeyPath) waymarkEnv.GOOGLE_APPLICATION_CREDENTIALS = saKeyPath;
-  if (oauthTokenPath) waymarkEnv.WAYMARK_OAUTH_TOKEN_PATH = oauthTokenPath;
+  // NOTE: Deliberately DO NOT hardcode WAYMARK_OAUTH_TOKEN_PATH here. When it is
+  // set, the MCP servers skip waymark-active-requester.json and always act as
+  // that one account — which permanently pins a shared agent to the owner and
+  // breaks per-collaborator Drive ownership. Leaving it unset lets each request
+  // run as the actual requester (the orchestrator writes active-requester.json
+  // per message, and/or passes the right token via the spawned agy env).
   if (workboardSheetId) waymarkEnv.WAYMARK_WORKBOARD_SHEET_ID = workboardSheetId;
 
   const sheetsEnv = {};
   if (saKeyPath) sheetsEnv.GOOGLE_APPLICATION_CREDENTIALS = saKeyPath;
-  if (oauthTokenPath) sheetsEnv.WAYMARK_OAUTH_TOKEN_PATH = oauthTokenPath;
   if (workboardSheetId) sheetsEnv.WAYMARK_WORKBOARD_SHEET_ID = workboardSheetId;
 
   return {
@@ -132,7 +135,7 @@ if (isMainModule(import.meta.url)) {
   console.log('===============================================================\n');
   writeConfigs();
   console.log('\n  Registered servers:');
-  console.log('    • waymark (12 tools: templates, sheets, entries, files, docs)');
+  console.log('    • waymark (14 tools: templates, sheets, entries, files, docs, knowledge graph)');
   console.log('    • google-sheets (11 tools: raw sheets API manipulation)');
   console.log('\n===============================================================\n');
 }

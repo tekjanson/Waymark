@@ -1365,6 +1365,13 @@ export class WaysideOrchestrator {
         );
       } catch {}
 
+      // Make the requester identity explicit in the logs — the #1 thing to
+      // verify when a shared agent misbehaves ("who does it think is asking?").
+      console.log(`[WaysideOrchestrator] 👤 Dispatching as requester='${senderKey}' | tokenPath='${activeTokenPath}'`);
+      if (!String(senderKey).includes('@')) {
+        console.warn(`[WaysideOrchestrator] ⚠️ Requester '${senderKey}' is not an email — the incoming message lacked a sender email, so the agent cannot reliably act as them and may fall back to the host account.`);
+      }
+
       const agyResult = await runAgyTask({
         task: text,
         templateKey: effectiveTemplateKey,
@@ -1383,7 +1390,9 @@ export class WaysideOrchestrator {
         createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'Shared Waymark');
         createdDocTitle = agyResult.docTitle || 'Waymark Document';
       } else {
-        replyText = `I encountered an issue executing your request: ${agyResult.error}\n\nPlease try again or clarify your prompt.`;
+        const who = agyResult.actingAs ? ` (acting as ${agyResult.actingAs})` : '';
+        console.error(`[WaysideOrchestrator] ❌ Task failed${who}: ${agyResult.error}${agyResult.logFile ? ` | log: ${agyResult.logFile}` : ''}`);
+        replyText = `⚠️ I couldn't finish that request${who}.\n\n${agyResult.error}\n\nI've logged the full details for debugging. Please try again or rephrase.`;
       }
     }
 
