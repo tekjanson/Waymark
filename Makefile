@@ -325,6 +325,14 @@ agy: ## Run ONE AGY task headlessly and print the result  [TASK="..." required |
 	@test -n "$(TASK)" || { echo 'Usage: make agy TASK="create a budget sheet" [TEMPLATE=budget] [SHEET_ID=<id>]'; exit 1; }
 	AGY_MODEL=$(AGY_MODEL) node scripts/agy-agent-runner.mjs $(if $(TEMPLATE),--template $(TEMPLATE),) $(if $(SHEET_ID),--sheet $(SHEET_ID),) --task "$(TASK)"
 
+agy-logs: ## Show the most recent AGY task diagnostics (who it acted as + full output)  [N=1]
+	@dir=agent-logs/agy-tasks; \
+	test -d "$$dir" || { echo "No AGY task logs yet ($$dir). Run a task first."; exit 0; }; \
+	n=$${N:-1}; \
+	for f in $$(ls -1t $$dir/*.log 2>/dev/null | head -n $$n); do \
+		echo "========== $$f =========="; cat "$$f"; echo; \
+	done
+
 agents-compile: ## Compile all AGY template agents + regenerate the agent catalog (deterministic)
 	node scripts/compile-all-agents.mjs --force
 
