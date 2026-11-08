@@ -20,12 +20,17 @@
 
 #wayboard-root { --bg: #0d1117; --panel: #161b22; --card: #21262d; --border: #30363d;
     --accent: #3b82f6; --green: #10b981; --amber: #f59e0b; --pink: #ec4899;
-    --text: #f0f6fc; --muted: #8b949e; --radius: 12px; --font: system-ui, -apple-system, sans-serif; }
+    --text: #f0f6fc; --muted: #8b949e; --inset-bg: rgba(0,0,0,0.18); --radius: 12px; --font: system-ui, -apple-system, sans-serif; }
 #wayboard-root * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
 #wayboard-root { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; transition: background 0.35s ease, color 0.35s ease; }
 #wayboard-root .workspace { display: flex; flex: 1; overflow: hidden; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root main.canvas { flex: 1; padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root .greeting-banner { background: var(--panel); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; transition: all 0.35s; }
+/* Greeting follows the active layout's palette (not the global app theme) so it
+   stays legible on light layouts (Bento, Focus, Pinboard, Editorial). */
+#wayboard-root .home-greeting h2,
+#wayboard-root #home-greeting-text { color: var(--text); }
+#wayboard-root .home-greeting-sub { color: var(--muted); }
 #wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: rgba(16,185,129,0.15); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
 #wayboard-root .badge.blue { background: rgba(59,130,246,0.15); color: var(--accent); }
 #wayboard-root .section-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
@@ -407,8 +412,10 @@
 }
 div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
-/* ---------- Shared light / dark theme for every Wayboard layout ---------- */
-html[data-theme="light"] #wayboard-root {
+/* ---------- App light / dark theme applies to the neutral Command Center
+   layout (mode-1); every other layout keeps its own fixed palette so the
+   choice is actually visible. ---------- */
+html[data-theme="light"] #wayboard-root.mode-1 {
   --bg: #f4f7fb;
   --panel: #ffffff;
   --card: #ffffff;
@@ -419,7 +426,7 @@ html[data-theme="light"] #wayboard-root {
   color-scheme: light;
 }
 
-html[data-theme="dark"] #wayboard-root {
+html[data-theme="dark"] #wayboard-root.mode-1 {
   --bg: #0f172a;
   --panel: #1e293b;
   --card: #202b3b;
