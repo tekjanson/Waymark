@@ -94,6 +94,20 @@ const DRIVE_BASE  = "https://www.googleapis.com/drive/v3";
 const DOCS_BASE   = "https://docs.googleapis.com/v1/documents";
 const TOKEN_URL   = "https://oauth2.googleapis.com/token";
 
+// Hard per-request timeout so a single stalled Google call can never hang the
+// whole agent task (the agy CLI kills the task at 180s; a hung fetch would eat
+// the entire budget). Fails fast so the model can recover or report instead.
+const HTTP_TIMEOUT_MS = Number(process.env.WAYMARK_HTTP_TIMEOUT_MS) || 45000;
+async function fetchWithTimeout(url, opts = {}, ms = HTTP_TIMEOUT_MS) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    return await globalThis.fetch(url, { ...opts, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const defaultSaPath = path.join(
   os.homedir(),
   ".config",
@@ -138,7 +152,7 @@ async function getAuthenticatedUserEmail(userToken) {
   const cacheKey = userToken.slice(-24);
   if (_cachedUserEmails.has(cacheKey)) return _cachedUserEmails.get(cacheKey);
   try {
-    const res = await fetch(`${DRIVE_BASE}/about?fields=user`, {
+    const res = await fetchWithTimeout(`${DRIVE_BASE}/about?fields=user`, {
       headers: { Authorization: `Bearer ${userToken}` },
     });
     if (!res.ok) return null;
@@ -200,7 +214,7 @@ async function loadTokenFromPath(tokenPath) {
     if (!tokenData.refresh_token) return null;
     const { client_id, client_secret } = resolveClientCreds(tokenData, tokenPath);
     if (!client_id || !client_secret) return null;
-    const res = await fetch(TOKEN_URL, {
+    const res = await fetchWithTimeout(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -286,7 +300,7 @@ async function apiRequestWithToken(token, baseUrl, path, { method = "GET", body 
     },
   };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${baseUrl}${path}`, opts);
+  const res = await fetchWithTimeout(`${baseUrl}${path}`, opts);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
@@ -921,7 +935,7 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, sh
   // Use whichever token we resolved (user OAuth preferred, SA fallback)
   const created = await (async () => {
     const token = createToken;
-    const res = await fetch(SHEETS_BASE, {
+    const res = await fetchWithTimeout(SHEETS_BASE, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -998,7 +1012,7 @@ async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith =
   let createdWithOAuth = !!userToken;
 
   // Create the Google Doc (with automatic SA fallback if an older user OAuth token lacks the documents scope)
-  let res = await fetch(DOCS_BASE, {
+  let res = await fetchWithTimeout(DOCS_BASE, {
     method: "POST",
     headers: { Authorization: `Bearer ${createToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ title }),
@@ -1006,7 +1020,7 @@ async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith =
   if (!res.ok && res.status === 403 && createdWithOAuth) {
     const saToken = await getSaToken();
     if (saToken) {
-      const retryRes = await fetch(DOCS_BASE, {
+      const retryRes = await fetchWithTimeout(DOCS_BASE, {
         method: "POST",
         headers: { Authorization: `Bearer ${saToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ title }),
@@ -1035,7 +1049,7 @@ async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith =
   // Insert initial body text if provided
   if (body) {
     try {
-      const insertRes = await fetch(`${DOCS_BASE}/${documentId}:batchUpdate`, {
+      const insertRes = await fetchWithTimeout(`${DOCS_BASE}/${documentId}:batchUpdate`, {
         method: "POST",
         headers: { Authorization: `Bearer ${createToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({

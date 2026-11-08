@@ -177,9 +177,9 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
    - Appending rows: call waymark_add_entry({ spreadsheetId, entry })
    - Searching rows: call waymark_search_entries({ spreadsheetId, query, column? })
    - Document operations: call waymark_create_doc, waymark_get_doc, waymark_append_doc
-2. Build synthetic understanding with the knowledge graph:
-   - Before acting, call waymark_get_links({ sheetId? }) to see how the user's Waymarks already relate (neighbors, relations) and use that context.
-   - After creating or connecting data, call waymark_link_entries({ fromSheetId, relation, toSheetId, ... }) to record meaningful relationships (e.g. a Travel itinerary 'funded by' a Budget, a Meal plan 'uses' a Recipe, a task 'depends on' another). Over time this graph lets you drive Waymark data far more intelligently.
+2. Optional — build synthetic understanding with the knowledge graph, ONLY when the task clearly involves connecting or cross-referencing multiple existing Waymarks, and never in a way that blocks, delays, or risks failing the core request:
+   - You MAY call waymark_get_links({ sheetId? }) to see how existing Waymarks relate when that context genuinely helps.
+   - After creating data that clearly relates to another existing Waymark, you MAY record it with waymark_link_entries(...). Skip all graph steps for simple, standalone requests (e.g. "add a recipe", "log an expense").
 3. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
 4. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
 5. Be fast and decisive: plan the whole task first, then use the fewest tool calls needed. Avoid redundant reads — reuse data you already fetched and batch related writes. Do not re-read a sheet you just wrote unless verification is essential.

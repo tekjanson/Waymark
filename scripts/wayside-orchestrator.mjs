@@ -24,6 +24,20 @@ import { runAgyTask, extractSpreadsheetId } from './agy-agent-runner.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
+/* ---------- HTTP with timeout ---------- */
+
+// Prevent any single stalled Google call from hanging request handling.
+const HTTP_TIMEOUT_MS = Number(process.env.WAYMARK_HTTP_TIMEOUT_MS) || 45000;
+async function fetchWithTimeout(url, opts = {}, ms = HTTP_TIMEOUT_MS) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    return await globalThis.fetch(url, { ...opts, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ---------- Configuration ---------- */
 
 export const AGENT_NAME = process.env.WAYSIDE_AGENT_NAME || 'Waymark AI';
@@ -83,7 +97,7 @@ export async function getAuthToken() {
         return data.access_token;
       }
       if (data.refresh_token && data.client_id && data.client_secret) {
-        const res = await fetch(TOKEN_URL, {
+        const res = await fetchWithTimeout(TOKEN_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
@@ -137,7 +151,7 @@ export async function getAuthToken() {
     const signature = signer.sign(creds.private_key);
     const jwt = `${signingInput}.${base64url(signature)}`;
 
-    const response = await fetch(TOKEN_URL, {
+    const response = await fetchWithTimeout(TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -166,7 +180,7 @@ async function sheetsApi(pathUrl, { method = 'GET', body = null } = {}) {
     },
   };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${SHEETS_BASE}${pathUrl}`, opts);
+  const res = await fetchWithTimeout(`${SHEETS_BASE}${pathUrl}`, opts);
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Sheets API ${res.status}: ${txt}`);
@@ -280,7 +294,7 @@ async function resolveCurrentUserEmail(existingToken = null) {
     const token = existingToken || await getAuthToken();
     const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
     const driveRoot = driveFilesBase.replace(/\/files\/?$/, '');
-    const aboutRes = await fetch(`${driveRoot}/about?fields=user`, {
+    const aboutRes = await fetchWithTimeout(`${driveRoot}/about?fields=user`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (aboutRes.ok) {
@@ -344,7 +358,7 @@ async function shareFileWithEmails(fileId, emails = [], existingToken = null) {
     for (const email of targets) {
       if (ownerEmail && email === ownerEmail) continue;
       try {
-        const res = await fetch(`${driveFilesBase}/${encodeURIComponent(fileId)}/permissions`, {
+        const res = await fetchWithTimeout(`${driveFilesBase}/${encodeURIComponent(fileId)}/permissions`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -397,7 +411,7 @@ export async function discoverOrCreateWaysideLedger(opts = {}) {
     explicitUserEmail,
   ]);
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.ok) {
@@ -643,7 +657,7 @@ export class WaysideOrchestrator {
       const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
       const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
       const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=100`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         const agentLower = AGENT_EMAIL.toLowerCase();
@@ -1428,7 +1442,7 @@ export class WaysideOrchestrator {
       }
 
       if (userAccessToken) {
-        const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${sheetId}?fields=id`, {
+        const checkRes = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${sheetId}?fields=id`, {
           headers: { Authorization: `Bearer ${userAccessToken}` },
         });
         if (checkRes.ok) return sheetId;
@@ -1436,7 +1450,7 @@ export class WaysideOrchestrator {
 
       // Sheet is not accessible under requester's drive.file scope — read rows using host token
       const hostToken = await getAuthToken();
-      const valRes = await fetch(`${SHEETS_BASE}/${sheetId}/values/A1:Z200`, {
+      const valRes = await fetchWithTimeout(`${SHEETS_BASE}/${sheetId}/values/A1:Z200`, {
         headers: { Authorization: `Bearer ${hostToken}` },
       });
       if (!valRes.ok) return sheetId;
@@ -1446,7 +1460,7 @@ export class WaysideOrchestrator {
 
       // Option 1: Re-create using requester's per-account OAuth token
       if (userAccessToken) {
-        const createRes = await fetch(SHEETS_BASE, {
+        const createRes = await fetchWithTimeout(SHEETS_BASE, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${userAccessToken}`,
@@ -1458,7 +1472,7 @@ export class WaysideOrchestrator {
           const created = await createRes.json();
           const newId = created.spreadsheetId;
           if (newId) {
-            await fetch(`${SHEETS_BASE}/${newId}/values/A1?valueInputOption=USER_ENTERED`, {
+            await fetchWithTimeout(`${SHEETS_BASE}/${newId}/values/A1?valueInputOption=USER_ENTERED`, {
               method: 'PUT',
               headers: {
                 Authorization: `Bearer ${userAccessToken}`,
@@ -1468,7 +1482,7 @@ export class WaysideOrchestrator {
             });
             for (const email of shareTargets) {
               if (email && email.toLowerCase() !== cleanTarget) {
-                await fetch(`https://www.googleapis.com/drive/v3/files/${newId}/permissions?sendNotificationEmail=false`, {
+                await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${newId}/permissions?sendNotificationEmail=false`, {
                   method: 'POST',
                   headers: {
                     Authorization: `Bearer ${userAccessToken}`,

@@ -23,6 +23,18 @@ const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
+// Hard per-request timeout so a stalled Google call can't hang the agent task.
+const HTTP_TIMEOUT_MS = Number(process.env.WAYMARK_HTTP_TIMEOUT_MS) || 45000;
+async function fetchWithTimeout(url, opts = {}, ms = HTTP_TIMEOUT_MS) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    return await globalThis.fetch(url, { ...opts, signal: ac.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const defaultSaPath = path.join(
   os.homedir(),
   ".config",
@@ -79,7 +91,7 @@ async function loadTokenFromPath(tokenPath) {
     if (!tokenData.refresh_token) return null;
     const { client_id, client_secret } = resolveClientCreds(tokenData, tokenPath);
     if (!client_id || !client_secret) return null;
-    const res = await fetch(TOKEN_URL, {
+    const res = await fetchWithTimeout(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -168,11 +180,11 @@ async function sheetsRequest(pathSuffix, { method = "GET", body } = {}) {
     return o;
   };
 
-  let res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(token));
+  let res = await fetchWithTimeout(`${SHEETS_BASE}${pathSuffix}`, buildOpts(token));
   if (!res.ok && res.status === 403 && userToken) {
     const saToken = await getSaToken();
     if (saToken) {
-      res = await fetch(`${SHEETS_BASE}${pathSuffix}`, buildOpts(saToken));
+      res = await fetchWithTimeout(`${SHEETS_BASE}${pathSuffix}`, buildOpts(saToken));
     }
   }
   if (!res.ok) {
