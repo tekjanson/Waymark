@@ -1,0 +1,15 @@
+{
+  "id": "sheet-080",
+  "title": "Waymark Synthetic Knowledge Graph",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Name", "Description", "Link", "Type", "Tags", "Icon", "Relation", "Target", "Synthesis"],
+    ["AI Engineering Graph", "Federated sub-graph covering autonomous agents, P2P signaling, and telemetry", "sheet-081", "linker", "engineering, agents, architecture", "🕸️", "federates", "Waymark Dev Board", "Central knowledge hub federating platform architecture and operational execution boards."],
+    ["", "", "", "", "", "", "governs", "Zero-Backend Principle", "Ensures every federated sub-graph adheres to browser-native execution."],
+    ["Waymark Dev Board", "Active engineering kanban workboard for the Waymark platform", "sheet-028", "waymark", "engineering, kanban, roadmap", "📋", "funded by", "Household & Project Budget", "Core engineering workboard where tasks flow from To Do through QA."],
+    ["Household & Project Budget", "Financial ledger and monthly budget allocation sheet", "sheet-016", "waymark", "finance, budget, planning", "💰", "allocates to", "Mimi's Kitchen", "Provides monthly cost envelopes for infrastructure and culinary R&D."],
+    ["Mimi's Kitchen", "Gluten-free and dairy-free family recipe book", "sheet-027", "waymark", "cooking, recipes, health", "👩‍🍳", "informs", "Weekly Meal Plan", "Curated allergen-free recipe collection driving weekly meal planning."],
+    ["Weekly Meal Plan", "Structured weekly nutrition and meal schedule", "sheet-024", "waymark", "cooking, nutrition, planning", "🥗", "validates", "Zero-Backend Principle", "Demonstrates client-side nutrition aggregation directly over Google Sheets."],
+    ["Zero-Backend Principle", "Architectural synthesis: 100% browser-rendered sheets with Drive persistence", "sheet-045", "synthesis", "architecture, philosophy, engineering", "💡", "documented in", "Waymark Dev Board", "All template detection, graph rendering, and federation execute purely in the browser."]
+  ]
+}

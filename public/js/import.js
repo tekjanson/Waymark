@@ -293,12 +293,16 @@ const ROLE_LABELS = {
   'passwords.category': 'Category grouping',
   'passwords.notes': 'Notes',
   // Linker
-  'linker.name': 'Entry Name / Community',
+  'linker.name': 'Entry Name / Community / Entity',
   'linker.description': 'Description / About',
   'linker.link': 'Sheet ID / URL',
-  'linker.type': 'Entry Type (waymark or linker)',
+  'linker.type': 'Entry Type (waymark, linker, graph, concept)',
   'linker.tags': 'Tags / Topics',
   'linker.icon': 'Icon / Emoji',
+  'linker.relation': 'Relationship / Edge Verb',
+  'linker.target': 'Target Node / Connected Sheet',
+  'linker.targetLink': 'Target Sheet ID / Link',
+  'linker.synthesis': 'Synthetic Understanding / Insight',
   // Arcade
   'arcade.game': 'Game Name',
   'arcade.player1': 'Player 1 / White / Home',
@@ -465,6 +469,8 @@ const CANONICAL_HEADERS = {
   'linker.name': 'Name', 'linker.description': 'Description',
   'linker.link': 'Link', 'linker.type': 'Type',
   'linker.tags': 'Tags', 'linker.icon': 'Icon',
+  'linker.relation': 'Relation', 'linker.target': 'Target',
+  'linker.targetLink': 'To_ID', 'linker.synthesis': 'Synthesis',
   // Arcade
   'arcade.game': 'Game', 'arcade.player1': 'Player 1',
   'arcade.player2': 'Player 2', 'arcade.score': 'Score',

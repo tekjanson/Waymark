@@ -61,7 +61,7 @@ const DEFAULT_HEADERS = {
   gantt:      ["Task", "Start Date", "End Date", "Progress", "Dependencies", "Assignee"],
   passwords:  ["Site", "Username", "Password", "URL", "Category", "Notes"],
   marketing:  ["Post", "Platform", "Status", "Topic", "Posted Date", "Likes", "Shares", "Comments", "Views", "Link", "Takeaway"],
-  linker:     ["Name", "Description", "Link", "Type", "Tags", "Icon"],
+  linker:     ["Name", "Description", "Link", "Type", "Tags", "Icon", "Relation", "Target", "Synthesis"],
   agents:     ["Name", "Model", "Provider", "Status", "Tuning", "Task", "Project", "Heartbeat", "Workboard", "Command"],
   arcade:     ["Game", "Player 1", "Player 2", "Result", "Mode", "Date"],
   worker:     ["Job", "Handler", "Status", "Schedule", "Input", "Output", "LastRun", "Logs"],

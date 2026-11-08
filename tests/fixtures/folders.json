@@ -793,6 +793,16 @@
           "id": "sheet-058",
           "name": "Waymark Community Hub",
           "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-080",
+          "name": "Waymark Synthetic Knowledge Graph",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
+        },
+        {
+          "id": "sheet-081",
+          "name": "Platform Architecture Sub-Graph",
+          "mimeType": "application/vnd.google-apps.spreadsheet"
         }
       ]
     },

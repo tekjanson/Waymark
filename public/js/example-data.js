@@ -961,13 +961,13 @@ export const EXAMPLE_SHEETS = {
   /* ---- Linker examples ---- */
   'Community Hub': {
     folder: 'Community',
-    headers: ['Name', 'Description', 'Link', 'Type', 'Tags', 'Icon'],
+    headers: ['Name', 'Description', 'Link', 'Type', 'Tags', 'Icon', 'Relation', 'Target', 'Synthesis'],
     rows: [
-      ['Cooking & Recipes', 'Share recipes, meal plans, and kitchen tips', '', 'linker', 'cooking, food', '🍳'],
-      ['Open Source Projects', 'Track and discover open source project boards', '', 'linker', 'tech, oss', '💻'],
-      ['My Meal Plan', 'Weekly meal planning template', '', 'waymark', 'cooking, planning', '🥗'],
-      ['Workout Log', 'Track workouts and fitness progress', '', 'waymark', 'health, fitness', '💪'],
-      ['Book Club', 'Reading lists and discussion notes', '', 'waymark', 'books, reading', '📖'],
+      ['Cooking & Recipes', 'Share recipes, meal plans, and kitchen tips', '', 'linker', 'cooking, food', '🍳', 'curates', 'My Meal Plan', 'Federated culinary hub connecting family recipes with weekly nutrition planning'],
+      ['Open Source Projects', 'Track and discover open source project boards', '', 'linker', 'tech, oss', '💻', 'federates', 'Workout Log', 'Aggregates community project trackers and personal habit boards'],
+      ['My Meal Plan', 'Weekly meal planning template', '', 'waymark', 'cooking, planning', '🥗', 'supports', 'Workout Log', 'Aligns daily macro intake with active training schedules'],
+      ['Workout Log', 'Track workouts and fitness progress', '', 'waymark', 'health, fitness', '💪', 'relates to', 'My Meal Plan', 'Provides energy expenditure metrics that calibrate meal targets'],
+      ['Book Club', 'Reading lists and discussion notes', '', 'waymark', 'books, reading', '📖', 'synthesizes', 'Open Source Projects', 'Captures shared notes and technical literature across study groups'],
     ],
   },
 
