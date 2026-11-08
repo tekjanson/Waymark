@@ -639,6 +639,33 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "waymark_link_entries",
+    description: "Record a relational link between two Waymarks to build a cross-sheet knowledge graph (e.g. a Travel itinerary 'funded by' a Budget, a Meal plan 'uses' a Recipe). Links are stored in a shared 'Waymark Knowledge Graph' sheet in the user's Drive. Use this to capture how data across Waymarks relates so the graph can drive smarter, context-aware actions.",
+    inputSchema: {
+      type: "object",
+      required: ["fromSheetId", "toSheetId", "relation"],
+      properties: {
+        fromSheetId: { type: "string", description: "Source Waymark spreadsheet ID." },
+        fromTitle: { type: "string", description: "Human-readable title of the source Waymark (optional but recommended)." },
+        relation: { type: "string", description: "The relationship verb/phrase, e.g. 'funded by', 'uses', 'blocks', 'depends on', 'related to'." },
+        toSheetId: { type: "string", description: "Target Waymark spreadsheet ID." },
+        toTitle: { type: "string", description: "Human-readable title of the target Waymark (optional but recommended)." },
+        note: { type: "string", description: "Optional note describing the link." },
+      },
+    },
+  },
+  {
+    name: "waymark_get_links",
+    description: "Read the Waymark knowledge graph — the relational links between Waymarks. Optionally filter to links touching a specific sheetId or a specific relation. Returns the links plus a neighbor adjacency map for building synthetic understanding of how the user's data connects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sheetId: { type: "string", description: "Only return links where this spreadsheet ID is the source or target." },
+        relation: { type: "string", description: "Only return links with this relation (case-insensitive)." },
+      },
+    },
+  },
 ];
 
 /* ---------- Tool implementations ---------- */
@@ -1294,6 +1321,98 @@ async function handleWaymarkSearchEntries({ spreadsheetId, sheetTitle, query, co
   };
 }
 
+/* ---------- Knowledge graph (relational links across Waymarks) ---------- */
+
+const GRAPH_SHEET_NAME = "Waymark Knowledge Graph";
+const GRAPH_TAB = "Links";
+const GRAPH_HEADERS = ["From_ID", "From_Title", "Relation", "To_ID", "To_Title", "Note", "Created"];
+
+/** Find the user's knowledge-graph spreadsheet by name, or null. */
+async function findGraphSheetId() {
+  const q = `name='${GRAPH_SHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+  const res = await drive(`/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime)&pageSize=5&orderBy=createdTime`);
+  return res?.files?.[0]?.id || null;
+}
+
+/** Find-or-create the knowledge-graph spreadsheet (a Links tab with headers). */
+async function ensureGraphSheet() {
+  const existing = await findGraphSheetId();
+  if (existing) return existing;
+
+  const created = await sheets("", {
+    method: "POST",
+    body: {
+      properties: { title: GRAPH_SHEET_NAME },
+      sheets: [{
+        properties: { title: GRAPH_TAB },
+        data: [{
+          startRow: 0,
+          startColumn: 0,
+          rowData: [{ values: GRAPH_HEADERS.map(h => ({ userEnteredValue: { stringValue: h } })) }],
+        }],
+      }],
+    },
+  });
+  const graphId = created.spreadsheetId;
+
+  const folder = process.env.WAYMARK_PARENT_FOLDER_ID;
+  if (folder && graphId) {
+    try { await drive(`/files/${graphId}?addParents=${folder}&fields=id`, { method: "PATCH", body: {} }); } catch { /* non-fatal */ }
+  }
+  if (SA_EMAIL && graphId) {
+    try {
+      await drive(`/files/${graphId}/permissions`, {
+        method: "POST",
+        body: { type: "user", role: "writer", emailAddress: SA_EMAIL },
+      });
+    } catch { /* non-fatal */ }
+  }
+  return graphId;
+}
+
+async function handleWaymarkLinkEntries({ fromSheetId, fromTitle = "", relation, toSheetId, toTitle = "", note = "" }) {
+  if (!fromSheetId || !toSheetId || !relation) {
+    throw new Error("fromSheetId, toSheetId, and relation are required");
+  }
+  const graphId = await ensureGraphSheet();
+  const row = [
+    String(fromSheetId), String(fromTitle || ""), String(relation),
+    String(toSheetId), String(toTitle || ""), String(note || ""), new Date().toISOString(),
+  ];
+  await sheets(`/${graphId}/values/${encodeURIComponent(GRAPH_TAB)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    method: "POST",
+    body: { values: [row] },
+  });
+  return {
+    graphSheetId: graphId,
+    link: { fromSheetId, fromTitle, relation, toSheetId, toTitle, note },
+    waymarkUrl: `https://swiftirons.com/waymark/#/sheet/${graphId}`,
+  };
+}
+
+async function handleWaymarkGetLinks({ sheetId, relation } = {}) {
+  const graphId = await findGraphSheetId();
+  if (!graphId) return { graphSheetId: null, links: [], total: 0, neighbors: {} };
+
+  const res = await sheets(`/${graphId}/values/${encodeURIComponent(GRAPH_TAB)}`);
+  const values = res?.values || [];
+  const rows = values.slice(1).filter(r => Array.isArray(r) && r.some(c => (c || "").trim()));
+  let links = rows.map(r => ({
+    fromSheetId: r[0] || "", fromTitle: r[1] || "", relation: r[2] || "",
+    toSheetId: r[3] || "", toTitle: r[4] || "", note: r[5] || "", created: r[6] || "",
+  }));
+  if (sheetId) links = links.filter(l => l.fromSheetId === sheetId || l.toSheetId === sheetId);
+  if (relation) links = links.filter(l => l.relation.toLowerCase() === String(relation).toLowerCase());
+
+  // Adjacency map (both directions) for synthetic understanding of the graph.
+  const neighbors = {};
+  for (const l of links) {
+    (neighbors[l.fromSheetId] ||= []).push({ relation: l.relation, direction: "out", sheetId: l.toSheetId, title: l.toTitle });
+    (neighbors[l.toSheetId] ||= []).push({ relation: l.relation, direction: "in", sheetId: l.fromSheetId, title: l.fromTitle });
+  }
+  return { graphSheetId: graphId, links, total: links.length, neighbors };
+}
+
 /* ---------- Utility ---------- */
 
 function colIndexToLetter(idx) {
@@ -1333,6 +1452,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "waymark_list_files":        result = await handleWaymarkListFiles(args); break;
       case "waymark_search_entries":    result = await handleWaymarkSearchEntries(args); break;
       case "waymark_share_sheet":       result = await handleWaymarkShareSheet(args); break;
+      case "waymark_link_entries":      result = await handleWaymarkLinkEntries(args); break;
+      case "waymark_get_links":         result = await handleWaymarkGetLinks(args); break;
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -1382,6 +1503,8 @@ export {
   handleWaymarkListFiles,
   handleWaymarkShareSheet,
   handleWaymarkSearchEntries,
+  handleWaymarkLinkEntries,
+  handleWaymarkGetLinks,
   detectTemplate,
   mapColumnRoles,
   getUserOAuthToken,

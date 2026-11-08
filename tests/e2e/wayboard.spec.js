@@ -308,6 +308,20 @@ test('saved home layout survives reload (zero-flash from localStorage)', async (
   await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-23\b/);
 });
 
+test('The Wayside header explains itself and uses consistent section labels', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .wayside-head', { timeout: 5_000 });
+  await expect(page.locator('#home-wayside .wayside-head')).toContainText('The Wayside');
+  // A tagline clarifies what the Wayside is.
+  await expect(page.locator('#home-wayside .wayside-head-tagline')).toContainText('Chat, call & share Waymarks');
+  // Section labels are the unified vocabulary (no overlapping puns).
+  const labels = await page.locator('#home-wayside .wayside-label').allInnerTexts();
+  expect(labels).toContain('CREWS');
+  expect(labels).toContain('WAYMARKERS');
+});
+
 test('Wayside shows Waymarker Crews from a Contacts Waymark', async ({ page }) => {
   await setupApp(page, {
     pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],

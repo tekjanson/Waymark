@@ -1478,7 +1478,7 @@ export class WaysideOrchestrator {
           const timer = setTimeout(() => {
             this._p2pSheetWaiters.delete(requestId);
             resolve(null);
-          }, 5000);
+          }, 15000);
           this._p2pSheetWaiters.set(requestId, (res) => {
             clearTimeout(timer);
             resolve(res);

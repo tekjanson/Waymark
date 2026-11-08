@@ -27,9 +27,10 @@
   border: none; background: transparent; cursor: pointer;
   font-size: 0.95rem; line-height: 1; padding: 4px 6px;
   border-radius: var(--radius-sm); flex-shrink: 0;
-  opacity: 0.45; transition: opacity var(--transition), background var(--transition);
+  opacity: 0.6; transition: opacity var(--transition), background var(--transition);
 }
-.checklist-note-btn:hover { background: var(--color-bg); opacity: 1; }
+.checklist-note-btn:hover, .checklist-note-btn:focus-visible { background: var(--color-bg); opacity: 1; }
+.checklist-row.note-open .checklist-note-btn { opacity: 1; background: var(--color-bg); }
 .checklist-note-btn.has-note { opacity: 1; }
 .checklist-note-panel { flex-basis: 100%; width: 100%; display: none; margin-top: 8px; }
 .checklist-row.note-open .checklist-note-panel { display: block; }

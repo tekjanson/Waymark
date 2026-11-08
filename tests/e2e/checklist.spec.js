@@ -426,4 +426,30 @@ test('note button reveals an editable note panel and edits emit to the notes col
   expect(update.spreadsheetId).toBe('sheet-001');
 });
 
+test('clicking the note button on an item with no note opens the editor immediately', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  // Eggs (row index 1) has an empty Notes cell → one click should drop into edit.
+  const eggsRow = page.locator('.checklist-row').nth(1);
+  const panel = eggsRow.locator('.checklist-note-panel');
+  await expect(panel).toBeHidden();
+
+  await eggsRow.locator('.checklist-note-btn').click();
+  await expect(panel).toBeVisible();
+  // An input/textarea is focused and ready for typing — no extra click needed.
+  await expect(panel.locator('input.editable-cell-input, textarea.editable-cell-textarea')).toHaveCount(1);
+
+  const field = eggsRow.locator('.checklist-note-field');
+  const input = field.locator('input.editable-cell-input, textarea.editable-cell-textarea').first();
+  await input.fill('Grab a dozen large');
+  await input.evaluate(el => el.blur());
+
+  const records = await getCreatedRecords(page);
+  const update = records.filter(r => r.type === 'cell-update').pop();
+  expect(update.col).toBe(3);
+  expect(update.value).toBe('Grab a dozen large');
+});
+
 

@@ -7,6 +7,7 @@ import { el, showToast, copyToClipboard } from './ui.js';
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as collab from './collab.js';
+import { detectTemplate } from './templates/index.js';
 
 function deriveAgentThreadTitle(text) {
   const clean = String(text || '')
@@ -656,6 +657,15 @@ if (typeof document !== 'undefined' && !document.__waymarkP2pSheetListener) {
           await api.drive.createDrivePermission(sheetId, shareEmail, 'writer').catch(() => {});
         }
       }
+      // Created through Waymark itself (this browser's drive.file scope), so the
+      // new Waymark is immediately openable. Register it in Recent Waymarks so it
+      // shows up in the Wayboard UI instead of only as a chat link.
+      try {
+        const headers = Array.isArray(rows[0]) ? rows[0] : [];
+        const { key } = detectTemplate(headers);
+        await userData.addRecentSheet({ id: sheetId, name: detail.title || 'Waymark Sheet', templateKey: key || '' });
+      } catch { /* non-fatal: sheet is still accessible via the chat link */ }
+      showToast(`New Waymark "${detail.title || 'Waymark'}" is ready in your Wayboard`, 'success');
       if (detail.session?.send) {
         detail.session.send('', 'agent-p2p-sheet-ready', {
           requestId: detail.requestId || '',

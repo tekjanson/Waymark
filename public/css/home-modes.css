@@ -413,6 +413,8 @@
 #wayboard-root .widget-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; font-size: 11px; }
 #wayboard-root .widget-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: center; }
+#wayboard-root .wayside-head-titles { display: flex; flex-direction: column; min-width: 0; }
+#wayboard-root .wayside-head-tagline { font-size: 9px; color: var(--muted); font-weight: 600; letter-spacing: 0.2px; }
 #wayboard-root .wayside-status { font-size: 10px; color: var(--muted); }
 #wayboard-root .wayside-label { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-top: 4px; }
 #wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.4; }

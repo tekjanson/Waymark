@@ -181,6 +181,49 @@ test('Wayside share list backfills documents shared across any known ledger', as
   expect(res.crewIds).toEqual(['sheet-002', 'sheet-016']);
 });
 
+test('a shared agent creating a Waymark through the browser registers it in the Wayboard UI', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const res = await page.evaluate(async () => {
+    // Loading the module registers the P2P ensure-sheet listener.
+    await import('/js/wayside-agent.js');
+    const userData = await import('/js/user-data.js');
+
+    // Simulate the orchestrator asking this browser to create the Waymark (so it
+    // lands in the requester's own drive.file scope and is actually accessible).
+    const sent = [];
+    const fakeSession = { send: (_t, type, payload) => sent.push({ type, payload }) };
+    document.dispatchEvent(new CustomEvent('waymark:agent-p2p-ensure-sheet', {
+      detail: {
+        requestId: 'req-1',
+        title: 'Trip Checklist',
+        rows: [['Item', 'Status', 'Notes'], ['Book flights', '', '']],
+        shareWith: [],
+        session: fakeSession,
+      },
+    }));
+
+    // Wait for the async handler to finish creating + registering.
+    await new Promise(r => setTimeout(r, 400));
+    const recent = userData.getRecentSheets();
+    const ack = sent.find(s => s.type === 'agent-p2p-sheet-ready');
+    return {
+      ackOk: ack?.payload?.ok === true,
+      ackSheetId: ack?.payload?.sheetId || '',
+      recentHasIt: recent.some(s => s.id === ack?.payload?.sheetId),
+      recentName: recent.find(s => s.id === ack?.payload?.sheetId)?.name || '',
+    };
+  });
+
+  // The browser created the Waymark and acknowledged with its id…
+  expect(res.ackOk).toBe(true);
+  expect(res.ackSheetId).toBeTruthy();
+  // …and it now appears in Recent Waymarks, so it's reachable through the UI.
+  expect(res.recentHasIt).toBe(true);
+  expect(res.recentName).toBe('Trip Checklist');
+});
+
 test('clicking close (✕) button in Wayside closes chat and restores placeholder even with 1 contact', async ({ page }) => {
   await setupApp(page, {
     pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],

@@ -222,13 +222,19 @@ const definition = {
       try { window.localStorage.setItem(storeKey, active ? '1' : '0'); } catch (_) { /* noop */ }
     });
 
-    /* Delegated per-item note toggle — expands/collapses the note panel */
+    /* Delegated per-item note toggle — expands/collapses the note panel.
+       Opening an empty note drops straight into the editor so a single click
+       lets the user start typing (no confusing "—" placeholder step). */
     delegateEvent(container, 'click', '.checklist-note-btn', (e, btn) => {
       e.stopPropagation();
       const rowEl = btn.closest('.checklist-row');
       if (!rowEl) return;
       const open = rowEl.classList.toggle('note-open');
       btn.setAttribute('aria-expanded', String(open));
+      if (open && !btn.classList.contains('has-note')) {
+        const field = rowEl.querySelector('.checklist-note-field');
+        if (field) field.click();
+      }
     });
 
     /* Filter toolbar at the very top (flat and categorized modes) */

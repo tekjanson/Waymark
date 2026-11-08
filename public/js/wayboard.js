@@ -963,12 +963,12 @@ function renderWaysidePlaceholder(container) {
     el('div', { className: 'chat-box-head' }, [
       el('b', { id: 'wayside-crew-title' }, ['💬 Wayside']),
     ]),
-    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Pick a crew or Waymarker to trade Waymarks']),
+    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Pick a crew or Waymarker to chat, call, or share']),
     el('div', {
       className: 'chat-log',
       id: 'wayside-chat-log',
       style: 'display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-style:italic;text-align:center;padding:1.5rem;',
-    }, ['Pick a crew or Waymarker above to start chatting or calling.']),
+    }, ['Pick a crew or Waymarker above to start chatting, calling, or sharing Waymarks.']),
   ]);
   container.append(placeholder);
 }
@@ -1005,18 +1005,21 @@ async function renderWayside({ autoSelect = true } = {}) {
   }
 
   host.append(el('div', { className: 'wayside-head' }, [
-    el('b', {}, ['🧭 The Wayside']),
+    el('div', { className: 'wayside-head-titles' }, [
+      el('b', {}, ['🧭 The Wayside']),
+      el('span', { className: 'wayside-head-tagline' }, ['Chat, call & share Waymarks']),
+    ]),
     el('span', { className: 'wayside-status', 'aria-live': 'polite' }, ['Finding Waymarkers…']),
   ]));
 
   const { crews, people } = await discoverCrews();
   if (renderToken !== _waysideRenderToken) return;
   const waysideStatus = host.querySelector('.wayside-status');
-  if (waysideStatus) waysideStatus.textContent = `${crews.length} crews · ${people.length} Waymarkers`;
+  if (waysideStatus) waysideStatus.textContent = `${crews.length} crew${crews.length === 1 ? '' : 's'} · ${people.length} Waymarker${people.length === 1 ? '' : 's'}`;
 
-  // Waymarker Crews
+  // Crews (shared groups)
   const crewsBlock = el('div', { className: 'crews-block' }, [
-    el('div', { className: 'wayside-label' }, ['WAYMARKER CREWS (SHARED WAYMARKS)']),
+    el('div', { className: 'wayside-label' }, ['CREWS']),
   ]);
   if (!crews.length) {
     crewsBlock.append(el('div', { className: 'wayside-empty' }, ['Add a Contacts Waymark with a Group column to form crews.']));
@@ -1047,7 +1050,7 @@ async function renderWayside({ autoSelect = true } = {}) {
 
   // Online Waymarkers
   const onlineBlock = el('div', {}, [
-    el('div', { className: 'wayside-label' }, ['ONLINE WAYMARKERS']),
+    el('div', { className: 'wayside-label' }, ['WAYMARKERS']),
   ]);
   const avatarRow = el('div', { className: 'avatar-row' });
   for (const p of people.slice(0, 8)) {
@@ -1060,7 +1063,7 @@ async function renderWayside({ autoSelect = true } = {}) {
     av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name, isAgent: isAi }, host));
     avatarRow.append(av);
   }
-  if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers on this trail yet.']));
+  if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers yet.']));
   onlineBlock.append(avatarRow);
   host.append(onlineBlock);
 
@@ -1392,14 +1395,14 @@ function renderSharedFiles(files) {
   container.replaceChildren();
 
   const heading = el('div', { className: 'wayside-files-head' }, [
-    el('div', { className: 'wayside-label' }, [`SHARED FILES (${list.length})`]),
+    el('div', { className: 'wayside-label' }, [`SHARED WAYMARKS (${list.length})`]),
     el('button', { className: 'btn btn-muted wayside-share-file', type: 'button' }, ['＋ Share a Waymark']),
   ]);
   heading.querySelector('button').addEventListener('click', () => shareWaymarkWithTarget());
   container.append(heading);
 
   if (!list.length) {
-    container.append(el('div', { className: 'wayside-empty' }, ['No shared files yet. Choose a Waymark to share with this collaborator.']));
+    container.append(el('div', { className: 'wayside-empty' }, ['No shared Waymarks yet. Choose a Waymark to share with this Waymarker.']));
     return;
   }
   const listEl = el('div', { className: 'wayside-files-list' });
