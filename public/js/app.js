@@ -840,6 +840,11 @@ async function maybeHandleDeepLinkInvite() {
     clearDeepLinkInviteParams();
     showToast('Connected shared Waymark ledger', 'success');
     renderHome();
+    if (invite.ledger && (invite.from || '').trim().toLowerCase() === 'assistant@waymark.internal') {
+      window.dispatchEvent(new CustomEvent('waymark:select-wayside-target', {
+        detail: { contactEmail: 'assistant@waymark.internal', label: 'Waymark AI' },
+      }));
+    }
   } catch (err) {
     showToast(`Could not open invite: ${err.message}`, 'error');
   }
@@ -1587,9 +1592,11 @@ async function showFolderContents(folderId, folderName) {
     loadingBar.classList.add('hidden');
     const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
     if (is403) {
-      sheetsEl.innerHTML = `<p class="empty-state">Permission denied. Use the Drive picker to open this folder and grant access.</p>`;
+      sheetsEl.innerHTML = '';
+      sheetsEl.append(el('p', { className: 'empty-state' }, ['Permission denied. Use the Drive picker to open this folder and grant access.']));
     } else {
-      sheetsEl.innerHTML = `<p class="empty-state">Failed to load folder: ${err.message}</p>`;
+      sheetsEl.innerHTML = '';
+      sheetsEl.append(el('p', { className: 'empty-state' }, [`Failed to load folder: ${err.message}`]));
     }
   }
 }
@@ -2630,12 +2637,22 @@ function openSettingsModal() {
   const nameEl = document.getElementById('settings-user-name');
   const emailEl = document.getElementById('settings-user-email');
 
+  const currentUser = api.auth.getUser?.() || {};
+  const displayName = _userName || currentUser.name || 'User';
+  const initial = (displayName.trim()[0] || 'U').toUpperCase();
+  const fallbackSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="#2563eb"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Inter, sans-serif" font-size="28" font-weight="700">${initial}</text></svg>`
+  )}`;
   if (userAvatarEl.src && !userAvatarEl.classList.contains('hidden')) {
+    avatarEl.onerror = () => { avatarEl.src = fallbackSvg; };
     avatarEl.src = userAvatarEl.src;
-    avatarEl.alt = userAvatarEl.alt;
+    avatarEl.alt = userAvatarEl.alt || displayName;
+  } else {
+    avatarEl.src = fallbackSvg;
+    avatarEl.alt = displayName;
   }
-  nameEl.textContent = _userName || '';
-  emailEl.textContent = '';
+  nameEl.textContent = _userName || currentUser.name || '';
+  emailEl.textContent = currentUser.email || '';
 
   // Version / hash display
   const versionEl = document.getElementById('settings-version');
@@ -2681,6 +2698,31 @@ function openSettingsModal() {
   settingsImportFolder.textContent = customName || 'Waymark / Imports';
   settingsResetFolder.classList.toggle('hidden', !customName);
   settingsFolderBrowser.classList.add('hidden');
+
+  // Waymark AI Agent host status display
+  const agentHostLabel = document.getElementById('settings-agent-host-label');
+  const configureAgentBtn = document.getElementById('settings-configure-agent-btn');
+  if (agentHostLabel) {
+    const ledgers = userData.getShareLedgers?.() || [];
+    const agentEntry = ledgers.find(l => l.contactEmail === 'assistant@waymark.internal');
+    const me = (currentUser.email || '').trim().toLowerCase();
+    if (agentEntry?.preferred && agentEntry?.ownerEmail && agentEntry.ownerEmail !== me) {
+      agentHostLabel.textContent = agentEntry.label || `Shared Agent (${agentEntry.ownerEmail})`;
+    } else if (agentEntry?.preferred && agentEntry?.label) {
+      agentHostLabel.textContent = agentEntry.label;
+    } else if (agentEntry?.label) {
+      agentHostLabel.textContent = agentEntry.label;
+    } else {
+      agentHostLabel.textContent = `Personal Agent (${currentUser.email || 'My Account'})`;
+    }
+  }
+  if (configureAgentBtn && !configureAgentBtn.dataset.wired) {
+    configureAgentBtn.dataset.wired = 'true';
+    configureAgentBtn.addEventListener('click', () => {
+      closeSettingsModal();
+      document.dispatchEvent(new CustomEvent('waymark:open-agent-config'));
+    });
+  }
 
   // Version picker (only visible when GitHub source is active)
   if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {

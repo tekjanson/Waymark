@@ -215,6 +215,16 @@ export class SocialSession {
       signal: this.signal,
       onMessage: (msg) => {
         if (!msg) return;
+        if (msg.type === 'agent-oauth-ack' && typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('waymark:agent-oauth-ack', { detail: msg }));
+          return;
+        }
+        if (msg.type === 'agent-p2p-ensure-sheet' && typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('waymark:agent-p2p-ensure-sheet', {
+            detail: { ...msg, session: this },
+          }));
+          return;
+        }
         if (msg.type === 'typing' && !msg.text) {
           this.onTyping(msg.name || 'Collaborator');
           return;
@@ -232,6 +242,8 @@ export class SocialSession {
           text: msg.text || '',
           ts: msg.ts || Date.now(),
           self: false,
+          threadId: msg.threadId || 'default',
+          threadTitle: msg.threadTitle || '',
         });
       },
       onPeersChanged: (peers) => {
@@ -356,6 +368,14 @@ export class SocialSession {
     return connect.waitForSignalingReady();
   }
 
+  /** Send a custom control or chat packet over the WebRTC P2P mesh. */
+  send(text = '', type = 'message', extra = {}) {
+    if (!this.connect || this.connect._destroyed) {
+      if (this.sheetId && this.signal) this.start();
+    }
+    this.connect?.send?.(text, type, extra);
+  }
+
   _wireVolumeDucking(audioEl) {
     if (!this.connect?._duckState || !audioEl) return;
     if (this._duckVolumeRAF) cancelAnimationFrame(this._duckVolumeRAF);
@@ -404,7 +424,7 @@ export class SocialSession {
     // 1. Send via WebRTC P2P DataChannel
     if (this.connect) {
       try {
-        this.connect.send(text, 'message', { messageId });
+        this.connect.send(text, 'message', { messageId, ...extra });
       } catch {}
     }
 

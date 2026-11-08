@@ -1,4 +1,3 @@
-import * as storage from '../../storage.js';
 /* ============================================================
    iot/index.js — IoT Sensor Log template
 
@@ -10,7 +9,7 @@ import * as storage from '../../storage.js';
    Live ingestion: WebSocket · HTTP polling · MQTT-over-WS · Web Serial
    ============================================================ */
 
-import { el, cell, editableCell, emitEdit, registerTemplate, registerCrossFeature, delegateEvent, buildDirSyncBtn } from '../shared.js';
+import { getRaw, setRaw, el, cell, editableCell, emitEdit, registerTemplate, registerCrossFeature, delegateEvent, buildDirSyncBtn } from '../shared.js';
 import {
   ALERT_STATES,
   parseNumber,
@@ -91,7 +90,7 @@ function currentSheetId() {
 
 function loadLogBuffer() {
   try {
-    const raw = storage.getRaw(`waymark_iot_log_${currentSheetId()}`);
+    const raw = getRaw(`waymark_iot_log_${currentSheetId()}`);
     const p = raw ? JSON.parse(raw) : [];
     return Array.isArray(p) ? p : [];
   } catch { return []; }
@@ -99,7 +98,7 @@ function loadLogBuffer() {
 
 function saveLogBuffer(entries) {
   try {
-    storage.setRaw(`waymark_iot_log_${currentSheetId()}`, JSON.stringify(entries.slice(-LOG_LIMIT)));
+    setRaw(`waymark_iot_log_${currentSheetId()}`, JSON.stringify(entries.slice(-LOG_LIMIT)));
   } catch { /* best-effort */ }
 }
 

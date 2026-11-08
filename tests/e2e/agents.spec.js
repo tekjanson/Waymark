@@ -397,8 +397,8 @@ test('agents: clicking Sync Fleet POSTs to the webhook /fleet-sync route', async
   await setupApp(page);
   await navigateToSheet(page, 'sheet-057');
   await page.click('.agents-sync-btn');
-  // Wait for request to fire
-  await page.waitForTimeout(500);
+  // Wait for the fleet-sync request to fire
+  await expect.poll(() => capturedRequest !== null, { timeout: 5000 }).toBe(true);
   expect(capturedRequest).not.toBeNull();
   expect(capturedRequest.method()).toBe('POST');
   expect(capturedRequest.url()).toBe('http://localhost:3002/fleet-sync');

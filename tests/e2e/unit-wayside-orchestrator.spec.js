@@ -5,7 +5,6 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
 
-test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
 
   test('classifyMessage identifies conversational greetings and help requests', async () => {
     const { classifyMessage } = await import('../../scripts/wayside-orchestrator.mjs');
@@ -316,4 +315,269 @@ test.describe('Wayside Orchestrator & AGY Bridge Unit Tests', () => {
     expect(orch.presenceTimer).toBeNull();
   });
 
-});
+  test('shouldRespondToMessage responds to all 1-on-1 messages and only @mentions in group ledgers', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    // 1-on-1 ledger: always responds
+    expect(WaysideOrchestrator.shouldRespondToMessage('Can you add milk to the list?', { isGroupLedger: false })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey honey I am on my way home', { isGroupLedger: false })).toBe(true);
+
+    // Group ledger: ignores human-to-human chatter without mention
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey honey I am on my way home', { isGroupLedger: true })).toBe(false);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Did you pick up the kids?', { isGroupLedger: true })).toBe(false);
+
+    // Group ledger: responds to @waymark, @agent, @assistant, Waymark AI, or @<template>
+    expect(WaysideOrchestrator.shouldRespondToMessage('@waymark add milk to the grocery list', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey Waymark can you plan dinners for this week?', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Waymark AI please create a budget sheet', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Please ask @recipe for a pasta dish', { isGroupLedger: true })).toBe(true);
+  });
+
+  test('buildAgyPrompt includes shareWith collaborator emails for automatic sharing', async () => {
+    const { buildAgyPrompt } = await import('../../scripts/agy-agent-runner.mjs');
+    const prompt = buildAgyPrompt({
+      task: 'Create a shared family meal planner',
+      templateKey: 'meal',
+      shareWith: ['spouse@gmail.com', 'host@gmail.com'],
+    });
+
+    expect(prompt).toContain('Household / Collaborator Share List');
+    expect(prompt).toContain('spouse@gmail.com, host@gmail.com');
+  });
+
+  test('discoverAllLedgers provisions host, guest, and group ledgers and grants writer permissions', async () => {
+    const http = require('http');
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    const tmpToken = path.join(ROOT, 'tests', 'fixtures', 'tmp-orch-multi-oauth.json');
+    fs.writeFileSync(tmpToken, JSON.stringify({
+      access_token: 'mock-access-token',
+      expiry_date: Date.now() + 3600_000,
+    }));
+
+    const permissionGrants = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url.startsWith('/drive/v3/about')) {
+          res.end(JSON.stringify({ user: { emailAddress: 'host@gmail.com' } }));
+        } else if (req.url.includes('/permissions')) {
+          const match = req.url.match(/\/drive\/v3\/files\/([^/?]+)\/permissions/);
+          permissionGrants.push({
+            fileId: match ? decodeURIComponent(match[1]) : '',
+            body: body ? JSON.parse(body) : null,
+          });
+          res.end(JSON.stringify({ id: 'perm-1' }));
+        } else if (req.url.startsWith('/drive/v3/files')) {
+          res.end(JSON.stringify({ files: [] }));
+        } else {
+          res.writeHead(404);
+          res.end('{}');
+        }
+      });
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+
+    const origTokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+    const origDriveBase = process.env.DRIVE_BASE;
+    const origFetch = globalThis.fetch;
+
+    try {
+      process.env.WAYMARK_OAUTH_TOKEN_PATH = tmpToken;
+      process.env.DRIVE_BASE = `http://127.0.0.1:${port}/drive/v3/files`;
+
+      let counter = 0;
+      globalThis.fetch = async (url, opts = {}) => {
+        const u = String(url);
+        if (u === 'https://sheets.googleapis.com/v4/spreadsheets' && opts.method === 'POST') {
+          counter += 1;
+          return new Response(JSON.stringify({ spreadsheetId: `multi-ledger-${counter}` }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (u.startsWith('https://sheets.googleapis.com/v4/spreadsheets/multi-ledger-')) {
+          return new Response(JSON.stringify({
+            sheets: [
+              { properties: { title: 'Shared_Docs' } },
+              { properties: { title: 'Presence' } },
+              { properties: { title: 'Chat' } },
+              { properties: { title: 'WebRTC_Signaling' } },
+            ],
+            values: [['Header']],
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return origFetch(url, opts);
+      };
+
+      const ledgers = await WaysideOrchestrator.discoverAllLedgers({
+        allowedUsers: ['spouse@gmail.com'],
+        groups: ['Family'],
+      });
+
+      expect(ledgers.length).toBe(3);
+      expect(ledgers[0]).toMatchObject({ sheetId: 'multi-ledger-1', userEmail: 'host@gmail.com', isGroupLedger: false });
+      expect(ledgers[1]).toMatchObject({ sheetId: 'multi-ledger-2', userEmail: 'spouse@gmail.com', isGroupLedger: false });
+      expect(ledgers[2]).toMatchObject({ sheetId: 'multi-ledger-3', group: 'Family', isGroupLedger: true });
+
+      const grantedEmails = permissionGrants.map(g => `${g.fileId}:${g.body?.emailAddress}:${g.body?.role}`);
+      expect(grantedEmails).toContain('multi-ledger-1:spouse@gmail.com:writer');
+      expect(grantedEmails).toContain('multi-ledger-2:spouse@gmail.com:writer');
+      expect(grantedEmails).toContain('multi-ledger-3:spouse@gmail.com:writer');
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origTokenPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+      else process.env.WAYMARK_OAUTH_TOKEN_PATH = origTokenPath;
+      if (origDriveBase === undefined) delete process.env.DRIVE_BASE;
+      else process.env.DRIVE_BASE = origDriveBase;
+      if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  test('WaysideOrchestrator parses thread metadata, isolates per-thread context, and handles /clear commands', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    expect(WaysideOrchestrator.parseThreadMeta('assistant@waymark.internal')).toEqual({
+      threadId: 'default',
+      threadTitle: '',
+    });
+    expect(WaysideOrchestrator.parseThreadMeta('thread:t-123|Trip to Maui')).toEqual({
+      threadId: 't-123',
+      threadTitle: 'Trip to Maui',
+    });
+    expect(WaysideOrchestrator.formatThreadTarget('assistant@waymark.internal', 'default', '')).toBe('assistant@waymark.internal');
+    expect(WaysideOrchestrator.formatThreadTarget('assistant@waymark.internal', 't-123', 'Trip to Maui')).toBe('thread:t-123|Trip to Maui');
+
+    const orch = new WaysideOrchestrator({ sheetId: 'thread-test-ledger', userEmail: 'host@gmail.com' });
+    const delivered = [];
+    orch.deliverReply = async (payload) => {
+      delivered.push(payload);
+    };
+
+    // Seed thread-A memory
+    orch.conversations.set('host@gmail.com::thread-a', {
+      history: [{ role: 'host@gmail.com', text: 'Plan a trip' }],
+      lastSheetId: 'sheet-trip-1',
+      lastDocId: null,
+      lastTemplateKey: 'travel',
+      threadId: 'thread-a',
+      threadTitle: 'Trip',
+    });
+
+    // Sending a conversational message in thread-b does NOT inherit thread-a's lastSheetId or history
+    await orch.processMessage({
+      text: 'Hello there!',
+      sender: 'host@gmail.com',
+      displayName: 'Host',
+      messageId: 'm-b1',
+      threadId: 'thread-b',
+      threadTitle: 'Budget Chat',
+    });
+
+    const convB = orch.conversations.get('host@gmail.com::thread-b');
+    expect(convB).toBeDefined();
+    expect(convB.lastSheetId).toBeNull();
+    expect(convB.history.length).toBe(2);
+    expect(delivered[0].threadId).toBe('thread-b');
+    expect(delivered[0].threadTitle).toBe('Budget Chat');
+
+    // Sending /clear in thread-a resets thread-a's history and lastSheetId without touching thread-b
+    await orch.processMessage({
+      text: '/clear',
+      sender: 'host@gmail.com',
+      displayName: 'Host',
+      messageId: 'm-a-clear',
+      threadId: 'thread-a',
+      threadTitle: 'Trip',
+    });
+
+    const convA = orch.conversations.get('host@gmail.com::thread-a');
+    expect(convA.history).toEqual([]);
+    expect(convA.lastSheetId).toBeNull();
+    expect(delivered[1].replyText).toContain('Conversation context cleared');
+    expect(orch.conversations.get('host@gmail.com::thread-b').history.length).toBe(2);
+  });
+
+  test('WaysideOrchestrator handles P2P agent-oauth-setup messages, persists token bundle, and broadcasts agent-oauth-ack', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+    const tmpToken = path.join(ROOT, 'tests', 'fixtures', 'tmp-p2p-oauth.json');
+    if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+
+    try {
+      const orch = new WaysideOrchestrator({
+        sheetId: 'p2p-oauth-ledger',
+        userEmail: 'host@gmail.com',
+      });
+      const broadcasts = [];
+      orch.webrtcPeer = {
+        broadcast: (msg) => broadcasts.push(msg),
+      };
+
+      // 1. Direct applyOAuthTokenBundle persists token file and returns metadata
+      const applied = WaysideOrchestrator.applyOAuthTokenBundle({
+        access_token: 'ya29.p2p-test-token',
+        refresh_token: '1//0g-p2p-refresh-token',
+        client_id: 'test-client-id',
+        client_secret: 'test-client-secret',
+        expiry_date: Date.now() + 3600_000,
+      }, { tokenPath: tmpToken });
+
+      expect(applied.ok).toBe(true);
+      expect(applied.hasRefreshToken).toBe(true);
+      const written = JSON.parse(fs.readFileSync(tmpToken, 'utf8'));
+      expect(written.access_token).toBe('ya29.p2p-test-token');
+      expect(written.refresh_token).toBe('1//0g-p2p-refresh-token');
+
+      // 2. Unauthorized sender via P2P is rejected with ok: false
+      await orch.handleWebRtcMessage('peer-stranger', {
+        type: 'agent-oauth-setup',
+        requestId: 'req-unauth',
+        sender: 'stranger@gmail.com',
+        tokenBundle: { access_token: 'ya29.hijack' },
+      });
+      expect(broadcasts.length).toBe(1);
+      expect(broadcasts[0].type).toBe('agent-oauth-ack');
+      expect(broadcasts[0].ok).toBe(false);
+      expect(broadcasts[0].requestId).toBe('req-unauth');
+
+      // 3. Authorized host sender via P2P succeeds and broadcasts ok: true
+      const origPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+      process.env.WAYMARK_OAUTH_TOKEN_PATH = tmpToken;
+      try {
+        await orch.handleWebRtcMessage('peer-host', {
+          type: 'agent-oauth-setup',
+          requestId: 'req-auth',
+          sender: 'host@gmail.com',
+          tokenBundle: {
+            access_token: 'ya29.host-updated-token',
+            refresh_token: '1//0g-host-refresh',
+          },
+        });
+      } finally {
+        if (origPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+        else process.env.WAYMARK_OAUTH_TOKEN_PATH = origPath;
+      }
+
+      expect(broadcasts.length).toBe(2);
+      expect(broadcasts[1].type).toBe('agent-oauth-ack');
+      expect(broadcasts[1].ok).toBe(true);
+      expect(broadcasts[1].hasRefreshToken).toBe(true);
+      expect(broadcasts[1].requestId).toBe('req-auth');
+      const updated = JSON.parse(fs.readFileSync(tmpToken, 'utf8'));
+      expect(updated.access_token).toBe('ya29.host-updated-token');
+    } finally {
+      if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+    }
+  });
+
+
+
+

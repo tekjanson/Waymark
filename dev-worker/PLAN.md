@@ -1,5 +1,11 @@
 # Waymark Dev Worker — Copilot CLI Container
 
+> [!CAUTION]
+> **STATUS: RETIRED / ARCHIVED — DO NOT RUN OR DEVELOP FURTHER**
+> The Dev-Worker autonomous loop and container fleet are retired and marked as obsolete/crufty.
+> Do not spin up this background container or spend API budget/maintenance time on it.
+> Kept for historical reference only.
+
 > A lean Debian container that runs the GitHub Copilot CLI agent headlessly.
 > The agent operates autonomously in autopilot mode. When a session ends,
 > the watchdog loop restarts it immediately. Xvfb provides a real virtual

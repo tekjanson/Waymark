@@ -5,7 +5,6 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
 
-test.describe('Headless OAuth & Waymark MCP File Operations Unit Tests', () => {
 
   test('Waymark MCP exports 12 tools including Drive file and doc operations', async () => {
     const { TOOLS } = await import('../../mcp/waymark.mjs');
@@ -202,4 +201,3 @@ test.describe('Headless OAuth & Waymark MCP File Operations Unit Tests', () => {
     }
   });
 
-});

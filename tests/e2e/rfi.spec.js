@@ -15,36 +15,37 @@ const mockRows = [
   ['RFI-002', 'HVAC Duct Elevation Spec', 'Draft', 'Sarah Jenkins', '2026-08-10', '', ''],
 ];
 
-test.describe('Waymark Construction RFI Template', () => {
+/** Mount the RFI template in a fresh page — replaces a beforeEach hook so each
+ * test stays independently isolated (AI_LAWS §7.2). */
+async function mountRfi(page) {
+  // Navigate to local Waymark runtime (WAYMARK_LOCAL=true environment)
+  await page.goto('/');
 
-  test.beforeEach(async ({ page }) => {
-    // Navigate to local Waymark runtime (WAYMARK_LOCAL=true environment)
-    await page.goto('/');
+  // Mount the template inside the browser context using native Waymark APIs
+  await page.evaluate(async ({ headers, rows }) => {
+    const tpl = await import('/js/templates/rfi.js').then(m => m.default || m);
+    const shared = await import('/js/templates/shared.js');
 
-    // Mount the template inside the browser context using native Waymark APIs
-    await page.evaluate(async ({ headers, rows }) => {
-      const tpl = await import('/js/templates/rfi.js').then(m => m.default || m);
-      const shared = await import('/js/templates/shared.js');
+    // Capture native cell edits in the page so the test can assert write-back.
+    shared.onEdit((rowIdx, colIdx, val) => {
+      window.lastCapturedEdit = { rowIndex: rowIdx, colIndex: colIdx, newValue: val };
+    });
 
-      // Capture native cell edits in the page so the test can assert write-back.
-      shared.onEdit((rowIdx, colIdx, val) => {
-        window.lastCapturedEdit = { rowIndex: rowIdx, colIndex: colIdx, newValue: val };
-      });
+    // Compute column mapping from headers
+    const lower = headers.map(h => h.toLowerCase());
+    const cols = tpl.columns(lower);
 
-      // Compute column mapping from headers
-      const lower = headers.map(h => h.toLowerCase());
-      const cols = tpl.columns(lower);
+    // Create container and invoke native render signature: render(container, rows, cols, template)
+    const container = document.createElement('div');
+    container.id = 'rfi-test-root';
+    document.body.appendChild(container);
 
-      // Create container and invoke native render signature: render(container, rows, cols, template)
-      const container = document.createElement('div');
-      container.id = 'rfi-test-root';
-      document.body.appendChild(container);
+    tpl.render(container, rows, cols, tpl);
+  }, { headers: mockHeaders, rows: mockRows });
+}
 
-      tpl.render(container, rows, cols, tpl);
-    }, { headers: mockHeaders, rows: mockRows });
-  });
-
-  test('detects template and renders summary bar, filter pills, and swim-lanes', async ({ page }) => {
+test('detects template and renders summary bar, filter pills, and swim-lanes', async ({ page }) => {
+    await mountRfi(page);
     // Assert summary bar counts calculate accurately from rows
     await expect(page.locator('.rfi-summary-bar .count-open')).toHaveText('1');
     await expect(page.locator('.rfi-summary-bar .count-pending')).toHaveText('0');
@@ -66,6 +67,7 @@ test.describe('Waymark Construction RFI Template', () => {
   });
 
   test('filters cards dynamically when assignee pills are clicked', async ({ page }) => {
+    await mountRfi(page);
     const davidPill = page.locator('.rfi-filter-pill', { hasText: 'David Chen' });
     const sarahPill = page.locator('.rfi-filter-pill', { hasText: 'Sarah Jenkins' });
     const allPill = page.locator('.rfi-filter-pill', { hasText: 'All Assignees' });
@@ -87,6 +89,7 @@ test.describe('Waymark Construction RFI Template', () => {
   });
 
   test('groups contiguous sub-rows into discussion notes and reveals them on expand', async ({ page }) => {
+    await mountRfi(page);
     const rfi1Card = page.locator('.rfi-card', { hasText: 'RFI-001' });
 
     // Detail section should be hidden initially
@@ -106,6 +109,7 @@ test.describe('Waymark Construction RFI Template', () => {
   });
 
   test('cycles stage badge on click and triggers native emitEdit write-back', async ({ page }) => {
+    await mountRfi(page);
     const rfi1Card = page.locator('.rfi-card', { hasText: 'RFI-001' });
     const statusBtn = rfi1Card.locator('.rfi-status-btn');
 
@@ -127,6 +131,7 @@ test.describe('Waymark Construction RFI Template', () => {
   });
 
   test('opens history-aware focus modal and allows status editing', async ({ page }) => {
+    await mountRfi(page);
     const rfi1Card = page.locator('.rfi-card', { hasText: 'RFI-001' });
 
     // Click open focus modal button (⛶)
@@ -141,4 +146,3 @@ test.describe('Waymark Construction RFI Template', () => {
     await overlay.locator('.rfi-modal-close').click();
     await expect(overlay).toBeHidden();
   });
-});

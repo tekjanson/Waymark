@@ -1,4 +1,3 @@
-import * as storage from '../storage.js';
 /* ============================================================
    notification.js — Notification History Viewer template
 
@@ -7,7 +6,7 @@ import * as storage from '../storage.js';
             Created | Expires | Source | Sheet
    ============================================================ */
 
-import { el, emitEdit, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
+import { getRaw, setRaw, el, emitEdit, registerTemplate, buildDirSyncBtn, delegateEvent } from './shared.js';
 
 /* ---------- Constants ---------- */
 
@@ -110,7 +109,7 @@ const definition = {
 
     /* ---- Connection state ---- */
     const sheetId = getCurrentSheetId();
-    const configuredId = storage.getRaw('waymark_notif_sheet_id') || '';
+    const configuredId = getRaw('waymark_notif_sheet_id') || '';
     const isConnected = configuredId === sheetId && sheetId;
 
     /* ---- Count helpers ---- */
@@ -137,7 +136,7 @@ const definition = {
         emitEdit(n.rowIndex, cols.status, n.status);
         if (isConnected) {
           try {
-            const stored = JSON.parse(storage.getRaw('waymark_notifications') || '[]');
+            const stored = JSON.parse(getRaw('waymark_notifications') || '[]');
             let changed = false;
             for (const item of stored) {
               if (item.title === n.title) {
@@ -146,7 +145,7 @@ const definition = {
               }
             }
             if (changed) {
-              storage.setRaw('waymark_notifications', JSON.stringify(stored));
+              setRaw('waymark_notifications', JSON.stringify(stored));
               document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
             }
           } catch { /* ignore */ }
@@ -302,7 +301,7 @@ const definition = {
     } else {
       const useBtn = el('button', { className: 'notification-use-btn' }, ['Use as Notification Sheet']);
       useBtn.addEventListener('click', () => {
-        storage.setRaw('waymark_notif_sheet_id', sheetId);
+        setRaw('waymark_notif_sheet_id', sheetId);
         const badge = el('span', { className: 'notification-connected-badge' }, ['🔔 Connected to Bell']);
         summary.replaceChild(badge, useBtn);
         connectionEl = badge;

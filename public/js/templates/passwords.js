@@ -3,8 +3,7 @@
    with inline editing, category grouping, and search
    ============================================================ */
 
-import { el, cell, editableCell, delegateEvent, registerTemplate, copyToClipboard, showToast } from './shared.js';
-import * as encryption from '../encryption.js';
+import { decrypt, isEncrypted, isUnlocked, el, cell, editableCell, delegateEvent, registerTemplate, copyToClipboard, showToast } from './shared.js';
 
 /* ---------- Copy to clipboard helper ---------- */
 
@@ -64,12 +63,12 @@ export async function getDecryptedKey(model, vaultSheet, sheetId = null) {
     if (!providerRegex.test(searchText) || !rawValue) continue;
 
     let plainValue = rawValue;
-    if (encryption.isEncrypted(rawValue) && effectiveSheetId && encryption.isUnlocked(effectiveSheetId)) {
-      plainValue = await encryption.decrypt(effectiveSheetId, rawValue);
+    if (isEncrypted(rawValue) && effectiveSheetId && isUnlocked(effectiveSheetId)) {
+      plainValue = await decrypt(effectiveSheetId, rawValue);
     }
 
     if (plainValue && plainValue !== rawValue) return String(plainValue).trim();
-    if (plainValue && !encryption.isEncrypted(rawValue)) return String(plainValue).trim();
+    if (plainValue && !isEncrypted(rawValue)) return String(plainValue).trim();
   }
 
   return null;

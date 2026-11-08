@@ -13,7 +13,7 @@
    - Headless AGY CLI execution targeted at Gemini 3.8 Flash
    ============================================================ */
 
-import { readFileSync, writeFileSync, existsSync, realpathSync, renameSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync, renameSync, chmodSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -294,25 +294,108 @@ async function resolveCurrentUserEmail(existingToken = null) {
   return '';
 }
 
+function parseEmailList(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : String(raw).split(',');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    const email = String(item || '').trim().toLowerCase();
+    if (email && email.includes('@') && !email.endsWith('.internal') && !email.endsWith('.local') && !seen.has(email)) {
+      seen.add(email);
+      out.push(email);
+    }
+  }
+  return out;
+}
+
+function parseGroupList(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : String(raw).split(',');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    const group = String(item || '').trim();
+    const lower = group.toLowerCase();
+    if (group && !seen.has(lower)) {
+      seen.add(lower);
+      out.push(group);
+    }
+  }
+  return out;
+}
+
+/**
+ * Grant Drive writer permissions on a spreadsheet or document to a list of emails.
+ * Best-effort: logs a warning on failure and never throws.
+ * @param {string} fileId
+ * @param {string[]} emails
+ * @param {string} [existingToken]
+ * @returns {Promise<string[]>} emails successfully granted access
+ */
+async function shareFileWithEmails(fileId, emails = [], existingToken = null) {
+  const targets = parseEmailList(emails);
+  if (!fileId || targets.length === 0) return [];
+  const granted = [];
+  try {
+    const token = existingToken || await getAuthToken();
+    const ownerEmail = await resolveCurrentUserEmail(token);
+    const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+    for (const email of targets) {
+      if (ownerEmail && email === ownerEmail) continue;
+      try {
+        const res = await fetch(`${driveFilesBase}/${encodeURIComponent(fileId)}/permissions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'user',
+            role: 'writer',
+            emailAddress: email,
+          }),
+        });
+        if (res.ok) {
+          granted.push(email);
+        }
+      } catch { /* best-effort per email */ }
+    }
+  } catch { /* best-effort */ }
+  return granted;
+}
+
 /**
  * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one
- * using the canonical `.waymark-ledger-contact-pair:` naming from public/js/collab.js.
+ * using the canonical `.waymark-ledger-contact-pair:` (or `.waymark-ledger-group:`)
+ * naming from public/js/collab.js.
+ * @param {{ userEmail?: string, group?: string, shareWithEmails?: string[] }} [opts]
  * @returns {Promise<string>} spreadsheetId
  */
-export async function discoverOrCreateWaysideLedger() {
+export async function discoverOrCreateWaysideLedger(opts = {}) {
   const token = await getAuthToken();
   const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
   const agentEmailLower = AGENT_EMAIL.toLowerCase();
-  const userEmail = await resolveCurrentUserEmail(token);
+  const groupName = String(opts.group || '').trim();
+  const explicitUserEmail = String(opts.userEmail || '').trim().toLowerCase();
+  const userEmail = explicitUserEmail || await resolveCurrentUserEmail(token);
 
-  const ledgerKey = userEmail && userEmail !== agentEmailLower
-    ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
-    : `contact:${agentEmailLower}`;
+  const ledgerKey = groupName
+    ? `group:${groupName.toLowerCase()}`
+    : (userEmail && userEmail !== agentEmailLower
+      ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
+      : `contact:${agentEmailLower}`);
   const canonicalTitle = ledgerFileName(ledgerKey);
-  const legacyTitle = ledgerFileName(`contact:${agentEmailLower}`);
+  const dashTitle = `.waymark-ledger-${String(ledgerKey).toLowerCase().replace(/[^a-z0-9@._-]/g, '-')}`;
+  const legacyTitle = !groupName && !explicitUserEmail ? ledgerFileName(`contact:${agentEmailLower}`) : '';
 
   const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
   const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime&pageSize=100`;
+
+  const shareTargets = parseEmailList([
+    ...(opts.shareWithEmails || []),
+    explicitUserEmail,
+  ]);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -321,11 +404,26 @@ export async function discoverOrCreateWaysideLedger() {
     const data = await res.json();
     const files = data.files || [];
     // Sort oldest-first matching public/js/drive.js findFilesGlobal so browser and orchestrator always pick the same ledger
-    const exactMatch = files.find(f => (f.name || '').toLowerCase() === canonicalTitle.toLowerCase());
-    if (exactMatch?.id) return exactMatch.id;
+    const exactMatch = files.find(f => {
+      const lower = (f.name || '').toLowerCase();
+      return lower === canonicalTitle.toLowerCase() || lower === dashTitle.toLowerCase();
+    });
+    if (exactMatch?.id) {
+      if (shareTargets.length > 0) {
+        await shareFileWithEmails(exactMatch.id, shareTargets, token);
+      }
+      return exactMatch.id;
+    }
 
-    const legacyMatch = files.find(f => (f.name || '').toLowerCase() === legacyTitle.toLowerCase());
-    if (legacyMatch?.id) return legacyMatch.id;
+    if (legacyTitle) {
+      const legacyMatch = files.find(f => (f.name || '').toLowerCase() === legacyTitle.toLowerCase());
+      if (legacyMatch?.id) {
+        if (shareTargets.length > 0) {
+          await shareFileWithEmails(legacyMatch.id, shareTargets, token);
+        }
+        return legacyMatch.id;
+      }
+    }
   }
 
   // Create a dedicated Wayside Share Ledger matching collab.js ledgerFileName
@@ -342,6 +440,9 @@ export async function discoverOrCreateWaysideLedger() {
     },
   });
   await ensureLedgerStructure(created.spreadsheetId);
+  if (shareTargets.length > 0) {
+    await shareFileWithEmails(created.spreadsheetId, shareTargets, token);
+  }
   return created.spreadsheetId;
 }
 
@@ -450,6 +551,279 @@ export function classifyMessage(text) {
 /* ---------- Orchestrator Daemon Core ---------- */
 
 export class WaysideOrchestrator {
+  /**
+   * Determine whether the orchestrator should reply to an incoming message.
+   * In 1-on-1 / shared AI ledgers (`isGroup: false`), all non-empty messages are answered.
+   * In group / crew ledgers (`isGroup: true`), the agent only responds when explicitly
+   * mentioned or addressed so human-to-human chats are not interrupted.
+   * @param {string} text
+   * @param {{ isGroup?: boolean, agentName?: string, agentEmail?: string }} [opts]
+   * @returns {boolean}
+   */
+  static shouldRespondToMessage(text, opts = {}) {
+    const clean = String(text || '').trim();
+    if (!clean) return false;
+    if (!opts.isGroup && !opts.isGroupLedger) return true;
+
+    const lower = clean.toLowerCase();
+    const agentNameLower = String(opts.agentName || AGENT_NAME).toLowerCase();
+    const agentEmailLower = String(opts.agentEmail || AGENT_EMAIL).toLowerCase();
+    if (
+      lower.includes('@waymark') ||
+      lower.includes('@agent') ||
+      lower.includes('@assistant') ||
+      lower.includes('@ai') ||
+      lower.includes(agentNameLower) ||
+      lower.includes(agentEmailLower) ||
+      /^(?:hey\s+|hi\s+)?waymark\b/i.test(clean)
+    ) {
+      return true;
+    }
+    for (const tmpl of CATALOG.templates || []) {
+      if (lower.includes(`@${tmpl.key}`)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Discover or provision all configured Wayside Share Ledgers:
+   * 1. The primary host user's bilateral ledger
+   * 2. Dedicated bilateral ledgers for each email in `WAYSIDE_ALLOWED_USERS` (shared with that user)
+   * 3. Shared group ledgers for each group in `WAYSIDE_GROUPS` (shared with allowed users)
+   * @param {{ allowedUsers?: string|string[], groups?: string|string[] }} [opts]
+   * @returns {Promise<Array<{ sheetId: string, userEmail: string, isGroup: boolean, group: string }>>}
+   */
+  static async discoverAllLedgers(opts = {}) {
+    const token = await getAuthToken();
+    const hostEmail = await resolveCurrentUserEmail(token);
+    const allowedUsers = parseEmailList(opts.allowedUsers ?? process.env.WAYSIDE_ALLOWED_USERS);
+    const groups = parseGroupList(opts.groups ?? process.env.WAYSIDE_GROUPS);
+
+    const results = [];
+    const seenIds = new Set();
+
+    // 1. Primary host ledger (also shared with allowedUsers if any are configured)
+    const primaryId = await discoverOrCreateWaysideLedger({
+      userEmail: hostEmail,
+      shareWithEmails: allowedUsers,
+    });
+    if (primaryId) {
+      seenIds.add(primaryId);
+      results.push({ sheetId: primaryId, userEmail: hostEmail, isGroup: false, isGroupLedger: false, group: '' });
+    }
+
+    // 2. Per-user bilateral ledgers for each allowed guest/family member
+    for (const guestEmail of allowedUsers) {
+      if (hostEmail && guestEmail === hostEmail) continue;
+      const guestLedgerId = await discoverOrCreateWaysideLedger({
+        userEmail: guestEmail,
+        shareWithEmails: [guestEmail],
+      });
+      if (guestLedgerId && !seenIds.has(guestLedgerId)) {
+        seenIds.add(guestLedgerId);
+        results.push({ sheetId: guestLedgerId, userEmail: guestEmail, isGroup: false, isGroupLedger: false, group: '' });
+      }
+    }
+
+    // 3. Shared group / crew ledgers
+    for (const group of groups) {
+      const groupLedgerId = await discoverOrCreateWaysideLedger({
+        group,
+        shareWithEmails: allowedUsers,
+      });
+      if (groupLedgerId && !seenIds.has(groupLedgerId)) {
+        seenIds.add(groupLedgerId);
+        results.push({ sheetId: groupLedgerId, userEmail: hostEmail, isGroup: true, isGroupLedger: true, group });
+      }
+    }
+
+    // 4. Auto-discover any existing collaborator / family AI ledgers in Drive
+    // (e.g. `.waymark-ledger-contact-pair-assistant@waymark.internal--kailey.levine@gmail.com`)
+    try {
+      const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+      const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+      const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=100`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        const agentLower = AGENT_EMAIL.toLowerCase();
+        for (const f of data.files || []) {
+          if (!f?.id || seenIds.has(f.id)) continue;
+          const lowerName = String(f.name || '').toLowerCase();
+          if (!lowerName.includes(agentLower)) continue;
+          let partnerEmail = hostEmail;
+          if (lowerName.startsWith('.waymark-ledger-contact-pair:') || lowerName.startsWith('.waymark-ledger-contact-pair-')) {
+            const rawRest = lowerName.slice('.waymark-ledger-contact-pair:'.length);
+            const parts = (rawRest.includes('::') ? rawRest.split('::') : rawRest.split('--'))
+              .map(s => s.trim())
+              .filter(Boolean);
+            const human = parts.find(p => p !== agentLower);
+            if (human) partnerEmail = human;
+          }
+          seenIds.add(f.id);
+          results.push({
+            sheetId: f.id,
+            userEmail: partnerEmail || hostEmail,
+            isGroup: false,
+            isGroupLedger: false,
+            group: '',
+          });
+        }
+      }
+    } catch { /* best-effort Drive scan */ }
+
+    return results;
+  }
+
+  /**
+   * Expose Drive permission helper for tests and callers.
+   */
+  static async shareFileWithEmails(fileId, emails = [], existingToken = null) {
+    return shareFileWithEmails(fileId, emails, existingToken);
+  }
+
+  /**
+   * Apply an OAuth token bundle received over the Waymark Frontend ↔ AI P2P tunnel
+   * (or CLI import), persisting it atomically to WAYMARK_OAUTH_TOKEN_PATH and
+   * updating the in-memory token cache immediately.
+   * @param {Object|string} rawBundle
+   * @param {{ tokenPath?: string, dryRun?: boolean }} [opts]
+   * @returns {{ ok: boolean, error?: string, tokenPath?: string, hasRefreshToken?: boolean }}
+   */
+  static applyOAuthTokenBundle(rawBundle, opts = {}) {
+    try {
+      const parsed = typeof rawBundle === 'string' ? JSON.parse(rawBundle) : rawBundle;
+      if (!parsed || typeof parsed !== 'object') {
+        return { ok: false, error: 'Invalid OAuth token payload' };
+      }
+      const accessToken = String(parsed.access_token || parsed.accessToken || '').trim();
+      const refreshToken = String(parsed.refresh_token || parsed.refreshToken || '').trim();
+      if (!accessToken && !refreshToken) {
+        return { ok: false, error: 'Token bundle must include access_token or refresh_token' };
+      }
+
+      const oauthPath = opts.tokenPath || process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+        path.join(os.homedir(), '.config', 'gcloud', 'waymark-oauth-token.json');
+      const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        path.join(os.homedir(), '.config', 'gcloud', 'waymark-service-account-key.json');
+
+      let existing = {};
+      if (!opts.dryRun && existsSync(oauthPath)) {
+        try {
+          existing = JSON.parse(readFileSync(oauthPath, 'utf8')) || {};
+        } catch {
+          existing = {};
+        }
+      }
+
+      const expiryMs = Number(parsed.expiry_date || parsed.expiryDate) || (Date.now() + 3600 * 1000);
+      const merged = {
+        ...existing,
+        ...(accessToken ? { access_token: accessToken } : {}),
+        ...(refreshToken ? { refresh_token: refreshToken } : {}),
+        ...(parsed.client_id ? { client_id: String(parsed.client_id).trim() } : {}),
+        ...(parsed.client_secret ? { client_secret: String(parsed.client_secret).trim() } : {}),
+        token_type: parsed.token_type || existing.token_type || 'Bearer',
+        expiry_date: expiryMs,
+        updated_via: 'wayside-p2p-tunnel',
+        updated_at: new Date().toISOString(),
+      };
+
+      const senderClean = String(opts.sender || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '');
+      const existingHost = String(existing.account_email || opts.hostEmail || '').trim().toLowerCase();
+      const isCollaboratorPush = Boolean(
+        senderClean &&
+        !opts.tokenPath &&
+        !process.env.WAYMARK_OAUTH_TOKEN_PATH &&
+        existsSync(oauthPath) &&
+        ((existingHost && existingHost !== senderClean) || (!refreshToken && existing.refresh_token))
+      );
+
+      if (!opts.dryRun) {
+        mkdirSync(path.dirname(oauthPath), { recursive: true });
+        if (!isCollaboratorPush) {
+          const tmpPath = `${oauthPath}.${process.pid}.tmp`;
+          writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+          if (process.platform !== 'win32') {
+            try { chmodSync(tmpPath, 0o600); } catch {}
+          }
+          renameSync(tmpPath, oauthPath);
+        }
+
+        if (senderClean && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+          const senderPath = path.join(path.dirname(oauthPath), `waymark-oauth-token-${senderClean}.json`);
+          const senderTmp = `${senderPath}.${process.pid}.tmp`;
+          const senderBundle = {
+            ...(accessToken ? { access_token: accessToken } : {}),
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+            token_type: parsed.token_type || 'Bearer',
+            expiry_date: expiryMs,
+            account_email: senderClean,
+            updated_via: 'wayside-p2p-tunnel',
+            updated_at: new Date().toISOString(),
+          };
+          writeFileSync(senderTmp, JSON.stringify(senderBundle, null, 2) + '\n', { mode: 0o600 });
+          if (process.platform !== 'win32') {
+            try { chmodSync(senderTmp, 0o600); } catch {}
+          }
+          renameSync(senderTmp, senderPath);
+          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderClean} -> ${senderPath}`);
+        }
+      }
+
+      if (accessToken && !isCollaboratorPush) {
+        _cachedAuth = {
+          token: accessToken,
+          expiry: expiryMs,
+          sourceKey: `${oauthPath}|${credPath}`,
+        };
+      }
+      return {
+        ok: true,
+        tokenPath: oauthPath,
+        hasRefreshToken: Boolean(merged.refresh_token),
+      };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Could not apply OAuth token bundle' };
+    }
+  }
+
+  /**
+   * Parse thread metadata encoded in Chat tab's Target_Group_Or_Contact column.
+   * Format when non-default: `thread:<threadId>|<threadTitle>`
+   * @param {string} targetVal
+   * @returns {{ threadId: string, threadTitle: string }}
+   */
+  static parseThreadMeta(targetVal) {
+    const raw = String(targetVal || '').trim();
+    if (raw.startsWith('thread:')) {
+      const rest = raw.slice('thread:'.length);
+      const pipeIdx = rest.indexOf('|');
+      if (pipeIdx >= 0) {
+        return {
+          threadId: rest.slice(0, pipeIdx).trim() || 'default',
+          threadTitle: rest.slice(pipeIdx + 1).trim(),
+        };
+      }
+      return { threadId: rest.trim() || 'default', threadTitle: '' };
+    }
+    return { threadId: 'default', threadTitle: '' };
+  }
+
+  /**
+   * Format Chat tab's Target_Group_Or_Contact column value for a conversation thread.
+   * @param {string} defaultTarget
+   * @param {string} [threadId]
+   * @param {string} [threadTitle]
+   * @returns {string}
+   */
+  static formatThreadTarget(defaultTarget = '', threadId = 'default', threadTitle = '') {
+    const cleanId = String(threadId || 'default').trim();
+    if (!cleanId || cleanId === 'default') return defaultTarget || '';
+    const cleanTitle = String(threadTitle || '').replace(/\|/g, ' ').trim();
+    return cleanTitle ? `thread:${cleanId}|${cleanTitle}` : `thread:${cleanId}`;
+  }
+
   constructor(opts = {}) {
     this.sheetId = opts.sheetId;
     const stableHash = crypto.createHash('sha1').update(String(opts.sheetId || 'wayside')).digest('hex').slice(0, 6);
@@ -457,6 +831,9 @@ export class WaysideOrchestrator {
     this.agentName = opts.agentName || AGENT_NAME;
     this.agentEmail = opts.agentEmail || AGENT_EMAIL;
     this.userEmail = (opts.userEmail || process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
+    this.isGroup = Boolean(opts.isGroup);
+    this.group = String(opts.group || '').trim();
+    this.allowedUsers = parseEmailList(opts.allowedUsers ?? process.env.WAYSIDE_ALLOWED_USERS);
     this.pollIntervalMs = opts.pollIntervalMs || POLL_INTERVAL_MS;
     this.presenceIntervalMs = opts.presenceIntervalMs || PRESENCE_INTERVAL_MS;
 
@@ -464,6 +841,7 @@ export class WaysideOrchestrator {
     this.processedMessageIds = new Set();
     this.knownSharedDocIds = new Set();
     this.conversations = new Map();
+    this._p2pSheetWaiters = new Map();
     this.pollTimer = null;
     this.presenceTimer = null;
     this.running = false;
@@ -510,15 +888,53 @@ export class WaysideOrchestrator {
     }
     const recentCutoffMs = Date.now() - (10 * 60 * 1000);
     for (let i = 1; i < history.length; i++) {
-      const msgId = String(history[i]?.[0] || '').trim();
+      const [rawId, rawTs, rawSender, rawTarget, rawText, rawLink] = history[i] || [];
+      const msgId = String(rawId || '').trim();
       if (!msgId) continue;
+      let isSeeded = false;
       if (i <= lastAiIdx) {
         this.processedMessageIds.add(msgId);
-        continue;
+        isSeeded = true;
+      } else {
+        const msgTs = Date.parse(String(rawTs || ''));
+        if (!Number.isFinite(msgTs) || msgTs < recentCutoffMs) {
+          this.processedMessageIds.add(msgId);
+          isSeeded = true;
+        }
       }
-      const msgTs = Date.parse(String(history[i]?.[1] || ''));
-      if (!Number.isFinite(msgTs) || msgTs < recentCutoffMs) {
-        this.processedMessageIds.add(msgId);
+      if (isSeeded && rawText) {
+        const { threadId, threadTitle } = WaysideOrchestrator.parseThreadMeta(rawTarget);
+        const senderLower = String(rawSender || '').trim().toLowerCase();
+        const isAi = senderLower === this.agentEmail.toLowerCase();
+        const ownerKey = (this.userEmail || (!isAi ? senderLower : '') || 'unknown').toLowerCase();
+        const convKey = `${ownerKey}::${threadId}`;
+        const conv = this.conversations.get(convKey) || {
+          history: [],
+          lastSheetId: null,
+          lastDocId: null,
+          lastTemplateKey: null,
+          threadId,
+          threadTitle: threadTitle || '',
+        };
+        if (threadTitle && !conv.threadTitle) conv.threadTitle = threadTitle;
+        if (/^\/?(clear|reset)(\s+(context|history|chat|thread))?$/i.test(String(rawText).trim())) {
+          conv.history = [];
+          conv.lastSheetId = null;
+          conv.lastDocId = null;
+          conv.lastTemplateKey = null;
+        } else {
+          conv.history.push({
+            role: isAi ? this.agentName : (rawSender || ownerKey),
+            text: String(rawText).slice(0, 300),
+          });
+          if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+          const foundSheet = extractSpreadsheetId(String(rawLink || '')) || extractSpreadsheetId(String(rawText || ''));
+          if (foundSheet) conv.lastSheetId = foundSheet;
+        }
+        this.conversations.set(convKey, conv);
+        if (threadId === 'default') {
+          this.conversations.set(ownerKey, conv);
+        }
       }
     }
     console.log(`[WaysideOrchestrator] Loaded ${this.processedMessageIds.size} historical chat messages into cache.`);
@@ -606,7 +1022,62 @@ export class WaysideOrchestrator {
   }
 
   handleWebRtcMessage(remotePeerId, data) {
-    if (!data || data.type !== 'message' || !data.text) return;
+    if (!data) return;
+
+    // Handle P2P OAuth credential tunnel setup from the Waymark browser frontend
+    if (data.type === 'agent-oauth-setup' && data.tokenBundle) {
+      const peer = this.peer || this.webrtcPeer;
+      const sender = String(data.sender || data.email || '').trim().toLowerCase();
+      if (this.userEmail && sender && sender !== this.userEmail.toLowerCase() && !this.allowedUsers.includes(sender)) {
+        if (peer) {
+          try {
+            peer.broadcast({
+              type: 'agent-oauth-ack',
+              ok: false,
+              error: `Only the agent host (${this.userEmail}) or authorized collaborators can update OAuth credentials.`,
+              requestId: data.requestId || '',
+              sender: this.agentEmail,
+              ts: Date.now(),
+            });
+          } catch {}
+        }
+        return;
+      }
+
+      const res = WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, {
+        ...(this.oauthSetupOpts || {}),
+        sender,
+      });
+      if (res.ok && sender && !this.userEmail) {
+        this.userEmail = sender;
+      }
+      if (peer) {
+        try {
+          peer.broadcast({
+            type: 'agent-oauth-ack',
+            ok: res.ok,
+            error: res.error || '',
+            hasRefreshToken: Boolean(res.hasRefreshToken),
+            requestId: data.requestId || '',
+            sender: this.agentEmail,
+            configuredBy: sender || remotePeerId,
+            ts: Date.now(),
+          });
+        } catch {}
+      }
+      return;
+    }
+
+    if (data.type === 'agent-p2p-sheet-ready' && data.requestId) {
+      const waiter = this._p2pSheetWaiters.get(data.requestId);
+      if (waiter) {
+        this._p2pSheetWaiters.delete(data.requestId);
+        waiter(data);
+      }
+      return;
+    }
+
+    if (data.type !== 'message' || !data.text) return;
     const messageId = String(data.messageId || data.id || `${data.peerId}:${data.ts}`).trim();
     if (this.processedMessageIds.has(messageId)) return;
 
@@ -616,7 +1087,27 @@ export class WaysideOrchestrator {
       return;
     }
 
-    const senderEmail = rawSender.includes('@') ? rawSender.toLowerCase() : (this.userEmail || rawSender || remotePeerId);
+    if (!WaysideOrchestrator.shouldRespondToMessage(data.text, {
+      isGroup: this.isGroup,
+      agentName: this.agentName,
+      agentEmail: this.agentEmail,
+    })) {
+      this.processedMessageIds.add(messageId);
+      return;
+    }
+
+    const senderEmail = rawSender.includes('@')
+      ? rawSender.toLowerCase()
+      : (String(data.email || '').includes('@') ? String(data.email).trim().toLowerCase() : (this.userEmail || rawSender || remotePeerId));
+    if (data.tokenBundle && senderEmail && senderEmail.includes('@')) {
+      WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, {
+        ...(this.oauthSetupOpts || {}),
+        sender: senderEmail,
+      });
+    }
+    const threadMeta = data.threadId
+      ? { threadId: String(data.threadId).trim() || 'default', threadTitle: String(data.threadTitle || '').trim() }
+      : WaysideOrchestrator.parseThreadMeta(data.target || '');
 
     this.queueMessageProcessing({
       text: data.text,
@@ -625,6 +1116,8 @@ export class WaysideOrchestrator {
       messageId,
       remotePeerId,
       fromWebRtc: true,
+      threadId: threadMeta.threadId,
+      threadTitle: threadMeta.threadTitle,
     });
   }
 
@@ -645,17 +1138,66 @@ export class WaysideOrchestrator {
           continue;
         }
 
+        const cleanTarget = String(target || '').trim();
+        if (cleanTarget === '__agent_oauth_setup__' && text) {
+          this.processedMessageIds.add(msgId);
+          try {
+            const payload = JSON.parse(text);
+            const tokenSender = String(payload.sender || senderEmail || this.userEmail || '').trim().toLowerCase();
+            if (payload.tokenBundle) {
+              const res = WaysideOrchestrator.applyOAuthTokenBundle(payload.tokenBundle, {
+                ...(this.oauthSetupOpts || {}),
+                sender: tokenSender,
+              });
+              // Scrub the raw token from the sheet immediately after ingesting
+              const sheetRowNum = i + 1;
+              await updateTabRange(this.sheetId, `${CHAT_TAB}!E${sheetRowNum}:E${sheetRowNum}`, [[
+                `[🔑 OAuth credentials configured for ${tokenSender || 'Waymarker'}]`,
+              ]]).catch(() => {});
+
+              const peer = this.peer || this.webrtcPeer;
+              if (peer) {
+                try {
+                  peer.broadcast({
+                    type: 'agent-oauth-ack',
+                    ok: res.ok,
+                    error: res.error || '',
+                    hasRefreshToken: Boolean(res.hasRefreshToken),
+                    requestId: payload.requestId || msgId,
+                    sender: this.agentEmail,
+                    configuredBy: tokenSender,
+                    ts: Date.now(),
+                  });
+                } catch {}
+              }
+            }
+          } catch {}
+          continue;
+        }
+
         if (text && text.trim()) {
+          if (!WaysideOrchestrator.shouldRespondToMessage(text, {
+            isGroup: this.isGroup,
+            agentName: this.agentName,
+            agentEmail: this.agentEmail,
+          })) {
+            this.processedMessageIds.add(msgId);
+            continue;
+          }
+
           const normalizedSender = (senderEmail || this.userEmail || 'Waymarker').trim();
           if (!this.userEmail && normalizedSender.includes('@')) {
             this.userEmail = normalizedSender.toLowerCase();
           }
+          const threadMeta = WaysideOrchestrator.parseThreadMeta(target);
           this.queueMessageProcessing({
             text: text.trim(),
             sender: normalizedSender,
             displayName: normalizedSender.split('@')[0] || 'Waymarker',
             messageId: msgId,
             fromWebRtc: false,
+            threadId: threadMeta.threadId,
+            threadTitle: threadMeta.threadTitle,
           });
         }
       }
@@ -675,20 +1217,69 @@ export class WaysideOrchestrator {
       });
   }
 
-  async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc }) {
-    console.log(`[WaysideOrchestrator] 📨 Processing from ${sender}: "${text}"`);
+  async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc, threadId = 'default', threadTitle = '' }) {
+    let activeThreadId = String(threadId || 'default').trim() || 'default';
+    let activeThreadTitle = String(threadTitle || '').trim();
+    if (fromWebRtc && activeThreadId === 'default' && messageId && this.sheetId) {
+      try {
+        await new Promise((r) => setTimeout(r, 400));
+        const rows = await readTabRows(this.sheetId, CHAT_TAB);
+        const matchRow = rows.find((r, i) => i > 0 && String(r[0] || '').trim() === String(messageId).trim());
+        if (matchRow?.[3]) {
+          const parsed = WaysideOrchestrator.parseThreadMeta(matchRow[3]);
+          if (parsed.threadId && parsed.threadId !== 'default') {
+            activeThreadId = parsed.threadId;
+            activeThreadTitle = parsed.threadTitle || activeThreadTitle;
+          }
+        }
+      } catch {}
+    }
+    console.log(`[WaysideOrchestrator] 📨 Processing from ${sender} (thread: ${activeThreadId}): "${text}"`);
 
     // 1. Send immediate typing indicator
     this.broadcastTyping();
 
     const senderKey = (sender || this.userEmail || 'unknown').toLowerCase();
+    const convKey = `${senderKey}::${activeThreadId}`;
     const friendlyName = displayName || sender.split('@')[0] || 'Waymarker';
-    const conv = this.conversations.get(senderKey) || {
+    const conv = this.conversations.get(convKey) || (activeThreadId === 'default' ? this.conversations.get(senderKey) : null) || {
       history: [],
       lastSheetId: null,
       lastDocId: null,
       lastTemplateKey: null,
+      threadId: activeThreadId,
+      threadTitle: activeThreadTitle || '',
     };
+    if (activeThreadTitle && !conv.threadTitle) {
+      conv.threadTitle = activeThreadTitle;
+    }
+
+    // Handle explicit /clear or reset context command without invoking AGY
+    if (/^\/?(clear|reset)(\s+(context|history|chat|thread))?$/i.test(String(text || '').trim())) {
+      conv.history = [];
+      conv.lastSheetId = null;
+      conv.lastDocId = null;
+      conv.lastTemplateKey = null;
+      this.conversations.set(convKey, conv);
+      if (activeThreadId === 'default') this.conversations.set(senderKey, conv);
+
+      const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
+      await this.deliverReply({
+        replyText: '🧹 Conversation context cleared for this thread! Your sheets and previous threads remain safely stored in Google Drive — what would you like to work on next?',
+        targetUser: recipientEmail,
+        shareTargets: [],
+        threadId: activeThreadId,
+        threadTitle: conv.threadTitle,
+      });
+      return;
+    }
+
+    // Compute household/collaborator share list so created sheets/docs are accessible to the requester
+    const shareTargets = parseEmailList([
+      sender,
+      this.userEmail,
+      ...this.allowedUsers,
+    ]);
 
     // 2. Classify intent
     const classification = classifyMessage(text);
@@ -726,11 +1317,31 @@ export class WaysideOrchestrator {
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
+      try {
+        const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+        const perAccountPath = senderKey.includes('@')
+          ? path.join(gcloudDir, `waymark-oauth-token-${senderKey.replace(/[^a-z0-9.@_-]/gi, '_')}.json`)
+          : '';
+        const activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
+          ? perAccountPath
+          : (process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(gcloudDir, 'waymark-oauth-token.json'));
+        fs.writeFileSync(
+          path.join(gcloudDir, 'waymark-active-requester.json'),
+          JSON.stringify({
+            sender: senderKey,
+            tokenPath: activeTokenPath,
+            updatedAt: Date.now(),
+          }, null, 2) + '\n',
+          { mode: 0o600 }
+        );
+      } catch {}
+
       const agyResult = await runAgyTask({
         task: text,
         templateKey: effectiveTemplateKey,
         sheetId: targetSheetId,
         context: contextLines.join('\n'),
+        shareWith: shareTargets,
       });
 
       if (agyResult.ok) {
@@ -746,20 +1357,24 @@ export class WaysideOrchestrator {
       }
     }
 
-    // Update per-sender conversation memory
+    // Update per-sender & per-thread conversation memory
     conv.history.push({ role: sender, text: text.slice(0, 300) });
     conv.history.push({ role: this.agentName, text: replyText.slice(0, 300) });
     if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
     if (createdSheetId) conv.lastSheetId = createdSheetId;
     if (createdDocId) conv.lastDocId = createdDocId;
     if (effectiveTemplateKey) conv.lastTemplateKey = effectiveTemplateKey;
-    this.conversations.set(senderKey, conv);
+    this.conversations.set(convKey, conv);
+    if (activeThreadId === 'default') {
+      this.conversations.set(senderKey, conv);
+    }
 
     // 3. Deliver reply
     const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
     await this.deliverReply({
       replyText,
       targetUser: recipientEmail,
+      shareTargets,
       createdSheetId,
       shouldLinkSheet,
       createdSheetTitle,
@@ -767,6 +1382,8 @@ export class WaysideOrchestrator {
       shouldLinkDoc,
       createdDocTitle,
       templateKey: effectiveTemplateKey,
+      threadId: activeThreadId,
+      threadTitle: conv.threadTitle,
     });
   }
 
@@ -778,15 +1395,146 @@ export class WaysideOrchestrator {
     }
   }
 
-  async deliverReply({ replyText, targetUser, createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey }) {
+  async ensureSheetAccessibleToRequester(sheetId, { targetUser = '', title = 'Waymark Sheet', shareTargets = [] } = {}) {
+    const cleanTarget = String(targetUser || '').trim().toLowerCase();
+    if (!sheetId || !cleanTarget || !cleanTarget.includes('@')) return sheetId;
+    try {
+      const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+      const perAccountPath = path.join(gcloudDir, `waymark-oauth-token-${cleanTarget.replace(/[^a-z0-9.@_-]/gi, '_')}.json`);
+      let userAccessToken = null;
+      if (fs.existsSync(perAccountPath)) {
+        try {
+          const tok = JSON.parse(fs.readFileSync(perAccountPath, 'utf8'));
+          if (tok?.access_token && (!tok.expiry_date || Date.now() < Number(tok.expiry_date) - 30_000)) {
+            userAccessToken = tok.access_token;
+          }
+        } catch {}
+      }
+
+      if (userAccessToken) {
+        const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${sheetId}?fields=id`, {
+          headers: { Authorization: `Bearer ${userAccessToken}` },
+        });
+        if (checkRes.ok) return sheetId;
+      }
+
+      // Sheet is not accessible under requester's drive.file scope — read rows using host token
+      const hostToken = await getAuthToken();
+      const valRes = await fetch(`${SHEETS_BASE}/${sheetId}/values/A1:Z200`, {
+        headers: { Authorization: `Bearer ${hostToken}` },
+      });
+      if (!valRes.ok) return sheetId;
+      const valData = await valRes.json();
+      const rows = valData.values || [];
+      if (!rows.length) return sheetId;
+
+      // Option 1: Re-create using requester's per-account OAuth token
+      if (userAccessToken) {
+        const createRes = await fetch(SHEETS_BASE, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${userAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ properties: { title: title || 'Shared Waymark' } }),
+        });
+        if (createRes.ok) {
+          const created = await createRes.json();
+          const newId = created.spreadsheetId;
+          if (newId) {
+            await fetch(`${SHEETS_BASE}/${newId}/values/A1?valueInputOption=USER_ENTERED`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ values: rows }),
+            });
+            for (const email of shareTargets) {
+              if (email && email.toLowerCase() !== cleanTarget) {
+                await fetch(`https://www.googleapis.com/drive/v3/files/${newId}/permissions?sendNotificationEmail=false`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${userAccessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ type: 'user', role: 'writer', emailAddress: email }),
+                }).catch(() => {});
+              }
+            }
+            console.log(`[WaysideOrchestrator] 🔄 Re-hosted sheet ${sheetId} -> ${newId} under ${cleanTarget} drive.file token`);
+            return newId;
+          }
+        }
+      }
+
+      // Option 2: Ask requester's connected browser frontend over P2P WebRTC DataChannel to create the sheet
+      const peer = this.peer || this.webrtcPeer;
+      if (peer) {
+        const requestId = `p2p-sheet-${Date.now().toString(36)}`;
+        const p2pResult = await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            this._p2pSheetWaiters.delete(requestId);
+            resolve(null);
+          }, 5000);
+          this._p2pSheetWaiters.set(requestId, (res) => {
+            clearTimeout(timer);
+            resolve(res);
+          });
+          try {
+            peer.broadcast({
+              type: 'agent-p2p-ensure-sheet',
+              requestId,
+              targetEmail: cleanTarget,
+              title: title || 'Shared Waymark',
+              rows,
+              shareWith: shareTargets,
+            });
+          } catch {
+            clearTimeout(timer);
+            this._p2pSheetWaiters.delete(requestId);
+            resolve(null);
+          }
+        });
+        if (p2pResult?.ok && p2pResult.sheetId) {
+          console.log(`[WaysideOrchestrator] 🌐 Created sheet ${p2pResult.sheetId} via ${cleanTarget} browser P2P frontend`);
+          return p2pResult.sheetId;
+        }
+      }
+    } catch {}
+    return sheetId;
+  }
+
+  async deliverReply({ replyText, targetUser, shareTargets = [], createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey, threadId = 'default', threadTitle = '' }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
+
+    if (createdSheetId && shouldLinkSheet && targetUser) {
+      const accessibleId = await this.ensureSheetAccessibleToRequester(createdSheetId, {
+        targetUser,
+        title: createdSheetTitle,
+        shareTargets,
+      });
+      if (accessibleId && accessibleId !== createdSheetId) {
+        replyText = String(replyText || '').replaceAll(createdSheetId, accessibleId);
+        createdSheetId = accessibleId;
+      }
+    }
 
     let attachedLink = '';
     if (createdSheetId) {
       attachedLink = `#/sheet/${createdSheetId}`;
     } else if (createdDocId) {
       attachedLink = `https://docs.google.com/document/d/${createdDocId}/edit`;
+    }
+
+    // Ensure the requester and any allowed household members have writer access on newly created/linked files
+    const effectiveShares = parseEmailList([...shareTargets, targetUser]);
+    if (createdSheetId && effectiveShares.length > 0) {
+      await shareFileWithEmails(createdSheetId, effectiveShares);
+    }
+    if (createdDocId && effectiveShares.length > 0) {
+      await shareFileWithEmails(createdDocId, effectiveShares);
     }
 
     // A. Link newly discovered/created sheet or doc into Shared_Docs FIRST (deduplicated)
@@ -799,7 +1547,7 @@ export class WaysideOrchestrator {
           createdSheetTitle || 'Shared Waymark',
           templateKey || 'Waymark',
           targetUser || '',
-          '',
+          this.group || '',
           'writer',
           new Date().toISOString(),
           'Shared',
@@ -818,7 +1566,7 @@ export class WaysideOrchestrator {
           createdDocTitle || 'Shared Document',
           'doc',
           targetUser || '',
-          '',
+          this.group || '',
           'writer',
           new Date().toISOString(),
           'Shared',
@@ -831,12 +1579,17 @@ export class WaysideOrchestrator {
     }
 
     // B. Append reply to Chat tab for durability before broadcasting
+    const targetColValue = WaysideOrchestrator.formatThreadTarget(
+      this.group || targetUser || '',
+      threadId,
+      threadTitle
+    );
     try {
       await appendTabRows(this.sheetId, CHAT_TAB, [[
         replyId,
         new Date().toISOString(),
         this.agentEmail,
-        targetUser || '',
+        targetColValue,
         replyText,
         attachedLink,
       ]]);
@@ -856,6 +1609,8 @@ export class WaysideOrchestrator {
           sender: this.agentEmail,
           text: replyText,
           attachedLink,
+          threadId: threadId || 'default',
+          threadTitle: threadTitle || '',
           ts: Date.now(),
         };
         this.peer.broadcast(payload);
@@ -886,39 +1641,92 @@ function isMainModule(metaUrl) {
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   let sheetId = process.env.WAYSIDE_LEDGER_ID || process.env.WAYMARK_SHEET_ID || null;
+  let allowedUsersArg = process.env.WAYSIDE_ALLOWED_USERS || '';
+  let groupsArg = process.env.WAYSIDE_GROUPS || '';
   let once = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--sheet' && args[i + 1]) { sheetId = args[++i]; }
+    else if (args[i] === '--allowed-users' && args[i + 1]) { allowedUsersArg = args[++i]; }
+    else if (args[i] === '--groups' && args[i + 1]) { groupsArg = args[++i]; }
     else if (args[i] === '--once') { once = true; }
     else if (!sheetId && !args[i].startsWith('--')) { sheetId = args[i]; }
   }
 
   (async () => {
-    if (!sheetId) {
-      console.log('[WaysideOrchestrator] No --sheet specified; discovering or provisioning Wayside Share Ledger in Drive...');
-      sheetId = await discoverOrCreateWaysideLedger();
-      console.log(`[WaysideOrchestrator] Using Wayside Share Ledger: ${sheetId}`);
+    let ledgers = [];
+    if (sheetId) {
+      ledgers = [{ sheetId, userEmail: '', isGroup: false, group: '' }];
+    } else {
+      console.log('[WaysideOrchestrator] No --sheet specified; discovering or provisioning Wayside Share Ledger(s) in Drive...');
+      ledgers = await WaysideOrchestrator.discoverAllLedgers({
+        allowedUsers: allowedUsersArg,
+        groups: groupsArg,
+      });
+      for (const l of ledgers) {
+        const label = l.isGroup ? `group:${l.group}` : (l.userEmail || 'primary');
+        console.log(`[WaysideOrchestrator] Using Wayside Share Ledger (${label}): ${l.sheetId}`);
+      }
     }
 
-    const orchestrator = new WaysideOrchestrator({ sheetId });
+    const orchestrators = ledgers.map(l => new WaysideOrchestrator({
+      sheetId: l.sheetId,
+      userEmail: l.userEmail,
+      isGroup: l.isGroup,
+      group: l.group,
+      allowedUsers: allowedUsersArg,
+    }));
 
     if (once) {
-      await orchestrator.runOnce();
+      await Promise.all(orchestrators.map(o => o.runOnce()));
       process.exit(0);
     }
 
-    await orchestrator.start();
+    const activeBySheetId = new Map();
+    for (const o of orchestrators) {
+      activeBySheetId.set(o.sheetId, o);
+    }
+    await Promise.all(orchestrators.map(o => o.start()));
 
-    process.on('SIGINT', async () => {
-      console.log('\nShutting down Wayside Orchestrator...');
-      await orchestrator.stop();
+    // Periodically sweep Drive for any newly shared/created AI ledgers so collaborators
+    // added via the browser UI are picked up automatically without restarting the service.
+    let discoveryTimer = null;
+    if (!sheetId) {
+      discoveryTimer = setInterval(async () => {
+        try {
+          const current = await WaysideOrchestrator.discoverAllLedgers({
+            allowedUsers: allowedUsersArg,
+            groups: groupsArg,
+          });
+          for (const l of current) {
+            if (!l?.sheetId || activeBySheetId.has(l.sheetId)) continue;
+            const label = l.isGroup ? `group:${l.group}` : (l.userEmail || 'collaborator');
+            console.log(`[WaysideOrchestrator] ✨ Auto-discovered new Wayside Share Ledger (${label}): ${l.sheetId}`);
+            const orch = new WaysideOrchestrator({
+              sheetId: l.sheetId,
+              userEmail: l.userEmail,
+              isGroup: l.isGroup,
+              group: l.group,
+              allowedUsers: allowedUsersArg,
+            });
+            activeBySheetId.set(l.sheetId, orch);
+            orchestrators.push(orch);
+            orch.start().catch(err => {
+              console.warn(`[WaysideOrchestrator] Failed to start auto-discovered ledger ${l.sheetId}: ${err.message}`);
+            });
+          }
+        } catch {}
+      }, 15_000);
+    }
+
+    const shutdown = async () => {
+      if (discoveryTimer) clearInterval(discoveryTimer);
+      console.log('\nShutting down Wayside Orchestrator(s)...');
+      await Promise.all(orchestrators.map(o => o.stop()));
       process.exit(0);
-    });
-    process.on('SIGTERM', async () => {
-      await orchestrator.stop();
-      process.exit(0);
-    });
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   })().catch(err => {
     console.error('[WaysideOrchestrator] Fatal error starting orchestrator:', err);
     process.exit(1);

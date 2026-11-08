@@ -1,4 +1,3 @@
-import * as storage from '../storage.js';
 /* ============================================================
    templates/blog.js — Blog template
    Renders a Google Sheet of blog posts (linked to Google Docs)
@@ -6,7 +5,7 @@ import * as storage from '../storage.js';
    using the Google Docs publish URL in a sandboxed iframe.
    ============================================================ */
 
-import { el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml, exportDocAsHtmlPublic, copyToClipboard } from './shared.js';
+import { getRaw, setRaw, el, cell, registerTemplate, delegateEvent, showToast, getUserName, createGoogleDoc, exportDocAsHtml, exportDocAsHtmlPublic, copyToClipboard } from './shared.js';
 
 /* ---------- Helpers ---------- */
 
@@ -339,7 +338,7 @@ const READING_MODES = [
 const BLOG_WIDTH_KEY = 'waymark-blog-width';
 
 function getReadingModeIdx() {
-  const v = parseInt(storage.getRaw(BLOG_WIDTH_KEY) || '1', 10);
+  const v = parseInt(getRaw(BLOG_WIDTH_KEY) || '1', 10);
   return isNaN(v) ? 1 : Math.min(Math.max(v, 0), READING_MODES.length - 1);
 }
 
@@ -347,7 +346,7 @@ function applyReadingMode(article, idx, btns) {
   const mode = READING_MODES[idx];
   article.style.setProperty('--blog-col', mode.col);
   article.style.setProperty('--blog-font', mode.font);
-  storage.setRaw(BLOG_WIDTH_KEY, String(idx));
+  setRaw(BLOG_WIDTH_KEY, String(idx));
   btns.forEach((b, i) => b.classList.toggle('blog-width-btn-active', i === idx));
 }
 

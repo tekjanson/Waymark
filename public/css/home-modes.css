@@ -434,6 +434,19 @@
 #wayboard-root .wayside-file small { color: var(--muted); }
 #wayboard-root #wayside-remote-audio { display: none; }
 #wayboard-root .chat-self { color: var(--text); }
+#wayboard-root .social-chat-self.chat-self,
+#wayboard-root .social-chat-self .social-chat-bubble-body {
+  color: #ffffff;
+  padding: 8px 12px;
+}
+#wayboard-root .social-chat-self .social-chat-bubble-name {
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 1;
+}
+#wayboard-root .social-chat-self .social-chat-bubble-time {
+  color: rgba(255, 255, 255, 0.78);
+  opacity: 1;
+}
 #wayboard-root .chat-peer { color: var(--muted); }
 #wayboard-root .avatar-online { border-color: var(--green); }
 #wayboard-root .avatar-away { border-color: var(--amber); }
@@ -489,6 +502,102 @@
 #wayboard-root .social-chat-panel.social-chat-embedded .social-subtitle-actions {
   flex: 0 0 auto;
   gap: 3px;
+}
+#wayboard-root .wayside-thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--inset-bg, rgba(0, 0, 0, 0.12));
+  min-width: 0;
+}
+#wayboard-root .wayside-thread-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#wayboard-root .wayside-thread-btn {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  font-size: 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+#wayboard-root .wayside-thread-empty {
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin: 6px 0;
+}
+.wayside-share-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.wayside-share-link-row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#wayside-share-agent-modal .modal {
+  width: min(92vw, 620px);
+  max-width: 620px;
+}
+.wayside-agent-section {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--color-bg-secondary, rgba(148, 163, 184, 0.06));
+  margin-bottom: 12px;
+}
+.wayside-agent-section:last-child {
+  margin-bottom: 0;
+}
+.wayside-agent-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text, #0f172a);
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wayside-agent-section-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #64748b);
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+.wayside-oauth-tunnel-status {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--color-text, #1e293b);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.wayside-oauth-tunnel-status.is-success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.wayside-oauth-tunnel-status.is-error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
 }
 div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 

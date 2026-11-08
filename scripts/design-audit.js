@@ -29,13 +29,22 @@ const https = require('https');
 
 /* ────────── Configuration ────────── */
 
-const PROVIDER = (process.env.DESIGN_AUDIT_PROVIDER || 'anthropic').toLowerCase();
+const PROVIDER = (
+  process.env.DESIGN_AUDIT_PROVIDER
+  || ((process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY) ? 'gemini' : 'gemini')
+).toLowerCase();
 const MODEL = process.env.DESIGN_AUDIT_MODEL || (
-  PROVIDER === 'openai' ? 'gpt-4o' : 'claude-sonnet-4-20250514'
+  PROVIDER === 'openai'
+    ? 'gpt-4o'
+    : PROVIDER === 'anthropic'
+      ? 'claude-sonnet-4-20250514'
+      : 'gemini-2.5-flash'
 );
 const API_KEY = PROVIDER === 'openai'
   ? process.env.OPENAI_API_KEY
-  : process.env.ANTHROPIC_API_KEY;
+  : PROVIDER === 'anthropic'
+    ? process.env.ANTHROPIC_API_KEY
+    : (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY);
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, '..', 'design-audit-screenshots');
 const OUTPUT_FILE = process.env.DESIGN_AUDIT_OUT
@@ -237,7 +246,41 @@ async function analyzeWithOpenAI(images, prompt) {
   return res.data.choices[0].message.content;
 }
 
+async function analyzeWithGemini(images, prompt) {
+  const parts = [];
+  for (const img of images) {
+    parts.push({
+      inline_data: {
+        mime_type: getMediaType(img.path),
+        data: readImageAsBase64(img.path),
+      },
+    });
+    parts.push({ text: `↑ ${img.label}` });
+  }
+  parts.push({ text: prompt });
+
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { maxOutputTokens: 4096 },
+  });
+
+  const res = await httpsRequest({
+    hostname: 'generativelanguage.googleapis.com',
+    path: `/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${encodeURIComponent(API_KEY)}`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, body);
+
+  if (res.status !== 200) {
+    throw new Error(`Gemini API error ${res.status}: ${JSON.stringify(res.data)}`);
+  }
+  const candParts = res.data?.candidates?.[0]?.content?.parts || [];
+  return candParts.map(p => p.text || '').join('');
+}
+
 async function analyze(images, prompt) {
+  if (PROVIDER === 'gemini') return analyzeWithGemini(images, prompt);
   if (PROVIDER === 'openai') return analyzeWithOpenAI(images, prompt);
   return analyzeWithAnthropic(images, prompt);
 }

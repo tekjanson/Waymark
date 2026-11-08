@@ -132,18 +132,20 @@ async function getSaToken() {
   }
 }
 
-let _cachedUserEmail = null;
+const _cachedUserEmails = new Map();
 async function getAuthenticatedUserEmail(userToken) {
-  if (_cachedUserEmail) return _cachedUserEmail;
   if (!userToken) return null;
+  const cacheKey = userToken.slice(-24);
+  if (_cachedUserEmails.has(cacheKey)) return _cachedUserEmails.get(cacheKey);
   try {
     const res = await fetch(`${DRIVE_BASE}/about?fields=user`, {
       headers: { Authorization: `Bearer ${userToken}` },
     });
     if (!res.ok) return null;
     const data = await res.json();
-    _cachedUserEmail = data?.user?.emailAddress?.trim() || null;
-    return _cachedUserEmail;
+    const email = data?.user?.emailAddress?.trim() || null;
+    if (email) _cachedUserEmails.set(cacheKey, email);
+    return email;
   } catch {
     return null;
   }
@@ -157,23 +159,15 @@ async function getToken() {
   throw new Error("No Google authentication configured. Provide GOOGLE_APPLICATION_CREDENTIALS or WAYMARK_OAUTH_TOKEN_PATH.");
 }
 
-/**
- * Get an OAuth access token for the human user (for sheet creation).
- * Reads WAYMARK_OAUTH_TOKEN_PATH, refreshes if expired.
- * Returns null if the token file is missing — caller falls back to SA.
- */
-async function getUserOAuthToken() {
-  const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    path.join(os.homedir(), ".config", "gcloud", "waymark-oauth-token.json");
+async function loadTokenFromPath(tokenPath) {
   let tokenData;
   try {
     const { readFileSync: read } = await import("node:fs");
     tokenData = JSON.parse(read(tokenPath, "utf8"));
   } catch {
-    return null; // token file missing — caller should fall back
+    return null;
   }
 
-  // Refresh if expired or missing expiry_date (with 60s buffer)
   const expiryMs = Number(tokenData.expiry_date);
   if (!tokenData.access_token || !Number.isFinite(expiryMs) || Date.now() >= (expiryMs - 60_000)) {
     if (!tokenData.refresh_token) return null;
@@ -204,6 +198,36 @@ async function getUserOAuthToken() {
   }
 
   return tokenData.access_token;
+}
+
+/**
+ * Get an OAuth access token for the human user (for sheet creation).
+ * Checks active requester token first (if set by WaysideOrchestrator), then
+ * WAYMARK_OAUTH_TOKEN_PATH, refreshing if expired.
+ * Returns null if the token file is missing — caller falls back to SA.
+ */
+async function getUserOAuthToken() {
+  const gcloudDir = path.join(os.homedir(), ".config", "gcloud");
+  if (!process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+    try {
+      const activePath = path.join(gcloudDir, "waymark-active-requester.json");
+      if (existsSync(activePath)) {
+        const activeMeta = JSON.parse(readFileSync(activePath, "utf8"));
+        if (
+          activeMeta?.tokenPath &&
+          existsSync(activeMeta.tokenPath) &&
+          Date.now() - Number(activeMeta.updatedAt || 0) < 10 * 60 * 1000
+        ) {
+          const reqToken = await loadTokenFromPath(activeMeta.tokenPath);
+          if (reqToken) return reqToken;
+        }
+      }
+    } catch {}
+  }
+
+  const defaultPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+    path.join(gcloudDir, "waymark-oauth-token.json");
+  return loadTokenFromPath(defaultPath);
 }
 
 /* ---------- REST helpers ---------- */
@@ -765,7 +789,22 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
   return { success: true, updated: results, rowIndex: parsedRowIndex };
 }
 
+function mergeAutoShareEmails(shareWith = []) {
+  const envRaw = [
+    process.env.WAYMARK_AUTO_SHARE_EMAILS || "",
+    process.env.WAYSIDE_ALLOWED_USERS || "",
+  ].join(",");
+  const combined = [
+    ...(Array.isArray(shareWith) ? shareWith : []),
+    ...envRaw.split(","),
+  ]
+    .map(e => String(e || "").trim().toLowerCase())
+    .filter(e => e && e.includes("@") && !e.endsWith(".internal") && !e.endsWith(".local"));
+  return [...new Set(combined)];
+}
+
 async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, shareWith = [], seedRows = [] }) {
+  shareWith = mergeAutoShareEmails(shareWith);
   // Fall back to the env-configured default folder so sheets land in the shared Waymark Drive folder
   const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
 
@@ -894,6 +933,7 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, sh
 
 async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith = [] }) {
   if (!title) throw new Error("title is required.");
+  shareWith = mergeAutoShareEmails(shareWith);
 
   const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
 

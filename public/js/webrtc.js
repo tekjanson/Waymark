@@ -780,6 +780,12 @@ export class WaymarkConnect {
           document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', { detail: d }));
         }
         break;
+      case 'agent-oauth-setup':
+      case 'agent-oauth-ack':
+        if (typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent(`waymark:${d.type}`, { detail: d }));
+        }
+        break;
       case 'leave':
         if (this._peers.get(d.peerId)?.inCall) this.onCallEnded(d.peerId);
         this._peers.delete(d.peerId);
@@ -1421,6 +1427,12 @@ export class WaymarkConnect {
           case 'waymark-sheet-update':
             if (typeof document !== 'undefined') {
               document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', { detail: m }));
+            }
+            break;
+          case 'agent-oauth-setup':
+          case 'agent-oauth-ack':
+            if (typeof document !== 'undefined') {
+              document.dispatchEvent(new CustomEvent(`waymark:${m.type}`, { detail: { ...m, remotePeerId } }));
             }
             break;
           case 'waymark-notification':

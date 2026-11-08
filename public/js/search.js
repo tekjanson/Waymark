@@ -52,7 +52,8 @@ async function performSearch(query) {
     userData.addSearchEntry(query, result.matches?.length || 0);
   } catch (err) {
     summaryEl.textContent = '';
-    resultsEl.innerHTML = `<p class="empty-state">Search failed: ${err.message}</p>`;
+    resultsEl.innerHTML = '';
+    resultsEl.append(el('p', { className: 'empty-state' }, [`Search failed: ${err.message}`]));
   }
 }
 

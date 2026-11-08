@@ -1,4 +1,3 @@
-import * as storage from '../../storage.js';
 /* ============================================================
    floorplan/index.js — Floor Plan template
 
@@ -8,14 +7,16 @@ import * as storage from '../../storage.js';
    ============================================================ */
 
 import {
+  api,
   cell,
   el,
+  getRaw,
   readSheetTab,
   registerTemplate,
+  setRaw,
   showToast,
   writeSheetTab,
 } from '../shared.js';
-import { api } from '../../api-client.js';
 import { openFloorplanAiRenderModal } from './ai-render.js';
 import {
   UNITS_PER_FOOT,
@@ -109,7 +110,7 @@ function isDebugEnabled() {
   if (window.__WAYMARK_LOCAL) return true;
   if (window.location && window.location.hostname === 'localhost') return true;
   try {
-    return storage.getRaw('waymark_floorplan_debug') === '1';
+    return getRaw('waymark_floorplan_debug') === '1';
   } catch {
     return false;
   }
@@ -497,7 +498,7 @@ const definition = {
     }
     let localDraft = null;
     try {
-      const rawDraft = storage.getRaw(draftStorageKey);
+      const rawDraft = getRaw(draftStorageKey);
       if (rawDraft) localDraft = JSON.parse(rawDraft);
     } catch (error) {
       console.warn('[floorplan] draft-load failed:', error);
@@ -844,7 +845,7 @@ const definition = {
       try {
         if (cloudSaveBlocked) payload.requiresDrivePicker = true;
         else delete payload.requiresDrivePicker;
-        storage.setRaw(draftStorageKey, JSON.stringify(payload));
+        setRaw(draftStorageKey, JSON.stringify(payload));
       } catch (error) {
         console.warn('[floorplan] draft-save failed:', error);
       }
@@ -863,11 +864,11 @@ const definition = {
 
     function markLocalDraftSynced(payload) {
       try {
-        const draft = JSON.parse(storage.getRaw(draftStorageKey) || 'null');
+        const draft = JSON.parse(getRaw(draftStorageKey) || 'null');
         if (draft?.updatedAt !== payload.updatedAt) return;
         draft.syncedAt = payload.updatedAt;
         delete draft.requiresDrivePicker;
-        storage.setRaw(draftStorageKey, JSON.stringify(draft));
+        setRaw(draftStorageKey, JSON.stringify(draft));
       } catch (error) {
         console.warn('[floorplan] draft-sync-marker failed:', error);
       }
@@ -912,10 +913,10 @@ const definition = {
         if (error?.status === 403) {
           cloudSaveBlocked = true;
           try {
-            const draft = JSON.parse(storage.getRaw(draftStorageKey) || 'null');
+            const draft = JSON.parse(getRaw(draftStorageKey) || 'null');
             if (draft) {
               draft.requiresDrivePicker = true;
-              storage.setRaw(draftStorageKey, JSON.stringify(draft));
+              setRaw(draftStorageKey, JSON.stringify(draft));
             }
           } catch (storageError) {
             console.warn('[floorplan] draft-access-marker failed:', storageError);

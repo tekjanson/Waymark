@@ -72,13 +72,19 @@ export class SocialChatWidget {
     this.password = opts.password || null;
     this.titleText = opts.title || (this.mode === 'embedded' ? '💬 Wayside' : '📡 Live Chat');
     this.subtitleText = opts.subtitle || (this.mode === 'embedded' ? 'Pick a crew or Waymarker to trade Waymarks' : 'Listening…');
+    this.baseSubtitle = this.subtitleText;
     this.signal = opts.signal || null;
     this.persistChat = opts.persistChat || null;
+    this.getMessageExtra = opts.getMessageExtra || null;
 
     this.userEmail = opts.userEmail || '';
     this.onClose = opts.onClose || (() => {});
     this.onOpenSheet = opts.onOpenSheet || (() => {});
     this.onConnectDrive = opts.onConnectDrive || (() => {});
+    this.onShareAgent = opts.onShareAgent || (() => {});
+    this.onSelectThread = opts.onSelectThread || (() => {});
+    this.onNewThread = opts.onNewThread || (() => {});
+    this.onClearThread = opts.onClearThread || (() => {});
     this.onBeforeStartCall = opts.onBeforeStartCall || null;
     this.onPeerMessage = opts.onPeerMessage || null;
 
@@ -86,6 +92,8 @@ export class SocialChatWidget {
     this.showMinimize = opts.showMinimize !== undefined ? opts.showMinimize : (this.mode === 'floating');
     this.showSheetLink = opts.showSheetLink !== undefined ? !!opts.showSheetLink : (this.mode === 'embedded');
     this.showConnectDrive = opts.showConnectDrive !== undefined ? !!opts.showConnectDrive : (this.mode === 'embedded');
+    this.showShareAgent = Boolean(opts.showShareAgent);
+    this.showAgentThreads = Boolean(opts.showAgentThreads);
 
     this._chatLog = [];
     this._unreadCount = 0;
@@ -103,13 +111,17 @@ export class SocialChatWidget {
       signal: this.signal,
       persistChat: this.persistChat,
       onMessage: (msg) => {
-        this.appendMessage({
-          id: msg.id,
-          sender: msg.sender || msg.name || 'Collaborator',
-          text: msg.text,
-          ts: msg.ts,
-          self: msg.self,
-        });
+        const msgThread = String(msg.threadId || 'default').trim() || 'default';
+        const currentThread = String(this._activeThreadId || 'default').trim() || 'default';
+        if (!this.showAgentThreads || msg.self || msgThread === currentThread) {
+          this.appendMessage({
+            id: msg.id,
+            sender: msg.sender || msg.name || 'Collaborator',
+            text: msg.text,
+            ts: msg.ts,
+            self: msg.self,
+          });
+        }
         if (!msg.self && typeof this.onPeerMessage === 'function') {
           this.onPeerMessage(msg);
         }
@@ -120,8 +132,8 @@ export class SocialChatWidget {
           this.peerCount.textContent = `${count} peer${count !== 1 ? 's' : ''}`;
         }
         if (this.mode === 'embedded' && this.subtitle && !this.session.inCall) {
-          const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
-          this.setSubtitle(`P2P · ${count} connected · ${linkText}`);
+          const base = this.baseSubtitle || (this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share');
+          this.setSubtitle(`P2P · ${count} connected · ${base}`, { isBase: false });
         }
       },
       onStatusChanged: (status) => {
@@ -182,8 +194,11 @@ export class SocialChatWidget {
     if (this.titleEl) this.titleEl.textContent = title;
   }
 
-  setSubtitle(subtitle) {
+  setSubtitle(subtitle, { isBase = true } = {}) {
     this.subtitleText = subtitle;
+    if (isBase && subtitle) {
+      this.baseSubtitle = subtitle;
+    }
     if (this.subtitleTextEl) this.subtitleTextEl.textContent = subtitle;
   }
 
@@ -192,7 +207,9 @@ export class SocialChatWidget {
     this.sheetId = String(sheetId);
     const connect = this.session.setSignaling(this.sheetId, signal);
     if (this.mode === 'embedded' && !this.session.inCall) {
-      this.setSubtitle(`Linked: ${this.sheetId}`);
+      if (!this.baseSubtitle || this.baseSubtitle === 'Linked on first share' || this.baseSubtitle.startsWith('Linked:')) {
+        this.setSubtitle(`Linked: ${this.sheetId}`);
+      }
     }
     return connect;
   }
@@ -254,6 +271,16 @@ export class SocialChatWidget {
       linkActions.append(this.connectBtn);
     }
 
+    if (this.showShareAgent) {
+      this.shareAgentBtn = el('button', {
+        className: 'btn btn-muted',
+        id: `${idPrefix}-share-agent-btn`,
+        title: 'Share this Waymark AI agent with family or collaborators',
+        on: { click: () => this.onShareAgent() },
+      }, ['🤝 Share Agent']);
+      linkActions.append(this.shareAgentBtn);
+    }
+
     this.settingsBtn = el('button', {
       className: 'social-chat-settings-btn btn-icon',
       title: 'Chat settings',
@@ -303,6 +330,41 @@ export class SocialChatWidget {
       className: 'chat-sheet-line',
       id: `${idPrefix}-sheet-line`,
     }, [this.subtitleTextEl, subtitleActions]);
+
+    /* ---------- Agent Conversation Thread Bar (Agent chats only) ---------- */
+    this.agentThreadBar = null;
+    this.threadSelect = null;
+    if (this.showAgentThreads) {
+      this.threadSelect = el('select', {
+        className: 'wayside-thread-select',
+        id: `${idPrefix}-thread-select`,
+        title: 'Switch between saved AI conversations in Google Drive',
+        on: { change: (e) => this.onSelectThread(e.target.value) },
+      }, [
+        el('option', { value: 'default' }, ['💬 General Conversation (0)']),
+      ]);
+
+      this.newThreadBtn = el('button', {
+        type: 'button',
+        className: 'btn btn-muted wayside-thread-btn',
+        id: `${idPrefix}-new-thread-btn`,
+        title: 'Start a new conversation thread (previous threads stay saved in Google Drive)',
+        on: { click: () => this.onNewThread() },
+      }, ['＋ New']);
+
+      this.clearThreadBtn = el('button', {
+        type: 'button',
+        className: 'btn btn-muted wayside-thread-btn',
+        id: `${idPrefix}-clear-thread-btn`,
+        title: 'Clear active context and start a fresh thread',
+        on: { click: () => this.onClearThread() },
+      }, ['🧹 Clear']);
+
+      this.agentThreadBar = el('div', {
+        className: 'wayside-thread-bar',
+        id: `${idPrefix}-thread-bar`,
+      }, [this.threadSelect, this.newThreadBtn, this.clearThreadBtn]);
+    }
 
     /* ---------- Settings Panel ---------- */
     this.settingsPanel = el('div', { className: 'social-chat-settings-panel hidden' });
@@ -479,6 +541,7 @@ export class SocialChatWidget {
     this.root.append(
       header,
       ...(!isFloating ? [this.subtitle] : []),
+      ...(this.agentThreadBar ? [this.agentThreadBar] : []),
       this.settingsPanel,
       this.incomingCallModal,
       this.mediaContainer,
@@ -808,7 +871,35 @@ export class SocialChatWidget {
     }
   }
 
+  clearMessages(emptyHint = '') {
+    if (!this.messages) return;
+    this.messages.replaceChildren();
+    this._chatLog = [];
+    if (emptyHint) {
+      this.messages.append(
+        el('div', { className: 'wayside-thread-empty' }, [emptyHint])
+      );
+    }
+  }
+
+  setThreads(threads = [], activeThreadId = 'default') {
+    this._activeThreadId = String(activeThreadId || 'default').trim() || 'default';
+    if (!this.threadSelect) return;
+    const list = Array.isArray(threads) && threads.length
+      ? threads
+      : [{ id: 'default', label: '💬 General Conversation (0)', title: 'General Conversation' }];
+    const activeMeta = list.find(t => t.id === this._activeThreadId);
+    this._activeThreadTitle = activeMeta?.title || '';
+    this.threadSelect.replaceChildren(
+      ...list.map(t => el('option', { value: t.id }, [t.label]))
+    );
+    const hasActive = list.some(t => t.id === this._activeThreadId);
+    this.threadSelect.value = hasActive ? this._activeThreadId : list[0].id;
+  }
+
   appendMessage({ id, sender, text, ts, self = false, failed = false, history = false }) {
+    const emptyEl = this.messages?.querySelector('.wayside-thread-empty');
+    if (emptyEl) emptyEl.remove();
     const isSelf = history
       ? (self || (sender === this.displayName) || (this.userEmail && (sender || '').toLowerCase() === this.userEmail.toLowerCase()))
       : Boolean(self);
@@ -872,7 +963,11 @@ export class SocialChatWidget {
   sendMessage() {
     const text = this.input.value.trim();
     if (!text || !this.session) return;
-    this.session.sendMessage(text);
+    const baseExtra = this._activeThreadId && this._activeThreadId !== 'default'
+      ? { threadId: this._activeThreadId, threadTitle: this._activeThreadTitle || '' }
+      : {};
+    const customExtra = typeof this.getMessageExtra === 'function' ? (this.getMessageExtra(text) || {}) : {};
+    this.session.sendMessage(text, { ...baseExtra, ...customExtra });
     this.input.value = '';
   }
 

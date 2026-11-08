@@ -1,4 +1,3 @@
-import { hasUserMedia, getUserMediaStream } from '../../camera-capture.js';
 /* ============================================================
    calorie/scanner.js — Hybrid barcode scanning
 
@@ -8,7 +7,7 @@ import { hasUserMedia, getUserMediaStream } from '../../camera-capture.js';
    Food DB, then Open Food Facts, and hands the result to the serving modal.
    ============================================================ */
 
-import { el, showToast } from '../shared.js';
+import { el, showToast, hasUserMedia, getUserMediaStream } from '../shared.js';
 import { lookupBarcode, loadFoodDatabase } from './helpers.js';
 import { openServingModal } from './modal.js';
 
