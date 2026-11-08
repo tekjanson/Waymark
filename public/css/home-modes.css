@@ -23,6 +23,29 @@
     --text: #f0f6fc; --muted: #8b949e; --inset-bg: rgba(0,0,0,0.18); --radius: 12px; --font: system-ui, -apple-system, sans-serif; }
 #wayboard-root * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
 #wayboard-root { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; transition: background 0.35s ease, color 0.35s ease; }
+
+/* ---------- Theme bridge: map the app's generic --color-* tokens onto the
+   active layout palette so embedded Waymark templates and the Wayside social
+   chat adopt the chosen layout instead of the global app theme. Semantic hues
+   (error/warning/danger) are left alone so Pass/Fail-style cues stay correct. */
+#wayboard-root {
+  --color-bg: var(--panel);
+  --color-surface: var(--card);
+  --color-surface-alt: var(--panel);
+  --color-surface-hover: var(--panel);
+  --color-surface-raised: var(--card);
+  --color-text: var(--text);
+  --color-heading: var(--text);
+  --color-text-muted: var(--muted);
+  --color-text-secondary: var(--muted);
+  --color-muted: var(--muted);
+  --color-label: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--accent);
+  --color-accent: var(--accent);
+  --color-success: var(--green);
+}
+
 #wayboard-root .workspace { display: flex; flex: 1; overflow: hidden; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root main.canvas { flex: 1; padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root .greeting-banner { background: var(--panel); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; transition: all 0.35s; }
@@ -47,12 +70,12 @@
 #wayboard-root .widget { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.3s; position: relative; }
 #wayboard-root .widget:hover { border-color: var(--accent); }
 #wayboard-root .btn { background: var(--accent); color: #fff; border: none; padding: 5px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; }
-#wayboard-root aside.wayside { width: 320px; background: var(--panel); border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
-#wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--card); border-radius: 6px; margin-top: 4px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
+#wayboard-root aside.wayside { width: 320px; background: var(--panel); border-left: 1px solid var(--border); padding: 16px 15px; display: flex; flex-direction: column; gap: 13px; flex-shrink: 0; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+#wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--card); border-radius: 7px; margin-top: 5px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
 #wayboard-root .crew-row.active,
 #wayboard-root .crew-row:hover { border-color: var(--accent); }
 #wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
-#wayboard-root .avatar-row { display: flex; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
+#wayboard-root .avatar-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
 #wayboard-root .avatar-ai { border-color: var(--accent); background: rgba(59,130,246,0.12); font-size: 14px; }
 #wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; flex: 1 1 auto; height: clamp(240px, 42vh, 560px); min-height: 220px; max-height: 80vh; resize: vertical; overflow: auto; }
@@ -73,6 +96,20 @@
 #wayboard-root .wayboard-grid { grid-template-columns: 1fr; }
 #wayboard-root aside.wayside { width: 100%; border-left: none; border-top: 1px solid var(--border); }
 
+/* ---------- Layout palettes (apply at every width so each layout keeps
+   its identity on mobile too; structural overrides below are desktop-only) ---------- */
+#wayboard-root.mode-2 { --bg:#f5f6fb; --panel:#ffffff; --card:#ffffff; --border:#e5e8f2; --text:#1d2433; --muted:#64708a; --accent:#6366f1; --radius:18px; }
+#wayboard-root.mode-3 { --bg:#f7f6f3; --panel:#ffffff; --card:#ffffff; --border:#e7e3da; --text:#1f2a28; --muted:#6c7b77; --accent:#0d9488; --radius:14px; }
+#wayboard-root.mode-4 { --bg:#1a1016; --panel:#241720; --card:#2d1d28; --border:#3f2a38; --accent:#ec4899; --green:#34d399; --text:#fdf2f8; --muted:#c69bb3; }
+#wayboard-root.mode-5 { --bg:#0b0f14; --panel:#131922; --card:#1a222d; --border:#2a3545; --accent:#38bdf8; }
+#wayboard-root.mode-6 { --bg:#0c0d15; --panel:#13141f; --card:#191b29; --border:#282a3d; --accent:#818cf8; }
+#wayboard-root.mode-7 { --bg:#efe9dd; --panel:#fbf7ef; --card:#fffdf8; --border:#e0d6c4; --text:#2b2418; --muted:#7a6f59; --accent:#c2410c; --radius:10px; }
+#wayboard-root.mode-8 { --bg:#05080a; --panel:#0a1014; --card:#0e171c; --border:#163038; --accent:#22d3ee; --green:#22d3ee; --text:#dbf5fb; --muted:#5f93a0; --radius:4px; --font:'JetBrains Mono', ui-monospace, monospace; }
+#wayboard-root.mode-9 { --bg:#0d0b12; --panel:#15121d; --card:#1c1827; --border:#2d2740; --accent:#a855f7; --radius:16px; }
+#wayboard-root.mode-10 { --bg:#0b1020; --panel:#111833; --card:#16203f; --border:#243357; --accent:#60a5fa; --radius:14px; }
+#wayboard-root.mode-11 { --bg:#faf7f0; --panel:#fffdf8; --card:#fffdf8; --border:#e6ddc9; --text:#211c13; --muted:#6f6552; --accent:#b45309; --radius:6px; --font: Georgia, 'Times New Roman', serif; }
+#wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#20262c; --accent:#f59e0b; --green:#22c55e; --text:#e8edf2; --muted:#7a8894; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
+
 /* ---------- Desktop layouts (>= 769px) ---------- */
 @media (min-width: 769px) {
   #wayboard-root .workspace { flex-direction: row; overflow: hidden; }
@@ -83,7 +120,6 @@
   /* 1 · Command Center — balanced dark dashboard with a right comms rail (base). */
 
   /* 2 · Bento Grid — airy light tiles, dense auto-flow, soft radius. */
-  #wayboard-root.mode-2 { --bg:#f5f6fb; --panel:#ffffff; --card:#ffffff; --border:#e5e8f2; --text:#1d2433; --muted:#64708a; --accent:#6366f1; --radius:18px; }
   #wayboard-root.mode-2 .greeting-banner { background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 4px 2px 12px; }
   #wayboard-root.mode-2 .wayboard-grid { grid-template-columns: repeat(4, 1fr); grid-auto-flow: dense; gap: 16px; }
   #wayboard-root.mode-2 .wayboard-widget-wide { grid-column: span 2; }
@@ -92,7 +128,6 @@
   #wayboard-root.mode-2 .wayboard-widget { border-radius: 18px; }
 
   /* 3 · Focus — calm centred reading column, de-emphasised side rail. */
-  #wayboard-root.mode-3 { --bg:#f7f6f3; --panel:#ffffff; --card:#ffffff; --border:#e7e3da; --text:#1f2a28; --muted:#6c7b77; --accent:#0d9488; --radius:14px; }
   #wayboard-root.mode-3 .greeting-banner { background: transparent; border: none; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 0; }
   #wayboard-root.mode-3 #home-greeting-text { font-size: 30px; }
   #wayboard-root.mode-3 .wayboard-section { max-width: 860px; margin: 0 auto; width: 100%; }
@@ -100,19 +135,16 @@
   #wayboard-root.mode-3 aside.wayside { width: 240px; background: transparent; border-left: 1px dashed var(--border); }
 
   /* 4 · Social Hub — the Wayside leads from the left, widgets support. */
-  #wayboard-root.mode-4 { --bg:#1a1016; --panel:#241720; --card:#2d1d28; --border:#3f2a38; --accent:#ec4899; --green:#34d399; --text:#fdf2f8; --muted:#c69bb3; }
   #wayboard-root.mode-4 aside.wayside { order: -1; width: 380px; border-left: none; border-right: 1px solid var(--border); border-top: none; }
   #wayboard-root.mode-4 .wayboard-grid { grid-template-columns: repeat(2, 1fr); }
 
   /* 5 · Split Rail — greeting becomes a slim left rail, grid fills the centre. */
-  #wayboard-root.mode-5 { --bg:#0b0f14; --panel:#131922; --card:#1a222d; --border:#2a3545; --accent:#38bdf8; }
   #wayboard-root.mode-5 main.canvas { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 18px; }
   #wayboard-root.mode-5 .greeting-banner { flex-direction: column; align-items: flex-start; gap: 10px; width: 210px; flex-shrink: 0; }
   #wayboard-root.mode-5 .wayboard-section { flex: 1; min-width: 0; }
   #wayboard-root.mode-5 .wayboard-grid { grid-template-columns: repeat(2, 1fr); }
 
   /* 6 · Stream — one vertical feed of full-width cards, comms pinned on top. */
-  #wayboard-root.mode-6 { --bg:#0c0d15; --panel:#13141f; --card:#191b29; --border:#282a3d; --accent:#818cf8; }
   #wayboard-root.mode-6 .workspace { flex-direction: column; overflow-y: auto; }
   #wayboard-root.mode-6 main.canvas { order: 2; }
   #wayboard-root.mode-6 aside.wayside { order: 1; width: 100%; border-left: none; border-bottom: 1px solid var(--border); border-top: none; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
@@ -120,39 +152,33 @@
   #wayboard-root.mode-6 .wayboard-section { max-width: 760px; margin: 0 auto; width: 100%; }
 
   /* 7 · Pinboard — tactile dot-grid, masonry columns, hover lift. */
-  #wayboard-root.mode-7 { --bg:#efe9dd; --panel:#fbf7ef; --card:#fffdf8; --border:#e0d6c4; --text:#2b2418; --muted:#7a6f59; --accent:#c2410c; --radius:10px; }
   #wayboard-root.mode-7 main.canvas { background-image: radial-gradient(rgba(120,100,70,0.22) 1.5px, transparent 1.5px); background-size: 22px 22px; }
   #wayboard-root.mode-7 .wayboard-grid { display: block; column-count: 3; column-gap: 14px; }
   #wayboard-root.mode-7 .wayboard-widget { break-inside: avoid; margin-bottom: 14px; transition: transform 200ms ease; }
   #wayboard-root.mode-7 .wayboard-widget:hover { transform: translateY(-3px) rotate(-0.6deg); }
 
   /* 8 · HUD — neon command deck, monospace, glowing left edges. */
-  #wayboard-root.mode-8 { --bg:#05080a; --panel:#0a1014; --card:#0e171c; --border:#163038; --accent:#22d3ee; --green:#22d3ee; --text:#dbf5fb; --muted:#5f93a0; --radius:4px; --font:'JetBrains Mono', ui-monospace, monospace; }
   #wayboard-root.mode-8 .wayboard-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
   #wayboard-root.mode-8 .wayboard-widget,
   #wayboard-root.mode-8 .greeting-banner { border-left: 3px solid var(--accent); box-shadow: inset 0 0 0 1px rgba(34,211,238,0.08), 0 0 18px rgba(34,211,238,0.06); }
 
   /* 9 · Gallery — preview-forward, generous cards. */
-  #wayboard-root.mode-9 { --bg:#0d0b12; --panel:#15121d; --card:#1c1827; --border:#2d2740; --accent:#a855f7; --radius:16px; }
   #wayboard-root.mode-9 .wayboard-grid { grid-template-columns: repeat(3, 1fr); gap: 18px; }
   #wayboard-root.mode-9 .wayboard-widget { min-height: 240px; }
 
   /* 10 · Canvas — spatial node board on grid paper. */
-  #wayboard-root.mode-10 { --bg:#0b1020; --panel:#111833; --card:#16203f; --border:#243357; --accent:#60a5fa; --radius:14px; }
   #wayboard-root.mode-10 main.canvas { background-image: linear-gradient(rgba(96,165,250,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(96,165,250,0.09) 1px, transparent 1px); background-size: 26px 26px; }
   #wayboard-root.mode-10 .wayboard-grid { grid-template-columns: repeat(3, 1fr); gap: 22px; }
   #wayboard-root.mode-10 .wayboard-widget,
   #wayboard-root.mode-10 .greeting-banner { box-shadow: 0 10px 30px rgba(3,7,18,0.5); }
 
   /* 11 · Editorial — warm daylight, serif, newspaper columns. */
-  #wayboard-root.mode-11 { --bg:#faf7f0; --panel:#fffdf8; --card:#fffdf8; --border:#e6ddc9; --text:#211c13; --muted:#6f6552; --accent:#b45309; --radius:6px; --font: Georgia, 'Times New Roman', serif; }
   #wayboard-root.mode-11 .greeting-banner { background: transparent; border: none; border-bottom: 3px double var(--border); border-radius: 0; padding: 6px 0 12px; }
   #wayboard-root.mode-11 #home-greeting-text { font-size: 30px; letter-spacing: -0.5px; }
   #wayboard-root.mode-11 .wayboard-grid { display: block; column-count: 2; column-gap: 26px; }
   #wayboard-root.mode-11 .wayboard-widget { break-inside: avoid; margin-bottom: 18px; }
 
   /* 12 · Matrix — dense terminal control plane, monospace, hairline grid. */
-  #wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#20262c; --accent:#f59e0b; --green:#22c55e; --text:#e8edf2; --muted:#7a8894; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
   #wayboard-root.mode-12 main.canvas { padding: 12px 14px; }
   #wayboard-root.mode-12 .wayboard-grid { grid-template-columns: repeat(5, 1fr); gap: 8px; }
   #wayboard-root.mode-12 .wayboard-widget { padding: 10px; }
@@ -218,13 +244,13 @@
 #wayboard-root .widget-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 #wayboard-root .widget-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; flex: 1; font-size: 11px; }
 #wayboard-root .widget-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-#wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: center; }
-#wayboard-root .wayside-head-titles { display: flex; flex-direction: column; min-width: 0; }
-#wayboard-root .wayside-head-tagline { font-size: 9px; color: var(--muted); font-weight: 600; letter-spacing: 0.2px; }
-#wayboard-root .wayside-status { font-size: 10px; color: var(--muted); }
-#wayboard-root .wayside-label { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-top: 4px; }
-#wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.4; }
-#wayboard-root .crews-block { display: flex; flex-direction: column; }
+#wayboard-root .wayside-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+#wayboard-root .wayside-head-titles { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+#wayboard-root .wayside-head-tagline { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: 0.2px; }
+#wayboard-root .wayside-status { font-size: 10px; color: var(--muted); text-align: right; flex-shrink: 0; }
+#wayboard-root .wayside-label { font-size: 10px; color: var(--muted); font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; margin: 10px 0 5px; }
+#wayboard-root .wayside-empty { font-size: 10px; color: var(--muted); padding: 6px 2px; line-height: 1.5; }
+#wayboard-root .crews-block { display: flex; flex-direction: column; gap: 1px; }
 #wayboard-root .chat-box-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
 #wayboard-root .chat-box-actions { display: flex; gap: 3px; }
 #wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
@@ -235,7 +261,7 @@
 #wayboard-root .chat-log a.chat-link { color: var(--accent); text-decoration: underline; cursor: pointer; }
 #wayboard-root .chat-failed { opacity: 0.55; text-decoration: line-through; }
 #wayboard-root .chat-box-actions .btn { font-size: 10px; }
-#wayboard-root .wayside-files { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 11px; }
+#wayboard-root .wayside-files { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-size: 11px; }
 #wayboard-root .wayside-files-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 #wayboard-root .wayside-share-file { flex: 0 0 auto; padding: 3px 6px; font-size: 9px; }
 #wayboard-root .wayside-files-list { max-height: 150px; overflow-y: auto; }
