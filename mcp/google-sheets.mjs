@@ -45,6 +45,27 @@ if (credPath && existsSync(credPath)) {
   }
 }
 
+/**
+ * Resolve OAuth client credentials for a token refresh, falling back to the
+ * agent host's own copy of the shared app credentials (env, then the host's own
+ * token file) so a collaborator's tunneled token — which carries a refresh_token
+ * but not the client_secret — can still be refreshed durably.
+ */
+function resolveClientCreds(tokenData, tokenPath) {
+  let client_id = tokenData.client_id || process.env.WAYMARK_OAUTH_CLIENT_ID || "";
+  let client_secret = tokenData.client_secret || process.env.WAYMARK_OAUTH_CLIENT_SECRET || "";
+  if (client_id && client_secret) return { client_id, client_secret };
+  try {
+    const hostPath = path.join(path.dirname(tokenPath), "waymark-oauth-token.json");
+    if (existsSync(hostPath) && realpathSync(hostPath) !== realpathSync(tokenPath)) {
+      const host = JSON.parse(readFileSync(hostPath, "utf8"));
+      if (!client_id && host.client_id) client_id = host.client_id;
+      if (!client_secret && host.client_secret) client_secret = host.client_secret;
+    }
+  } catch { /* best effort */ }
+  return { client_id, client_secret };
+}
+
 async function loadTokenFromPath(tokenPath) {
   let tokenData;
   try {
@@ -56,14 +77,16 @@ async function loadTokenFromPath(tokenPath) {
   const expiryMs = Number(tokenData.expiry_date);
   if (!tokenData.access_token || !Number.isFinite(expiryMs) || Date.now() >= (expiryMs - 60_000)) {
     if (!tokenData.refresh_token) return null;
+    const { client_id, client_secret } = resolveClientCreds(tokenData, tokenPath);
+    if (!client_id || !client_secret) return null;
     const res = await fetch(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
         refresh_token: tokenData.refresh_token,
-        client_id: tokenData.client_id,
-        client_secret: tokenData.client_secret,
+        client_id,
+        client_secret,
       }),
     });
     const refreshed = await res.json();

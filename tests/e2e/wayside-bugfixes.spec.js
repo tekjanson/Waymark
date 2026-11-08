@@ -181,6 +181,21 @@ test('Wayside share list backfills documents shared across any known ledger', as
   expect(res.crewIds).toEqual(['sheet-002', 'sheet-016']);
 });
 
+test('getAgentTokenBundle returns a durable bundle with a refresh token for the agent', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const bundle = await page.evaluate(async () => {
+    const { api } = await import('/js/api-client.js');
+    return api.auth.getAgentTokenBundle();
+  });
+
+  // The bundle must carry a refresh_token (not just a 1-hour access token) so a
+  // shared agent can durably act as this user and create Waymarks in THEIR Drive.
+  expect(bundle.access_token).toBeTruthy();
+  expect(bundle.refresh_token).toBeTruthy();
+});
+
 test('a shared agent creating a Waymark through the browser registers it in the Wayboard UI', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('.notif-bell', { timeout: 5_000 });

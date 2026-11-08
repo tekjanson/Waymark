@@ -615,3 +615,54 @@ test('resolveOAuthTokenPath runs a shared agent as the active requester, not the
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('applyOAuthTokenBundle persists durable refresh credentials per collaborator', async () => {
+  const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+  const os = require('os');
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'waymark-home-'));
+  fs.mkdirSync(path.join(tmpHome, '.config', 'gcloud'), { recursive: true });
+
+  const origHome = process.env.HOME;
+  const origTokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+  process.env.HOME = tmpHome;
+  delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+  try {
+    // A collaborator (Kailey) connects her account to the shared agent. The
+    // bundle now carries a refresh_token + client_id so her token is durable.
+    const result = WaysideOrchestrator.applyOAuthTokenBundle(
+      {
+        access_token: 'ya29.kailey-access',
+        refresh_token: '1//0g-kailey-refresh',
+        client_id: 'shared-app.apps.googleusercontent.com',
+        token_type: 'Bearer',
+        scope: 'https://www.googleapis.com/auth/drive.file',
+      },
+      { sender: 'kailey.levine@gmail.com' }
+    );
+    expect(result.ok).toBe(true);
+
+    const perAccount = path.join(tmpHome, '.config', 'gcloud', 'waymark-oauth-token-kailey.levine@gmail.com.json');
+    expect(fs.existsSync(perAccount)).toBe(true);
+    const saved = JSON.parse(fs.readFileSync(perAccount, 'utf8'));
+    // The durable pieces must survive — without these the agent can only act as
+    // Kailey for ~1 hour before falling back to the owner's Drive.
+    expect(saved.refresh_token).toBe('1//0g-kailey-refresh');
+    expect(saved.client_id).toBe('shared-app.apps.googleusercontent.com');
+    expect(saved.account_email).toBe('kailey.levine@gmail.com');
+
+    // A later refresh-only push (no client_id) must not drop the stored creds.
+    WaysideOrchestrator.applyOAuthTokenBundle(
+      { access_token: 'ya29.kailey-access-2', refresh_token: '1//0g-kailey-refresh' },
+      { sender: 'kailey.levine@gmail.com' }
+    );
+    const saved2 = JSON.parse(fs.readFileSync(perAccount, 'utf8'));
+    expect(saved2.client_id).toBe('shared-app.apps.googleusercontent.com');
+    expect(saved2.refresh_token).toBe('1//0g-kailey-refresh');
+    expect(saved2.access_token).toBe('ya29.kailey-access-2');
+  } finally {
+    process.env.HOME = origHome;
+    if (origTokenPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+    else process.env.WAYMARK_OAUTH_TOKEN_PATH = origTokenPath;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+});

@@ -6,9 +6,9 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '../..');
 
 
-  test('Waymark MCP exports 12 tools including Drive file and doc operations', async () => {
+  test('Waymark MCP exports 14 tools including Drive file, doc, and knowledge-graph operations', async () => {
     const { TOOLS } = await import('../../mcp/waymark.mjs');
-    expect(TOOLS.length).toBe(12);
+    expect(TOOLS.length).toBe(14);
 
     const names = TOOLS.map(t => t.name);
     expect(names).toContain('waymark_list_files');
@@ -19,6 +19,8 @@ const ROOT = path.resolve(__dirname, '../..');
     expect(names).toContain('waymark_get_sheet');
     expect(names).toContain('waymark_share_sheet');
     expect(names).toContain('waymark_search_entries');
+    expect(names).toContain('waymark_link_entries');
+    expect(names).toContain('waymark_get_links');
 
     const listFilesTool = TOOLS.find(t => t.name === 'waymark_list_files');
     expect(listFilesTool.inputSchema.properties.type.enum).toEqual([

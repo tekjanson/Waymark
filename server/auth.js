@@ -341,6 +341,58 @@ module.exports = function setupAuth(app) {
     }
   });
 
+  /* --- POST /auth/agent-bundle ---
+     Returns a DURABLE OAuth credential bundle for connecting the signed-in
+     user's own Google account to a Waymark AI agent. Unlike the in-memory
+     access token, this includes the user's refresh_token so the agent host can
+     act on the user's behalf durably (and create Waymarks in THEIR Drive).
+     The client_secret is never returned — the agent host refreshes using its
+     own copy of the shared app credentials. Delivered only to the already
+     authenticated user (has the httpOnly refresh cookie) and intended to be
+     pushed to the chosen agent over the end-to-end-encrypted P2P tunnel. */
+  app.post('/auth/agent-bundle', async (req, res) => {
+    const refreshToken = req.cookies.waymark_refresh;
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Not signed in' });
+    }
+
+    if (config.WAYMARK_LOCAL) {
+      return res.json({
+        access_token: 'mock-access-token-' + Date.now(),
+        refresh_token: refreshToken,
+        client_id: config.GOOGLE_CLIENT_ID || 'mock-client-id',
+        token_type: 'Bearer',
+        expiry_date: Date.now() + 3600 * 1000,
+        scope: (config.SCOPES || []).join(' '),
+      });
+    }
+
+    try {
+      const tokens = await refreshAccessToken(refreshToken);
+      if (tokens.error) {
+        res.clearCookie('waymark_refresh', { path: bp + '/auth' });
+        return res.status(401).json({ error: tokens.error_description || tokens.error });
+      }
+      // Google may rotate the refresh token — keep the cookie current and hand
+      // the freshest refresh token to the agent.
+      const effectiveRefresh = tokens.refresh_token || refreshToken;
+      if (tokens.refresh_token) {
+        res.cookie('waymark_refresh', tokens.refresh_token, REFRESH_COOKIE_OPTS);
+      }
+      res.json({
+        access_token: tokens.access_token,
+        refresh_token: effectiveRefresh,
+        client_id: config.GOOGLE_CLIENT_ID,
+        token_type: tokens.token_type || 'Bearer',
+        expiry_date: Date.now() + ((Number(tokens.expires_in) || 3600) * 1000),
+        scope: tokens.scope || (config.SCOPES || []).join(' '),
+      });
+    } catch (err) {
+      console.error('Agent bundle exception:', err);
+      res.status(500).json({ error: 'Could not build agent credential bundle' });
+    }
+  });
+
   /* --- POST /auth/logout --- */
   app.post('/auth/logout', async (req, res) => {
     res.clearCookie('waymark_refresh', { path: bp + '/auth' });
