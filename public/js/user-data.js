@@ -51,7 +51,7 @@ function defaultUserData() {
       githubRef: 'main',        // pinned GitHub ref (branch, tag, or commit SHA)
       mqttBridge: false,          // MQTT debug bridge enabled
       mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
-      homeTemplateMode: 1,        // selected Home Page layout architecture (1–50)
+      homeTemplateMode: 1,        // selected Home layout (stored 1–50 legacy; resolved to 12 curated layouts)
     },
 
     /* ── Tutorial ── */

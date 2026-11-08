@@ -2748,10 +2748,10 @@ function closeSettingsModal() {
   if (settingsFolderBrowser) settingsFolderBrowser.classList.add('hidden');
 }
 
-/* ---------- Home Page Layout Template selector (50 architectures) ---------- */
+/* ---------- Home Page Layout Template selector (12 curated layouts) ---------- */
 
 /**
- * Populate the 50-mode selector (grouped), and wire live-preview + persistence.
+ * Populate the 12-layout selector (grouped), and wire live-preview + persistence.
  * Called once from initSettingsModal.
  */
 function wireHomeTemplateSelector() {
@@ -2774,10 +2774,11 @@ function wireHomeTemplateSelector() {
     }
     select.appendChild(og);
   }
-  select.value = String(userData.getHomeTemplateMode());
+  select.value = String(wayboard.resolveLayout(userData.getHomeTemplateMode()));
 
   const applyMode = async (mode) => {
-    const n = Math.min(50, Math.max(1, parseInt(mode, 10) || 1));
+    const max = wayboard.LAYOUT_COUNT || 12;
+    const n = Math.min(max, Math.max(1, parseInt(mode, 10) || 1));
     select.value = String(n);
     // Persist to Drive + localStorage mirror.
     await userData.setHomeTemplateMode(n);
@@ -2786,14 +2787,15 @@ function wireHomeTemplateSelector() {
     showToast(`Home layout: ${n} — ${wayboard.MODE_NAMES[n] || ''}`.trim(), 'success');
   };
 
+  const max = wayboard.LAYOUT_COUNT || 12;
   select.addEventListener('change', () => applyMode(select.value));
   if (prev) prev.addEventListener('click', () => {
     const cur = parseInt(select.value, 10) || 1;
-    applyMode(cur <= 1 ? 50 : cur - 1);
+    applyMode(cur <= 1 ? max : cur - 1);
   });
   if (next) next.addEventListener('click', () => {
     const cur = parseInt(select.value, 10) || 1;
-    applyMode(cur >= 50 ? 1 : cur + 1);
+    applyMode(cur >= max ? 1 : cur + 1);
   });
 }
 
