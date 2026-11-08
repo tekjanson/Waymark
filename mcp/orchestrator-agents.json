@@ -96,7 +96,7 @@
     { "keywords": ["grading", "gradebook", "scores", "assignments", "students"], "agent": "waymark-grading" },
     { "keywords": ["passwords", "credentials", "logins", "vault"], "agent": "waymark-passwords" },
     { "keywords": ["photos", "gallery", "images", "album"], "agent": "waymark-photos" },
-    { "keywords": ["community linker", "resource links", "curated links"], "agent": "waymark-linker" },
+    { "keywords": ["community linker", "resource links", "curated links", "knowledge graph", "linker tree", "federated graph", "synthetic understanding"], "agent": "waymark-linker" },
     { "keywords": ["test cases", "qa cases", "test plan", "acceptance criteria"], "agent": "waymark-testcases" },
     { "keywords": ["worker jobs", "tasks queue", "job management"], "agent": "waymark-worker" },
     { "keywords": ["notification", "alerts", "reminders", "announcements"], "agent": "waymark-notification" },

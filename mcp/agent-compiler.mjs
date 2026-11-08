@@ -76,7 +76,7 @@ const DEFAULT_HEADERS = {
   okr:          ["Objective", "Key Result", "Progress", "Target", "Owner", "Quarter"],
   gantt:        ["Task", "Start Date", "End Date", "Progress", "Dependencies", "Assignee"],
   passwords:    ["Site", "Username", "Password", "URL", "Category", "Notes"],
-  linker:       ["Name", "Description", "Link", "Type", "Tags", "Icon"],
+  linker:       ["Name", "Description", "Link", "Type", "Tags", "Icon", "Relation", "Target", "Synthesis"],
   marketing:    ["Post", "Platform", "Status", "Topic", "Posted Date", "Likes", "Shares", "Comments", "Views", "Link", "Takeaway"],
   arcade:       ["Game", "Player 1", "Player 2", "Score", "Status"],
   worker:       ["Job", "Handler", "Config", "Status", "Schedule"],

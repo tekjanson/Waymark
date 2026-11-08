@@ -1,61 +1,61 @@
-# Community Linker — Domain Knowledge
+# Community Linker & Knowledge Graph — Domain Knowledge
 
 ## What This Template Is
-A curated link directory where each row is a resource. The `name` column is the link title. The `description` column explains what it is. The `link` column is the URL. The `type` column categorizes it (tool, article, repo, video, community, etc.). The `tags` column has comma-separated keywords. The `icon` column holds an emoji or icon identifier.
+A Knowledge Graph, Linker Tree, and curated Waymark directory where each row represents an entity/node, a Waymark resource, or a federated sub-graph, along with its directed relationships and synthetic understanding.
+- `name`: Entity, hub, or resource title.
+- `description`: Overview of what the node or resource represents.
+- `link`: Waymark Sheet ID, Folder ID, or `#/sheet/{id}` route for direct source-data click-through.
+- `type`: Categorizes the node (`waymark`, `linker`, `graph`, `sub-graph`, `concept`, `synthesis`, `folder`).
+- `tags`: Comma-separated keywords/clusters used for filtering and semantic hub grouping.
+- `icon`: Emoji or symbol identifier.
+- `relation`: Directed relationship verb/predicate (e.g. `funded by`, `uses`, `federates`, `curates`, `informs`, `depends on`).
+- `target`: Target entity name or target Waymark Sheet ID connected by `relation`.
+- `synthesis`: Synthetic understanding, insights, or cross-sheet takeaway explaining how and why these sources connect.
 
 ## Smart Operations
+
+### Knowledge Graph & Linker Tree Construction
+- **Primary Node Rows**: Populate `name`, `description`, `link`, `type`, `tags`, `icon`, and optionally `relation`, `target`, and `synthesis`.
+- **Multi-Edge / Multi-Insight Continuation Rows (§4.7)**: To attach multiple relationships or synthetic insights to the same entity without packing cells with delimiters, leave `name` blank on the following row(s) and populate `relation`, `target`, and/or `synthesis`.
+- **Cross-Sheet Federation**: Entries with `type: "linker"` or `type: "graph"` and a `link` pointing to another Waymark spreadsheet act as federated sub-graph hubs that expand inline in the Waymark UI.
 
 ### Link Directory
 Group all entries by `type`. For each type:
 ```
-{Type} ({N} links)
+{Type} ({N} nodes)
   • {name} — {description}
-    {link}
+    Link: {link} | {relation} → {target}
+    Synthesis: {synthesis}
 ```
 
-### Find a Link
-When asked "find a link for {topic}" or "do we have a link to {thing}":
+### Find a Node or Relationship
+When asked "find a link for {topic}" or "how does {A} relate to {B}":
 - Search `name` (exact then partial)
-- Search `description` (keyword match)
+- Search `description` and `synthesis` (keyword match)
+- Search `relation` and `target` (edge traversal)
 - Search `tags` (split by comma, match individual tags)
-- Return: name, description, link, type, tags
-- If multiple matches: list all
+- Return: name, description, link, type, relation, target, synthesis, tags
 
 ### Tag Search
 Find all entries tagged with {tag}:
 - Split `tags` by comma, strip whitespace, match case-insensitively
-- Return matching entries with their links
+- Return matching entries with their links and relationships
 
-### Adding a Link
-Append a row. Required: `name`, `link`. Optional: `description`, `type`, `tags`, `icon`.
-Before adding: check for an existing entry with the same URL — warn if found.
-`type` should use an existing type value from the sheet if one fits.
-
-### Type Breakdown
-Count entries per type. Report: `{type}: {N} links`
-
-### Dead Link Detection
-This agent cannot make HTTP requests, so it cannot verify links are live.
-When asked to check links: note this limitation and report the full list of links for the user to verify manually.
-
-### Tagging Suggestions
-When asked to suggest tags for an entry:
-- Read the `name` and `description`
-- Suggest 3–5 relevant tags based on the content
-- Do not write them unless confirmed by the user
+### Adding a Node or Relationship
+Append a row. Required: `name` (or continuation row under an existing node). Optional: `description`, `link`, `type`, `tags`, `icon`, `relation`, `target`, `synthesis`.
+Before adding: check for an existing entry with the same `name` or `link` — if adding a new relationship to an existing node, either update the node or append a continuation row.
 
 ### Exporting
-When asked to export the directory:
+When asked to export the directory or knowledge graph:
 Format as markdown:
 ```markdown
 ## {type}
-- [{name}]({link}) — {description}  `{tags}`
+- [{name}]({link}) — {description} (`{relation} → {target}`)
+  - 💡 Synthesis: {synthesis}
 ```
-Group by type, sort alphabetically within each group.
 
 ## Interpretation Rules
-- `link` must start with http:// or https:// — flag entries with invalid URL format
+- `link` should be a valid Waymark reference (`sheet-NNN`, Google Sheet/Folder ID, or `#/sheet/{id}` / `#/folder/{id}`) for direct source click-through
 - `tags` is free text — normalize to lowercase for comparison, preserve original case for storage
-- `icon` is optional decoration — it's an emoji or icon name, not a URL
-- Entries with empty `link` are placeholders — flag them: `{name} has no URL yet`
-- Duplicate links (same URL, different names) may be intentional cross-references — flag but don't auto-remove
+- `icon` is optional decoration — an emoji (`📄`, `📁`, `🧠`, `💡`, `🌐`)
+- `synthesis` stores higher-order synthetic understanding across linked sheets

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-10-31T23:49:25.430Z",
+  "generatedAt": "2026-11-08T21:56:51.776Z",
   "fallbackAgent": "waymark-builder",
   "keywordRoutes": [
     {
@@ -293,7 +293,11 @@
       "keywords": [
         "community linker",
         "resource links",
-        "curated links"
+        "curated links",
+        "knowledge graph",
+        "linker tree",
+        "federated graph",
+        "synthetic understanding"
       ],
       "agent": "waymark-linker"
     },
@@ -1465,7 +1469,10 @@
         "link",
         "type",
         "tags",
-        "icon"
+        "icon",
+        "relation",
+        "target",
+        "synthesis"
       ],
       "defaultHeaders": [
         "Name",
@@ -1473,7 +1480,10 @@
         "Link",
         "Type",
         "Tags",
-        "Icon"
+        "Icon",
+        "Relation",
+        "Target",
+        "Synthesis"
       ],
       "detectSignals": [
         "link",
@@ -1487,7 +1497,10 @@
         "entry type",
         "name",
         "title",
-        "community"
+        "community",
+        "relation",
+        "target",
+        "synthesis"
       ]
     },
     {

@@ -1,0 +1,11 @@
+{
+  "id": "sheet-081",
+  "title": "Platform Architecture Sub-Graph",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Name", "Description", "Link", "Type", "Tags", "Icon", "Relation", "Target", "Synthesis"],
+    ["Agent Registry Hub", "Autonomous agent fleet configuration and heartbeat monitor", "sheet-057", "waymark", "agents, fleet, orchestration", "🤖", "monitors", "IoT Sensor Fleet", "Coordinates autonomous AGY and Wayside agents across user ledgers."],
+    ["IoT Sensor Fleet", "Real-time sensor readings and threshold alerts", "sheet-047", "waymark", "iot, telemetry, alerts", "📡", "reports to", "Agent Registry Hub", "Streams environmental sensor thresholds into Waymark alert rules."],
+    ["WebRTC Signaling Mesh", "Serverless P2P signaling over Google Sheets cells", "sheet-044", "concept", "p2p, webrtc, architecture", "🌐", "powers", "Agent Registry Hub", "Serverless peer-to-peer data channels negotiated via Google Sheets signaling cells."]
+  ]
+}

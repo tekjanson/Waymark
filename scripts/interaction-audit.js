@@ -336,7 +336,6 @@ const TEST_HYGIENE_BASELINE = new Set([
   'tests/e2e/contacts.spec.js',
   'tests/e2e/design-audit.spec.js',
   'tests/e2e/kanban.spec.js',
-  'tests/e2e/linker.spec.js',
   'tests/e2e/public.spec.js',
   'tests/e2e/tutorial.spec.js',
 ]);
