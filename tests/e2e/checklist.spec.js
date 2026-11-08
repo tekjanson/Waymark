@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { setupApp, navigateToSheet, waitForChecklistRows, getChecklistTexts, getCreatedRecords } = require('../helpers/test-utils');
+const { setupApp, navigateToSheet, navigateToHome, waitForChecklistRows, getChecklistTexts, getCreatedRecords } = require('../helpers/test-utils');
 
 test('grocery list detected as Checklist template', async ({ page }) => {
   await setupApp(page);
@@ -306,7 +306,9 @@ test('a long text cell opens in a textarea for editing', async ({ page }) => {
   await waitForChecklistRows(page);
 
   // Milk's note is seeded long (> 70 chars) → editor opens as a textarea
-  const note = page.locator('.checklist-item-notes').first();
+  const firstRow = page.locator('.checklist-row').first();
+  await firstRow.locator('.checklist-note-btn').click();
+  const note = firstRow.locator('.checklist-note-field');
   await note.click();
   await expect(note.locator('textarea.editable-cell-textarea')).toBeVisible();
   await expect(note.locator('input')).toHaveCount(0);
@@ -335,7 +337,9 @@ test('editing a long text cell commits on blur', async ({ page }) => {
   await navigateToSheet(page, 'sheet-004');
   await waitForChecklistRows(page);
 
-  const note = page.locator('.checklist-item-notes').first();
+  const firstRow = page.locator('.checklist-row').first();
+  await firstRow.locator('.checklist-note-btn').click();
+  const note = firstRow.locator('.checklist-note-field');
   await note.click();
   const ta = note.locator('textarea.editable-cell-textarea');
   await ta.fill('Updated note that is also fairly long so it stays in a textarea while editing here');
@@ -344,6 +348,82 @@ test('editing a long text cell commits on blur', async ({ page }) => {
   const records = await getCreatedRecords(page);
   const updates = records.filter(r => r.type === 'cell-update');
   expect(updates.some(u => u.value.startsWith('Updated note'))).toBe(true);
+});
+
+/* ---------- Filter: hide completed items ---------- */
+
+test('filter bar hides completed rows when "Hide completed" is active', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  const filterBtn = page.locator('.checklist-filter-btn');
+  await expect(filterBtn).toBeVisible();
+  await expect(filterBtn).toHaveAttribute('aria-pressed', 'false');
+
+  // Milk (row 0) is completed; Bread (row 2) is incomplete
+  const completedRow = page.locator('.checklist-row.completed').first();
+  const incompleteRow = page.locator('.checklist-row:not(.completed)').first();
+  await expect(completedRow).toBeVisible();
+
+  await filterBtn.click();
+
+  await expect(filterBtn).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForSelector('.checklist-row.completed', { state: 'hidden' });
+  await expect(completedRow).toBeHidden();
+  await expect(incompleteRow).toBeVisible();
+});
+
+test('hide-completed filter state persists across navigation', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  const filterBtn = page.locator('.checklist-filter-btn');
+  await filterBtn.click();
+  await expect(filterBtn).toHaveAttribute('aria-pressed', 'true');
+
+  // Re-navigate to the same sheet; persisted state should restore
+  await navigateToHome(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  const filterBtn2 = page.locator('.checklist-filter-btn');
+  await expect(filterBtn2).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForSelector('.checklist-row.completed', { state: 'hidden' });
+  await expect(page.locator('.checklist-row.completed').first()).toBeHidden();
+});
+
+/* ---------- Per-item notes ---------- */
+
+test('note button reveals an editable note panel and edits emit to the notes column', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-001');
+  await waitForChecklistRows(page);
+
+  // Milk (row 0) has a seeded note → note button is present and marked has-note
+  const firstRow = page.locator('.checklist-row').first();
+  const noteBtn = firstRow.locator('.checklist-note-btn');
+  await expect(noteBtn).toBeVisible();
+
+  // Panel is collapsed until the button is clicked
+  const panel = firstRow.locator('.checklist-note-panel');
+  await expect(panel).toBeHidden();
+  await noteBtn.click();
+  await expect(panel).toBeVisible();
+
+  // Edit the note; it commits to the Notes column (index 3) via the edit pipeline
+  const field = firstRow.locator('.checklist-note-field');
+  await field.click();
+  const input = field.locator('input.editable-cell-input, textarea.editable-cell-textarea').first();
+  await input.fill('Pick skim this time');
+  await input.evaluate(el => el.blur());
+
+  const records = await getCreatedRecords(page);
+  const update = records.filter(r => r.type === 'cell-update').pop();
+  expect(update.col).toBe(3);
+  expect(update.value).toBe('Pick skim this time');
+  expect(update.spreadsheetId).toBe('sheet-001');
 });
 
 

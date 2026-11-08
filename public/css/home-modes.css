@@ -179,6 +179,9 @@
 #wayboard-root.mode-22 .marker-card:nth-child(4),
 #wayboard-root.mode-22 .marker-card:nth-child(5) { transform: rotateY(-28deg) scale(0.92); }
 #wayboard-root.mode-22 .wayboard-grid { width: 100%; transform: rotateX(8deg); }
+/* The 3D cover-flow foreshortens cards via rotateY; give the quick-action tiles
+   a floor so short labels stay comfortably legible (and above the 80px min). */
+#wayboard-root.mode-22 .wayboard-widget-quickmarks .home-action-card { min-width: 104px; }
 #wayboard-root.mode-23 { --bg: #090d14; --panel: #111722; --card: #0c121b; --border: #2563eb; --radius: 2px; }
 #wayboard-root.mode-23 aside.left-nav,
 #wayboard-root.mode-23 .greeting-banner { display: none; }
@@ -711,6 +714,11 @@ html[data-theme="light"] #wayboard-root.mode-37 {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1px 4px 1px 1px;
+}
+/* Pinned Waymarks always show in full — the widget grows to fit every row. */
+#wayboard-root .wayboard-full-list .wayboard-data-list {
+  max-height: none;
+  overflow-y: visible;
 }
 #wayboard-root .wayboard-show-more { align-self: center; flex: 0 0 auto; }
 #wayboard-root .wayboard-show-more[hidden] { display: none; }

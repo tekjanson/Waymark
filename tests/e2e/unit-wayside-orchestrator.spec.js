@@ -581,3 +581,37 @@ const ROOT = path.resolve(__dirname, '../..');
 
 
 
+
+test('resolveOAuthTokenPath runs a shared agent as the active requester, not the owner', async () => {
+  const { resolveOAuthTokenPath } = await import('../../scripts/agy-agent-runner.mjs');
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'waymark-oauth-'));
+  const gcloudDir = path.join(tmp, '.config', 'gcloud');
+  fs.mkdirSync(gcloudDir, { recursive: true });
+
+  const ownerToken = path.join(gcloudDir, 'waymark-oauth-token.json');
+  const guestToken = path.join(gcloudDir, 'waymark-oauth-token-wife_example.com.json');
+  fs.writeFileSync(ownerToken, JSON.stringify({ access_token: 'owner' }));
+  fs.writeFileSync(guestToken, JSON.stringify({ access_token: 'guest' }));
+  const activePath = path.join(gcloudDir, 'waymark-active-requester.json');
+  const writeActive = (tokenPath, updatedAt) =>
+    fs.writeFileSync(activePath, JSON.stringify({ sender: 'wife@example.com', tokenPath, updatedAt }));
+
+  try {
+    // Fresh active-requester pointer → the guest's token wins over the owner default.
+    writeActive(guestToken, Date.now());
+    expect(resolveOAuthTokenPath({ homeDir: tmp, env: {} })).toBe(guestToken);
+
+    // Explicit caller override always wins.
+    expect(resolveOAuthTokenPath({ tokenPath: guestToken, homeDir: tmp, env: {} })).toBe(guestToken);
+
+    // A stale pointer (older than 10 min) falls back to the owner default.
+    writeActive(guestToken, Date.now() - 11 * 60 * 1000);
+    expect(resolveOAuthTokenPath({ homeDir: tmp, env: {} })).toBe(ownerToken);
+
+    // An exported env var still takes precedence over the active-requester file.
+    writeActive(guestToken, Date.now());
+    expect(resolveOAuthTokenPath({ homeDir: tmp, env: { WAYMARK_OAUTH_TOKEN_PATH: ownerToken } })).toBe(ownerToken);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

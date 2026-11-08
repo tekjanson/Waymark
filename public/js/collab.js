@@ -1666,6 +1666,56 @@ function presenceFromRows(rows) {
  * @param {string} ledgerSheetId
  * @returns {Promise<{ chat: Array<{id:string,sender:string,text:string,ts:string}>, presence: Array<{email:string,name:string,status:string}>, files: Array<{docId:string,title:string,type:string,sharedWith:string,group:string,permission:string,ts:string,status:string}> }>}
  */
+/**
+ * Backfill helper — gather every document Waymark knows was shared with a
+ * target (contact or crew), scanned across ALL known Share Ledgers, not just
+ * the one currently bound to the Wayside chat. This surfaces files that were
+ * shared before the active ledger existed (e.g. earlier one-off shares or a
+ * ledger that was later superseded), so the Wayside share list is complete.
+ * Read-only; never mutates any ledger.
+ * @param {{ contactEmail?: string, group?: string }} target
+ * @returns {Promise<Array<{docId:string,title:string,type:string,permission:string,ts:string,status:string}>>}
+ */
+async function getKnownSharedDocsForTarget(target = {}) {
+  const email = String(target.contactEmail || '').trim().toLowerCase();
+  const group = String(target.group || '').trim().toLowerCase();
+  if (!email && !group) return [];
+  const ledgers = (userData.getShareLedgers?.() || []).filter(l => l?.sheetId);
+  if (!ledgers.length) return [];
+  const seenSheets = new Set();
+  const byDoc = new Map();
+  await Promise.all(ledgers.map(async (l) => {
+    if (seenSheets.has(l.sheetId)) return;
+    seenSheets.add(l.sheetId);
+    let data;
+    try {
+      data = await api.sheets.getSpreadsheet(l.sheetId);
+    } catch {
+      return;
+    }
+    for (const r of tabRowsFromData(data, SHARED_DOCS_TAB)) {
+      const id = (r.Document_ID || '').trim();
+      if (!id) continue;
+      if (String(r.Status || '').startsWith('Updated|')) continue;
+      const rowEmail = String(r.Shared_With_Email || '').trim().toLowerCase();
+      const rowGroup = String(r.Group || '').trim().toLowerCase();
+      const matches = (email && rowEmail === email) || (group && rowGroup && rowGroup === group);
+      if (!matches) continue;
+      if (!byDoc.has(id)) {
+        byDoc.set(id, {
+          docId: id,
+          title: r.Document_Title || '',
+          type: r.Waymark_Type || '',
+          permission: r.Permission_Level || '',
+          ts: r.Shared_Timestamp || '',
+          status: r.Status || '',
+        });
+      }
+    }
+  }));
+  return [...byDoc.values()];
+}
+
 async function readSocialSnapshot(ledgerSheetId) {
   const data = await api.sheets.getSpreadsheet(ledgerSheetId);
   const files = tabRowsFromData(data, SHARED_DOCS_TAB)
@@ -1914,6 +1964,7 @@ export {
   findExistingShareLedger,
   findLedgersForDocument,
   getKnownCollaborators,
+  getKnownSharedDocsForTarget,
   getSignalingTarget,
   getSocialTarget,
   notifySheetMutation,

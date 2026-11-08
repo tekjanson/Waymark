@@ -144,6 +144,43 @@ test('an accepted share is not re-announced when the ledger is re-polled, and Cl
   expect(res.cleared).toBe(true);
 });
 
+test('Wayside share list backfills documents shared across any known ledger', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5_000 });
+
+  const res = await page.evaluate(async () => {
+    const collab = await import('/js/collab.js');
+    const { api } = await import('/js/api-client.js');
+
+    // Ledger 1 — the chat ledger bound to Alice, but with NO shared docs on it.
+    await collab.ensureShareLedger({ contactEmail: 'alice@example.com' });
+
+    // Ledger 2 — a crew ledger that recorded a doc shared with Alice earlier,
+    // before the current chat ledger existed. This is the "backfill" source.
+    const { sheetId: crewLedger } = await collab.ensureShareLedger({ group: 'OldCrew' });
+    await api.sheets.appendRows(crewLedger, 'Shared_Docs', [
+      ['sheet-002', 'Home Repairs', 'checklist', 'alice@example.com', 'OldCrew', 'writer', new Date().toISOString(), 'Shared'],
+      ['sheet-016', 'Budget', 'budget', 'bob@example.com', 'OldCrew', 'reader', new Date().toISOString(), 'Shared'],
+    ]);
+
+    const aliceDocs = await collab.getKnownSharedDocsForTarget({ contactEmail: 'alice@example.com' });
+    const crewDocs = await collab.getKnownSharedDocsForTarget({ group: 'OldCrew' });
+    return {
+      aliceIds: aliceDocs.map(d => d.docId),
+      aliceTitle: aliceDocs.find(d => d.docId === 'sheet-002')?.title || '',
+      crewIds: crewDocs.map(d => d.docId).sort(),
+    };
+  });
+
+  // Alice's share list is backfilled with the doc shared via the crew ledger…
+  expect(res.aliceIds).toContain('sheet-002');
+  expect(res.aliceTitle).toBe('Home Repairs');
+  // …but not a doc shared with someone else.
+  expect(res.aliceIds).not.toContain('sheet-016');
+  // A crew target backfills every doc shared to that crew.
+  expect(res.crewIds).toEqual(['sheet-002', 'sheet-016']);
+});
+
 test('clicking close (✕) button in Wayside closes chat and restores placeholder even with 1 contact', async ({ page }) => {
   await setupApp(page, {
     pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],

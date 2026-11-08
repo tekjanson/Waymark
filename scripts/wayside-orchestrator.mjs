@@ -1317,12 +1317,13 @@ export class WaysideOrchestrator {
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
+      let activeTokenPath = null;
       try {
         const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
         const perAccountPath = senderKey.includes('@')
           ? path.join(gcloudDir, `waymark-oauth-token-${senderKey.replace(/[^a-z0-9.@_-]/gi, '_')}.json`)
           : '';
-        const activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
+        activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
           ? perAccountPath
           : (process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(gcloudDir, 'waymark-oauth-token.json'));
         fs.writeFileSync(
@@ -1342,6 +1343,7 @@ export class WaysideOrchestrator {
         sheetId: targetSheetId,
         context: contextLines.join('\n'),
         shareWith: shareTargets,
+        tokenPath: activeTokenPath,
       });
 
       if (agyResult.ok) {

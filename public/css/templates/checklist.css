@@ -8,6 +8,7 @@
 
 .checklist-row {
   display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
   padding: 10px 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -20,7 +21,44 @@
 
 .checklist-item-text { flex: 1; font-size: 0.95rem; }
 .checklist-item-date { font-size: 0.8rem; color: var(--color-text-muted); white-space: nowrap; }
-.checklist-item-notes { font-size: 0.8rem; color: var(--color-text-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Per-item note attachment */
+.checklist-note-btn {
+  border: none; background: transparent; cursor: pointer;
+  font-size: 0.95rem; line-height: 1; padding: 4px 6px;
+  border-radius: var(--radius-sm); flex-shrink: 0;
+  opacity: 0.45; transition: opacity var(--transition), background var(--transition);
+}
+.checklist-note-btn:hover { background: var(--color-bg); opacity: 1; }
+.checklist-note-btn.has-note { opacity: 1; }
+.checklist-note-panel { flex-basis: 100%; width: 100%; display: none; margin-top: 8px; }
+.checklist-row.note-open .checklist-note-panel { display: block; }
+.checklist-note-field {
+  display: block; width: 100%;
+  font-size: 0.85rem; color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px; min-height: 1.2em;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* Filter toolbar (Hide completed) */
+.checklist-filter { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.checklist-filter-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text-secondary); font-size: 0.8rem;
+  padding: 6px 12px; border-radius: var(--radius); cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.checklist-filter-btn:hover { background: var(--color-bg); color: var(--color-text); }
+.checklist-filter-btn[aria-pressed="true"] {
+  background: var(--color-success-light);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+.checklist-hide-completed .checklist-row.completed { display: none; }
 
 .checklist-checkbox {
   display: flex; align-items: center; justify-content: center;
@@ -107,5 +145,4 @@
 /* ---------- Responsive ---------- */
 @media (max-width: 480px) {
   .checklist-actions { flex-wrap: wrap; gap: 6px; }
-  .checklist-item-notes { display: none; }
 }

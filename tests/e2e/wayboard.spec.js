@@ -61,26 +61,44 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
   await expect(bread).toHaveAttribute('class', breadState);
 });
 
-test('Quick marks can be selected and reordered inside their own widget', async ({ page }) => {
+test('Quick actions can be selected and reordered inside their own widget', async ({ page }) => {
   await setupApp(page);
   const quickmarks = page.locator('.wayboard-widget-quickmarks');
   await expect(quickmarks.locator('.home-action-card')).toHaveCount(4);
-  await quickmarks.getByRole('button', { name: 'Edit Quick marks' }).click();
+  await quickmarks.getByRole('button', { name: 'Edit Quick actions' }).click();
 
   const options = page.locator('.wayboard-widget-quickmark-options');
   await expect(options.locator('input[type="checkbox"]')).toHaveCount(4);
   await options.locator('input[value="import"]').uncheck();
   await options.locator('input[value="browse"]').uncheck();
-  const moveGuidesEarlier = options.getByRole('button', { name: 'Move Waymark guides earlier' });
+  const moveGuidesEarlier = options.getByRole('button', { name: 'Move Example Waymarks earlier' });
   await moveGuidesEarlier.click();
   await moveGuidesEarlier.click();
   await moveGuidesEarlier.click();
   await page.locator('.wayboard-widget-form button[type="submit"]').click();
 
-  await expect(quickmarks.locator('.home-action-label')).toHaveText(['Waymark guides', 'New Waymark']);
+  await expect(quickmarks.locator('.home-action-label')).toHaveText(['Example Waymarks', 'New Waymark']);
   await page.locator('.wayboard-widget-dialog-header .btn-icon').click();
   await page.locator('#home-action-create').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
+});
+
+test('pinned Waymarks widget shows every pinned item with no show-more button', async ({ page }) => {
+  const pinnedSheets = Array.from({ length: 8 }, (_, i) => ({
+    id: `sheet-00${(i % 9) + 1}`,
+    name: `Pinned Waymark ${i + 1}`,
+    templateKey: 'checklist',
+    pinnedAt: new Date().toISOString(),
+  }));
+  await setupApp(page, { pinnedSheets });
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const pinnedWidget = page.locator('.wayboard-widget-pinned');
+  await expect(pinnedWidget).toBeVisible();
+  // Full list (grows to fit) — not the paged list.
+  await expect(pinnedWidget.locator('.wayboard-full-list')).toBeVisible();
+  await expect(pinnedWidget.locator('.wayboard-show-more')).toHaveCount(0);
+  await expect(pinnedWidget.locator('.wayboard-data-row')).toHaveCount(8);
 });
 
 test('expanded Wayboard gives widgets the full home canvas and can be restored', async ({ page }) => {

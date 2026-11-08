@@ -99,6 +99,8 @@ const definition = {
     const text      = cell(row, cols.text) || row[0] || '\u2014';
     const date      = cell(row, cols.date);
     const notes     = cell(row, cols.notes);
+    const hasNotes  = cols.notes >= 0;
+    const hasNote   = hasNotes && notes.trim() !== '';
 
     const checkbox = el('span', {
       className: 'checklist-checkbox',
@@ -107,14 +109,41 @@ const definition = {
       tabindex: '0',
     }, [completed ? '\u2713' : '']);
 
+    const children = [
+      checkbox,
+      editableCell('span', { className: 'checklist-item-text' }, text, rowIdx, cols.text),
+      cols.date >= 0 ? dateCell('span', { className: 'checklist-item-date' }, date, rowIdx, cols.date) : null,
+    ];
+
+    /* Per-item note attachment: toggle button + expandable editable panel */
+    if (hasNotes) {
+      children.push(el('button', {
+        className: `checklist-note-btn${hasNote ? ' has-note' : ''}`,
+        type: 'button',
+        title: 'Add/edit note',
+        'aria-label': 'Add or edit note',
+        'aria-expanded': 'false',
+      }, ['\uD83D\uDCDD']));
+      children.push(el('div', { className: 'checklist-note-panel' }, [
+        editableCell('div', { className: 'checklist-note-field', title: 'Click to edit note' }, notes, rowIdx, cols.notes),
+      ]));
+    }
+
     return el('div', {
       className: `checklist-row${completed ? ' completed' : ''}`,
       dataset: { rowIdx: String(rowIdx) },
-    }, [
-      checkbox,
-      editableCell('span', { className: 'checklist-item-text' }, text, rowIdx, cols.text),
-      cols.date >= 0  ? dateCell('span', { className: 'checklist-item-date' }, date, rowIdx, cols.date) : null,
-      cols.notes >= 0 ? editableCell('span', { className: 'checklist-item-notes', title: notes }, notes, rowIdx, cols.notes) : null,
+    }, children);
+  },
+
+  /** Build the filter toolbar (Hide completed toggle) shown above the list. */
+  _buildFilterBar(active) {
+    return el('div', { className: 'checklist-filter' }, [
+      el('button', {
+        className: 'checklist-filter-btn',
+        type: 'button',
+        'aria-pressed': String(active),
+        title: 'Hide completed items',
+      }, ['\uD83D\uDC41\uFE0F Hide completed']),
     ]);
   },
 
@@ -136,6 +165,13 @@ const definition = {
   render(container, rows, cols, template) {
     const canAdd = typeof template._onAddRow === 'function' && typeof template.addRowFields === 'function';
     const totalCols = template._totalColumns || 0;
+
+    /* Per-sheet "hide completed" filter state, persisted in localStorage */
+    const sheetId = String(template._currentSheetId || 'unknown-sheet');
+    const storeKey = `waymark_checklist_hide_completed_${sheetId}`;
+    let hideCompleted = false;
+    try { hideCompleted = window.localStorage.getItem(storeKey) === '1'; } catch (_) { /* noop */ }
+    container.classList.toggle('checklist-hide-completed', hideCompleted);
 
     /* Delegated checkbox toggle — single listener for all rows */
     delegateEvent(container, 'click', '.checklist-checkbox', (e, checkbox) => {
@@ -178,6 +214,25 @@ const definition = {
       const catEl = header.closest('.checklist-category');
       if (catEl) catEl.classList.toggle('collapsed');
     });
+
+    /* Delegated "Hide completed" filter toggle — pure DOM + localStorage */
+    delegateEvent(container, 'click', '.checklist-filter-btn', (e, btn) => {
+      const active = container.classList.toggle('checklist-hide-completed');
+      btn.setAttribute('aria-pressed', String(active));
+      try { window.localStorage.setItem(storeKey, active ? '1' : '0'); } catch (_) { /* noop */ }
+    });
+
+    /* Delegated per-item note toggle — expands/collapses the note panel */
+    delegateEvent(container, 'click', '.checklist-note-btn', (e, btn) => {
+      e.stopPropagation();
+      const rowEl = btn.closest('.checklist-row');
+      if (!rowEl) return;
+      const open = rowEl.classList.toggle('note-open');
+      btn.setAttribute('aria-expanded', String(open));
+    });
+
+    /* Filter toolbar at the very top (flat and categorized modes) */
+    container.append(template._buildFilterBar(hideCompleted));
 
     /* ---- Flat mode (no category column) ---- */
     if (cols.category < 0) {

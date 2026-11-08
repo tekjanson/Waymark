@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -272,12 +272,47 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
  * @param {string} [opts.cwd]
  * @returns {Promise<{ ok: boolean, output: string, sheetId?: string, createdNewSheet?: boolean, durationMs: number, error?: string }>}
  */
+/**
+ * Resolve which OAuth token a Waymark task should run under.
+ *
+ * Critical for SHARED agents: when a guest (e.g. a spouse) drives the owner's
+ * agent, the WaysideOrchestrator records the guest as the "active requester"
+ * (waymark-active-requester.json). The agent must act as that requester so the
+ * Waymarks it creates land in — and stay usable by — the person who asked for
+ * them. Previously this helper's logic was skipped and the owner's default
+ * token was always forced onto the child, so guest requests silently ran as the
+ * owner and produced sheets the requester could not use.
+ *
+ * Precedence: explicit caller override → an already-exported env var → a fresh
+ * active-requester pointer → the owner's default token.
+ * @param {{ tokenPath?: string|null, homeDir?: string, env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {string} absolute token path, or '' when none is available
+ */
+export function resolveOAuthTokenPath({ tokenPath = null, homeDir = os.homedir(), env = process.env } = {}) {
+  const gcloudDir = path.join(homeDir, '.config', 'gcloud');
+  const defaultOAuth = path.join(gcloudDir, 'waymark-oauth-token.json');
+  if (tokenPath && existsSync(tokenPath)) return tokenPath;
+  if (env.WAYMARK_OAUTH_TOKEN_PATH) return env.WAYMARK_OAUTH_TOKEN_PATH;
+  try {
+    const activePath = path.join(gcloudDir, 'waymark-active-requester.json');
+    if (existsSync(activePath)) {
+      const meta = JSON.parse(readFileSync(activePath, 'utf8'));
+      if (meta?.tokenPath && existsSync(meta.tokenPath)
+          && Date.now() - Number(meta.updatedAt || 0) < 10 * 60 * 1000) {
+        return meta.tokenPath;
+      }
+    }
+  } catch { /* fall through to default */ }
+  return existsSync(defaultOAuth) ? defaultOAuth : '';
+}
+
 export async function runAgyTask({
   task,
   templateKey = null,
   sheetId = null,
   context = '',
   shareWith = [],
+  tokenPath = null,
   model = DEFAULT_MODEL,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   cwd = ROOT,
@@ -288,13 +323,15 @@ export async function runAgyTask({
 
   const homeDir = os.homedir();
   const defaultSa = path.join(homeDir, '.config', 'gcloud', 'waymark-service-account-key.json');
-  const defaultOAuth = path.join(homeDir, '.config', 'gcloud', 'waymark-oauth-token.json');
   const childEnv = { ...process.env };
   if (!childEnv.GOOGLE_APPLICATION_CREDENTIALS && existsSync(defaultSa)) {
     childEnv.GOOGLE_APPLICATION_CREDENTIALS = defaultSa;
   }
-  if (!childEnv.WAYMARK_OAUTH_TOKEN_PATH && existsSync(defaultOAuth)) {
-    childEnv.WAYMARK_OAUTH_TOKEN_PATH = defaultOAuth;
+  // Run as the actual requester (the guest driving a shared agent), not the
+  // agent owner. Setting this explicitly makes every MCP child deterministic.
+  const resolvedOAuth = resolveOAuthTokenPath({ tokenPath, homeDir, env: process.env });
+  if (resolvedOAuth) {
+    childEnv.WAYMARK_OAUTH_TOKEN_PATH = resolvedOAuth;
   }
   if (Array.isArray(shareWith) && shareWith.length > 0) {
     childEnv.WAYMARK_AUTO_SHARE_EMAILS = shareWith.join(',');
