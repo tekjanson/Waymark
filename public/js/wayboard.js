@@ -1,6 +1,6 @@
 /* ============================================================
    wayboard.js — Unified Wayboard home: widgets, Wayside social,
-   and the 50 selectable layout architectures (mode-1 … mode-50).
+   and the 12 curated layout architectures (mode-1 … mode-12).
    ============================================================ */
 
 import { el, showToast } from './ui.js';
@@ -22,31 +22,48 @@ import {
 export { appendLinkified };
 const WAYSIDE_URL_RE = URL_REGEX;
 
-/* ---------- 50 architecture names (for the Profile selector) ---------- */
+/* ---------- 12 curated Wayboard layouts (for the Profile selector) ----------
+   Each is a distinct information architecture, not a colour swap, and is
+   mobile-aware. Styling lives in css/home-modes.css (.mode-1 … .mode-12). */
 const MODE_NAMES = {
-  1: 'Markup Command Center (Classic 3-Col)', 2: 'Bento Grid + Story Pill Markers', 3: 'Top Multiplayer Social Pill', 4: 'Guild Left-Dock (Discord Style)',
-  5: 'Spatial Glass + Floating Bottom Dock', 6: 'Warm Editorial Daylight', 7: 'Dual-Column Split', 8: 'Linear Timeline',
-  9: 'Infinite Dot-Grid Tactile Pinboard', 10: 'AR Field Engineer HUD', 11: 'Bottom Comms Utility Tray', 12: 'Visual Gallery Grid',
-  13: 'AI-First Prompt Stream', 14: '3D World Stage (Floorplan IS Background)', 15: 'Orbital Node Map', 16: 'Multiplayer Tavern Rooms',
-  17: 'BOOX E-Ink Paper Tablet', 18: 'Horizontal Time River', 19: 'Floating OS Window Manager', 20: 'Sheet Matrix Control Plane',
-  21: 'VS Code / Cursor 4-Pane IDE Split', 22: 'Apple CoverFlow 3D Perspective Carousel', 23: 'AutoCAD / Revit 4-Viewport Station',
-  24: 'Swiss International Typographic Grid', 25: 'Arc Browser Floating Glass Frame', 26: 'Kanban 4-Column Vertical Swimlanes',
-  27: 'Circular Radar / Sonar Concentric Station', 28: 'Isometric 3D Pitched Tabletop Board', 29: 'Dynamic Island Top Pill',
-  30: 'Obsidian Bi-Directional Graph', 31: 'Node-RED / ComfyUI Patch-Cord Canvas', 32: 'Newspaper Multi-Column Broadsheet',
-  33: 'Video-First 50/50 Split', 34: 'Hyprland / i3wm Tiling Window Manager', 35: 'Interactive Horizontal Accordion Slices',
-  36: 'Smart Glasses Peripheral AR HUD', 37: 'Architectural Blueprint Sheet + Title Block', 38: '4-Quadrant Compass Rose',
-  39: 'Split-Level Mezzanine', 40: 'Zen Spotlight Focus Mode', 41: 'Jupyter / Observable Notebook Cells',
-  42: 'Teenage Engineering OP-1 Tactile Synth', 43: '3-Monitor Curved Ultrawide Cockpit', 44: 'Staggered Masonry Waterfall Grid',
-  45: 'Subway / Metro Transit Line Topology', 46: 'Floating Organic Glass Orbs', 47: 'Dual-Brain Reverse Split',
-  48: 'Detective Corkboard + Polaroids + Red String', 49: 'SpaceX / Bloomberg 5-Column Telemetry', 50: 'Spotlight Command-First Zero-Chrome',
+  1: 'Command Center', 2: 'Bento Grid', 3: 'Focus', 4: 'Social Hub',
+  5: 'Split Rail', 6: 'Stream', 7: 'Pinboard', 8: 'HUD',
+  9: 'Gallery', 10: 'Canvas', 11: 'Editorial', 12: 'Matrix',
 };
+
+/** How many curated layouts exist. */
+const LAYOUT_COUNT = 12;
 
 /** Grouping used by the Profile selector. */
 const MODE_GROUPS = [
-  { label: '1–20 Core & Unchained', range: [1, 20] },
-  { label: '21–35 Spatial Architectures', range: [21, 35] },
-  { label: '36–50 Experimental Mechanics', range: [36, 50] },
+  { label: 'Focused', range: [1, 4] },
+  { label: 'Structured', range: [5, 8] },
+  { label: 'Expressive', range: [9, 12] },
 ];
+
+/* Legacy compatibility: the Wayboard used to ship 50 thin layout variants.
+   Saved profiles may still reference modes 13–50, so map each retired mode to
+   the closest surviving curated layout. Modes 1–12 pass through unchanged. */
+const LEGACY_LAYOUT_MAP = {
+  13: 6, 14: 10, 15: 10, 16: 7, 17: 11, 18: 6, 19: 10, 20: 12,
+  21: 5, 22: 9, 23: 12, 24: 11, 25: 10, 26: 12, 27: 10, 28: 7,
+  29: 4, 30: 10, 31: 10, 32: 11, 33: 4, 34: 5, 35: 9, 36: 8,
+  37: 10, 38: 2, 39: 5, 40: 3, 41: 6, 42: 7, 43: 12, 44: 7,
+  45: 6, 46: 10, 47: 5, 48: 7, 49: 12, 50: 3,
+};
+
+/**
+ * Resolve any stored home-template mode (1–50, legacy or current) to one of the
+ * 12 curated layouts.
+ * @param {number|string} mode — stored mode value
+ * @returns {number} layout index 1–LAYOUT_COUNT
+ */
+function resolveLayout(mode) {
+  const n = parseInt(mode, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  if (n <= LAYOUT_COUNT) return n;
+  return LEGACY_LAYOUT_MAP[n] || 1;
+}
 
 const MAX_HOME_WIDGETS = 16;
 const DEFAULT_HOME_WIDGETS = [
@@ -77,12 +94,12 @@ const sheetPreviewCache = new Map();
 
 /**
  * Apply a home layout architecture to the Wayboard root.
- * @param {number} mode 1–50
+ * @param {number} mode stored mode (1–50 legacy or 1–12 current)
  */
 function applyHomeMode(mode) {
   const root = document.getElementById('wayboard-root');
   if (!root) return;
-  const n = (mode >= 1 && mode <= 50) ? mode : 1;
+  const n = resolveLayout(mode);
   const expanded = root.classList.contains('wayboard-expanded');
   root.className = `wayboard-root mode-${n}`;
   if (expanded) root.classList.add('wayboard-expanded');
@@ -1678,6 +1695,7 @@ function openAgentModalForHost(host) {
 }
 
 export {
+  LAYOUT_COUNT,
   MODE_GROUPS,
   MODE_NAMES,
   WAYSIDE_URL_RE,
@@ -1685,6 +1703,7 @@ export {
   endWaysideCall,
   initWayboard,
   renderWayboard,
+  resolveLayout,
   sendWaysideChat,
   startCall,
 };

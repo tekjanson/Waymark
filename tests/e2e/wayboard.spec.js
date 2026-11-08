@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * wayboard.spec.js — Unified Wayboard home, 50 layout architectures,
+ * wayboard.spec.js — Unified Wayboard home, 12 curated layout architectures,
  * Profile layout selector, and the Wayside social pane.
  */
 const { test, expect } = require('@playwright/test');
@@ -135,7 +135,7 @@ test('default home layout is mode-1', async ({ page }) => {
   await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-1\b/);
 });
 
-test('home templates retain their defining layouts with user widgets enabled', async ({ page }) => {
+test('the 12 curated layouts each render a distinct architecture', async ({ page }) => {
   await setupApp(page, { theme: 'dark' });
   const layouts = await page.evaluate(() => {
     const noTransitions = document.createElement('style');
@@ -145,69 +145,62 @@ test('home templates retain their defining layouts with user widgets enabled', a
     const read = mode => {
       root.className = `wayboard-root mode-${mode}`;
       const grid = getComputedStyle(root.querySelector('.wayboard-grid'));
+      const canvas = getComputedStyle(root.querySelector('main.canvas'));
       const section = getComputedStyle(root.querySelector('.wayboard-section'));
-      const widget = getComputedStyle(root.querySelector('.wayboard-widget'));
       const greeting = getComputedStyle(root.querySelector('.greeting-banner'));
+      const wayside = getComputedStyle(root.querySelector('aside.wayside'));
       const quickmarks = root.querySelector('.wayboard-widget-quickmarks');
-      const quickmarkStyle = getComputedStyle(quickmarks);
+      const quickStyle = getComputedStyle(quickmarks);
       const markRow = getComputedStyle(quickmarks.querySelector('.markers-row'));
-      const markAction = getComputedStyle(quickmarks.querySelector('.marker-card'));
+      const widget = getComputedStyle(root.querySelector('.wayboard-widget'));
       return {
         gridDisplay: grid.display,
-        gridWrap: grid.flexWrap,
-        sectionPosition: section.position,
-        widgetPosition: widget.position,
-        greetingPosition: greeting.position,
+        gridColumns: grid.gridTemplateColumns,
+        gridColumnCount: grid.columnCount,
+        canvasDirection: canvas.flexDirection,
+        canvasBg: canvas.backgroundImage,
+        sectionMaxWidth: section.maxWidth,
         greetingBorder: greeting.borderBottomStyle,
-        quickmarkDisplay: quickmarkStyle.display,
-        quickmarkRowDisplay: markRow.display,
-        quickmarkRadius: markAction.borderRadius,
-        quickmarkIconHeight: getComputedStyle(quickmarks.querySelector('.marker-thumb')).height,
-        quickmarkBackground: quickmarkStyle.backgroundColor,
-        quickmarkTopBorder: quickmarkStyle.borderTopWidth,
-        quickmarkBottomBorder: quickmarkStyle.borderBottomWidth,
-        quickmarkAfter: getComputedStyle(quickmarks, '::after').content,
-        quickmarkLeftBorder: quickmarkStyle.borderLeftWidth,
+        waysideOrder: wayside.order,
+        fontFamily: quickStyle.fontFamily.toLowerCase(),
+        widgetMinHeight: widget.minHeight,
+        quickDisplay: quickStyle.display,
+        markRowDisplay: markRow.display,
       };
     };
     return {
-      bento: read(2),
-      prompt: read(13),
-      stage: read(14),
-      orbit: read(15),
-      windows: read(19),
-      accordion: read(35),
-      compass: read(38),
-      telemetry: read(49),
-      tavern: read(16),
-      gallery: read(12),
-      corkboard: read(48),
-      notebook: read(41),
-      pipeline: read(31),
-      allModes: Array.from({ length: 50 }, (_, index) => read(index + 1)),
+      command: read(1), bento: read(2), focus: read(3), social: read(4),
+      rail: read(5), stream: read(6), pinboard: read(7), hud: read(8),
+      gallery: read(9), canvas: read(10), editorial: read(11), matrix: read(12),
+      all: Array.from({ length: 12 }, (_, i) => read(i + 1)),
     };
   });
 
+  // Each archetype expresses its defining structural trait.
+  expect(layouts.command.gridDisplay).toBe('grid');
   expect(layouts.bento.greetingBorder).toBe('solid');
-  expect(layouts.prompt.gridDisplay).toBe('flex');
-  expect(layouts.stage.widgetPosition).toBe('relative');
-  expect(layouts.orbit.gridWrap).toBe('wrap');
-  expect(layouts.windows.sectionPosition).toBe('absolute');
-  expect(layouts.accordion.gridWrap).toBe('wrap');
-  expect(layouts.compass.greetingPosition).toBe('relative');
-  expect(layouts.telemetry.gridDisplay).toBe('grid');
-  expect(layouts.tavern.quickmarkAfter).toContain('WAYMARK PARTY');
-  expect(layouts.gallery.quickmarkIconHeight).toBe('85px');
-  expect(layouts.corkboard.quickmarkBackground).toBe('rgb(250, 248, 245)');
-  expect(layouts.corkboard.quickmarkBottomBorder).toBe('24px');
-  expect(layouts.notebook.quickmarkLeftBorder).toBe('5px');
-  expect(layouts.pipeline.quickmarkTopBorder).toBe('18px');
-  expect(layouts.allModes).toHaveLength(50);
-  expect(layouts.allModes.every(layout => layout.quickmarkDisplay !== 'none' && layout.quickmarkRowDisplay !== 'none')).toBe(true);
-  expect(new Set(layouts.allModes.map(layout => `${layout.gridDisplay}:${layout.quickmarkRowDisplay}:${layout.quickmarkRadius}:${layout.quickmarkBackground}:${layout.quickmarkBottomBorder}`)).size).toBeGreaterThan(10);
+  expect(layouts.bento.gridColumns.split(' ')).toHaveLength(4);
+  expect(layouts.focus.sectionMaxWidth).not.toBe('none');
+  expect(layouts.social.waysideOrder).toBe('-1');
+  expect(layouts.rail.canvasDirection).toBe('row');
+  expect(layouts.stream.gridDisplay).toBe('flex');
+  expect(layouts.pinboard.gridColumnCount).toBe('3');
+  expect(layouts.hud.fontFamily).toContain('mono');
+  expect(layouts.gallery.widgetMinHeight).toBe('240px');
+  expect(layouts.canvas.canvasBg).toContain('gradient');
+  expect(layouts.editorial.gridColumnCount).toBe('2');
+  expect(layouts.matrix.gridColumns.split(' ')).toHaveLength(5);
+  expect(layouts.matrix.fontFamily).toContain('mono');
+
+  // Quick marks stay visible in every layout (regression guard).
+  expect(layouts.all.every(l => l.quickDisplay !== 'none' && l.markRowDisplay !== 'none')).toBe(true);
+  // The layouts are genuinely distinct, not colour swaps.
+  const signatures = new Set(layouts.all.map(l =>
+    `${l.gridDisplay}:${l.gridColumns}:${l.canvasDirection}:${l.waysideOrder}:${l.widgetMinHeight}:${l.canvasBg}:${l.fontFamily}`));
+  expect(signatures.size).toBeGreaterThanOrEqual(10);
 });
 
-test('all 50 layouts keep quick marks and greetings aligned at desktop and phone widths', async ({ page }) => {
+test('all 12 layouts keep quick marks and greetings aligned at desktop and phone widths', async ({ page }) => {
   await setupApp(page);
   await page.addStyleTag({ content: '#wayboard-root, #wayboard-root * { transition: none !important; }' });
 
@@ -221,7 +214,7 @@ test('all 50 layouts keep quick marks and greetings aligned at desktop and phone
     const alignmentIssues = await page.evaluate(() => {
       const root = document.getElementById('wayboard-root');
       const issues = [];
-      for (let mode = 1; mode <= 50; mode++) {
+      for (let mode = 1; mode <= 12; mode++) {
         root.className = `wayboard-root mode-${mode}`;
         const workspace = root.querySelector('.workspace').getBoundingClientRect();
         const quickmarks = root.querySelector('.wayboard-widget-quickmarks');
@@ -265,12 +258,12 @@ test('all 50 layouts keep quick marks and greetings aligned at desktop and phone
   }
 });
 
-test('Profile settings lists all 50 home layout templates', async ({ page }) => {
+test('Profile settings lists all 12 home layout templates', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
 
   const options = page.locator('#settings-home-template option');
-  await expect(options).toHaveCount(50);
+  await expect(options).toHaveCount(12);
   // Grouped into three optgroups.
   await expect(page.locator('#settings-home-template optgroup')).toHaveCount(3);
 });
@@ -301,11 +294,11 @@ test('prev/next cycle buttons change the layout', async ({ page }) => {
 test('saved home layout survives reload (zero-flash from localStorage)', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
-  await page.evaluate(() => localStorage.setItem('waymark_home_template_mode', '23'));
+  await page.evaluate(() => localStorage.setItem('waymark_home_template_mode', '9'));
 
   await page.reload();
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
-  await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-23\b/);
+  await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-9\b/);
 });
 
 test('The Wayside header explains itself and uses consistent section labels', async ({ page }) => {
@@ -405,3 +398,11 @@ test('clicking Call on a collaborator notification in the bell starts a Wayside 
   await page.click('#wayside-call-btn');
 });
 
+
+test('a legacy saved layout mode (13–50) maps to a curated layout', async ({ page }) => {
+  // Mode 48 was the retired "Detective Corkboard"; it now resolves to Pinboard (7).
+  await page.addInitScript(() => localStorage.setItem('waymark_home_template_mode', '48'));
+  await setupApp(page);
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+  await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-7\b/);
+});

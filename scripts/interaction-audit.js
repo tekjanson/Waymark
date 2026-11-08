@@ -243,6 +243,62 @@ function auditDynamicInnerHtml(file) {
   };
 }
 
+/* ---------- Rule: Wayboard layout parity (no dead layout CSS) ---------- */
+
+// The Wayboard ships a fixed, curated set of home layouts (mode-1 … mode-N,
+// where N = LAYOUT_COUNT in wayboard.js). home-modes.css must style exactly
+// those layouts — it must not carry CSS for retired layout numbers (which are
+// remapped by resolveLayout) nor style reference-shell selectors that never
+// render in the live Wayboard DOM. This guard was added after the Wayboard was
+// rebuilt from 50 near-identical, desktop-only, dead-selector modes down to a
+// curated, mobile-first set, to stop that cruft from creeping back.
+const WAYBOARD_JS = path.join(PUBLIC_JS_DIR, 'wayboard.js');
+const HOME_MODES_CSS = path.join(ROOT, 'public', 'css', 'home-modes.css');
+// Selectors from the old "UX Studio" reference shell with no node in the live
+// Wayboard DOM (see index.html #wayboard-root): styling them is dead CSS.
+const DEAD_WAYBOARD_SELECTORS = ['aside.left-nav', 'header.app-header', '.viewport-box', '.search-bar', '.nav-item'];
+
+/**
+ * Audit home-modes.css against the curated layout catalogue in wayboard.js.
+ * @returns {{file:string, violations:string[]}|null}
+ */
+function auditWayboardLayouts() {
+  if (!fs.existsSync(WAYBOARD_JS) || !fs.existsSync(HOME_MODES_CSS)) return null;
+  const js = fs.readFileSync(WAYBOARD_JS, 'utf8');
+  const css = fs.readFileSync(HOME_MODES_CSS, 'utf8');
+  const rel = path.relative(ROOT, HOME_MODES_CSS);
+  const violations = [];
+
+  const countMatch = js.match(/const\s+LAYOUT_COUNT\s*=\s*(\d+)/);
+  const layoutCount = countMatch ? parseInt(countMatch[1], 10) : null;
+  if (!layoutCount) {
+    return { file: rel, violations: ['wayboard.js does not declare a numeric LAYOUT_COUNT — the layout catalogue is the source of truth for home-modes.css.'] };
+  }
+
+  // 1. No CSS for retired layout numbers (> LAYOUT_COUNT).
+  const modeNums = new Set();
+  for (const m of css.matchAll(/\.mode-(\d+)\b/g)) modeNums.add(parseInt(m[1], 10));
+  const stale = [...modeNums].filter(n => n > layoutCount).sort((a, b) => a - b);
+  if (stale.length) {
+    violations.push(`references retired layout classes .mode-${stale.join(', .mode-')} beyond LAYOUT_COUNT (${layoutCount}). Retired layouts are remapped by resolveLayout() and must not carry their own CSS.`);
+  }
+
+  // 2. Every curated layout 2..N has a style block (mode-1 is the base shell).
+  const missing = [];
+  for (let n = 2; n <= layoutCount; n++) if (!modeNums.has(n)) missing.push(n);
+  if (missing.length) {
+    violations.push(`declares ${layoutCount} layouts but has no CSS for .mode-${missing.join(', .mode-')} — each curated layout must be visually distinct.`);
+  }
+
+  // 3. No dead reference-shell selectors (non-existent DOM, AI_LAWS §13).
+  const dead = DEAD_WAYBOARD_SELECTORS.filter(sel => new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(css));
+  if (dead.length) {
+    violations.push(`styles dead reference-shell selectors (${dead.join(', ')}) that never render in the live Wayboard DOM. Remove them (AI_LAWS §13 — dead CSS).`);
+  }
+
+  return violations.length ? { file: rel, violations } : null;
+}
+
 /* ---------- Rule: test hygiene (AI_LAWS §7.2) ---------- */
 
 // Playwright specs must be flat: no describe() blocks, no beforeEach/afterEach/
@@ -316,7 +372,7 @@ function main() {
   }
 
   console.log('interaction-audit — behavioral parity drift guard');
-  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY, DYNAMIC_INNERHTML`);
+  console.log(`  rules: VOICE_GRACEFUL_DEGRADATION, CLIPBOARD_GRACEFUL_DEGRADATION, GOOGLE_API_IMPORT_BOUNDARY, DYNAMIC_INNERHTML, WAYBOARD_LAYOUT_PARITY`);
   console.log(`  voice-intake surfaces scanned: ${voiceSurfaces}`);
   console.log(`  clipboard surfaces scanned: ${clipboardSurfaces}`);
   console.log(`  template modules scanned for import boundary: ${importSurfaces}`);
@@ -328,6 +384,11 @@ function main() {
     if (xss) findings.push(xss);
   }
   console.log(`  public/js modules scanned for dynamic innerHTML: ${publicFiles.length}`);
+
+  // Wayboard layout parity: home-modes.css must match the curated catalogue.
+  const wayboardLayouts = auditWayboardLayouts();
+  if (wayboardLayouts) findings.push(wayboardLayouts);
+  console.log(`  Wayboard layout catalogue checked for parity: public/css/home-modes.css`);
 
   // Test-hygiene scan over the e2e specs (AI_LAWS §7.2). Grandfathered specs in
   // TEST_HYGIENE_BASELINE are reported as backlog but don't fail the gate; any
@@ -346,7 +407,7 @@ function main() {
   console.log(`  e2e specs scanned for test hygiene: ${e2eSpecs.length} (grandfathered backlog: ${grandfathered})`);
 
   if (!findings.length) {
-    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML, flat/isolated e2e specs');
+    console.log('  ✓ no drift — voice/clipboard degrade gracefully, no direct Google-API imports, no dynamic innerHTML, flat/isolated e2e specs, Wayboard layouts in parity');
     process.exit(0);
   }
 
