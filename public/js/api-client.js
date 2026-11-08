@@ -289,13 +289,38 @@ export const api = {
     },
 
     async getAgentTokenBundle() {
-      const token = await this.getToken();
-      if (!token) throw new Error('Not signed in — please log in first');
-      const bundle = {
-        access_token: token,
-        token_type: 'Bearer',
-        expiry_date: Date.now() + 3600 * 1000,
-      };
+      // Pull a DURABLE credential bundle from the server (includes the user's
+      // refresh_token + client_id) so an agent host can act on this user's
+      // behalf over time — creating Waymarks in THEIR own Drive. Falls back to
+      // the in-memory access token only if the durable endpoint is unavailable.
+      let bundle = null;
+      try {
+        const res = await fetch(BASE + '/auth/agent-bundle', { method: 'POST', credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && (data.refresh_token || data.access_token)) {
+            bundle = {
+              access_token: data.access_token || '',
+              ...(data.refresh_token ? { refresh_token: data.refresh_token } : {}),
+              ...(data.client_id ? { client_id: data.client_id } : {}),
+              token_type: data.token_type || 'Bearer',
+              expiry_date: data.expiry_date || (Date.now() + 3600 * 1000),
+              ...(data.scope ? { scope: data.scope } : {}),
+            };
+          }
+        }
+      } catch { /* fall through to access-token-only */ }
+
+      if (!bundle) {
+        const token = await this.getToken();
+        if (!token) throw new Error('Not signed in — please log in first');
+        bundle = {
+          access_token: token,
+          token_type: 'Bearer',
+          expiry_date: Date.now() + 3600 * 1000,
+        };
+      }
+
       if (isLocal && window.__WAYMARK_RECORDS) {
         window.__WAYMARK_RECORDS.push({
           type: 'agent-token-bundle',

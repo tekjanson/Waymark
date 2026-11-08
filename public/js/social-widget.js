@@ -71,7 +71,7 @@ export class SocialChatWidget {
     this.displayName = opts.displayName || 'Waymarker';
     this.password = opts.password || null;
     this.titleText = opts.title || (this.mode === 'embedded' ? '💬 Wayside' : '📡 Live Chat');
-    this.subtitleText = opts.subtitle || (this.mode === 'embedded' ? 'Pick a crew or Waymarker to trade Waymarks' : 'Listening…');
+    this.subtitleText = opts.subtitle || (this.mode === 'embedded' ? 'Pick a crew or Waymarker to chat, call, or share' : 'Listening…');
     this.baseSubtitle = this.subtitleText;
     this.signal = opts.signal || null;
     this.persistChat = opts.persistChat || null;

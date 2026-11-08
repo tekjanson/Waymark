@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -170,15 +170,20 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
   parts.push(`\nInstructions:
 1. Use the Waymark MCP tools:
    - Discovering files: call waymark_list_files({ query?, type? }) to find existing sheets or docs.
+   - Understanding structure (the same template model the Waymark app uses): call waymark_list_templates() and waymark_detect_template({ headers }) to reason about a sheet's template and column roles. waymark_get_sheet returns rows keyed by column role — prefer it when reading.
    - Creating new sheets: call waymark_create_sheet({ templateKey, title, seedRows?, shareWith? })
    - Reading sheets: call waymark_get_sheet({ spreadsheetId, sheetTitle? })
    - Modifying rows: call waymark_update_entry({ spreadsheetId, rowIndex, updates }) using 1-based rowIndex (_rowIndex >= 1)
    - Appending rows: call waymark_add_entry({ spreadsheetId, entry })
    - Searching rows: call waymark_search_entries({ spreadsheetId, query, column? })
    - Document operations: call waymark_create_doc, waymark_get_doc, waymark_append_doc
-2. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
-3. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
-4. Provide a friendly, concise summary of what you did.`);
+2. Build synthetic understanding with the knowledge graph:
+   - Before acting, call waymark_get_links({ sheetId? }) to see how the user's Waymarks already relate (neighbors, relations) and use that context.
+   - After creating or connecting data, call waymark_link_entries({ fromSheetId, relation, toSheetId, ... }) to record meaningful relationships (e.g. a Travel itinerary 'funded by' a Budget, a Meal plan 'uses' a Recipe, a task 'depends on' another). Over time this graph lets you drive Waymark data far more intelligently.
+3. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
+4. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
+5. Be fast and decisive: plan the whole task first, then use the fewest tool calls needed. Avoid redundant reads — reuse data you already fetched and batch related writes. Do not re-read a sheet you just wrote unless verification is essential.
+6. Provide a friendly, concise summary of what you did.`);
 
   return parts.join('\n\n');
 }
@@ -272,12 +277,47 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
  * @param {string} [opts.cwd]
  * @returns {Promise<{ ok: boolean, output: string, sheetId?: string, createdNewSheet?: boolean, durationMs: number, error?: string }>}
  */
+/**
+ * Resolve which OAuth token a Waymark task should run under.
+ *
+ * Critical for SHARED agents: when a guest (e.g. a spouse) drives the owner's
+ * agent, the WaysideOrchestrator records the guest as the "active requester"
+ * (waymark-active-requester.json). The agent must act as that requester so the
+ * Waymarks it creates land in — and stay usable by — the person who asked for
+ * them. Previously this helper's logic was skipped and the owner's default
+ * token was always forced onto the child, so guest requests silently ran as the
+ * owner and produced sheets the requester could not use.
+ *
+ * Precedence: explicit caller override → an already-exported env var → a fresh
+ * active-requester pointer → the owner's default token.
+ * @param {{ tokenPath?: string|null, homeDir?: string, env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {string} absolute token path, or '' when none is available
+ */
+export function resolveOAuthTokenPath({ tokenPath = null, homeDir = os.homedir(), env = process.env } = {}) {
+  const gcloudDir = path.join(homeDir, '.config', 'gcloud');
+  const defaultOAuth = path.join(gcloudDir, 'waymark-oauth-token.json');
+  if (tokenPath && existsSync(tokenPath)) return tokenPath;
+  if (env.WAYMARK_OAUTH_TOKEN_PATH) return env.WAYMARK_OAUTH_TOKEN_PATH;
+  try {
+    const activePath = path.join(gcloudDir, 'waymark-active-requester.json');
+    if (existsSync(activePath)) {
+      const meta = JSON.parse(readFileSync(activePath, 'utf8'));
+      if (meta?.tokenPath && existsSync(meta.tokenPath)
+          && Date.now() - Number(meta.updatedAt || 0) < 10 * 60 * 1000) {
+        return meta.tokenPath;
+      }
+    }
+  } catch { /* fall through to default */ }
+  return existsSync(defaultOAuth) ? defaultOAuth : '';
+}
+
 export async function runAgyTask({
   task,
   templateKey = null,
   sheetId = null,
   context = '',
   shareWith = [],
+  tokenPath = null,
   model = DEFAULT_MODEL,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   cwd = ROOT,
@@ -288,13 +328,15 @@ export async function runAgyTask({
 
   const homeDir = os.homedir();
   const defaultSa = path.join(homeDir, '.config', 'gcloud', 'waymark-service-account-key.json');
-  const defaultOAuth = path.join(homeDir, '.config', 'gcloud', 'waymark-oauth-token.json');
   const childEnv = { ...process.env };
   if (!childEnv.GOOGLE_APPLICATION_CREDENTIALS && existsSync(defaultSa)) {
     childEnv.GOOGLE_APPLICATION_CREDENTIALS = defaultSa;
   }
-  if (!childEnv.WAYMARK_OAUTH_TOKEN_PATH && existsSync(defaultOAuth)) {
-    childEnv.WAYMARK_OAUTH_TOKEN_PATH = defaultOAuth;
+  // Run as the actual requester (the guest driving a shared agent), not the
+  // agent owner. Setting this explicitly makes every MCP child deterministic.
+  const resolvedOAuth = resolveOAuthTokenPath({ tokenPath, homeDir, env: process.env });
+  if (resolvedOAuth) {
+    childEnv.WAYMARK_OAUTH_TOKEN_PATH = resolvedOAuth;
   }
   if (Array.isArray(shareWith) && shareWith.length > 0) {
     childEnv.WAYMARK_AUTO_SHARE_EMAILS = shareWith.join(',');

@@ -50,25 +50,25 @@ const MODE_GROUPS = [
 
 const MAX_HOME_WIDGETS = 16;
 const DEFAULT_HOME_WIDGETS = [
-  { id: 'starter-quickmarks', type: 'quickmarks', title: 'Quick marks', actions: ['create', 'import', 'browse', 'examples'], size: 'normal' },
-  { id: 'starter-overview', type: 'overview', title: 'Your Waymark overview', size: 'normal' },
+  { id: 'starter-quickmarks', type: 'quickmarks', title: 'Quick actions', actions: ['create', 'import', 'browse', 'examples'], size: 'normal' },
+  { id: 'starter-overview', type: 'overview', title: 'Overview', size: 'normal' },
   { id: 'starter-recent', type: 'recent', title: 'Recent Waymarks', size: 'normal' },
   { id: 'starter-pinned', type: 'pinned', title: 'Pinned Waymarks', size: 'normal' },
   { id: 'starter-folders', type: 'folders', title: 'Pinned waypoints', size: 'normal' },
 ];
 const WIDGET_TYPES = {
-  quickmarks: { label: 'Quick marks', icon: '⚡' },
-  overview: { label: 'Waymark overview', icon: '📊' },
+  quickmarks: { label: 'Quick actions', icon: '⚡' },
+  overview: { label: 'Overview', icon: '📊' },
   recent: { label: 'Recent Waymarks', icon: '🕒' },
   pinned: { label: 'Pinned Waymarks', icon: '📌' },
-  folders: { label: 'Waymark waypoints', icon: '📁' },
+  folders: { label: 'Pinned waypoints', icon: '📁' },
   sheet: { label: 'Any Waymark', icon: '📄' },
 };
 const QUICK_MARK_ACTIONS = [
-  { id: 'create', label: 'Mark a fresh trail', shortLabel: 'New Waymark', icon: '📝', detail: 'Start a new Waymark' },
-  { id: 'import', label: 'Bring marks along', shortLabel: 'Import Waymarks', icon: '📥', detail: 'Import a Waymark' },
-  { id: 'browse', label: 'Find your Waymarks', shortLabel: 'Find Waymarks', icon: '📂', detail: 'Browse your Drive trail' },
-  { id: 'examples', label: 'Follow a trail guide', shortLabel: 'Waymark guides', icon: '✨', detail: 'Explore example Waymarks' },
+  { id: 'create', label: 'New Waymark', shortLabel: 'New Waymark', icon: '📝', detail: 'Start a new Waymark' },
+  { id: 'import', label: 'Import Waymark', shortLabel: 'Import Waymark', icon: '📥', detail: 'Import a Waymark' },
+  { id: 'browse', label: 'Browse Waymarks', shortLabel: 'Browse Waymarks', icon: '📂', detail: 'Browse your Drive' },
+  { id: 'examples', label: 'Example Waymarks', shortLabel: 'Example Waymarks', icon: '✨', detail: 'Explore example Waymarks' },
 ];
 const QUICK_MARK_ACTION_IDS = QUICK_MARK_ACTIONS.map(action => action.id);
 const sheetPreviewCache = new Map();
@@ -197,8 +197,8 @@ function renderStatusBadges() {
   const pinned = userData.getPinnedSheets().length + userData.getPinnedFolders().length;
   const recent = userData.getRecentSheets().length;
   host.append(
-    el('span', { className: 'badge' }, [`📌 ${pinned} marks pinned`]),
-    el('span', { className: 'badge blue' }, [`🕒 ${recent} fresh Waymark${recent === 1 ? '' : 's'}`]),
+    el('span', { className: 'badge' }, [`📌 ${pinned} pinned`]),
+    el('span', { className: 'badge blue' }, [`🕒 ${recent} recent Waymark${recent === 1 ? '' : 's'}`]),
   );
 }
 
@@ -279,10 +279,10 @@ function renderOverviewWidget() {
   const pinnedFolders = userData.getPinnedFolders().length;
   const ledgers = userData.getShareLedgers().length;
   const values = [
-    ['Fresh marks', recent, '🕒'],
-    ['Pinned marks', pinnedSheets, '📌'],
+    ['Recent', recent, '🕒'],
+    ['Pinned', pinnedSheets, '📌'],
     ['Waypoints', pinnedFolders, '📁'],
-    ['Shared marks', ledgers, '🔗'],
+    ['Shared', ledgers, '🔗'],
   ];
   return el('div', { className: 'wayboard-metrics' }, values.map(([label, value, icon]) =>
     el('div', { className: 'wayboard-metric' }, [
@@ -314,6 +314,12 @@ function renderPagedWidgetList(items, makeRow) {
   return el('div', { className: 'wayboard-paged-list' }, [list, showMore]);
 }
 
+function renderFullWidgetList(items, makeRow) {
+  return el('div', { className: 'wayboard-paged-list wayboard-full-list' }, [
+    el('div', { className: 'wayboard-data-list' }, items.map(makeRow)),
+  ]);
+}
+
 function renderFolderRow(folder) {
   return el('button', {
     className: 'wayboard-data-row', type: 'button', title: folder.name || 'Untitled folder',
@@ -333,7 +339,7 @@ function renderFolderRow(folder) {
 function renderSheetListWidget(type) {
   if (type === 'folders') {
     const folders = userData.getPinnedFolders();
-    if (!folders.length) return emptyWidgetMessage('No folder waypoints pinned yet. Pin one in Browse to mark the trail.');
+    if (!folders.length) return emptyWidgetMessage('No waypoints pinned yet. Pin a folder in Browse to add one.');
     return renderPagedWidgetList(folders, renderFolderRow);
   }
 
@@ -342,16 +348,19 @@ function renderSheetListWidget(type) {
   if (type === 'pinned') items = userData.getPinnedSheets();
   if (!items.length) {
     const noun = type === 'recent' ? 'recent Waymarks' : 'pinned Waymarks';
-    return emptyWidgetMessage(`No ${noun} yet. Open or pin a Waymark to leave a mark here.`);
+    return emptyWidgetMessage(`No ${noun} yet. Open or pin a Waymark to see it here.`);
   }
-  return renderPagedWidgetList(items, sheet => {
+  const makeRow = sheet => {
     const template = sheet.templateKey ? TEMPLATES[sheet.templateKey] : null;
     const timestamp = sheet.openedAt ? Date.parse(sheet.openedAt) : NaN;
     const ago = Number.isFinite(timestamp)
       ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(timestamp)
       : '';
     return makeWidgetRow(sheet, template?.icon || '📄', ago);
-  });
+  };
+  // Pinned Waymarks always show in full (no paging) and the widget grows to fit.
+  if (type === 'pinned') return renderFullWidgetList(items, makeRow);
+  return renderPagedWidgetList(items, makeRow);
 }
 
 function sheetDataPromise(sheetId) {
@@ -436,7 +445,7 @@ function renderQuickmarksWidget(widget) {
     .map(id => QUICK_MARK_ACTIONS.find(action => action.id === id))
     .filter(Boolean);
   if (!actions.length) {
-    return emptyWidgetMessage('No quick marks on this leg yet. Edit this widget to choose a few.', 'Edit quick marks', () => openWidgetManager(widget.id));
+    return emptyWidgetMessage('No quick actions yet. Edit this widget to choose a few.', 'Edit widget', () => openWidgetManager(widget.id));
   }
   return el('div', { className: 'markers-row home-quick-actions' }, actions.map(action => {
     const attrs = {
@@ -494,8 +503,8 @@ function renderWidgets() {
   for (const widget of widgets) grid.append(makeWidget(widget));
   if (!widgets.length) {
     grid.append(el('div', { className: 'wayboard-empty-dashboard' }, [
-      el('p', {}, ['Your Wayboard is clear. Add Waymarks, waypoints, or a view of your choice to set the course.']),
-      el('button', { className: 'btn-secondary', type: 'button', on: { click: openWidgetManager } }, ['Mark your Wayboard with a widget']),
+      el('p', {}, ['Your Wayboard is empty. Add a widget to show your Waymarks, waypoints, and more.']),
+      el('button', { className: 'btn-secondary', type: 'button', on: { click: openWidgetManager } }, ['Add a widget']),
     ]));
   }
 }
@@ -530,7 +539,7 @@ function ensureWidgetManager() {
   ));
   const titleInput = el('input', {
     className: 'wayboard-widget-control', name: 'title', type: 'text', maxlength: '48',
-    placeholder: 'Name this mark', autocomplete: 'off',
+    placeholder: 'Widget name', autocomplete: 'off',
   });
   const sheetSelect = el('select', { className: 'wayboard-widget-control', name: 'sheet', id: 'wayboard-widget-source' });
   const browseDriveButton = el('button', {
@@ -538,27 +547,27 @@ function ensureWidgetManager() {
     title: 'Browse Google Drive for a Waymark',
   }, ['Browse Drive']);
   const sheetLabel = el('div', { className: 'wayboard-widget-field wayboard-widget-sheet-field hidden' }, [
-    el('label', { for: 'wayboard-widget-source' }, ['Waymark to bring along']),
+    el('label', { for: 'wayboard-widget-source' }, ['Waymark to show']),
     el('div', { className: 'wayboard-widget-sheet-picker' }, [sheetSelect, browseDriveButton]),
   ]);
   const sizeSelect = el('select', { className: 'wayboard-widget-control', name: 'size' }, [
-    el('option', { value: 'normal' }, ['Roomy mark']),
-    el('option', { value: 'compact' }, ['Compact mark']),
-    el('option', { value: 'wide' }, ['Two lanes wide']),
-    el('option', { value: 'tall' }, ['Two lanes tall']),
-    el('option', { value: 'full' }, ['Full trail']),
+    el('option', { value: 'normal' }, ['Normal']),
+    el('option', { value: 'compact' }, ['Compact']),
+    el('option', { value: 'wide' }, ['Wide']),
+    el('option', { value: 'tall' }, ['Tall']),
+    el('option', { value: 'full' }, ['Full width']),
   ]);
-  const submitButton = el('button', { className: 'btn btn-primary', type: 'submit' }, ['Add Waymark widget']);
+  const submitButton = el('button', { className: 'btn btn-primary', type: 'submit' }, ['Add widget']);
   const quickmarkOptions = el('div', {
     className: 'wayboard-widget-field wayboard-widget-quickmark-options hidden',
-    role: 'group', 'aria-label': 'Choose and arrange quick marks',
+    role: 'group', 'aria-label': 'Choose and arrange quick actions',
   });
   const form = el('form', { className: 'wayboard-widget-form' }, [
-    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Waymark widget']), typeSelect]),
-    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Mark name']), titleInput]),
+    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Widget type']), typeSelect]),
+    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Widget name']), titleInput]),
     sheetLabel,
     quickmarkOptions,
-    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Trail footprint']), sizeSelect]),
+    el('label', { className: 'wayboard-widget-field' }, [el('span', {}, ['Widget size']), sizeSelect]),
     el('div', { className: 'wayboard-widget-form-actions' }, [submitButton]),
   ]);
   const list = el('div', { className: 'wayboard-widget-manager-list' });
@@ -566,19 +575,19 @@ function ensureWidgetManager() {
   const dialog = el('div', { className: 'modal wayboard-widget-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'wayboard-widget-title' }, [
     el('div', { className: 'modal-header wayboard-widget-dialog-header' }, [
       el('div', {}, [
-        el('h3', { id: 'wayboard-widget-title' }, ['Mark up your Wayboard']),
-        el('p', { className: 'wayboard-widget-manager-hint' }, ['Drop in the Waymarks you need and arrange your route.']),
+        el('h3', { id: 'wayboard-widget-title' }, ['Manage Wayboard widgets']),
+        el('p', { className: 'wayboard-widget-manager-hint' }, ['Add, arrange, and edit the widgets on your Wayboard.']),
       ]),
       closeButton,
     ]),
     el('div', { className: 'modal-body wayboard-widget-dialog-body' }, [
       el('section', { className: 'wayboard-widget-add-section' }, [
-        el('h4', {}, ['Mark a widget']),
+        el('h4', {}, ['Add a widget']),
         form,
       ]),
       el('section', { className: 'wayboard-widget-current-section' }, [
         el('div', { className: 'wayboard-widget-current-heading' }, [
-          el('h4', {}, ['Your Wayboard marks']),
+          el('h4', {}, ['Your widgets']),
           el('span', { className: 'wayboard-widget-count' }),
         ]),
         list,
@@ -610,7 +619,7 @@ function ensureWidgetManager() {
       .filter((id, index, list) => QUICK_MARK_ACTION_IDS.includes(id) && list.indexOf(id) === index);
     quickmarkOptions.replaceChildren();
     quickmarkOptions.classList.toggle('hidden', typeSelect.value !== 'quickmarks');
-    quickmarkOptions.append(el('span', { className: 'wayboard-widget-field-label' }, ['Quick marks to pack'])) ;
+    quickmarkOptions.append(el('span', { className: 'wayboard-widget-field-label' }, ['Quick actions to include'])) ;
     for (const id of ordered) {
       const action = QUICK_MARK_ACTIONS.find(option => option.id === id);
       const checkbox = el('input', { type: 'checkbox', name: 'quickmarkAction', value: id });
@@ -682,7 +691,7 @@ function ensureWidgetManager() {
       });
       const file = files?.find(item => item?.id && item.mimeType === 'application/vnd.google-apps.spreadsheet');
       if (!file) {
-        if (files?.length) showToast('Choose a Google spreadsheet to add as a Waymark widget.', 'info');
+        if (files?.length) showToast('Choose a Google spreadsheet to add as a widget.', 'info');
         return;
       }
       widgetManager.driveSheets.set(file.id, { id: file.id, name: file.name || 'Untitled Waymark', templateKey: '' });
@@ -735,12 +744,12 @@ function ensureWidgetManager() {
     await saveWidgets(next);
     form.dataset.editingId = '';
     form.reset();
-    submitButton.textContent = 'Add Waymark widget';
+    submitButton.textContent = 'Add widget';
     refreshQuickmarkOptions();
     refreshSheetOptions();
     renderWidgets();
     renderWidgetManagerList();
-    showToast(editingId ? 'Wayboard mark updated' : 'Wayboard mark added', 'success');
+    showToast(editingId ? 'Widget updated' : 'Widget added', 'success');
   });
 
   widgetManager = { overlay, dialog, form, typeSelect, titleInput, sheetSelect, sheetLabel, sizeSelect, submitButton, list, refreshSheetOptions, refreshQuickmarkOptions, driveSheets: new Map() };
@@ -755,7 +764,7 @@ function openWidgetManager(editingId = '') {
   widgetManagerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   manager.form.dataset.editingId = '';
   manager.form.reset();
-  manager.submitButton.textContent = 'Add Waymark widget';
+  manager.submitButton.textContent = 'Add widget';
   manager.refreshQuickmarkOptions(QUICK_MARK_ACTION_IDS);
   manager.refreshSheetOptions();
   renderWidgetManagerList();
@@ -783,7 +792,7 @@ function renderWidgetManagerList() {
   widgetManager.list.replaceChildren();
   widgetManager.dialog.querySelector('.wayboard-widget-count').textContent = `${widgets.length}/${MAX_HOME_WIDGETS}`;
   if (!widgets.length) {
-    widgetManager.list.append(el('p', { className: 'wayboard-widget-manager-empty' }, ['Your Wayboard is clear. Add a mark above to set your course.']));
+    widgetManager.list.append(el('p', { className: 'wayboard-widget-manager-empty' }, ['No widgets yet. Add one above.']));
     return;
   }
 
@@ -795,13 +804,13 @@ function renderWidgetManagerList() {
         el('b', {}, [widget.title]),
         el('small', {}, [widget.type === 'sheet'
           ? (findWidgetSheet(widget.sheetId)?.name || widget.sheetName || 'Any Waymark')
-          : widget.type === 'quickmarks' ? `${widget.actions.length} quick marks` : type.label]),
+          : widget.type === 'quickmarks' ? `${widget.actions.length} quick actions` : type.label]),
       ]),
       el('div', { className: 'wayboard-widget-manager-actions' }, [
-        el('button', { className: 'btn-secondary btn-sm', type: 'button', title: 'Edit Waymark widget', on: { click: () => editWidget(widget) } }, ['Edit mark']),
+        el('button', { className: 'btn-secondary btn-sm', type: 'button', title: 'Edit widget', on: { click: () => editWidget(widget) } }, ['Edit']),
         el('button', { className: 'btn-secondary btn-sm', type: 'button', title: 'Move up', 'aria-label': 'Move widget up', on: { click: () => moveWidget(index, -1) } }, ['↑']),
         el('button', { className: 'btn-secondary btn-sm', type: 'button', title: 'Move down', 'aria-label': 'Move widget down', on: { click: () => moveWidget(index, 1) } }, ['↓']),
-        el('button', { className: 'btn-danger btn-sm', type: 'button', title: 'Remove Waymark widget', on: { click: () => removeWidget(widget.id) } }, ['Remove mark']),
+        el('button', { className: 'btn-danger btn-sm', type: 'button', title: 'Remove widget', on: { click: () => removeWidget(widget.id) } }, ['Remove']),
       ]),
     ]);
     row.querySelector('[title="Move up"]').disabled = index === 0;
@@ -825,7 +834,7 @@ function editWidget(widget) {
     manager.submitButton.disabled = false;
   }
   if (widget.sheetId) manager.sheetSelect.value = widget.sheetId;
-  manager.submitButton.textContent = 'Save Waymark widget';
+  manager.submitButton.textContent = 'Save widget';
   manager.typeSelect.focus();
 }
 
@@ -954,12 +963,12 @@ function renderWaysidePlaceholder(container) {
     el('div', { className: 'chat-box-head' }, [
       el('b', { id: 'wayside-crew-title' }, ['💬 Wayside']),
     ]),
-    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Pick a crew or Waymarker to trade Waymarks']),
+    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Pick a crew or Waymarker to chat, call, or share']),
     el('div', {
       className: 'chat-log',
       id: 'wayside-chat-log',
       style: 'display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-style:italic;text-align:center;padding:1.5rem;',
-    }, ['Pick a crew or Waymarker above to start chatting or calling.']),
+    }, ['Pick a crew or Waymarker above to start chatting, calling, or sharing Waymarks.']),
   ]);
   container.append(placeholder);
 }
@@ -996,18 +1005,21 @@ async function renderWayside({ autoSelect = true } = {}) {
   }
 
   host.append(el('div', { className: 'wayside-head' }, [
-    el('b', {}, ['🧭 The Wayside']),
+    el('div', { className: 'wayside-head-titles' }, [
+      el('b', {}, ['🧭 The Wayside']),
+      el('span', { className: 'wayside-head-tagline' }, ['Chat, call & share Waymarks']),
+    ]),
     el('span', { className: 'wayside-status', 'aria-live': 'polite' }, ['Finding Waymarkers…']),
   ]));
 
   const { crews, people } = await discoverCrews();
   if (renderToken !== _waysideRenderToken) return;
   const waysideStatus = host.querySelector('.wayside-status');
-  if (waysideStatus) waysideStatus.textContent = `${crews.length} crews · ${people.length} Waymarkers`;
+  if (waysideStatus) waysideStatus.textContent = `${crews.length} crew${crews.length === 1 ? '' : 's'} · ${people.length} Waymarker${people.length === 1 ? '' : 's'}`;
 
-  // Waymarker Crews
+  // Crews (shared groups)
   const crewsBlock = el('div', { className: 'crews-block' }, [
-    el('div', { className: 'wayside-label' }, ['WAYMARKER CREWS (SHARED WAYMARKS)']),
+    el('div', { className: 'wayside-label' }, ['CREWS']),
   ]);
   if (!crews.length) {
     crewsBlock.append(el('div', { className: 'wayside-empty' }, ['Add a Contacts Waymark with a Group column to form crews.']));
@@ -1038,7 +1050,7 @@ async function renderWayside({ autoSelect = true } = {}) {
 
   // Online Waymarkers
   const onlineBlock = el('div', {}, [
-    el('div', { className: 'wayside-label' }, ['ONLINE WAYMARKERS']),
+    el('div', { className: 'wayside-label' }, ['WAYMARKERS']),
   ]);
   const avatarRow = el('div', { className: 'avatar-row' });
   for (const p of people.slice(0, 8)) {
@@ -1051,9 +1063,18 @@ async function renderWayside({ autoSelect = true } = {}) {
     av.addEventListener('click', () => selectTarget({ contactEmail: p.email, label: p.name, isAgent: isAi }, host));
     avatarRow.append(av);
   }
-  if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers on this trail yet.']));
+  if (!people.length) avatarRow.append(el('div', { className: 'wayside-empty' }, ['No Waymarkers yet.']));
   onlineBlock.append(avatarRow);
   host.append(onlineBlock);
+
+  // Warm ledger/snapshot/backfill caches so switching between any listed
+  // crew or Waymarker is instant and the share list is already backfilled.
+  warmWaysideCaches([
+    ...crews.map(c => ({ group: c.name })),
+    ...people
+      .filter(p => !p.isAgent && p.email !== 'assistant@waymark.internal')
+      .map(p => ({ contactEmail: p.email })),
+  ], renderToken);
 
   // Shared Files between users
   const filesBlock = el('div', { className: 'wayside-files', id: 'wayside-files' });
@@ -1082,10 +1103,69 @@ async function renderWayside({ autoSelect = true } = {}) {
 
 const _waysideSnapshotCache = new Map();
 const _waysideTargetLedgerCache = new Map();
+/* Docs Waymark knows were shared with a target, scanned across every known
+   ledger (not just the active one). Keyed by target key. Powers share-list
+   backfill so older shares still appear. */
+const _waysideBackfillFiles = new Map();
 
 function getWaysideTargetKey(target = {}) {
   if (target.group) return `group:${String(target.group).trim().toLowerCase()}`;
   return `contact:${String(target.contactEmail || '').trim().toLowerCase()}`;
+}
+
+/** Merge a ledger's live shared files with the backfilled docs for a target. */
+function mergeBackfillFiles(target, files) {
+  const base = Array.isArray(files) ? files : [];
+  const extra = _waysideBackfillFiles.get(getWaysideTargetKey(target || _activeTarget || {})) || [];
+  if (!extra.length) return base;
+  const seen = new Set(base.map(f => (f.docId || f.Document_ID || '').trim()).filter(Boolean));
+  const merged = [...base];
+  for (const f of extra) {
+    const id = (f.docId || '').trim();
+    if (id && !seen.has(id)) { seen.add(id); merged.push(f); }
+  }
+  return merged;
+}
+
+/**
+ * Warm the Wayside ledger/snapshot/backfill caches in the background so that
+ * switching between any listed crew or Waymarker feels instant (a cache hit)
+ * instead of waiting on a Drive round-trip. Fire-and-forget; every async step
+ * is guarded by the render token so a newer render supersedes stale warms.
+ * @param {Array<{group?:string, contactEmail?:string}>} targets
+ * @param {number} renderToken
+ */
+function warmWaysideCaches(targets, renderToken) {
+  for (const t of targets.slice(0, 16)) {
+    const tKey = getWaysideTargetKey(t);
+
+    // Backfill is independent of the active ledger — compute it for every target.
+    collab.getKnownSharedDocsForTarget(t).then(docs => {
+      if (renderToken !== _waysideRenderToken) return;
+      if (docs && docs.length) _waysideBackfillFiles.set(tKey, docs);
+      else _waysideBackfillFiles.delete(tKey);
+      if (_activeTarget && getWaysideTargetKey(_activeTarget) === tKey) {
+        const snap = _activeLedgerId ? _waysideSnapshotCache.get(_activeLedgerId) : null;
+        renderSharedFiles(mergeBackfillFiles(_activeTarget, snap?.files || []));
+      }
+    }).catch(() => {});
+
+    const prefetchSnapshot = (sheetId) => {
+      if (!sheetId || _waysideSnapshotCache.has(sheetId)) return;
+      collab.readSocialSnapshot(sheetId).then(snap => {
+        if (renderToken === _waysideRenderToken && snap) _waysideSnapshotCache.set(sheetId, snap);
+      }).catch(() => {});
+    };
+
+    const cached = _waysideTargetLedgerCache.get(tKey);
+    if (cached?.sheetId) { prefetchSnapshot(cached.sheetId); continue; }
+
+    collab.findExistingShareLedger(t).then(ledger => {
+      if (renderToken !== _waysideRenderToken || !ledger?.sheetId) return;
+      _waysideTargetLedgerCache.set(tKey, ledger);
+      prefetchSnapshot(ledger.sheetId);
+    }).catch(() => {});
+  }
 }
 
 function peekKnownLedgerForTarget(target = {}) {
@@ -1137,7 +1217,7 @@ async function selectTarget(target, host) {
   let ledger = peekKnownLedgerForTarget(target);
   _activeLedgerId = ledger ? ledger.sheetId : null;
   if (!_activeLedgerId) {
-    renderSharedFiles([]);
+    renderSharedFiles(mergeBackfillFiles(target, []));
   }
 
   teardownWaysideWidget();
@@ -1315,14 +1395,14 @@ function renderSharedFiles(files) {
   container.replaceChildren();
 
   const heading = el('div', { className: 'wayside-files-head' }, [
-    el('div', { className: 'wayside-label' }, [`SHARED FILES (${list.length})`]),
+    el('div', { className: 'wayside-label' }, [`SHARED WAYMARKS (${list.length})`]),
     el('button', { className: 'btn btn-muted wayside-share-file', type: 'button' }, ['＋ Share a Waymark']),
   ]);
   heading.querySelector('button').addEventListener('click', () => shareWaymarkWithTarget());
   container.append(heading);
 
   if (!list.length) {
-    container.append(el('div', { className: 'wayside-empty' }, ['No shared files yet. Choose a Waymark to share with this collaborator.']));
+    container.append(el('div', { className: 'wayside-empty' }, ['No shared Waymarks yet. Choose a Waymark to share with this Waymarker.']));
     return;
   }
   const listEl = el('div', { className: 'wayside-files-list' });
@@ -1390,7 +1470,7 @@ function applyWaysideSnapshot(host, snap, isAgentTarget) {
       history: true,
     });
   }
-  renderSharedFiles(snap.files || []);
+  renderSharedFiles(mergeBackfillFiles(_activeTarget, snap.files || []));
   applyPresenceRings(host, snap.presence || []);
 }
 
@@ -1476,7 +1556,7 @@ async function refreshWaysideSocial(host) {
         const threads = getAgentThreads([]);
         _waysideWidget.setThreads(threads, _activeAgentThreadId);
       }
-      renderSharedFiles([]);
+      renderSharedFiles(mergeBackfillFiles(_activeTarget, []));
       applyPresenceRings(host, []);
     }
   } catch { /* ignore */ }

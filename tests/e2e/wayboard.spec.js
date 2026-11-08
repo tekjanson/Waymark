@@ -61,26 +61,44 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
   await expect(bread).toHaveAttribute('class', breadState);
 });
 
-test('Quick marks can be selected and reordered inside their own widget', async ({ page }) => {
+test('Quick actions can be selected and reordered inside their own widget', async ({ page }) => {
   await setupApp(page);
   const quickmarks = page.locator('.wayboard-widget-quickmarks');
   await expect(quickmarks.locator('.home-action-card')).toHaveCount(4);
-  await quickmarks.getByRole('button', { name: 'Edit Quick marks' }).click();
+  await quickmarks.getByRole('button', { name: 'Edit Quick actions' }).click();
 
   const options = page.locator('.wayboard-widget-quickmark-options');
   await expect(options.locator('input[type="checkbox"]')).toHaveCount(4);
   await options.locator('input[value="import"]').uncheck();
   await options.locator('input[value="browse"]').uncheck();
-  const moveGuidesEarlier = options.getByRole('button', { name: 'Move Waymark guides earlier' });
+  const moveGuidesEarlier = options.getByRole('button', { name: 'Move Example Waymarks earlier' });
   await moveGuidesEarlier.click();
   await moveGuidesEarlier.click();
   await moveGuidesEarlier.click();
   await page.locator('.wayboard-widget-form button[type="submit"]').click();
 
-  await expect(quickmarks.locator('.home-action-label')).toHaveText(['Waymark guides', 'New Waymark']);
+  await expect(quickmarks.locator('.home-action-label')).toHaveText(['Example Waymarks', 'New Waymark']);
   await page.locator('.wayboard-widget-dialog-header .btn-icon').click();
   await page.locator('#home-action-create').click();
   await expect(page.locator('#create-sheet-modal')).toBeVisible();
+});
+
+test('pinned Waymarks widget shows every pinned item with no show-more button', async ({ page }) => {
+  const pinnedSheets = Array.from({ length: 8 }, (_, i) => ({
+    id: `sheet-00${(i % 9) + 1}`,
+    name: `Pinned Waymark ${i + 1}`,
+    templateKey: 'checklist',
+    pinnedAt: new Date().toISOString(),
+  }));
+  await setupApp(page, { pinnedSheets });
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const pinnedWidget = page.locator('.wayboard-widget-pinned');
+  await expect(pinnedWidget).toBeVisible();
+  // Full list (grows to fit) — not the paged list.
+  await expect(pinnedWidget.locator('.wayboard-full-list')).toBeVisible();
+  await expect(pinnedWidget.locator('.wayboard-show-more')).toHaveCount(0);
+  await expect(pinnedWidget.locator('.wayboard-data-row')).toHaveCount(8);
 });
 
 test('expanded Wayboard gives widgets the full home canvas and can be restored', async ({ page }) => {
@@ -288,6 +306,20 @@ test('saved home layout survives reload (zero-flash from localStorage)', async (
   await page.reload();
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
   await expect(page.locator('#wayboard-root')).toHaveClass(/\bmode-23\b/);
+});
+
+test('The Wayside header explains itself and uses consistent section labels', async ({ page }) => {
+  await setupApp(page, {
+    pinnedSheets: [{ id: 'sheet-077', name: 'Waymarker Crews', templateKey: 'contacts', pinnedAt: new Date().toISOString() }],
+  });
+  await page.waitForSelector('#home-wayside .wayside-head', { timeout: 5_000 });
+  await expect(page.locator('#home-wayside .wayside-head')).toContainText('The Wayside');
+  // A tagline clarifies what the Wayside is.
+  await expect(page.locator('#home-wayside .wayside-head-tagline')).toContainText('Chat, call & share Waymarks');
+  // Section labels are the unified vocabulary (no overlapping puns).
+  const labels = await page.locator('#home-wayside .wayside-label').allInnerTexts();
+  expect(labels).toContain('CREWS');
+  expect(labels).toContain('WAYMARKERS');
 });
 
 test('Wayside shows Waymarker Crews from a Contacts Waymark', async ({ page }) => {

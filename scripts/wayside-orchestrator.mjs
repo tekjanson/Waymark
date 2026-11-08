@@ -753,9 +753,23 @@ export class WaysideOrchestrator {
         if (senderClean && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
           const senderPath = path.join(path.dirname(oauthPath), `waymark-oauth-token-${senderClean}.json`);
           const senderTmp = `${senderPath}.${process.pid}.tmp`;
+          // Preserve any client credentials already on file for this account so a
+          // refresh-only push never drops them.
+          let priorSender = {};
+          if (existsSync(senderPath)) {
+            try { priorSender = JSON.parse(readFileSync(senderPath, 'utf8')) || {}; } catch { priorSender = {}; }
+          }
+          const senderClientId = parsed.client_id || priorSender.client_id || '';
+          const senderClientSecret = parsed.client_secret || priorSender.client_secret || '';
           const senderBundle = {
             ...(accessToken ? { access_token: accessToken } : {}),
-            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+            // A refresh_token (+ client_id) is what makes a collaborator's token
+            // durable — without it the agent can only act as them for ~1 hour,
+            // then falls back to the owner and creates files in the wrong Drive.
+            ...(refreshToken ? { refresh_token: refreshToken } : (priorSender.refresh_token ? { refresh_token: priorSender.refresh_token } : {})),
+            ...(senderClientId ? { client_id: senderClientId } : {}),
+            ...(senderClientSecret ? { client_secret: senderClientSecret } : {}),
+            ...(parsed.scope ? { scope: parsed.scope } : (priorSender.scope ? { scope: priorSender.scope } : {})),
             token_type: parsed.token_type || 'Bearer',
             expiry_date: expiryMs,
             account_email: senderClean,
@@ -767,7 +781,7 @@ export class WaysideOrchestrator {
             try { chmodSync(senderTmp, 0o600); } catch {}
           }
           renameSync(senderTmp, senderPath);
-          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderClean} -> ${senderPath}`);
+          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderClean} (${senderBundle.refresh_token ? 'durable: refresh_token' : 'access-only'}) -> ${senderPath}`);
         }
       }
 
@@ -1317,12 +1331,13 @@ export class WaysideOrchestrator {
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
+      let activeTokenPath = null;
       try {
         const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
         const perAccountPath = senderKey.includes('@')
           ? path.join(gcloudDir, `waymark-oauth-token-${senderKey.replace(/[^a-z0-9.@_-]/gi, '_')}.json`)
           : '';
-        const activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
+        activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
           ? perAccountPath
           : (process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(gcloudDir, 'waymark-oauth-token.json'));
         fs.writeFileSync(
@@ -1342,6 +1357,7 @@ export class WaysideOrchestrator {
         sheetId: targetSheetId,
         context: contextLines.join('\n'),
         shareWith: shareTargets,
+        tokenPath: activeTokenPath,
       });
 
       if (agyResult.ok) {
@@ -1476,7 +1492,7 @@ export class WaysideOrchestrator {
           const timer = setTimeout(() => {
             this._p2pSheetWaiters.delete(requestId);
             resolve(null);
-          }, 5000);
+          }, 15000);
           this._p2pSheetWaiters.set(requestId, (res) => {
             clearTimeout(timer);
             resolve(res);
